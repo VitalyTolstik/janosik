@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -94,6 +95,12 @@ describe("table row windowing (TASK-139)", () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem("janosik-boards", JSON.stringify([board()]));
+  });
+
+  afterEach(async () => {
+    // React's scheduler can defer a render callback past the test body; let
+    // it run while jsdom still has `window` instead of failing teardown.
+    await new Promise((resolve) => setTimeout(resolve, 25));
   });
 
   it("mounts only the rows around the viewport", () => {

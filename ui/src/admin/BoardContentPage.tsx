@@ -21,14 +21,8 @@ import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
-import {
-  ConfirmDialog,
-  ErrorState,
-  IdChip,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { ConfirmDialog, ErrorState, IdChip, PageHeader, Panel } from "./ui";
+import { BoardEditorSkeleton } from "./skeletons";
 
 /**
  * Board content editor (TASK-43) — create and tidy columns/cards without
@@ -128,7 +122,7 @@ export function BoardContentPage() {
     [boardId, t, toast],
   );
 
-  if (state === "loading") return <LoadingState />;
+  if (state === "loading") return <BoardEditorSkeleton />;
   if (state === "error" || board === null) return <ErrorState onRetry={load} />;
 
   const selected = board.columns.find(
@@ -175,10 +169,10 @@ export function BoardContentPage() {
   };
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
         <Link
-          to={routes.admin}
+          to={routes.adminBoardDetail(boardId)}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
@@ -194,7 +188,7 @@ export function BoardContentPage() {
             <IdChip id={board.id} />
             <Button size="sm" variant="outline" onClick={load} disabled={busy}>
               <RotateCw className="h-3.5 w-3.5" aria-hidden />
-              {t("admin.common.retry")}
+              {t("admin.common.refresh")}
             </Button>
           </div>
         }
@@ -474,6 +468,6 @@ export function BoardContentPage() {
           }
         }}
       />
-    </>
+    </div>
   );
 }

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { CardDescriptionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
 import { CardAttachments } from "@/components/board/CardAttachments";
@@ -62,6 +63,7 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -72,7 +74,12 @@ import {
 import { api, ApiError } from "@/api/client";
 import { embedMarkdown } from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
-import { useBoard } from "@/store/BoardContext";
+import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import {
+  boardMoveBlockReason,
+  moveTargetBlockReason,
+  restoreTargetBlockReason,
+} from "@/utils/workflow";
 import { createId } from "@/utils/id";
 import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
@@ -167,6 +174,7 @@ export function CardDialog({
     duplicateCard,
     registerDraftFlush,
   } = useBoard();
+  const { role } = useBoardAccess();
   // The conflict-draft key is board-scoped (TASK-147 follow-up). `board` is
   // optional in the store; an empty id only happens before a board loads,
   // when this dialog is not really open.
@@ -556,6 +564,7 @@ export function CardDialog({
     if (!cardId) return;
     const stored = board?.cards[cardId]?.title ?? "";
     heldTitles.delete(conflictedKey(boardId, cardId));
+    titleTargetRef.current = null;
     titleSeenRef.current = stored;
     titleDraftRef.current = stored;
     titleDirtyRef.current = false;
@@ -723,13 +732,13 @@ export function CardDialog({
 
   const handleMove = (columnId: string) => {
     const target = board.columns.find((col) => col.id === columnId);
-    if (!target) return;
-    moveCard(
-      card.id,
-      currentColumn?.id ?? target.id,
-      columnId,
-      target.cardIds.length,
-    );
+    if (!target || !currentColumn) return;
+    const reason = boardMoveBlockReason(board, card.id, target, role, t);
+    if (reason !== null) {
+      toast.error(reason);
+      return;
+    }
+    moveCard(card.id, currentColumn.id, columnId, target.cardIds.length);
   };
 
   // Archive keeps the dialog open: the card is still here (archived cards
@@ -1000,20 +1009,30 @@ export function CardDialog({
                       <DropdownMenuLabel>
                         {t("card.restoreTo")}
                       </DropdownMenuLabel>
-                      {board.columns.map((column) => (
-                        <DropdownMenuItem
-                          key={column.id}
-                          disabled={isColumnFull(column)}
-                          onSelect={() => handleRestore(column.id)}
-                        >
-                          <span className="truncate">{column.title}</span>
-                          {column.wipLimit !== undefined && (
-                            <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                              {column.cardIds.length}/{column.wipLimit}
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-                      ))}
+                      {board.columns.map((column) => {
+                        const reason = restoreTargetBlockReason(
+                          board,
+                          card,
+                          column,
+                          role,
+                          t,
+                        );
+                        return (
+                          <DropdownMenuItem
+                            key={column.id}
+                            disabled={reason !== null}
+                            title={reason ?? undefined}
+                            onSelect={() => handleRestore(column.id)}
+                          >
+                            <span className="truncate">{column.title}</span>
+                            {column.wipLimit !== undefined && (
+                              <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                {column.cardIds.length}/{column.wipLimit}
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 ) : null}
@@ -1034,17 +1053,43 @@ export function CardDialog({
                           {t("card.moveTo")}
                         </DropdownMenuLabel>
                         {board.columns.map((column) => {
-                          const full =
-                            column.id !== currentColumn?.id &&
-                            isColumnFull(column);
+                          const current = column.id === currentColumn?.id;
+                          const reason = current
+                            ? null
+                            : moveTargetBlockReason(
+                                {
+                                  workflow: board.workflow,
+                                  card,
+                                  fromColumnId: currentColumn?.id ?? column.id,
+                                  fromTitle: currentColumn?.title ?? "",
+                                  target: column,
+                                  role,
+                                },
+                                t,
+                              );
                           return (
                             <DropdownMenuItem
                               key={column.id}
-                              disabled={column.id === currentColumn?.id || full}
+                              disabled={current || reason !== null}
+                              title={reason ?? undefined}
                               onSelect={() => handleMove(column.id)}
+                              data-testid={`card-dialog-move-${column.id}`}
+                              className="items-start"
                             >
-                              {column.id === currentColumn?.id ? "✓ " : ""}
-                              <span className="truncate">{column.title}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate">
+                                  {current ? "✓ " : ""}
+                                  {column.title}
+                                </span>
+                                {reason ? (
+                                  <span
+                                    className="block whitespace-normal text-[10px] leading-snug text-muted-foreground"
+                                    data-testid={`card-dialog-move-reason-${column.id}`}
+                                  >
+                                    {reason}
+                                  </span>
+                                ) : null}
+                              </span>
                               {column.wipLimit !== undefined && (
                                 <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
                                   {column.cardIds.length}/{column.wipLimit}
@@ -1116,9 +1161,15 @@ export function CardDialog({
                   oversized pastes are clamped here with a visible toast. */}
                   <Suspense
                     fallback={
-                      /* Same footprint as the empty editor so the dialog rows
-                     don't jump while the chunk streams in (first open only). */
-                      <div className="h-32 animate-pulse rounded-md bg-muted/40" />
+                      /* Same footprint as the empty editor (toolbar + body)
+                     so the dialog rows don't jump while the chunk streams
+                     in (first open only). */
+                      <SkeletonRegion
+                        label={t("card.description.loading")}
+                        testId="card-description-skeleton"
+                      >
+                        <CardDescriptionSkeleton />
+                      </SkeletonRegion>
                     }
                   >
                     {/* The blur wrapper closes the staging window: leaving the
@@ -1207,6 +1258,7 @@ export function CardDialog({
                 />
 
                 <CardAttachments
+                  key={`attachments:${card.id}`}
                   cardId={card.id}
                   boardId={board.id}
                   readOnly={readOnly}

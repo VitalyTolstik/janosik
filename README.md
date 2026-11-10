@@ -57,7 +57,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ site/                        # @janosik/site — marketing site and documentation
 ├─ video/                       # @janosik/video — product demo clips
 ├─ mcp/                         # @janosik/mcp — the MCP server: the board as agent tools
-│  ├─ src/                      # client + 13 tool groups (71 tools), toolset gating
+│  ├─ src/                      # client + 13 tool groups (74 tools), toolset gating
 │  ├─ server.json               # MCP Registry metadata (published as io.github.vitalytolstik/janosik)
 │  └─ scripts/smoke.mjs         # live smoke test against a running instance
 ├─ skills/janosik/              # workflow guidance for AI agents using the MCP tools
@@ -100,7 +100,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
 - **AI agents (MCP + skill)** — `@janosik/mcp` gives compatible clients (Claude, Cursor, VS Code, opencode and Codex) access to board tools through a personal API key. The `janosik` skill provides workflow guidance: claim a card under a temporary lease, keep its description, checklist and comments structured, and return blocked work with evidence. Keys can be scoped to one board, made read-only and rate-limited. Commands retain actor attribution, history and undo. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
 - **Performance** — the editor and calendar load on demand; vendor libraries use separate cacheable chunks, and board rows and cards are memoized. Performance measurements and their test conditions are recorded in [docs/PERF-BASELINE.md](./docs/PERF-BASELINE.md).
-- **Data safety** — debounced saves, JSON export/import, automatic backups (20 snapshots, rotated), error boundary + toasts, input/collection limits everywhere.
+- **Data safety** — debounced saves, JSON export/import (25 MB import/export envelope, 10 MB command bodies), automatic local backups in the no-API build (20 snapshots, rotated; server mode deliberately does not create backups), self-service export/delete, error boundary + toasts, input/collection limits everywhere.
 - **Themes & polish** — dark/light with no-flash preflight, four board backgrounds, adjustable column glass, `prefers-reduced-motion`, custom scrollbars.
 - **i18n** — English & Russian with type-safe keys and pluralization; 12h/24h time format toggle.
 - **Brand** — Space Grotesk wordmark (self-hosted) + animated "Перо Яношика" feather logo.
@@ -363,11 +363,12 @@ Rules worth knowing:
 Janosik lets AI agents and people work on shared boards. The MCP server provides
 the tools; the skill describes a consistent workflow for using them:
 
-- **`@janosik/mcp` — the tools.** An MCP server (71 tools across 13 groups)
-  for boards, columns, cards, labels, checklists, links, comments, activity and
-  attachments. Optional toolsets add members, invitations, share links and
-  account actions. Any compatible MCP client can connect with a personal API
-  key (`jnk_…`). Writes use the same command log as the UI, so they can be
+- **`@janosik/mcp` — the tools.** An MCP server (74 tools across 13 groups)
+  for boards, columns, cards, labels, checklists, links, comments, activity,
+  attachments and agent sessions. Optional toolsets add members, share links
+  and account identity. Any compatible MCP client can connect with a personal
+  API key (`jnk_…`) whose scope preset decides what it may read and write.
+  Writes use the same command log as the UI, so they can be
   undone and stream live to other board members.
 - **`skills/janosik` — workflow guidance.** It tells the agent to read before
   writing, claim a card under a time-limited lease, keep its description,
@@ -403,9 +404,12 @@ an agent.
 
 Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex.
 `JANOSIK_APP_BASE` is only needed when the app is not at the site root (e.g.
-`/app`). By default the server registers the board-work tools; member,
-invitation, share and account tools are opt-in (`JANOSIK_MCP_TOOLSETS`), and
-attachment upload/download stays off until you set `JANOSIK_MCP_ALLOW_FS=1`.
+`/app`). By default the server registers the board-work and agent-session
+tools; member, share and account-identity tools are opt-in
+(`JANOSIK_MCP_TOOLSETS`), and attachment upload/download stays off until you set
+`JANOSIK_MCP_ALLOW_FS=1`. An API key also carries an immutable scope preset
+(`observer`, `worker`, `reviewer`, `admin`) and an optional `trustedCi` flag;
+destructive actions need a human approval unless the key is trusted CI.
 
 ### 3. Add the skill
 

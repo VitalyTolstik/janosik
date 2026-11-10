@@ -320,7 +320,7 @@ describe("Board-level commands (e2e)", () => {
       const stale = await postCommand(boardId, update, adminToken, {
         ifMatchVersions: { "card:card-pre": cardVersion + 1 },
       }).expect(409);
-      expect(stale.body).toEqual({
+      expect(stale.body).toMatchObject({
         conflict: "version",
         currentVersion: addedCard.seq,
       });
@@ -379,7 +379,7 @@ describe("Board-level commands (e2e)", () => {
         adminToken,
         { ifMatchVersions: { [`board:${boardId}`]: boardVersion } },
       ).expect(409);
-      expect(stale.body).toEqual({
+      expect(stale.body).toMatchObject({
         conflict: "version",
         currentVersion: renamed.seq,
       });

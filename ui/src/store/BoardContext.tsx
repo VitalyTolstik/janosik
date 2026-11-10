@@ -47,13 +47,16 @@ import type {
   Board,
   BoardMemberDto,
   BoardRole,
+  BoardWorkflow,
   CardCover,
   CardLinkType,
   CardPriority,
+  ColumnAccentStyle,
   Label,
   MembershipChange,
 } from "@janosik/shared";
 import { normalizeBoards } from "@janosik/shared";
+import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { changedEntityIds } from "@/store/board-diff";
 import { hasCard } from "@/utils/card-nav";
 import {
@@ -70,6 +73,7 @@ import {
   type DebouncedPersistence,
 } from "@/utils/persistence";
 import { routes } from "@/routes";
+import { conditionLabel } from "@/utils/workflow";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 
@@ -113,6 +117,12 @@ interface BoardStateValue {
   board: Board | undefined;
   /** Every board in storage (export/import target). */
   boards: Board[];
+  /**
+   * Boards that are still streaming in after the shell became ready (U-9).
+   * The switcher renders pending rows while this is positive; zero once the
+   * background hydration finished (or gave up).
+   */
+  pendingBoardCount: number;
   /** Non-null while the data is at risk — rendered as a banner. */
   dataIssue: DataIssue | null;
   /**
@@ -140,6 +150,16 @@ interface BoardIdentityValue {
 interface BoardHistoryValue {
   canUndo: boolean;
   canRedo: boolean;
+}
+
+/**
+ * The caller's role on the active board — its own narrow context so the
+ * header can hide mutating affordances for a VIEWER without subscribing to
+ * every board edit. `undefined` while the role is unknown or there is no
+ * active board.
+ */
+interface BoardAccessValue {
+  role: BoardRole | undefined;
 }
 
 /**
@@ -233,6 +253,16 @@ interface BoardActionsValue {
   moveColumn: (columnId: string, fromIndex: number, toIndex: number) => void;
   /** Sets (or clears, `wipLimit === undefined`) a column's WIP limit. */
   setColumnWipLimit: (columnId: string, wipLimit?: number) => void;
+  /** Sets (or clears, `accent === undefined`) a column's accent. */
+  setColumnAccent: (columnId: string, accent?: CardCover) => void;
+  /** Sets the board-wide column accent shape (`undefined` = signature). */
+  setBoardColumnStyle: (columnStyle?: ColumnAccentStyle) => void;
+  /**
+   * Replaces (or clears, `undefined`) the board's card workflow. In server
+   * mode resolves `false` when the server refused the command (the failure
+   * toast is already shown), so the settings dialog can stay open.
+   */
+  setBoardWorkflow: (workflow?: BoardWorkflow) => void | Promise<boolean>;
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
@@ -286,6 +316,7 @@ type BoardContextValue = BoardStateValue &
 const BoardStateContext = createContext<BoardStateValue | null>(null);
 const BoardIdentityContext = createContext<BoardIdentityValue | null>(null);
 const BoardHistoryContext = createContext<BoardHistoryValue | null>(null);
+const BoardAccessContext = createContext<BoardAccessValue | null>(null);
 const BoardActionsContext = createContext<BoardActionsValue | null>(null);
 
 export function BoardProvider({ children }: { children: ReactNode }) {
@@ -332,6 +363,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<BoardStateValue["syncStatus"]>(
     serverMode ? "loading" : "ready",
   );
+  const [pendingBoardCount, setPendingBoardCount] = useState(0);
   const [roles, setRoles] = useState<Record<string, BoardRole>>({});
 
   /* eslint-enable react-hooks/refs */
@@ -424,29 +456,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       versionsRef.current.set(boardId, current);
     },
     [],
-  );
-
-  /** Toast for a command the server refused or the network dropped. */
-  const showFailure = useCallback(
-    (failure: SendFailure) => {
-      switch (failure.kind) {
-        case "offline":
-          toast.error(t("sync.offline"));
-          break;
-        case "wip":
-          toast.error(t("toast.wipLimitBlocked"));
-          break;
-        case "version":
-          toast.error(t("sync.foreignEdit"));
-          break;
-        case "busy":
-          toast.error(t("sync.busy"));
-          break;
-        default:
-          toast.error(t("sync.rejected"));
-      }
-    },
-    [toast, t],
   );
 
   const onForeignSkipped = useCallback(
@@ -603,6 +612,73 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return boardId ? getBoardById(boardId) : undefined;
   }, [getBoardById]);
 
+  /** Toast for a command the server refused or the network dropped. */
+  const showFailure = useCallback(
+    (failure: SendFailure) => {
+      switch (failure.kind) {
+        case "offline":
+          toast.error(t("sync.offline"));
+          break;
+        case "wip":
+          toast.error(t("toast.wipLimitBlocked"));
+          break;
+        case "version":
+          toast.error(t("sync.foreignEdit"));
+          break;
+        case "workflow": {
+          const board = getActiveBoard();
+          const details = failure.details;
+          const titleOf = (id: string | null) =>
+            board?.columns.find((column) => column.id === id)?.title ??
+            id ??
+            "—";
+          if (details.code === "condition_failed") {
+            toast.error(
+              t("workflow.blocked.conditionToast", {
+                conditions: (details.failedConditions ?? [])
+                  .map((condition) => conditionLabel(condition, t))
+                  .join(t("workflow.conditionSeparator")),
+              }),
+            );
+          } else if (details.code === "role_not_allowed") {
+            toast.error(
+              t("workflow.blocked.role", {
+                from: titleOf(details.fromColumnId),
+                to: titleOf(details.toColumnId),
+                roles:
+                  details.requiredRoles?.join(" / ") ??
+                  t("workflow.roleFallback"),
+              }),
+            );
+          } else {
+            const allowed = details.allowedToColumnIds
+              .map((id) => titleOf(id))
+              .join(t("workflow.listSeparator"));
+            toast.error(
+              t(
+                allowed === ""
+                  ? "workflow.blocked.transition"
+                  : "workflow.blocked.transitionAllowed",
+                {
+                  from: titleOf(details.fromColumnId),
+                  to: titleOf(details.toColumnId),
+                  columns: allowed,
+                },
+              ),
+            );
+          }
+          break;
+        }
+        case "busy":
+          toast.error(t("sync.busy"));
+          break;
+        default:
+          toast.error(t("sync.rejected"));
+      }
+    },
+    [toast, t, getActiveBoard],
+  );
+
   /**
    * Undo/redo transport (TASK-29): the inverse command rides the same queue
    * as ordinary commands, with version preconditions for text so a stale
@@ -666,6 +742,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     () => ({ canUndo, canRedo }),
     [canUndo, canRedo],
   );
+
+  // Any path that leaves the caller as a VIEWER — a live membership event, a
+  // focus refetch, a fresh load — drops the local undo stack. Hiding the
+  // buttons alone would still leave Ctrl+Z able to send refused commands.
+  useEffect(() => {
+    const activeId = board?.id;
+    if (activeId !== undefined && roles[activeId] === "VIEWER") {
+      dropHistory(activeId);
+    }
+  }, [board?.id, roles, dropHistory]);
 
   // Switching boards swaps in that board's stack — and its own undo state.
   useEffect(() => {
@@ -829,11 +915,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   /**
    * Server hydration (TASK-29): list the boards, then load every aggregate
-   * into the local model (≤ LIMITS.boardsCount boards — the multi-board UI,
-   * global search and export keep working on the same shape). An account
-   * with zero boards inherits the pre-server localStorage data through
-   * `POST /boards/import` once, archived cards included; the local key is
-   * dropped afterwards so the same data cannot be imported twice.
+   * into the local model (server mode has no 10-board product limit — the
+   * operator cap is enforced by the API; the multi-board UI, global search
+   * and export keep working on the same shape). An account with zero boards
+   * inherits the pre-server localStorage data through `POST /boards/import`
+   * once, archived cards included; the local key is dropped afterwards so
+   * the same data cannot be imported twice.
    */
   /**
    * Second hydration phase (U-9): the boards that are not on screen. They
@@ -849,61 +936,72 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const loadRemainingBoards = useCallback(
     async (ids: string[], order: string[], gen: number): Promise<void> => {
       const loaded = new Map<string, { board: Board; seq: number }>();
-      let missing = ids;
-      for (let attempt = 0; missing.length > 0 && attempt < 4; attempt += 1) {
-        if (attempt > 0) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1_000 * 2 ** (attempt - 1)),
+      try {
+        let missing = ids;
+        for (let attempt = 0; missing.length > 0 && attempt < 4; attempt += 1) {
+          if (attempt > 0) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1_000 * 2 ** (attempt - 1)),
+            );
+          }
+          if (!aliveRef.current || hydrationGenRef.current !== gen) return;
+          const results = await Promise.allSettled(
+            missing.map((id) => api.getBoardSnapshot(id)),
           );
+          missing = missing.filter((id, index) => {
+            const result = results[index];
+            if (result.status !== "fulfilled") return true;
+            loaded.set(id, result.value);
+            return false;
+          });
         }
-        if (!aliveRef.current || hydrationGenRef.current !== gen) return;
-        const results = await Promise.allSettled(
-          missing.map((id) => api.getBoardSnapshot(id)),
-        );
-        missing = missing.filter((id, index) => {
-          const result = results[index];
-          if (result.status !== "fulfilled") return true;
-          loaded.set(id, result.value);
-          return false;
-        });
-      }
-      if (
-        !aliveRef.current ||
-        hydrationGenRef.current !== gen ||
-        loaded.size === 0
-      ) {
-        return;
-      }
-      const current = stateRef.current;
-      const byId = new Map(current.map((board) => [board.id, board]));
-      const merged: Board[] = [];
-      const now = Date.now();
-      for (const id of order) {
-        const existing = byId.get(id);
-        if (existing !== undefined) {
-          merged.push(existing);
-          byId.delete(id);
-          continue;
+        if (
+          !aliveRef.current ||
+          hydrationGenRef.current !== gen ||
+          loaded.size === 0
+        ) {
+          return;
         }
-        const fresh = loaded.get(id);
-        if (fresh === undefined) continue;
-        merged.push(fresh.board);
-        live.attribution.seed(fresh.board);
-        seqsRef.current.set(
-          id,
-          Math.max(seqsRef.current.get(id) ?? 0, fresh.seq),
-        );
-        syncedAtRef.current.set(id, now);
+        const current = stateRef.current;
+        const byId = new Map(current.map((board) => [board.id, board]));
+        const merged: Board[] = [];
+        const now = Date.now();
+        for (const id of order) {
+          const existing = byId.get(id);
+          if (existing !== undefined) {
+            merged.push(existing);
+            byId.delete(id);
+            continue;
+          }
+          const fresh = loaded.get(id);
+          if (fresh === undefined) continue;
+          merged.push(fresh.board);
+          live.attribution.seed(fresh.board);
+          seqsRef.current.set(
+            id,
+            Math.max(seqsRef.current.get(id) ?? 0, fresh.seq),
+          );
+          syncedAtRef.current.set(id, now);
+        }
+        // Boards created while the list was loading.
+        for (const board of byId.values()) merged.push(board);
+        apply({ type: "IMPORT_BOARDS", boards: merged });
+      } finally {
+        // Pending rows must clear even when a board was dropped after the
+        // retry budget; a newer hydration owns the counter otherwise.
+        if (aliveRef.current && hydrationGenRef.current === gen) {
+          setPendingBoardCount((count) => Math.max(0, count - ids.length));
+        }
       }
-      // Boards created while the list was loading.
-      for (const board of byId.values()) merged.push(board);
-      apply({ type: "IMPORT_BOARDS", boards: merged });
     },
     [apply, live],
   );
 
   const runHydration = useCallback(async (): Promise<void> => {
     const gen = ++hydrationGenRef.current;
+    // A failed re-hydration must not leave the previous generation's pending
+    // rows counting forever; this generation owns the counter from here.
+    setPendingBoardCount(0);
     const summaries = await api.listBoards();
     const nextRoles: Record<string, BoardRole> = {};
     for (const summary of summaries) nextRoles[summary.id] = summary.role;
@@ -949,6 +1047,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       nextSynced.set(board.id, now);
     }
     setRoles(nextRoles);
+    // The switcher shows pending rows until the background phase settles.
+    setPendingBoardCount(rest.length);
     // The hydrated state is exactly what the aggregates showed: replacing
     // the seq map keeps the realtime resume point in sync with it.
     seqsRef.current = nextSeqs;
@@ -1374,7 +1474,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // the API afterwards; a refusal rolls the optimistic state back and shows
   // a toast (TASK-29).
   const dispatch = useCallback(
-    (action: BoardAction) => {
+    (action: BoardAction): void | Promise<boolean> => {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -1401,11 +1501,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      void sync.enqueue(boardId, scoped).then((outcome) => {
+      return sync.enqueue(boardId, scoped).then((outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
-          return;
+          return outcome.ok;
         }
         handledOutcomesRef.current.add(outcome);
         if (outcome.ok) {
@@ -1415,7 +1515,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           live.commits.publish(boardId, touchedIds);
           realtimeRef.current?.settled(boardId, outcome.seq);
           drainRefetch(boardId);
-          return;
+          return true;
         }
         realtimeRef.current?.settled(boardId);
         showFailure(outcome.failure);
@@ -1439,6 +1539,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           }
         }
         drainRefetch(boardId);
+        return false;
       });
     },
     [
@@ -1468,8 +1569,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           .importBoards(toEnvelope(normalizeBoards(boards)))
           .then(() => hydrateBoards())
           .then(() => true)
-          .catch(() => {
-            toast.error(t("data.importError"));
+          .catch((error: unknown) => {
+            // TASK-166: an operator cap is a limit, not a generic sync
+            // failure — say how many boards are allowed.
+            const limit =
+              error instanceof ApiError && error.code === "limit_exceeded"
+                ? (error.body as { limit?: unknown } | null)?.limit
+                : undefined;
+            toast.error(
+              typeof limit === "number"
+                ? t("limits.maxBoards", { limit })
+                : t("data.importError"),
+            );
             return false;
           });
       }
@@ -1491,12 +1602,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           .createBoard(resolved)
           .then((created) => {
             if (!aliveRef.current) return null;
-            apply({ type: "ADD_BOARD", board: created });
+            apply({ type: "ADD_BOARD", board: created, remote: true });
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
           })
-          .catch(() => {
-            toast.error(t("sync.rejected"));
+          .catch((error: unknown) => {
+            const limit =
+              error instanceof ApiError && error.code === "limit_exceeded"
+                ? (error.body as { limit?: unknown } | null)?.limit
+                : undefined;
+            toast.error(
+              typeof limit === "number"
+                ? t("limits.maxBoards", { limit })
+                : t("sync.rejected"),
+            );
             return null;
           });
       }
@@ -1621,8 +1740,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const stateValue = useMemo<BoardStateValue>(
-    () => ({ board, boards: state, dataIssue, syncStatus }),
-    [board, state, dataIssue, syncStatus],
+    () => ({
+      board,
+      boards: state,
+      pendingBoardCount,
+      dataIssue,
+      syncStatus,
+    }),
+    [board, state, pendingBoardCount, dataIssue, syncStatus],
   );
 
   const identity = useMemo<BoardIdentityValue>(
@@ -1630,15 +1755,30 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [board?.id, board?.title],
   );
 
+  // A narrow role slice: the header hides Undo/Redo for a VIEWER, and the
+  // role changes only on membership events — not on every card edit.
+  const activeBoardId = board?.id;
+  const access = useMemo<BoardAccessValue>(
+    () => ({
+      role:
+        activeBoardId === undefined
+          ? undefined
+          : (roles[activeBoardId] ?? (serverMode ? undefined : "ADMIN")),
+    }),
+    [activeBoardId, roles, serverMode],
+  );
+
   return (
     <BoardLiveProvider live={live}>
       <BoardActionsContext.Provider value={actions}>
         <BoardHistoryContext.Provider value={history}>
-          <BoardIdentityContext.Provider value={identity}>
-            <BoardStateContext.Provider value={stateValue}>
-              {children}
-            </BoardStateContext.Provider>
-          </BoardIdentityContext.Provider>
+          <BoardAccessContext.Provider value={access}>
+            <BoardIdentityContext.Provider value={identity}>
+              <BoardStateContext.Provider value={stateValue}>
+                {children}
+              </BoardStateContext.Provider>
+            </BoardIdentityContext.Provider>
+          </BoardAccessContext.Provider>
         </BoardHistoryContext.Provider>
       </BoardActionsContext.Provider>
     </BoardLiveProvider>
@@ -1694,6 +1834,9 @@ function createBoardActions(
   | "moveCard"
   | "moveColumn"
   | "setColumnWipLimit"
+  | "setColumnAccent"
+  | "setBoardColumnStyle"
+  | "setBoardWorkflow"
   | "sortColumn"
 > {
   /** `n` fresh ids, for the activity events (or copies) a command produces. */
@@ -1995,6 +2138,50 @@ function createBoardActions(
         wipLimit,
         at: Date.now(),
       }),
+    setColumnAccent: (columnId: string, accent?: CardCover) => {
+      const current = getBoard()?.columns.find(
+        (c) => c.id === columnId,
+      )?.accent;
+      const same =
+        current === undefined
+          ? accent === undefined
+          : accent !== undefined &&
+            current.type === accent.type &&
+            current.value === accent.value;
+      if (same) return;
+      dispatch({
+        type: "SET_COLUMN_ACCENT",
+        columnId,
+        accent,
+        at: Date.now(),
+      });
+    },
+    setBoardColumnStyle: (columnStyle?: ColumnAccentStyle) => {
+      // Selecting the implicit default again is not an edit: avoid a
+      // command/activity entry that reads signature -> signature.
+      const current = getBoard()?.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
+      const next = columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
+      if (current === next) return;
+      dispatch({
+        type: "SET_BOARD_COLUMN_STYLE",
+        columnStyle,
+        at: Date.now(),
+      });
+    },
+    setBoardWorkflow: (workflow?: BoardWorkflow) => {
+      // Saving an unchanged config is not a step (and must not cost undo).
+      if (
+        JSON.stringify(workflow ?? null) ===
+        JSON.stringify(getBoard()?.workflow ?? null)
+      ) {
+        return;
+      }
+      return dispatch({
+        type: "SET_BOARD_WORKFLOW",
+        workflow,
+        at: Date.now(),
+      });
+    },
     sortColumn: (columnId: string, sortBy: ColumnSortBy) =>
       dispatch({ type: "SORT_COLUMN", columnId, sortBy, at: Date.now() }),
   };
@@ -2024,6 +2211,11 @@ export function useBoardIdentity(): BoardIdentityValue {
 /** Undo availability for the active board — changes only when it flips. */
 export function useBoardHistory(): BoardHistoryValue {
   return required(useContext(BoardHistoryContext), "useBoardHistory");
+}
+
+/** The caller's role on the active board — a narrow header-only slice. */
+export function useBoardAccess(): BoardAccessValue {
+  return required(useContext(BoardAccessContext), "useBoardAccess");
 }
 
 /**
@@ -2096,6 +2288,9 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     moveCard: noop,
     moveColumn: noop,
     setColumnWipLimit: noop,
+    setColumnAccent: noop,
+    setBoardColumnStyle: noop,
+    setBoardWorkflow: noop,
     sortColumn: noop,
     addBoard: () => "",
     removeBoard: noop,
@@ -2147,12 +2342,19 @@ export function ShareBoardProvider({
     () => ({ canUndo: false, canRedo: false }),
     [],
   );
+  const access = useMemo<BoardAccessValue>(() => ({ role: "VIEWER" }), []);
   const identity = useMemo<BoardIdentityValue>(
     () => ({ id: board.id, title: board.title }),
     [board.id, board.title],
   );
   const stateValue = useMemo<BoardStateValue>(
-    () => ({ board, boards: [board], dataIssue: null, syncStatus: "ready" }),
+    () => ({
+      board,
+      boards: [board],
+      pendingBoardCount: 0,
+      dataIssue: null,
+      syncStatus: "ready",
+    }),
     [board],
   );
 
@@ -2160,11 +2362,13 @@ export function ShareBoardProvider({
     <BoardLiveProvider live={live}>
       <BoardActionsContext.Provider value={actions}>
         <BoardHistoryContext.Provider value={history}>
-          <BoardIdentityContext.Provider value={identity}>
-            <BoardStateContext.Provider value={stateValue}>
-              {children}
-            </BoardStateContext.Provider>
-          </BoardIdentityContext.Provider>
+          <BoardAccessContext.Provider value={access}>
+            <BoardIdentityContext.Provider value={identity}>
+              <BoardStateContext.Provider value={stateValue}>
+                {children}
+              </BoardStateContext.Provider>
+            </BoardIdentityContext.Provider>
+          </BoardAccessContext.Provider>
         </BoardHistoryContext.Provider>
       </BoardActionsContext.Provider>
     </BoardLiveProvider>

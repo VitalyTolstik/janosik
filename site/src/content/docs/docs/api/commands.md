@@ -43,6 +43,10 @@ Response `200` (`CommandResponse`):
 `seq` is the board's monotonic sequence number. `versions` holds the version
 counter of every entity the command actually wrote.
 
+The server stamps `boardId` on the action it stores and broadcasts, so callers
+may omit it; a client value that disagrees with the route is replaced, and
+`boardId` does not take part in the idempotency comparison.
+
 ### Validation and the command clock
 
 The shared validator rebuilds the action from a per-type allow-list instead
@@ -119,12 +123,81 @@ A refused command answers `409` with a `ConflictError` body
 | `version`  | an `ifMatch` or `ifMatchVersions` precondition is stale              |
 | `wip`      | the command would break a collection or WIP limit                    |
 | `id`       | the command names an entity id that already belongs to another board |
+| `workflow` | a `MOVE_CARD` is forbidden by the board's configured workflow        |
+
+### Board workflow
+
+`SET_BOARD_WORKFLOW` replaces (or clears) the whole optional workflow in one
+command. It is ADMIN-only (a `MEMBER` gets `403`). Omitting `workflow` clears
+it; `enabled: false` keeps the configuration but turns enforcement off.
+
+```json
+{
+  "commandId": "cmd-…",
+  "action": {
+    "type": "SET_BOARD_WORKFLOW",
+    "boardId": "board-…",
+    "at": 1730000000000,
+    "workflow": {
+      "schemaVersion": 1,
+      "enabled": true,
+      "initialColumnId": "col-backlog",
+      "doneColumnIds": ["col-done"],
+      "transitions": [
+        {
+          "id": "backlog-doing",
+          "fromColumnId": "col-backlog",
+          "toColumnId": "col-doing",
+          "allowedRoles": ["ADMIN", "MEMBER"],
+          "conditions": ["requireAssignee"]
+        }
+      ]
+    }
+  }
+}
+```
+
+The shared validator checks the shape (schema version 1, unique `from → to`
+pairs, no self-edge, roles ⊆ `{ADMIN, MEMBER}`, known conditions, at most 200
+transitions). The server additionally checks inside the board lock that every
+referenced column exists, that an enabled workflow has at least two columns,
+and that an enabled workflow has at least one **active** transition. A bad
+reference is `400 { "field": "action.workflow.transitions[0].toColumnId" }`.
+
+`UNARCHIVE_CARD` and `RESTORE_CARD` are column changes too: the server checks
+the transition from the card's original column to the requested target with the
+same role and condition rules, and answers the same `409 workflow` when the
+target is forbidden. Restoring to the original column is always allowed.
+
+A blocked move answers:
+
+```json
+{
+  "conflict": "workflow",
+  "currentVersion": 42,
+  "workflow": {
+    "code": "transition_not_allowed",
+    "fromColumnId": "col-backlog",
+    "toColumnId": "col-done",
+    "allowedToColumnIds": ["col-doing"]
+  }
+}
+```
+
+`code` is `transition_not_allowed`, `role_not_allowed` or `condition_failed`;
+`condition_failed` also carries `failedConditions`. The move is checked before
+WIP, and `inverse: true` gets no exemption: undo of a move obeys the current
+workflow. `GET /boards/:id` returns `workflow` when one is stored; export files
+use `schemaVersion: 3` (adds the optional `agentPolicy`; version 1 and 2 files
+still import with no policy). Clients should read the
+workflow from the aggregate rather than assume the first/last column.
 
 The `wip` check mirrors the reducer's collection guards: `LIMITS` on columns,
 cards per column, labels per board, labels per card, links per card, checklists
-per card and items per checklist, plus the column WIP limit. The `RESTORE_*`
-family is exempt (it re-adds data that already existed). A client-supplied
-`inverse: true` flag buys no exemption.
+per card and items per checklist, plus the column WIP limit. The current hard
+cap is **1000 active cards per column**; archived cards do not count toward
+it. The `RESTORE_*` family is exempt (it re-adds data that already existed). A
+client-supplied `inverse: true` flag buys no exemption.
 
 The `id` check exists because entity ids are global primary keys while
 commands are board-scoped: an id that already lives on another board would be
@@ -138,7 +211,7 @@ silently rewritten by the upserts.
 | `400`  | unsupported action type; body carries `field: "action.type"`                   |
 | `400`  | a timestamp outside the Date range; `field` names its path                     |
 | `400`  | `ifMatchVersions` key or value is invalid                                      |
-| `403`  | caller is a `VIEWER`; or a non-`ADMIN` sends `ARCHIVE_BOARD`/`UNARCHIVE_BOARD` |
+| `403`  | caller is a `VIEWER`; or a non-`ADMIN` sends `ARCHIVE_BOARD`/`UNARCHIVE_BOARD`/`SET_BOARD_WORKFLOW` |
 | `404`  | board not found                                                                |
 | `409`  | a conflict (see above), or `commandId` used on another board                   |
 | `409`  | `commandId` reused with a different action; `field: "commandId"`               |
@@ -307,6 +380,7 @@ aggregate-level actions are listed at the end and are rejected.
 | `SORT_COLUMN`           | `columnId`, `sortBy` `"createdAt" \| "dueDate" \| "title"`                | Sorts the column's cards by the criterion. Dragging restores manual order.                                                                    |
 | `SET_COLUMN_CARD_ORDER` | `columnId`, `cardIds` string[]                                            | Sets the column's card order outright. `cardIds` must be a permutation of the current ids, or the command is ignored.                         |
 | `SET_COLUMN_WIP_LIMIT`  | `columnId`, `wipLimit` number optional                                    | Sets the column WIP limit; omitted or `undefined` removes it.                                                                                 |
+| `SET_COLUMN_ACCENT`     | `columnId`, `accent` `{ type: "color" \| "gradient", value }` optional    | Sets the column accent from the card-cover palette; omitted removes it. Unknown values are rejected.                                         |
 | `ARCHIVE_COLUMN_CARDS`  | `columnId`                                                                | Archives every card of the column in one step.                                                                                                |
 
 ### Cards
@@ -377,6 +451,8 @@ and the inverse-only timestamp overrides.
 | Action            | Fields          | Meaning                                                                                          |
 | ----------------- | --------------- | ------------------------------------------------------------------------------------------------ |
 | `RENAME_BOARD`    | `title`         | Renames the board. Title clamped to `LIMITS.boardTitle` (100). Allowed for `ADMIN` and `MEMBER`. |
+| `SET_BOARD_WORKFLOW` | `workflow` object optional | Replaces (or clears, when omitted) the board workflow. ADMIN only; see “Board workflow”. |
+| `SET_BOARD_COLUMN_STYLE` | `columnStyle` `"rail" \| "left" \| "wash" \| "title" \| "glow" \| "glass" \| "band" \| "dot" \| "signature"` optional | Sets the board-wide column accent shape; omitted restores `signature`. |
 | `ARCHIVE_BOARD`   | `boardId`, `at` | Archives the board. `ADMIN` only; a non-`ADMIN` answers `403`.                                   |
 | `UNARCHIVE_BOARD` | `boardId`, `at` | Brings an archived board back. `ADMIN` only; a non-`ADMIN` answers `403`.                        |
 

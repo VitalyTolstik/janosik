@@ -24,7 +24,10 @@ export const PERIOD_WINDOWS_MS: Record<string, number> = {
 export interface AdminListState<T> {
   items: T[];
   total: number;
+  /** First response has not arrived yet — show the table skeleton. */
   loading: boolean;
+  /** A newer request is in flight while the previous rows stay on screen. */
+  refreshing: boolean;
   error: boolean;
   search: string;
   setSearch: (value: string) => void;
@@ -36,6 +39,9 @@ export interface AdminListState<T> {
   offset: number;
   setOffset: (value: number) => void;
   limit: number;
+  setLimit: (value: number) => void;
+  /** HTTP status of the failed request (`null` when the last answer was ok). */
+  errorStatus: number | null;
   reload: () => void;
 }
 
@@ -44,13 +50,14 @@ interface ListResult<T> {
   items: T[];
   total: number;
   error: boolean;
+  errorStatus?: number | null;
 }
 
 export function useAdminList<T>(
   fetcher: (params: AdminListParams) => Promise<AdminPage<T>>,
   options: { limit?: number } = {},
 ): AdminListState<T> {
-  const limit = options.limit ?? 50;
+  const [limit, setLimitState] = useState(options.limit ?? 50);
   const fetcherRef = useRef(fetcher);
   useEffect(() => {
     fetcherRef.current = fetcher;
@@ -87,18 +94,36 @@ export function useAdminList<T>(
           items: page.items,
           total: page.total,
           error: false,
+          errorStatus: null,
         });
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
-        setResult({ key: requestKey, items: [], total: 0, error: true });
+        const status =
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          typeof (error as { status?: unknown }).status === "number"
+            ? (error as { status: number }).status
+            : null;
+        setResult({
+          key: requestKey,
+          items: [],
+          total: 0,
+          error: true,
+          errorStatus: status,
+        });
       });
     return () => {
       cancelled = true;
     };
   }, [requestKey, search, status, period, limit, offset]);
 
-  const loading = result === null || result.key !== requestKey;
+  // Keep the last successful page while a search/page request is in flight
+  // (SKELETON-AUDIT §4.11): the table header and rows must not vanish on
+  // every keystroke. Only the very first answer gets a skeleton.
+  const loading = result === null;
+  const refreshing = result !== null && result.key !== requestKey;
 
   const setSearchInput = useCallback((value: string) => {
     setRawSearch(value);
@@ -114,15 +139,23 @@ export function useAdminList<T>(
     setOffset(0);
   }, []);
 
+  const setLimit = useCallback((value: number) => {
+    setLimitState(value);
+    setOffset(0);
+  }, []);
+
   const reload = useCallback(() => {
     setReloadKey((key) => key + 1);
   }, []);
 
   return {
-    items: loading ? [] : (result?.items ?? []),
-    total: loading ? 0 : (result?.total ?? 0),
+    items: result?.items ?? [],
+    total: result?.total ?? 0,
     loading,
-    error: !loading && (result?.error ?? false),
+    refreshing,
+    // Keep a previous failure on screen while its retry is in flight; the
+    // retry must not masquerade as an empty result.
+    error: result?.error ?? false,
     search: rawSearch,
     setSearch: setSearchInput,
     status,
@@ -132,6 +165,8 @@ export function useAdminList<T>(
     offset,
     setOffset,
     limit,
+    setLimit,
+    errorStatus: result?.errorStatus ?? null,
     reload,
   };
 }

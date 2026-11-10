@@ -15,6 +15,7 @@ import {
   FileVideo,
 } from "lucide-react";
 import { LABEL_COLOR_CHIP, type LabelColor } from "@janosik/shared";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
@@ -420,9 +421,12 @@ export function AttachmentThumb({
   }
   if (url === null) {
     return (
-      <span
-        className="inline-block h-7 w-7 shrink-0 animate-pulse rounded bg-muted/50"
+      <Skeleton
+        width={28}
+        height={28}
+        className="shrink-0 rounded"
         aria-label={fileName}
+        data-testid="admin-attachment-thumbnail-skeleton"
       />
     );
   }

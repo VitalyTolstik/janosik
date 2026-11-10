@@ -21,16 +21,33 @@ import {
   atWipLimit,
   boardReducer,
   cardOf,
+  evaluateCardTransition,
+  evaluateTransition,
   hasLinkedPair,
   LIMITS,
   MAX_COMMAND_BYTES,
   validateBoardAction,
+  workflowReferenceError,
   wouldCloseBlocksCycle,
+} from "@janosik/shared";
+import type {
+  BoardRole,
+  WorkflowConflictDetails,
+  WorkflowDecision,
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { assertAgentRule, classifyCommandAction } from "@/auth/token-scope";
+import { pauseGateFor } from "@/auth/agent-pause";
+import {
+  type RequestAttribution,
+  attributionFields,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
+import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
 import {
   type InternalCommandEvent,
   RealtimeService,
@@ -78,6 +95,8 @@ type CommandActionType = Exclude<
  */
 const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   RENAME_BOARD: true,
+  SET_BOARD_COLUMN_STYLE: true,
+  SET_BOARD_WORKFLOW: true,
   ARCHIVE_BOARD: true,
   UNARCHIVE_BOARD: true,
   ADD_COLUMN: true,
@@ -87,6 +106,7 @@ const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
   MOVE_COLUMN: true,
   SORT_COLUMN: true,
   SET_COLUMN_WIP_LIMIT: true,
+  SET_COLUMN_ACCENT: true,
   SET_COLUMN_CARD_ORDER: true,
   ADD_CARD: true,
   UPDATE_CARD: true,
@@ -156,10 +176,11 @@ export const COMMAND_DELTA_MAX = 5_000;
  * TASK-156 (item 17): the ceiling the internal `allowOversize` bypass may
  * reach — the companion of the shared `MAX_COMMAND_BYTES` (2 MiB) client cap.
  * Internal admin restores pack a whole column's snapshot into one
- * `RESTORE_COLUMN` (~6 MB for a full column of large cards), which must not
- * 413 — but the bypass still may not be unlimited: everything above this
- * lands in `Command.action` JSONB and in one SSE frame per subscriber, so it
- * stays finite (8 MiB, 4× the client cap) and everything larger is a 413.
+ * `RESTORE_COLUMN`. The old ~6 MB estimate described the 200-card cap; a
+ * 1000-card column of large cards can exceed this 8 MiB ceiling and 413.
+ * The bypass still may not be unlimited: everything above this lands in
+ * `Command.action` JSONB and in one SSE frame per subscriber, so it stays
+ * finite (8 MiB, 4× the client cap) and everything larger is a 413.
  */
 export const MAX_COMMAND_BYTES_INTERNAL = 8 * 1024 * 1024;
 
@@ -215,7 +236,15 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
-    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+    options: {
+      allowOversize?: boolean;
+      actorType?: ActorType;
+      actorRole?: Role;
+      /** TASK-166 attribution; the server fills it from the principal. */
+      attribution?: RequestAttribution;
+      /** TASK-166 scope/destructive gate; only the REST transport passes it. */
+      principal?: AuthPrincipal;
+    } = {},
   ): Promise<CommandResponse> {
     const [response] = await this.applyBatch(boardId, actorId, [dto], options);
     return response;
@@ -238,16 +267,47 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dtos: CreateCommandDto[],
-    options: { allowOversize?: boolean; actorType?: ActorType } = {},
+    options: {
+      allowOversize?: boolean;
+      actorType?: ActorType;
+      actorRole?: Role;
+      /** TASK-166 attribution; the server fills it from the principal. */
+      attribution?: RequestAttribution;
+      /** TASK-166 scope/destructive gate; only the REST transport passes it. */
+      principal?: AuthPrincipal;
+    } = {},
   ): Promise<CommandResponse[]> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
     // transport resolves it from the request principal; internal callers
     // (admin restores, the demo seeder) default to "human".
     const actorType: ActorType = options.actorType ?? "human";
+    // TASK-166: token/session/run attribution. A request can never carry
+    // these fields itself — they are resolved from the auth principal.
+    const attribution = options.attribution ?? HUMAN_ATTRIBUTION;
+    // The caller's board role drives workflow transitions. A normal command
+    // passes the membership role resolved by `MembershipGuard`; internal
+    // callers (the master panel, demo seeding) act as an ADMIN.
+    const actorRole: Role = options.actorRole ?? Role.ADMIN;
     // Validate every command *before* the board lock (TASK-147 follow-up): an
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
-    const prepared = dtos.map((dto) => this.prepareCommand(dto, options));
+    const prepared = dtos.map((dto) => {
+      const entry = this.prepareCommand(boardId, dto, options);
+      // TASK-166 (D23): the claim holder is the authenticated actor. A
+      // client cannot claim on behalf of another user; token/session fields
+      // are written by `command-writers` from the attribution, never from
+      // the action payload.
+      if (
+        entry.action.type === "CLAIM_CARD" &&
+        entry.action.claimedBy !== null
+      ) {
+        entry.action = { ...entry.action, claimedBy: actorId };
+        // The stored payload carries the server-normalized holder, so the
+        // retry fingerprint must be taken from that same canonical action.
+        entry.fingerprint = actionFingerprint(entry.action, boardId);
+      }
+      return entry;
+    });
 
     const applied = await this.boardWrite.run(
       boardId,
@@ -262,7 +322,7 @@ export class CommandsService {
         // committed predecessor. We only need the board to exist.
         const board = await tx.board.findFirst({
           where: { id: boardId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, agentPolicy: true },
         });
         if (!board) {
           throw new NotFoundException("Board not found");
@@ -283,15 +343,20 @@ export class CommandsService {
             throw new ConflictException({
               message: "commandId already used on another board",
               field: "commandId",
+              code: "id_conflict",
+              conflict: "id",
             });
           }
           // A reused key with a different body is a client bug (or a key
           // collision), not a retry: answering with the first command's
           // result would tell the caller its *new* action was applied.
-          if (actionFingerprint(existing.payload) !== entry.fingerprint) {
+          if (
+            actionFingerprint(existing.payload, boardId) !== entry.fingerprint
+          ) {
             throw new ConflictException({
               message: "commandId already used with a different payload",
               field: "commandId",
+              code: "idempotency_conflict",
             });
           }
         }
@@ -326,10 +391,22 @@ export class CommandsService {
             responses.push(existing.result as unknown as CommandResponse);
             continue;
           }
+          // TASK-166: check the preset and destructive gate at the point the
+          // command would run. `running` already includes earlier commands of
+          // this batch, so a create + move is judged on the moved card. Any
+          // refusal throws inside the board transaction and rolls the whole
+          // batch back — there is no partial apply.
+          assertAgentRule(
+            options.principal,
+            board.agentPolicy,
+            classifyCommandAction(entry.action, running),
+          );
           const outcome = await this.applyPrepared(tx, {
             boardId,
             actorId,
             actorType,
+            actorRole,
+            attribution,
             entry,
             board: running,
           });
@@ -350,10 +427,12 @@ export class CommandsService {
             commandId: entry.dto.commandId,
             touches: outcome.touches,
             prevSeq: outcome.prevSeq,
+            ...attributionFields(attribution),
           });
         }
         return { responses, events };
       },
+      pauseGateFor(options.principal, attribution.agentSessionId),
     );
 
     // Publish after the batch committed, in order. A failed batch throws
@@ -374,6 +453,9 @@ export class CommandsService {
         });
       }
     }
+    // A successful PAT write refreshes the session heartbeat at most once a
+    // minute (ADR §6.5), but only after the transaction committed.
+    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
     return applied.responses;
   }
 
@@ -385,15 +467,21 @@ export class CommandsService {
    * retry (same body, later wall clock) still matches the stored command.
    */
   private prepareCommand(
+    boardId: string,
     dto: CreateCommandDto,
     options: { allowOversize?: boolean },
   ): PreparedCommand {
+    // The route is authoritative: overwrite any client-supplied `boardId`
+    // before the size check, validation, fingerprint and storage, so the
+    // command log, delta replay and SSE frame all name the board the command
+    // actually ran on (the UI realtime bridge routes by `action.boardId`).
+    const routed = { ...dto.action, boardId };
     // An oversized action is refused before anything else runs (TASK-30.2):
     // the writers would happily persist megabytes of snapshot/activity ids.
     // Internal admin restores may exceed the client cap (RESTORE_COLUMN
     // carries a whole column's snapshot, TASK-156) but not the internal one
     // — the caller is trusted, the JSONB row and the SSE frame are not.
-    const bytes = Buffer.byteLength(JSON.stringify(dto.action), "utf8");
+    const bytes = Buffer.byteLength(JSON.stringify(routed), "utf8");
     const cap =
       options.allowOversize === true
         ? MAX_COMMAND_BYTES_INTERNAL
@@ -402,9 +490,12 @@ export class CommandsService {
       throw new PayloadTooLargeException({
         message: `Command is too large (${bytes} bytes, max ${cap})`,
         field: "action",
+        code: "payload_too_large",
+        limit: cap,
+        retryable: false,
       });
     }
-    const validation = validateBoardAction(dto.action);
+    const validation = validateBoardAction(routed);
     if (!validation.ok) {
       throw new BadRequestException({
         message: `Invalid command (${validation.field}): ${validation.message}`,
@@ -426,7 +517,7 @@ export class CommandsService {
     return {
       dto,
       action: clampActionAt(validation.action, Date.now()),
-      fingerprint: actionFingerprint(validation.action),
+      fingerprint: actionFingerprint(validation.action, boardId),
     };
   }
 
@@ -442,6 +533,8 @@ export class CommandsService {
       boardId: string;
       actorId: string;
       actorType: ActorType;
+      actorRole: Role;
+      attribution: RequestAttribution;
       entry: PreparedCommand;
       board: Board;
     },
@@ -451,11 +544,19 @@ export class CommandsService {
     prevSeq: number;
     board: Board;
   }> {
-    const { boardId, actorId, actorType, entry, board } = params;
+    const {
+      boardId,
+      actorId,
+      actorType,
+      actorRole,
+      attribution,
+      entry,
+      board,
+    } = params;
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
-    await this.assertClaimIsFree(tx, boardId, action);
+    await this.assertClaimIsFree(tx, boardId, action, attribution);
 
     await this.assertBoardManagement(tx, boardId, actorId, action.type);
 
@@ -472,6 +573,19 @@ export class CommandsService {
         currentVersion,
       } satisfies ConflictError);
     }
+    // Workflow first: a forbidden transition must report its own reason, not
+    // hide behind a WIP refusal in the same destination. Recovery commands
+    // (unarchive / restore) change a card's column too, so they run the same
+    // role and condition checks against the column the card came from.
+    await this.assertWorkflowTransition(
+      tx,
+      boardId,
+      board,
+      action,
+      actorRole,
+      currentVersion,
+    );
+    this.assertWorkflowReferences(board, action);
     this.assertNoWipConflict(board, action, currentVersion);
 
     const at = (action as BoardScopedAction).at;
@@ -502,6 +616,10 @@ export class CommandsService {
         boardId,
         actorId,
         actorType,
+        apiTokenId: attribution.apiTokenId,
+        agentSessionId: attribution.agentSessionId,
+        runId: attribution.runId,
+        agentName: attribution.agentName,
         type: action.type,
         payload: jsonSafe(action),
         result: {},
@@ -522,6 +640,8 @@ export class CommandsService {
         after,
         at,
         actorId,
+        apiTokenId: attribution.apiTokenId,
+        agentSessionId: attribution.agentSessionId,
       });
     }
     const versions = changed ? await collectVersions(tx, boardId, touches) : {};
@@ -569,6 +689,11 @@ export class CommandsService {
     boardId: string,
     since: number,
     max: number = COMMAND_DELTA_MAX,
+    filters: {
+      runId?: string;
+      apiTokenId?: string;
+      agentSessionId?: string;
+    } = {},
   ): Promise<CommandDelta> {
     if (since > 0) {
       const baseline = await this.prisma.command.findFirst({
@@ -583,6 +708,13 @@ export class CommandsService {
       where: {
         boardId,
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
+        ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
+        ...(filters.apiTokenId !== undefined
+          ? { apiTokenId: filters.apiTokenId }
+          : {}),
+        ...(filters.agentSessionId !== undefined
+          ? { agentSessionId: filters.agentSessionId }
+          : {}),
       },
       orderBy: { seq: "asc" },
       // One extra row tells "exactly max" apart from "more than max".
@@ -592,6 +724,10 @@ export class CommandsService {
         seq: true,
         actorId: true,
         actorType: true,
+        apiTokenId: true,
+        agentSessionId: true,
+        runId: true,
+        agentName: true,
         payload: true,
         touches: true,
       },
@@ -600,11 +736,22 @@ export class CommandsService {
     return {
       entries: (truncated ? rows.slice(0, max) : rows).map((row) => ({
         seq: Number(row.seq),
-        action: row.payload as unknown as BoardAction,
+        // Rows written before ingress stamping may lack `boardId`; replay them
+        // scoped to the queried board so the UI's realtime bridge keeps them.
+        action: {
+          ...(row.payload as Record<string, unknown>),
+          boardId,
+        } as BoardAction,
         actorId: row.actorId,
         actorType: row.actorType as ActorType,
         commandId: row.id,
         touches: row.touches,
+        ...attributionFields({
+          apiTokenId: row.apiTokenId,
+          agentSessionId: row.agentSessionId,
+          runId: row.runId,
+          agentName: row.agentName,
+        }),
       })),
       resync: truncated,
     };
@@ -786,20 +933,36 @@ export class CommandsService {
     tx: Prisma.TransactionClient,
     boardId: string,
     action: BoardAction,
+    attribution: RequestAttribution,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
     if (action.claimedBy === null || action.leaseUntil === null) return;
     const card = await tx.card.findFirst({
       where: { id: action.cardId, column: { boardId } },
-      select: { claimedBy: true, leaseUntil: true },
+      select: {
+        claimedBy: true,
+        claimedByTokenId: true,
+        claimedBySessionId: true,
+        leaseUntil: true,
+      },
     });
     if (
-      card &&
-      card.claimedBy !== null &&
-      card.claimedBy !== action.claimedBy &&
-      card.leaseUntil !== null &&
-      card.leaseUntil.getTime() > Date.now()
+      !card ||
+      card.claimedBy === null ||
+      card.leaseUntil === null ||
+      card.leaseUntil.getTime() <= Date.now()
     ) {
+      return;
+    }
+    // TASK-166 (D23): compare the session first, then the token, then the
+    // legacy user id. Two PATs of one owner are different claim holders.
+    const sameHolder =
+      card.claimedBySessionId !== null
+        ? card.claimedBySessionId === attribution.agentSessionId
+        : card.claimedByTokenId !== null
+          ? card.claimedByTokenId === attribution.apiTokenId
+          : card.claimedBy === action.claimedBy;
+    if (!sameHolder) {
       throw new BadRequestException({
         message: `Card is claimed by another member until ${card.leaseUntil.toISOString()}`,
         field: "action.claimedBy",
@@ -819,7 +982,11 @@ export class CommandsService {
     actorId: string,
     actionType: string,
   ): Promise<void> {
-    if (actionType !== "ARCHIVE_BOARD" && actionType !== "UNARCHIVE_BOARD") {
+    if (
+      actionType !== "ARCHIVE_BOARD" &&
+      actionType !== "UNARCHIVE_BOARD" &&
+      actionType !== "SET_BOARD_WORKFLOW"
+    ) {
       return;
     }
     const membership = await tx.boardMember.findUnique({
@@ -828,8 +995,179 @@ export class CommandsService {
     });
     if (membership?.role !== Role.ADMIN) {
       throw new ForbiddenException(
-        "Only an ADMIN can archive or unarchive the board",
+        actionType === "SET_BOARD_WORKFLOW"
+          ? "Only an ADMIN can change the board workflow"
+          : "Only an ADMIN can archive or unarchive the board",
       );
+    }
+  }
+
+  /**
+   * Enforce the board's workflow for every command that changes a card's
+   * column (TASK-165 review). Runs inside the board-write transaction, after
+   * the board lock, so the config, the card's actual column, the caller's
+   * role and WIP all describe the same instant.
+   *
+   * `MOVE_CARD` uses the aggregate as the source and does not trust
+   * `action.fromColumnId`; on a workflow board a stale source is a version
+   * conflict (legacy boards keep the reducer's historical no-op).
+   * `UNARCHIVE_CARD` and `RESTORE_CARD` recover a card whose DB row still
+   * points at its original column, so they are checked from that column —
+   * a MEMBER cannot use recovery to skip a missing edge, a role rule or a
+   * card-field condition. A card with no pre-existing row is a create, and
+   * creation in any column is deliberately unrestricted.
+   */
+  private async assertWorkflowTransition(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    board: Board,
+    action: BoardAction,
+    actorRole: Role,
+    currentVersion: number,
+  ): Promise<void> {
+    let fromColumnId: string | undefined;
+    let toColumnId: string | undefined;
+    let card = "cardId" in action ? cardOf(board, action.cardId) : undefined;
+
+    if (action.type === "MOVE_CARD") {
+      if (!card || card.archivedAt !== undefined) return;
+      const from = board.columns.find((column) =>
+        column.cardIds.includes(action.cardId),
+      );
+      if (!from) return;
+      if (from.id !== action.fromColumnId) {
+        // A workflow move built on a stale source would otherwise be a 200
+        // no-op while the client keeps its optimistic position. Refuse it as
+        // a version conflict so the client rolls back and re-reads; legacy
+        // boards keep the reducer's historical no-op.
+        if (board.workflow?.enabled) {
+          throw new ConflictException({
+            conflict: "version",
+            currentVersion,
+          } satisfies ConflictError);
+        }
+        return;
+      }
+      fromColumnId = from.id;
+      toColumnId = action.toColumnId;
+    } else if (action.type === "UNARCHIVE_CARD") {
+      if (!card || card.archivedAt === undefined) return;
+      fromColumnId = await this.recoverySourceColumn(
+        tx,
+        boardId,
+        action.cardId,
+      );
+      toColumnId = action.columnId ?? board.columns[0]?.id;
+    } else if (action.type === "RESTORE_CARD") {
+      // A column-less restore recreates the archived state, and restoring an
+      // archived snapshot into a column is a reducer no-op.
+      if (action.columnId === undefined) return;
+      if (action.card.archivedAt !== undefined) return;
+      card = action.card;
+      fromColumnId = await this.recoverySourceColumn(
+        tx,
+        boardId,
+        action.card.id,
+      );
+      toColumnId = action.columnId;
+    } else {
+      return;
+    }
+
+    if (fromColumnId === undefined || toColumnId === undefined) return;
+    // The original column was deleted: there is no status to enforce, so a
+    // recovery into a live column is allowed (deleting a column is ADMIN-only).
+    if (!board.columns.some((column) => column.id === fromColumnId)) return;
+    const to = board.columns.find((column) => column.id === toColumnId);
+    if (!to || fromColumnId === to.id) return;
+    if (!card) return;
+
+    let decision: WorkflowDecision;
+    let allowedToColumnIds: string[];
+    if (action.type === "MOVE_CARD") {
+      const move = evaluateTransition(
+        board,
+        action.cardId,
+        action.toColumnId,
+        actorRole as BoardRole,
+      );
+      decision = move;
+      allowedToColumnIds = move.allowedToColumnIds;
+    } else {
+      decision = evaluateCardTransition(
+        board.workflow,
+        card,
+        fromColumnId,
+        to.id,
+        actorRole as BoardRole,
+      );
+      allowedToColumnIds = board.columns
+        .filter((column) => column.id !== fromColumnId)
+        .filter(
+          (column) =>
+            evaluateCardTransition(
+              board.workflow,
+              card,
+              fromColumnId,
+              column.id,
+              actorRole as BoardRole,
+            ).allowed,
+        )
+        .map((column) => column.id);
+    }
+    if (decision.allowed) return;
+    if (decision.code === "card_not_found") return;
+    const workflow: WorkflowConflictDetails = {
+      code: decision.code,
+      fromColumnId: decision.fromColumnId,
+      toColumnId: decision.toColumnId,
+      allowedToColumnIds,
+      ...(decision.code === "role_not_allowed" && decision.requiredRoles
+        ? { requiredRoles: decision.requiredRoles }
+        : {}),
+      ...(decision.code === "condition_failed"
+        ? { failedConditions: decision.failedConditions }
+        : {}),
+    };
+    throw new ConflictException({
+      conflict: "workflow",
+      currentVersion,
+      workflow,
+    } satisfies ConflictError);
+  }
+
+  /** The column a soft-deleted or archived card came from, if still known. */
+  private async recoverySourceColumn(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    cardId: string,
+  ): Promise<string | undefined> {
+    const row = await tx.card.findFirst({
+      where: { id: cardId, column: { boardId } },
+      select: { columnId: true, archivedFromColumnId: true },
+    });
+    // A deleted source column leaves the internal orphan in `columnId`; the
+    // persisted archive source stays valid (and is absent from the board, so
+    // the caller treats it as a deleted-column recovery).
+    return row?.archivedFromColumnId ?? row?.columnId;
+  }
+
+  /**
+   * A workflow command may only name columns the board actually has. Shape is
+   * validated on the wire; this is the reference check that needs the board,
+   * so it runs under the lock. An enabled workflow also needs two columns —
+   * there is nothing to restrict on a one-column board.
+   */
+  private assertWorkflowReferences(board: Board, action: BoardAction): void {
+    if (action.type !== "SET_BOARD_WORKFLOW" || action.workflow === undefined) {
+      return;
+    }
+    const problem = workflowReferenceError(action.workflow, board.columns);
+    if (problem) {
+      throw new BadRequestException({
+        message: `Invalid workflow (${problem.field}): ${problem.message}`,
+        field: `action.${problem.field}`,
+      });
     }
   }
 
@@ -1145,15 +1483,18 @@ async function entityVersions(
 /**
  * Stable identity of an action for the idempotency check: canonical JSON
  * without `at` (the client clock is not part of *what* the command does, and
- * the stored copy may carry the server-clamped value).
+ * the stored copy may carry the server-clamped value). `boardId`, when given,
+ * is the route board: taking it for the stored payload too keeps an honest
+ * retry matching a row written before ingress stamping existed.
  */
-function actionFingerprint(action: unknown): string {
+export function actionFingerprint(action: unknown, boardId?: string): string {
   if (action === null || typeof action !== "object") {
     return stableStringify(action);
   }
   const rest: Record<string, unknown> = {
     ...(jsonSafe(action) as Record<string, unknown>),
   };
+  if (boardId !== undefined) rest.boardId = boardId;
   delete rest.at;
   return stableStringify(rest);
 }

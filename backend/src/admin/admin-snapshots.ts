@@ -243,6 +243,7 @@ export async function loadColumnRestore(
   });
   const assignees = await liveAssignees(db, column.boardId);
   const cards = rows.map((row) => toCardSnapshot(row as CardRow, assignees));
+  const accent = columnAccentFromRow(column);
 
   return {
     boardId: column.boardId,
@@ -252,8 +253,31 @@ export async function loadColumnRestore(
       title: column.title,
       cardIds: cards.map((card) => card.id),
       ...(column.wipLimit !== null ? { wipLimit: column.wipLimit } : {}),
+      ...(accent ? { accent } : {}),
       createdAt: column.createdAt.getTime(),
     },
     cards,
   };
+}
+
+/** A column row's accent as a renderable pair, or undefined for garbage. */
+function columnAccentFromRow(column: {
+  accentType: string | null;
+  accentValue: string | null;
+}): CardCover | undefined {
+  if (
+    column.accentType === "color" &&
+    column.accentValue !== null &&
+    (COVER_COLORS as readonly string[]).includes(column.accentValue)
+  ) {
+    return { type: "color", value: column.accentValue as CoverColor };
+  }
+  if (
+    column.accentType === "gradient" &&
+    column.accentValue !== null &&
+    (COVER_GRADIENTS as readonly string[]).includes(column.accentValue)
+  ) {
+    return { type: "gradient", value: column.accentValue as CoverGradient };
+  }
+  return undefined;
 }

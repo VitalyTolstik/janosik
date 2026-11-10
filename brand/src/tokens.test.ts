@@ -11,6 +11,7 @@ import {
   overlay,
   shape,
   siteTheme,
+  skeleton,
   themes,
   typeScale,
 } from "./tokens";
@@ -45,6 +46,11 @@ function parseBlocks(css: string): Map<string, Record<string, string>> {
     blocks.set(selector, vars);
   }
   return blocks;
+}
+
+/** Whitespace is insignificant in `color-mix(...)`; Prettier wraps it. */
+function compact(value: string | undefined): string | undefined {
+  return value?.replace(/\s+/g, " ").replace(/\s*([(),])\s*/g, "$1");
 }
 
 const css = readFileSync(new URL("./tokens.css", import.meta.url), "utf8");
@@ -92,6 +98,14 @@ describe("brand tokens", () => {
     expect(root["--janosik-duration-slow"]).toBe(motion.durationSlow);
     expect(root["--janosik-logo-from"]).toBe(logo.from);
     expect(root["--janosik-logo-to"]).toBe(logo.to);
+    expect(root["--janosik-skeleton-base"]).toBe(skeleton.base);
+    expect(compact(root["--janosik-skeleton-highlight"])).toBe(
+      compact(skeleton.highlight),
+    );
+    expect(light["--janosik-skeleton-base"]).toBe(skeleton.lightBase);
+    expect(compact(light["--janosik-skeleton-highlight"])).toBe(
+      compact(skeleton.lightHighlight),
+    );
   });
 
   it("type scale matches", () => {

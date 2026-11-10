@@ -359,10 +359,12 @@ test("U10: promoting a user creates an operator master", async ({
     await masterSide.page.getByTestId("admin-login-password").fill(temporary);
     await masterSide.page.getByTestId("admin-login-submit").click();
     await expect(masterSide.page.getByTestId("admin-sidebar")).toBeVisible();
+    await masterSide.page
+      .getByTestId("admin-sidebar")
+      .getByRole("link", { name: "Access & security", exact: true })
+      .click();
     await expect(
-      masterSide.page
-        .getByTestId("admin-sidebar")
-        .getByRole("link", { name: "Masters", exact: true }),
+      masterSide.page.getByTestId("admin-hub-tab-masters"),
     ).toHaveCount(0);
   } finally {
     await masterSide.context.close();

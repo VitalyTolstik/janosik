@@ -3,19 +3,29 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
   Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
-import type { CreateUserTokenResponse, UserTokenDto } from "@janosik/shared";
+import { createReadStream } from "node:fs";
+import type {
+  CreateUserTokenResponse,
+  DeleteAccountResponse,
+  RequestAccountDeletionCodeResponse,
+  UserDataExportDto,
+  UserTokenDto,
+} from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import { ApiTokenService } from "@/auth/api-token.service";
 import { SessionOnlyGuard } from "@/auth/auth-principal";
@@ -27,7 +37,12 @@ import {
 } from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
 import { tempUploadStorage } from "@/attachments/upload-storage";
+import { AgentPauseDto } from "@/agent-sessions/dto/agent-pause.dto";
+import { pickLocale } from "@/mailer/mail.types";
+import { AccountDataService } from "./account-data.service";
 import { CreateUserTokenDto } from "./dto/create-user-token.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { RequestAccountDeletionCodeDto } from "./dto/request-account-deletion-code.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UsersService } from "./users.service";
 
@@ -35,8 +50,9 @@ import { UsersService } from "./users.service";
  * Account self-service (§7.4, TASK-36.1): profile and personal API tokens.
  * Password changes live in `AuthController` (the refresh cookie is scoped to
  * `/auth`). Every route is behind `JwtAuthGuard`, which accepts both a user
- * access token and a `jnk_` PAT — except the token routes, which refuse a
- * PAT (`SessionOnlyGuard`, B-2).
+ * access token and a `jnk_` PAT — but TASK-166 (D22) closes all account
+ * writes and token reads to a PAT (`SessionOnlyGuard`, B-2); only the
+ * identity (`GET /auth/me`) and avatar reads stay open to an agent key.
  */
 @Controller("users")
 @UseGuards(JwtAuthGuard)
@@ -45,8 +61,10 @@ export class UsersController {
     private readonly users: UsersService,
     private readonly apiTokens: ApiTokenService,
     private readonly storage: StorageService,
+    private readonly accountData: AccountDataService,
   ) {}
 
+  @UseGuards(SessionOnlyGuard)
   @Patch("me")
   updateProfile(
     @CurrentUser() user: AuthUser,
@@ -56,6 +74,7 @@ export class UsersController {
   }
 
   /** Upload the profile avatar (multipart field `file`) — TASK-47. */
+  @UseGuards(SessionOnlyGuard)
   @Patch("me/avatar")
   @UseInterceptors(
     FileInterceptor("file", {
@@ -91,6 +110,81 @@ export class UsersController {
   }
 
   /**
+   * TASK-166 self-service export (ADR §12.5). Session-only: a board-scoped
+   * PAT must not download an account bundle. The response is the queued
+   * `DataExport` row; a small account may already be `ready`.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
+  @Post("me/export")
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestExport(@CurrentUser() user: AuthUser): Promise<UserDataExportDto> {
+    return this.accountData.requestExport(user.id, user.email);
+  }
+
+  @UseGuards(SessionOnlyGuard)
+  @Get("me/export/:id")
+  exportStatus(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+  ): Promise<UserDataExportDto> {
+    return this.accountData.exportStatus(user.id, id);
+  }
+
+  @UseGuards(SessionOnlyGuard)
+  @Get("me/export/:id/download")
+  async downloadExport(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { absPath, filename } = await this.accountData.exportDownload(
+      user.id,
+      id,
+    );
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename.replace(/["\\]/g, "")}"`,
+    );
+    return new StreamableFile(createReadStream(absPath));
+  }
+
+  /**
+   * TASK-166 D22: an OAuth-only account cannot prove ownership with a
+   * password, so it requests a one-time email code first.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @Post("me/delete/request-code")
+  @HttpCode(HttpStatus.OK)
+  requestDeletionCode(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RequestAccountDeletionCodeDto,
+    @Headers("accept-language") acceptLanguage: string | undefined,
+  ): Promise<RequestAccountDeletionCodeResponse> {
+    return this.accountData.requestDeletionCode(
+      user.id,
+      dto.oauthProof,
+      pickLocale(acceptLanguage),
+    );
+  }
+
+  /**
+   * TASK-166 self-service account deletion: disable immediately, hard-delete
+   * after the seven-day grace window via the maintenance sweep.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Delete("me")
+  @HttpCode(HttpStatus.ACCEPTED)
+  deleteAccount(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: DeleteAccountDto,
+  ): Promise<DeleteAccountResponse> {
+    return this.accountData.deleteAccount(user.id, dto);
+  }
+
+  /**
    * The token surface is session-only (B-2): a PAT cannot list, mint or
    * revoke keys — an agent tricked into "create a key and paste it" gets 403.
    */
@@ -106,7 +200,9 @@ export class UsersController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateUserTokenDto,
   ): Promise<CreateUserTokenResponse> {
-    return this.apiTokens.create(user.id, dto);
+    // SessionOnlyGuard above proves a browser session; only it may enable
+    // the privileged `trustedCi` flag (TASK-166 D9/D10).
+    return this.apiTokens.create(user.id, dto, { allowTrustedCi: true });
   }
 
   @UseGuards(SessionOnlyGuard)
@@ -118,5 +214,28 @@ export class UsersController {
   ): Promise<{ status: "ok" }> {
     await this.apiTokens.revoke(user.id, id);
     return { status: "ok" };
+  }
+
+  /** TASK-166.3: pause only this token; `resume-all` keeps it paused. */
+  @UseGuards(SessionOnlyGuard)
+  @Post("me/tokens/:id/pause")
+  @HttpCode(HttpStatus.OK)
+  pauseToken(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Body() dto: AgentPauseDto,
+  ): Promise<UserTokenDto> {
+    return this.apiTokens.pause(user.id, id, dto.reason);
+  }
+
+  @UseGuards(SessionOnlyGuard)
+  @Post("me/tokens/:id/resume")
+  @HttpCode(HttpStatus.OK)
+  resumeToken(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Body() dto: AgentPauseDto,
+  ): Promise<UserTokenDto> {
+    return this.apiTokens.resume(user.id, id, dto.reason);
   }
 }

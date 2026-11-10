@@ -33,9 +33,13 @@ const prismaMock = {
     updateMany: jest.fn(),
   },
   apiToken: {
+    findMany: jest.fn(),
     updateMany: jest.fn(),
   },
   passwordResetToken: { deleteMany: jest.fn() },
+  agentSession: { updateMany: jest.fn() },
+  card: { findMany: jest.fn(), updateMany: jest.fn() },
+  $executeRaw: jest.fn(),
   emailChangeCode: {
     findFirst: jest.fn(),
     create: jest.fn(),
@@ -46,8 +50,11 @@ const prismaMock = {
 } as unknown as PrismaService & {
   user: Record<"create" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
-  apiToken: Record<"updateMany", jest.Mock>;
+  apiToken: Record<"findMany" | "updateMany", jest.Mock>;
   passwordResetToken: Record<"deleteMany", jest.Mock>;
+  agentSession: Record<"updateMany", jest.Mock>;
+  card: Record<"findMany" | "updateMany", jest.Mock>;
+  $executeRaw: jest.Mock;
   emailChangeCode: Record<
     "findFirst" | "create" | "update" | "deleteMany",
     jest.Mock
@@ -102,6 +109,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   disabledAt: null,
   emailVerifiedAt: null,
   notifyDigest: true,
+  locale: null,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   ...overrides,
 });
@@ -141,9 +149,19 @@ describe("AuthService", () => {
       emailTemplatesMock,
       flagsMock,
       new LoginBackoffService(),
+      { record: jest.fn() } as never,
     );
     jwtMock.signAsync.mockResolvedValue("access-token");
     prismaMock.refreshToken.create.mockResolvedValue({});
+    prismaMock.apiToken.findMany.mockResolvedValue([]);
+    prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.card.findMany.mockResolvedValue([]);
+    prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.$executeRaw.mockResolvedValue(1);
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock),
+    );
   });
 
   describe("register", () => {
@@ -173,12 +191,15 @@ describe("AuthService", () => {
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
         // No mail transport in the unit env — the account auto-verifies.
         emailVerifiedAt: expect.any(Number),
+        // TASK-166: the session method rides along for the account panel.
+        authMethod: "password",
+        hasPassword: true,
       });
       expect(result.accessToken).toBe("access-token");
       // Audience isolation (TASK-36): user tokens are signed for this
       // contour only, so they can never pass the admin strategy.
       expect(jwtMock.signAsync).toHaveBeenCalledWith(
-        { sub: "user-1" },
+        { sub: "user-1", authMethod: "password" },
         { audience: "janosik-user" },
       );
       const { passwordHash } = prismaMock.user.create.mock.calls[0][0].data;
@@ -458,6 +479,8 @@ describe("AuthService", () => {
       prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
       prismaMock.user.update.mockResolvedValue(makeUser());
       prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
 
       await service.changePassword(
         "user-1",
@@ -478,8 +501,16 @@ describe("AuthService", () => {
       });
       // B-2: a password rotation also kills every personal API token.
       expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: "user-1", revokedAt: null },
+        where: { id: { in: ["token-1"] }, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.agentSession.updateMany).toHaveBeenCalledWith({
+        where: { apiTokenId: { in: ["token-1"] }, endedAt: null },
+        data: {
+          status: "cancelled",
+          endedAt: expect.any(Date),
+          endReason: "cancelled",
+        },
       });
     });
 

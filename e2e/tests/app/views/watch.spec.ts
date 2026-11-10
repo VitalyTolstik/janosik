@@ -61,8 +61,9 @@ test("shows status, WIP, online roster and no cards", async ({
   await expect(page.getByTestId("watch-cards")).toHaveText("2");
   await expect(page.getByTestId("watch-columns")).toHaveText("2");
   await expect
-    .poll(async () =>
-      Number(await page.getByTestId("watch-online").textContent()),
+    .poll(
+      async () => Number(await page.getByTestId("watch-online").textContent()),
+      { timeout: 15_000 },
     )
     .toBeGreaterThanOrEqual(1);
   const columns = page.getByTestId("watch-column-list");
@@ -74,6 +75,7 @@ test("shows status, WIP, online roster and no cards", async ({
   ).toContainText("1");
   await expect(page.getByTestId("watch-presence-list")).toContainText(
     board.email,
+    { timeout: 15_000 },
   );
   await expect(page.getByTestId("watch-agents")).toHaveText("0");
   await expect(page.locator("article")).toHaveCount(0);

@@ -10,6 +10,7 @@ import type {
   BoardEnvelope,
   BoardInvitationDto,
   BoardMemberDto,
+  BoardPendingInvitationDto,
   BoardShareDto,
   BoardSummary,
   CommandRequest,
@@ -20,13 +21,18 @@ import type {
   CreateShareRequest,
   CreateUserTokenRequest,
   CreateUserTokenResponse,
+  DeleteAccountRequest,
+  DeleteAccountResponse,
   InviteMemberRequest,
+  RequestAccountDeletionCodeRequest,
+  RequestAccountDeletionCodeResponse,
   UpdateMemberRequest,
   UpdateProfileRequest,
   UpdateShareRequest,
+  UserDataExportDto,
   UserTokenDto,
 } from "@janosik/shared";
-import { DEFAULT_COMMENT_KIND } from "@janosik/shared";
+import { DEFAULT_COMMENT_KIND, MAX_IMPORT_BYTES } from "@janosik/shared";
 import { createId } from "@/utils/id";
 
 /**
@@ -82,22 +88,44 @@ export class ApiError extends Error {
   }
 
   /** `409` conflict category, when the server named one. */
-  get conflict(): "version" | "wip" | "id" | undefined {
+  get conflict(): "version" | "wip" | "id" | "workflow" | undefined {
     const body = this.body as { conflict?: unknown } | null;
     return body?.conflict === "version" ||
       body?.conflict === "wip" ||
-      body?.conflict === "id"
+      body?.conflict === "id" ||
+      body?.conflict === "workflow"
       ? body.conflict
       : undefined;
   }
 
   /**
    * Machine-readable error code, when the server named one
-   * (`login_backoff`, `board_write_timeout`, …).
+   * (`scope_denied`, `board_write_timeout`, `idempotency_conflict`, …).
    */
   get code(): string | undefined {
     const body = this.body as { code?: unknown } | null;
     return typeof body?.code === "string" ? body.code : undefined;
+  }
+
+  /** TASK-166.4: whether the same request may be retried unchanged. */
+  get retryable(): boolean | undefined {
+    const body = this.body as { retryable?: unknown } | null;
+    return typeof body?.retryable === "boolean" ? body.retryable : undefined;
+  }
+
+  /** TASK-166.4: correlation id shared with `X-Request-Id` and the server log. */
+  get requestId(): string | undefined {
+    const body = this.body as { requestId?: unknown } | null;
+    return typeof body?.requestId === "string" ? body.requestId : undefined;
+  }
+
+  /** TASK-166.4: the server's current version on a conflict, when supplied. */
+  get currentVersion(): number | null | undefined {
+    const body = this.body as { currentVersion?: unknown } | null;
+    return typeof body?.currentVersion === "number" ||
+      body?.currentVersion === null
+      ? body.currentVersion
+      : undefined;
   }
 
   /** `400 {field}` — the exact command field the strict validator rejected. */
@@ -301,8 +329,9 @@ export class ApiClient {
   }
 
   /** `GET /announcements/active` — banners the signed-in user should see. */
-  activeAnnouncements(): Promise<AnnouncementDto[]> {
-    return this.request<AnnouncementDto[]>("/announcements/active");
+  activeAnnouncements(locale?: "en" | "ru"): Promise<AnnouncementDto[]> {
+    const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+    return this.request<AnnouncementDto[]>(`/announcements/active${query}`);
   }
 
   /**
@@ -344,10 +373,65 @@ export class ApiClient {
       return {
         allowRegistration: body?.allowRegistration !== false,
         allowPublicShares: body?.allowPublicShares !== false,
+        limits: {
+          boards:
+            typeof body?.limits?.boards === "number" && body.limits.boards > 0
+              ? body.limits.boards
+              : null,
+          importBytes:
+            typeof body?.limits?.importBytes === "number" &&
+            body.limits.importBytes > 0
+              ? body.limits.importBytes
+              : MAX_IMPORT_BYTES,
+        },
       };
     } catch {
-      return { allowRegistration: true, allowPublicShares: true };
+      return {
+        allowRegistration: true,
+        allowPublicShares: true,
+        limits: { boards: null, importBytes: MAX_IMPORT_BYTES },
+      };
     }
+  }
+
+  /** TASK-166: self-service data export (session-only). */
+  requestAccountExport(): Promise<UserDataExportDto> {
+    return this.request<UserDataExportDto>("/users/me/export", {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  accountExportStatus(exportId: string): Promise<UserDataExportDto> {
+    return this.request<UserDataExportDto>(
+      `/users/me/export/${encodeURIComponent(exportId)}`,
+    );
+  }
+
+  /** Download a ready export as a blob (session-only, TTL link). */
+  async downloadAccountExport(exportId: string): Promise<Blob> {
+    const response = await this.requestRaw(
+      `/users/me/export/${encodeURIComponent(exportId)}/download`,
+    );
+    return response.blob();
+  }
+
+  /** TASK-166: OAuth-only accounts request a one-time email code first. */
+  requestAccountDeletionCode(
+    body: RequestAccountDeletionCodeRequest,
+  ): Promise<RequestAccountDeletionCodeResponse> {
+    return this.request<RequestAccountDeletionCodeResponse>(
+      "/users/me/delete/request-code",
+      { method: "POST", body },
+    );
+  }
+
+  /** TASK-166: disable and schedule the account erasure. */
+  deleteAccount(body: DeleteAccountRequest): Promise<DeleteAccountResponse> {
+    return this.request<DeleteAccountResponse>("/users/me", {
+      method: "DELETE",
+      body,
+    });
   }
 
   /** `PATCH /users/me` — display name / avatar color (TASK-36.1). */
@@ -538,10 +622,6 @@ export class ApiClient {
     });
   }
 
-  exportBoard(boardId: string): Promise<BoardEnvelope> {
-    return this.request<BoardEnvelope>(`/boards/${boardId}/export`);
-  }
-
   // ------------------------------------------- public shares (TASK-58)
 
   /** The board's public links (ADMIN) — for the "Share" dialog. */
@@ -608,6 +688,14 @@ export class ApiClient {
 
   listMembers(boardId: string): Promise<BoardMemberDto[]> {
     return this.request<BoardMemberDto[]>(`/boards/${boardId}/members`);
+  }
+
+  listPendingInvitations(
+    boardId: string,
+  ): Promise<BoardPendingInvitationDto[]> {
+    return this.request<BoardPendingInvitationDto[]>(
+      `/boards/${boardId}/invitations`,
+    );
   }
 
   inviteMember(

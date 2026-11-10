@@ -53,8 +53,16 @@ export class PerUserRateLimitInterceptor implements NestInterceptor {
           (t) => now - t < WINDOW_MS,
         );
         if (recent.length >= limit) {
+          const oldest = recent[0] ?? now;
           throw new HttpException(
-            "Too many requests",
+            {
+              message: "Too many requests",
+              code: "rate_limited",
+              retryAfter: Math.max(
+                1,
+                Math.ceil((oldest + WINDOW_MS - now) / 1000),
+              ),
+            },
             HttpStatus.TOO_MANY_REQUESTS,
           );
         }

@@ -148,6 +148,31 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
+    case "SET_COLUMN_ACCENT": {
+      const column = before.columns.find((c) => c.id === action.columnId);
+      if (!column) return null;
+      return {
+        ...head,
+        type: "SET_COLUMN_ACCENT",
+        columnId: column.id,
+        accent: column.accent,
+      };
+    }
+
+    case "SET_BOARD_COLUMN_STYLE":
+      return {
+        ...head,
+        type: "SET_BOARD_COLUMN_STYLE",
+        columnStyle: before.columnStyle,
+      };
+
+    case "SET_BOARD_WORKFLOW":
+      return {
+        ...head,
+        type: "SET_BOARD_WORKFLOW",
+        workflow: before.workflow,
+      };
+
     case "DUPLICATE_COLUMN":
       return { ...head, type: "DELETE_COLUMN", columnId: action.newColumnId };
 
@@ -344,6 +369,10 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     case "CLAIM_CARD": {
       const card = cardOf(before, action.cardId);
       if (!card) return null;
+      // TASK-166: token/session ids deliberately do not travel back in the
+      // inverse. The server must never trust attribution supplied by a client
+      // (D23), so a human undo restores a legacy user-id claim; token/session
+      // stay NULL until an agent claims again with its own principal.
       return {
         ...head,
         type: "CLAIM_CARD",

@@ -8,7 +8,10 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import type { BoardMemberDto } from "@janosik/shared";
+import type {
+  BoardMemberDto,
+  BoardPendingInvitationDto,
+} from "@janosik/shared";
 
 import { ApiError, api } from "@/api/client";
 import { BoardMembersPanel } from "@/components/board/BoardMembersDialog";
@@ -66,8 +69,27 @@ function renderPanel(canManage: boolean, children?: ReactNode) {
 }
 
 describe("BoardMembersPanel (TASK-35)", () => {
+  it("shows a busy roster skeleton while the members load", async () => {
+    let release!: (members: BoardMemberDto[]) => void;
+    vi.spyOn(api, "listMembers").mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderPanel(true);
+
+    const skeleton = await screen.findByTestId("board-members-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getAllByTestId("board-members-skeleton-row")).toHaveLength(4);
+
+    act(() => release([ADMIN, MEMBER]));
+    expect(await screen.findByText("Boris")).toBeInTheDocument();
+    expect(screen.queryByTestId("board-members-skeleton")).toBeNull();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(api, "listPendingInvitations").mockResolvedValue([]);
   });
 
   it("lists members with name, email and role for an ADMIN", async () => {
@@ -366,5 +388,37 @@ describe("BoardMembersPanel (TASK-35)", () => {
       (await screen.findAllByText("quiet@example.com")).length,
     ).toBeGreaterThan(0);
     expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("lists pending invitations and cancels one", async () => {
+    const invitation: BoardPendingInvitationDto = {
+      id: "invite-1",
+      userId: "user-3",
+      displayName: null,
+      email: "pending@example.com",
+      role: "VIEWER",
+      expiresAt: null,
+      createdAt: Date.now(),
+    };
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    vi.spyOn(api, "listPendingInvitations").mockResolvedValue([invitation]);
+    const remove = vi
+      .spyOn(api, "removeMember")
+      .mockResolvedValue({ status: "ok" });
+
+    renderPanel(true);
+
+    const row = await screen.findByTestId("board-pending-row");
+    expect(row).toHaveTextContent("pending@example.com");
+    expect(row).toHaveTextContent("Viewer");
+    fireEvent.click(within(row).getByTestId("board-pending-cancel"));
+
+    await waitFor(() =>
+      expect(remove).toHaveBeenCalledWith("board-1", "user-3"),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("board-pending-row")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Invitation cancelled")).toBeInTheDocument();
   });
 });

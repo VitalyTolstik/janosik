@@ -79,6 +79,7 @@ export default defineConfig({
           items: [
             { slug: "docs/user-guide" },
             { slug: "docs/user-guide/boards" },
+            { slug: "docs/user-guide/workflow" },
             { slug: "docs/user-guide/views" },
             { slug: "docs/user-guide/cards" },
             { slug: "docs/user-guide/collaboration" },
@@ -90,6 +91,7 @@ export default defineConfig({
           translations: { ru: "Админ-панель" },
           items: [
             { slug: "docs/admin" },
+            { slug: "docs/admin/redesign" },
             { slug: "docs/admin/monitoring" },
             { slug: "docs/admin/people" },
             { slug: "docs/admin/content" },

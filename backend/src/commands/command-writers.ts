@@ -126,6 +126,10 @@ export interface WriteContext {
    * so the client can attribute the last change without a join per card.
    */
   actorId: string;
+  /** TASK-166 PAT attribution of the command, when it was an agent. */
+  apiTokenId?: string | null;
+  /** TASK-166 agent session that holds a claim written by this command. */
+  agentSessionId?: string | null;
 }
 
 /**
@@ -271,6 +275,7 @@ function cardCreateData(
     definitionOfDone: card.definitionOfDone ?? [],
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
+    archivedFromColumnId: card.archivedFromColumnId ?? null,
     createdAt: new Date(card.createdAt),
     updatedAt: new Date(card.updatedAt),
   };
@@ -296,6 +301,7 @@ function cardUpdateData(
     definitionOfDone: card.definitionOfDone ?? [],
     archivedAt:
       card.archivedAt !== undefined ? new Date(card.archivedAt) : null,
+    archivedFromColumnId: card.archivedFromColumnId ?? null,
     updatedAt: new Date(card.updatedAt),
   };
 }
@@ -480,6 +486,8 @@ async function upsertColumn(
       boardId,
       title: column.title,
       wipLimit: column.wipLimit ?? null,
+      accentType: column.accent?.type ?? null,
+      accentValue: column.accent?.value ?? null,
       position,
       createdAt: new Date(column.createdAt),
       updatedAt: new Date(at),
@@ -487,6 +495,8 @@ async function upsertColumn(
     update: {
       title: column.title,
       wipLimit: column.wipLimit ?? null,
+      accentType: column.accent?.type ?? null,
+      accentValue: column.accent?.value ?? null,
       position,
       deletedAt: null,
       updatedAt: new Date(at),
@@ -551,6 +561,29 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.board.update({
         where: { id: boardId },
         data: { title: after.title },
+      });
+      return [boardTouch];
+    }
+
+    case "SET_BOARD_COLUMN_STYLE": {
+      // Null = the default `signature` shape (omitted from the aggregate).
+      await tx.board.update({
+        where: { id: boardId },
+        data: { columnStyle: after.columnStyle ?? null },
+      });
+      return [boardTouch];
+    }
+
+    case "SET_BOARD_WORKFLOW": {
+      // The reducer keeps the config optional; SQL NULL is "no workflow",
+      // `Prisma.DbNull` writes a real NULL instead of JSON `null`.
+      await tx.board.update({
+        where: { id: boardId },
+        data: {
+          workflow: after.workflow
+            ? (after.workflow as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+        },
       });
       return [boardTouch];
     }
@@ -718,6 +751,21 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [boardTouch, touch.column(column.id)];
     }
 
+    case "SET_COLUMN_ACCENT": {
+      const column = columnOf(after, action.columnId);
+      if (!column) return [boardTouch];
+      await tx.column.update({
+        where: { id: column.id },
+        data: {
+          accentType: column.accent?.type ?? null,
+          accentValue: column.accent?.value ?? null,
+          updatedAt: new Date(ctx.at),
+          version: { increment: 1 },
+        },
+      });
+      return [boardTouch, touch.column(column.id)];
+    }
+
     case "ADD_CARD": {
       const card = cardOf(after, action.newCardId);
       if (!card) return [boardTouch];
@@ -814,6 +862,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           where: { id },
           data: {
             archivedAt: new Date(card.archivedAt),
+            archivedFromColumnId: card.archivedFromColumnId ?? action.columnId,
             lastActorId: ctx.actorId,
             updatedAt: new Date(card.updatedAt),
             version: { increment: 1 },
@@ -869,6 +918,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           boardId,
           title: action.column.title,
           wipLimit: action.column.wipLimit ?? null,
+          accentType: action.column.accent?.type ?? null,
+          accentValue: action.column.accent?.value ?? null,
           position,
           createdAt: new Date(action.column.createdAt),
           updatedAt: new Date(ctx.at),
@@ -876,6 +927,8 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         update: {
           title: action.column.title,
           wipLimit: action.column.wipLimit ?? null,
+          accentType: action.column.accent?.type ?? null,
+          accentValue: action.column.accent?.value ?? null,
           position,
           deletedAt: null,
           updatedAt: new Date(ctx.at),
@@ -1300,6 +1353,18 @@ async function writeCardAction(
           priority: card.priority ?? null,
           assigneeId: card.assigneeId ?? null,
           claimedBy: card.claimedBy ?? null,
+          ...(action.type === "CLAIM_CARD"
+            ? {
+                claimedByTokenId:
+                  card.claimedBy !== undefined
+                    ? (ctx.apiTokenId ?? null)
+                    : null,
+                claimedBySessionId:
+                  card.claimedBy !== undefined
+                    ? (ctx.agentSessionId ?? null)
+                    : null,
+              }
+            : {}),
           leaseUntil:
             card.leaseUntil !== undefined ? new Date(card.leaseUntil) : null,
           acceptanceCriteria: card.acceptanceCriteria ?? [],
@@ -1329,6 +1394,7 @@ async function writeCardAction(
           archivedAt: card.archivedAt
             ? new Date(card.archivedAt)
             : new Date(ctx.at),
+          archivedFromColumnId: sourceColumn?.id ?? null,
           lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
@@ -1351,6 +1417,7 @@ async function writeCardAction(
         where: { id: card.id },
         data: {
           archivedAt: null,
+          archivedFromColumnId: null,
           columnId: column.id,
           lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),

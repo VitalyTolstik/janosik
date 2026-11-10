@@ -9,8 +9,10 @@
 
 import type { BoardAction } from "./store/board-reducer";
 import type { Board, CommentKind } from "./types/kanban";
+import type { WorkflowCondition, WorkflowRole } from "./workflow";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
+import type { AnnouncementLocale } from "./announcements";
 
 /** Body of `POST /boards/:id/commands` (§7.0). */
 export interface CommandRequest {
@@ -76,15 +78,156 @@ export interface CommandBatchResponse {
  * - `wip` — the command would break a collection/WIP limit;
  * - `id` — the command names an entity id that already belongs to another
  *   board (the writers upsert by global id, so applying it would rewrite
- *   that board's row).
+ *   that board's row);
+ * - `workflow` — the move is forbidden by the board's configured workflow.
  */
-export type CommandConflict = "version" | "wip" | "id";
+export type CommandConflict = "version" | "wip" | "id" | "workflow";
+
+/** Machine-readable details of a `409 { conflict: "workflow" }` refusal. */
+export interface WorkflowConflictDetails {
+  code: "transition_not_allowed" | "role_not_allowed" | "condition_failed";
+  fromColumnId: string | null;
+  toColumnId: string;
+  /** Other columns the card may move to for this role and card state. */
+  allowedToColumnIds: string[];
+  /** Roles that would have allowed the edge (`role_not_allowed` only). */
+  requiredRoles?: WorkflowRole[];
+  /** Conditions that failed (`condition_failed` only). */
+  failedConditions?: WorkflowCondition[];
+}
 
 /** `409` body of `POST /boards/:id/commands`. */
 export interface ConflictError {
   conflict: CommandConflict;
   currentVersion: number;
+  /** Only for `conflict: "workflow"`. */
+  workflow?: WorkflowConflictDetails;
 }
+
+/**
+ * Machine-readable error codes the server emits today (TASK-166.4, ADR §8.2).
+ * This is a published catalog, not a closed union: clients must still tolerate
+ * an unknown code from a newer server and fall back to the HTTP status.
+ */
+export const API_ERROR_CODES = [
+  "scope_denied",
+  "destructive_denied",
+  "agent_paused",
+  "agent_session_closed",
+  "agent_session_invalid",
+  "pat_required",
+  "pat_forbidden",
+  "pat_read_only",
+  "approval_required",
+  "approval_expired",
+  "approval_mismatch",
+  "approval_owner_mismatch",
+  "approval_not_pending",
+  "approval_rejected",
+  "approval_cancelled",
+  "approval_consumed",
+  "version_conflict",
+  "id_conflict",
+  "workflow_conflict",
+  "run_conflict",
+  "run_expired",
+  "limit_exceeded",
+  "idempotency_conflict",
+  "idempotency_in_progress",
+  "payload_too_large",
+  "rate_limited",
+  "login_backoff",
+  "export_in_progress",
+  "announcement_translations_incomplete",
+  "announcement_source_translation_required",
+  "board_write_timeout",
+  "not_found",
+  "validation_failed",
+  "unauthorized",
+  "forbidden",
+  "conflict",
+  "method_not_allowed",
+  "gone",
+  "unsupported_media_type",
+  "range_not_satisfiable",
+  "service_unavailable",
+  "internal_error",
+] as const;
+
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number] | (string & {});
+
+/**
+ * The one error body every REST route returns (TASK-166.4, ADR §8.1).
+ *
+ * `code` and `retryable` are the parts an agent branches on; `message` is an
+ * English fallback, localizable by `code`. `requestId` is the same value as
+ * the `X-Request-Id` response header. `currentVersion` is always present as a
+ * number or `null` — for a command conflict it is `max(Command.seq)`, not
+ * `Board.version`.
+ *
+ * The legacy top-level `field`, `conflict`, `workflow` and `retryAfter`
+ * fields remain for existing clients; `statusCode` is kept as a compatibility
+ * mirror of the HTTP status. Unknown extra keys must be ignored.
+ */
+export interface ApiErrorEnvelope {
+  code: ApiErrorCode;
+  message: string;
+  retryable: boolean;
+  requestId: string;
+  currentVersion: number | null;
+  statusCode?: number;
+  /** The request field a validation or idempotency error points at. */
+  field?: string;
+  /** Optional machine-readable context (`messages`, `versionOf`, …). */
+  details?: Record<string, unknown>;
+  /** Legacy conflict category — same value as the matching `*_conflict` code. */
+  conflict?: CommandConflict;
+  /** Only for a workflow conflict; unchanged from `ConflictError`. */
+  workflow?: WorkflowConflictDetails;
+  /** Destinations the card may move to on a workflow conflict. */
+  allowedToColumnIds?: string[];
+  /** Announcement locales that still need a translation (admin error). */
+  missingLocales?: string[];
+  /** Semantic limit (WIP/collection/board/run) and the observed count. */
+  limit?: number;
+  current?: number;
+  /** Idempotency key that caused `idempotency_conflict`/`_in_progress`. */
+  key?: string;
+  /** Seconds to wait before retrying a retryable error. */
+  retryAfter?: number;
+  /** Resource name for `not_found` (`board`, `card`, `share`, …). */
+  resource?: string;
+  /** Required and actual preset for a scope denial. */
+  requiredScope?: ScopePreset;
+  effectiveTokenScope?: ScopePreset;
+  requiredRoles?: string[];
+  /** Approval seam: filled in by 166.5 when an approval exists. */
+  approvalId?: string;
+  planHash?: string;
+  expiresAt?: number;
+  /** Action name for scope/policy/approval errors (`DELETE_CARD`, …). */
+  action?: string;
+  /** `board_policy`, `board_scope`, … */
+  reason?: string;
+}
+
+/** Header carrying a REST idempotency key (ADR §6.12). */
+export const IDEMPOTENCY_HEADER = "Idempotency-Key";
+
+/** Idempotency record lifetime in hours (ADR §6.11). */
+export const IDEMPOTENCY_TTL_HOURS = 24;
+
+/**
+ * REST write operations that honour `Idempotency-Key` (ADR §6.11/§7.2).
+ * Command writes are idempotent through `CommandRequest.commandId` instead.
+ */
+export type IdempotencyScope =
+  | "create_board"
+  | "import_boards"
+  | "duplicate_card"
+  | "add_comment"
+  | "create_share"
+  | "upload_attachment";
 
 /**
  * Who performed a command (TASK-157): a person at a browser session
@@ -126,6 +269,15 @@ export interface CommandDeltaEntry {
    * a client can mark its undo history foreign without diffing the board.
    */
   touches: string[];
+  /**
+   * TASK-166 attribution: the PAT and agent session that issued the command.
+   * Omitted for browser sessions and rows written before the fields existed.
+   */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  /** Token-name snapshot at write time (`ApiToken.name`). */
+  agentName?: string;
 }
 
 /** Server-sent event describing a committed command (TASK-30). */
@@ -140,6 +292,11 @@ export interface CommandSseEvent {
   commandId?: string;
   /** Touched entity labels — same contract as `CommandDeltaEntry.touches`. */
   touches: string[];
+  /** TASK-166 attribution — same contract as `CommandDeltaEntry`. */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  agentName?: string;
 }
 
 /** A user currently connected to the board (`presence`, TASK-36). */
@@ -199,9 +356,25 @@ export interface ActivitySseEvent {
   boardId: string;
   cardId?: string;
   actorId: string;
+  /** TASK-166: keep `actorType` on activity frames too. */
+  actorType?: ActorType;
   at: number;
   kind: string;
   detail?: string;
+  /** TASK-166 attribution — same contract as `CommandDeltaEntry`. */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  agentName?: string;
+}
+
+/** TASK-166: an agent-session control-plane transition. */
+export interface AgentSseEvent {
+  type: "agent";
+  op: "started" | "paused" | "resumed" | "ended";
+  sessionId?: string;
+  scope?: "board" | "token" | "session";
+  at: number;
 }
 
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
@@ -220,7 +393,8 @@ export type BoardSseEvent =
   | ActivitySseEvent
   | MembershipSseEvent
   | KeepAliveSseEvent
-  | ResyncSseEvent;
+  | ResyncSseEvent
+  | AgentSseEvent;
 
 /**
  * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
@@ -240,6 +414,22 @@ export interface BoardMemberDto {
   avatarColor: UserAvatarColor | null;
   /** Stored avatar image name (TASK-47); `null` → render the initials. */
   avatarPath: string | null;
+}
+
+/**
+ * A pending invitation on `GET /boards/:id/invitations` (ADMIN only): the
+ * inviter can see and cancel a row the invitee has not answered yet.
+ */
+export interface BoardPendingInvitationDto {
+  id: string;
+  userId: string;
+  displayName: string | null;
+  email: string;
+  role: BoardRole;
+  /** Unix ms expiry of a time-limited VIEWER; `null` when unbounded. */
+  expiresAt: number | null;
+  /** Unix ms the invitation was created. */
+  createdAt: number;
 }
 
 /** Body of `POST /boards/:id/members` — ADMIN-only invite (TASK-35). */
@@ -313,6 +503,21 @@ export const ACTIVITY_EVENT_TYPES = [
   "member_removed",
   "comment_added",
   "comment_deleted",
+  // TASK-166 agent control / approvals / pause.
+  "approval_requested",
+  "approval_approved",
+  "approval_rejected",
+  "approval_cancelled",
+  "approval_expired",
+  "approval_consumed",
+  "agent_session_started",
+  "agent_session_ended",
+  "agent_session_paused",
+  "agent_session_resumed",
+  "agents_paused",
+  "agents_resumed",
+  "agent_policy_changed",
+  "run_reverted",
 ] as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
@@ -354,6 +559,12 @@ export interface ActivityFeedEntry {
    * legacy rows — treat as `"human"`.
    */
   actorType?: ActorType;
+  /** TASK-166 attribution: the PAT, session and run behind the entry. */
+  apiTokenId?: string;
+  agentSessionId?: string;
+  runId?: string | null;
+  /** Token-name snapshot at write time. */
+  agentName?: string;
   /** Command entries: the single card the command touched, when unambiguous. */
   cardId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */
@@ -369,6 +580,99 @@ export interface ActivityFeedEntry {
 export interface ActivityFeedPage {
   items: ActivityFeedEntry[];
   nextCursor: string | null;
+}
+
+/**
+ * TASK-166 agent sessions: the board-scoped work context of one PAT
+ * (`start`/`heartbeat`/`end`). A session is not an account and grants no
+ * rights beyond the token that owns it.
+ */
+export const AGENT_SESSION_STATUSES = [
+  "active",
+  "idle",
+  "waiting_approval",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export type AgentSessionStatus = (typeof AGENT_SESSION_STATUSES)[number];
+
+/** A session whose heartbeat is older than this is reported as `stale`. */
+export const AGENT_SESSION_STALE_MS = 5 * 60 * 1000;
+
+/** Body of `POST /boards/:id/agent-sessions`. */
+export interface CreateAgentSessionRequest {
+  name?: string;
+  clientName?: string;
+  model?: string;
+}
+
+/** Body of `POST /boards/:id/agent-sessions/:sessionId/heartbeat`. */
+export interface AgentSessionHeartbeatRequest {
+  status?: Exclude<AgentSessionStatus, "completed" | "failed" | "cancelled">;
+  currentCardId?: string | null;
+  summary?: string;
+}
+
+/** Body of `POST /boards/:id/agent-sessions/:sessionId/end`. */
+export interface EndAgentSessionRequest {
+  status?: "completed" | "failed" | "cancelled";
+  summary?: string;
+}
+
+/** One agent session (`GET` list/detail and the start/heartbeat/end replies). */
+export interface AgentSessionDto {
+  id: string;
+  userId: string;
+  apiTokenId: string;
+  boardId: string;
+  name: string | null;
+  clientName: string | null;
+  model: string | null;
+  status: AgentSessionStatus;
+  currentCardId: string | null;
+  currentRunId: string | null;
+  startedAt: number;
+  lastHeartbeatAt: number;
+  /** Computed: no heartbeat for `AGENT_SESSION_STALE_MS` and not terminal. */
+  stale: boolean;
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  pausedReason: string | null;
+  pauseScope: "board" | "token" | "session" | null;
+  endedAt: number | null;
+  endReason: string | null;
+  summary: string | null;
+}
+
+/**
+ * The pause state of one level (TASK-166.3).
+ */
+export interface AgentPauseStateDto {
+  scope: "board" | "token" | "session";
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  reason: string | null;
+}
+
+/** `POST /boards/:id/agents/pause|resume` response. */
+export interface BoardAgentPauseDto extends AgentPauseStateDto {
+  scope: "board";
+  boardId: string;
+}
+
+/**
+ * `POST /agents/pause-all|resume-all` response. `affected` is the number of
+ * live tokens whose `stopAllPausedAt` stamp changed in this call.
+ */
+export interface AgentStopAllPauseDto {
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  affected: number;
 }
 
 /**
@@ -393,6 +697,12 @@ export interface CommentDto {
    * `handoff`). Lets a reader filter ("only blockers") without parsing text.
    */
   kind: CommentKind;
+  /** TASK-166: `agent` when a PAT wrote the comment, otherwise `human`. */
+  actorType: ActorType;
+  /** TASK-166 attribution; absent on public shares and legacy rows. */
+  apiTokenId?: string | null;
+  agentSessionId?: string | null;
+  agentName?: string | null;
   /** Unix ms. */
   createdAt: number;
 }
@@ -419,6 +729,9 @@ export interface AttachmentDto {
   mimeType: string;
   sizeBytes: number;
   uploadedById: string;
+  /** TASK-166 attribution for the "own upload" rule; null on legacy rows. */
+  uploadedByTokenId?: string | null;
+  uploadedBySessionId?: string | null;
   /** Unix ms. */
   createdAt: number;
   /** TASK-50 video transcode state; `none` for non-video files. */
@@ -435,6 +748,16 @@ export interface AttachmentDto {
  */
 export type BoardEnvelope = BoardExportFile;
 
+/** TASK-166: `POST /boards/import?dryRun=1` preview — writes nothing. */
+export interface BoardImportPreviewDto {
+  boards: number;
+  cards: number;
+  columns: number;
+  labels: number;
+  /** True when the operator cap would accept this envelope right now. */
+  withinLimit: boolean;
+}
+
 /** Public user projection returned by the auth endpoints (§7.4, TASK-24). */
 export interface AuthUserDto {
   id: string;
@@ -449,6 +772,13 @@ export interface AuthUserDto {
    * account setting is now reachable through `PATCH /users/me`.
    */
   notifyDigest?: boolean;
+  /**
+   * Canonical language of the interface, announcement banner and email.
+   * Omitted for accounts created before localization; the client adopts its
+   * current language once, and the server treats "not chosen" as English for
+   * email while the banner uses the requested/Accept-Language locale.
+   */
+  locale?: AnnouncementLocale;
   /** Unix ms of account creation — "member since" in the account panel. */
   createdAt: number;
   /**
@@ -464,6 +794,21 @@ export interface AuthUserDto {
    * support session before adopting it.
    */
   impersonatedBy?: string | null;
+  /**
+   * TASK-166: whether this account has a local password. `false` means an
+   * OAuth-only account; the account panel uses it to choose the deletion
+   * proof instead of guessing from the login method.
+   */
+  hasPassword?: boolean;
+  /**
+   * `GET /auth/me` only: which proof `DELETE /users/me` expects.
+   */
+  deletionMethod?: "password" | "email_code";
+  /**
+   * `GET /auth/me` only (TASK-166): how the browser session authenticated.
+   * Kept for diagnostics; deletion uses `hasPassword`/`deletionMethod`.
+   */
+  authMethod?: "password" | "oauth";
 }
 
 /**
@@ -473,6 +818,22 @@ export interface AuthUserDto {
 export interface AuthResponseDto {
   accessToken: string;
   user: AuthUserDto;
+}
+
+/**
+ * `GET /auth/me`: the user projection plus the optional token identity
+ * (TASK-166) and impersonation marker. A browser session gets `token: null`.
+ */
+export interface ServerInfoDto {
+  version: string;
+  apiVersion: string;
+}
+
+export interface AuthMeResponseDto extends AuthUserDto {
+  impersonatedBy: string | null;
+  token: ApiTokenIdentityDto | null;
+  session: AgentSessionDto | null;
+  server?: ServerInfoDto;
 }
 
 /**
@@ -506,6 +867,64 @@ export interface AuthConfigResponse {
   allowRegistration: boolean;
   /** False when public read-only board links are disabled. */
   allowPublicShares: boolean;
+  /**
+   * TASK-166 runtime limits. `boards: null` means unlimited (the default in
+   * server mode); a positive number is an operator safety cap. `importBytes`
+   * is the board-import envelope cap.
+   */
+  limits: {
+    boards: number | null;
+    importBytes: number;
+  };
+}
+
+/**
+ * TASK-166 self-service data export (`POST /users/me/export`). The bundle is
+ * built by the existing `DataExport` queue and downloaded through a TTL link.
+ */
+export interface UserDataExportDto {
+  id: string;
+  status: "pending" | "ready" | "failed";
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms; the artifact is deleted at this point. */
+  expiresAt: number;
+  sizeBytes: number | null;
+  error: string | null;
+}
+
+/** `POST /users/me/delete/request-code` — OAuth-only accounts. */
+export interface RequestAccountDeletionCodeRequest {
+  /**
+   * An access token issued by OAuth login no more than 10 minutes ago. The
+   * server checks the signature, `sub`, `iat` and the `authMethod` claim.
+   */
+  oauthProof?: string;
+}
+
+/** `POST /users/me/delete/request-code` response. */
+export interface RequestAccountDeletionCodeResponse {
+  expiresAt: number;
+  queued: boolean;
+}
+
+/**
+ * `DELETE /users/me` — session-only. A password account sends its current
+ * password; an OAuth-only account sends `oauthProof` plus the `emailCode`.
+ */
+export interface DeleteAccountRequest {
+  password?: string;
+  oauthProof?: string;
+  emailCode?: string;
+  /** Must equal the account email (case-insensitive) — a typed confirmation. */
+  confirmEmail: string;
+}
+
+/** `DELETE /users/me` response: the account is disabled now, purged later. */
+export interface DeleteAccountResponse {
+  status: "scheduled";
+  /** Unix ms — seven days after the request. */
+  deleteAfter: number;
 }
 
 /** Body of `PATCH /users/me` (TASK-36.1): only changed fields are sent. */
@@ -516,6 +935,8 @@ export interface UpdateProfileRequest {
   avatarColor?: UserAvatarColor | null;
   /** Opt out of scheduled digests/reminders (TASK-153). */
   notifyDigest?: boolean;
+  /** Canonical language for the UI, announcements and email. */
+  locale?: AnnouncementLocale | null;
 }
 
 /** Body of `POST /users/me/password` (TASK-36.1). */
@@ -523,6 +944,19 @@ export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
 }
+
+/**
+ * TASK-166 capability preset. A preset never raises the board role; `readOnly`
+ * still yields an effective `observer`.
+ */
+export const SCOPE_PRESETS = [
+  "observer",
+  "worker",
+  "reviewer",
+  "admin",
+] as const;
+
+export type ScopePreset = (typeof SCOPE_PRESETS)[number];
 
 /**
  * A personal API token as listed by `GET /users/me/tokens` (TASK-36.1).
@@ -548,6 +982,39 @@ export interface UserTokenDto {
   readOnly: boolean;
   /** Requests per minute this token may make; `null` = no per-token limit. */
   rateLimitPerMinute: number | null;
+  /** TASK-166 capability preset; `readOnly` still wins when true. */
+  scopePreset: ScopePreset;
+  /** TASK-166 trusted-CI escape hatch (explicit, never a preset). */
+  trustedCi: boolean;
+  /** Unix ms of an individual pause; `null` when not individually paused. */
+  individualPausedAt: number | null;
+  individualPausedBy: string | null;
+  individualPausedReason: string | null;
+  /** Unix ms of the bulk "stop all" pause; `null` when not paused that way. */
+  stopAllPausedAt: number | null;
+  stopAllPausedBy: string | null;
+  /** True while either pause source is active. */
+  paused: boolean;
+  /** `observer` when `readOnly`, otherwise `scopePreset` (not authorization). */
+  effectiveTokenScope: ScopePreset;
+}
+
+/**
+ * The token half of the identity surface (`GET /auth/me` for a PAT and
+ * `janosik_whoami`). It exposes no secret and no token hash.
+ */
+export interface ApiTokenIdentityDto {
+  id: string;
+  name: string;
+  scopePreset: ScopePreset;
+  trustedCi: boolean;
+  effectiveTokenScope: ScopePreset;
+  boardId: string | null;
+  readOnly: boolean;
+  rateLimitPerMinute: number | null;
+  individualPausedAt: number | null;
+  stopAllPausedAt: number | null;
+  paused: boolean;
 }
 
 /** Body of `POST /users/me/tokens` (TASK-36.1). */
@@ -561,6 +1028,10 @@ export interface CreateUserTokenRequest {
   readOnly?: boolean;
   /** Per-token request limit per minute (TASK-157); omitted/`null` = none. */
   rateLimitPerMinute?: number | null;
+  /** TASK-166 preset; defaults to `worker`. */
+  scopePreset?: ScopePreset;
+  /** TASK-166 trusted CI; defaults to `false`, session JWT only. */
+  trustedCi?: boolean;
 }
 
 /** Response of `POST /users/me/tokens`: the plaintext appears exactly once. */

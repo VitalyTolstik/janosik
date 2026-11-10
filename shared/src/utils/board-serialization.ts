@@ -12,13 +12,28 @@ import { validateImportedBoards } from "../store/validate";
  */
 
 export const EXPORT_APP = "janosik";
-export const EXPORT_SCHEMA_VERSION = 1;
+/**
+ * Version 2 added the optional `Board.workflow`; version 3 (TASK-166) adds
+ * the optional `Board.agentPolicy`. The parser still accepts files written by
+ * version 1 and 2 clients; an older client refuses a newer export instead of
+ * silently dropping the workflow or the board policy.
+ */
+export const EXPORT_SCHEMA_VERSION = 3;
 
 export interface BoardExportFile {
   app: typeof EXPORT_APP;
   schemaVersion: number;
   exportedAt: number;
   boards: BoardState;
+}
+
+export interface ParseExportOptions {
+  /**
+   * Maximum number of boards in the file. Defaults to the local/offline
+   * `LIMITS.boardsCount` guard; `null` disables the envelope check (the
+   * server then enforces its own operator cap atomically).
+   */
+  maxBoards?: number | null;
 }
 
 export function serializeExport(boards: BoardState): string {
@@ -32,14 +47,28 @@ export function serializeExport(boards: BoardState): string {
 }
 
 /** Parse and validate an export file; throws a readable Error when invalid. */
-export function parseExport(raw: string): BoardState {
+export function parseExport(
+  raw: string,
+  options: ParseExportOptions = {},
+): BoardState {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     throw new Error("Not valid JSON");
   }
+  return parseExportValue(parsed, options);
+}
 
+/**
+ * Validate an already-parsed export value. Kept separate so the server can
+ * hand over the Express-parsed body without a `JSON.stringify` → `JSON.parse`
+ * round trip (TASK-166.6).
+ */
+export function parseExportValue(
+  parsed: unknown,
+  options: ParseExportOptions = {},
+): BoardState {
   if (typeof parsed !== "object" || parsed === null) {
     throw new Error("Malformed export file");
   }
@@ -64,7 +93,7 @@ export function parseExport(raw: string): BoardState {
   // then the lenient pass for what it can repair (clamps, legacy shapes) —
   // a malformed file fails here with a field path, not with a TypeError
   // inside normalization or a 500 from the server's writer.
-  const checked = validateImportedBoards(file.boards);
+  const checked = validateImportedBoards(file.boards, options);
   if (!checked.ok) {
     throw new Error(
       `Invalid board data at ${checked.field}: ${checked.message}`,

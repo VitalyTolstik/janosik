@@ -12,6 +12,7 @@ import {
 import type { AuthResponseDto, AuthUserDto } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
 import { clearAvatarCache } from "@/hooks/use-avatar-object-url";
+import { ensureLocale, defaultI18n, type Lang } from "@/i18n/i18n";
 import {
   clearImpersonation,
   consumeImpersonationHash,
@@ -225,8 +226,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUser = useCallback((next: AuthUserDto) => {
-    setUser(next);
+    // TASK-166: `authMethod` is a property of the session, not the profile —
+    // a profile PATCH response does not carry it, so keep the boot value.
+    setUser((current) =>
+      current === null ? next : { ...next, authMethod: current.authMethod },
+    );
   }, []);
+
+  // Announcement localization: the server profile is the source of truth for
+  // the interface language. `?lng=` (a documentation/marketing handoff) still
+  // wins. An account without a stored locale adopts the current UI language
+  // once, which keeps existing users on the language they already had.
+  const localeAdoptionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!serverMode || status !== "authenticated" || !user) return;
+    if (impersonating) return;
+    if (new URLSearchParams(window.location.search).has("lng")) return;
+    const current: Lang = defaultI18n.language.startsWith("ru") ? "ru" : "en";
+    const stored = user.locale;
+    if (stored === "en" || stored === "ru") {
+      if (stored === current) return;
+      void ensureLocale(stored).then((ok) => {
+        if (ok && defaultI18n.language !== stored) {
+          void defaultI18n.changeLanguage(stored);
+        }
+      });
+      return;
+    }
+    // Defensive: a malformed/legacy DTO must not crash `ensureLocale`.
+    if (stored !== undefined && stored !== null) return;
+    const adoptionKey = `${user.id}:${current}`;
+    if (localeAdoptionRef.current === adoptionKey) return;
+    localeAdoptionRef.current = adoptionKey;
+    void api
+      .updateProfile({ locale: current })
+      .then(updateUser)
+      .catch(() => {
+        // Offline/best-effort: allow a later render/session to retry.
+        localeAdoptionRef.current = null;
+      });
+  }, [serverMode, status, user, impersonating, updateUser]);
 
   const exitImpersonation = useCallback(() => {
     clearImpersonation();

@@ -36,18 +36,25 @@ invitation does not count.
 title answers `400`.
 
 `POST /boards/import` accepts an export envelope, either as a parsed JSON
-object or as a raw JSON string. It normalizes leniently and creates every
-board in the envelope with the importer as `ADMIN`. An empty or invalid
-envelope answers `400`. The envelope is:
+object or as a raw JSON string; the server validates the parsed object without a
+stringify→parse round trip. It normalizes leniently and creates every board in
+the envelope with the importer as `ADMIN`. An empty or invalid envelope answers
+`400`. `?dryRun=1` returns `{boards, cards, columns, labels, withinLimit}` and
+writes nothing. The envelope is:
 
 ```json
-{ "app": "janosik", "schemaVersion": 1, "exportedAt": 0, "boards": [] }
+{ "app": "janosik", "schemaVersion": 3, "exportedAt": 0, "boards": [] }
 ```
+
+Version 3 adds the optional per-board `agentPolicy`; version 2 added the
+optional `workflow`; version 1/2 files still import (with no policy). The
+importer mints fresh column and card ids and rewrites the workflow references;
+a transition whose column is missing is dropped rather than failing the import.
 
 `GET /boards/:id` returns the board aggregate and sets an `X-Board-Seq`
 response header carrying the command `seq` the aggregate reflects. A client
 resumes the SSE stream from that value. An unknown or soft-deleted board
-answers `404`.
+answers `404`. The aggregate carries `workflow` when the board has one.
 
 `GET /boards/:id/search?q=` returns `{ cardIds }` — the cards whose title,
 description, a checklist item or a comment contains `q` (case-insensitive
@@ -113,6 +120,165 @@ answers `400`, and an unknown `kind` answers `400`. Pages are newest-first and
 another author answers `403`.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
+
+## Agent sessions and attribution
+
+A personal API token may open a board-scoped agent session. The session is an
+attribution context, not a second account: it grants no rights beyond the token
+that owns it.
+
+| Method | Path                                                    | Auth / role              | Request                    | Response            |
+| ------ | ------------------------------------------------------- | ------------------------ | -------------------------- | ------------------- |
+| `POST` | `/boards/:id/agent-sessions`                            | PAT, board member        | `CreateAgentSessionDto`    | `AgentSessionDto`   |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/heartbeat`       | the same PAT             | `AgentSessionHeartbeatDto` | `AgentSessionDto`   |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/end`             | the same PAT or `ADMIN`  | `EndAgentSessionDto`       | `AgentSessionDto`   |
+| `GET`  | `/boards/:id/agent-sessions?active=1`                   | any member               | none                       | `AgentSessionDto[]` |
+| `GET`  | `/boards/:id/agent-sessions/:sessionId`                 | any member               | none                       | `AgentSessionDto`   |
+
+Start accepts optional `name`, `clientName` and `model` (100 characters each).
+Heartbeat accepts `status` (`active`, `idle`, `waiting_approval`),
+`currentCardId` and `summary`; end accepts `status` (`completed`, `failed`,
+`cancelled`) and `summary`. Repeating `end` returns the stored terminal state.
+A session whose last heartbeat is older than five minutes is reported as
+`stale` (computed, not stored). Ending a session releases the claims it owns.
+
+A PAT write may send `X-Agent-Session: <sessionId>`. The server verifies that
+the session belongs to the same user, token and board and is not closed; a
+mismatch answers `403 agent_session_invalid`, a closed session
+`403 agent_session_closed`. Start and heartbeat are PAT-only: a browser JWT
+gets `403 pat_required` (the `endpoint` detail names `start` or `heartbeat`).
+`end` accepts the same PAT or a board ADMIN browser session. Clients that send
+no header keep working: commands still carry `apiTokenId`, but
+`agentSessionId` stays `null`. The server fills all attribution from the
+authenticated principal; a request body cannot forge `apiTokenId`,
+`agentSessionId`, `runId`, `agentName`, `claimedByTokenId` or
+`claimedBySessionId`.
+
+Command entries and command SSE frames expose the optional `apiTokenId`,
+`agentSessionId`, `runId` and `agentName` fields. Activity entries expose the
+same fields plus `actorType`; `CommentDto` carries `actorType`, `apiTokenId`,
+`agentSessionId` and `agentName`, while `AttachmentDto` uses
+`uploadedByTokenId`/`uploadedBySessionId`. `GET /boards/:id/activity` and
+`GET /cards/:id/activity` accept `actorType`, `apiTokenId`, `agentSessionId`,
+`runId`, `type`, `from` and `to`; the filters apply to both merged sources
+(commands and activity rows). `GET /boards/:id/commands` accepts `since`,
+`runId`, `apiTokenId` and `agentSessionId` only. Public share responses and
+streams strip token/session ids and the token name. `GET /auth/me` for a PAT
+adds a non-secret `token` identity object (`scopePreset`, `trustedCi`, pause
+stamps, `effectiveTokenScope`) and a `server` block; a browser session gets
+`token: null`.
+
+## Pause and kill
+
+Humans can stop agents without revoking a key. Pause is reversible; kill is
+token revocation. All pause/resume routes are browser-session only: a PAT gets
+`403 pat_forbidden`, so an agent cannot clear the pause that stopped it.
+
+| Method | Path                                                | Auth                  | Request          | Response              |
+| ------ | --------------------------------------------------- | --------------------- | ---------------- | --------------------- |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/pause`       | board `ADMIN` session | `AgentPauseDto`  | `AgentSessionDto`     |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/resume`      | board `ADMIN` session | `AgentPauseDto`  | `AgentSessionDto`     |
+| `POST` | `/boards/:id/agents/pause`                          | board `ADMIN` session | `AgentPauseDto`  | `BoardAgentPauseDto`  |
+| `POST` | `/boards/:id/agents/resume`                         | board `ADMIN` session | `AgentPauseDto`  | `BoardAgentPauseDto`  |
+| `POST` | `/users/me/tokens/:id/pause`                        | owner session         | `AgentPauseDto`  | `UserTokenDto`        |
+| `POST` | `/users/me/tokens/:id/resume`                       | owner session         | `AgentPauseDto`  | `UserTokenDto`        |
+| `POST` | `/agents/pause-all`                                 | owner session         | `AgentPauseDto`  | `AgentStopAllPauseDto` |
+| `POST` | `/agents/resume-all`                                | owner session         | `AgentPauseDto`  | `AgentStopAllPauseDto` |
+
+`AgentPauseDto` is optional `{ reason?: string }` (500 characters). The reason
+is stored on the session/board stamp; the token and stop-all reasons go to
+`SecurityAuditLog`. `pauseScope` precedence is **token → board → session**:
+a token paused by `individualPausedAt` or `stopAllPausedAt` wins over a board
+pause, which wins over a session pause. `resume-all` clears only
+`stopAllPausedAt` and does **not** clear an individual token pause; a token
+stays paused while at least one source is active.
+
+Every PAT write blocked by a pause answers `403` with a stable code:
+
+```json
+{
+  "message": "Agent access is paused at the board level; resume it before writing",
+  "code": "agent_paused",
+  "retryable": false,
+  "pauseScope": "board",
+  "scope": "board",
+  "pausedAt": 1762764000000
+}
+```
+
+The block covers commands (single and batch), comments, attachment upload and
+delete, claims, board member/share changes and other board writes. GET reads
+stay allowed, and the control plane stays open: `heartbeat`, `end` and
+`GET /boards/:id/agent-sessions/:id` work while paused so an agent can finish
+cleanly. Pause is evaluated before the board role, token scope and destructive/
+approval gates: a paused agent gets `agent_paused`, not `scope_denied`,
+`pat_read_only` or `approval_required`. Pause does not release a claim. Ending a
+session or revoking its token releases the session/token claims.
+
+Pause is checked at the request boundary and again inside the board-write
+transaction after the advisory lock. A request that passed the second check
+finishes and commits; a pause that committed before it is refused. The same
+second read rejects a token revoked or expired (or a disabled owner) and a
+session that ended before the lock, so a queued write cannot outlive an
+`end_session` or `DELETE /users/me/tokens/:id`. On the next
+SSE keep-alive a PAT stream receives
+`{ "type": "agent", "op": "paused", "scope": "...", "at": ... }` and closes.
+Session pause closes only a stream opened with `?session=<sessionId>`; a
+reconnect during an active pause gets `403 agent_paused`. Human SSE streams are
+not closed.
+
+`DELETE /users/me/tokens/:id` is the irreversible kill. It revokes the key, marks
+its open sessions `cancelled`, releases the claims held by `claimedByTokenId`
+(legacy claims without a token id wait for their lease) and closes the token's
+SSE on the next tick. New requests with the key get `401`.
+
+## Token scopes and the destructive gate
+
+Every PAT carries one immutable preset. A new key is `worker`; existing keys
+were grandfathered to `admin` + `trustedCi` (read-only keys keep effective
+`observer`). The preset is chosen when the key is created and cannot be
+changed: create a new key and revoke the old one. `readOnly` remains as a
+deprecated compatibility flag and always wins, yielding `observer`.
+
+| Preset     | Read | Ordinary content write | Done transition (`reviewer`) | Destructive | Board administration |
+| ---------- | ---- | ---------------------- | ---------------------------- | ----------- | -------------------- |
+| `observer` | yes  | no                     | no                           | no          | no                   |
+| `worker`   | yes  | yes                    | no                           | approval / `trustedCi` | no       |
+| `reviewer` | yes  | yes                    | yes                          | approval / `trustedCi` | no       |
+| `admin`    | yes  | yes                    | yes                          | approval / `trustedCi` | yes      |
+
+A preset never raises the board role: an `admin` key owned by a MEMBER cannot
+manage members, and a `worker` key owned by an ADMIN cannot delete a card
+without approval. Destructive actions require a human approval unless the key
+has `trustedCi`; `Board.agentPolicy.destructive = "deny"` is a hard block that
+even `trustedCi` cannot bypass. Approval does not raise scope: a `worker` key
+that needs `admin` gets `scope_denied`, not `approval_required`.
+
+Board-scoped keys are limited to their board and cannot create or import
+boards. Account routes (profile writes, key management, invitations, exports)
+and their sensitive reads are session-only: a PAT gets `403 pat_forbidden`.
+Identity reads (`GET /auth/me`, avatar) remain available.
+
+Error codes are additive and stable:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `scope_denied` | 403 | the preset/board role does not allow the action; preset denial carries `requiredScope`/`action`, board-role denial `requiredRoles`, and a board-scoped token on another board `reason: "board_scope"` |
+| `destructive_denied` | 403 | the board policy is `destructive: "deny"`; `reason: "board_policy"` |
+| `approval_required` | 409 | a destructive action has no approval; the request is refused, nothing is applied |
+| `pat_forbidden` | 403 | an account route is session-only |
+| `agent_paused` | 403 | a session, token or board pause blocks the write; `pauseScope`/`pausedAt`, `retryable: false` |
+| `pat_read_only` | 403 | legacy read-only key refused a write |
+
+The approval request API (`POST /boards/:id/approvals`) and the decision
+endpoint ship in 166.5. Until then `approval_required` is a refusal, not a
+queued request: nothing is applied, and a human performs the action in the
+browser.
+
+Browser sessions do not pass through the preset/destructive gate; their board
+role rules are unchanged (including ordinary undo). A PAT can never send
+`RESTORE_*` commands (`scope_denied`) — an agent uses compensating edits or asks
+a human to revert a run.
 
 ## Attachments
 
@@ -268,14 +434,15 @@ with a personal API token that has since been revoked or has expired.
 `?client=` is an optional tab-scoped id matching `^[A-Za-z0-9_-]{8,64}$`.
 When omitted or malformed, the server generates one.
 
-The stream carries five event types:
+The stream carries six event types:
 
 | `type`       | Payload                                                        | Notes                                          |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
-| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches` | a committed command                            |
+| `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | a committed command                            |
 | `presence`   | `users[]`                                                      | who is connected; no `seq`                     |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated` or `removed` |
-| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?` | non-reducer activity, e.g. a new comment |
+| `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | non-reducer activity, e.g. a new comment |
+| `agent`      | `op` (`started`, `paused`, `resumed`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
 `commandId` is the idempotency key sent with the command. A client uses it to
@@ -413,6 +580,10 @@ The response bodies are the shared wire types. Key fields:
 
 ## Errors
 
+Every error below uses the shared [`code`/`message`/`retryable`/`requestId`
+envelope](../#error-envelope). The status is still the HTTP status; `code`
+names the cause.
+
 | Status | When                                                                                                                                                      |
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `400`  | validation failed, a blank required text, an invalid limit or expiry, an invalid or empty envelope, a rejected file                                       |
@@ -423,7 +594,7 @@ The response bodies are the shared wire types. Key fields:
 | `405`  | a write against the public share API                                                                                                                  |
 | `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
-| `413`  | a command payload over `MAX_COMMAND_BYTES`; a JSON body over 256 KB (5 MB on import and commands)                                                         |
+| `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |
 | `429`  | a rate limit was exceeded; `code: "login_backoff"` during a login backoff                                                                                 |
 | `503`  | maintenance mode; a failed health check; `code: "board_write_timeout"` when a board write timed out (safe to retry)                                       |

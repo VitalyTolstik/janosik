@@ -1,5 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { Check, ChevronDown, Loader2, Trash2 } from "lucide-react";
 import type {
   ActivitySseEvent,
   AuthUserDto,
@@ -10,10 +17,18 @@ import { COMMENT_KINDS, DEFAULT_COMMENT_KIND, LIMITS } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
@@ -44,6 +59,8 @@ interface CardCommentsProps {
   readOnly?: boolean;
   /** Loaded comment count for the section badge (newest page + older pages). */
   onCountChange?: (count: number) => void;
+  /** Lets the Activity tab distinguish "0 comments" from "not loaded yet". */
+  onLoadedChange?: (loaded: boolean) => void;
 }
 
 /**
@@ -60,6 +77,7 @@ export function CardComments({
   boardId,
   readOnly = false,
   onCountChange,
+  onLoadedChange,
 }: CardCommentsProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -69,6 +87,10 @@ export function CardComments({
 
   const [items, setItems] = useState<CommentDto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // `loaded` separates "no comments yet" from "the first page has not
+  // arrived": the section must not claim an empty thread before the answer.
+  const [loaded, setLoaded] = useState(!serverMode);
+  const aliveRef = useRef(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [draft, setDraft] = useState("");
   // Structured comment kind (TASK-157, D10) — a swarm vocabulary the reader
@@ -84,23 +106,37 @@ export function CardComments({
     if (!serverMode) return;
     try {
       const page = await api.listComments(cardId, undefined, PAGE_SIZE);
+      if (!aliveRef.current) return;
       setItems(page.items);
       setNextCursor(page.nextCursor);
     } catch {
+      if (!aliveRef.current) return;
       toast.error(t("comment.loadError"));
+    } finally {
+      // A failed request still ends the wait: the skeleton must not spin
+      // forever over an error toast.
+      if (aliveRef.current) setLoaded(true);
     }
   }, [cardId, serverMode, t, toast]);
 
   // A different card means a different thread: the parent remounts this
   // component with `key={cardId}`, so the initial state is the reset.
   useEffect(() => {
+    aliveRef.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the thread lands after the await, not synchronously
     void loadFirst();
+    return () => {
+      aliveRef.current = false;
+    };
   }, [loadFirst]);
 
   useEffect(() => {
     onCountChange?.(items.length);
   }, [items.length, onCountChange]);
+
+  useEffect(() => {
+    onLoadedChange?.(loaded);
+  }, [loaded, onLoadedChange]);
 
   // Live arrival: a foreign comment is not in the frame body (the frame
   // carries its id), so the newest page is re-read and merged — paginated
@@ -155,6 +191,10 @@ export function CardComments({
       authorId: user.id,
       text,
       kind: sentKind,
+      actorType: "human",
+      apiTokenId: null,
+      agentSessionId: null,
+      agentName: null,
       createdAt: Date.now(),
     };
     setItems((prev) => [optimistic, ...prev]);
@@ -215,7 +255,7 @@ export function CardComments({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" aria-busy={!loaded}>
       {!readOnly && serverMode && user !== null ? (
         <CommentComposer
           user={user}
@@ -233,7 +273,14 @@ export function CardComments({
       ) : null}
 
       {/* An editable empty thread already has the composer as its prompt. */}
-      {items.length === 0 && (readOnly || !serverMode || user === null) ? (
+      {!loaded ? (
+        <SkeletonRegion
+          label={t("comment.loading")}
+          testId="card-comments-skeleton"
+        >
+          <CardSectionSkeleton kind="comments" rows={3} />
+        </SkeletonRegion>
+      ) : items.length === 0 && (readOnly || !serverMode || user === null) ? (
         <p className="py-1 pl-[36px] text-sm text-muted-foreground/70">
           {t("comment.empty")}
         </p>
@@ -310,6 +357,74 @@ function kindLabel(
 }
 
 /**
+ * Structured comment kind: an outline trigger opening the project's
+ * radio-list popover. A native `<select>` was used here first, but its
+ * option list is drawn by the browser — it ignores the app theme and breaks
+ * the dialog's visual language (and cannot be styled at all). The popover
+ * keeps keyboard semantics: the trigger is a button, Escape closes, and each
+ * option exposes `role="radio"` + `aria-checked`.
+ */
+function CommentKindPicker({
+  kind,
+  disabled,
+  onChange,
+}: {
+  kind: CommentKind;
+  disabled: boolean;
+  onChange: (kind: CommentKind) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const label = t("comment.kindLabel");
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          aria-label={label}
+          data-testid="comment-kind"
+          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+        >
+          {kindLabel(kind, t)}
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-40 p-1">
+        <div role="radiogroup" aria-label={label}>
+          {COMMENT_KINDS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={option === kind}
+              data-testid={`comment-kind-option-${option}`}
+              onClick={() => {
+                setOpen(false);
+                onChange(option);
+              }}
+              className={cn(
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                option === kind
+                  ? "font-medium text-foreground"
+                  : "text-foreground/90",
+              )}
+            >
+              {kindLabel(option, t)}
+              {option === kind && (
+                <Check className="h-3.5 w-3.5 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
  * Jira's comment box: avatar on the left, the markdown field that grows
  * with the text, and the primary Save on the left with a quiet Cancel
  * next to it — both rendered at once, both disabled until the draft has
@@ -351,7 +466,7 @@ function CommentComposer({
           fallback={
             /* Same footprint as the single-line editor so the thread
                doesn't jump while the chunk streams in. */
-            <div className="h-9 animate-pulse rounded-md bg-muted/40" />
+            <Skeleton className="h-9 rounded-md" />
           }
         >
           <CommentComposerEditor
@@ -365,26 +480,11 @@ function CommentComposer({
         </Suspense>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
-            <label className="sr-only" htmlFor="comment-kind">
-              {t("comment.kindLabel")}
-            </label>
-            <select
-              id="comment-kind"
-              data-testid="comment-kind"
-              aria-label={t("comment.kindLabel")}
-              value={kind}
+            <CommentKindPicker
+              kind={kind}
               disabled={sending}
-              onChange={(event) =>
-                onKindChange(event.target.value as CommentKind)
-              }
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-            >
-              {COMMENT_KINDS.map((option) => (
-                <option key={option} value={option}>
-                  {kindLabel(option, t)}
-                </option>
-              ))}
-            </select>
+              onChange={onKindChange}
+            />
             <Button
               variant="premium"
               size="sm"

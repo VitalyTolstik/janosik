@@ -52,23 +52,39 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  eyebrow,
+  meta,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  /** Small uppercase context line above the h1. */
+  eyebrow?: string;
+  /** A short meta line below the subtitle (ids, status, dates). */
+  meta?: ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="space-y-0.5">
-        <h1 className="text-base font-semibold tracking-tight text-foreground">
+      <div className="min-w-0 space-y-0.5">
+        {eyebrow ? (
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {eyebrow}
+          </p>
+        ) : null}
+        <h1 className="truncate text-xl font-semibold tracking-[-0.025em] text-foreground">
           {title}
         </h1>
         {subtitle ? (
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="text-xs leading-5 text-muted-foreground">{subtitle}</p>
+        ) : null}
+        {meta ? (
+          <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+            {meta}
+          </div>
         ) : null}
       </div>
       {actions ? (
-        <div className="flex items-center gap-2">{actions}</div>
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
       ) : null}
     </div>
   );
@@ -264,24 +280,115 @@ export function LoadingState() {
   );
 }
 
-export function ErrorState({ onRetry }: { onRetry: () => void }) {
+export function ErrorState({
+  onRetry,
+  reference,
+}: {
+  onRetry: () => void;
+  /** A short support reference (request id, timestamp or entity key). */
+  reference?: string;
+}) {
   const t = useAdminT();
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-      <AlertTriangle className="h-5 w-5 text-danger" aria-hidden />
-      <p className="text-xs text-muted-foreground">{t("admin.common.error")}</p>
-      <Button size="sm" variant="outline" onClick={onRetry}>
+    <div
+      className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center"
+      data-testid="admin-error-state"
+      role="alert"
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger/25 bg-danger/10">
+        <AlertTriangle className="h-4 w-4 text-danger" aria-hidden />
+      </span>
+      <p className="text-xs font-medium text-foreground">
+        {t("admin.common.error")}
+      </p>
+      <p className="max-w-sm text-[11px] leading-5 text-muted-foreground">
+        {t("admin.common.errorHint")}
+      </p>
+      {reference ? (
+        <p
+          className="font-mono text-[10px] text-muted-foreground"
+          data-testid="admin-error-reference"
+        >
+          {t("admin.common.errorReference")}: {reference}
+        </p>
+      ) : null}
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onRetry}
+        data-testid="admin-error-retry"
+      >
         {t("admin.common.retry")}
       </Button>
     </div>
   );
 }
 
-export function EmptyState({ message }: { message?: string }) {
+export function EmptyState({
+  message,
+  filtered = false,
+  onClear,
+  action,
+}: {
+  message?: string;
+  /** Distinguish "no rows exist" from "the current filters match nothing". */
+  filtered?: boolean;
+  onClear?: () => void;
+  action?: ReactNode;
+}) {
   const t = useAdminT();
   return (
-    <div className="py-16 text-center text-xs text-muted-foreground">
-      {message ?? t("admin.common.empty")}
+    <div
+      className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center"
+      data-testid="admin-empty-state"
+    >
+      <p className="text-xs font-medium text-foreground">
+        {message ?? t("admin.common.empty")}
+      </p>
+      {filtered ? (
+        <p className="text-[11px] text-muted-foreground">
+          {t("admin.common.emptyFiltered")}
+        </p>
+      ) : null}
+      {filtered && onClear ? (
+        <Button size="sm" variant="outline" onClick={onClear}>
+          {t("admin.common.clearFilters")}
+        </Button>
+      ) : (
+        action
+      )}
+    </div>
+  );
+}
+
+/** Explicit 403 state for an owner-only screen reached by direct URL. */
+export function ForbiddenState({ onBack }: { onBack?: () => void }) {
+  const t = useAdminT();
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center"
+      data-testid="admin-forbidden-state"
+      role="alert"
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-warning/25 bg-warning/10">
+        <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
+      </span>
+      <p className="text-sm font-semibold text-foreground">
+        {t("admin.hub.forbidden.title")}
+      </p>
+      <p className="max-w-sm text-[11px] leading-5 text-muted-foreground">
+        {t("admin.hub.forbidden.body")}
+      </p>
+      <p className="text-[10px] text-muted-foreground">
+        {t("admin.common.forbiddenHint")}
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onBack ?? (() => window.history.back())}
+      >
+        {t("admin.common.backToPanel")}
+      </Button>
     </div>
   );
 }
@@ -304,10 +411,13 @@ export function Table({
   return (
     <div
       data-testid="admin-table-scroll"
-      className={cn("overflow-auto overscroll-contain", className)}
+      className={cn(
+        "admin-table-scroll overflow-auto overscroll-contain",
+        className,
+      )}
       style={{ maxHeight }}
     >
-      <table className="w-max min-w-full border-collapse text-left text-xs">
+      <table className="admin-table w-max min-w-full text-left text-xs">
         {children}
       </table>
     </div>
@@ -323,8 +433,9 @@ export function Th({
 }) {
   return (
     <th
+      scope="col"
       className={cn(
-        "sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground",
+        "sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-3 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground",
         className,
       )}
     >
@@ -336,14 +447,18 @@ export function Th({
 export function Td({
   children,
   className,
+  label,
 }: {
   children?: ReactNode;
   className?: string;
+  /** Column name used by the phone card layout (`data-label`). */
+  label?: string;
 }) {
   return (
     <td
+      data-label={label ?? ""}
       className={cn(
-        "whitespace-nowrap border-b border-border/60 px-3 py-2 align-middle text-foreground",
+        "whitespace-nowrap border-b border-border/60 px-3 align-middle text-foreground",
         className,
       )}
     >
@@ -357,21 +472,44 @@ export function Pagination({
   limit,
   offset,
   onChange,
+  onLimitChange,
 }: {
   total: number;
   limit: number;
   offset: number;
   onChange: (offset: number) => void;
+  /** Enables the 25 / 50 / 100 rows-per-page select. */
+  onLimitChange?: (limit: number) => void;
 }) {
   const t = useAdminT();
   const pages = Math.max(1, Math.ceil(total / limit));
   const page = Math.floor(offset / limit) + 1;
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
-      <span className="text-[11px] text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-1.5">
+      <span className="text-[11px] tabular-nums text-muted-foreground">
         {t("admin.common.total", { count: total })}
       </span>
       <div className="flex items-center gap-2">
+        {onLimitChange ? (
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="sr-only">{t("admin.common.pageSize")}</span>
+            <select
+              data-testid="admin-page-size"
+              value={limit}
+              onChange={(event) => onLimitChange(Number(event.target.value))}
+              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {[25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            <span className="hidden sm:inline">
+              {t("admin.common.pageSize")}
+            </span>
+          </label>
+        ) : null}
         <Button
           size="sm"
           variant="ghost"

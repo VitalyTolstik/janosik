@@ -13,11 +13,13 @@
 import path from "node:path";
 
 /**
- * Tool groups. The default set covers working the board; the groups that act
- * on the *account* or on who can see a board (members, invitations, share
- * links, profile) are opt-in. Board content is untrusted input to the model,
- * and a prompt-injected agent holding those tools could invite an outsider
- * or publish the board. API-key management is not exposed to API keys.
+ * Tool groups. The default set covers working the board; the groups that
+ * change who can see a board (members, share links) or expose the account
+ * identity (`account`) are opt-in. Board content is untrusted input to the
+ * model, and a prompt-injected agent holding those tools could invite an
+ * outsider or publish the board. API-key management is not exposed to API
+ * keys, and TASK-166 removed the invitation/profile tools: those routes are
+ * session-only (`pat_forbidden`).
  */
 export const TOOLSETS = [
   "boards",
@@ -29,8 +31,8 @@ export const TOOLSETS = [
   "comments",
   "activity",
   "attachments",
+  "sessions",
   "members",
-  "invitations",
   "shares",
   "account",
 ] as const;
@@ -47,6 +49,7 @@ export const DEFAULT_TOOLSETS: readonly Toolset[] = [
   "comments",
   "activity",
   "attachments",
+  "sessions",
 ];
 
 export interface Config {
@@ -188,12 +191,20 @@ function parseToolsets(value: string | undefined): ReadonlySet<Toolset> {
     if (name === "all") TOOLSETS.forEach((set) => out.add(set));
     else if (name === "default")
       DEFAULT_TOOLSETS.forEach((set) => out.add(set));
-    else if ((TOOLSETS as readonly string[]).includes(name)) {
+    else if (name === "invitations") {
+      // TASK-166 removed the invitation tools (the routes are session-only).
+      // Keep old configurations starting instead of failing the whole agent;
+      // the group contributes nothing.
+      process.stderr.write(
+        'janosik-mcp: warning: toolset "invitations" was removed; ignoring it.\n',
+      );
+    } else if ((TOOLSETS as readonly string[]).includes(name)) {
       out.add(name as Toolset);
     } else {
       throw new ConfigError(
         `Unknown toolset "${name}". Use a comma-separated list of: ` +
-          `${TOOLSETS.join(", ")} (or "all", "default").`,
+          `${TOOLSETS.join(", ")} (or "all", "default"); ` +
+          `"invitations" is accepted but removed.`,
       );
     }
   }
@@ -250,7 +261,8 @@ Environment:
   JANOSIK_MCP_ALLOW_FS Allow attachment upload/download (default off)
   JANOSIK_MCP_FS_ROOT  Confine filesystem tools to this directory
   JANOSIK_MCP_TOOLSETS Tool groups (default: ${DEFAULT_TOOLSETS.join(",")};
-                       opt-in: members,invitations,shares,account; or "all")
+                       opt-in: members,shares,account; or "all"). The removed
+                       "invitations" name is accepted but does nothing.
   JANOSIK_MCP_READONLY Register read-only tools only
 
   Prefer the environment for JANOSIK_TOKEN: a --token flag is visible to

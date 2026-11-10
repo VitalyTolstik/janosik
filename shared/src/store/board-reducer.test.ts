@@ -1948,6 +1948,23 @@ describe("boardReducer — collection limits (TASK-20)", () => {
       },
     });
     expect(next).toHaveLength(L.boardsCount);
+
+    // TASK-166: a board the server already accepted is never clipped by the
+    // local quota again.
+    const remote = reduceState(state, {
+      type: "ADD_BOARD",
+      remote: true,
+      board: {
+        id: "server-board",
+        title: "Server board",
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    expect(remote).toHaveLength(L.boardsCount + 1);
   });
 });
 
@@ -2084,6 +2101,136 @@ describe("boardReducer — SET_COLUMN_WIP_LIMIT (TASK-13)", () => {
     const copy = next.columns.find((c) => c.title === "Done copy");
     expect(copy?.wipLimit).toBe(1);
     expect(copy?.cardIds).toHaveLength(1);
+  });
+});
+
+describe("boardReducer — SET_COLUMN_ACCENT (TASK-164)", () => {
+  it("sets a color and a gradient, and clones on duplicate", () => {
+    const colored = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+      accent: { type: "color", value: "brand" },
+    });
+    expect(colored.columns[0].accent).toEqual({
+      type: "color",
+      value: "brand",
+    });
+
+    const gradient = reduceBoard(colored, {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+      accent: { type: "gradient", value: "ocean" },
+    });
+    expect(gradient.columns[0].accent).toEqual({
+      type: "gradient",
+      value: "ocean",
+    });
+
+    const copy = reduceBoard(gradient, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+      title: "Accent copy",
+    }).columns.find((column) => column.title === "Accent copy");
+    expect(copy?.accent).toEqual({ type: "gradient", value: "ocean" });
+    expect(copy?.accent).not.toBe(gradient.columns[0].accent);
+  });
+
+  it("clears the field entirely (omit-when-unset) and no-ops on repeats", () => {
+    const colored = reduceBoard(freshBoard(), {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+      accent: { type: "color", value: "red" },
+    });
+    const repeat = reduceBoard(colored, {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+      accent: { type: "color", value: "red" },
+    });
+    expect(repeat).toBe(colored);
+
+    const cleared = reduceBoard(colored, {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+    });
+    expect(cleared.columns[0].accent).toBeUndefined();
+    expect("accent" in cleared.columns[0]).toBe(false);
+  });
+
+  it("treats an unknown palette value as a clear; missing columns are no-ops", () => {
+    const seed = freshBoard();
+    expect(
+      reduceBoard(seed, {
+        type: "SET_COLUMN_ACCENT",
+        columnId: "nope",
+        accent: { type: "color", value: "brand" },
+      }),
+    ).toBe(seed);
+
+    const poisoned = reduceBoard(seed, {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+      accent: { type: "color", value: "chartreuse" } as never,
+    });
+    expect(poisoned).toBe(seed);
+  });
+
+  it("does not touch cards, WIP or the column order", () => {
+    const seed = freshBoard();
+    const board = reduceBoard(seed, {
+      type: "SET_COLUMN_ACCENT",
+      columnId: "col-backlog",
+      accent: { type: "gradient", value: "sunset" },
+    });
+    expect(board.columns.map((column) => column.id)).toEqual(
+      seed.columns.map((column) => column.id),
+    );
+    expect(board.columns[0].cardIds).toEqual(seed.columns[0].cardIds);
+    expect(board.columns[0].wipLimit).toBe(seed.columns[0].wipLimit);
+    expect(board.cards).toBe(seed.cards);
+  });
+});
+
+describe("boardReducer — SET_BOARD_COLUMN_STYLE (TASK-164)", () => {
+  it("stores the requested shape and drops the field on clear", () => {
+    const rail = reduceBoard(freshBoard(), {
+      type: "SET_BOARD_COLUMN_STYLE",
+      columnStyle: "rail",
+    });
+    expect(rail.columnStyle).toBe("rail");
+
+    // Explicit `signature` survives as a value (an import may carry it),
+    // so undo can restore the exact stored shape.
+    const signature = reduceBoard(rail, {
+      type: "SET_BOARD_COLUMN_STYLE",
+      columnStyle: "signature",
+    });
+    expect(signature.columnStyle).toBe("signature");
+
+    const cleared = reduceBoard(rail, { type: "SET_BOARD_COLUMN_STYLE" });
+    expect(cleared.columnStyle).toBeUndefined();
+    expect("columnStyle" in cleared).toBe(false);
+  });
+
+  it("no-ops for the same shape and rejects unknown shapes", () => {
+    const rail = reduceBoard(freshBoard(), {
+      type: "SET_BOARD_COLUMN_STYLE",
+      columnStyle: "rail",
+    });
+    expect(
+      reduceBoard(rail, {
+        type: "SET_BOARD_COLUMN_STYLE",
+        columnStyle: "rail",
+      }),
+    ).toBe(rail);
+
+    const seed = freshBoard();
+    expect(reduceBoard(seed, { type: "SET_BOARD_COLUMN_STYLE" })).toBe(seed);
+    expect(
+      reduceBoard(seed, {
+        type: "SET_BOARD_COLUMN_STYLE",
+        columnStyle: "neon" as never,
+      }),
+    ).toBe(seed);
   });
 });
 

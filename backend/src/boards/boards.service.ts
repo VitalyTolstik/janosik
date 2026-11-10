@@ -7,15 +7,26 @@ import {
 } from "@nestjs/common";
 import { Role, Prisma } from "@prisma/client";
 import type {
-  ActorType,
   BoardAggregate,
   BoardCardSearchResult,
-  BoardEnvelope,
+  BoardImportPreviewDto,
   BoardMemberDto,
+  BoardPendingInvitationDto,
   BoardState,
   BoardSummary,
 } from "@janosik/shared";
-import { LIMITS, parseExport, serializeExport } from "@janosik/shared";
+import {
+  LIMITS,
+  parseExport,
+  parseExportValue,
+  serializeExport,
+} from "@janosik/shared";
+import {
+  type RequestAttribution,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
+import { pauseGateFor } from "@/auth/agent-pause";
+import type { AuthPrincipal } from "@/auth/auth-principal";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
   BoardWriteService,
@@ -28,6 +39,11 @@ import {
   toBoardSummary,
   toMemberDto,
 } from "./board-aggregate";
+import {
+  assertBoardExportSize,
+  assertBoardQuota,
+  lockBoardQuota,
+} from "./board-limits";
 import { persistBoard } from "./board-import";
 import type { CreateBoardDto } from "./dto/create-board.dto";
 import type { InviteMemberDto } from "./dto/invite-member.dto";
@@ -57,8 +73,7 @@ export class BoardsService {
     private readonly realtime: RealtimeService,
   ) {}
 
-  /**
-   * Boards where the caller is a member (§7.4). Pending invitations don't
+  /** Boards where the caller is a member (§7.4). Pending invitations don't
    * count, and neither does an expired VIEWER (TASK-147, B4): the row still
    * exists until a request lazily cleans it, so the expiry must be in the
    * query or a lapsed guest keeps the board in their listing.
@@ -141,18 +156,26 @@ export class BoardsService {
     if (title.length === 0) {
       throw new BadRequestException("title must not be blank");
     }
-    const board = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.board.create({ data: { title } });
-      await tx.boardMember.create({
-        data: {
-          boardId: created.id,
-          userId,
-          role: Role.ADMIN,
-          acceptedAt: new Date(),
-        },
-      });
-      return created;
-    });
+    const board = await this.prisma.$transaction(
+      async (tx) => {
+        // TASK-166 D19: the count and the insert share one transaction and
+        // one per-account advisory lock, so two parallel creates cannot both
+        // slip past an operator cap.
+        await lockBoardQuota(tx, userId);
+        await assertBoardQuota(tx, userId, 1);
+        const created = await tx.board.create({ data: { title } });
+        await tx.boardMember.create({
+          data: {
+            boardId: created.id,
+            userId,
+            role: Role.ADMIN,
+            acceptedAt: new Date(),
+          },
+        });
+        return created;
+      },
+      { timeout: 15_000, maxWait: 10_000 },
+    );
     return this.getAggregate(board.id);
   }
 
@@ -259,68 +282,108 @@ export class BoardsService {
    * the only record of who may see a restored board); the purge job reclaims
    * them with the rest of the subtree.
    */
-  async deleteBoard(boardId: string): Promise<void> {
-    await this.boardWrite.run(boardId, async (tx) => {
-      const now = new Date();
-
-      const cards = await tx.card.findMany({
-        where: { column: { boardId }, deletedAt: null },
-        select: { id: true },
-      });
-      const cardIds = cards.map((card) => card.id);
-      const checklists =
-        cardIds.length === 0
-          ? []
-          : await tx.checklist.findMany({
-              where: { cardId: { in: cardIds }, deletedAt: null },
-              select: { id: true },
-            });
-      const checklistIds = checklists.map((checklist) => checklist.id);
-
-      if (checklistIds.length > 0) {
-        await tx.checklistItem.updateMany({
-          where: { checklistId: { in: checklistIds }, deletedAt: null },
-          data: { deletedAt: now },
-        });
-        await tx.checklist.updateMany({
-          where: { id: { in: checklistIds } },
-          data: { deletedAt: now },
-        });
-      }
-      // Card links (TASK-46) carry `deletedAt` like every other child and
-      // must be flagged with them, or the purge job would leave the rows
-      // behind after the board itself is gone.
-      await tx.cardLink.updateMany({
-        where: { boardId, deletedAt: null },
-        data: { deletedAt: now },
-      });
-      if (cardIds.length > 0) {
-        await tx.card.updateMany({
-          where: { id: { in: cardIds } },
-          data: { deletedAt: now },
-        });
-      }
-      await tx.column.updateMany({
-        where: { boardId, deletedAt: null },
-        data: { deletedAt: now },
-      });
-      await tx.label.updateMany({
-        where: { boardId, deletedAt: null },
-        data: { deletedAt: now },
-      });
-      // A live share of a deleted board is dead by definition — revoke it so
-      // the master panel shows an explicit "revoked" instead of a link that
-      // silently answers 410. Snapshot shares deliberately survive the board
-      // (a frozen copy), so they are left untouched.
-      await tx.boardShare.updateMany({
-        where: { boardId, mode: "live", revokedAt: null },
-        data: { revokedAt: now },
-      });
-      await tx.board.update({
-        where: { id: boardId },
-        data: { deletedAt: now },
-      });
+  async deleteBoard(
+    boardId: string,
+    actorId: string,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
+  ): Promise<void> {
+    const board = await this.prisma.board.findUnique({
+      where: { id: boardId },
+      select: {
+        title: true,
+        members: {
+          where: { role: Role.ADMIN, acceptedAt: { not: null } },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { userId: true },
+        },
+      },
     });
+    if (!board) {
+      throw new NotFoundException("Board not found");
+    }
+    const ownerId = board.members[0]?.userId ?? actorId;
+    await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        const now = new Date();
+
+        const cards = await tx.card.findMany({
+          where: { column: { boardId }, deletedAt: null },
+          select: { id: true },
+        });
+        const cardIds = cards.map((card) => card.id);
+        const checklists =
+          cardIds.length === 0
+            ? []
+            : await tx.checklist.findMany({
+                where: { cardId: { in: cardIds }, deletedAt: null },
+                select: { id: true },
+              });
+        const checklistIds = checklists.map((checklist) => checklist.id);
+
+        if (checklistIds.length > 0) {
+          await tx.checklistItem.updateMany({
+            where: { checklistId: { in: checklistIds }, deletedAt: null },
+            data: { deletedAt: now },
+          });
+          await tx.checklist.updateMany({
+            where: { id: { in: checklistIds } },
+            data: { deletedAt: now },
+          });
+        }
+        // Card links (TASK-46) carry `deletedAt` like every other child and
+        // must be flagged with them, or the purge job would leave the rows
+        // behind after the board itself is gone.
+        await tx.cardLink.updateMany({
+          where: { boardId, deletedAt: null },
+          data: { deletedAt: now },
+        });
+        if (cardIds.length > 0) {
+          await tx.card.updateMany({
+            where: { id: { in: cardIds } },
+            data: { deletedAt: now },
+          });
+        }
+        await tx.column.updateMany({
+          where: { boardId, deletedAt: null },
+          data: { deletedAt: now },
+        });
+        await tx.label.updateMany({
+          where: { boardId, deletedAt: null },
+          data: { deletedAt: now },
+        });
+        // A live share of a deleted board is dead by definition — revoke it so
+        // the master panel shows an explicit "revoked" instead of a link that
+        // silently answers 410. Snapshot shares deliberately survive the board
+        // (a frozen copy), so they are left untouched.
+        await tx.boardShare.updateMany({
+          where: { boardId, mode: "live", revokedAt: null },
+          data: { revokedAt: now },
+        });
+        await tx.board.update({
+          where: { id: boardId },
+          data: { deletedAt: now },
+        });
+        // TASK-166: a board delete is account-contour accountability, not a
+        // board content event. The row survives the soft-delete + purge.
+        await tx.securityAuditLog.create({
+          data: {
+            userId: ownerId,
+            actorId,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            action: "board.deleted",
+            targetType: "board",
+            targetId: boardId,
+            details: { boardTitle: board.title },
+          },
+        });
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
   }
 
   /**
@@ -335,6 +398,30 @@ export class BoardsService {
       orderBy: { createdAt: "asc" },
     });
     return members.map(toMemberDto);
+  }
+
+  /**
+   * Pending invitations of a board (ADMIN only): the member list above shows
+   * accepted rows, so without this an inviter could neither see nor cancel a
+   * wrong address or role until the invitee answered.
+   */
+  async listPendingInvitations(
+    boardId: string,
+  ): Promise<BoardPendingInvitationDto[]> {
+    const rows = await this.prisma.boardMember.findMany({
+      where: { boardId, acceptedAt: null },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      displayName: row.user.displayName,
+      email: row.user.email,
+      role: row.role,
+      expiresAt: row.expiresAt?.getTime() ?? null,
+      createdAt: row.createdAt.getTime(),
+    }));
   }
 
   /**
@@ -359,7 +446,8 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     dto: InviteMemberDto,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<BoardMemberDto> {
     const email = dto.email.trim().toLowerCase();
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
@@ -384,64 +472,71 @@ export class BoardsService {
     // would surface a raw P2002 as a 500. The lock serializes them, and the
     // unique constraint is the final backstop.
     await this.boardWrite
-      .run(boardId, async (tx) => {
-        const existing = await tx.boardMember.findUnique({
-          where: { boardId_userId: { boardId, userId: user.id } },
-        });
-        if (existing) {
-          if (existing.acceptedAt === null) {
-            // A pending invite must not swallow a material change
-            // (TASK-156, item 37): an expired one is invisible in the feed
-            // but still blocks a fresh row until the sweep, and a repeat
-            // invite with a different role/TTL used to be a silent no-op —
-            // the invitee never saw the new role. Revive the row with the
-            // new role/TTL/inviter instead. Only a truly identical pending
-            // invite stays an idempotent no-op — a 409 here would tell the
-            // inviter the account exists.
-            const expired =
-              existing.expiresAt !== null &&
-              existing.expiresAt.getTime() <= Date.now();
-            const roleChanged = existing.role !== dto.role;
-            const ttlChanged =
-              (expiresAt?.getTime() ?? null) !==
-              (existing.expiresAt?.getTime() ?? null);
-            if (expired || roleChanged || ttlChanged) {
-              await tx.boardMember.update({
-                where: { id: existing.id },
-                data: { role: dto.role, expiresAt, invitedById: actorId },
-              });
+      .run(
+        boardId,
+        async (tx) => {
+          const existing = await tx.boardMember.findUnique({
+            where: { boardId_userId: { boardId, userId: user.id } },
+          });
+          if (existing) {
+            if (existing.acceptedAt === null) {
+              // A pending invite must not swallow a material change
+              // (TASK-156, item 37): an expired one is invisible in the feed
+              // but still blocks a fresh row until the sweep, and a repeat
+              // invite with a different role/TTL used to be a silent no-op —
+              // the invitee never saw the new role. Revive the row with the
+              // new role/TTL/inviter instead. Only a truly identical pending
+              // invite stays an idempotent no-op — a 409 here would tell the
+              // inviter the account exists.
+              const expired =
+                existing.expiresAt !== null &&
+                existing.expiresAt.getTime() <= Date.now();
+              const roleChanged = existing.role !== dto.role;
+              const ttlChanged =
+                (expiresAt?.getTime() ?? null) !==
+                (existing.expiresAt?.getTime() ?? null);
+              if (expired || roleChanged || ttlChanged) {
+                await tx.boardMember.update({
+                  where: { id: existing.id },
+                  data: { role: dto.role, expiresAt, invitedById: actorId },
+                });
+              }
+              return null;
             }
-            return null;
+            throw new ConflictException("User is already a board member");
           }
-          throw new ConflictException("User is already a board member");
-        }
-        const created = await tx.boardMember.create({
-          data: {
-            boardId,
-            userId: user.id,
-            role: dto.role,
-            expiresAt,
-            acceptedAt: null,
-            invitedById: actorId,
-          },
-          include: { user: true },
-        });
-        await tx.activity.create({
-          data: {
-            boardId,
-            type: "member_invited",
-            actorId,
-            actorType,
-            details: {
+          const created = await tx.boardMember.create({
+            data: {
+              boardId,
               userId: user.id,
-              email: user.email,
               role: dto.role,
-              expiresAt: expiresAt ? expiresAt.toISOString() : null,
+              expiresAt,
+              acceptedAt: null,
+              invitedById: actorId,
             },
-          },
-        });
-        return created;
-      })
+            include: { user: true },
+          });
+          await tx.activity.create({
+            data: {
+              boardId,
+              type: "member_invited",
+              actorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: {
+                userId: user.id,
+                email: user.email,
+                role: dto.role,
+                expiresAt: expiresAt ? expiresAt.toISOString() : null,
+              },
+            },
+          });
+          return created;
+        },
+        pauseGateFor(principal, attribution.agentSessionId),
+      )
       .catch((error: unknown) => {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -467,7 +562,8 @@ export class BoardsService {
     actorId: string,
     targetUserId: string,
     dto: UpdateMemberDto,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<BoardMemberDto> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -492,52 +588,62 @@ export class BoardsService {
     const expiryChanged =
       (expiresAt?.getTime() ?? null) !== (member.expiresAt?.getTime() ?? null);
 
-    const updated = await this.boardWrite.run(boardId, async (tx) => {
-      // Last-ADMIN guard runs inside the board lock (TASK-100): two
-      // concurrent demotes would otherwise both pass and leave the board
-      // adminless. A pending invitation is not a member yet.
-      if (demoting) {
-        await this.assertNotLastAdmin(tx, boardId, targetUserId, "demote");
-      }
-      const row = await tx.boardMember.update({
-        where: { id: member.id },
-        data: { role, expiresAt },
-        include: { user: true },
-      });
-      if (roleChanged) {
-        await tx.activity.create({
-          data: {
-            boardId,
-            type: "member_role_changed",
-            actorId,
-            actorType,
-            details: {
-              userId: member.userId,
-              email: member.user.email,
-              from: member.role,
-              to: role,
-            },
-          },
+    const updated = await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        // Last-ADMIN guard runs inside the board lock (TASK-100): two
+        // concurrent demotes would otherwise both pass and leave the board
+        // adminless. A pending invitation is not a member yet.
+        if (demoting) {
+          await this.assertNotLastAdmin(tx, boardId, targetUserId, "demote");
+        }
+        const row = await tx.boardMember.update({
+          where: { id: member.id },
+          data: { role, expiresAt },
+          include: { user: true },
         });
-      }
-      if (expiryChanged) {
-        await tx.activity.create({
-          data: {
-            boardId,
-            type: "member_expiry_changed",
-            actorId,
-            actorType,
-            details: {
-              userId: member.userId,
-              email: member.user.email,
-              from: member.expiresAt?.toISOString() ?? null,
-              to: expiresAt?.toISOString() ?? null,
+        if (roleChanged) {
+          await tx.activity.create({
+            data: {
+              boardId,
+              type: "member_role_changed",
+              actorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: {
+                userId: member.userId,
+                email: member.user.email,
+                from: member.role,
+                to: role,
+              },
             },
-          },
-        });
-      }
-      return row;
-    });
+          });
+        }
+        if (expiryChanged) {
+          await tx.activity.create({
+            data: {
+              boardId,
+              type: "member_expiry_changed",
+              actorId,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: {
+                userId: member.userId,
+                email: member.user.email,
+                from: member.expiresAt?.toISOString() ?? null,
+                to: expiresAt?.toISOString() ?? null,
+              },
+            },
+          });
+        }
+        return row;
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
     // A real role/expiry change rewrites the directory every open member
     // list shows; a no-op PATCH stays silent (mirrors the activity write).
     if ((roleChanged || expiryChanged) && member.acceptedAt !== null) {
@@ -556,7 +662,8 @@ export class BoardsService {
     boardId: string,
     actorId: string,
     targetUserId: string,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<void> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
@@ -571,25 +678,32 @@ export class BoardsService {
     // the board adminless.
     const removingAdmin =
       member.acceptedAt !== null && member.role === Role.ADMIN;
-    await this.boardWrite.run(boardId, async (tx) => {
-      if (removingAdmin) {
-        await this.assertNotLastAdmin(tx, boardId, targetUserId, "remove");
-      }
-      await tx.boardMember.delete({ where: { id: member.id } });
-      await tx.activity.create({
-        data: {
-          boardId,
-          type: "member_removed",
-          actorId,
-          actorType,
-          details: {
-            userId: member.userId,
-            email: member.user.email,
-            role: member.role,
+    await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        if (removingAdmin) {
+          await this.assertNotLastAdmin(tx, boardId, targetUserId, "remove");
+        }
+        await tx.boardMember.delete({ where: { id: member.id } });
+        await tx.activity.create({
+          data: {
+            boardId,
+            type: "member_removed",
+            actorId,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
+            details: {
+              userId: member.userId,
+              email: member.user.email,
+              role: member.role,
+            },
           },
-        },
-      });
-    });
+        });
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
     // An accepted member has an open SSE stream: tell it the membership is
     // gone so it stops following the board (the endpoint closes that
     // stream), instead of leaving a ghost that only notices on reconnect.
@@ -608,15 +722,101 @@ export class BoardsService {
    * Export the board as the shared envelope (the UI file format), readable
    * by every member including VIEWER (§7.4).
    */
-  async exportBoard(boardId: string): Promise<BoardEnvelope> {
-    const board = await this.getAggregate(boardId);
-    // serializeExport owns the envelope shape; round-trip it back to an
-    // object so the endpoint answers JSON rather than a JSON string.
-    return JSON.parse(serializeExport([board])) as BoardEnvelope;
+  /**
+   * Preflight used by both the single-board export and the account bundle:
+   * `pg_column_size` catches a grossly oversized board before `getAggregate`
+   * allocates it. The exact 25 MB check still runs on the serialized string.
+   */
+  async assertExportFitsPreflight(boardId: string): Promise<void> {
+    const [estimate] = await this.prisma.$queryRaw<Array<{ bytes: bigint }>>`
+      SELECT (
+        COALESCE((SELECT SUM(pg_column_size(c.*))
+          FROM "Card" c JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(col.*))
+          FROM "Column" col
+          WHERE col."boardId" = ${boardId} AND col."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(l.*))
+          FROM "Label" l
+          WHERE l."boardId" = ${boardId} AND l."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(cl.*))
+          FROM "CardLink" cl
+          WHERE cl."boardId" = ${boardId} AND cl."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(ca.*))
+          FROM "CardLabel" ca
+          JOIN "Card" c ON c.id = ca."cardId"
+          JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(ch.*))
+          FROM "Checklist" ch
+          JOIN "Card" c ON c.id = ch."cardId"
+          JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL
+            AND ch."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(ci.*))
+          FROM "ChecklistItem" ci
+          JOIN "Checklist" ch ON ch.id = ci."checklistId"
+          JOIN "Card" c ON c.id = ch."cardId"
+          JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL
+            AND ch."deletedAt" IS NULL AND ci."deletedAt" IS NULL), 0)
+      )::bigint AS bytes
+    `;
+    assertBoardExportSize(Number(estimate?.bytes ?? 0));
+  }
+
+  async exportBoardSerialized(boardId: string): Promise<string> {
+    await this.assertExportFitsPreflight(boardId);
+    // `getAggregate` already carries `agentPolicy` (absent = defaults); it is
+    // the only TASK-166 field that belongs in an export. Pause state and
+    // policy version are operational and never travel.
+    const exportable = { ...(await this.getAggregate(boardId)) };
+    // Operational pause state never travels in an export (ADR §6.3).
+    delete exportable.agentsPausedAt;
+    delete exportable.agentsPausedBy;
+    delete exportable.agentsPauseReason;
+    const serialized = serializeExport([exportable]);
+    // TASK-166.6: the guard runs once, on the exact string the controller
+    // streams. No JSON.parse → re-serialize round trip.
+    assertBoardExportSize(Buffer.byteLength(serialized, "utf8"));
+    return serialized;
+  }
+
+  /** `POST /boards/import?dryRun=1`: validate and count, write nothing. */
+  async previewImport(
+    userId: string,
+    body: unknown,
+  ): Promise<BoardImportPreviewDto> {
+    const boards = this.parseEnvelope(body);
+    if (boards.length === 0) {
+      throw new BadRequestException("The envelope contains no boards");
+    }
+    let withinLimit = true;
+    try {
+      await assertBoardQuota(this.prisma, userId, boards.length);
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        withinLimit = false;
+      } else {
+        throw error;
+      }
+    }
+    return {
+      boards: boards.length,
+      cards: boards.reduce(
+        (sum, board) => sum + Object.keys(board.cards).length,
+        0,
+      ),
+      columns: boards.reduce((sum, board) => sum + board.columns.length, 0),
+      labels: boards.reduce((sum, board) => sum + board.labels.length, 0),
+      withinLimit,
+    };
   }
 
   /** Import a board envelope, atomically (TASK-149, B16). */
   async importBoards(userId: string, body: unknown): Promise<BoardAggregate[]> {
+    // The server cap is enforced inside the transaction (below), so this
+    // parse only checks structure; `null` disables the local 10-board guard.
     const boards = this.parseEnvelope(body);
     if (boards.length === 0) {
       throw new BadRequestException("The envelope contains no boards");
@@ -625,6 +825,8 @@ export class BoardsService {
     try {
       createdIds = await this.prisma.$transaction(
         async (tx) => {
+          await lockBoardQuota(tx, userId);
+          await assertBoardQuota(tx, userId, boards.length);
           const ids: string[] = [];
           for (const board of boards) {
             ids.push(await persistBoard(tx, board, userId));
@@ -650,9 +852,13 @@ export class BoardsService {
    * `parseExport` (which runs the lenient `normalizeBoards` clamp mode).
    */
   private parseEnvelope(body: unknown): BoardState {
-    const raw = typeof body === "string" ? body : JSON.stringify(body ?? null);
     try {
-      return parseExport(raw);
+      // Express has already parsed a normal JSON body; only a raw string
+      // (legacy/multipart path) needs JSON.parse. TASK-166.6 removes the old
+      // stringify → parse round trip for the common case.
+      return typeof body === "string"
+        ? parseExport(body, { maxBoards: null })
+        : parseExportValue(body, { maxBoards: null });
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : "Invalid export file",

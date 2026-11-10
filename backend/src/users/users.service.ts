@@ -49,6 +49,11 @@ export class UsersService {
     if (typeof dto.notifyDigest === "boolean") {
       data.notifyDigest = dto.notifyDigest;
     }
+    // `@IsOptional` lets `null` through; the column accepts it, meaning "not
+    // chosen yet" (the client re-adopts the current UI language).
+    if (dto.locale !== undefined) {
+      data.locale = dto.locale;
+    }
     const user = await this.prisma.user.update({ where: { id: userId }, data });
     const fresh = toAuthUser(user);
     await this.announceProfile(userId, dto, fresh);

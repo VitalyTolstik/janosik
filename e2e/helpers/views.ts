@@ -65,6 +65,59 @@ export function unscheduledCard(page: Page, title: string): Locator {
     .getByRole("button", { name: title, exact: true });
 }
 
+/**
+ * Force the native drag/drop sequence in the DOM. Negative drag tests cannot
+ * rely on a synthetic mouse path alone: if the pointer misses the target, the
+ * due date also stays unchanged and the test would pass for the wrong reason.
+ * Dispatching the events directly is deterministic and proves the element
+ * never puts a card id into the transfer (disabled drag), on top of the
+ * visible `draggable="false"` assertion. Returns the transferred card id
+ * length (0 when drag is disabled).
+ */
+export async function attemptDropOnDay(
+  page: Page,
+  title: string,
+  key: string,
+): Promise<number> {
+  return page.evaluate(
+    ({ title, key }) => {
+      const chip = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-testid="calendar-chip"]',
+        ),
+      ].find((element) => element.textContent?.includes(title));
+      const day = document.querySelector<HTMLElement>(
+        `[data-testid="calendar-day"][data-date="${key}"]`,
+      );
+      if (!chip || !day) throw new Error("Chip or target day is not visible");
+      const data = new DataTransfer();
+      chip.dispatchEvent(
+        new DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+        }),
+      );
+      day.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+        }),
+      );
+      day.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: data,
+        }),
+      );
+      return data.getData("text/plain").length;
+    },
+    { title, key },
+  );
+}
+
 /** All day keys currently rendered, left to right. */
 export async function visibleDayKeys(page: Page): Promise<string[]> {
   return page

@@ -7,13 +7,21 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { ActorType, AttachmentDto } from "@janosik/shared";
+import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { pauseGateFor } from "@/auth/agent-pause";
+import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import {
+  type RequestAttribution,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
+import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import {
@@ -74,8 +82,9 @@ export class AttachmentsService {
     user: AuthUser,
     file: UploadedBlob,
     isInline = false,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     descriptionEmbed = false,
+    principal?: AuthPrincipal,
   ): Promise<AttachmentDto> {
     // multer streamed the body to a `.tmp-*` file (TASK-155). Every exit path
     // removes it; a successful upload renamed it into the blob tree already.
@@ -91,8 +100,9 @@ export class AttachmentsService {
         user,
         file,
         isInline,
-        actorType,
+        attribution,
         descriptionEmbed && !isInline,
+        principal,
       );
     } finally {
       await rm(file.path, { force: true }).catch(() => undefined);
@@ -104,8 +114,9 @@ export class AttachmentsService {
     user: AuthUser,
     file: UploadedBlob,
     isInline = false,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     descriptionEmbed = false,
+    principal?: AuthPrincipal,
   ): Promise<AttachmentDto> {
     if (file.size <= 0) {
       throw new BadRequestException({
@@ -222,6 +233,8 @@ export class AttachmentsService {
               mimeType,
               sizeBytes: file.size,
               uploadedById: user.id,
+              uploadedByTokenId: attribution.apiTokenId,
+              uploadedBySessionId: attribution.agentSessionId,
               isInline,
               descriptionEmbed,
               descriptionDetached: descriptionEmbed,
@@ -241,7 +254,10 @@ export class AttachmentsService {
                 cardId,
                 type: "attachment_added",
                 actorId: user.id,
-                actorType,
+                actorType: attribution.actorType,
+                apiTokenId: attribution.apiTokenId,
+                agentSessionId: attribution.agentSessionId,
+                agentName: attribution.agentName,
                 details: { attachmentId: row.id, fileName },
               },
             });
@@ -249,6 +265,7 @@ export class AttachmentsService {
           }
           return { row, activityId: null };
         },
+        pauseGateFor(principal, attribution.agentSessionId),
       );
 
       // The row (and its blob) are now the attachment; only failures before
@@ -259,6 +276,10 @@ export class AttachmentsService {
         if (transcodeStatus === "pending")
           this.transcode.enqueue(created.row.id);
         if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
+        await touchAgentSessionAfterWrite(
+          this.prisma,
+          attribution.agentSessionId,
+        );
         return toAttachmentDto(created.row);
       }
 
@@ -271,6 +292,11 @@ export class AttachmentsService {
         user.id,
         "attachment_added",
         created.row.id,
+        attribution,
+      );
+      await touchAgentSessionAfterWrite(
+        this.prisma,
+        attribution.agentSessionId,
       );
       return toAttachmentDto(created.row);
     } finally {
@@ -317,7 +343,8 @@ export class AttachmentsService {
   async remove(
     attachmentId: string,
     user: AuthUser,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, deletedAt: null },
@@ -326,6 +353,7 @@ export class AttachmentsService {
         cardId: true,
         boardId: true,
         uploadedById: true,
+        uploadedByTokenId: true,
         fileName: true,
         isInline: true,
         card: { select: { deletedAt: true } },
@@ -334,8 +362,17 @@ export class AttachmentsService {
     if (!row || row.card.deletedAt !== null) throw new NotFoundException();
 
     // Uploader or board ADMIN — the comments rule (author-only) does not
-    // fit files, where cleanup is a board-management concern.
-    if (row.uploadedById !== user.id) {
+    // fit files, where cleanup is a board-management concern. TASK-166:
+    // a PAT "owns" only an upload attributed to the same token; a browser
+    // session keeps the historical userId rule, and a legacy row without a
+    // token id falls back to it.
+    const ownUpload =
+      attribution.actorType === "agent"
+        ? row.uploadedByTokenId !== null
+          ? row.uploadedByTokenId === attribution.apiTokenId
+          : row.uploadedById === user.id
+        : row.uploadedById === user.id;
+    if (!ownUpload) {
       const membership = await this.prisma.boardMember.findFirst({
         where: {
           boardId: row.boardId,
@@ -345,38 +382,57 @@ export class AttachmentsService {
         select: { role: true },
       });
       if (membership?.role !== "ADMIN") throw new ForbiddenException();
+      // TASK-166: deleting another user's upload is admin + destructive.
+      // The board role was checked first; the helper then applies the token
+      // preset (admin) and the approval/trustedCi/deny policy.
+      const board = await this.prisma.board.findUnique({
+        where: { id: row.boardId },
+        select: { agentPolicy: true },
+      });
+      assertAgentRule(
+        principal,
+        board?.agentPolicy,
+        LIFECYCLE_ACTIONS["attachment.delete"],
+      );
     }
 
-    const removed = await this.boardWrite.run(row.boardId, async (tx) => {
-      const current = await tx.attachment.findUnique({
-        where: { id: attachmentId },
-        select: { descriptionDetached: true },
-      });
-      const updated = await tx.attachment.updateMany({
-        where: { id: attachmentId, deletedAt: null },
-        data: { deletedAt: new Date() },
-      });
-      if (updated.count === 0) return null;
-      // TASK-108: inline media never incremented the counter, so they must
-      // not decrement it either — that drift went negative over time.
-      if (!row.isInline && !current?.descriptionDetached) {
-        await tx.card.update({
-          where: { id: row.cardId },
-          data: { attachmentCount: { decrement: 1 } },
+    const removed = await this.boardWrite.run(
+      row.boardId,
+      async (tx) => {
+        const current = await tx.attachment.findUnique({
+          where: { id: attachmentId },
+          select: { descriptionDetached: true },
         });
-      }
-      const activity = await tx.activity.create({
-        data: {
-          boardId: row.boardId,
-          cardId: row.cardId,
-          type: "attachment_deleted",
-          actorId: user.id,
-          actorType,
-          details: { attachmentId, fileName: row.fileName },
-        },
-      });
-      return activity.id;
-    });
+        const updated = await tx.attachment.updateMany({
+          where: { id: attachmentId, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
+        if (updated.count === 0) return null;
+        // TASK-108: inline media never incremented the counter, so they must
+        // not decrement it either — that drift went negative over time.
+        if (!row.isInline && !current?.descriptionDetached) {
+          await tx.card.update({
+            where: { id: row.cardId },
+            data: { attachmentCount: { decrement: 1 } },
+          });
+        }
+        const activity = await tx.activity.create({
+          data: {
+            boardId: row.boardId,
+            cardId: row.cardId,
+            type: "attachment_deleted",
+            actorId: user.id,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
+            details: { attachmentId, fileName: row.fileName },
+          },
+        });
+        return activity.id;
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
     if (!removed) return;
 
     // TASK-88: the blob and its derivatives stay on disk — soft-delete is
@@ -390,7 +446,9 @@ export class AttachmentsService {
       user.id,
       "attachment_deleted",
       attachmentId,
+      attribution,
     );
+    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
   }
 
   private publish(
@@ -400,6 +458,7 @@ export class AttachmentsService {
     actorId: string,
     kind: "attachment_added" | "attachment_deleted",
     detail: string,
+    attribution: RequestAttribution,
   ): void {
     this.realtime.publish(boardId, {
       type: "activity",
@@ -407,9 +466,15 @@ export class AttachmentsService {
       boardId,
       cardId,
       actorId,
+      actorType: attribution.actorType,
       at: Date.now(),
       kind,
       detail,
+      ...(attribution.apiTokenId ? { apiTokenId: attribution.apiTokenId } : {}),
+      ...(attribution.agentSessionId
+        ? { agentSessionId: attribution.agentSessionId }
+        : {}),
+      ...(attribution.agentName ? { agentName: attribution.agentName } : {}),
     });
   }
 }
@@ -421,6 +486,8 @@ function toAttachmentDto(row: {
   mimeType: string;
   sizeBytes: number;
   uploadedById: string;
+  uploadedByTokenId?: string | null;
+  uploadedBySessionId?: string | null;
   transcodeStatus: string;
   thumbnailName?: string | null;
   posterName?: string | null;
@@ -433,6 +500,8 @@ function toAttachmentDto(row: {
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     uploadedById: row.uploadedById,
+    uploadedByTokenId: row.uploadedByTokenId ?? null,
+    uploadedBySessionId: row.uploadedBySessionId ?? null,
     transcodeStatus: row.transcodeStatus as AttachmentDto["transcodeStatus"],
     hasThumbnail: Boolean(row.thumbnailName),
     hasPoster: Boolean(row.posterName),

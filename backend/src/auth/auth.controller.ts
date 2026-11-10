@@ -15,6 +15,8 @@ import type { Request, Response } from "express";
 import { env } from "@/config/env";
 import { cookieSecure } from "@/config/security";
 import { pickLocale } from "@/mailer/mail.types";
+import type { AuthMeResponseDto } from "@janosik/shared";
+import { API_VERSION, SERVER_VERSION } from "@/common/server-version";
 import { REFRESH_COOKIE } from "./auth.types";
 import type { AuthResult, AuthResponse, AuthUser } from "./auth.types";
 import { PasswordResetAuditService } from "./password-reset-audit.service";
@@ -145,6 +147,7 @@ export class AuthController {
   config(): Promise<{
     allowRegistration: boolean;
     allowPublicShares: boolean;
+    limits: { boards: number | null; importBytes: number };
   }> {
     return this.auth.publicConfig();
   }
@@ -160,8 +163,22 @@ export class AuthController {
   me(
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
-  ): AuthUser & { impersonatedBy: string | null } {
-    return { ...user, impersonatedBy: principal?.impersonatedBy ?? null };
+  ): AuthMeResponseDto {
+    return {
+      ...user,
+      impersonatedBy: principal?.impersonatedBy ?? null,
+      ...(user.hasPassword === false
+        ? { deletionMethod: "email_code" as const }
+        : { deletionMethod: "password" as const }),
+      ...(principal?.via === "jwt"
+        ? { authMethod: principal.authMethod ?? "password" }
+        : {}),
+      ...(principal?.via === "pat"
+        ? { token: principal.tokenIdentity ?? null }
+        : { token: null }),
+      session: null,
+      server: { version: SERVER_VERSION, apiVersion: API_VERSION },
+    };
   }
 
   // Lives under `/auth` on purpose: the refresh cookie is scoped to this

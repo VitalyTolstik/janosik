@@ -51,13 +51,33 @@ overwritten.
 
 Tools come in groups. By default the server registers the groups that work
 the board: boards, columns, cards, labels, checklists, card links, comments,
-activity and attachments. The groups that change who can see a board or act
-on your account (`members`, `invitations`, `shares`, `account`) are opt-in:
+activity, attachments and agent sessions. The groups that change who can see a
+board or act on your account (`members`, `shares`, `account`) are opt-in:
 
 | Setting | Effect |
 | --- | --- |
 | `JANOSIK_MCP_TOOLSETS` | Comma-separated groups, e.g. `default,members`, or `all`. |
 | `JANOSIK_MCP_READONLY=1` | Only tools that never change anything. |
+
+Account-only actions are not exposed as tools: invitations, profile writes and
+key management are session-only, so the server removes those tools entirely.
+The token's scope is enforced by the API: an `observer` cannot write, a
+`worker` cannot enter a done column or administer the board, and a destructive
+tool (`delete_card`, `clear_column`, `delete_board`, share/member changes)
+answers `approval_required` unless the token is marked `Trusted CI`. A board
+policy of `destructive: "deny"` returns `destructive_denied` for every agent.
+Do not retry these errors with the same token; report the blocker or ask a
+human.
+
+A human can also pause an agent, a board or every token at once. New writes then
+answer `403 agent_paused` with `pauseScope` (`session`, `board` or `token`) and
+`retryable: false`. Reads and the session control plane stay available:
+`janosik_heartbeat` and `janosik_end_session` still work so the agent can finish
+cleanly. Do not retry a paused write and do not try to create a new key; stop,
+report the pause scope and wait for the human to resume. The MCP server
+deliberately exposes no pause/resume tools — those are browser-session only, so
+an agent cannot clear the pause that stopped it. Revoking the key
+(`DELETE /users/me/tokens/:id`) is the irreversible kill.
 
 Data-reading tools accept `response_format: "markdown"` (default) or `"json"`. The
 tool names all start with `janosik_` so they sit alongside other servers
@@ -82,7 +102,27 @@ between. Command-log write tools accept `expectedVersion` (the board `seq` from
 `janosik_get_board`): pass it and the write is refused if the board changed
 since, instead of silently overwriting another agent's edit. Create tools take a
 client id (`cardId`, `checklistId`, …) reused as the idempotency key, so a
-retried call returns the first entity rather than a duplicate.
+retried call returns the first entity rather than a duplicate. The REST-backed
+writes (`janosik_create_board`, `janosik_duplicate_card`,
+`janosik_add_comment`, `janosik_create_share`, `janosik_upload_attachment`)
+also accept `idempotencyKey`: reuse it only for the same request body.
+
+Mutation results carry `structuredContent` with `ok: true` and, when known,
+`resourceId`, `seq`, `runId` or `approvalId`, so an agent does not have to parse
+the human text. Errors stay `isError: true` and additionally carry
+`structuredContent` with `ok: false`, the server's `code`, `retryable`,
+`requestId` and any conflict details (`currentVersion`, `allowedToColumnIds`,
+`approvalId`/`expiresAt`). Read the code, not the sentence:
+
+- `retryable: false` (validation, scope, workflow, approval) — do not repeat the
+  same call; fix the input or ask a human.
+- `version_conflict` — re-read the board with `janosik_get_board` and rebuild the
+  write; do not blind-retry the same `expectedVersion`.
+- `approval_required` — stop and wait for a human; nothing was applied.
+- `idempotency_conflict` — the key was reused with another body; send the new
+  intent under a fresh key.
+- `rate_limited` / `board_write_timeout` — wait `retryAfter` or a moment and
+  retry the identical request; the server marks these `retryable: true`.
 
 ## The skill: teach the agent how to work
 
@@ -155,17 +195,40 @@ Three tools let a swarm share one board without stepping on itself:
 ### Ready to work, and the Definition-of-Done gate
 
 - `janosik_list_ready_cards` returns the cards an agent can pick up now: in the
-  board's first (Backlog) column, unassigned, not under a live claim and not
-  blocked by another card, most urgent first. `janosik_wait_for_work` blocks
-  until one appears (or a timeout passes), so idle agents make one call instead
-  of polling.
-- `janosik_move_card` checks completion requirements when moving a card into the
-  board’s last column, which the tool treats as Done. The check applies if the
-  card has a non-empty `definitionOfDone` field or a checklist named `Definition
-  of Done`. Every item in that checklist must be checked, and the card must have
-  at least one `evidence` comment. Cards without such a contract are not subject
-  to this check. The agent must separately verify the criteria and the content
-  of the evidence.
+  board's **initial column** (the first column when the board has no workflow),
+  unassigned, not under a live claim and not blocked by another card, most
+  urgent first. `janosik_wait_for_work` blocks until one appears (or a timeout
+  passes), so idle agents make one call instead of polling.
+- `janosik_move_card` checks completion requirements when moving a card into a
+  **done column** (the configured `doneColumnIds`, falling back to the last
+  column when the list is empty or the board has no workflow). The check applies if the card has a non-empty
+  `definitionOfDone` field or a checklist named `Definition of Done`. Every item
+  in that checklist must be checked, and the card must have at least one
+  `evidence` comment. Cards without such a contract are not subject to this
+  check. The agent must separately verify the criteria and the content of the
+  evidence.
+
+### Workflow and blocked moves
+
+`janosik_get_workflow` reads the board's optional workflow: whether control is
+enabled, the initial and done columns, and every directed transition with its
+roles and conditions. Pass `cardId` to also get the card's allowed and blocked
+destinations right now, with the machine code (`transition_not_allowed`,
+`role_not_allowed`, `condition_failed`) and the failed conditions when the
+obstacle is a card field.
+
+The server enforces the same rules on every move. A refused `janosik_move_card`
+returns `409` with a `workflow` conflict; the tool message names the allowed
+columns and explicitly says not to retry the same destination. Choose an allowed
+column, satisfy the conditions (assignee, due date, description, checklists) or
+leave the card in place and report the blocker.
+
+Recovery follows the same boundary: `janosik_unarchive_card` and restoring a
+deleted card may return it to its original column, but another target must be an
+allowed transition and passes the same role and condition checks (a refused
+call returns `409 workflow`). Do not clear a task contract or change the
+workflow to bypass a rule — that is an admin decision, and the change would be
+audited. Importing whole boards is likewise an admin operation.
 
 ## Permissions
 

@@ -1,14 +1,17 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { BullModule } from "@nestjs/bullmq";
 import { ThrottlerModule, ThrottlerStorageService } from "@nestjs/throttler";
 import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
 import Redis from "ioredis";
+import { ApiExceptionFilter } from "@/common/api-exception.filter";
 import { RedisThrottlerStorage } from "@/common/redis-throttler-storage";
 import { principalTracker } from "@/common/throttle-tracker";
 import { PrismaModule } from "@/common/prisma/prisma.module";
+import { SecurityAuditModule } from "@/common/security-audit/security-audit.module";
 import { BoardWriteModule } from "@/common/board-write.module";
+import { IdempotencyModule } from "@/common/idempotency.module";
 import { TrafficModule } from "@/common/traffic.module";
 import { HealthModule } from "@/health/health.module";
 import { MailerModule } from "@/mailer/mailer.module";
@@ -16,8 +19,10 @@ import { PasswordResetThrottlerGuard } from "@/auth/password-reset-throttler.gua
 import { PasswordResetAuditService } from "@/auth/password-reset-audit.service";
 import { AuthModule } from "@/auth/auth.module";
 import { UsersModule } from "@/users/users.module";
+import { AccountDeletionModule } from "@/users/account-deletion.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
+import { AgentSessionsModule } from "@/agent-sessions/agent-sessions.module";
 import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
@@ -59,14 +64,18 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
         : {}),
     }),
     PrismaModule,
+    SecurityAuditModule,
     BoardWriteModule,
+    IdempotencyModule,
     TrafficModule,
     MailerModule,
     HealthModule,
     AuthModule,
     UsersModule,
+    AccountDeletionModule,
     BoardsModule,
     CommandsModule,
+    AgentSessionsModule,
     ActivityModule,
     CommentsModule,
     AttachmentsModule,
@@ -93,6 +102,9 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     { provide: APP_GUARD, useClass: PasswordResetThrottlerGuard },
     { provide: APP_GUARD, useClass: MaintenanceGuard },
     { provide: APP_INTERCEPTOR, useClass: PerUserRateLimitInterceptor },
+    // TASK-166.4: one envelope for every REST error. Registered after the
+    // modules so `TrafficService` is injectable.
+    { provide: APP_FILTER, useClass: ApiExceptionFilter },
   ],
 })
 export class AppModule {}

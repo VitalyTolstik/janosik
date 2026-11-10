@@ -1,4 +1,10 @@
+import {
+  announcementFallbackNotice,
+  announcementFallbackSubjectPrefix,
+} from "@janosik/shared";
 import type { MailLocale } from "./mail.types";
+
+export { announcementFallbackNotice, announcementFallbackSubjectPrefix };
 
 /**
  * Email templates (TASK-51). Table-based HTML — mail clients (Outlook,
@@ -14,9 +20,9 @@ import type { MailLocale } from "./mail.types";
 
 const BRAND = "Janosik";
 
-function shell(title: string, bodyHtml: string): string {
+function shell(title: string, bodyHtml: string, lang?: string): string {
   return `<!doctype html>
-<html><body style="margin:0;padding:0;background:#f4f5f7;">
+<html${lang ? ` lang="${lang}"` : ""}><body style="margin:0;padding:0;background:#f4f5f7;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:32px 16px;">
     <tr><td align="center">
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:12px;border:1px solid #e4e4e7;">
@@ -84,6 +90,58 @@ export function verificationCodeEmail(
       `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Enter this code to activate your account:</p>
        <span ${codeStyleAttr()}>${code}</span>
        <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">The code expires in ${minutes} minutes and works once.<br>If you did not create an account, ignore this message.</p>`,
+    ),
+  };
+}
+
+/**
+ * TASK-166: the one-time code an OAuth-only account receives before the
+ * self-service `DELETE /users/me`. It is deliberately worded as a warning,
+ * not a routine confirmation.
+ */
+export function accountDeletionCodeEmail(
+  code: string,
+  minutes: number | string,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  if (locale === "ru") {
+    const title = "Удаление аккаунта";
+    const text = [
+      title,
+      "",
+      `Ваш код: ${code}`,
+      "",
+      `Код действует ${minutes} минут и работает один раз.`,
+      "Если вы не запрашивали удаление аккаунта, смените пароль и проигнорируйте письмо.",
+    ].join("\n");
+    return {
+      subject: `${BRAND}: код удаления аккаунта ${code}`,
+      text,
+      html: shell(
+        title,
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Введите этот код, чтобы подтвердить удаление аккаунта:</p>
+         <span ${codeStyleAttr()}>${code}</span>
+         <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Код действует ${minutes} минут и работает один раз.<br>Если вы не запрашивали удаление — смените пароль и проигнорируйте письмо.</p>`,
+      ),
+    };
+  }
+  const title = "Delete your account";
+  const text = [
+    title,
+    "",
+    `Your code: ${code}`,
+    "",
+    `The code expires in ${minutes} minutes and works once.`,
+    "If you did not request account deletion, change your password and ignore this message.",
+  ].join("\n");
+  return {
+    subject: `${BRAND}: account deletion code ${code}`,
+    text,
+    html: shell(
+      title,
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Enter this code to confirm account deletion:</p>
+       <span ${codeStyleAttr()}>${code}</span>
+       <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">The code expires in ${minutes} minutes and works once.<br>If you did not request deletion, change your password and ignore this message.</p>`,
     ),
   };
 }
@@ -258,6 +316,62 @@ export function dueReminderEmail(
     html: shell(
       "Tasks due soon",
       `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tasks with an approaching due date:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+    ),
+  };
+}
+
+/**
+ * Bilingual announcement letter: one language per recipient, chosen by
+ * `User.locale` and the announcement translations. When the recipient's
+ * language is missing, the original text is sent with a localized notice in
+ * both the subject and the body rather than silently switching languages.
+ *
+ * This is intentionally not an editable `EmailTemplate`: it carries dynamic
+ * per-recipient content and the fallback contract. Locale-aware custom
+ * templates are a phase-2 item.
+ */
+export function announcementEmail(input: {
+  title: string;
+  body: string;
+  contentLocale: MailLocale | null;
+  recipientLocale: MailLocale;
+  isFallback: boolean;
+}): { subject: string; text: string; html: string } {
+  const { recipientLocale, contentLocale, isFallback } = input;
+  // Header injection defence: a title is single-line by contract.
+  const title = input.title.replace(/[\r\n]+/g, " ").trim();
+  const notice = isFallback
+    ? announcementFallbackNotice(recipientLocale, contentLocale)
+    : null;
+  const subjectPrefix =
+    isFallback && contentLocale !== null
+      ? announcementFallbackSubjectPrefix(recipientLocale, contentLocale)
+      : "";
+  const text = [
+    title,
+    "",
+    input.body,
+    ...(notice === null ? [] : ["", notice]),
+  ].join("\n");
+  const bodyHtml = input.body
+    .split("\n")
+    .map((line) =>
+      line.length === 0
+        ? `<p style="margin:0 0 10px 0;">&nbsp;</p>`
+        : `<p style="margin:0 0 10px 0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(line)}</p>`,
+    )
+    .join("");
+  const noticeHtml =
+    notice === null
+      ? ""
+      : `<div lang="${recipientLocale}" style="margin:0 0 14px 0;padding:10px 12px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:13px;line-height:1.5;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${escapeHtml(notice)}</div>`;
+  return {
+    subject: `${subjectPrefix}${title}`,
+    text,
+    html: shell(
+      escapeHtml(title),
+      `<div${contentLocale ? ` lang="${contentLocale}"` : ""}>${noticeHtml}${bodyHtml}</div>`,
+      contentLocale ?? undefined,
     ),
   };
 }

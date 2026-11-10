@@ -15,6 +15,7 @@ interface Call {
   path: string;
   method: string;
   body: unknown;
+  headers?: Record<string, string>;
 }
 
 let calls: Call[];
@@ -38,6 +39,7 @@ let cardOverrides: Record<string, unknown>;
 let searchFailure: number | null;
 let archivedBoard: boolean;
 let reorderOnConflict: boolean;
+let boardWorkflow: unknown;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -118,6 +120,7 @@ function board(cards: Record<string, unknown> = {}) {
     labels: [],
     createdAt: 1,
     updatedAt: 1,
+    ...(boardWorkflow ? { workflow: boardWorkflow } : {}),
   };
 }
 
@@ -136,6 +139,58 @@ function fakeApi(
         role: "ADMIN",
       },
     ]);
+  }
+  if (path === "/boards" && method === "POST") {
+    const title = (body as { title?: string } | undefined)?.title ?? "New";
+    return respond(
+      {
+        id: "b-new",
+        title,
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      201,
+    );
+  }
+  if (path === "/boards/import" && method === "POST") {
+    return respond(
+      [
+        {
+          id: "b-import",
+          title: "Imported",
+          columns: [],
+          cards: {},
+          labels: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      201,
+    );
+  }
+  if (path === "/boards/b1/shares" && method === "POST") {
+    return respond(
+      {
+        id: "share-1",
+        token: "share-token",
+        boardId: "b1",
+        boardTitle: "Alpha",
+        mode: "live",
+        title: null,
+        includeComments: true,
+        includeAttachments: false,
+        expiresAt: null,
+        revokedAt: null,
+        views: 0,
+        lastViewedAt: null,
+        createdAt: 1,
+        createdBy: "u1",
+      },
+      201,
+    );
   }
   if (path === "/boards/b1" && method === "GET") {
     const snapshot = board(cardOverrides);
@@ -190,11 +245,52 @@ function fakeApi(
     return respond([{ userId: "u1", role: "ADMIN" }]);
   }
   if (path === "/auth/me" && method === "GET") {
-    return respond({ id: "u1", displayName: "Test user" });
+    return respond({
+      id: "u1",
+      email: "user@example.com",
+      displayName: "Test user",
+      avatarColor: "teal",
+      avatarPath: null,
+      emailVerifiedAt: 123,
+      impersonatedBy: null,
+      createdAt: 1,
+      token: { id: "tok1", name: "CI", scopePreset: "worker" },
+      session: null,
+      server: { version: "0.2.0", apiVersion: "1" },
+    });
   }
-  if (path === "/invitations/inv1/accept" && method === "POST") {
-    // The real endpoint answers 200 with an empty body.
-    return new Response(null, { status: 200 });
+  const agentSession =
+    /^\/boards\/([^/]+)\/agent-sessions(?:\/([^/]+)\/(heartbeat|end))?$/.exec(
+      path,
+    );
+  if (agentSession && method === "POST") {
+    const [, boardId, sessionId, action] = agentSession;
+    return respond(
+      {
+        id: sessionId ?? `sess-${boardId}`,
+        userId: "u1",
+        apiTokenId: "tok1",
+        boardId,
+        name: (body as { name?: string } | undefined)?.name ?? null,
+        clientName: null,
+        model: null,
+        status: action === "end" ? "completed" : "active",
+        currentCardId: null,
+        currentRunId: null,
+        startedAt: 1,
+        lastHeartbeatAt: 2,
+        stale: false,
+        paused: false,
+        pausedAt: null,
+        pausedBy: null,
+        pausedReason: null,
+        pauseScope: null,
+        endedAt: action === "end" ? 3 : null,
+        endReason: action === "end" ? "completed" : null,
+        summary: null,
+      },
+      action === undefined && sessionId === undefined ? 201 : 200,
+    );
   }
   if (path === "/boards/b1/commands" && method === "POST") {
     const request = body as {
@@ -224,9 +320,11 @@ function fakeApi(
         return respond({ seq: ++boardSeq, versions: { "board:b1": 2 } });
     }
   }
-  if (path === "/boards/b1/commands/batch" && method === "POST") {
+  const batchMatch = /^\/boards\/([^/]+)\/commands\/batch$/.exec(path);
+  if (batchMatch && method === "POST") {
     // TASK-160: apply every command in order, one result each. A failing
     // member fails the whole batch (the real server rolls it back).
+    const boardId = batchMatch[1];
     const request = body as {
       commands: Array<{
         ifMatch?: number;
@@ -262,7 +360,10 @@ function fakeApi(
         case "SET_CARD_DUE_DATE":
           return respond({ message: "boom" }, 500);
         default:
-          results.push({ seq: ++boardSeq, versions: { "board:b1": 2 } });
+          results.push({
+            seq: ++boardSeq,
+            versions: { [`board:${boardId}`]: 2 },
+          });
       }
     }
     return respond({ results });
@@ -333,11 +434,17 @@ beforeEach(() => {
   searchFailure = null;
   archivedBoard = false;
   reorderOnConflict = false;
+  boardWorkflow = null;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ path: url.pathname.replace("/api/v1", ""), method, body });
+    calls.push({
+      path: url.pathname.replace("/api/v1", ""),
+      method,
+      body,
+      headers: (init?.headers ?? {}) as Record<string, string>,
+    });
     return Promise.resolve(
       fakeApi(
         url.pathname.replace("/api/v1", ""),
@@ -356,15 +463,23 @@ describe("janosik MCP server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
-    // Pinned exactly so a dropped or renamed tool fails loudly.
-    expect(names.length).toBe(73);
+    // Pinned exactly so a dropped or renamed tool fails loudly. TASK-166
+    // removed the invitation and profile tools (session-only routes).
+    expect(names.length).toBe(74);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
+    expect(names).toContain("janosik_set_column_accent");
     expect(names).toContain("janosik_claim_card");
     expect(names).toContain("janosik_release_card");
     expect(names).toContain("janosik_set_card_task_spec");
     expect(names).toContain("janosik_create_share");
     expect(names).toContain("janosik_upload_attachment");
+    // TASK-166: removing a link is a reversible relationship edit, not a
+    // destructive action (ADR §7.1/§13.4.6).
+    const removeLink = tools.find(
+      (tool) => tool.name === "janosik_remove_card_link",
+    );
+    expect(removeLink?.annotations?.destructiveHint).toBe(false);
     // Every tool is prefixed for coexistence with other servers.
     expect(names.every((name) => name.startsWith("janosik_"))).toBe(true);
     await client.close();
@@ -380,6 +495,164 @@ describe("janosik MCP server", () => {
     expect(result.structuredContent).toMatchObject({
       boards: [{ id: "b1" }],
     });
+    await client.close();
+  });
+
+  it("returns structured mutation results and forwards an idempotency key", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_create_board",
+      arguments: { title: "New board", idempotencyKey: "create-board-key" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "b-new",
+      board: { id: "b-new", title: "New board" },
+    });
+    const call = calls.find(
+      (entry) => entry.path === "/boards" && entry.method === "POST",
+    );
+    expect(call?.headers?.["Idempotency-Key"]).toBe("create-board-key");
+    await client.close();
+  });
+
+  it("replays import_board with the same key and returns structured ids", async () => {
+    const client = await connect();
+    const args = {
+      envelope: { app: "janosik", schemaVersion: 3, boards: [] },
+      idempotencyKey: "import-key-1",
+    };
+    const first = await client.callTool({
+      name: "janosik_import_board",
+      arguments: args,
+    });
+    const second = await client.callTool({
+      name: "janosik_import_board",
+      arguments: args,
+    });
+    expect(first.isError).toBeFalsy();
+    expect(first.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "b-import",
+      boards: [{ id: "b-import" }],
+    });
+    expect(second.structuredContent).toMatchObject({
+      resourceId: "b-import",
+    });
+    const imports = calls.filter(
+      (call) => call.path === "/boards/import" && call.method === "POST",
+    );
+    expect(imports).toHaveLength(2);
+    expect(imports.map((call) => call.headers?.["Idempotency-Key"])).toEqual([
+      "import-key-1",
+      "import-key-1",
+    ]);
+    await client.close();
+  });
+
+  it("forwards an idempotency key when creating a share", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      mode: "live",
+      expiresInHours: 24,
+      idempotencyKey: "share-key-1",
+    };
+    const result = await client.callTool({
+      name: "janosik_create_share",
+      arguments: args,
+    });
+    const retry = await client.callTool({
+      name: "janosik_create_share",
+      arguments: { ...args, expiresInHours: 25 },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "share-1",
+    });
+    expect(retry.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "share-1",
+    });
+    const shareCalls = calls.filter(
+      (entry) => entry.path === "/boards/b1/shares" && entry.method === "POST",
+    );
+    expect(shareCalls.map((call) => call.headers?.["Idempotency-Key"])).toEqual(
+      ["share-key-1", "share-key-1"],
+    );
+    await client.close();
+  });
+
+  it("keeps duplicate_card args stable across a keyed retry", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      cardId: "k1",
+      idempotencyKey: "duplicate-key-1",
+    };
+    await client.callTool({ name: "janosik_duplicate_card", arguments: args });
+    await client.callTool({ name: "janosik_duplicate_card", arguments: args });
+    const writes = calls.filter(
+      (call) => call.path === "/boards/b1/commands" && call.method === "POST",
+    );
+    expect(writes).toHaveLength(2);
+    const bodies = writes.map((call) => call.body as Record<string, unknown>);
+    const commands = bodies.map(
+      (body) => (body as { commandId: string }).commandId,
+    );
+    expect(commands[0]).toBe(commands[1]);
+    expect((bodies[0]!.action as { newCardId: string }).newCardId).toBe(
+      (bodies[1]!.action as { newCardId: string }).newCardId,
+    );
+    expect(writes.map((call) => call.headers?.["Idempotency-Key"])).toEqual([
+      "duplicate-key-1",
+      "duplicate-key-1",
+    ]);
+    await client.close();
+  });
+
+  it("reads the workflow and validates a card's moves", async () => {
+    boardWorkflow = {
+      schemaVersion: 1,
+      enabled: true,
+      initialColumnId: "col1",
+      doneColumnIds: ["col2"],
+      transitions: [
+        {
+          id: "todo-done",
+          fromColumnId: "col1",
+          toColumnId: "col2",
+          allowedRoles: ["ADMIN", "MEMBER"],
+        },
+      ],
+    };
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_get_workflow",
+      arguments: { boardId: "b1", cardId: "k1" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      enabled: true,
+      initialColumnId: "col1",
+      doneColumnIds: ["col2"],
+      transitions: [
+        {
+          id: "todo-done",
+          fromTitle: "Todo",
+          toTitle: "Done",
+          roles: ["ADMIN", "MEMBER"],
+        },
+      ],
+      card: {
+        id: "k1",
+        columnId: "col1",
+        allowedToColumnIds: ["col2"],
+      },
+    });
+    expect(firstText(result)).toContain("Todo → Done");
     await client.close();
   });
 
@@ -401,6 +674,10 @@ describe("janosik MCP server", () => {
     });
     expect(action.newCardId).toMatch(/^[0-9a-f-]{36}$/);
     expect(firstText(result)).toContain("New task");
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: action.newCardId,
+    });
     await client.close();
   });
 
@@ -412,6 +689,11 @@ describe("janosik MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(firstText(result)).toMatch(/limit/i);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      status: 409,
+      conflict: "wip",
+    });
     await client.close();
   });
 
@@ -426,14 +708,17 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
-  it("accepts an invitation without reading a body", async () => {
+  it("does not register account-only tools", async () => {
     const client = await connect();
-    const result = await client.callTool({
-      name: "janosik_accept_invitation",
-      arguments: { invitationId: "inv1" },
-    });
-    expect(result.isError).toBeFalsy();
-    expect(firstText(result)).toContain("Accepted invitation inv1");
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    for (const removed of [
+      "janosik_update_profile",
+      "janosik_list_invitations",
+      "janosik_accept_invitation",
+      "janosik_decline_invitation",
+    ]) {
+      expect(names).not.toContain(removed);
+    }
     await client.close();
   });
 
@@ -448,6 +733,116 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("returns whoami as { user, token, session, server }", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_whoami",
+      arguments: { response_format: "json" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      user: {
+        id: "u1",
+        email: "user@example.com",
+        displayName: "Test user",
+        avatarColor: "teal",
+        emailVerifiedAt: 123,
+        createdAt: 1,
+      },
+      token: { id: "tok1", name: "CI" },
+      session: null,
+      server: { version: "0.2.0", apiVersion: "1" },
+    });
+    expect(
+      (result.structuredContent as { user: Record<string, unknown> }).user,
+    ).not.toHaveProperty("token");
+    await client.close();
+  });
+
+  it("starts a session and attaches X-Agent-Session to later writes", async () => {
+    const client = await connect();
+    const started = await client.callTool({
+      name: "janosik_start_session",
+      arguments: { boardId: "b1", name: "run-1", response_format: "json" },
+    });
+    expect(started.isError).toBeFalsy();
+    expect(started.structuredContent).toMatchObject({
+      session: { id: "sess-b1", boardId: "b1", status: "active" },
+    });
+
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", title: "Attributed" },
+    });
+    const write = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    expect(write?.headers?.["X-Agent-Session"]).toBe("sess-b1");
+
+    const heartbeat = await client.callTool({
+      name: "janosik_heartbeat",
+      arguments: { boardId: "b1", sessionId: "sess-b1", status: "idle" },
+    });
+    expect(heartbeat.isError).toBeFalsy();
+
+    const ended = await client.callTool({
+      name: "janosik_end_session",
+      arguments: { boardId: "b1", sessionId: "sess-b1" },
+    });
+    expect(ended.isError).toBeFalsy();
+
+    calls.length = 0;
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", title: "Unattributed" },
+    });
+    const after = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    expect(after?.headers?.["X-Agent-Session"]).toBeUndefined();
+    await client.close();
+  });
+
+  it("scopes X-Agent-Session to the board that owns it", async () => {
+    const client = await connect();
+    const a = await client.callTool({
+      name: "janosik_start_session",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    expect(a.structuredContent).toMatchObject({
+      session: { id: "sess-b1" },
+    });
+
+    calls.length = 0;
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b2", columnId: "col1", title: "Elsewhere" },
+    });
+    const writeB = calls.find(
+      (call) => call.path === "/boards/b2/commands/batch",
+    );
+    expect(writeB?.headers?.["X-Agent-Session"]).toBeUndefined();
+
+    const b = await client.callTool({
+      name: "janosik_start_session",
+      arguments: { boardId: "b2", response_format: "json" },
+    });
+    expect(b.structuredContent).toMatchObject({
+      session: { id: "sess-b2" },
+    });
+
+    calls.length = 0;
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: { boardId: "b1", columnId: "col1", title: "Back on A" },
+    });
+    const writeA = calls.find(
+      (call) => call.path === "/boards/b1/commands/batch",
+    );
+    expect(writeA?.headers?.["X-Agent-Session"]).toBe("sess-b1");
+    await client.close();
+  });
+
   it("leaves the account-level groups out by default", async () => {
     const client = await connect({ toolsets: new Set(DEFAULT_TOOLSETS) });
     const names = (await client.listTools()).tools.map((tool) => tool.name);
@@ -456,7 +851,6 @@ describe("janosik MCP server", () => {
       "janosik_whoami",
       "janosik_invite_member",
       "janosik_create_share",
-      "janosik_accept_invitation",
     ]) {
       expect(names).not.toContain(optIn);
     }
@@ -670,17 +1064,27 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
-  it("posts a typed comment", async () => {
+  it("posts a typed comment and forwards its idempotency key", async () => {
     const client = await connect();
     const result = await client.callTool({
       name: "janosik_add_comment",
-      arguments: { cardId: "k1", text: "stuck", kind: "blocker" },
+      arguments: {
+        cardId: "k1",
+        text: "stuck",
+        kind: "blocker",
+        idempotencyKey: "comment-key-1",
+      },
     });
     expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "cm1",
+    });
     const call = calls.find(
       (entry) => entry.path === "/cards/k1/comments" && entry.method === "POST",
     );
     expect(call?.body).toMatchObject({ text: "stuck", kind: "blocker" });
+    expect(call?.headers?.["Idempotency-Key"]).toBe("comment-key-1");
     expect(firstText(result)).toMatch(/blocker/);
     await client.close();
   });

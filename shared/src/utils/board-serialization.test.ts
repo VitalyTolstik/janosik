@@ -94,6 +94,32 @@ describe("board serialization", () => {
     ).toThrow();
   });
 
+  it("drops an unknown board column style instead of failing the import", () => {
+    const state = initialBoardState();
+    const raw = JSON.parse(serializeExport(state)) as {
+      boards: Array<Record<string, unknown>>;
+    };
+    raw.boards[0].columnStyle = "neon";
+    const imported = parseExport(JSON.stringify(raw));
+    expect(imported[0].columnStyle).toBeUndefined();
+  });
+
+  it("drops an unknown column accent instead of failing the import", () => {
+    const state = initialBoardState();
+    const raw = JSON.parse(serializeExport(state)) as {
+      boards: Array<{
+        columns: Array<Record<string, unknown>>;
+      }>;
+    };
+    raw.boards[0].columns[0].accent = {
+      type: "color",
+      value: "chartreuse",
+    };
+    const imported = parseExport(JSON.stringify(raw));
+    expect(imported[0].columns[0].accent).toBeUndefined();
+    expect("accent" in imported[0].columns[0]).toBe(false);
+  });
+
   it("normalizes legacy labelId shapes on import", () => {
     const legacy = {
       id: "board-legacy",
@@ -117,6 +143,38 @@ describe("board serialization", () => {
       JSON.stringify({ app: EXPORT_APP, schemaVersion: 1, boards: [legacy] }),
     );
     expect(imported[0].cards["card-1"]).toHaveProperty("labelIds", ["label-x"]);
+  });
+
+  it("round-trips a column accent and the board column style", () => {
+    const state = initialBoardState();
+    const board = state[0];
+    const decorated = [
+      {
+        ...board,
+        columnStyle: "rail" as const,
+        columns: board.columns.map((column, index) =>
+          index === 0
+            ? {
+                ...column,
+                accent: { type: "gradient" as const, value: "ocean" as const },
+              }
+            : column,
+        ),
+      },
+    ];
+    const imported = parseExport(serializeExport(decorated));
+    expect(imported[0].columnStyle).toBe("rail");
+    expect(imported[0].columns[0].accent).toEqual({
+      type: "gradient",
+      value: "ocean",
+    });
+  });
+
+  it("keeps an old board without style fields unchanged (schemaVersion 1)", () => {
+    const state = initialBoardState();
+    const imported = parseExport(serializeExport(state));
+    expect(imported[0].columnStyle).toBeUndefined();
+    expect("accent" in imported[0].columns[0]).toBe(false);
   });
 });
 
@@ -163,12 +221,37 @@ describe("parseExport — strict structure and integrity (S-7)", () => {
     expect(parseExport(wrap([board()]))[0].cards["k1"].title).toBe("One");
   });
 
+  it("accepts a column at exactly LIMITS.cardsPerColumn cards", () => {
+    const cardIds = Array.from(
+      { length: LIMITS.cardsPerColumn },
+      (_, i) => `k${i}`,
+    );
+    const cards = Object.fromEntries(
+      cardIds.map((id) => [
+        id,
+        { id, title: id, labelIds: [], createdAt: 1, updatedAt: 1 },
+      ]),
+    );
+    const value = board({
+      columns: [{ id: "col", title: "Todo", cardIds, createdAt: 1 }],
+      cards,
+    });
+    expect(parseExport(wrap([value]))[0].columns[0].cardIds).toHaveLength(
+      LIMITS.cardsPerColumn,
+    );
+  });
+
   it.each([
     ["a null label", board({ labels: [null] }), "boards[0].labels[0]"],
     [
       "a column without a title",
       board({ columns: [{ id: "col", cardIds: [], createdAt: 1 }] }),
       "boards[0].columns[0].title",
+    ],
+    [
+      "a non-string board column style",
+      board({ columnStyle: 7 }),
+      "boards[0].columnStyle",
     ],
     [
       "a card with a string timestamp",

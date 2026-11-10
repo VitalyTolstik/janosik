@@ -336,7 +336,7 @@ export class StorageService {
   > {
     const out: Array<{ name: string; absPath: string; mtimeMs: number }> = [];
     const scan = async (dir: string): Promise<void> => {
-      let entries: import("node:fs").Dirent[] = [];
+      let entries: import("node:fs").Dirent[];
       try {
         entries = await readdir(dir, { withFileTypes: true });
       } catch {
@@ -376,7 +376,7 @@ export class StorageService {
       mtimeMs: number;
     }> = [];
     const scan = async (dir: string, avatar: boolean): Promise<void> => {
-      let entries: import("node:fs").Dirent[] = [];
+      let entries: import("node:fs").Dirent[];
       try {
         entries = await readdir(dir, { withFileTypes: true });
       } catch {

@@ -64,6 +64,7 @@ test("S23: shares open, copy and revoke, and snapshots survive board deletion", 
   }
 
   await page.getByTestId(`admin-share-revoke-${live.id}`).click();
+  await page.getByTestId("admin-confirm-accept").click();
   await expect(row).toContainText("revoked");
   await expectAudit(admin, { action: "share.revoked", targetId: live.id });
 

@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   Archive,
+  ArrowRightLeft,
   ArrowUpRight,
   CalendarClock,
   Check,
@@ -15,14 +16,18 @@ import {
   CopyPlus,
   Link2,
   ListChecks,
+  Lock,
   MessageSquare,
   Palette,
   Search,
   SquarePen,
   Tag,
   UserRound,
+  Workflow,
 } from "lucide-react";
 import type {
+  Board,
+  BoardRole,
   Card,
   CardCover,
   CardPriority,
@@ -70,8 +75,14 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { useBoardActions, useBoardState } from "@/store/BoardContext";
+import {
+  useBoardActions,
+  useBoardAccess,
+  useBoardState,
+} from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
+import { moveTargetBlockReason } from "@/utils/workflow";
+import { WorkflowRulesDialog } from "@/components/board/WorkflowRulesDialog";
 import { userLabel } from "@/utils/avatar";
 import { cardPath } from "@/utils/card-nav";
 import { PRIORITY_META, PRIORITY_ORDER } from "@/utils/priority";
@@ -83,9 +94,9 @@ import {
 import { createId } from "@/utils/id";
 
 /**
- * Right-click (mouse button 2) menu for a card, on every surface that shows
- * one: the board face, the calendar (date chips, the unscheduled list,
- * day-panel rows) and the table rows. The menu carries the card's quick
+ * Right-click (mouse) or the explicit "Card actions" button (touch) opens the
+ * card menu, on every surface that shows one: the board face, the calendar
+ * (date chips, the unscheduled list, day-panel rows) and the table rows. The menu carries the card's quick
  * editors — labels, due date, priority, assignee, link card, cover,
  * checklist, comment — plus open / copy-link / new-tab / duplicate / archive.
  *
@@ -96,8 +107,10 @@ import { createId } from "@/utils/id";
  */
 export interface CardContextMenuProps {
   cardId: string;
-  /** The element the menu opens from — rendered as-is, right-click attached. */
-  children: ReactElement;
+  /** The element the menu opens from — rendered as-is, right-click attached.
+   *  A function receives `open()` so an explicit "Card actions" button can
+   *  open the same menu on touch (where long-press belongs to the drag). */
+  children: ReactElement | ((controls: { open: () => void }) => ReactElement);
   /** VIEWER mode (TASK-35): only the read-only actions stay in the menu. */
   readOnly?: boolean;
   /** Opens the card dialog — the "Open card" item. */
@@ -117,20 +130,34 @@ export function CardContextMenu({
   onArchive,
 }: CardContextMenuProps) {
   const [open, setOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const trigger =
+    typeof children === "function"
+      ? children({ open: () => setOpen(true) })
+      : children;
   return (
-    <ContextMenu open={open} onOpenChange={setOpen}>
-      <ContextMenuTrigger render={children} />
-      <ContextMenuContent data-testid="card-context-menu">
-        <CardContextMenuBody
-          cardId={cardId}
-          readOnly={readOnly}
-          onOpen={onOpen}
-          onDuplicate={onDuplicate}
-          onArchive={onArchive}
-          close={() => setOpen(false)}
-        />
-      </ContextMenuContent>
-    </ContextMenu>
+    <>
+      <ContextMenu open={open} onOpenChange={setOpen}>
+        <ContextMenuTrigger render={trigger} />
+        <ContextMenuContent data-testid="card-context-menu">
+          <CardContextMenuBody
+            cardId={cardId}
+            readOnly={readOnly}
+            onOpen={onOpen}
+            onDuplicate={onDuplicate}
+            onArchive={onArchive}
+            onShowRules={() => {
+              setOpen(false);
+              setRulesOpen(true);
+            }}
+            close={() => setOpen(false)}
+          />
+        </ContextMenuContent>
+      </ContextMenu>
+      {rulesOpen ? (
+        <WorkflowRulesDialog open={rulesOpen} onOpenChange={setRulesOpen} />
+      ) : null}
+    </>
   );
 }
 
@@ -150,11 +177,16 @@ function CardContextMenuBody({
   onOpen,
   onDuplicate,
   onArchive,
+  onShowRules,
   close,
-}: Omit<CardContextMenuProps, "children"> & { close: () => void }) {
+}: Omit<CardContextMenuProps, "children"> & {
+  onShowRules: () => void;
+  close: () => void;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const { board } = useBoardState();
+  const { role } = useBoardAccess();
   const {
     toggleCardLabel,
     addLabel,
@@ -165,6 +197,7 @@ function CardContextMenuBody({
     addChecklist,
     addChecklistItem,
     toggleChecklistItem,
+    moveCard,
   } = useBoardActions();
 
   const [linkQuery, setLinkQuery] = useState("");
@@ -232,6 +265,21 @@ function CardContextMenuBody({
       {!readOnly ? (
         <>
           {onOpen ? <ContextMenuSeparator /> : null}
+          <MoveToSub
+            board={board}
+            card={card}
+            role={role}
+            onMove={(toColumnId) => {
+              const from = board.columns.find((column) =>
+                column.cardIds.includes(cardId),
+              );
+              const target = board.columns.find(
+                (column) => column.id === toColumnId,
+              );
+              if (!from || !target) return;
+              moveCard(cardId, from.id, target.id, target.cardIds.length);
+            }}
+          />
           <LabelsSub
             card={card}
             labels={board.labels}
@@ -334,6 +382,13 @@ function CardContextMenuBody({
         </>
       ) : null}
 
+      {board.workflow !== undefined ? (
+        <ContextMenuItem onClick={onShowRules} data-testid="ctx-workflow-rules">
+          <Workflow />
+          {t("workflow.rules")}
+        </ContextMenuItem>
+      ) : null}
+
       <ContextMenuSeparator />
       <ContextMenuItem onClick={copyLink} data-testid="ctx-copy-link">
         {/* Jira-style: the chain link is tilted, not horizontal. */}
@@ -377,6 +432,95 @@ function CardContextMenuBody({
         </ContextMenuItem>
       ) : null}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Move to                                                             */
+/* ------------------------------------------------------------------ */
+
+function MoveToSub({
+  board,
+  card,
+  role,
+  onMove,
+}: {
+  board: Board;
+  card: Card;
+  role?: BoardRole;
+  onMove: (toColumnId: string) => void;
+}) {
+  const { t } = useI18n();
+  if (!board) return null;
+  const current = board.columns.find((column) =>
+    column.cardIds.includes(card.id),
+  );
+  if (!current) return null;
+  const targets = board.columns.filter((column) => column.id !== current.id);
+  const decisions = targets.map((target) => ({
+    target,
+    reason: moveTargetBlockReason(
+      {
+        workflow: board.workflow,
+        card,
+        fromColumnId: current.id,
+        fromTitle: current.title,
+        target,
+        role,
+      },
+      t,
+    ),
+  }));
+  const allowed = decisions.filter((entry) => entry.reason === null);
+  const blocked = decisions.filter((entry) => entry.reason !== null);
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger data-testid="ctx-move-trigger">
+        <ArrowRightLeft />
+        {t("workflow.moveTo")}
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-64" data-testid="ctx-move-content">
+        {allowed.length === 0 ? (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            {t("workflow.noAvailableTargets")}
+          </p>
+        ) : null}
+        {allowed.map(({ target }) => (
+          <ContextMenuItem
+            key={target.id}
+            onClick={() => onMove(target.id)}
+            data-testid={`ctx-move-${target.id}`}
+          >
+            <ArrowRightLeft />
+            <span className="min-w-0 flex-1 truncate">{target.title}</span>
+          </ContextMenuItem>
+        ))}
+        {allowed.length > 0 && blocked.length > 0 ? (
+          <ContextMenuSeparator />
+        ) : null}
+        {blocked.map(({ target, reason }) => (
+          <ContextMenuItem
+            key={target.id}
+            disabled
+            title={reason ?? undefined}
+            data-testid={`ctx-move-${target.id}`}
+            className="items-start"
+          >
+            <Lock className="mt-0.5 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{target.title}</span>
+              <span
+                className="block whitespace-normal text-[10px] leading-snug text-muted-foreground"
+                data-testid={`ctx-move-reason-${target.id}`}
+              >
+                {reason}
+              </span>
+            </span>
+          </ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   );
 }
 

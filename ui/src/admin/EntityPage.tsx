@@ -18,13 +18,14 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
 import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
   FilterTabs,
-  LoadingState,
+  ForbiddenState,
   PageHeader,
   Pagination,
   Panel,
@@ -280,6 +281,14 @@ export function EntityPage<E extends AdminEntity>({
       ]
     : undefined;
 
+  const filtered =
+    list.search.trim() !== "" || list.status !== "all" || list.period !== "any";
+  const clearFilters = () => {
+    list.setSearch("");
+    list.setStatus("all");
+    list.setPeriod("any");
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <PageHeader
@@ -306,17 +315,33 @@ export function EntityPage<E extends AdminEntity>({
           </>
         }
       />
-      <Panel className="flex min-h-0 flex-1 flex-col">
+      <Panel
+        className="flex min-h-0 flex-1 flex-col"
+        data-testid="admin-entity-panel"
+        aria-busy={list.loading || list.refreshing}
+      >
         {list.loading ? (
-          <LoadingState />
+          <EntityListSkeleton
+            columns={
+              config.columns.length +
+              (config.actions || !config.skipActions ? 1 : 0)
+            }
+            bulk={bulkEnabled}
+            testId={`admin-${config.entity}-skeleton`}
+          />
+        ) : list.errorStatus === 403 ? (
+          <ForbiddenState onBack={() => navigate("/admin")} />
         ) : list.error ? (
-          <ErrorState onRetry={list.reload} />
+          <ErrorState
+            onRetry={list.reload}
+            reference={`${config.entity}:${new Date().toISOString().slice(0, 19)}`}
+          />
         ) : list.items.length === 0 ? (
-          <EmptyState />
+          <EmptyState filtered={filtered} onClear={clearFilters} />
         ) : (
           <>
             {bulkEnabled && selected.size > 0 ? (
-              <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
+              <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-card/95 px-3 py-2 text-xs backdrop-blur">
                 <span className="text-muted-foreground">
                   {t("admin.bulk.selected", { count: selected.size })}
                 </span>
@@ -356,7 +381,7 @@ export function EntityPage<E extends AdminEntity>({
                   {bulkEnabled ? (
                     <Th className="w-8">
                       <Checkbox
-                        aria-label={t("admin.bulk.delete")}
+                        aria-label={t("admin.common.selectAll")}
                         data-testid="admin-select-all"
                         checked={allSelected}
                         onCheckedChange={toggleAll}
@@ -389,12 +414,36 @@ export function EntityPage<E extends AdminEntity>({
                       <tr
                         key={rowHrefKey(row, index)}
                         data-testid={testId}
+                        data-clickable={href ? "true" : undefined}
+                        data-selected={
+                          id !== null && selected.has(id) ? "true" : undefined
+                        }
+                        tabIndex={href ? 0 : undefined}
                         className={
                           href
                             ? "cursor-pointer transition-colors hover:bg-hover/50"
                             : undefined
                         }
                         onClick={href ? () => void navigate(href) : undefined}
+                        onKeyDown={
+                          href
+                            ? (event) => {
+                                if (event.target !== event.currentTarget)
+                                  return;
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void navigate(href);
+                                } else if (
+                                  event.key === " " &&
+                                  bulkEnabled &&
+                                  id !== null
+                                ) {
+                                  event.preventDefault();
+                                  toggleRow(id);
+                                }
+                              }
+                            : undefined
+                        }
                       >
                         {bulkEnabled && id !== null ? (
                           <Td className="w-8">
@@ -411,7 +460,11 @@ export function EntityPage<E extends AdminEntity>({
                           <Td className="w-8" />
                         ) : null}
                         {config.columns.map((column) => (
-                          <Td key={column.label} className={column.className}>
+                          <Td
+                            key={column.label}
+                            label={column.label}
+                            className={column.className}
+                          >
                             {column.render(row)}
                           </Td>
                         ))}
@@ -442,6 +495,7 @@ export function EntityPage<E extends AdminEntity>({
               limit={list.limit}
               offset={list.offset}
               onChange={list.setOffset}
+              onLimitChange={list.setLimit}
             />
           </>
         )}

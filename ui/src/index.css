@@ -17,6 +17,23 @@
    duplicate/archive actions live in the card dialog. */
 @custom-variant no-hover (@media (hover: none));
 
+/* Touch input does not get tooltips (TASK-31). A tap focuses an icon-only
+   header button, and the still-open tooltip would cover its neighbour and
+   swallow the next tap (measured at 390 px). `data-input` is set by App.tsx
+   on the first pointerdown and flips back to mouse on a mouse press. ARIA
+   labels keep every control named for assistive tech. */
+html[data-input="touch"] [role="tooltip"] {
+  display: none;
+}
+
+/* An active touch drag owns the finger: no text selection or caret movement
+   under it, and a grabbing cursor on hybrid devices. */
+body.janosik-touch-dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 @theme inline {
   /* Wordmark display font — the family stack comes from the brand tokens. */
   --font-display: var(--janosik-font-display);
@@ -34,6 +51,9 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  /* Loading placeholders (brand/src/tokens.css). */
+  --color-skeleton: var(--janosik-skeleton-base);
+  --color-skeleton-highlight: var(--janosik-skeleton-highlight);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -89,6 +109,17 @@
 
   html {
     @apply antialiased;
+  }
+
+  /* Native controls (checkbox, select, number/date pickers) must follow the
+     app theme, not the OS preference. Without this a light-themed dialog on a
+     dark-preference OS renders black native checkboxes and chevrons. The
+     preflight in index.html mirrors these rules before the stylesheet loads. */
+  :root {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
   }
 
   body {
@@ -203,6 +234,31 @@
       linear-gradient(rgb(26 26 36 / 0.07) 1px, transparent 1px),
       linear-gradient(90deg, rgb(26 26 36 / 0.07) 1px, transparent 1px);
   }
+  /* Concentric squares: three nested outlines per 180 px tile, breathing
+   * slowly. The same SVG pattern is used on the auth screens. */
+  .janosik-bg-concentric {
+    background-color: #0c1526;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cg fill='none' stroke='%23fff' stroke-opacity='.06'%3E%3Crect x='20' y='20' width='140' height='140'/%3E%3Crect x='45' y='45' width='90' height='90'/%3E%3Crect x='70' y='70' width='40' height='40'/%3E%3C/g%3E%3C/svg%3E");
+    background-position: center;
+    background-size: var(--janosik-concentric-size, 180px)
+      var(--janosik-concentric-size, 180px);
+    animation: janosik-bg-concentric 9s ease-in-out infinite;
+  }
+  .light .janosik-bg-concentric {
+    background-color: #eef0f3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cg fill='none' stroke='%231a1a24' stroke-opacity='.07'%3E%3Crect x='20' y='20' width='140' height='140'/%3E%3Crect x='45' y='45' width='90' height='90'/%3E%3Crect x='70' y='70' width='40' height='40'/%3E%3C/g%3E%3C/svg%3E");
+  }
+  @keyframes janosik-bg-concentric {
+    0%,
+    100% {
+      background-size: var(--janosik-concentric-size, 180px)
+        var(--janosik-concentric-size, 180px);
+    }
+    50% {
+      background-size: calc(var(--janosik-concentric-size, 180px) * 1.06)
+        calc(var(--janosik-concentric-size, 180px) * 1.06);
+    }
+  }
   /* Compact tiles for the picker previews (36×24 px tiles) — the dense
    * pattern makes dots / grid legible at a glance. Must follow the base
    * classes so the custom property wins in the cascade. */
@@ -211,6 +267,9 @@
   }
   .janosik-bg-grid-sm {
     --janosik-grid-size: 12px;
+  }
+  .janosik-bg-concentric-sm {
+    --janosik-concentric-size: 44px;
   }
 }
 
@@ -1180,5 +1239,265 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 @media (prefers-reduced-motion: no-preference) {
   .card-copy-success {
     animation: card-copy-success 180ms ease-out;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Loading skeletons (SKELETON-AUDIT §4.1). The shimmer is one pseudo-element
+ * over a themed base; the region fades in after 180 ms so a fast response
+ * never flashes a placeholder, while its layout box exists from frame one.
+ * -------------------------------------------------------------------------- */
+.janosik-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--janosik-skeleton-base);
+}
+
+.janosik-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--janosik-skeleton-highlight),
+    transparent
+  );
+  animation: janosik-skeleton-shimmer 1.4s linear infinite;
+}
+
+.janosik-skeleton-region {
+  animation: janosik-skeleton-reveal 1ms linear
+    var(--janosik-skeleton-delay, 180ms) both;
+}
+
+@keyframes janosik-skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes janosik-skeleton-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-skeleton::after {
+    display: none;
+    animation: none;
+  }
+  .janosik-skeleton-region {
+    opacity: 1;
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Column accent styles (TASK-164) — the 9 shapes from the sandbox design.
+ * The color is per-column (`--column-accent-paint` / `--column-accent-solid`),
+ * the shape is board-wide (`janosik-column-accent-<style>`). Rules stay off
+ * `border-color` so the drag-over/focus border keeps its own semantics.
+ * ------------------------------------------------------------------------ */
+.janosik-column-accent {
+  position: relative;
+  transition:
+    background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+    box-shadow var(--janosik-duration-fast) var(--janosik-ease-out);
+}
+.janosik-column-accent::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--column-accent-paint, var(--border));
+}
+.janosik-column-accent-rail::before,
+.janosik-column-accent-glass::before,
+.janosik-column-accent-signature::before {
+  inset: 1px 1px auto;
+  height: 3px;
+  border-radius: 12px 12px 0 0;
+}
+.janosik-column-accent-signature::before {
+  height: 2px;
+}
+.janosik-column-accent-left::before {
+  inset: 1px auto 1px 1px;
+  width: 4px;
+  border-radius: 12px 0 0 12px;
+}
+.janosik-column-accent-dotmark {
+  display: none;
+  background: var(--column-accent-paint, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--card) 70%, transparent);
+}
+.janosik-column-accent-dot .janosik-column-accent-dotmark,
+.janosik-column-accent-signature .janosik-column-accent-dotmark {
+  display: inline-block;
+}
+
+/* Wash: header 14%, body gradient — transparent stops keep the glass and the
+   board background visible underneath. */
+.janosik-column-accent-wash {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--column-accent-solid) 11%, transparent),
+    color-mix(in oklab, var(--column-accent-solid) 4%, transparent) 48%,
+    transparent
+  );
+}
+.janosik-column-accent-wash .janosik-column-accent-head {
+  background: color-mix(in oklab, var(--column-accent-solid) 14%, transparent);
+}
+.janosik-column-accent-wash .janosik-column-accent-head,
+.janosik-column-accent-glass .janosik-column-accent-head,
+.janosik-column-accent-signature .janosik-column-accent-head {
+  border-radius: 12px 12px 0 0;
+}
+
+/* Title: accent text plus a short underline; light theme mixes toward the
+   foreground so yellow/orange/teal keep their contrast. */
+.janosik-column-accent-title .janosik-column-accent-heading {
+  color: var(--column-accent-solid);
+}
+.light .janosik-column-accent-title .janosik-column-accent-heading {
+  color: color-mix(in oklab, var(--column-accent-solid) 62%, var(--foreground));
+}
+.janosik-column-accent-title .janosik-column-accent-heading::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 2px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--column-accent-paint);
+}
+
+/* Glow: inset border ring + soft shadow. No border-color override: drag-over
+   and keyboard focus stay visible. */
+.janosik-column-accent-glow {
+  box-shadow:
+    inset 0 0 0 1px
+      color-mix(in oklab, var(--column-accent-solid) 45%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--column-accent-solid) 18%, transparent),
+    0 18px 44px color-mix(in oklab, var(--column-accent-solid) 16%, transparent);
+}
+.light .janosik-column-accent-glow {
+  box-shadow:
+    inset 0 0 0 1px
+      color-mix(in oklab, var(--column-accent-solid) 34%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--column-accent-solid) 12%, transparent),
+    0 10px 26px color-mix(in oklab, var(--column-accent-solid) 10%, transparent);
+}
+
+/* Glass: a slightly denser translucent surface + header tint + inset ring. */
+.janosik-column-accent-glass .janosik-column-accent-head {
+  background: color-mix(in oklab, var(--column-accent-solid) 7%, transparent);
+}
+.janosik-column-accent-glass {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--column-accent-solid) 26%, transparent);
+}
+
+/* Band: header painted with the accent, a dark scrim keeps the white text
+   readable on every palette color and gradient. */
+.janosik-column-accent-band .janosik-column-accent-head {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  background: var(--column-accent-paint);
+}
+.janosik-column-accent-band .janosik-column-accent-head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.34), rgb(0 0 0 / 0.16));
+  pointer-events: none;
+}
+.janosik-column-accent-band .janosik-column-accent-head > * {
+  position: relative;
+  z-index: 1;
+}
+.janosik-column-accent-band .janosik-column-accent-heading {
+  color: #fff;
+}
+.janosik-column-accent-band [data-testid="column-wip"],
+.janosik-column-accent-band .janosik-column-accent-count {
+  background: rgb(0 0 0 / 0.28);
+  color: #fff;
+}
+.janosik-column-accent-band [data-testid="column-wip"][class*="bg-warning"] {
+  background: rgb(0 0 0 / 0.42);
+  color: #ffd9a3;
+}
+.janosik-column-accent-band [data-testid="column-wip"][class*="bg-danger"] {
+  background: rgb(0 0 0 / 0.46);
+  color: #ffb4b4;
+}
+.janosik-column-accent-band .janosik-column-accent-head button,
+.janosik-column-accent-band .janosik-column-accent-grip {
+  color: rgb(255 255 255 / 0.82);
+}
+.janosik-column-accent-band .janosik-column-accent-head button:hover {
+  background: rgb(255 255 255 / 0.15);
+  color: #fff;
+}
+
+/* Signature: rail 2px + dot + a 6% header tint. */
+.janosik-column-accent-signature .janosik-column-accent-head {
+  background: color-mix(in oklab, var(--column-accent-solid) 6%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .janosik-column-accent {
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------- auth background ---- */
+
+/*
+ * Concentric square field behind the sign-in / registration / master-login
+ * screens. Pure CSS/SVG, no raster assets. The layer is intentionally quiet:
+ * it sits under the form and only breathes via transform + opacity.
+ */
+.auth-background {
+  position: absolute;
+  inset: -5%;
+  z-index: 0;
+  overflow: hidden;
+  color: color-mix(in oklab, var(--foreground) 9%, transparent);
+  pointer-events: none;
+  transform-origin: center;
+  animation: auth-concentric 9s ease-in-out infinite;
+}
+
+.auth-background__pattern {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes auth-concentric {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.06);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-background {
+    animation: none;
   }
 }

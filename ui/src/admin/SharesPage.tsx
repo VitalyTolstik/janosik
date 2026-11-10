@@ -8,11 +8,12 @@ import { formatDate, useHour12, useI18n } from "@/i18n";
 import { appPath, appShareUrl } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
 import {
   Badge,
+  ConfirmDialog,
   ErrorState,
-  LoadingState,
   PageHeader,
   Panel,
   SearchInput,
@@ -38,6 +39,9 @@ export function SharesPage() {
   );
   const { items: rows, reload } = list;
   const [busy, setBusy] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<AdminShareRowDto | null>(
+    null,
+  );
   // Inline "copied" feedback (icon flips to a check), like the app's copy
   // chips — no toast for a copy.
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -72,11 +76,6 @@ export function SharesPage() {
     [reload, t, toast],
   );
 
-  if (list.loading && rows.length === 0) return <LoadingState />;
-  if (list.error) {
-    return <ErrorState onRetry={reload} />;
-  }
-
   return (
     <div className="w-full max-w-5xl space-y-4 p-4">
       <PageHeader
@@ -85,8 +84,14 @@ export function SharesPage() {
         actions={<SearchInput value={list.search} onChange={list.setSearch} />}
       />
 
-      <Panel className="p-0">
-        {rows.length === 0 ? (
+      <Panel className="p-0" aria-busy={list.loading || list.refreshing}>
+        {list.loading ? (
+          <EntityListSkeleton columns={6} testId="admin-shares-skeleton" />
+        ) : list.error ? (
+          <div className="p-4">
+            <ErrorState onRetry={reload} />
+          </div>
+        ) : rows.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
             {t("admin.shares.empty")}
           </p>
@@ -218,7 +223,7 @@ export function SharesPage() {
                           title={t("admin.shares.revoke")}
                           disabled={busy === row.id}
                           data-testid={`admin-share-revoke-${row.id}`}
-                          onClick={() => void revoke(row.id)}
+                          onClick={() => setPendingRevoke(row)}
                         >
                           {busy === row.id ? (
                             <RefreshCw
@@ -238,6 +243,20 @@ export function SharesPage() {
           </table>
         )}
       </Panel>
+
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        title={t("admin.shares.confirm.title")}
+        body={t("admin.shares.confirm.body")}
+        confirmLabel={t("admin.shares.revoke")}
+        busy={pendingRevoke !== null && busy === pendingRevoke.id}
+        onConfirm={() => {
+          const id = pendingRevoke?.id;
+          setPendingRevoke(null);
+          if (id !== undefined) void revoke(id);
+        }}
+        onClose={() => setPendingRevoke(null)}
+      />
     </div>
   );
 }

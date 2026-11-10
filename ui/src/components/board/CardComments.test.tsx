@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,13 +73,26 @@ function comment(overrides: Partial<CommentDto> = {}): CommentDto {
     authorId: "user-1",
     text: "First!",
     kind: "note",
+    actorType: "human",
+    apiTokenId: null,
+    agentSessionId: null,
+    agentName: null,
     createdAt: 1_700_000_000_000,
     ...overrides,
   };
 }
 
-function renderComments(server: FakeServer, readOnly = false) {
-  vi.stubGlobal("fetch", server.handle);
+type FetchHandler = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+function renderComments(
+  server: FakeServer,
+  readOnly = false,
+  handler: FetchHandler = server.handle,
+) {
+  vi.stubGlobal("fetch", handler);
   return render(
     <I18nProvider>
       <ToastProvider>
@@ -129,6 +143,35 @@ afterEach(() => {
 });
 
 describe("CardComments", () => {
+  it("shows a busy skeleton until the first page arrives", async () => {
+    const server = new FakeServer();
+    server.commentsByCard.set("card-1", [comment()]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      await gate;
+      return server.handle(input, init);
+    };
+
+    renderComments(server, false, handler);
+
+    const skeleton = await screen.findByTestId("card-comments-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(within(skeleton).getByRole("status")).toHaveTextContent(
+      "Loading comments…",
+    );
+    expect(screen.queryByText("No comments yet")).not.toBeInTheDocument();
+
+    act(() => release());
+
+    expect(await screen.findByTestId("comment")).toHaveTextContent("First!");
+    expect(
+      screen.queryByTestId("card-comments-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
   it("lists the thread and sends a comment via Save, optimistically", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [comment({ text: "Old note" })]);
@@ -177,14 +220,29 @@ describe("CardComments", () => {
     );
   });
 
+  it("offers the comment kinds in a themed radio picker", async () => {
+    const server = new FakeServer([seedBoard()]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-kind"));
+    const group = screen.getByRole("radiogroup", { name: "Comment kind" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(6);
+    expect(screen.getByTestId("comment-kind-option-note")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    fireEvent.click(screen.getByTestId("comment-kind-option-question"));
+    expect(screen.getByTestId("comment-kind")).toHaveTextContent("Question");
+  });
+
   it("sends the chosen comment kind", async () => {
     const server = new FakeServer([seedBoard()]);
     renderComments(server);
     const input = await screen.findByTestId("comment-input");
     fireEvent.change(input, { target: { value: "Blocked" } });
-    fireEvent.change(await screen.findByTestId("comment-kind"), {
-      target: { value: "blocker" },
-    });
+    fireEvent.click(await screen.findByTestId("comment-kind"));
+    fireEvent.click(await screen.findByTestId("comment-kind-option-blocker"));
     fireEvent.click(screen.getByTestId("comment-send"));
     await waitFor(() =>
       expect(

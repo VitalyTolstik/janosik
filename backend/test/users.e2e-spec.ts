@@ -104,13 +104,22 @@ describe("Users API (e2e)", () => {
         avatarPath: null,
         createdAt: expect.any(Number),
         emailVerifiedAt: expect.any(Number),
+        hasPassword: true,
       });
 
       const me = await server()
         .get("/api/v1/auth/me")
         .set(auth(profileToken))
         .expect(200);
-      expect(me.body).toEqual({ ...user, impersonatedBy: null });
+      expect(me.body).toEqual({
+        ...user,
+        authMethod: "password",
+        deletionMethod: "password",
+        impersonatedBy: null,
+        token: null,
+        session: null,
+        server: { version: expect.any(String), apiVersion: "1" },
+      });
     });
 
     it("clears a field with null", async () => {
@@ -137,6 +146,7 @@ describe("Users API (e2e)", () => {
         avatarPath: null,
         createdAt: expect.any(Number),
         emailVerifiedAt: expect.any(Number),
+        hasPassword: true,
       });
     });
 
@@ -151,6 +161,34 @@ describe("Users API (e2e)", () => {
         .set(auth(profileToken))
         .send({ displayName: "x".repeat(51) })
         .expect(400);
+    });
+
+    it("stores the canonical announcement/UI locale and rejects unknown ones", async () => {
+      const res = await server()
+        .patch("/api/v1/users/me")
+        .set(auth(profileToken))
+        .send({ locale: "ru" })
+        .expect(200);
+      expect(res.body.locale).toBe("ru");
+
+      const me = await server()
+        .get("/api/v1/auth/me")
+        .set(auth(profileToken))
+        .expect(200);
+      expect(me.body.locale).toBe("ru");
+
+      await server()
+        .patch("/api/v1/users/me")
+        .set(auth(profileToken))
+        .send({ locale: "de" })
+        .expect(400);
+
+      const cleared = await server()
+        .patch("/api/v1/users/me")
+        .set(auth(profileToken))
+        .send({ locale: null })
+        .expect(200);
+      expect(cleared.body.locale).toBeUndefined();
     });
 
     it("requires authentication", async () => {
@@ -244,6 +282,16 @@ describe("Users API (e2e)", () => {
         boardId: null,
         readOnly: false,
         rateLimitPerMinute: null,
+        // TASK-166 identity surface.
+        scopePreset: "worker",
+        trustedCi: false,
+        individualPausedAt: null,
+        individualPausedBy: null,
+        individualPausedReason: null,
+        stopAllPausedAt: null,
+        stopAllPausedBy: null,
+        paused: false,
+        effectiveTokenScope: "worker",
       });
       pat = body.token;
       tokenId = body.apiToken.id;

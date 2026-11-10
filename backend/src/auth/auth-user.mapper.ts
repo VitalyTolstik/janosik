@@ -17,9 +17,18 @@ export function toAuthUser(user: User): AuthUser {
     // TASK-153: the account digest opt-out reaches the client; the default
     // (on) is omitted like every other optional field.
     ...(user.notifyDigest ? {} : { notifyDigest: false }),
+    // Announcement localization: omitted while the account has not chosen a
+    // language yet, so old accounts keep their browser language until the
+    // client adopts it once on the next sign-in.
+    ...(user.locale === "en" || user.locale === "ru"
+      ? { locale: user.locale }
+      : {}),
     createdAt: user.createdAt.getTime(),
     // TASK-53: null → the address is not confirmed yet, the UI shows the
     // verification gate instead of the boards.
     emailVerifiedAt: user.emailVerifiedAt?.getTime() ?? null,
+    // TASK-166.6: session-independent account capability. The deletion flow
+    // must follow this, not the login method.
+    hasPassword: user.passwordHash !== null,
   };
 }

@@ -84,7 +84,14 @@ describe("Review hardening (e2e)", () => {
     const res = await server()
       .post("/api/v1/users/me/tokens")
       .set(auth(token))
-      .send({ name, expiresAt: null })
+      .send({
+        name,
+        expiresAt: null,
+        // This suite exercises B-2 (PAT vs account routes), including the
+        // admin-only share read; keep the old PAT capability with an admin
+        // preset so the security assertion is unchanged.
+        scopePreset: "admin",
+      })
       .expect(201);
     return res.body.token as string;
   }

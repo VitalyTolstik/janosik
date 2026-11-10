@@ -1,285 +1,82 @@
-import { useCallback, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
-import {
-  Activity,
-  ArrowLeft,
-  FileText,
-  Gauge,
-  KanbanSquare,
-  KeyRound,
-  LayoutDashboard,
-  Link2,
-  ListChecks,
-  LogOut,
-  Mail,
-  MessageSquare,
-  Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Paperclip,
-  PlayCircle,
-  ScrollText,
-  Search,
-  Share2,
-  ShieldCheck,
-  Tags,
-  Users,
-  ClipboardList,
-  Columns3,
-  Fingerprint,
-  SlidersHorizontal,
-  Megaphone,
-  Newspaper,
-  ServerCog,
-  ShieldAlert,
-  Sun,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTheme } from "@/hooks/use-theme";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { routes } from "@/routes";
-import { useAdminT, type AdminMessageKey } from "./admin-i18n";
-import { useAdminAuth } from "./AdminAuthContext";
-import { GlobalSearchDialog } from "./GlobalSearch";
+import { useAdminT } from "./admin-i18n";
+import { AdminSidebar } from "./layout/AdminSidebar";
+import { AdminTopbar } from "./layout/AdminTopbar";
+import { ADMIN_HUBS, HUB_SHORTCUTS } from "./layout/admin-nav";
+import { AdminShortcutsDialog } from "./layout/AdminShortcutsDialog";
+import { GlobalSearchDialog, rememberRecentPath } from "./GlobalSearch";
+import "./admin.css";
 
 /**
- * Master panel shell (TASK-36, redesigned in TASK-48): fixed sidebar, dense
- * content area, compact type scale and a global omnibox (Cmd/Ctrl+K) that
- * searches every core entity at once.
+ * Master console shell (redesigned): eight hubs, a 232/64/280 px responsive
+ * sidebar, breadcrumbs and the command palette. Dense rows and controls are
+ * driven by the `.admin-app` token layer, with a persisted density preference.
  */
 
-const NAV_SECTIONS: Array<{
-  labelKey: AdminMessageKey;
-  items: Array<{
-    to: string;
-    end?: boolean;
-    labelKey: AdminMessageKey;
-    icon: typeof LayoutDashboard;
-    ownerOnly?: boolean;
-  }>;
-}> = [
-  {
-    labelKey: "admin.nav.section.monitoring",
-    items: [
-      {
-        to: "/admin",
-        end: true,
-        labelKey: "admin.nav.dashboard",
-        icon: LayoutDashboard,
-      },
-      { to: "/admin/activity", labelKey: "admin.nav.activity", icon: Activity },
-      { to: "/admin/commands", labelKey: "admin.nav.log", icon: ClipboardList },
-      { to: "/admin/audit", labelKey: "admin.nav.audit", icon: ScrollText },
-    ],
-  },
-  {
-    labelKey: "admin.nav.section.people",
-    items: [
-      { to: "/admin/users", labelKey: "admin.nav.users", icon: Users },
-      {
-        to: "/admin/masters",
-        labelKey: "admin.nav.masters",
-        icon: ShieldCheck,
-        ownerOnly: true,
-      },
-    ],
-  },
-  {
-    labelKey: "admin.nav.section.content",
-    items: [
-      { to: "/admin/boards", labelKey: "admin.nav.boards", icon: KanbanSquare },
-      { to: "/admin/cards", labelKey: "admin.nav.cards", icon: FileText },
-      {
-        to: "/admin/columns",
-        labelKey: "admin.nav.columns",
-        icon: Columns3,
-      },
-      { to: "/admin/labels", labelKey: "admin.nav.labels", icon: Tags },
-      {
-        to: "/admin/checklists",
-        labelKey: "admin.nav.checklists",
-        icon: ListChecks,
-      },
-      {
-        to: "/admin/cardLinks",
-        labelKey: "admin.nav.cardLinks",
-        icon: Link2,
-      },
-    ],
-  },
-  {
-    labelKey: "admin.nav.section.collaboration",
-    items: [
-      {
-        to: "/admin/comments",
-        labelKey: "admin.nav.comments",
-        icon: MessageSquare,
-      },
-      {
-        to: "/admin/attachments",
-        labelKey: "admin.nav.attachments",
-        icon: Paperclip,
-      },
-    ],
-  },
-  {
-    labelKey: "admin.nav.section.security",
-    items: [
-      {
-        to: "/admin/sessions",
-        labelKey: "admin.nav.sessions",
-        icon: ShieldCheck,
-      },
-      { to: "/admin/tokens", labelKey: "admin.nav.tokens", icon: KeyRound },
-      {
-        to: "/admin/email",
-        labelKey: "admin.nav.email",
-        icon: Mail,
-        ownerOnly: true,
-      },
-      {
-        to: "/admin/oauth",
-        labelKey: "admin.nav.oauth",
-        icon: Fingerprint,
-        ownerOnly: true,
-      },
-      {
-        to: "/admin/security",
-        labelKey: "admin.nav.security",
-        icon: ShieldAlert,
-      },
-    ],
-  },
-  {
-    labelKey: "admin.nav.section.ops",
-    items: [
-      {
-        to: "/admin/traffic",
-        labelKey: "admin.nav.traffic",
-        icon: Gauge,
-      },
-      {
-        to: "/admin/demo",
-        labelKey: "admin.nav.demo",
-        icon: PlayCircle,
-      },
-      {
-        to: "/admin/shares",
-        labelKey: "admin.nav.shares",
-        icon: Share2,
-      },
-      {
-        to: "/admin/ops",
-        labelKey: "admin.nav.ops",
-        icon: SlidersHorizontal,
-      },
-      {
-        to: "/admin/comms",
-        labelKey: "admin.nav.comms",
-        icon: Megaphone,
-      },
-      {
-        to: "/admin/announcements",
-        labelKey: "admin.nav.announcements",
-        icon: Newspaper,
-      },
-      {
-        to: "/admin/observability",
-        labelKey: "admin.nav.observability",
-        icon: ServerCog,
-      },
-    ],
-  },
-];
-
-/** localStorage key for the collapsed ("icon rail") sidebar preference. */
 const SIDEBAR_KEY = "janosik.admin.sidebar";
+const DENSITY_KEY = "janosik.admin.density";
 
-function Brand({ collapsed }: { collapsed: boolean }) {
-  const t = useAdminT();
-  return (
-    <NavLink
-      to={routes.admin}
-      end
-      aria-label="Janosik"
-      className={cn(
-        "flex h-16 items-center gap-2.5",
-        collapsed ? "justify-center px-2" : "px-4",
-      )}
-    >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-        <ShieldCheck className="h-4 w-4" aria-hidden />
-      </span>
-      {!collapsed ? (
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold tracking-tight text-foreground">
-            Janosik
-          </p>
-          <p className="truncate text-[10px] uppercase tracking-widest text-muted-foreground">
-            {t("admin.nav.masterBadge")}
-          </p>
-        </div>
-      ) : null}
-    </NavLink>
-  );
+/** Phone: the sidebar becomes a sheet. Matches the table-card breakpoint. */
+const PHONE_QUERY = "(max-width: 639px)";
+/** Tablet: the sidebar becomes a permanent 64 px icon rail. */
+const RAIL_QUERY = "(max-width: 959px)";
+
+type Density = "comfortable" | "compact";
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => {
+    try {
+      return window.matchMedia?.(query).matches ?? false;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (media === undefined) return;
+    const onChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
 }
 
-/**
- * One sidebar entry. When the rail is collapsed the label is dropped and the
- * icon is centred with a right-side tooltip — the popular "icon rail" pattern
- * (VS Code / Linear) that keeps the whole nav reachable in ~56px.
- */
-function NavItem({
-  item,
-  collapsed,
-}: {
-  item: (typeof NAV_SECTIONS)[number]["items"][number];
-  collapsed: boolean;
-}) {
-  const t = useAdminT();
-  const { pathname } = useLocation();
-  const label = t(item.labelKey);
-  // A plain string className on purpose: when collapsed the link is wrapped by
-  // Radix `TooltipTrigger asChild` (a Slot), and a Slot cannot resolve
-  // react-router's function `className` — it would stringify the callback and
-  // drop every style. Active state is computed here instead.
-  const active = item.end
-    ? pathname === item.to
-    : pathname === item.to || pathname.startsWith(`${item.to}/`);
-  const className = cn(
-    "flex h-7 items-center rounded-lg text-xs font-medium transition-colors",
-    collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
-    active
-      ? "bg-primary/15 text-foreground"
-      : "text-muted-foreground hover:bg-hover hover:text-foreground",
-  );
-  const link = (
-    <NavLink to={item.to} end={item.end} className={className}>
-      <item.icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      {!collapsed ? <span className="truncate">{label}</span> : null}
-    </NavLink>
-  );
-  if (!collapsed) return link;
+function readDensity(): Density {
+  try {
+    return localStorage.getItem(DENSITY_KEY) === "compact"
+      ? "compact"
+      : "comfortable";
+  } catch {
+    return "comfortable";
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
-    </Tooltip>
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    target.isContentEditable
   );
 }
 
 export function AdminShell() {
   const t = useAdminT();
-  const { admin, logout } = useAdminAuth();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { theme, setTheme } = useTheme();
-  const isOwner = admin?.role === "OWNER";
   const [searchOpen, setSearchOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const mobile = useMediaQuery(PHONE_QUERY);
+  const railViewport = useMediaQuery(RAIL_QUERY);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === "1";
@@ -287,8 +84,19 @@ export function AdminShell() {
       return false;
     }
   });
+  const [density, setDensity] = useState<Density>(readDensity);
+  const pendingG = useRef<number | null>(null);
+
+  // The tablet rail is a layout state, not a stored preference: it exists
+  // even when the user asked for the expanded sidebar on a wide screen.
+  const effectiveCollapsed = !mobile && (collapsed || railViewport);
 
   const toggleSidebar = useCallback(() => {
+    if (mobile) {
+      setMobileOpen((open) => !open);
+      return;
+    }
+    if (railViewport) return;
     setCollapsed((previous) => {
       const next = !previous;
       try {
@@ -298,7 +106,38 @@ export function AdminShell() {
       }
       return next;
     });
+  }, [mobile, railViewport]);
+
+  const toggleDensity = useCallback(() => {
+    setDensity((previous) => {
+      const next: Density =
+        previous === "comfortable" ? "compact" : "comfortable";
+      try {
+        localStorage.setItem(DENSITY_KEY, next);
+      } catch {
+        /* storage unavailable — the preference still applies this session */
+      }
+      return next;
+    });
   }, []);
+
+  // Leaving the phone layout closes the sheet; the rail needs no transient
+  // state, so it never inherits an open drawer from a narrower window.
+  useEffect(() => {
+    if (!mobile) setMobileOpen(false);
+  }, [mobile]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+    rememberRecentPath(pathname);
+  }, [pathname]);
+
+  // Move keyboard focus to the content region after a route change; screen
+  // readers then announce the new h1 instead of leaving focus on the old link.
+  useEffect(() => {
+    const main = document.getElementById("admin-main");
+    main?.focus({ preventScroll: true });
+  }, [pathname]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -308,180 +147,98 @@ export function AdminShell() {
         setSearchOpen(true);
         return;
       }
-      // Cmd/Ctrl+B toggles the sidebar (VS Code muscle memory).
       if (mod && event.key.toLowerCase() === "b") {
         event.preventDefault();
         toggleSidebar();
+        return;
+      }
+      if (isEditableTarget(event.target) || event.metaKey || event.ctrlKey) {
+        return;
+      }
+      if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (event.key.toLowerCase() === "g") {
+        pendingG.current = Date.now();
+        return;
+      }
+      if (pendingG.current !== null && Date.now() - pendingG.current < 900) {
+        const hub = HUB_SHORTCUTS[event.key.toLowerCase()];
+        if (hub !== undefined) {
+          event.preventDefault();
+          pendingG.current = null;
+          const entry = ADMIN_HUBS.find((candidate) => candidate.key === hub);
+          if (entry !== undefined) navigate(entry.to);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleSidebar]);
+  }, [navigate, toggleSidebar]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-[13px] text-foreground">
-      <aside
-        data-testid="admin-sidebar"
-        data-collapsed={collapsed ? "true" : "false"}
-        className={cn(
-          "flex shrink-0 flex-col border-r border-border bg-card/40 transition-[width] duration-200",
-          collapsed ? "w-14" : "w-52",
-        )}
-      >
-        <Brand collapsed={collapsed} />
-        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden px-2 pb-3">
-          {NAV_SECTIONS.map((section) => (
-            <div key={section.labelKey} className="space-y-0.5">
-              {/* The header keeps the SAME height (h-5) in both states, so
-                  collapsing never nudges the item rows by a pixel — the label
-                  simply becomes a divider. */}
-              <div
-                className="flex h-5 items-center px-2.5"
-                aria-hidden={collapsed}
-              >
-                {collapsed ? (
-                  <span className="mx-auto block h-px w-6 bg-border" />
-                ) : (
-                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
-                    {t(section.labelKey)}
-                  </p>
-                )}
-              </div>
-              {section.items
-                .filter((item) => item.ownerOnly !== true || isOwner)
-                .map((item) => (
-                  <NavItem key={item.to} item={item} collapsed={collapsed} />
-                ))}
-            </div>
-          ))}
-        </nav>
+    <div
+      className="admin-app admin-shell"
+      data-density={density}
+      data-collapsed={effectiveCollapsed ? "true" : "false"}
+      data-mobile-open={mobileOpen ? "true" : "false"}
+    >
+      <a href="#admin-main" className="admin-skip-link">
+        Skip to content
+      </a>
 
-        <div
-          className={cn(
-            "border-t border-border py-3",
-            collapsed
-              ? "flex flex-col items-center gap-2 px-2"
-              : "space-y-2 px-3",
-          )}
+      <AdminSidebar
+        collapsed={effectiveCollapsed}
+        mobileOpen={mobileOpen}
+        onNavigate={() => setMobileOpen(false)}
+      />
+
+      {mobileOpen ? (
+        <button
+          type="button"
+          aria-label={t("admin.hub.closeMenu")}
+          data-testid="admin-sidebar-scrim"
+          className="admin-scrim fixed inset-0 z-50 border-0 sm:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      ) : null}
+
+      <div className="admin-main flex flex-1 flex-col overflow-hidden">
+        <AdminTopbar
+          collapsed={effectiveCollapsed}
+          mobile={mobile}
+          density={density}
+          onToggleSidebar={toggleSidebar}
+          onToggleDensity={toggleDensity}
+          onOpenPalette={() => setSearchOpen(true)}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
+        />
+
+        <main
+          id="admin-main"
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto outline-none"
         >
-          {collapsed ? (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <NavLink
-                    to={routes.home}
-                    aria-label={t("admin.nav.backToBoards")}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-                  </NavLink>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  {t("admin.nav.backToBoards")}
-                </TooltipContent>
-              </Tooltip>
-              <LanguageSwitcher />
-            </>
-          ) : (
-            <div className="flex items-center justify-between gap-2">
-              <LanguageSwitcher />
-              <NavLink
-                to={routes.home}
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-                {t("admin.nav.backToBoards")}
-              </NavLink>
-            </div>
-          )}
-        </div>
-      </aside>
-
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar: sidebar toggle, signed-in identity, the omnibox, logout. */}
-        <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-card/30 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  data-testid="admin-sidebar-toggle"
-                  aria-label={t("admin.nav.toggleSidebar")}
-                  aria-expanded={!collapsed}
-                  onClick={toggleSidebar}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-                >
-                  {collapsed ? (
-                    <PanelLeftOpen className="h-4 w-4" aria-hidden />
-                  ) : (
-                    <PanelLeftClose className="h-4 w-4" aria-hidden />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{t("admin.nav.toggleSidebar")}</TooltipContent>
-            </Tooltip>
-            <p className="truncate text-xs text-muted-foreground">
-              {t("admin.nav.signedInAs")}{" "}
-              <span className="font-medium text-foreground">
-                {admin?.email}
-              </span>
-              {admin?.role === "OWNER" ? (
-                <span className="ml-2 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
-                  {t("admin.nav.masterBadge")}
-                </span>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid="admin-global-search"
-              onClick={() => setSearchOpen(true)}
-              className="inline-flex h-7 items-center gap-2 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-            >
-              <Search className="h-3.5 w-3.5" aria-hidden />
-              <span>{t("admin.search.title")}</span>
-              <kbd className="rounded border border-border bg-hover/50 px-1 font-mono text-[10px]">
-                ⌘K
-              </kbd>
-            </button>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  data-testid="admin-theme-toggle"
-                  aria-label={t("admin.nav.toggleTheme")}
-                  aria-pressed={theme === "dark"}
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-                >
-                  {theme === "dark" ? (
-                    <Sun className="h-3.5 w-3.5" aria-hidden />
-                  ) : (
-                    <Moon className="h-3.5 w-3.5" aria-hidden />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{t("admin.nav.toggleTheme")}</TooltipContent>
-            </Tooltip>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              data-testid="admin-logout"
-              className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-            >
-              <LogOut className="h-3.5 w-3.5" aria-hidden />
-              {t("admin.nav.logout")}
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>
 
-      <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+      <GlobalSearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onOpenShortcuts={() => {
+          setSearchOpen(false);
+          setShortcutsOpen(true);
+        }}
+        onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        onToggleDensity={toggleDensity}
+      />
+      <AdminShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+      />
     </div>
   );
 }

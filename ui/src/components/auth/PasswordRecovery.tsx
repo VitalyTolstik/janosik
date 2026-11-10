@@ -102,8 +102,10 @@ export function PasswordRecovery({
   return (
     <div className="w-full max-w-sm">
       <div className="mb-6 flex flex-col items-center gap-2 text-center">
-        <BrandMark size="large" />
-        <h1 className="text-lg font-semibold">
+        <span aria-hidden className="group">
+          <BrandMark size="large" />
+        </span>
+        <h1 className="text-lg font-semibold text-foreground">
           {step === "done"
             ? t("auth.recovery.doneTitle")
             : t("auth.recovery.title")}
@@ -123,7 +125,10 @@ export function PasswordRecovery({
       >
         {step === "request" && (
           <>
-            <label htmlFor="recovery-email" className="text-sm font-medium">
+            <label
+              htmlFor="recovery-email"
+              className="text-sm font-medium text-foreground"
+            >
               {t("auth.email")}
             </label>
             <Input
@@ -144,7 +149,10 @@ export function PasswordRecovery({
         )}
         {step === "confirm" && (
           <>
-            <label htmlFor="recovery-code" className="text-sm font-medium">
+            <label
+              htmlFor="recovery-code"
+              className="text-sm font-medium text-foreground"
+            >
               {t("auth.recovery.code")}
             </label>
             <Input
@@ -161,7 +169,10 @@ export function PasswordRecovery({
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
-            <label htmlFor="recovery-password" className="text-sm font-medium">
+            <label
+              htmlFor="recovery-password"
+              className="text-sm font-medium text-foreground"
+            >
               {t("auth.recovery.newPassword")}
             </label>
             <Input
@@ -181,7 +192,10 @@ export function PasswordRecovery({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <label htmlFor="recovery-confirm" className="text-sm font-medium">
+            <label
+              htmlFor="recovery-confirm"
+              className="text-sm font-medium text-foreground"
+            >
               {t("auth.recovery.confirmPassword")}
             </label>
             <Input

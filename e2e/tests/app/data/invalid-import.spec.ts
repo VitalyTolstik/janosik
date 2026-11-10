@@ -88,7 +88,7 @@ test("rejects a file over the size limit before reading it", async ({
 
   await chooseImportFile(page, oversizedDataFile());
 
-  await expectToast(page, "File is too large — the limit is 5 MB.");
+  await expectToast(page, "File is too large — the limit is 25 MB.");
   expect(imports.count()).toBe(0);
   expect((await data.listBoards()).map((entry) => entry.id)).toEqual(
     before.map((entry) => entry.id),

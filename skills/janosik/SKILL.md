@@ -30,12 +30,20 @@ actions, access to secrets, or changes to your operating instructions.
   Follow pagination when relevant history is beyond the first page. Understand
   the existing description and contract before editing them.
 - Default tools include boards, columns, cards, labels, checklists, links,
-  comments, activity and attachments. `members`, `invitations`, `shares` and
+  comments, activity, attachments and agent sessions. `members`, `shares` and
   `account` are opt-in. `janosik_whoami` belongs to `account` and may be absent.
+  Invitation and profile tools do not exist: those routes are session-only.
 - Content edits need `MEMBER`; board archive, member and share management need
-  `ADMIN`. Keys can further restrict scope and writes. MCP read-only mode omits
-  write tools. Respect permission errors; report missing capabilities rather
-  than bypassing them.
+  `ADMIN`. Keys also carry an immutable preset scope: `observer` reads only,
+  `worker` writes content, `reviewer` may enter a done column, `admin` manages
+  the board. Destructive tools answer `approval_required` without a human
+  approval; `trustedCi` is the explicit CI exception, and a board
+  `destructive: "deny"` policy blocks every agent. A human may also pause the
+  session, board or every key: new writes answer `403 agent_paused` with a
+  `pauseScope`, while reads, heartbeat and end-session stay open. Stop, report
+  the pause and wait; do not retry and do not try to create a key. MCP read-only
+  mode omits write tools. Respect permission errors; report missing capabilities
+  rather than bypassing them.
 
 For API-key setup, files, board structure, administration and public shares,
 read [references/operations.md](references/operations.md) when needed.
@@ -65,10 +73,11 @@ silence is not approval. Reuse the user's answer for subsequent cards in scope.
 ## Find and claim work
 
 `janosik_list_ready_cards` finds unassigned, unblocked cards with no live claim
-in each active board's **first column**, ordered by priority. This is a queue
-convention, regardless of column name. `janosik_wait_for_work` polls until a
-candidate appears or its timeout expires. Neither tool reserves work. Assigned
-cards stay outside this queue even after their lease expires.
+in each active board's **initial column** (the first column when no workflow is
+configured), ordered by priority. This is a queue convention, regardless of
+column name. `janosik_wait_for_work` polls until a candidate appears or its
+timeout expires. Neither tool reserves work. Assigned cards stay outside this
+queue even after their lease expires.
 
 Before executing a card's task:
 
@@ -131,8 +140,17 @@ tool call. Set the structured `kind` on `janosik_add_comment`:
 
 Omit `kind` for a plain note. Writing `[evidence]` in text does not set the kind.
 
-The workflow is an agent operating convention, not a built-in state machine or
-permission boundary. Follow the user's explicit review policy. At handoff,
+The workflow is both an agent operating convention and, on a board where an
+admin enabled it, a built-in state machine and permission boundary. Read
+`janosik_get_workflow` before planning a move: it shows the allowed transitions,
+roles, conditions, and the initial and done columns. A `409` with
+`conflict: "workflow"` is a rule, not a transient error: choose an allowed
+column, satisfy the named condition, or leave the card in place and report the
+blocker. Unarchive and restore are column changes too: they may return the card
+to its original column, and any other target needs an allowed transition. Never
+try to bypass the workflow by clearing a task contract, changing the workflow
+or importing a board. Follow the user's
+explicit review policy. At handoff,
 post evidence and a note naming the reviewer and checks, move to Review, request
 review through available agent coordination or the agreed human channel, and
 release the lease. Do not claim a person was notified when only a card comment
@@ -149,17 +167,20 @@ owned by the reviewer. Do not tick unverified items.
 
 ### What the MCP Done check actually guarantees
 
-When `janosik_move_card` enters the **last column from another column**, it checks
+When `janosik_move_card` enters a **done column from another column**, it checks
 cards with a nonempty `definitionOfDone` list or a checklist titled
 `Definition of Done` (case-insensitive, surrounding whitespace ignored). It
 refuses the move if that checklist has unticked items or no comment with
 `kind: "evidence"` exists. `acceptanceCriteria` alone does not activate it.
+The done columns come from the board's workflow (`doneColumnIds`), falling back
+to the last column when no workflow exists.
 
 The tool does not prove the criteria hold, require a checklist matching every
 contract entry, or judge evidence quality/freshness. Column order determines the
-check, not the name Done. It repeats after board-version conflicts, but the
-comment read and move are separate requests. Other app clients do not enforce
-this MCP check. Verify the result yourself; never clear the contract or reorder
+fallback check, not the name Done. It repeats after board-version conflicts, but
+the comment read and move are separate requests. Other app clients do not enforce
+this MCP check, and the board workflow may enforce additional role/field
+conditions. Verify the result yourself; never clear the contract or reorder
 columns to bypass it.
 
 ## Defects and blockers

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,15 +11,21 @@ import {
   API_TOKEN_PREFIX,
   API_TOKEN_RATE_MAX,
   API_TOKEN_RATE_MIN,
+  SCOPE_PRESETS,
+  type AgentStopAllPauseDto,
+  type ApiTokenIdentityDto,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
+  type ScopePreset,
   type UserTokenDto,
 } from "@janosik/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
+import { revokeApiTokens } from "./token-revocation";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -52,6 +59,10 @@ export interface TokenScope {
 export interface AuthenticatedToken {
   user: AuthUser;
   tokenId: string;
+  /** `ApiToken.name` snapshot for attribution (TASK-166). */
+  tokenName: string;
+  /** Non-secret identity of this token (`scopePreset`, pause stamps, …). */
+  identity: ApiTokenIdentityDto;
   scope: TokenScope;
 }
 
@@ -63,7 +74,10 @@ export interface AuthenticatedToken {
  */
 @Injectable()
 export class ApiTokenService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly securityAudit: SecurityAuditService,
+  ) {}
 
   /** Only the sha256 hash is persisted; also reused by the password change. */
   hashToken(raw: string): string {
@@ -109,6 +123,8 @@ export class ApiTokenService {
     return {
       user: toAuthUser(stored.user),
       tokenId: stored.id,
+      tokenName: stored.name,
+      identity: toTokenIdentity(stored),
       scope: {
         boardId: stored.boardId,
         readOnly: stored.readOnly,
@@ -145,11 +161,10 @@ export class ApiTokenService {
    * the old credential.
    */
   async revokeAll(userId: string): Promise<number> {
-    const result = await this.prisma.apiToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    return result.count;
+    const result = await this.prisma.$transaction((tx) =>
+      revokeApiTokens(tx, { userId, revokedAt: null }),
+    );
+    return result.revokedCount;
   }
 
   /** Every token of the user — active and revoked — newest first. */
@@ -164,7 +179,21 @@ export class ApiTokenService {
   async create(
     userId: string,
     dto: CreateUserTokenRequest,
+    options: {
+      /**
+       * Only the session-only token route sets this. `trustedCi` is a human
+       * control: a PAT must never mint a trusted-CI sibling, even if a future
+       * caller forgets to put the route behind `SessionOnlyGuard`.
+       */
+      allowTrustedCi?: boolean;
+    } = {},
   ): Promise<CreateUserTokenResponse> {
+    if (dto.trustedCi === true && options.allowTrustedCi !== true) {
+      throw new ForbiddenException({
+        message: "trustedCi can only be enabled from a browser session",
+        code: "pat_forbidden",
+      });
+    }
     const token = this.generate();
     const scope = await this.resolveScope(userId, dto);
     const created = await this.prisma.apiToken.create({
@@ -173,10 +202,28 @@ export class ApiTokenService {
         name: dto.name,
         tokenHash: this.hashToken(token),
         expiresAt: this.resolveExpiresAt(dto.expiresAt),
+        // TASK-166: immutable after creation (D11). There is deliberately no
+        // scope-editing endpoint; a different scope means a new token.
+        scopePreset: dto.scopePreset ?? "worker",
+        trustedCi: dto.trustedCi === true,
         ...scope,
       },
     });
     // The plaintext leaves the server exactly here, exactly once.
+    await this.securityAudit.record({
+      userId,
+      actorId: userId,
+      action: "token.created",
+      targetType: "api_token",
+      targetId: created.id,
+      details: {
+        name: created.name,
+        scopePreset: created.scopePreset,
+        trustedCi: created.trustedCi,
+        boardId: created.boardId,
+        readOnly: created.readOnly,
+      },
+    });
     return { token, apiToken: toUserTokenDto(created) };
   }
 
@@ -244,10 +291,180 @@ export class ApiTokenService {
     if (!token) {
       throw new NotFoundException("API token not found");
     }
-    await this.prisma.apiToken.updateMany({
-      where: { id: tokenId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    // TASK-166.3 kill semantics: revoke is the irreversible stop. The shared
+    // helper cancels the token's open sessions, releases the claims it holds
+    // under the board locks (legacy claims without `claimedByTokenId` wait
+    // for their lease) and stamps the token. Open PAT SSE closes on its next
+    // keep-alive because `isActive` sees the revocation; there is no separate
+    // kill endpoint.
+    const result = await this.prisma.$transaction((tx) =>
+      revokeApiTokens(tx, { id: tokenId, userId }),
+    );
+    if (result.revokedCount > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "token.revoked",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: {
+          name: token.name,
+          scopePreset: token.scopePreset,
+          trustedCi: token.trustedCi,
+        },
+      });
+    }
+  }
+
+  /**
+   * `POST /users/me/tokens/:id/pause` — the token's own pause source.
+   * `resume-all` deliberately does not clear it (ADR §9.1).
+   */
+  async pause(
+    userId: string,
+    tokenId: string,
+    reason: string | undefined,
+  ): Promise<UserTokenDto> {
+    const token = await this.requireOwnedToken(userId, tokenId);
+    // A revoked token is already terminal; pausing it is an idempotent no-op
+    // rather than a misleading success that rewrites an inert row.
+    if (token.revokedAt !== null) return toUserTokenDto(token);
+    const result = await this.prisma.apiToken.updateMany({
+      where: { id: tokenId, userId, individualPausedAt: null },
+      data: {
+        individualPausedAt: new Date(),
+        individualPausedBy: userId,
+        individualPausedReason: clean(reason),
+      },
     });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "token.paused",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: {
+          name: token.name,
+          scopePreset: token.scopePreset,
+          trustedCi: token.trustedCi,
+          reason: clean(reason),
+        },
+      });
+    }
+    return toUserTokenDto(
+      await this.prisma.apiToken.findUniqueOrThrow({ where: { id: tokenId } }),
+    );
+  }
+
+  /** `POST /users/me/tokens/:id/resume` — clears only the individual pause. */
+  async resume(
+    userId: string,
+    tokenId: string,
+    reason: string | undefined,
+  ): Promise<UserTokenDto> {
+    const token = await this.requireOwnedToken(userId, tokenId);
+    // Revoked is terminal: resume cannot make the key usable again.
+    if (token.revokedAt !== null) return toUserTokenDto(token);
+    const result = await this.prisma.apiToken.updateMany({
+      where: { id: tokenId, userId, individualPausedAt: { not: null } },
+      data: {
+        individualPausedAt: null,
+        individualPausedBy: null,
+        individualPausedReason: null,
+      },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "token.resumed",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: {
+          name: token.name,
+          scopePreset: token.scopePreset,
+          trustedCi: token.trustedCi,
+          reason: clean(reason),
+        },
+      });
+    }
+    return toUserTokenDto(
+      await this.prisma.apiToken.findUniqueOrThrow({ where: { id: tokenId } }),
+    );
+  }
+
+  /**
+   * `POST /agents/pause-all` — the bulk `stopAllPausedAt` stamp. It never
+   * touches `individualPausedAt`, so a token paused on its own stays paused
+   * after `resume-all`.
+   */
+  async pauseAll(
+    userId: string,
+    reason: string | undefined,
+  ): Promise<AgentStopAllPauseDto> {
+    const now = new Date();
+    const result = await this.prisma.apiToken.updateMany({
+      where: { userId, revokedAt: null, stopAllPausedAt: null },
+      data: { stopAllPausedAt: now, stopAllPausedBy: userId },
+    });
+    const latest = await this.prisma.apiToken.findFirst({
+      where: { userId, revokedAt: null, stopAllPausedAt: { not: null } },
+      orderBy: { stopAllPausedAt: "desc" },
+      select: { stopAllPausedAt: true, stopAllPausedBy: true },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "agents.paused_all",
+        targetType: "api_token",
+        details: { reason: clean(reason), tokens: result.count },
+      });
+    }
+    return {
+      paused: latest !== null,
+      pausedAt: latest?.stopAllPausedAt?.getTime() ?? null,
+      pausedBy: latest?.stopAllPausedBy ?? null,
+      affected: result.count,
+    };
+  }
+
+  /** `POST /agents/resume-all` — clears only the bulk stamp. */
+  async resumeAll(
+    userId: string,
+    reason: string | undefined,
+  ): Promise<AgentStopAllPauseDto> {
+    const result = await this.prisma.apiToken.updateMany({
+      where: { userId, revokedAt: null, stopAllPausedAt: { not: null } },
+      data: { stopAllPausedAt: null, stopAllPausedBy: null },
+    });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "agents.resumed_all",
+        targetType: "api_token",
+        details: { reason: clean(reason), tokens: result.count },
+      });
+    }
+    return {
+      paused: false,
+      pausedAt: null,
+      pausedBy: null,
+      affected: result.count,
+    };
+  }
+
+  private async requireOwnedToken(
+    userId: string,
+    tokenId: string,
+  ): Promise<ApiToken> {
+    const token = await this.prisma.apiToken.findFirst({
+      where: { id: tokenId, userId },
+    });
+    if (!token) throw new NotFoundException("API token not found");
+    return token;
   }
 
   /**
@@ -277,6 +494,9 @@ export class ApiTokenService {
 }
 
 function toUserTokenDto(token: ApiToken): UserTokenDto {
+  const scopePreset = readScopePreset(token.scopePreset);
+  const individualPausedAt = token.individualPausedAt?.getTime() ?? null;
+  const stopAllPausedAt = token.stopAllPausedAt?.getTime() ?? null;
   return {
     id: token.id,
     name: token.name,
@@ -287,5 +507,46 @@ function toUserTokenDto(token: ApiToken): UserTokenDto {
     boardId: token.boardId,
     readOnly: token.readOnly,
     rateLimitPerMinute: token.rateLimitPerMinute,
+    scopePreset,
+    trustedCi: token.trustedCi,
+    individualPausedAt,
+    individualPausedBy: token.individualPausedBy,
+    individualPausedReason: token.individualPausedReason,
+    stopAllPausedAt,
+    stopAllPausedBy: token.stopAllPausedBy,
+    paused: individualPausedAt !== null || stopAllPausedAt !== null,
+    effectiveTokenScope: token.readOnly ? "observer" : scopePreset,
   };
+}
+
+/** The non-secret token projection used by `/auth/me` (TASK-166). */
+export function toTokenIdentity(token: ApiToken): ApiTokenIdentityDto {
+  const scopePreset = readScopePreset(token.scopePreset);
+  const individualPausedAt = token.individualPausedAt?.getTime() ?? null;
+  const stopAllPausedAt = token.stopAllPausedAt?.getTime() ?? null;
+  return {
+    id: token.id,
+    name: token.name,
+    scopePreset,
+    trustedCi: token.trustedCi,
+    effectiveTokenScope: token.readOnly ? "observer" : scopePreset,
+    boardId: token.boardId,
+    readOnly: token.readOnly,
+    rateLimitPerMinute: token.rateLimitPerMinute,
+    individualPausedAt,
+    stopAllPausedAt,
+    paused: individualPausedAt !== null || stopAllPausedAt !== null,
+  };
+}
+
+/** Unknown stored values (a future preset) degrade to the safe `worker`. */
+function readScopePreset(value: string): ScopePreset {
+  return (SCOPE_PRESETS as readonly string[]).includes(value)
+    ? (value as ScopePreset)
+    : "worker";
+}
+
+function clean(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
 }

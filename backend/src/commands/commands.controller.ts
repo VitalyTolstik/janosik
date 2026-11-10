@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,17 +12,29 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { Role } from "@prisma/client";
+import { type BoardMember, Role } from "@prisma/client";
 import type {
   CommandBatchResponse,
   CommandDeltaEntry,
   CommandResponse,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
-import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import {
+  actorTypeOf,
+  CurrentAgentSession,
+  CurrentPrincipal,
+} from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import { CurrentMembership } from "@/common/current-membership.decorator";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CommandsService } from "./commands.service";
 import { CreateCommandBatchDto } from "./dto/create-command-batch.dto";
@@ -41,21 +54,62 @@ export const DELTA_RESYNC_HEADER = "X-Delta-Resync";
  */
 @Controller("boards/:id/commands")
 export class CommandsController {
-  constructor(private readonly commands: CommandsService) {}
+  constructor(
+    private readonly commands: CommandsService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN, Role.MEMBER)
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(
+  async create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<CommandResponse> {
-    return this.commands.apply(id, user.id, dto, {
-      actorType: actorTypeOf(principal),
+    const apply = (): Promise<CommandResponse> =>
+      this.commands.apply(id, user.id, dto, {
+        actorType: actorTypeOf(principal),
+        actorRole: membership.role,
+        attribution: requestAttribution(principal, session?.id),
+        principal,
+      });
+    // Commands are already idempotent through `commandId`; the ADR's
+    // `duplicate_card` operation additionally accepts the REST-level
+    // `Idempotency-Key` so an agent can retry a whole tool call.
+    if (dto.action.type !== "DUPLICATE_CARD") return apply();
+    const action = dto.action;
+    const outcome = await this.idempotency.run({
+      scope: "duplicate_card",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      // `at` and `commandId` are transport stamps, not intent: an honest
+      // retry may carry a later clock and still must replay.
+      requestHash: hashIdempotentRequest({
+        boardId: id,
+        type: action.type,
+        cardId: action.cardId,
+        newCardId: action.newCardId,
+        title: action.title,
+      }),
+      run: async () => {
+        const response = await apply();
+        return {
+          body: response,
+          status: 200,
+          resourceId:
+            typeof dto.action.newCardId === "string"
+              ? dto.action.newCardId
+              : null,
+        };
+      },
     });
+    return outcome.body;
   }
 
   /**
@@ -72,10 +126,15 @@ export class CommandsController {
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandBatchDto,
   ): Promise<CommandBatchResponse> {
     const results = await this.commands.applyBatch(id, user.id, dto.commands, {
       actorType: actorTypeOf(principal),
+      actorRole: membership.role,
+      attribution: requestAttribution(principal, session?.id),
+      principal,
     });
     return { results };
   }
@@ -93,8 +152,24 @@ export class CommandsController {
     @Param("id") id: string,
     @Res({ passthrough: true }) res: Response,
     @Query("since") since?: string,
+    @Query("runId") runId?: string,
+    @Query("apiTokenId") apiTokenId?: string,
+    @Query("agentSessionId") agentSessionId?: string,
   ): Promise<CommandDeltaEntry[]> {
-    const delta = await this.commands.deltaSince(id, parseSince(since));
+    const delta = await this.commands.deltaSince(
+      id,
+      parseSince(since),
+      undefined,
+      {
+        ...(runId !== undefined && runId !== "" ? { runId } : {}),
+        ...(apiTokenId !== undefined && apiTokenId !== ""
+          ? { apiTokenId }
+          : {}),
+        ...(agentSessionId !== undefined && agentSessionId !== ""
+          ? { agentSessionId }
+          : {}),
+      },
+    );
     if (delta.resync) {
       res.setHeader(DELTA_RESYNC_HEADER, "1");
       return [];

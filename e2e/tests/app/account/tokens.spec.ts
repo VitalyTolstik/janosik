@@ -29,6 +29,60 @@ test("creating a key reveals it once and the list never shows it again", async (
   await expect(row).not.toContainText("jnk_");
 });
 
+test("the create dialog uses themed controls in light and dark", async ({
+  page,
+  account,
+}) => {
+  await account.open(page);
+  // The reported bug: the OS preferred dark while the app was light, so the
+  // UA painted native controls with the dark scheme.
+  await page.emulateMedia({ colorScheme: "dark" });
+
+  const openCreate = async () => {
+    await openAccount(page, "tokens");
+    await page.getByTestId("token-create").click();
+    const dialog = page.getByTestId("token-dialog");
+    await expect(dialog).toBeVisible();
+    return dialog;
+  };
+
+  await page.evaluate(() => localStorage.setItem("janosik-theme", "dark"));
+  await page.reload();
+  let dialog = await openCreate();
+
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await expect(dialog.locator('input[type="number"]')).toHaveCount(0);
+  await expect(dialog.locator('input[type="checkbox"]')).toHaveCount(0);
+  await expect(
+    dialog.getByRole("checkbox", { name: "Read-only (writes refused)" }),
+  ).toBeVisible();
+  // The board picker is a themed listbox, not a native <select> whose popup
+  // would be painted white over the dark dialog.
+  await dialog.getByTestId("token-board").click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await expect(page.getByRole("option").first()).toBeVisible();
+  // Toggle the popover closed; Escape would close the whole token dialog.
+  await dialog.getByTestId("token-board").click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(dialog.getByTestId("token-rate")).toHaveAttribute(
+    "type",
+    "text",
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Increase rate limit" }),
+  ).toBeVisible();
+
+  await page.evaluate(() => localStorage.setItem("janosik-theme", "light"));
+  await page.reload();
+  dialog = await openCreate();
+
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await expect(
+    dialog.getByRole("checkbox", { name: "Read-only (writes refused)" }),
+  ).toBeVisible();
+  await expect(dialog.locator('input[type="number"]')).toHaveCount(0);
+});
+
 test("copying a new key puts the plaintext on the clipboard", async ({
   page,
   account,

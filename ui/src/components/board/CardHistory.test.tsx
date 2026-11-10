@@ -97,6 +97,36 @@ describe("foldHistory", () => {
 });
 
 describe("CardHistory", () => {
+  it("shows a busy skeleton until the first page arrives", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [commandEntry()]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      await gate;
+      return server.handle(input, init);
+    };
+    vi.stubGlobal("fetch", handler);
+
+    renderHistory();
+
+    const skeleton = await screen.findByTestId("card-history-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByText("No history yet")).not.toBeInTheDocument();
+
+    act(() => release());
+
+    expect(await screen.findByTestId("history-entry")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("card-history-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows an administrator without linking to the board owner's profile", async () => {
     const server = new FakeServer();
     server.seedActivity("card-1", [

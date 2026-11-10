@@ -26,17 +26,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardItem } from "@/components/board/CardItem";
 import { ColumnView } from "@/components/board/ColumnView";
+import { columnAccentVars } from "@/utils/column-accent";
 import { useCardLabels } from "@/hooks/use-card-labels";
 import { useCardList } from "@/hooks/use-card-list";
 import type { BoardDensity } from "@/hooks/use-board-density";
 import { useI18n } from "@/i18n";
-import { useBoard } from "@/store/BoardContext";
+import { useBoard, useBoardAccess } from "@/store/BoardContext";
 import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
+import { blockedMoveMessage, workflowBlockReason } from "@/utils/workflow";
 import { applyCardOver } from "@/utils/dnd";
+import { cn } from "@/lib/utils";
 import { cardLinkIndex, linkSignature } from "@/utils/links";
 import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
+import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 
 /** Stable empties, so the resolvers survive a board-less render. */
 const NO_LABELS: Label[] = [];
@@ -133,6 +137,8 @@ export function DndBoard({
   readOnly = false,
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
+  const { role } = useBoardAccess();
+  const columnStyle = board?.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
   const { tp, t } = useI18n();
   const toast = useToast();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
@@ -177,6 +183,8 @@ export function DndBoard({
   }, [t]);
 
   const [draft, setDraftState] = useState<Draft | null>(null);
+  // Last blocked destination announced to assistive tech while dragging.
+  const [blockedNotice, setBlockedNotice] = useState<string | null>(null);
   // Ref mirror so event handlers always read the latest draft (state updates
   // are async across events).
   const draftRef = useRef<Draft | null>(null);
@@ -296,6 +304,7 @@ export function DndBoard({
       const type = event.active.data.current?.type;
       lastOverIdRef.current = null;
       recentlyMovedRef.current = false;
+      setBlockedNotice(null);
 
       if (type === "column") {
         updateDraft({
@@ -371,6 +380,36 @@ export function DndBoard({
             );
       if (!toColId || fromColId === toColId) return;
 
+      // A workflow-forbidden column keeps the card visually in its source
+      // column while the pointer passes over it; the drop itself is rejected
+      // in `handleDragEnd` with the reason and the still-allowed targets.
+      const targetColumn = board?.columns.find(
+        (column) => column.id === toColId,
+      );
+      const dragCard = board?.cards[current.activeCardId];
+      const fromTitle = board?.columns.find(
+        (column) => column.id === fromColId,
+      )?.title;
+      if (board && targetColumn && dragCard && fromTitle !== undefined) {
+        const reason = workflowBlockReason(
+          {
+            workflow: board.workflow,
+            card: dragCard,
+            fromColumnId: fromColId,
+            fromTitle,
+            target: targetColumn,
+            role,
+          },
+          t,
+        );
+        if (reason !== null) {
+          setBlockedNotice((previous) =>
+            previous === reason ? previous : reason,
+          );
+          return;
+        }
+      }
+      setBlockedNotice(null);
       // Cross-column hover (or a column body): insert next to the hovered
       // card using dnd-kit's canonical MultipleContainers rule — the dragged
       // card's TOP vs the hovered card's BOTTOM decides before/after. This
@@ -393,7 +432,7 @@ export function DndBoard({
       recentlyMovedRef.current = true;
       updateDraft({ ...current, columns: next });
     },
-    [board, updateDraft],
+    [board, updateDraft, role, t],
   );
 
   const handleDragEnd = useCallback(
@@ -440,6 +479,36 @@ export function DndBoard({
         col.cardIds.includes(activeId),
       );
       if (!fromColumn) return;
+
+      // Recompute the workflow decision at drop time: another ADMIN may have
+      // changed the config while this drag was in flight (realtime), and the
+      // server would refuse a move the stale draft considered allowed.
+      const dropColumn = board.columns.find((col) => col.id === overContainer);
+      const dropCard = board.cards[activeId];
+      if (
+        dropColumn &&
+        dropCard &&
+        dropColumn.id !== fromColumn.id &&
+        !readOnly
+      ) {
+        const reason = workflowBlockReason(
+          {
+            workflow: board.workflow,
+            card: dropCard,
+            fromColumnId: fromColumn.id,
+            fromTitle: fromColumn.title,
+            target: dropColumn,
+            role,
+          },
+          t,
+        );
+        if (reason !== null) {
+          setBlockedNotice(null);
+          toast.error(blockedMoveMessage(board, activeId, dropColumn, role, t));
+          return;
+        }
+      }
+      setBlockedNotice(null);
 
       /**
        * TASK-13: a full destination refuses cards from other columns —
@@ -517,10 +586,13 @@ export function DndBoard({
         Math.min(targetIndex, overItems.length),
       );
     },
-    [board, moveCard, moveColumn, updateDraft, toast, t],
+    [board, moveCard, moveColumn, updateDraft, toast, t, role, readOnly],
   );
 
-  const handleDragCancel = useCallback(() => updateDraft(null), [updateDraft]);
+  const handleDragCancel = useCallback(() => {
+    setBlockedNotice(null);
+    updateDraft(null);
+  }, [updateDraft]);
 
   // Open the card detail dialog (owned by BoardSection), ignoring the click
   // that immediately follows a finished drag.
@@ -650,6 +722,12 @@ export function DndBoard({
   );
   const cursorCardId = cursor !== null ? visibleCardIds[cursor] : undefined;
 
+  const draggedCard =
+    draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
+  const draggedFrom = draggedCard
+    ? board.columns.find((column) => column.cardIds.includes(draggedCard.id))
+    : undefined;
+
   const activeCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
   const activeLabels = activeCard
@@ -671,6 +749,9 @@ export function DndBoard({
       onDragCancel={handleDragCancel}
     >
       <div className="flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto pb-4">
+        <p className="sr-only" role="status">
+          {blockedNotice ?? ""}
+        </p>
         <SortableContext
           items={columnOrder}
           strategy={horizontalListSortingStrategy}
@@ -684,6 +765,20 @@ export function DndBoard({
               draft?.mode === "card"
                 ? draft.columns[column.id]
                 : filteredCardIds?.[column.id];
+            const workflowBlockedReason =
+              draggedCard && draggedFrom && column.id !== draggedFrom.id
+                ? (workflowBlockReason(
+                    {
+                      workflow: board.workflow,
+                      card: draggedCard,
+                      fromColumnId: draggedFrom.id,
+                      fromTitle: draggedFrom.title,
+                      target: column,
+                      role,
+                    },
+                    t,
+                  ) ?? undefined)
+                : undefined;
             return (
               <ColumnView
                 key={columnId}
@@ -699,6 +794,8 @@ export function DndBoard({
                 onCardClick={handleCardClick}
                 density={density}
                 readOnly={readOnly}
+                columnStyle={columnStyle}
+                workflowBlockedReason={workflowBlockedReason}
                 canDuplicateColumn={
                   board.columns.length < LIMITS.columnsPerBoard
                 }
@@ -727,10 +824,33 @@ export function DndBoard({
             />
           </div>
         ) : activeColumn ? (
-          <div className="w-72 rotate-2 cursor-grabbing rounded-xl border border-primary/60 bg-card/95 p-3 shadow-xl backdrop-blur-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-semibold text-foreground">
-                {activeColumn.title}
+          <div
+            data-column-accent={activeColumn.accent?.value ?? "none"}
+            data-column-accent-type={activeColumn.accent?.type ?? "none"}
+            data-column-accent-style={
+              activeColumn.accent ? columnStyle : "none"
+            }
+            style={columnAccentVars(activeColumn.accent)}
+            className={cn(
+              "w-72 rotate-2 cursor-grabbing rounded-xl border border-primary/60 bg-card/95 p-3 shadow-xl backdrop-blur-sm",
+              activeColumn.accent && "janosik-column-accent",
+              activeColumn.accent && `janosik-column-accent-${columnStyle}`,
+            )}
+          >
+            <div
+              className={cn(
+                "flex items-center justify-between gap-2",
+                activeColumn.accent && "janosik-column-accent-head",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
+                />
+                <span className="janosik-column-accent-heading truncate text-sm font-semibold text-foreground">
+                  {activeColumn.title}
+                </span>
               </span>
               <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hover px-1.5 text-[11px] font-medium text-muted-foreground">
                 {activeColumn.cardIds.length}

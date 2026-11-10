@@ -9,14 +9,8 @@ import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
-import {
-  CharCount,
-  ErrorState,
-  Field,
-  LoadingState,
-  PageHeader,
-  Panel,
-} from "./ui";
+import { CharCount, ErrorState, Field, PageHeader, Panel } from "./ui";
+import { SettingsSkeleton } from "./skeletons";
 import { fieldError } from "./validation";
 
 /**
@@ -120,7 +114,8 @@ export function OAuthSettingsPage() {
     [drafts, t, toast],
   );
 
-  if (phase === "loading") return <LoadingState />;
+  if (phase === "loading")
+    return <SettingsSkeleton testId="admin-oauth-skeleton" panels={2} />;
   if (phase === "error") return <ErrorState onRetry={retry} />;
 
   return (

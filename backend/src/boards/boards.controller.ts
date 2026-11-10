@@ -2,8 +2,8 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Res,
+  StreamableFile,
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
@@ -18,16 +19,25 @@ import { Role } from "@prisma/client";
 import type {
   BoardAggregate,
   BoardCardSearchResult,
-  BoardEnvelope,
+  BoardImportPreviewDto,
   BoardMemberDto,
   BoardSummary,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
-import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
+import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
+import { assertAccountWidePreset } from "@/auth/token-scope";
+import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
 import { BoardsService } from "./boards.service";
 import { CreateBoardDto } from "./dto/create-board.dto";
@@ -43,7 +53,10 @@ import { UpdateMemberDto } from "./dto/update-member.dto";
  */
 @Controller("boards")
 export class BoardsController {
-  constructor(private readonly boards: BoardsService) {}
+  constructor(
+    private readonly boards: BoardsService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -59,29 +72,57 @@ export class BoardsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  create(
+  async create(
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: CreateBoardDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardAggregate> {
-    // A board-scoped token cannot mint boards outside its scope (TASK-157).
-    if (principal?.tokenScope?.boardId) {
-      throw new ForbiddenException("Token is scoped to one board");
-    }
-    return this.boards.createBoard(user.id, dto);
+    // Board creation is account-wide `admin` (TASK-166): a board-scoped or
+    // worker/reviewer token cannot mint boards outside its mandate.
+    assertAccountWidePreset(principal, "board.create");
+    const outcome = await this.idempotency.run({
+      scope: "create_board",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      requestHash: hashIdempotentRequest({ title: dto.title }),
+      run: async () => {
+        const board = await this.boards.createBoard(user.id, dto);
+        return { body: board, status: 201, resourceId: board.id };
+      },
+    });
+    return outcome.body;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("import")
-  import(
+  async import(
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() body: unknown,
-  ): Promise<BoardAggregate[]> {
-    if (principal?.tokenScope?.boardId) {
-      throw new ForbiddenException("Token is scoped to one board");
+    @Query("dryRun") dryRun?: string,
+    @Headers("idempotency-key") rawKey?: string,
+  ): Promise<BoardAggregate[] | BoardImportPreviewDto> {
+    assertAccountWidePreset(principal, "board.import");
+    const preview = dryRun === "1" || dryRun === "true";
+    if (preview) {
+      return this.boards.previewImport(user.id, body);
     }
-    return this.boards.importBoards(user.id, body);
+    const outcome = await this.idempotency.run({
+      scope: "import_boards",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      requestHash: hashIdempotentRequest(body),
+      run: async () => {
+        const boards = await this.boards.importBoards(user.id, body);
+        return {
+          body: boards,
+          status: 201,
+          resourceId: boards[0]?.id ?? null,
+        };
+      },
+    });
+    return outcome.body;
   }
 
   @UseGuards(MembershipGuard)
@@ -108,10 +149,22 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("board.delete")
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
-  async remove(@Param("id") id: string): Promise<{ status: "ok" }> {
-    await this.boards.deleteBoard(id);
+  async remove(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+  ): Promise<{ status: "ok" }> {
+    await this.boards.deleteBoard(
+      id,
+      user.id,
+      requestAttribution(principal, session?.id),
+      principal,
+    );
     return { status: "ok" };
   }
 
@@ -121,26 +174,47 @@ export class BoardsController {
     return this.boards.listMembers(id);
   }
 
+  /** Pending invitations (ADMIN only), so a wrong invite can be cancelled. */
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @Get(":id/invitations")
+  pendingInvitations(@Param("id") id: string) {
+    return this.boards.listPendingInvitations(id);
+  }
+
+  @UseGuards(MembershipGuard)
+  @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("member.invite")
   @Post(":id/members")
   invite(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.inviteMember(id, user.id, dto, actorTypeOf(principal));
+    return this.boards.inviteMember(
+      id,
+      user.id,
+      dto,
+      requestAttribution(principal, session?.id),
+      principal,
+    );
   }
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("member.update")
   @Patch(":id/members/:userId")
   updateMember(
     @Param("id") id: string,
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: UpdateMemberDto,
   ): Promise<BoardMemberDto> {
     return this.boards.updateMember(
@@ -148,12 +222,15 @@ export class BoardsController {
       user.id,
       userId,
       dto,
-      actorTypeOf(principal),
+      requestAttribution(principal, session?.id),
+      principal,
     );
   }
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("member.remove")
   @Delete(":id/members/:userId")
   @HttpCode(HttpStatus.OK)
   async removeMember(
@@ -161,14 +238,28 @@ export class BoardsController {
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.boards.removeMember(id, user.id, userId, actorTypeOf(principal));
+    await this.boards.removeMember(
+      id,
+      user.id,
+      userId,
+      requestAttribution(principal, session?.id),
+      principal,
+    );
     return { status: "ok" };
   }
 
   @UseGuards(MembershipGuard)
   @Get(":id/export")
-  export(@Param("id") id: string): Promise<BoardEnvelope> {
-    return this.boards.exportBoard(id);
+  async export(
+    @Param("id") id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const serialized = await this.boards.exportBoardSerialized(id);
+    // TASK-166.6: stream the exact validated string; do not parse it back
+    // into an object only for Nest to serialize it a second time.
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    return new StreamableFile(Buffer.from(serialized, "utf8"));
   }
 }

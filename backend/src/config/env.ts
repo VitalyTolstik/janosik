@@ -232,6 +232,15 @@ export const env = cleanEnv(process.env, {
     default: 30,
     example: "30",
   }),
+  // TASK-166: server-mode board cap per account. 0 = unlimited (the
+  // product default); a positive value is an operator safety cap, not a
+  // pricing tier. Local/offline mode keeps its own 10-board localStorage
+  // guard in `@janosik/shared`.
+  MAX_BOARDS_PER_USER: nonNegativeInt({
+    desc: "Maximum boards per user in server mode; 0 = unlimited",
+    default: 0,
+    example: "0",
+  }),
   // TASK-148: the master audit trail is trimmed on its own, longer window —
   // accountability wants history, not unbounded growth.
   AUDIT_RETENTION_DAYS: num({

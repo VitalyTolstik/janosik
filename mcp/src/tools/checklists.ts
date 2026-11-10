@@ -67,7 +67,9 @@ export function registerChecklistTools(
             : {}),
         },
       );
-      return textOnly(`Added checklist "${title}" — \`${newChecklistId}\`.`);
+      return textOnly(`Added checklist "${title}" — \`${newChecklistId}\`.`, {
+        resourceId: newChecklistId,
+      });
     },
   );
 
@@ -146,7 +148,9 @@ export function registerChecklistTools(
           ...(itemId ? { commandId: stableCommandId(itemId, "create") } : {}),
         },
       );
-      return textOnly(`Added item "${text}" — \`${newItemId}\`.`);
+      return textOnly(`Added item "${text}" — \`${newItemId}\`.`, {
+        resourceId: newItemId,
+      });
     },
   );
 

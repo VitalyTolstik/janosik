@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Megaphone } from "lucide-react";
+import { Globe2, Megaphone } from "lucide-react";
 import type { AnnouncementDto } from "@janosik/shared";
 import { api, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -32,25 +32,32 @@ function dismissedIds(): string[] {
  */
 export function AnnouncementBanner() {
   const { status } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [items, setItems] = useState<AnnouncementDto[]>([]);
+  const [itemsLocale, setItemsLocale] = useState<string | null>(null);
   const [hidden, setHidden] = useState<string[]>(() => dismissedIds());
 
   useEffect(() => {
     if (!isApiEnabled() || status !== "authenticated") return;
     let active = true;
     api
-      .activeAnnouncements()
+      .activeAnnouncements(lang)
       .then((list) => {
-        if (active) setItems(list);
+        if (active) {
+          setItems(list);
+          setItemsLocale(lang);
+        }
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [status]);
+  }, [status, lang]);
 
-  const visible = items.filter((item) => !hidden.includes(item.id));
+  const visible =
+    itemsLocale === lang
+      ? items.filter((item) => !hidden.includes(item.id))
+      : [];
   if (visible.length === 0) return null;
 
   const dismiss = (id: string) => {
@@ -65,22 +72,38 @@ export function AnnouncementBanner() {
 
   return (
     <div className="contents" data-testid="announcement-banner">
-      {visible.map((item) => (
-        <Notice
-          key={item.id}
-          tone={TONE_BY_LEVEL[item.level]}
-          icon={Megaphone}
-          eyebrow={t("announcement.eyebrow")}
-          title={item.title}
-          body={item.body}
-          bodyClassName="whitespace-pre-line"
-          close={{
-            onClick: () => dismiss(item.id),
-            label: t("announcement.dismiss"),
-            testId: `announcement-dismiss-${item.id}`,
-          }}
-        />
-      ))}
+      {visible.map((item) => {
+        const fallbackNotice = item.isFallback ? (
+          <p
+            lang={lang}
+            data-testid={`announcement-fallback-${item.id}`}
+            className="flex items-start gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2 py-1.5 text-[11px] leading-snug text-primary"
+          >
+            <Globe2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+            {item.contentLocale === "ru"
+              ? t("announcement.fallback.onlyRu")
+              : t("announcement.fallback.onlyEn")}
+          </p>
+        ) : null;
+        return (
+          <Notice
+            key={item.id}
+            tone={TONE_BY_LEVEL[item.level]}
+            icon={Megaphone}
+            eyebrow={t("announcement.eyebrow")}
+            title={item.title}
+            body={item.body}
+            contentLang={item.contentLocale}
+            notice={fallbackNotice}
+            bodyClassName="whitespace-pre-line"
+            close={{
+              onClick: () => dismiss(item.id),
+              label: t("announcement.dismiss"),
+              testId: `announcement-dismiss-${item.id}`,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

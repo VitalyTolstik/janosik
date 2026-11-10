@@ -33,6 +33,14 @@ test("hides owner-only navigation entries from an operator", async ({
       0,
     );
   }
+
+  // Masters is not even a tab in the operator's Access hub; the limit is
+  // enforced by the server anyway, but the UI should not advertise it.
+  await sidebar
+    .getByRole("link", { name: "Access & security", exact: true })
+    .click();
+  await expect(page.getByTestId("admin-hub-tab-sessions")).toBeVisible();
+  await expect(page.getByTestId("admin-hub-tab-masters")).toHaveCount(0);
 });
 
 test("refuses the masters area to an operator on a direct URL", async ({
@@ -50,7 +58,10 @@ test("refuses the masters area to an operator on a direct URL", async ({
   await page.goto(adminPath("masters"), { waitUntil: "domcontentloaded" });
   await forbidden;
 
-  await expect(page.getByText("Could not load the data")).toBeVisible();
+  await expect(page.getByTestId("admin-forbidden-state")).toBeVisible();
+  await expect(
+    page.getByText("Owner rights required", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByTestId("admin-master-password")).toHaveCount(0);
 });
 
@@ -226,7 +237,7 @@ test("PERM-11: operator sees communications read-only", async ({
   ).toHaveCount(0);
 });
 
-test("PERM-12: operator does not see announcement row actions", async ({
+test("PERM-12: operator can view an announcement read-only", async ({
   page,
   admin,
   operator,
@@ -252,7 +263,17 @@ test("PERM-12: operator does not see announcement row actions", async ({
 
   const row = page.getByTestId("admin-row-announcements-0");
   await expect(row).toContainText(title);
-  await expect(row.getByRole("button", { name: "Actions" })).toHaveCount(0);
+  await row.getByRole("button", { name: "Actions" }).click();
+  await page.getByRole("menuitem", { name: "View", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByTestId("admin-announcement-title")).toBeDisabled();
+  await expect(dialog.getByTestId("admin-announcement-save-draft")).toHaveCount(
+    0,
+  );
+  await expect(dialog.getByTestId("admin-announcement-edit-save")).toHaveCount(
+    0,
+  );
+  await dialog.getByTestId("admin-announcement-close").click();
 });
 
 test("PERM-13: operator can still archive a board", async ({

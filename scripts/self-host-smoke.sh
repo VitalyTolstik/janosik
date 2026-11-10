@@ -43,7 +43,9 @@ def post(path, data, token=None):
     with urllib.request.urlopen(req) as response: return json.load(response)
 auth = post('/auth/register', {'email':'smoke@example.test', 'password':'smoke-test-password'})
 assert auth['user']['email'] == 'smoke@example.test'
-key = post('/users/me/tokens', {'name':'smoke'}, auth['accessToken'])['token']
+# TASK-166: new tokens are worker-scoped and cannot create boards; the smoke
+# test deliberately uses an admin-scoped key to keep testing board creation.
+key = post('/users/me/tokens', {'name':'smoke', 'scopePreset':'admin'}, auth['accessToken'])['token']
 post('/boards', {'title':'Persistence smoke'}, key)
 print('Registration, API key, and board creation: OK')
 PY

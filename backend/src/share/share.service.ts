@@ -14,12 +14,17 @@ import type {
   BoardEnvelope,
   BoardShareDto,
   BoardShareMode,
+  CommentDto,
   CommentPage,
   PublicBoardDto,
   PublicBoardMemberDto,
   AttachmentDto,
 } from "@janosik/shared";
 import { SHARE_LIMITS, serializeExport } from "@janosik/shared";
+import {
+  type RequestAttribution,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 import { BoardsService } from "@/boards/boards.service";
@@ -80,6 +85,7 @@ export class ShareService {
     createdBy: string,
     dto: CreateShareDto,
     actorType: "user" | "admin" = "user",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<BoardShareDto> {
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
@@ -126,6 +132,7 @@ export class ShareService {
         createdBy,
         actorType,
         "created",
+        attribution,
       );
       return created;
     });
@@ -139,6 +146,7 @@ export class ShareService {
     actorId: string,
     actorType: "user" | "admin",
     action: "created" | "revoked" | "deleted",
+    attribution: RequestAttribution,
   ): Promise<void> {
     await tx.boardShareAuditLog.create({
       data: {
@@ -146,6 +154,9 @@ export class ShareService {
         boardId,
         actorId,
         actorType,
+        apiTokenId: attribution.apiTokenId,
+        agentSessionId: attribution.agentSessionId,
+        agentName: attribution.agentName,
         action,
         details: {
           mode: share.mode,
@@ -173,7 +184,12 @@ export class ShareService {
       },
     });
     if (count >= SHARE_LIMITS.activePerBoard[mode]) {
-      throw new ConflictException("Active share limit reached");
+      throw new ConflictException({
+        message: "Active share limit reached",
+        code: "limit_exceeded",
+        limit: SHARE_LIMITS.activePerBoard[mode],
+        current: count,
+      });
     }
   }
 
@@ -246,7 +262,11 @@ export class ShareService {
   }
 
   /** Revoke a share: its token stops resolving at once. Idempotent. */
-  async revoke(shareId: string, actorId: string): Promise<BoardShareDto> {
+  async revoke(
+    shareId: string,
+    actorId: string,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+  ): Promise<BoardShareDto> {
     const row = await this.requireShare(shareId);
     const updated = await this.prisma.$transaction(async (tx) => {
       const changed = await tx.boardShare.updateMany({
@@ -264,6 +284,7 @@ export class ShareService {
           actorId,
           "user",
           "revoked",
+          attribution,
         );
       return current;
     });
@@ -274,6 +295,7 @@ export class ShareService {
     boardId: string,
     shareId: string,
     actorId: string,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<void> {
     const row = await this.requireShareOnBoard(shareId, boardId);
     if (!row.revokedAt)
@@ -283,7 +305,15 @@ export class ShareService {
         where: { id: shareId, boardId, revokedAt: { not: null } },
       });
       if (!deleted.count) throw new NotFoundException("Share not found");
-      await this.auditShare(tx, row, boardId, actorId, "user", "deleted");
+      await this.auditShare(
+        tx,
+        row,
+        boardId,
+        actorId,
+        "user",
+        "deleted",
+        attribution,
+      );
     });
   }
 
@@ -355,7 +385,7 @@ export class ShareService {
         mode: "snapshot",
         title: share.title,
         takenAt: payload.takenAt ?? share.createdAt.getTime(),
-        board: payload.envelope.boards[0],
+        board: sanitizePublicBoard(payload.envelope.boards[0]),
         seq: share.snapshotVersion ?? null,
         members: payload.members,
         includeComments: share.includeComments,
@@ -370,7 +400,7 @@ export class ShareService {
       mode: "live",
       title: share.title,
       takenAt: null,
-      board,
+      board: sanitizePublicBoard(board),
       seq,
       members,
       includeComments: share.includeComments,
@@ -408,13 +438,17 @@ export class ShareService {
       throw new NotFoundException("Not found");
     }
     await this.assertCardOnBoard(share, cardId);
-    return this.comments.list(
+    const page = await this.comments.list(
       cardId,
       cursor,
       limit,
       undefined,
       this.snapshotCutoff(share),
     );
+    return {
+      ...page,
+      items: page.items.map(toPublicComment),
+    };
   }
 
   /** Attachment metadata for a card on the shared board, when exposed. */
@@ -426,7 +460,11 @@ export class ShareService {
       throw new NotFoundException("Not found");
     }
     await this.assertCardOnBoard(share, cardId);
-    return this.attachments.list(cardId, this.snapshotCutoff(share));
+    const rows = await this.attachments.list(
+      cardId,
+      this.snapshotCutoff(share),
+    );
+    return rows.map(toPublicAttachment);
   }
 
   /** A blob for the public attachment route, when the share exposes blobs. */
@@ -445,7 +483,7 @@ export class ShareService {
     if (cutoff !== undefined && meta.createdAt > cutoff.getTime()) {
       throw new NotFoundException("Not found");
     }
-    return { meta, storedName };
+    return { meta: toPublicAttachment(meta), storedName };
   }
 
   /** The OG preview PNG for a share (snapshot or a live, existing board). */
@@ -520,7 +558,9 @@ export class ShareService {
     if (board === undefined) {
       throw new NotFoundException("Board not found");
     }
-    const envelope = JSON.parse(serializeExport([board])) as BoardEnvelope;
+    const envelope = JSON.parse(
+      serializeExport([sanitizePublicBoard(board)]),
+    ) as BoardEnvelope;
     return {
       payload: {
         envelope,
@@ -654,6 +694,45 @@ export class ShareService {
       createdBy: row.createdBy,
     };
   }
+}
+
+/**
+ * TASK-166: a public share is anonymous. Strip the token/session attribution
+ * from cards before serving a live board or freezing a snapshot — the ADR
+ * keeps that identity on member/audit surfaces only.
+ */
+export function sanitizePublicBoard(board: BoardAggregate): BoardAggregate {
+  const cards = Object.fromEntries(
+    Object.entries(board.cards ?? {}).map(([id, card]) => {
+      const copy = { ...card };
+      delete copy.claimedByTokenId;
+      delete copy.claimedBySessionId;
+      return [id, copy];
+    }),
+  );
+  const copy = { ...board, cards };
+  // Pause is operational and never leaves the member surface (ADR §6.3).
+  delete copy.agentsPausedAt;
+  delete copy.agentsPausedBy;
+  delete copy.agentsPauseReason;
+  return copy;
+}
+
+/** Comments on a public share keep their text/kind, not the agent identity. */
+function toPublicComment(comment: CommentDto): CommentDto {
+  const copy = { ...comment };
+  delete copy.apiTokenId;
+  delete copy.agentSessionId;
+  delete copy.agentName;
+  return copy;
+}
+
+/** Public attachment metadata never exposes the uploader's token/session. */
+function toPublicAttachment(attachment: AttachmentDto): AttachmentDto {
+  const copy = { ...attachment };
+  delete copy.uploadedByTokenId;
+  delete copy.uploadedBySessionId;
+  return copy;
 }
 
 /** The Prisma row shape the service works with (local alias, not exported). */

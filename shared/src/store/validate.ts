@@ -1,14 +1,17 @@
 import type { BoardAction, BoardState } from "./board-reducer";
 import { isCardLinkType } from "./card-links";
+import { validateWorkflowShape } from "../workflow";
 import {
   CARD_ACTIVITY_TYPES,
   CARD_PRIORITIES,
   CLAIM_LEASE_MAX_MS,
   COVER_COLORS,
   COVER_GRADIENTS,
+  isColumnAccentStyle,
   LABEL_COLORS,
   LIMITS,
   MAX_CARD_ACTIVITY,
+  validateBoardAgentPolicy,
 } from "../types/kanban";
 
 /**
@@ -434,6 +437,15 @@ function validateCard(value: unknown, field: string): Json {
     "archivedAt",
     readOptionalTimestamp(card, "archivedAt", `${field}.archivedAt`),
   );
+  put(
+    out,
+    "archivedFromColumnId",
+    readOptionalId(
+      card,
+      "archivedFromColumnId",
+      `${field}.archivedFromColumnId`,
+    ),
+  );
   // TASK-97: a RESTORE_* snapshot must validate the fields the create/edit
   // commands constrain — priority, assignee and the activity feed.
   if (!absent(card.priority)) {
@@ -546,6 +558,9 @@ function validateColumn(value: unknown, field: string): Json {
     fail(`${field}.wipLimit`, `must be at most ${LIMITS.wipLimitMax}`);
   }
   put(out, "wipLimit", wipLimit);
+  if (!absent(column.accent)) {
+    out.accent = validateCover(column.accent, `${field}.accent`);
+  }
   return out;
 }
 
@@ -740,6 +755,38 @@ function parseAction(action: Json): BoardAction {
         fail("action.wipLimit", `must be at most ${LIMITS.wipLimitMax}`);
       }
       put(result, "wipLimit", wipLimit);
+      break;
+    }
+    case "SET_COLUMN_ACCENT":
+      result = out();
+      result.columnId = id("columnId");
+      if (!absent(action.accent)) {
+        result.accent = validateCover(action.accent, "action.accent");
+      }
+      break;
+    case "SET_BOARD_COLUMN_STYLE": {
+      result = out();
+      if (!absent(action.columnStyle)) {
+        if (!isColumnAccentStyle(action.columnStyle)) {
+          fail("action.columnStyle", "must be a known column style");
+        }
+        result.columnStyle = action.columnStyle;
+      }
+      break;
+    }
+    case "SET_BOARD_WORKFLOW": {
+      result = out();
+      // Absent (or null) clears the config; a present config is rebuilt
+      // through the shared shape validator so unknown keys never land in the
+      // board JSON or the command log.
+      if (!absent(action.workflow)) {
+        const checked = validateWorkflowShape(
+          action.workflow,
+          "action.workflow",
+        );
+        if (!checked.ok) fail(checked.field, checked.message);
+        result.workflow = checked.workflow;
+      }
       break;
     }
     case "ADD_CARD":
@@ -1107,11 +1154,16 @@ export type BoardsValidationResult =
  * that are not dates, collections over `LIMITS`, duplicate ids, a column
  * listing a card that does not exist, a card sitting in two places.
  */
-export function validateImportedBoards(input: unknown): BoardsValidationResult {
+export function validateImportedBoards(
+  input: unknown,
+  options: { maxBoards?: number | null } = {},
+): BoardsValidationResult {
   try {
     if (!Array.isArray(input)) fail("boards", "must be an array");
-    if (input.length > LIMITS.boardsCount) {
-      fail("boards", `must hold at most ${LIMITS.boardsCount} boards`);
+    const maxBoards =
+      options.maxBoards === undefined ? LIMITS.boardsCount : options.maxBoards;
+    if (maxBoards !== null && input.length > maxBoards) {
+      fail("boards", `must hold at most ${maxBoards} boards`);
     }
     const boardIds = new Set<string>();
     input.forEach((board, index) => {
@@ -1137,6 +1189,10 @@ function checkImportedBoard(value: unknown, field: string): string {
   readTimestamp(board, "createdAt", `${field}.createdAt`);
   readTimestamp(board, "updatedAt", `${field}.updatedAt`);
   readOptionalTimestamp(board, "archivedAt", `${field}.archivedAt`);
+  // Column style is optional. Unknown names are dropped by normalization
+  // rather than failing the import: the field is decorative and a newer
+  // export may carry a shape this client has not learned yet.
+  readOptionalString(board, "columnStyle", `${field}.columnStyle`);
 
   const labelIds = new Set<string>();
   readArray(board, "labels", `${field}.labels`, LIMITS.labelsPerBoard).forEach(
@@ -1176,6 +1232,9 @@ function checkImportedBoard(value: unknown, field: string): string {
     columnIds.add(columnId);
     readString(column, "title", `${columnField}.title`);
     readTimestamp(column, "createdAt", `${columnField}.createdAt`);
+    // `accent` is decorative and optional. Like a card cover, an unknown
+    // future palette value is dropped by normalization instead of rejecting
+    // a whole import on a client that predates that color.
     const cardIds = readIdArray(
       column,
       "cardIds",
@@ -1193,6 +1252,21 @@ function checkImportedBoard(value: unknown, field: string): string {
       placed.set(cardId, idField);
     });
   });
+  // The workflow is optional; a board without it keeps the legacy "all moves
+  // allowed" behaviour. Structural errors fail the import with a field path;
+  // dangling column references are tolerated (the editor shows them and the
+  // backend import remapper drops them) so a hand-edited file still loads.
+  if (board.workflow !== undefined && board.workflow !== null) {
+    const checked = validateWorkflowShape(board.workflow, `${field}.workflow`);
+    if (!checked.ok) fail(checked.field, checked.message);
+  }
+  // TASK-166: an export from schema version 3 may carry the board agent
+  // policy. It is strict — a policy may only lower the global limits, and an
+  // unknown approval key must not be silently ignored on import.
+  if (board.agentPolicy !== undefined && board.agentPolicy !== null) {
+    const checked = validateBoardAgentPolicy(board.agentPolicy);
+    if (!checked.ok) fail(`${field}.agentPolicy`, checked.message);
+  }
   return id;
 }
 
@@ -1214,5 +1288,6 @@ function checkImportedCard(key: string, value: unknown, field: string): void {
   readTimestamp(card, "createdAt", `${field}.createdAt`);
   readTimestamp(card, "updatedAt", `${field}.updatedAt`);
   readOptionalTimestamp(card, "archivedAt", `${field}.archivedAt`);
+  readOptionalId(card, "archivedFromColumnId", `${field}.archivedFromColumnId`);
   readOptionalTimestamp(card, "dueDate", `${field}.dueDate`);
 }

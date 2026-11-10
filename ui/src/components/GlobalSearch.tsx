@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { Loader2 } from "lucide-react";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -127,7 +128,7 @@ interface GlobalSearchPaletteProps {
 function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
   const { t } = useI18n();
   const toast = useToast();
-  const { boards } = useBoard();
+  const { boards, pendingBoardCount } = useBoard();
   const navigate = useNavigate();
 
   const [rawQuery, setRawQuery] = useState("");
@@ -223,6 +224,17 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
         className="max-h-[60vh] overflow-y-auto p-2"
         data-testid="global-search-results"
       >
+        {pendingBoardCount > 0 ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-boards-loading"
+            className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            {t("search.boardsLoading")}
+          </p>
+        ) : null}
         {query.trim() === "" ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {t("search.hint")}

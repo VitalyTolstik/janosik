@@ -48,7 +48,16 @@ with a chosen column and labels (including Cancel), read-only VIEWER controls,
 and the 12/24-hour preference. Table: inline due date (set and remove), title,
 labels and column edits, sorting every header asc → desc → board order with
 `aria-sort` on the column header, optional columns persisted across reloads,
-and the filtered empty state. Watch: status counts (archived cards excluded),
+and the filtered empty state. `tests/app/mobile/` runs the same surfaces at
+390×844 with `hasTouch` and sends long-press drags through Chrome's touch
+transport (CDP): a calendar chip reschedules, an unscheduled chip is planned,
+a table row moves between columns, the due-date popover is tapped, the header,
+filters and every board dialog stay inside the viewport without sideways
+scroll, and double-tap rename, touch card creation and column scrolling keep
+working. Its 16 scenarios also cover the slow tap (no accidental drop),
+edge auto-scroll to a day or a far row outside the first viewport (including a
+virtualized table), same-column reordering, WIP refusal, and the explicit `⋯`
+card menu on both the calendar day panel and table rows. Watch: status counts (archived cards excluded),
 WIP limits, online roster, agent attribution, empty feed, board deletion
 (visible feed error + retry), paging with page sizes 20/50/100 and retention
 boundaries. The watch scenarios cover board, column and card activity, diffs,
@@ -60,8 +69,44 @@ are skipped when using external development servers. E2E imports use `@/` for
 paths relative to `e2e/`.
 
 `tests/app/sharing/` covers public live and snapshot boards, read-only content,
-link limits and revocation, and iframe themes on a separate local origin. Its
-fixtures create a fresh user and board per test.
+link limits and revocation, iframe themes on a separate local origin, and the
+link lifecycle: a snapshot freezes comments and attachments at capture time,
+refreshing it serves the newer content, an expired link is refused and frees
+its slot, revoking or deleting a board disconnects an already open viewer, and
+unknown/revoked tokens answer 404 without leaking the board. It also covers
+copy-link success and a blocked clipboard, the share row's title/view
+count/flags, snapshot embeds with an unknown theme fallback, attachment
+downloads as attachments, and a public roster without emails. Its fixtures
+create a fresh user and board per test.
+
+Loading skeletons are covered where the state is observable in Chrome: board
+boot, card comments/history/attachments, public board and card, account API
+keys, admin entity tables/search. `helpers/network.ts` delays only the next
+matching request, so each spec asserts `aria-busy`/testids without slowing the
+rest of the run. `tests/app/navigation/skeleton.spec.ts` also checks that
+`prefers-reduced-motion: reduce` disables the shimmer.
+
+`tests/app/columns/style.spec.ts` covers column accents: per-column colors and
+gradients, all nine board-wide shapes, reload persistence, undo/redo, the
+palette reset and duplication. `tests/app/collaboration/realtime/accent.spec.ts`
+proves a second Chrome context sees the color and shape live, and
+`tests/app/data/` round-trips both through export/import.
+
+`tests/app/workflow/` covers the admin-configurable card workflow: board ADMIN
+creates and edits the transition matrix (roles, reverse edges, conditions),
+saves it, and sees it after a reload; allowed and blocked drags (the forbidden
+column stays visible with a lock and reason and the card snaps back); the card
+context menu, card dialog, table column picker and read-only rules panel; all
+four MVP conditions (assignee, due date, description, checklists); MEMBER and
+VIEWER restrictions; a second Chrome context receiving a workflow change live
+and then the reverse; export/import with remapped column ids; board
+archive/restore; card archive/restore refusing a forbidden target with the
+workflow reason; legacy boards without a workflow; and a one-column board
+refusing to enable control. The editor's initial/done controls and card preview
+are covered by unit tests. The master-panel editor is covered under
+`tests/admin/workflow.spec.ts`: an OWNER and an OPERATOR edit on behalf of the
+board owner, the board receives the command, and `AdminAuditLog` records it.
+Each test creates its own user, board, columns and cards.
 
 `tests/app/filters/` covers the board filter toolbar: title, description, label
 and checklist search; the due, created, label, priority, assignee and link
@@ -91,25 +136,39 @@ the redo stack with a new edit, multi-step replay, per-board stacks, and the
 saved result (but not the stack) surviving reload. It exercises every UI inverse
 for cards, columns, labels, checklists and board rename, including nested
 restores (a deleted card with its checklist, a deleted column with its cards,
-a deleted label with its assignments). Two independent contexts verify that a
-foreign card or board edit marks the overtaken step dead and undo leaves the
-other member's text untouched; an unrelated foreign edit does not block local
-undo. Each test starts from its own user and board.
+a deleted label with its assignments), description edits, card reordering inside
+a column, moving through the dialog's column row and creating a label with its
+first assignment. Two independent contexts verify that a foreign card, column,
+label, checklist or board edit marks the overtaken step dead and undo leaves the
+other member's text untouched, that several dead steps collapse into one toast
+before the next live step, and that an unrelated foreign edit does not block
+local undo. Shortcuts are ignored in inputs, textareas and the description's
+contenteditable editor. Each test starts from its own user and board.
 
 `tests/app/collaboration/` covers the two-account flows: an admin invites an
 account by email, the invitee sees the invitation in the bell with board,
 inviter and role, accepts it (the board appears without a reload) or declines
-it, and a pending invitation grants no access. Roles are exercised end to end:
-a live promotion to ADMIN, a live demotion to a read-only VIEWER, the
-last-ADMIN guard and a live removal that revokes access on an open board. Two
-independent Chrome contexts verify realtime updates in under two seconds, the
-presence roster and its departure within a minute, delta catch-up through
-`?since=` after the stream is closed and reopened, and `commandId` retry
-idempotency. Description conflicts are surfaced rather than silently
-overwritten, «Keep mine» and «Reload» resolve them, and undo skips an edit made
-in the other context. Each test starts from its own owner and board; the
-two-account tests also get their own invited account and an independent browser
-context.
+it, and a pending invitation grants no access. Role and invitation edges are
+covered too: a repeat pending invite revives with the new role, the inviter
+sees and cancels a pending row, an accepted invite appears live in an open
+member list, a lapsed invite leaves the bell and a duplicate accepted invite is
+refused, and a MEMBER cannot invite, change roles, remove members or open the
+share dialog. Roles are exercised end to end:
+a live promotion to ADMIN, a live demotion to a read-only VIEWER whose header,
+card surfaces, members list, share trigger and Undo/Redo disappear, the
+last-ADMIN guard and a live removal or access expiry that revokes an open board.
+Two independent Chrome contexts verify realtime updates in under two seconds,
+the presence roster and its departure within a minute, a heartbeat that keeps
+the session past the 60-second TTL, the sweep of a session whose heartbeat is
+blocked, the presence overflow with roles, delta catch-up through `?since=`
+after the stream is closed and reopened, and `commandId` retry idempotency, plus
+a second tab of the same account whose commands apply once and whose presence
+deduplicates. Description and title conflicts are surfaced rather than silently
+overwritten, «Keep mine» and «Reload» resolve both, an unresolved description
+draft survives closing the card, and undo skips an edit made in the other
+context (title or description). Each test starts from its own owner and board;
+the two-account tests also get their own invited account and an independent
+browser context.
 
 `tests/app/account/` covers the personal account panel: profile name, avatar
 color, photo upload (including a rejected non-image), the digest opt-out and
@@ -242,9 +301,9 @@ status, English and Russian copy, the docs link, language switch and noindex.
 The site is public, so these tests need no account, fixture or API setup.
 
 `tests/docs/` covers the Starlight documentation under `/docs/` and
-`/ru/docs/`: all 22 English and 22 Russian pages (status, `<html lang>`, one
+`/ru/docs/`: all 23 English and 23 Russian pages (status, `<html lang>`, one
 H1, title, description and canonical), a full crawl of every internal link and
-`#fragment` across those 44 pages, the landing and the five sidebar groups,
+`#fragment` across those 46 pages, the landing and the five sidebar groups,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
 opening a result, keyboard navigation and focus return, empty query, no matches
 and a recoverable bundle failure), code-block copy, tables, heading anchors,

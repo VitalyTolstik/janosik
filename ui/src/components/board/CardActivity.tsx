@@ -2,6 +2,7 @@ import { useState } from "react";
 import { History, MessageSquare } from "lucide-react";
 import type { CardActivityEvent } from "@janosik/shared";
 
+import { ActivityCountSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardComments } from "@/components/board/CardComments";
 import { CardHistory } from "@/components/board/CardHistory";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
@@ -62,6 +63,8 @@ export function CardActivity({
   const [view, setView] = useState<ActivityView>("comments");
   const [commentCount, setCommentCount] = useState(0);
   const [historyCount, setHistoryCount] = useState(0);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   return (
     <CollapsibleSection
@@ -77,6 +80,7 @@ export function CardActivity({
       >
         {VIEWS.map(({ id, icon: Icon, labelKey, testId }) => {
           const count = id === "comments" ? commentCount : historyCount;
+          const loaded = id === "comments" ? commentsLoaded : historyLoaded;
           return (
             <button
               key={id}
@@ -100,6 +104,8 @@ export function CardActivity({
                 >
                   {count}
                 </span>
+              ) : !loaded ? (
+                <ActivityCountSkeleton />
               ) : null}
             </button>
           );
@@ -117,6 +123,7 @@ export function CardActivity({
           boardId={boardId}
           readOnly={readOnly}
           onCountChange={setCommentCount}
+          onLoadedChange={setCommentsLoaded}
         />
       </div>
       <div className={cn(view !== "history" && "hidden")}>
@@ -127,6 +134,7 @@ export function CardActivity({
           updatedAt={updatedAt}
           localActivity={localActivity}
           onCountChange={setHistoryCount}
+          onLoadedChange={setHistoryLoaded}
         />
       </div>
     </CollapsibleSection>

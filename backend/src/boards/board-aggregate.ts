@@ -17,10 +17,19 @@ import type {
   CardCover,
   CardLink,
   Checklist,
+  CoverColor,
+  CoverGradient,
   LabelColor,
   UserAvatarColor,
 } from "@janosik/shared";
-import { isCardLinkType } from "@janosik/shared";
+import {
+  COVER_COLORS,
+  COVER_GRADIENTS,
+  isCardLinkType,
+  isColumnAccentStyle,
+  readBoardAgentPolicy,
+  readBoardWorkflow,
+} from "@janosik/shared";
 
 /** A card row with the relations the aggregate needs (labels + checklists). */
 export type CardWithRelations = Prisma.CardGetPayload<{
@@ -130,6 +139,24 @@ export function toBoardAggregate(
   for (const card of cards) {
     cardsMap[card.id] = toCard(card, boardLabelIds, linksBySource.get(card.id));
   }
+  const workflow = readBoardWorkflow(board.workflow);
+  const agentPolicy = readBoardAgentPolicy(board.agentPolicy);
+  // A stored workflow that cannot be read (corrupt JSONB, a future schema
+  // version, a value from a newer client) must not silently unlock the
+  // board. Expose an enabled, edge-less config: every cross-column move is
+  // refused until an ADMIN repairs it, and the editor can see the problem.
+  const workflowInvalid =
+    board.workflow !== null &&
+    board.workflow !== undefined &&
+    workflow === undefined;
+  const effectiveWorkflow = workflowInvalid
+    ? {
+        schemaVersion: 1 as const,
+        enabled: true,
+        doneColumnIds: [],
+        transitions: [],
+      }
+    : workflow;
 
   return {
     id: board.id,
@@ -143,12 +170,14 @@ export function toBoardAggregate(
             card.deletedAt === null,
         )
         .map((card) => card.id);
+      const accent = columnAccent(column);
       return {
         id: column.id,
         title: column.title,
         cardIds,
         // Keep the "omit when unset" invariant of the UI model.
         ...(column.wipLimit !== null ? { wipLimit: column.wipLimit } : {}),
+        ...(accent ? { accent } : {}),
         createdAt: column.createdAt.getTime(),
       };
     }),
@@ -160,8 +189,48 @@ export function toBoardAggregate(
     })),
     createdAt: board.createdAt.getTime(),
     updatedAt: board.updatedAt.getTime(),
+    // Null in the DB = the default `signature` shape; omit it so an old
+    // board's aggregate stays byte-identical to its stored/exported form.
+    ...(isColumnAccentStyle(board.columnStyle)
+      ? { columnStyle: board.columnStyle }
+      : {}),
+    // Absent in the aggregate = no workflow (old boards stay byte-identical).
+    ...(effectiveWorkflow ? { workflow: effectiveWorkflow } : {}),
+    ...(workflowInvalid ? { workflowInvalid: true as const } : {}),
+    // TASK-166: absent means the safe defaults; old boards stay byte-identical.
+    ...(agentPolicy ? { agentPolicy } : {}),
+    ...(board.agentsPausedAt
+      ? {
+          agentsPausedAt: board.agentsPausedAt.getTime(),
+          ...(board.agentsPausedBy
+            ? { agentsPausedBy: board.agentsPausedBy }
+            : {}),
+          ...(board.agentsPauseReason
+            ? { agentsPauseReason: board.agentsPauseReason }
+            : {}),
+        }
+      : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
   };
+}
+
+/** The column's accent as a renderable pair, or undefined for garbage. */
+function columnAccent(column: ColumnRow): CardCover | undefined {
+  if (column.accentType === "color") {
+    return (COVER_COLORS as readonly string[]).includes(
+      column.accentValue as string,
+    )
+      ? { type: "color", value: column.accentValue as CoverColor }
+      : undefined;
+  }
+  if (column.accentType === "gradient") {
+    return (COVER_GRADIENTS as readonly string[]).includes(
+      column.accentValue as string,
+    )
+      ? { type: "gradient", value: column.accentValue as CoverGradient }
+      : undefined;
+  }
+  return undefined;
 }
 
 function toCard(
@@ -189,6 +258,12 @@ function toCard(
     // Claim (TASK-157): raw claimant id + lease expiry, both omitted when
     // unclaimed. Display data resolves client-side like the assignee.
     ...(card.claimedBy ? { claimedBy: card.claimedBy } : {}),
+    ...(card.claimedByTokenId
+      ? { claimedByTokenId: card.claimedByTokenId }
+      : {}),
+    ...(card.claimedBySessionId
+      ? { claimedBySessionId: card.claimedBySessionId }
+      : {}),
     ...(card.leaseUntil ? { leaseUntil: card.leaseUntil.getTime() } : {}),
     // Task contract (TASK-157): omitted when empty (optional-field rule).
     ...(card.acceptanceCriteria && card.acceptanceCriteria.length > 0
@@ -215,7 +290,16 @@ function toCard(
     ...(card.attachmentCount > 0
       ? { attachmentCount: card.attachmentCount }
       : {}),
-    ...(card.archivedAt ? { archivedAt: card.archivedAt.getTime() } : {}),
+    ...(card.archivedAt
+      ? {
+          archivedAt: card.archivedAt.getTime(),
+          // Persisted on archive; the migration backfilled pre-feature rows.
+          // A synthetic restore without the field stays field-less.
+          ...(card.archivedFromColumnId
+            ? { archivedFromColumnId: card.archivedFromColumnId }
+            : {}),
+        }
+      : {}),
   };
 }
 

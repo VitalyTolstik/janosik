@@ -12,6 +12,7 @@ import {
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
 import { Observable } from "rxjs";
+import type { AgentPauseStamp } from "@/auth/agent-pause";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
@@ -68,6 +69,7 @@ export class EventsController {
     @Query("since") since?: string,
     @Query("client") client?: string,
     @Query("presence") presence?: string,
+    @Query("session") session?: string,
     @CurrentUser() user?: AuthUser,
     @CurrentPrincipal() principal?: AuthPrincipal,
     @Res({ passthrough: true }) res?: Response,
@@ -105,6 +107,7 @@ export class EventsController {
       admission.release,
       user,
       principal,
+      session,
     );
   }
 
@@ -116,6 +119,7 @@ export class EventsController {
     releaseTracking: () => void,
     user?: AuthUser,
     principal?: AuthPrincipal,
+    sessionId?: string,
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       const send = (data: object | string): void => {
@@ -181,6 +185,11 @@ export class EventsController {
           send(event as unknown as object);
           return;
         }
+        // TASK-166: agent-session lifecycle frames are control-plane only.
+        if (event.type === "agent") {
+          send(event as unknown as object);
+          return;
+        }
         if (event.type !== "command") return;
         sequencer.offer(event as InternalCommandEvent);
       });
@@ -209,9 +218,25 @@ export class EventsController {
               }
             : { type: "keepalive" },
         );
-        void this.tick(boardId, user, principal, sequencer).then((allowed) => {
-          if (!allowed && !subscriber.closed) subscriber.complete();
-        });
+        void this.tick(boardId, user, principal, sequencer, sessionId).then(
+          (outcome) => {
+            if (subscriber.closed) return;
+            if (outcome.pause !== null) {
+              // TASK-166.3: announce the pause on the keep-alive tick, then
+              // close. Token/board pause closes every PAT stream; session
+              // pause only a stream opened with `?session=<id>`.
+              send({
+                type: "agent",
+                op: "paused",
+                scope: outcome.pause.scope,
+                at: outcome.pause.at ?? Date.now(),
+              });
+              subscriber.complete();
+              return;
+            }
+            if (!outcome.allowed) subscriber.complete();
+          },
+        );
       }, sseTiming.keepAliveMs);
 
       return () => {
@@ -236,13 +261,23 @@ export class EventsController {
     user: AuthUser | undefined,
     principal: AuthPrincipal | undefined,
     sequencer: CommandStreamSequencer,
-  ): Promise<boolean> {
+    sessionId: string | undefined,
+  ): Promise<{ allowed: boolean; pause: AgentPauseStamp | null }> {
     try {
       if (
         user !== undefined &&
         !(await this.access.memberStreamAllowed(boardId, user.id, principal))
       ) {
-        return false;
+        return { allowed: false, pause: null };
+      }
+      if (user !== undefined) {
+        const pause = await this.access.streamPause(
+          boardId,
+          user.id,
+          principal,
+          sessionId,
+        );
+        if (pause !== null) return { allowed: true, pause };
       }
       await sequencer.verifyCaughtUp();
     } catch (error) {
@@ -252,6 +287,6 @@ export class EventsController {
         }`,
       );
     }
-    return true;
+    return { allowed: true, pause: null };
   }
 }

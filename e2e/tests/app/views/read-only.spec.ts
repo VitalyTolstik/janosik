@@ -2,6 +2,7 @@ import { test, expect } from "@/fixtures/collaboration.js";
 import { getBoard } from "@/helpers/boards.js";
 import {
   adjacentVisibleDay,
+  attemptDropOnDay,
   calendarChip,
   calendarDay,
   openCalendar,
@@ -35,12 +36,21 @@ test("viewer sees a read-only calendar and table", async ({
   await openCalendar(page);
   await expect(calendarChip(page, "Viewer visible")).toBeVisible();
   await expect(page.getByTestId("day-add")).toHaveCount(0);
-  await expect(page.getByTestId("day-composer")).toHaveCount(0);
   await expect(page.getByTestId("unscheduled-add")).toHaveCount(0);
   await expect(calendarChip(page, "Viewer visible")).toHaveAttribute(
     "draggable",
     "false",
   );
+
+  // A VIEWER can still open the day panel (the full list is useful), but the
+  // composer inside it must be absent.
+  await calendarDay(page, todayKey()).click();
+  const dayPanel = page.getByTestId("day-panel");
+  await expect(dayPanel).toBeVisible();
+  await expect(dayPanel.getByTestId("day-composer-input")).toHaveCount(0);
+  await expect(dayPanel.getByTestId("day-composer-column")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dayPanel).toBeHidden();
 
   const target = await adjacentVisibleDay(page);
   const before = (await getBoard(board.api, board.id)).cards[cardId]?.dueDate;
@@ -56,6 +66,9 @@ test("viewer sees a read-only calendar and table", async ({
     steps: 20,
   });
   await page.mouse.up();
+  // The forced native events are the deterministic negative check; the
+  // coordinate drag above is a best-effort user-path signal.
+  expect(await attemptDropOnDay(page, "Viewer visible", target.key)).toBe(0);
   await expect(
     calendarDay(page, todayKey())
       .getByTestId("calendar-chip")

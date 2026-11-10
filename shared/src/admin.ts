@@ -1,5 +1,10 @@
 import type { OAuthProviderId } from "./api";
 import type { BoardAction } from "./store/board-reducer";
+import type {
+  AnnouncementFallbackPolicy,
+  AnnouncementLocale,
+  AnnouncementTranslationOrigin,
+} from "./announcements";
 
 /**
  * Admin (master account) wire contract — §7.4, TASK-36.
@@ -953,6 +958,17 @@ export interface AdminCardDetailDto {
 }
 
 /** Board meta line of `GET /admin/boards/:id/meta`. */
+export interface AdminBoardWorkflowSummaryDto {
+  /** The board has a stored workflow config (even a disabled one). */
+  present: boolean;
+  enabled: boolean;
+  transitions: number;
+  /** Transitions whose `enabled` flag is not `false`. */
+  activeTransitions: number;
+  initialColumnId: string | null;
+  doneColumnIds: string[];
+}
+
 export interface AdminBoardDetailDto {
   board: AdminBoardRowDto & {
     version: number;
@@ -971,6 +987,8 @@ export interface AdminBoardDetailDto {
   members: AdminBoardMemberRowDto[];
   columns: AdminColumnRowDto[];
   labels: AdminLabelRowDto[];
+  /** Snapshot of the board's optional workflow (master-panel panel). */
+  workflowSummary: AdminBoardWorkflowSummaryDto;
 }
 
 /** `GET /admin/search?q=` — grouped top matches for the omnibox. */
@@ -1268,28 +1286,67 @@ export interface AdminUpdateOpsSettingsRequest {
 
 // --- TASK-62: comms --------------------------------------------------------
 
+/** One language version of an announcement. */
+export interface AdminAnnouncementTranslationDto {
+  locale: AnnouncementLocale;
+  title: string;
+  body: string;
+  origin: AnnouncementTranslationOrigin;
+  translatedFrom: AnnouncementLocale | null;
+  /** Unix ms of the source version this translation was based on. */
+  sourceUpdatedAt: number | null;
+  /** Unix ms of human review; `null` for an unreviewed AI draft. */
+  reviewedAt: number | null;
+  updatedAt: number;
+  updatedBy: string | null;
+}
+
 /** `GET /admin/announcements` row. */
 export interface AdminAnnouncementDto {
   id: string;
+  /**
+   * Compatibility projection: the source translation, or the legacy text.
+   * New clients should read `translations`.
+   */
   title: string;
   body: string;
+  sourceLocale: AnnouncementLocale | null;
+  fallbackPolicy: AnnouncementFallbackPolicy;
+  translations: AdminAnnouncementTranslationDto[];
+  completeness: Record<AnnouncementLocale, boolean>;
   level: "info" | "warning" | "danger";
   audience: "all" | "segment";
   segment: string | null;
   active: boolean;
   /** TASK-62: the letter is also queued to the recipients' inbox. */
   sendEmail: boolean;
+  /** Unix ms the localized letter was queued; `null` = not sent. */
+  emailSentAt: number | null;
   startsAt: number | null;
   endsAt: number | null;
+  /** Optimistic concurrency version; send it back on PATCH. */
+  version: number;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
 }
 
-/** `POST /admin/announcements`. */
-export interface AdminCreateAnnouncementRequest {
+/** One language input inside a create/update request. */
+export interface AdminAnnouncementTranslationInput {
   title: string;
   body: string;
+}
+
+/** `POST /admin/announcements`. */
+export interface AdminCreateAnnouncementRequest {
+  /** Original language; required by the translations format. */
+  sourceLocale?: AnnouncementLocale;
+  /** Strict by default; `allow_fallback` publishes a single language. */
+  fallbackPolicy?: AnnouncementFallbackPolicy;
+  /** Locale → text. At least the source translation must be present. */
+  translations?: Partial<
+    Record<AnnouncementLocale, AdminAnnouncementTranslationInput>
+  >;
   level?: "info" | "warning" | "danger";
   audience?: "all" | "segment";
   segment?: string | null;
@@ -1298,11 +1355,41 @@ export interface AdminCreateAnnouncementRequest {
   sendEmail?: boolean;
   startsAt?: number | null;
   endsAt?: number | null;
+
+  /**
+   * @deprecated Compatibility with the pre-localization admin client. A
+   * payload without `translations` maps `title`/`body` to the source
+   * translation and defaults the policy to `allow_fallback`.
+   */
+  title?: string;
+  body?: string;
 }
 
 /** `PATCH /admin/announcements/:id`. */
-export type AdminUpdateAnnouncementRequest =
-  Partial<AdminCreateAnnouncementRequest>;
+export interface AdminUpdateAnnouncementRequest {
+  sourceLocale?: AnnouncementLocale | null;
+  fallbackPolicy?: AnnouncementFallbackPolicy;
+  /**
+   * Only provided locales are touched; `null` deletes that translation.
+   * Omitting the whole object leaves every translation intact.
+   */
+  translations?: Partial<
+    Record<AnnouncementLocale, AdminAnnouncementTranslationInput | null>
+  >;
+  level?: "info" | "warning" | "danger";
+  audience?: "all" | "segment";
+  segment?: string | null;
+  active?: boolean;
+  sendEmail?: boolean;
+  startsAt?: number | null;
+  endsAt?: number | null;
+  /** Version loaded by the editor; omitted by old clients. */
+  version?: number;
+
+  /** @deprecated Compatibility with the pre-localization admin client. */
+  title?: string;
+  body?: string;
+}
 
 /** `POST /admin/email/send` — a one-off letter to a user. */
 export interface AdminSendEmailRequest {
@@ -1344,6 +1431,12 @@ export interface AnnouncementDto {
   title: string;
   body: string;
   level: "info" | "warning" | "danger";
+  /** Language of the returned text; `null` for a legacy row. */
+  contentLocale: AnnouncementLocale | null;
+  /** Language the client asked for (query, profile or Accept-Language). */
+  requestedLocale: AnnouncementLocale;
+  /** `true` → the UI must show the "available only in …" notice. */
+  isFallback: boolean;
 }
 
 // --- TASK-63: data + compliance --------------------------------------------
@@ -1379,7 +1472,18 @@ export interface AdminRetentionDto {
     attachments: number;
     columns: number;
   };
-  backups: { configured: boolean; location: string | null };
+  /**
+   * TASK-166 honest backup status: Janosik never creates or verifies backups.
+   * `mode: "external"` means an operator pointed `BACKUP_DIR` at a directory
+   * they manage; `unconfigured` means there is no location at all.
+   */
+  backups: {
+    mode: "external" | "unconfigured";
+    location: string | null;
+    automatic: false;
+    lastBackupAt: null;
+    verified: false;
+  };
 }
 
 // --- TASK-64: observability ------------------------------------------------

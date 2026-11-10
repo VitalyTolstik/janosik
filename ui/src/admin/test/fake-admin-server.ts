@@ -1,5 +1,6 @@
 import {
   boardReducer,
+  completeness,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
   OAUTH_PROVIDER_IDS,
@@ -32,6 +33,7 @@ import type {
   AdminUserRowDto,
   AdminBoardMemberRowDto,
   AdminAnnouncementDto,
+  AdminAnnouncementTranslationDto,
   AdminEmailTemplateDto,
   AdminFeatureFlagDto,
   AdminObservabilityDto,
@@ -401,7 +403,13 @@ export class FakeAdminServer {
   retention: AdminRetentionDto = {
     retentionDays: null,
     purgeable: { cards: 0, comments: 0, attachments: 0, columns: 0 },
-    backups: { configured: false, location: null },
+    backups: {
+      mode: "unconfigured",
+      location: null,
+      automatic: false,
+      lastBackupAt: null,
+      verified: false,
+    },
   };
 
   /** Observability snapshot (TASK-64). */
@@ -1218,22 +1226,74 @@ export class FakeAdminServer {
       const payload = jsonBody as {
         title?: string;
         body?: string;
+        sourceLocale?: "en" | "ru";
+        fallbackPolicy?: AdminAnnouncementDto["fallbackPolicy"];
+        translations?: Partial<
+          Record<"en" | "ru", { title: string; body: string } | null>
+        >;
         level?: string;
         audience?: "all" | "segment";
         segment?: string | null;
         sendEmail?: boolean;
+        active?: boolean;
+        startsAt?: number | null;
+        endsAt?: number | null;
       };
+      const sourceLocale = payload.sourceLocale ?? "en";
+      const rawTranslations: Partial<
+        Record<"en" | "ru", { title: string; body: string } | null>
+      > =
+        payload.translations ??
+        (payload.title !== undefined && payload.body !== undefined
+          ? {
+              [sourceLocale]: {
+                title: payload.title,
+                body: payload.body,
+              },
+            }
+          : {});
+      const translations: AdminAnnouncementTranslationDto[] = (
+        ["en", "ru"] as const
+      ).flatMap((locale) => {
+        const value = rawTranslations[locale];
+        if (!value) return [];
+        return [
+          {
+            locale,
+            title: value.title,
+            body: value.body,
+            origin: "human" as const,
+            translatedFrom: locale === sourceLocale ? null : sourceLocale,
+            sourceUpdatedAt: null,
+            reviewedAt: now,
+            updatedAt: now,
+            updatedBy: "master@example.com",
+          },
+        ];
+      });
+      const primary =
+        translations.find((entry) => entry.locale === sourceLocale) ??
+        translations[0];
       const created: AdminAnnouncementDto = {
         id: `ann-${this.announcements.length + 1}`,
-        title: payload.title ?? "",
-        body: payload.body ?? "",
+        title: primary?.title ?? "",
+        body: primary?.body ?? "",
+        sourceLocale,
+        fallbackPolicy:
+          payload.fallbackPolicy ??
+          (payload.translations ? "require_all" : "allow_fallback"),
+        translations,
+        completeness: completeness(translations),
         level: (payload.level as AdminAnnouncementDto["level"]) ?? "info",
         audience: payload.audience ?? "all",
         segment: payload.segment ?? null,
-        active: true,
+        active: payload.active ?? true,
         sendEmail: payload.sendEmail ?? false,
-        startsAt: null,
-        endsAt: null,
+        emailSentAt:
+          payload.active !== false && payload.sendEmail === true ? now : null,
+        startsAt: payload.startsAt ?? null,
+        endsAt: payload.endsAt ?? null,
+        version: 1,
         createdBy: "master@example.com",
         createdAt: now,
         updatedAt: now,
@@ -1246,7 +1306,105 @@ export class FakeAdminServer {
       const id = decodeURIComponent(annOne[1] ?? "");
       const row = this.announcements.find((entry) => entry.id === id);
       if (!row) return this.json({ message: "Not found" }, 404);
-      Object.assign(row, jsonBody as object, { updatedAt: now });
+      const payload = jsonBody as {
+        sourceLocale?: "en" | "ru" | null;
+        fallbackPolicy?: AdminAnnouncementDto["fallbackPolicy"];
+        translations?: Partial<
+          Record<"en" | "ru", { title: string; body: string } | null>
+        >;
+        title?: string;
+        body?: string;
+        level?: AdminAnnouncementDto["level"];
+        audience?: AdminAnnouncementDto["audience"];
+        segment?: string | null;
+        active?: boolean;
+        sendEmail?: boolean;
+        startsAt?: number | null;
+        endsAt?: number | null;
+        version?: number;
+      };
+      if (payload.version !== undefined && payload.version !== row.version) {
+        return this.json(
+          {
+            message: "The announcement was changed by someone else",
+            conflict: "version",
+            currentVersion: row.version,
+          },
+          409,
+        );
+      }
+      const wasActive = row.active;
+      const translations = new Map(
+        row.translations.map((translation) => [
+          translation.locale,
+          translation,
+        ]),
+      );
+      for (const [locale, value] of Object.entries(
+        payload.translations ?? {},
+      )) {
+        if (locale !== "en" && locale !== "ru") continue;
+        if (value === null) {
+          translations.delete(locale);
+        } else {
+          translations.set(locale, {
+            locale,
+            title: value.title,
+            body: value.body,
+            origin: "human",
+            translatedFrom:
+              locale === row.sourceLocale ? null : row.sourceLocale,
+            sourceUpdatedAt: null,
+            reviewedAt: now,
+            updatedAt: now,
+            updatedBy: "master@example.com",
+          });
+        }
+      }
+      if (
+        payload.title !== undefined &&
+        payload.body !== undefined &&
+        payload.translations == null
+      ) {
+        const locale = payload.sourceLocale ?? row.sourceLocale ?? "en";
+        translations.set(locale, {
+          locale,
+          title: payload.title,
+          body: payload.body,
+          origin: "human",
+          translatedFrom: null,
+          sourceUpdatedAt: null,
+          reviewedAt: now,
+          updatedAt: now,
+          updatedBy: "master@example.com",
+        });
+      }
+      const nextTranslations = [...translations.values()];
+      const nextActive = payload.active ?? row.active;
+      const nextSendEmail = payload.sendEmail ?? row.sendEmail;
+      const queued =
+        !wasActive && nextActive && nextSendEmail && row.emailSentAt === null;
+      const primary =
+        nextTranslations.find(
+          (entry) =>
+            entry.locale === (payload.sourceLocale ?? row.sourceLocale),
+        ) ?? nextTranslations[0];
+      Object.assign(row, {
+        ...payload,
+        title: primary?.title ?? "",
+        body: primary?.body ?? "",
+        sourceLocale:
+          payload.sourceLocale === undefined
+            ? row.sourceLocale
+            : payload.sourceLocale,
+        translations: nextTranslations,
+        completeness: completeness(nextTranslations),
+        active: nextActive,
+        sendEmail: nextSendEmail,
+        emailSentAt: queued ? now : row.emailSentAt,
+        version: row.version + 1,
+        updatedAt: now,
+      });
       return this.json(row);
     }
     if (annOne && method === "DELETE") {
@@ -1463,6 +1621,14 @@ export class FakeAdminServer {
         members: [],
         columns: [],
         labels: [],
+        workflowSummary: {
+          present: false,
+          enabled: false,
+          transitions: 0,
+          activeTransitions: 0,
+          initialColumnId: null,
+          doneColumnIds: [],
+        },
       });
     }
 

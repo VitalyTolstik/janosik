@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { ActorType, BoardInvitationDto } from "@janosik/shared";
+import type { BoardInvitationDto } from "@janosik/shared";
+import {
+  type RequestAttribution,
+  HUMAN_ATTRIBUTION,
+} from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -66,7 +70,7 @@ export class InvitationsService {
   async accept(
     userId: string,
     invitationId: string,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<void> {
     if (!(await this.isVerified(userId))) {
       throw new ForbiddenException(
@@ -93,7 +97,10 @@ export class InvitationsService {
           boardId: invitation.boardId,
           type: "member_invite_accepted",
           actorId: userId,
-          actorType,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          agentName: attribution.agentName,
           details: { userId, role: invitation.role },
         },
       });
@@ -112,7 +119,7 @@ export class InvitationsService {
   async decline(
     userId: string,
     invitationId: string,
-    actorType: ActorType = "human",
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<void> {
     const invitation = await this.findPending(userId, invitationId);
     await this.boardWrite.run(invitation.boardId, async (tx) => {
@@ -122,7 +129,10 @@ export class InvitationsService {
           boardId: invitation.boardId,
           type: "member_invite_declined",
           actorId: userId,
-          actorType,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          agentName: attribution.agentName,
           details: { userId, role: invitation.role },
         },
       });

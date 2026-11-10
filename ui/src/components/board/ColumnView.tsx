@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Lock } from "lucide-react";
 import {
   Fragment,
   memo,
@@ -19,6 +19,8 @@ import {
 
 import { AddCardZone } from "@/components/board/AddCardZone";
 import { CardComposer } from "@/components/board/CardComposer";
+import { ColumnAccentPicker } from "@/components/board/ColumnAccentPicker";
+import { columnAccentVars } from "@/utils/column-accent";
 import { ColumnMenu } from "@/components/board/ColumnMenu";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { RenameColumnDialog } from "@/components/board/RenameColumnDialog";
@@ -39,6 +41,10 @@ import { useBoardActions } from "@/store/BoardContext";
 import type { Card, Column, Label } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
+import {
+  DEFAULT_COLUMN_ACCENT_STYLE,
+  type ColumnAccentStyle,
+} from "@janosik/shared";
 
 /** Stable empty list for an empty column's SortableContext. */
 const NO_IDS: string[] = [];
@@ -80,8 +86,16 @@ interface ColumnViewProps {
   canDuplicateColumn?: boolean;
   /** Card density (TASK-142): the compact face uses a shorter window row. */
   density?: BoardDensity;
+  /** Board-wide accent shape (TASK-164); ignored when the column has no accent. */
+  columnStyle?: ColumnAccentStyle;
   /** VIEWER mode (TASK-35): static header, no menu, no composers, no drag. */
   readOnly?: boolean;
+  /**
+   * While a card is dragged, the reason this column cannot accept it (a
+   * workflow transition, role or condition). Rendered as a dimmed target with
+   * a lock and the reason, so a forbidden drop is never a silent no-op.
+   */
+  workflowBlockedReason?: string;
 }
 
 /**
@@ -109,7 +123,9 @@ function ColumnViewBody({
   cursorCardId,
   canDuplicateColumn = true,
   density = "full",
+  columnStyle = DEFAULT_COLUMN_ACCENT_STYLE,
   readOnly = false,
+  workflowBlockedReason,
 }: ColumnViewProps) {
   const {
     addCard,
@@ -121,6 +137,7 @@ function ColumnViewBody({
     duplicateColumn,
     sortColumn,
     setColumnWipLimit,
+    setColumnAccent,
   } = useBoardActions();
   const { t, tp } = useI18n();
   const [renameOpen, setRenameOpen] = useState(false);
@@ -260,32 +277,52 @@ function ColumnViewBody({
     setConfirmDelete(false);
   };
 
+  const accent = column.accent;
+  const accentActive = accent !== undefined;
+
   return (
     <>
       <section
         ref={setNodeRef}
+        data-column-accent={accent?.value ?? "none"}
+        data-column-accent-type={accent?.type ?? "none"}
+        data-column-accent-style={accentActive ? columnStyle : "none"}
+        data-workflow-blocked={workflowBlockedReason !== undefined || undefined}
+        aria-label={
+          workflowBlockedReason
+            ? `${column.title}: ${workflowBlockedReason}`
+            : undefined
+        }
         style={{
           transform: CSS.Transform.toString(transform),
           transition,
           // Column glass — driven by --janosik-glass-* (BoardGlassProvider).
           // transparency 0 = opaque, 100 = frame only; blur 0 = no frosting.
+          // Every accent shape keeps the user's glass settings, including
+          // `glass` (which only adds a rail, tint and border ring).
           backgroundColor:
             "color-mix(in oklab, var(--card) calc((100 - var(--janosik-glass-transparency)) * 1%), transparent)",
           backdropFilter: "blur(var(--janosik-glass-blur))",
+          ...columnAccentVars(accent),
         }}
         className={cn(
           "flex max-h-full w-[80vw] max-w-72 shrink-0 flex-col rounded-xl border transition-colors sm:w-72 sm:max-w-none",
+          accentActive && "janosik-column-accent",
+          accentActive && `janosik-column-accent-${columnStyle}`,
           isColumnDragging
             ? "border-primary/60 opacity-50"
             : isOver
               ? "border-primary/60"
-              : "border-border",
+              : workflowBlockedReason
+                ? "border-danger/40 opacity-60"
+                : "border-border",
           className,
         )}
       >
         <header
           className={cn(
             "flex items-center justify-between gap-1 px-2 py-2.5 pl-3",
+            accentActive && "janosik-column-accent-head",
             !readOnly &&
               "cursor-grab touch-manipulation active:cursor-grabbing",
           )}
@@ -296,13 +333,19 @@ function ColumnViewBody({
           aria-label={column.title}
           title={readOnly ? undefined : t("column.dragHint")}
         >
-          <h3
-            className="truncate text-sm font-semibold text-foreground"
-            onDoubleClick={readOnly ? undefined : openRename}
-            {...(readOnly ? {} : doubleTapHandlers)}
-          >
-            {column.title}
-          </h3>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span
+              aria-hidden
+              className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
+            />
+            <h3
+              className="janosik-column-accent-heading truncate text-sm font-semibold text-foreground"
+              onDoubleClick={readOnly ? undefined : openRename}
+              {...(readOnly ? {} : doubleTapHandlers)}
+            >
+              {column.title}
+            </h3>
+          </span>
           <span className="flex shrink-0 items-center gap-1">
             <span
               data-testid="column-wip"
@@ -324,6 +367,13 @@ function ColumnViewBody({
             </span>
             {readOnly ? null : (
               <>
+                <ColumnAccentPicker
+                  columnId={column.id}
+                  title={column.title}
+                  accent={accent}
+                  columnStyle={columnStyle}
+                  onChange={(next) => setColumnAccent(column.id, next)}
+                />
                 <ColumnMenu
                   onRename={openRename}
                   onDuplicate={() =>
@@ -344,12 +394,22 @@ function ColumnViewBody({
                 />
                 <GripVertical
                   aria-hidden
-                  className="h-4 w-4 shrink-0 text-muted-foreground/60"
+                  className="janosik-column-accent-grip h-4 w-4 shrink-0 text-muted-foreground/60"
                 />
               </>
             )}
           </span>
         </header>
+
+        {workflowBlockedReason ? (
+          <p
+            data-testid={`column-workflow-blocked-${column.id}`}
+            className="mx-2 mb-1 flex items-start gap-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-[10px] leading-snug text-danger"
+          >
+            <Lock className="mt-px h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0">{workflowBlockedReason}</span>
+          </p>
+        ) : null}
 
         <div
           ref={scrollRef}

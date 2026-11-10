@@ -1,5 +1,6 @@
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { StorageService } from "@/attachments/storage.service";
+import type { AccountDeletionService } from "@/users/account-deletion.service";
 import type { OpsSettingsService } from "./ops-settings.service";
 import { MaintenanceService, PURGE_CHUNK } from "./maintenance.service";
 
@@ -27,6 +28,7 @@ function makePrisma(): PrismaService {
     board: purgeable(),
     activity: sweepable(0),
     adminAuditLog: sweepable(0),
+    securityAuditLog: sweepable(0),
     $transaction: jest.fn(async (arg: unknown) =>
       typeof arg === "function"
         ? (arg as (t: unknown) => unknown)({})
@@ -48,6 +50,9 @@ function makePrisma(): PrismaService {
     },
     command: sweepable(0),
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    idempotencyRecord: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   } as unknown as PrismaService;
 }
 
@@ -62,6 +67,16 @@ const opsMock = {
   retentionDays: jest.fn().mockResolvedValue(30),
 } as unknown as OpsSettingsService;
 
+const accountDeletionMock = {
+  usersDueForDeletion: jest.fn().mockResolvedValue([]),
+  deleteAccount: jest.fn(),
+  reapOrphanBoards: jest.fn().mockResolvedValue(0),
+} as unknown as AccountDeletionService & {
+  usersDueForDeletion: jest.Mock;
+  deleteAccount: jest.Mock;
+  reapOrphanBoards: jest.Mock;
+};
+
 /** Epoch mtime — unambiguously older than any grace window. */
 const LONG_AGO = 0;
 
@@ -71,15 +86,41 @@ describe("MaintenanceService", () => {
     (storageMock.listBlobs as jest.Mock).mockResolvedValue([]);
     (storageMock.listTempBlobs as jest.Mock).mockResolvedValue([]);
     (storageMock.remove as jest.Mock).mockResolvedValue(undefined);
+    (accountDeletionMock.usersDueForDeletion as jest.Mock).mockResolvedValue(
+      [],
+    );
+    (accountDeletionMock.reapOrphanBoards as jest.Mock).mockResolvedValue(0);
   });
 
   it("counts every sweep under 'all'", async () => {
-    const service = new MaintenanceService(makePrisma(), storageMock, opsMock);
+    const service = new MaintenanceService(
+      makePrisma(),
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
     const results = await service.run("all");
     const total = results.reduce((sum, entry) => sum + entry.removed, 0);
     // codes 2+1, tokens 4+1, shares 3, invitations 5.
     expect(total).toBe(16);
     expect(results.map((entry) => entry.job)).toContain("sweep-codes");
+  });
+
+  it("sweeps expired idempotency records (TASK-166.4)", async () => {
+    const prisma = makePrisma();
+    (prisma.idempotencyRecord.deleteMany as jest.Mock).mockResolvedValue({
+      count: 2,
+    });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
+    expect(await service.sweepIdempotency()).toBe(2);
+    expect(prisma.idempotencyRecord.deleteMany).toHaveBeenCalledWith({
+      where: { expiresAt: { lte: expect.any(Date) } },
+    });
   });
 
   it("deletes expired export artifacts", async () => {
@@ -88,7 +129,12 @@ describe("MaintenanceService", () => {
       { id: "exp-1", storedName: "export-1.json" },
     ]);
     (prisma.dataExport.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
     const removed = await service.sweepExports();
     expect(removed).toBe(1);
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/export-1.json");
@@ -113,7 +159,12 @@ describe("MaintenanceService", () => {
         mtimeMs: LONG_AGO,
       },
     ]);
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(1);
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/orphan.bin");
@@ -129,7 +180,12 @@ describe("MaintenanceService", () => {
         mtimeMs: Date.now(),
       },
     ]);
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(0);
     expect(storageMock.remove).not.toHaveBeenCalled();
@@ -157,7 +213,12 @@ describe("MaintenanceService", () => {
             ]
           : [],
     );
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.purgeSoftDeleted();
 
@@ -175,7 +236,12 @@ describe("MaintenanceService", () => {
     const prisma = makePrisma();
     (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
     (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 7 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
     const removed = await service.sweepCommands();
     expect(removed).toBe(7);
     const call = (prisma.command.findMany as jest.Mock).mock.calls[0][0] as {
@@ -211,7 +277,12 @@ describe("MaintenanceService", () => {
     (prisma.activity.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
     (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
     (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.purgeSoftDeleted();
 
@@ -251,7 +322,12 @@ describe("MaintenanceService", () => {
     (prisma.command.deleteMany as jest.Mock)
       .mockResolvedValueOnce({ count: PURGE_CHUNK })
       .mockResolvedValueOnce({ count: 40 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.purgeSoftDeleted();
 
@@ -292,7 +368,12 @@ describe("MaintenanceService", () => {
   it("deletes expired and long-revoked board shares (TASK-148)", async () => {
     const prisma = makePrisma();
     (prisma.boardShare.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.sweepShares();
 
@@ -311,7 +392,12 @@ describe("MaintenanceService", () => {
   it("keeps a revoked share while its board is soft-deleted inside the restore window (TASK-156)", async () => {
     const prisma = makePrisma();
     (prisma.boardShare.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.sweepShares();
 
@@ -341,7 +427,12 @@ describe("MaintenanceService", () => {
     const prisma = makePrisma();
     (prisma.activity.findMany as jest.Mock).mockResolvedValue([{ id: "a-1" }]);
     (prisma.activity.deleteMany as jest.Mock).mockResolvedValue({ count: 9 });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.sweepActivity();
 
@@ -360,7 +451,12 @@ describe("MaintenanceService", () => {
     (prisma.adminAuditLog.deleteMany as jest.Mock).mockResolvedValue({
       count: 4,
     });
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.sweepAudit();
 
@@ -384,7 +480,12 @@ describe("MaintenanceService", () => {
         mtimeMs: Date.now(),
       },
     ]);
-    const service = new MaintenanceService(prisma, storageMock, opsMock);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
 
     const removed = await service.sweepOrphanBlobs();
 

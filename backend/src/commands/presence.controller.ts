@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { MembershipGuard } from "@/common/membership.guard";
+import { TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import type { AuthUser } from "@/auth/auth.types";
 import { PresenceService } from "@/realtime/presence.service";
@@ -29,6 +30,7 @@ export class PresenceController {
   constructor(private readonly presence: PresenceService) {}
 
   @UseGuards(MembershipGuard)
+  @TokenScope("observer")
   @Post()
   @HttpCode(204)
   ping(

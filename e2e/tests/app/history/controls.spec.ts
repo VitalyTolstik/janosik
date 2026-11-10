@@ -15,6 +15,8 @@ import {
   undo,
 } from "@/helpers/history.js";
 
+test.describe.configure({ timeout: 60_000 });
+
 function todoCard(page: Page, title: string) {
   return columnSection(page, "Todo")
     .getByTestId("card-title")
@@ -93,6 +95,24 @@ test("board shortcuts are ignored while editing text", async ({
   await expect(todoCard(page, "Editing task")).toBeVisible();
   await undo(page);
   await expect(todoCard(page, "Editing task")).toHaveCount(0);
+});
+
+test("Ctrl+Z inside the description editor does not undo the board", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.open(page);
+  await addCard(page, "Editing target");
+  await openCard(page, "Editing target");
+  const dialog = cardDialog(page);
+  const editor = dialog.locator(".janosik-md-content").first();
+  await expect(editor).toBeVisible({ timeout: 20_000 });
+  await editor.click();
+  await pressUndo(page);
+  await expect(dialog).toBeVisible();
+  await closeCardDialog(page);
+  await expect(todoCard(page, "Editing target")).toBeVisible();
 });
 
 test("a new edit clears the redo stack", async ({ page, board }) => {

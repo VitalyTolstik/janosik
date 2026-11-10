@@ -43,14 +43,14 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
           aria-pressed={value === id}
           onClick={() => onChange(id)}
           className={cn(
-            "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors sm:px-2.5",
             value === id
               ? "bg-primary/15 text-primary"
               : "text-muted-foreground hover:bg-hover hover:text-foreground",
           )}
         >
           <Icon className="h-3.5 w-3.5" aria-hidden />
-          {t(labelKey)}
+          <span className="sr-only sm:not-sr-only">{t(labelKey)}</span>
         </button>
       ))}
     </div>

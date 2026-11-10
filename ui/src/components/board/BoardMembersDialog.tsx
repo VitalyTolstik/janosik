@@ -7,7 +7,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { LIMITS, type BoardMemberDto, type BoardRole } from "@janosik/shared";
+import {
+  LIMITS,
+  type BoardMemberDto,
+  type BoardPendingInvitationDto,
+  type BoardRole,
+} from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -29,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { LimitCounter } from "@/components/ui/limit-counter";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
@@ -81,6 +87,28 @@ type Translate = ReturnType<typeof useI18n>["t"];
  * an account exists — so a `409` (already a member) is the only invite-
  * specific refusal.
  */
+/** Four roster rows: the invite form below must not jump into place. */
+function BoardMembersSkeleton() {
+  return (
+    <div className="divide-y divide-border/60" aria-hidden="true">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div
+          key={index}
+          className="flex h-[52px] items-center gap-2.5 px-3"
+          data-testid="board-members-skeleton-row"
+        >
+          <Skeleton variant="circle" width={28} height={28} />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton width={120} height={14} />
+            <Skeleton width={180} height={10} />
+          </div>
+          <Skeleton width={64} height={20} className="rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function membershipError(error: unknown, t: Translate): string {
   if (error instanceof ApiError) {
     if (error.offline) return t("board.members.errors.offline");
@@ -136,7 +164,12 @@ function RolePicker({
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-44 p-1">
+      <PopoverContent
+        align="end"
+        className="w-44 p-1"
+        // Escape closes this picker only, not the member dialog around it.
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
         <div role="radiogroup" aria-label={label}>
           {ROLES.map((role) => (
             <button
@@ -212,7 +245,12 @@ function ExpiryPicker({
               )}`}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="relative w-auto p-3">
+      <PopoverContent
+        align="end"
+        className="relative w-auto p-3"
+        // Escape closes the calendar only, not the member dialog around it.
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+      >
         {/* Draft state lives here: Radix unmounts the content on close, so
             every open mounts a clean calendar (AGENT.md). */}
         <ExpiryCalendarBody value={value} onChange={onChange} />
@@ -234,6 +272,11 @@ function ExpiryCalendarBody({
     value === null ? "12:00" : formatTimeOfDay(new Date(value)),
   );
   const due = value === null ? undefined : new Date(value);
+  // A deadline in the past can never be met: offering yesterday only ends in
+  // a successful invite the bell hides again. The invite form refuses an
+  // already-lapsed deadline before it reaches the API.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const applyTime = (next: string) => {
     setTime(next);
@@ -258,6 +301,7 @@ function ExpiryCalendarBody({
         mode="single"
         localeTag={lang}
         selected={due}
+        disabled={{ before: today }}
         onSelect={(date) => {
           if (date) onChange(composeTimestamp(date, time));
         }}
@@ -313,7 +357,16 @@ export function BoardMembersDialog() {
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-xl">
+        <DialogContent
+          className="w-[calc(100vw-1.5rem)] sm:max-w-xl"
+          onEscapeKeyDown={(event) => {
+            // A nested calendar must consume the first Escape: close only the
+            // picker, keep the member dialog open for the next action.
+            if (document.querySelector('[data-testid="expiry-calendar"]')) {
+              event.preventDefault();
+            }
+          }}
+        >
           <BoardMembersPanel boardId={board.id} canManage={canManage} />
         </DialogContent>
       </Dialog>
@@ -337,6 +390,7 @@ export function BoardMembersPanel({
   const openProfile = useOpenProfile();
 
   const [members, setMembers] = useState<BoardMemberDto[] | null>(null);
+  const [pending, setPending] = useState<BoardPendingInvitationDto[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
@@ -347,6 +401,7 @@ export function BoardMembersPanel({
   // Invite draft — remount-reset (see the file header), never `open`-reset.
   const [email, setEmail] = useState("");
   const [inviteEmailError, setInviteEmailError] = useState(false);
+  const [inviteExpiryError, setInviteExpiryError] = useState(false);
   const [role, setRole] = useState<BoardRole>("MEMBER");
   const [expiry, setExpiry] = useState<number | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -367,12 +422,19 @@ export function BoardMembersPanel({
 
   const load = useCallback(async () => {
     try {
-      setMembers(await api.listMembers(boardId));
+      const [nextMembers, nextPending] = await Promise.all([
+        api.listMembers(boardId),
+        canManage
+          ? api.listPendingInvitations(boardId).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+      setMembers(nextMembers);
+      setPending(nextPending);
       setLoadFailed(false);
     } catch {
       setLoadFailed(true);
     }
-  }, [boardId]);
+  }, [boardId, canManage]);
 
   // The directory is rewritten on every membership event (someone accepted
   // an invitation, a role moved, another admin removed someone) — reload so
@@ -406,7 +468,12 @@ export function BoardMembersPanel({
       input?.focus();
       return;
     }
+    if (role === "VIEWER" && expiry !== null && expiry <= Date.now()) {
+      setInviteExpiryError(true);
+      return;
+    }
     setInviteEmailError(false);
+    setInviteExpiryError(false);
     setInviting(true);
     try {
       const address = email.trim();
@@ -425,6 +492,7 @@ export function BoardMembersPanel({
       setEmail("");
       setRole("MEMBER");
       setExpiry(null);
+      setInviteExpiryError(false);
       // The invitation is pending until the invitee accepts — it must not
       // show up as a member yet (and the masked answer is no member row),
       // so the list is refetched.
@@ -486,6 +554,20 @@ export function BoardMembersPanel({
     }
   }
 
+  /** Cancel a pending invitation; the invitee's bell loses it on next load. */
+  async function handleCancelInvitation(invitation: BoardPendingInvitationDto) {
+    setPendingUserId(invitation.userId);
+    try {
+      await api.removeMember(boardId, invitation.userId);
+      setPending((prev) => prev.filter((row) => row.id !== invitation.id));
+      toast.success(t("board.members.pending.cancelled"));
+    } catch (error) {
+      toast.error(membershipError(error, t));
+    } finally {
+      setPendingUserId(null);
+    }
+  }
+
   return (
     <>
       <DialogHeader className="shrink-0">
@@ -500,9 +582,13 @@ export function BoardMembersPanel({
       </DialogHeader>
 
       {members === null && !loadFailed ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          {t("board.members.loading")}
-        </p>
+        <SkeletonRegion
+          label={t("board.members.loading")}
+          testId="board-members-skeleton"
+          delayMs={150}
+        >
+          <BoardMembersSkeleton />
+        </SkeletonRegion>
       ) : members === null ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm">
           <span>{t("board.members.loadFailed")}</span>
@@ -518,6 +604,7 @@ export function BoardMembersPanel({
         <div
           className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
           data-testid="board-members-box"
+          aria-busy={members === null}
         >
           <div className="relative flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
             <Search size={15} className="shrink-0 text-muted-foreground" />
@@ -559,14 +646,14 @@ export function BoardMembersPanel({
                   data-testid="board-member-row"
                   data-role={member.role}
                   data-user-id={member.userId}
-                  className="flex items-center gap-3 px-4 py-3"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 sm:flex-nowrap sm:px-4"
                 >
                   <button
                     type="button"
                     data-testid="board-member-open"
                     aria-label={t("profile.open", { name: label })}
                     onClick={() => openProfile(member.userId)}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80"
+                    className="flex w-full min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80 sm:w-auto"
                   >
                     <UserAvatar
                       userId={member.userId}
@@ -576,10 +663,10 @@ export function BoardMembersPanel({
                       avatarPath={member.avatarPath}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {label}
+                      <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                        <span className="truncate">{label}</span>
                         {member.userId === user?.id ? (
-                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
                             {t("board.members.you")}
                           </span>
                         ) : null}
@@ -608,7 +695,7 @@ export function BoardMembersPanel({
                   </button>
 
                   {canManage ? (
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1 sm:flex-nowrap">
                       {member.role === "VIEWER" ? (
                         <ExpiryPicker
                           value={member.expiresAt}
@@ -694,6 +781,46 @@ export function BoardMembersPanel({
         </div>
       )}
 
+      {canManage && pending.length > 0 ? (
+        <div
+          className="shrink-0 space-y-1 rounded-lg border border-dashed bg-muted/20 p-3"
+          data-testid="board-pending-list"
+        >
+          <p className="text-xs font-medium uppercase text-muted-foreground">
+            {t("board.members.pending.title", { count: pending.length })}
+          </p>
+          <ul className="space-y-1">
+            {pending.map((invitation) => (
+              <li
+                key={invitation.id}
+                data-testid="board-pending-row"
+                className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {invitation.email}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {t(ROLE_KEYS[invitation.role])}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-danger"
+                  aria-label={t("board.members.pending.cancel", {
+                    email: invitation.email,
+                  })}
+                  data-testid="board-pending-cancel"
+                  disabled={pendingUserId === invitation.userId}
+                  onClick={() => void handleCancelInvitation(invitation)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {canManage ? (
         <form
           noValidate
@@ -737,14 +864,24 @@ export function BoardMembersPanel({
             </p>
           )}
           {role === "VIEWER" ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              {t("board.members.invite.expires")}
-              <ExpiryPicker
-                value={expiry}
-                label={t("board.members.invite.expires")}
-                onChange={setExpiry}
-              />
-            </label>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                {t("board.members.invite.expires")}
+                <ExpiryPicker
+                  value={expiry}
+                  label={t("board.members.invite.expires")}
+                  onChange={(value) => {
+                    setExpiry(value);
+                    setInviteExpiryError(false);
+                  }}
+                />
+              </label>
+              {inviteExpiryError ? (
+                <p role="alert" className="text-sm text-danger">
+                  {t("board.members.expires.past")}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <Button
             type="submit"

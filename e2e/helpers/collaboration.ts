@@ -94,7 +94,12 @@ export async function resumeStream(page: Page): Promise<void> {
 }
 
 export function membersDialog(page: Page): Locator {
-  return page.getByRole("dialog", { name: /^Members/ });
+  // Locate by the panel body, not the accessible name: on a reopen the
+  // Radix title id can briefly lag behind the dialog mount, which made the
+  // name-based locator miss an already-open dialog (CI flake).
+  return page
+    .getByRole("dialog")
+    .filter({ has: page.getByTestId("board-members-box") });
 }
 
 export async function openMembers(page: Page): Promise<Locator> {

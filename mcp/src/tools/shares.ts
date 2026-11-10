@@ -11,7 +11,12 @@ import { z } from "zod";
 import type { JanosikClient } from "../client.js";
 import { respond, textOnly } from "../format.js";
 import { renderShares } from "../render.js";
-import { boardIdSchema, responseFormatSchema, idSchema } from "../schemas.js";
+import {
+  boardIdSchema,
+  responseFormatSchema,
+  idempotencyKeySchema,
+  idSchema,
+} from "../schemas.js";
 import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
 
 /** Ten years: a longer expiry is "never" in practice, and stays a valid date. */
@@ -95,6 +100,7 @@ export function registerShareTools(
           .max(MAX_SHARE_HOURS)
           .optional()
           .describe("Expire the link after this many hours (default: never)."),
+        idempotencyKey: idempotencyKeySchema,
       },
       annotations: WRITE,
     },
@@ -105,22 +111,28 @@ export function registerShareTools(
       includeComments,
       includeAttachments,
       expiresInHours,
+      idempotencyKey,
     }) => {
-      const share = await client.createShare(boardId, {
-        mode,
-        ...(title !== undefined ? { title } : {}),
-        ...(includeComments !== undefined ? { includeComments } : {}),
-        ...(includeAttachments !== undefined ? { includeAttachments } : {}),
-        ...(expiresInHours !== undefined
-          ? {
-              expiresAt: new Date(
-                Date.now() + expiresInHours * 3_600_000,
-              ).toISOString(),
-            }
-          : {}),
-      });
+      const share = await client.createShare(
+        boardId,
+        {
+          mode,
+          ...(title !== undefined ? { title } : {}),
+          ...(includeComments !== undefined ? { includeComments } : {}),
+          ...(includeAttachments !== undefined ? { includeAttachments } : {}),
+          ...(expiresInHours !== undefined
+            ? {
+                expiresAt: new Date(
+                  Date.now() + expiresInHours * 3_600_000,
+                ).toISOString(),
+              }
+            : {}),
+        },
+        idempotencyKey,
+      );
       return textOnly(
         `Created a ${mode} share link: ${shareUrl(baseUrl, appBase, share.token)}`,
+        { resourceId: share.id },
       );
     },
   );

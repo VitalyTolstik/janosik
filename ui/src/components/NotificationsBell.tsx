@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
@@ -62,8 +63,22 @@ export function NotificationsBell() {
     if (!isApiEnabled() || user === null) return;
     void load();
     const onFocus = () => void load();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    // Invitations have no per-user SSE channel yet: a low-frequency poll
+    // keeps a long-lived tab from hiding a pending invitation until the user
+    // switches windows. Focus/visibility still answer immediately.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 30_000);
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load, user]);
 
   if (!isApiEnabled() || user === null) return null;
@@ -101,6 +116,7 @@ export function NotificationsBell() {
         sideOffset={8}
         collisionPadding={8}
         data-testid="invitations-panel"
+        aria-busy={invitations === null}
         className="w-80 overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         <NotificationsPanel
@@ -110,6 +126,26 @@ export function NotificationsBell() {
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Two invitation rows: the panel used to be one text line, then jump. */
+function NotificationsSkeleton() {
+  return (
+    <div className="divide-y divide-border/60" aria-hidden="true">
+      {[0, 1].map((index) => (
+        <div key={index} className="space-y-3 px-4 py-3">
+          <div className="space-y-1.5">
+            <Skeleton className="h-3.5 w-3/5" />
+            <Skeleton className="h-2.5 w-4/5" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 flex-1 rounded-md" />
+            <Skeleton className="h-8 flex-1 rounded-md" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -177,9 +213,13 @@ function NotificationsPanel({
       </div>
 
       {invitations === null ? (
-        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-          {t("notifications.loading")}
-        </p>
+        <SkeletonRegion
+          label={t("notifications.loading")}
+          testId="notifications-skeleton"
+          delayMs={150}
+        >
+          <NotificationsSkeleton />
+        </SkeletonRegion>
       ) : invitations.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-muted-foreground">
           {t("notifications.empty")}

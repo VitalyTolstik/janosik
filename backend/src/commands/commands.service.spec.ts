@@ -5,6 +5,7 @@ import {
   COMMAND_DELTA_MAX,
   CommandsService,
   MAX_COMMAND_BYTES_INTERNAL,
+  actionFingerprint,
 } from "./commands.service";
 
 const row = (seq: number) => ({
@@ -93,8 +94,11 @@ describe("CommandsService.apply size caps", () => {
 
   /** An UPDATE_CARD whose JSON encoding is exactly `bytes` bytes long. */
   const actionOfBytes = (bytes: number) => {
+    // The service stamps the route `boardId` before the size gate, so the
+    // boundary fixture already carries it (same value = same serialized size).
     const skeleton = {
       type: "UPDATE_CARD",
+      boardId: "board-1",
       cardId: "card-1",
       at: 1,
       description: "",
@@ -174,8 +178,11 @@ describe("CommandsService.applyBatch size caps", () => {
 
   /** An `UPDATE_CARD` whose JSON encoding is exactly `bytes` bytes long. */
   const actionOfBytes = (bytes: number) => {
+    // The service stamps the route `boardId` before the size gate, so the
+    // boundary fixture already carries it (same value = same serialized size).
     const skeleton = {
       type: "UPDATE_CARD",
+      boardId: "board-1",
       cardId: "card-1",
       at: 1,
       description: "",
@@ -206,5 +213,30 @@ describe("CommandsService.applyBatch size caps", () => {
     // The board writer — the per-board queue and the advisory lock — was
     // never entered: the whole batch failed its cheap validation first.
     expect(boardWrite.run).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The route board id is canonical for idempotency: a body that omits it (or
+ * carries a stale one) must fingerprint like the stamped action, while a real
+ * body change must still produce a different fingerprint.
+ */
+describe("actionFingerprint", () => {
+  const boardId = "board-1";
+  const action = { type: "RENAME_BOARD", title: "Board", at: 1 };
+
+  it("canonicalizes the route boardId whether or not the body carries one", () => {
+    expect(actionFingerprint(action, boardId)).toBe(
+      actionFingerprint({ ...action, boardId }, boardId),
+    );
+    expect(actionFingerprint({ ...action, boardId: "other" }, boardId)).toBe(
+      actionFingerprint(action, boardId),
+    );
+  });
+
+  it("still distinguishes a changed body", () => {
+    expect(
+      actionFingerprint({ ...action, title: "Renamed" }, boardId),
+    ).not.toBe(actionFingerprint(action, boardId));
   });
 });

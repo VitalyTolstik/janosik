@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
+import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
@@ -135,8 +136,14 @@ function SharePanel({ boardId }: { boardId: string }) {
           setCreating(true);
           try {
             const created = await api.createShare(boardId, request);
-            await copy(shareLink(created.token));
-            toast.success(t("share.created"));
+            // A refused clipboard is not a created-and-copied success: the
+            // user would walk away without the link. Keep the row (it is in
+            // the list) and say exactly what failed.
+            if (await copy(shareLink(created.token))) {
+              toast.success(t("share.created"));
+            } else {
+              toast.error(t("share.copyError"));
+            }
             await load();
           } catch (error) {
             toast.error(
@@ -153,12 +160,18 @@ function SharePanel({ boardId }: { boardId: string }) {
         }}
       />
 
-      <div className="space-y-2">
+      <div className="space-y-2" aria-busy={shares === null}>
         <p className="text-xs font-medium uppercase text-muted-foreground">
           {t("share.active")}
         </p>
         {shares === null ? (
-          <p className="text-sm text-muted-foreground">{t("share.loading")}</p>
+          <SkeletonRegion
+            label={t("share.loading")}
+            testId="share-list-skeleton"
+            delayMs={150}
+          >
+            <ShareListSkeleton />
+          </SkeletonRegion>
         ) : !shares.some((share) => share.mode === mode) ? (
           <p className="text-sm text-muted-foreground">{t("share.empty")}</p>
         ) : (
@@ -177,6 +190,28 @@ function SharePanel({ boardId }: { boardId: string }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Two active-link rows, 76 px each — the real `ShareRow` rhythm. */
+function ShareListSkeleton() {
+  return (
+    <div className="space-y-2" aria-hidden="true">
+      {[0, 1].map((index) => (
+        <div key={index} className="h-[76px] space-y-2 rounded-md border p-2">
+          <div className="flex items-center gap-2">
+            <Skeleton width={48} height={16} className="rounded" />
+            <Skeleton width={120} height={12} />
+            <div className="ml-auto flex items-center gap-1">
+              <Skeleton width={24} height={24} className="rounded-md" />
+              <Skeleton width={24} height={24} className="rounded-md" />
+            </div>
+          </div>
+          <Skeleton width={180} height={10} />
+          <Skeleton width={140} height={10} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -283,7 +318,13 @@ function ShareRow({
               variant="outline"
               size="sm"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => void copy(shareLink(share.token))}
+              onClick={async () => {
+                if (await copy(shareLink(share.token))) {
+                  toast.success(t("share.copied"));
+                } else {
+                  toast.error(t("share.copyError"));
+                }
+              }}
             >
               <Copy className="h-3.5 w-3.5" aria-hidden />
               {t("share.copy")}
@@ -550,6 +591,7 @@ function CreateForm({
       <Input
         value={title}
         maxLength={100}
+        aria-label={t("share.titlePlaceholder")}
         placeholder={t("share.titlePlaceholder")}
         onChange={(event) => setTitle(event.target.value)}
       />

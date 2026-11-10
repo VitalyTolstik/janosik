@@ -6,7 +6,7 @@
  *   the same reducer action the UI dispatches, with the idempotency key and
  *   clock stamped here so tools never touch those details;
  * - the **REST surface** — boards, members, comments, attachments, shares,
- *   activity, invitations and the caller's own account.
+ *   activity and the caller's own account.
  *
  * Auth is a personal API token (`Bearer jnk_…`), which every guarded route
  * accepts alongside a session JWT (TASK-36.1).
@@ -14,13 +14,14 @@
 
 import type {
   ActivityFeedPage,
+  AgentSessionDto,
+  AgentSessionHeartbeatRequest,
   AttachmentDto,
-  AuthUserDto,
+  AuthMeResponseDto,
   BoardAction,
   BoardAggregate,
   BoardCardSearchResult,
   BoardEnvelope,
-  BoardInvitationDto,
   BoardMemberDto,
   BoardRole,
   BoardShareDto,
@@ -32,10 +33,11 @@ import type {
   CommandBatchResponse,
   CommandRequest,
   CommandResponse,
+  CreateAgentSessionRequest,
   CreateShareRequest,
+  EndAgentSessionRequest,
   InviteMemberRequest,
   UpdateMemberRequest,
-  UpdateProfileRequest,
   UpdateShareRequest,
 } from "@janosik/shared";
 import type { Board } from "@janosik/shared";
@@ -72,6 +74,12 @@ export interface CommandOptions {
    * minting a duplicate.
    */
   commandId?: string;
+  /**
+   * TASK-166.4: optional REST-level `Idempotency-Key`. Honoured by the
+   * server for `duplicate_card`; other commands are already idempotent by
+   * `commandId`.
+   */
+  idempotencyKey?: string;
   /**
    * Accept a command the server applied as a no-op. By default an empty
    * `versions` map (nothing changed: an unknown id, or the value was already
@@ -133,6 +141,8 @@ interface RequestOptions {
   form?: FormData;
   /** Return the raw response instead of parsed JSON (used by download). */
   raw?: boolean;
+  /** Extra request headers (`Idempotency-Key`, TASK-166.4). */
+  headers?: Record<string, string>;
 }
 
 function buildQuery(query?: Record<string, string | number | undefined>) {
@@ -146,10 +156,22 @@ function buildQuery(query?: Record<string, string | number | undefined>) {
 }
 
 export class JanosikClient {
+  /**
+   * TASK-166: active agent sessions, keyed by board. A session belongs to one
+   * board, so the header is only attached to that board's requests; starting
+   * a session on board B must not invalidate the run already open on board A.
+   */
+  private readonly agentSessions = new Map<string, string>();
+
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
   ) {}
+
+  /** The session attached to requests for `boardId`, if any. */
+  agentSessionFor(boardId: string): string | null {
+    return this.agentSessions.get(boardId) ?? null;
+  }
 
   /**
    * Low-level request; throws {@link ApiError} on any non-2xx response. A
@@ -167,13 +189,20 @@ export class JanosikClient {
   }
 
   private async send<T>(path: string, options: RequestOptions): Promise<T> {
-    const { method = "GET", body, query, form, raw } = options;
+    const { method = "GET", body, query, form, raw, headers: extra } = options;
     const url = `${this.baseUrl}${API_PREFIX}${path}${buildQuery(query)}`;
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
+      ...extra,
     };
+    const boardId = boardIdOfPath(path);
+    const agentSessionId =
+      boardId === null ? undefined : this.agentSessions.get(boardId);
+    if (agentSessionId !== undefined) {
+      headers["X-Agent-Session"] = agentSessionId;
+    }
     let payload: string | FormData | undefined;
     if (form) {
       payload = form;
@@ -234,6 +263,7 @@ export class JanosikClient {
     const response = await this.sendCommand<CommandResponse>(
       apiPath`/boards/${boardId}/commands`,
       request,
+      opts.idempotencyKey,
     );
     // A committed change always bumps the board version, so an empty map
     // means the reducer found nothing to do.
@@ -283,10 +313,19 @@ export class JanosikClient {
    * `commandId`s — if the first attempt did commit, the server answers the
    * retry with the stored results instead of applying it twice.
    */
-  private async sendCommand<T>(path: string, body: unknown): Promise<T> {
+  private async sendCommand<T>(
+    path: string,
+    body: unknown,
+    idempotencyKey?: string,
+  ): Promise<T> {
+    const headers = idempotencyHeaders(idempotencyKey);
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.send<T>(path, { method: "POST", body });
+        return await this.send<T>(path, {
+          method: "POST",
+          body,
+          ...(headers !== undefined ? { headers } : {}),
+        });
       } catch (error) {
         if (attempt >= COMMAND_RETRIES || !isTransientNetworkError(error)) {
           throw error;
@@ -362,12 +401,25 @@ export class JanosikClient {
     return this.request("/boards");
   }
 
-  createBoard(title: string): Promise<BoardAggregate> {
-    return this.request("/boards", { method: "POST", body: { title } });
+  createBoard(title: string, idempotencyKey?: string): Promise<BoardAggregate> {
+    const headers = idempotencyHeaders(idempotencyKey);
+    return this.request("/boards", {
+      method: "POST",
+      body: { title },
+      ...(headers !== undefined ? { headers } : {}),
+    });
   }
 
-  importBoards(envelope: BoardEnvelope): Promise<BoardAggregate[]> {
-    return this.request("/boards/import", { method: "POST", body: envelope });
+  importBoards(
+    envelope: BoardEnvelope,
+    idempotencyKey?: string,
+  ): Promise<BoardAggregate[]> {
+    const headers = idempotencyHeaders(idempotencyKey);
+    return this.request("/boards/import", {
+      method: "POST",
+      body: envelope,
+      ...(headers !== undefined ? { headers } : {}),
+    });
   }
 
   getBoard(id: string): Promise<BoardAggregate> {
@@ -414,7 +466,7 @@ export class JanosikClient {
     return this.request(apiPath`/boards/${id}`, { method: "DELETE" });
   }
 
-  // --- Members & invitations --------------------------------------------
+  // --- Members -----------------------------------------------------------
 
   listMembers(boardId: string): Promise<BoardMemberDto[]> {
     return this.request(apiPath`/boards/${boardId}/members`);
@@ -447,22 +499,6 @@ export class JanosikClient {
     });
   }
 
-  listInvitations(): Promise<BoardInvitationDto[]> {
-    return this.request("/invitations");
-  }
-
-  // Both accept and decline answer `200` with an empty body (the backend
-  // returns `void`), so the result is intentionally ignored.
-  acceptInvitation(id: string): Promise<void> {
-    return this.request(apiPath`/invitations/${id}/accept`, { method: "POST" });
-  }
-
-  declineInvitation(id: string): Promise<void> {
-    return this.request(apiPath`/invitations/${id}/decline`, {
-      method: "POST",
-    });
-  }
-
   // --- Comments ----------------------------------------------------------
 
   listComments(
@@ -480,10 +516,13 @@ export class JanosikClient {
     cardId: string,
     text: string,
     kind?: CommentKind,
+    idempotencyKey?: string,
   ): Promise<CommentDto> {
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/comments`, {
       method: "POST",
       body: { text, ...(kind ? { kind } : {}) },
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -524,6 +563,7 @@ export class JanosikClient {
     fileName: string,
     mimeType: string,
     data: Buffer,
+    idempotencyKey?: string,
   ): Promise<AttachmentDto> {
     const form = new FormData();
     form.append(
@@ -531,9 +571,11 @@ export class JanosikClient {
       new Blob([new Uint8Array(data)], { type: mimeType }),
       fileName,
     );
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/attachments`, {
       method: "POST",
       form,
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -564,10 +606,13 @@ export class JanosikClient {
   createShare(
     boardId: string,
     dto: CreateShareRequest,
+    idempotencyKey?: string,
   ): Promise<BoardShareDto> {
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/boards/${boardId}/shares`, {
       method: "POST",
       body: dto,
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -594,15 +639,79 @@ export class JanosikClient {
     });
   }
 
+  // --- Agent sessions (TASK-166.1) --------------------------------------
+
+  /** Start a session and attach it to later requests for this board only. */
+  async startSession(
+    boardId: string,
+    body: CreateAgentSessionRequest = {},
+  ): Promise<AgentSessionDto> {
+    // Keep the previous board session if this request fails; replace it only
+    // after the server accepted the start.
+    const session = await this.request<AgentSessionDto>(
+      apiPath`/boards/${boardId}/agent-sessions`,
+      { method: "POST", body },
+    );
+    this.agentSessions.set(boardId, session.id);
+    return session;
+  }
+
+  heartbeat(
+    boardId: string,
+    sessionId: string,
+    body: AgentSessionHeartbeatRequest = {},
+  ): Promise<AgentSessionDto> {
+    return this.request(
+      apiPath`/boards/${boardId}/agent-sessions/${sessionId}/heartbeat`,
+      { method: "POST", body },
+    );
+  }
+
+  /** End a session; a successful end detaches it from that board. */
+  async endSession(
+    boardId: string,
+    sessionId: string,
+    body: EndAgentSessionRequest = {},
+  ): Promise<AgentSessionDto> {
+    const session = await this.request<AgentSessionDto>(
+      apiPath`/boards/${boardId}/agent-sessions/${sessionId}/end`,
+      { method: "POST", body },
+    );
+    if (this.agentSessions.get(boardId) === session.id) {
+      this.agentSessions.delete(boardId);
+    }
+    return session;
+  }
+
   // --- Account -----------------------------------------------------------
 
-  whoami(): Promise<AuthUserDto> {
+  whoami(): Promise<AuthMeResponseDto> {
     return this.request("/auth/me");
   }
+}
 
-  updateProfile(dto: UpdateProfileRequest): Promise<AuthUserDto> {
-    return this.request("/users/me", { method: "PATCH", body: dto });
+/**
+ * Extract the board id from an API path (`/boards/:id/...`) so an agent
+ * session is attached only to the board it belongs to. Returns null for
+ * non-board routes (`/auth/me`, `/users/...`).
+ */
+function boardIdOfPath(path: string): string | null {
+  const match = /^\/boards\/([^/]+)(?:\/|$)/.exec(path);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
   }
+}
+
+/** Extra headers for a REST idempotent write, or `undefined` when absent. */
+function idempotencyHeaders(
+  key: string | undefined,
+): Record<string, string> | undefined {
+  return key !== undefined && key !== ""
+    ? { "Idempotency-Key": key }
+    : undefined;
 }
 
 /** Read a JSON error body, tolerating an empty or non-JSON response. */

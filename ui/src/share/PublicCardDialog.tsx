@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 
 import type {
   AttachmentDto,
@@ -20,6 +20,10 @@ import {
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n";
 import { userAvatarColor, userInitials, userLabel } from "@/utils/avatar";
+import {
+  PublicAttachmentsSkeleton,
+  PublicCommentsSkeleton,
+} from "@/share/PublicBoardSkeleton";
 import {
   fetchPublicAttachments,
   fetchPublicComments,
@@ -220,7 +224,8 @@ function PublicAttachments({
     };
   }, [token, cardId]);
 
-  if (items === null || items.length === 0) return null;
+  if (items === null) return <PublicAttachmentsSkeleton />;
+  if (items.length === 0) return null;
   return (
     <div className="space-y-1">
       <p className="text-sm font-medium">{t("card.attachments.title")}</p>
@@ -264,13 +269,7 @@ function PublicComments({
     };
   }, [token, cardId]);
 
-  if (items === null) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-      </div>
-    );
-  }
+  if (items === null) return <PublicCommentsSkeleton />;
   if (items.length === 0) return null;
   return (
     <div className="space-y-2">

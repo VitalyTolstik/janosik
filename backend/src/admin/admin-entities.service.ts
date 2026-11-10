@@ -25,10 +25,11 @@ import type {
   AdminUserDetailDto,
   AdminUserRowDto,
 } from "@janosik/shared";
-import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
+import { ADMIN_PAGE_LIMITS, readBoardWorkflow } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { AdminService } from "./admin.service";
+import { CommsService } from "./comms.service";
 
 /**
  * Admin v2 (TASK-48): full Prisma coverage for the support panel.
@@ -121,6 +122,7 @@ export class AdminEntitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly admin: AdminService,
+    private readonly comms: CommsService,
   ) {}
 
   async listEntity<E extends AdminEntity>(
@@ -814,6 +816,13 @@ export class AdminEntitiesService {
         { title: like(query.search) },
         { body: like(query.search) },
         { createdBy: like(query.search) },
+        {
+          translations: {
+            some: {
+              OR: [{ title: like(query.search) }, { body: like(query.search) }],
+            },
+          },
+        },
       ];
     }
     if (query.status === "active") where.active = true;
@@ -825,6 +834,7 @@ export class AdminEntitiesService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.announcement.findMany({
         where,
+        include: { translations: true },
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
@@ -833,21 +843,7 @@ export class AdminEntitiesService {
     ]);
 
     return {
-      items: items.map((row) => ({
-        id: row.id,
-        title: row.title,
-        body: row.body,
-        level: row.level as AdminAnnouncementDto["level"],
-        audience: row.audience as AdminAnnouncementDto["audience"],
-        segment: row.segment,
-        active: row.active,
-        sendEmail: row.sendEmail,
-        startsAt: row.startsAt?.getTime() ?? null,
-        endsAt: row.endsAt?.getTime() ?? null,
-        createdBy: row.createdBy,
-        createdAt: row.createdAt.getTime(),
-        updatedAt: row.updatedAt.getTime(),
-      })),
+      items: items.map((row) => this.comms.toAnnouncement(row)),
       total,
       limit,
       offset,
@@ -1497,6 +1493,7 @@ export class AdminEntitiesService {
         id: true,
         title: true,
         version: true,
+        workflow: true,
         createdAt: true,
         updatedAt: true,
         archivedAt: true,
@@ -1593,6 +1590,7 @@ export class AdminEntitiesService {
           where: { boardId, deletedAt: null },
         }),
       ]);
+    const workflow = readBoardWorkflow(board.workflow);
 
     return {
       board: {
@@ -1651,6 +1649,17 @@ export class AdminEntitiesService {
         deletedAt: MS(label.deletedAt),
         version: label.version,
       })),
+      workflowSummary: {
+        present: workflow !== undefined,
+        enabled: workflow?.enabled ?? false,
+        transitions: workflow?.transitions.length ?? 0,
+        activeTransitions:
+          workflow?.transitions.filter(
+            (transition) => transition.enabled !== false,
+          ).length ?? 0,
+        initialColumnId: workflow?.initialColumnId ?? null,
+        doneColumnIds: workflow?.doneColumnIds ?? [],
+      },
     };
   }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { CreateUserTokenResponse, UserTokenDto } from "@janosik/shared";
@@ -105,7 +106,13 @@ describe("API tokens gate (e2e)", () => {
       const res = await server()
         .post("/api/v1/users/me/tokens")
         .set(auth(sessionToken))
-        .send({ name: "integration", expiresAt: null })
+        .send({
+          name: "integration",
+          expiresAt: null,
+          // TASK-166: creating boards is account-wide admin; the default
+          // worker preset writes board content but does not mint boards.
+          scopePreset: "admin",
+        })
         .expect(201);
 
       const body = res.body as CreateUserTokenResponse;
@@ -152,6 +159,62 @@ describe("API tokens gate (e2e)", () => {
         (token) => token.id === tokenId,
       );
       expect(used?.lastUsedAt).toEqual(expect.any(Number));
+    });
+
+    it("creates typed comments through the API key", async () => {
+      const board = await server()
+        .post("/api/v1/boards")
+        .set(auth(pat))
+        .send({ title: "PAT comments" })
+        .expect(201);
+      const boardId = board.body.id as string;
+      const columnId = randomUUID();
+      await server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(pat))
+        .send({
+          commandId: randomUUID(),
+          action: {
+            boardId,
+            at: Date.now(),
+            type: "ADD_COLUMN",
+            newColumnId: columnId,
+            title: "Todo",
+          },
+        })
+        .expect(200);
+      const cardId = randomUUID();
+      await server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(pat))
+        .send({
+          commandId: randomUUID(),
+          action: {
+            boardId,
+            at: Date.now(),
+            type: "ADD_CARD",
+            newCardId: cardId,
+            columnId,
+            title: "Typed",
+          },
+        })
+        .expect(200);
+
+      const created = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(pat))
+        .send({ text: "stuck", kind: "blocker" })
+        .expect(201);
+      expect(created.body).toMatchObject({ text: "stuck", kind: "blocker" });
+
+      const filtered = await server()
+        .get(`/api/v1/cards/${cardId}/comments?kind=blocker`)
+        .set(auth(pat))
+        .expect(200);
+      expect(filtered.body.items[0]).toMatchObject({
+        text: "stuck",
+        kind: "blocker",
+      });
     });
 
     it("stops working once revoked", async () => {

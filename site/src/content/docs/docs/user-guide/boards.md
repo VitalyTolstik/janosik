@@ -83,6 +83,28 @@ In the board view, open the column appearance menu next to the view switcher.
 `Transparency` makes columns translucent over the board background, and `Blur`
 frosts what shows through. Both apply live and are remembered.
 
+### Column accents
+
+Use the brush button in a column header to give that column a color or one of
+the six gradient presets from the card-cover palette, or choose `No accent`
+to clear it. The accent is board content: it survives reloads, is visible to
+every participant, and can be undone.
+
+The board-wide shape is chosen from the brush menu next to the view switcher:
+top rail, left rail, wash, title, glow, glass, header band, dot or signature.
+The shape applies to every accent on the board and is stored on the board, so
+all participants see the same style. The accent is decoration only — WIP
+colors, drag state, focus rings and text keep their own meaning.
+
+### Board workflow
+
+A board admin can restrict moves between columns. Open the gear in the header
+(`Board settings`) → `Workflow`, enable control and pick transitions in the
+matrix. Each transition has roles and optional card-field conditions. A
+forbidden target is shown disabled with the reason in the drag overlay, card
+menu, card dialog and table; a rejected drop leaves the card in place. See
+[Board workflow](/docs/user-guide/workflow/).
+
 ## Cards on the board
 
 ### Add a card
@@ -119,5 +141,6 @@ highlighted column and `C` to add a column. Escape clears the cursor.
 
 ## Next
 
+- [Board workflow](/docs/user-guide/workflow/)
 - [Calendar, table and watch views](/docs/user-guide/views/)
 - [Card details and the quick menu](/docs/user-guide/cards/)

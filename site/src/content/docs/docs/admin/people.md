@@ -3,6 +3,12 @@ title: Users and masters
 description: The user list and its actions, the user detail page, and the masters page.
 ---
 
+:::note
+Users are the **Users** hub. Masters is now an owner-only tab inside
+**Access & security** (`/admin/access?tab=masters`); `/admin/masters` redirects
+there. See [Admin redesign](../redesign/).
+:::
+
 The people section manages regular users and master accounts. The user list is
 visible to every master; the masters page is owner-only.
 

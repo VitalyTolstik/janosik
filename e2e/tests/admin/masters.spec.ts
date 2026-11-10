@@ -69,10 +69,12 @@ test("MST-2: creating an OWNER master with the checkbox grants the tier", async 
     await masterSide.page.getByTestId("admin-login-password").fill(temporary);
     await masterSide.page.getByTestId("admin-login-submit").click();
     await expect(masterSide.page.getByTestId("admin-sidebar")).toBeVisible();
+    await masterSide.page
+      .getByTestId("admin-sidebar")
+      .getByRole("link", { name: "Access & security", exact: true })
+      .click();
     await expect(
-      masterSide.page
-        .getByTestId("admin-sidebar")
-        .getByRole("link", { name: "Masters", exact: true }),
+      masterSide.page.getByTestId("admin-hub-tab-masters"),
     ).toBeVisible();
   } finally {
     await masterSide.context.close();

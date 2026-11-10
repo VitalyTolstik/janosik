@@ -76,31 +76,45 @@ you, so keep it secret.
 
 Use `Create key`, give it a `Name`, and choose when it expires: `Never`,
 `In 30 days`, `In 90 days` or `In a year`. You can also scope the key: pin it
-to one board, make it read-only (every write is refused), and give it its own
-requests-per-minute budget. If an agent only needs to read data, use a read-only
-key restricted to one board. The key itself is shown once, with a `jnk_` prefix;
-copy
-it then and store it in a password manager. The list shows each key's name,
-status (`Active`, `Expired` or `Revoked`), its scope, when it was created, when
-it was last used and when it expires. `Revoke` stops a key immediately and
-cannot be undone; a live connection opened with the key closes within about 25
-seconds.
+to one board, choose a `Scope preset` (`Observer`, `Worker`, `Reviewer` or
+`Admin`), make it read-only (every write is refused), give it its own
+requests-per-minute budget, and optionally mark it `Trusted CI`. A new key
+starts as `Worker`; the preset never raises your board role. `Observer` only
+reads, `Reviewer` may also move cards into a done column, and `Admin` may
+administer the board (members, shares, delete). Even `Admin` cannot delete
+cards, columns or labels without a human approval; `Trusted CI` is the explicit
+exception for a trusted pipeline, and a board policy can block destructive
+actions entirely. The approval request lifecycle ships in 166.5; until then a
+destructive agent call is refused with `409 approval_required` and nothing is
+applied — a human performs the action in the browser. If an agent only needs to
+read data, use an `Observer` key restricted to one board. The key itself is
+shown once, with a `jnk_` prefix; copy it then and store it in a password
+manager. The list shows each key's name, status (`Active`, `Expired` or
+`Revoked`), its effective scope, when it was created, when it was last used and
+when it expires. `Revoke` stops a key immediately and cannot be undone; a live
+connection opened with the key closes within about 25 seconds.
 
 Keys are managed only here, in a signed-in browser. A key cannot list, create
-or revoke keys, or change your password or email, so a leaked key can never
-mint a longer-lived one or lock you out of your account.
+or revoke keys, change your password or email, update the profile, or list and
+accept invitations, so a leaked key can never mint a longer-lived one, change
+your account or lock you out. A key's scope cannot be edited: create a new key
+and revoke the old one.
 
 ### Preferences
 
 ![The Preferences section: language, time format, theme and board background.](/screens/account-preferences.png)
 
-Preferences are personal and apply to this browser:
+Preferences are personal. The language is stored on your account, so it follows
+you across devices; the remaining display options apply to this browser:
 
-- `Language` — English or Русский.
+- `Language` — English or Русский; also used for announcement banners and email.
 - `Time format` — `Auto` (follows the language), `12-hour (AM/PM)` or
   `24-hour`.
 - `Theme` — `Light` or `Dark`.
-- `Board background` — `Solid`, `Paper`, `Dots` or `Grid`.
+- `Board background` — `Solid`, `Paper`, `Dots`, `Grid` or `Concentric`.
+
+Changing the language is saved to your account best-effort while online; a
+`?lng=` handoff from the documentation or marketing site applies for that visit.
 
 Column transparency and blur are set on the board itself, from the column
 appearance menu in the board view.
@@ -122,9 +136,13 @@ The data menu in the header manages your data.
 
 ![The data menu: export, import, a manual copy, the card archive and automatic backups.](/screens/data-menu.png)
 
-- `Export JSON` downloads all your boards as `janosik-boards.json`.
+- `Export JSON` downloads all your boards as `janosik-boards.json`. A file
+  above 25 MB is refused with advice to use `pg_dump` (the same limit applies
+  to a single server board export), so an export can always be imported back.
 - `Import JSON` reads a Janosik export and adds the imported boards to your
-  account.
+  account. Server mode imposes no 10-board product limit; an operator may set
+  `MAX_BOARDS_PER_USER` in the environment, and an import above that cap is
+  rejected without creating anything.
 - `Save a copy now` writes a backup copy straight away.
 - `Automatic backups` opens the list of copies the app kept on its own while
   you worked. From there you can restore a copy or delete it. Restoring takes
@@ -136,7 +154,25 @@ The data menu in the header manages your data.
 
 `Save a copy now` and `Automatic backups` belong to the local mode (the no-API build the tests use). In
 the shipped server mode your boards live in the database and are not mirrored
-into the browser.
+into the browser. **Janosik does not create, schedule or verify server
+backups.** Running `pg_dump` and copying the uploads volume is an operator
+task (see the runbooks).
+
+### Your data and account
+
+The account panel has a **Data & privacy** section:
+
+- `Prepare export` queues a personal JSON bundle (profile, comments, activity,
+  attachment metadata and full envelopes of boards where you are an ADMIN or
+  MEMBER; boards you can only view are not copied). `Download` appears when
+  the bundle is ready and stays valid for seven days. One export can be pending
+  at a time; the bundle is capped at 50 MB.
+- `Delete account` disables the account immediately, revokes sessions and API
+  keys and schedules permanent erasure after seven days. A password account
+  confirms with its current password; an OAuth-only account requests a
+  one-time email code and supplies the current OAuth-issued access token as
+  proof. A new request always restarts the seven-day window. Once it passes the
+  data cannot be recovered.
 
 ### The data-safety banner
 

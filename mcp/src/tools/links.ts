@@ -16,7 +16,7 @@ import {
   idSchema,
   linkTypeSchema,
 } from "../schemas.js";
-import { DESTRUCTIVE, WRITE, defineTool } from "./helpers.js";
+import { WRITE, defineTool } from "./helpers.js";
 
 export function registerLinkTools(server: McpServer, client: JanosikClient) {
   defineTool(
@@ -52,6 +52,7 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
       );
       return textOnly(
         `Linked card ${cardId} --${linkType}--> ${targetCardId}.`,
+        { resourceId: linkId },
       );
     },
   );
@@ -73,7 +74,7 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
           .describe("Type, when the pair has more than one relation."),
         expectedVersion: expectedVersionSchema,
       },
-      annotations: DESTRUCTIVE,
+      annotations: WRITE,
     },
     async ({ boardId, cardId, targetCardId, linkType, expectedVersion }) => {
       const link = await client.commandOnFreshBoard(

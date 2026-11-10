@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, Role } from "@prisma/client";
@@ -35,7 +36,7 @@ import type {
   AdminUserRowDto,
   AdminShareRowDto,
 } from "@janosik/shared";
-import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
+import { ADMIN_PAGE_LIMITS, serializeExport } from "@janosik/shared";
 import type {
   AdminAddBoardMemberRequest,
   AdminBulkResultDto,
@@ -60,6 +61,7 @@ import {
   type OAuthProviderId,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { SerialQueue } from "@/common/serial-queue";
 import { TtlCache } from "@/common/ttl-cache";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
@@ -78,6 +80,12 @@ import { JwtService } from "@nestjs/jwt";
 import { StorageService } from "@/attachments/storage.service";
 import { OpsSettingsService } from "@/ops/ops-settings.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
+import {
+  AccountDeletionService,
+  ACCOUNT_DELETE_CANCELLED_ACTION,
+} from "@/users/account-deletion.service";
+import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
+import type { RequestAttribution } from "@/auth/request-attribution";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
@@ -88,8 +96,21 @@ import type { AdminDemoStartDto } from "./dto/admin-demo-start.dto";
 import { DemoService } from "./demo.service";
 import { ThrottleSettingsService } from "./throttle-settings.service";
 import { loadCardRestore, loadColumnRestore } from "./admin-snapshots";
+import {
+  addBoardToBundleBudget,
+  assertBundleBudget,
+  BundleTooLargeException,
+} from "./export-budget";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Master-panel actions are not a PAT/browser session: system attribution. */
+const ADMIN_ATTRIBUTION: RequestAttribution = {
+  actorType: "admin",
+  apiTokenId: null,
+  agentSessionId: null,
+  runId: null,
+  agentName: null,
+};
 /** One row of the SQL per-day aggregation (B-7). */
 interface DayCountRow {
   day: Date;
@@ -124,6 +145,10 @@ const BACKEND_VERSION: string = (() => {
  */
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+  /** One account/self-service bundle assembly at a time per process. */
+  private readonly bundleQueue = new SerialQueue();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly boardWrite: BoardWriteService,
@@ -141,6 +166,8 @@ export class AdminService {
     private readonly storage: StorageService,
     private readonly ops: OpsSettingsService,
     private readonly maintenance: MaintenanceService,
+    private readonly accountDeletion: AccountDeletionService,
+    private readonly securityAudit: SecurityAuditService,
   ) {}
 
   /**
@@ -453,6 +480,29 @@ export class AdminService {
       await this.audit(admin, "user.enable", "user", userId, {
         email: updated.email,
       });
+      // TASK-166.6: re-enabling a self-service schedule cancels it explicitly
+      // in the security trail; the schedule marker itself is never deleted.
+      if (user.disabledAt !== null) {
+        const scheduled = await this.prisma.securityAuditLog.findFirst({
+          where: { userId, action: "account.delete_scheduled" },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, createdAt: true },
+        });
+        if (scheduled) {
+          await this.securityAudit.record({
+            userId,
+            actorId: admin.id,
+            actorType: "admin",
+            action: ACCOUNT_DELETE_CANCELLED_ACTION,
+            targetType: "user",
+            targetId: userId,
+            details: {
+              scheduledAt: scheduled.createdAt.toISOString(),
+              reason: "admin_reenable",
+            },
+          });
+        }
+      }
     } else if (verifyFlag === null && Object.keys(data).length > 0) {
       await this.audit(admin, "user.update", "user", userId, {
         displayName: updated.displayName,
@@ -506,6 +556,10 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException("User not found");
     }
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { userId, revokedAt: null },
+      select: { id: true },
+    });
     const revoked = await this.prisma.apiToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -514,6 +568,21 @@ export class AdminService {
       email: user.email,
       revoked: revoked.count,
     });
+    if (revoked.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: admin.id,
+        actorType: "admin",
+        action: "token.revoked",
+        targetType: "user",
+        targetId: userId,
+        details: {
+          reason: "admin_user_tokens_revoked",
+          revoked: revoked.count,
+          tokenIds: tokens.map((token) => token.id),
+        },
+      });
+    }
     return { revoked: revoked.count };
   }
 
@@ -886,7 +955,7 @@ export class AdminService {
     if (!board) {
       throw new NotFoundException("Board not found");
     }
-    await this.boards.deleteBoard(boardId);
+    await this.boards.deleteBoard(boardId, admin.id, ADMIN_ATTRIBUTION);
     await this.audit(admin, "board.delete", "board", boardId, {
       title: board.title,
     });
@@ -1331,7 +1400,12 @@ export class AdminService {
   ): Promise<{ revoked: number }> {
     const token = await this.prisma.apiToken.findUnique({
       where: { id: tokenId },
-      select: { id: true, name: true, user: { select: { email: true } } },
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        user: { select: { email: true } },
+      },
     });
     if (!token) {
       throw new NotFoundException("API token not found");
@@ -1344,6 +1418,15 @@ export class AdminService {
       await this.audit(admin, "token.revoke", "token", tokenId, {
         userEmail: token.user.email,
         name: token.name,
+      });
+      await this.securityAudit.record({
+        userId: token.userId,
+        actorId: admin.id,
+        actorType: "admin",
+        action: "token.revoked",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: { reason: "admin_revoke", name: token.name },
       });
     }
     return { revoked: revoked.count };
@@ -1927,76 +2010,14 @@ export class AdminService {
     // Owner-only like the (less destructive) password reset, promote and
     // impersonate next to it — an OPERATOR could erase any account before.
     this.assertOwner(admin);
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException("User not found");
-    const blobs = await this.prisma.attachment.findMany({
-      where: { uploadedById: userId },
-      select: {
-        storedName: true,
-        thumbnailName: true,
-        posterName: true,
-        cardId: true,
-      },
+    const deleted = await this.accountDeletion.deleteAccount(userId, {
+      actorId: admin.id,
+      actorType: "admin",
     });
-    // TASK-149 (B11): cards that held this user's files need their badge
-    // recomputed after the rows go, or it keeps counting deleted files.
-    const affectedCards = [...new Set(blobs.map((blob) => blob.cardId))];
-    // TASK-148 (B12): an erase must take the user's GDPR bundles with it.
-    // Rows hold `userId` with no FK, so deleting the user left the export
-    // rows and their `.json` artifacts downloadable for the full 7-day TTL.
-    const exports = await this.prisma.dataExport.findMany({
-      where: { userId },
-      select: { storedName: true },
-    });
-    await this.prisma.$transaction(async (tx) => {
-      await tx.emailVerificationCode.deleteMany({ where: { userId } });
-      await tx.emailChangeCode.deleteMany({ where: { userId } });
-      await tx.refreshToken.deleteMany({ where: { userId } });
-      await tx.apiToken.deleteMany({ where: { userId } });
-      await tx.dataExport.deleteMany({ where: { userId } });
-      await tx.attachment.deleteMany({ where: { uploadedById: userId } });
-      await tx.comment.deleteMany({ where: { authorId: userId } });
-      await tx.activity.deleteMany({ where: { actorId: userId } });
-      await tx.command.deleteMany({ where: { actorId: userId } });
-      await tx.boardMember.deleteMany({ where: { userId } });
-      await tx.boardMember.updateMany({
-        where: { invitedById: userId },
-        data: { invitedById: null },
-      });
-      await tx.card.updateMany({
-        where: { assigneeId: userId },
-        data: { assigneeId: null },
-      });
-      await tx.user.delete({ where: { id: userId } });
-    });
-    for (const cardId of affectedCards) {
-      await this.recountCardAttachments(cardId);
-    }
-    for (const blob of blobs) {
-      // TASK-107: the derivatives are separate blobs — erase them too, or a
-      // user wipe leaves orphaned thumbnails/posters on disk.
-      for (const name of [
-        blob.storedName,
-        blob.thumbnailName,
-        blob.posterName,
-      ]) {
-        if (name) {
-          await this.storage
-            .remove(this.storage.attachmentPath(name))
-            .catch(() => undefined);
-        }
-      }
-    }
-    for (const row of exports) {
-      if (row.storedName) {
-        await this.storage
-          .remove(this.storage.attachmentPath(row.storedName))
-          .catch(() => undefined);
-      }
-    }
+    if (!deleted) throw new NotFoundException("User not found");
     await this.audit(admin, "user.delete", "user", userId, {
-      email: user.email,
-      exports: exports.length,
+      email: deleted.email,
+      exports: deleted.exports,
     });
     return { status: "ok" };
   }
@@ -2259,7 +2280,7 @@ export class AdminService {
     id: string,
     admin: AdminPrincipal,
   ): Promise<{ status: "ok" }> {
-    await this.setDeletedAt(entity, id, null);
+    await this.setDeletedAt(entity, id, null, admin.id);
     await this.audit(admin, "entity.restored", entity, id, {});
     return { status: "ok" };
   }
@@ -2280,9 +2301,9 @@ export class AdminService {
     for (const id of ordered) {
       try {
         if (action === "delete")
-          await this.setDeletedAt(entity, id, new Date());
+          await this.setDeletedAt(entity, id, new Date(), admin.id);
         else if (action === "restore")
-          await this.setDeletedAt(entity, id, null);
+          await this.setDeletedAt(entity, id, null, admin.id);
         else if (action === "archive") await this.setArchived(entity, id, true);
         else await this.setArchived(entity, id, false);
         affected += 1;
@@ -2396,11 +2417,12 @@ export class AdminService {
     entity: string,
     id: string,
     when: Date | null,
+    actorId: string,
   ): Promise<void> {
     switch (entity) {
       case "boards": {
         if (when !== null) {
-          await this.boards.deleteBoard(id);
+          await this.boards.deleteBoard(id, actorId, ADMIN_ATTRIBUTION);
           return;
         }
         // Full subtree restore (TASK-156): undo the exact cascade
@@ -2701,6 +2723,15 @@ export class AdminService {
     filename: string;
     data: Record<string, unknown>;
   }> {
+    return this.bundleQueue.run(() => this.buildUserBundleOnce(userId));
+  }
+
+  private async buildUserBundleOnce(userId: string): Promise<{
+    email: string;
+    generatedAt: number;
+    filename: string;
+    data: Record<string, unknown>;
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -2725,7 +2756,9 @@ export class AdminService {
     ] = await this.prisma.$transaction([
       this.prisma.boardMember.findMany({
         where: { userId },
-        include: { board: { select: { id: true, title: true } } },
+        include: {
+          board: { select: { id: true, title: true, deletedAt: true } },
+        },
       }),
       this.prisma.comment.findMany({
         where: { authorId: userId },
@@ -2767,49 +2800,91 @@ export class AdminService {
     ]);
 
     const generatedAt = Date.now();
+    const now = Date.now();
+    // TASK-166.6: boards where the user is only a VIEWER are not included as
+    // full envelopes. The bundle must not become a way to copy another
+    // owner's board; the user's comments/activity on it are still present.
+    const accessibleBoards = memberships.filter(
+      (membership) =>
+        membership.acceptedAt !== null &&
+        membership.role !== "VIEWER" &&
+        membership.board.deletedAt === null &&
+        (membership.expiresAt === null || membership.expiresAt.getTime() > now),
+    );
+    // Sequential, budgeted assembly: no `Promise.all` over every board and no
+    // unbounded memory spike. A board is skipped with a visible warning, not
+    // silently, and a grossly oversized board is rejected before getAggregate.
+    const boardEnvelopes: unknown[] = [];
+    const warnings: Array<{ boardId: string; reason: string }> = [];
+    let boardBytes = 0;
+    for (const membership of accessibleBoards) {
+      try {
+        await this.boards.assertExportFitsPreflight(membership.boardId);
+        const envelope = JSON.parse(
+          serializeExport([await this.boards.getAggregate(membership.boardId)]),
+        );
+        const size = Buffer.byteLength(JSON.stringify(envelope), "utf8");
+        const nextBytes = addBoardToBundleBudget(boardBytes, size);
+        boardEnvelopes.push(envelope);
+        boardBytes = nextBytes;
+      } catch (error) {
+        // A single board over its own limit is skipped with a warning; the
+        // combined bundle over 50 MB is a hard 413, never a partial file.
+        if (error instanceof BundleTooLargeException) throw error;
+        const reason = error instanceof Error ? error.message : String(error);
+        warnings.push({ boardId: membership.boardId, reason });
+        this.logger.warn(
+          `Export skipped board ${membership.boardId}: ${reason}`,
+        );
+      }
+    }
+    const data = {
+      user: {
+        ...user,
+        createdAt: user.createdAt.getTime(),
+        disabledAt: user.disabledAt?.getTime() ?? null,
+        emailVerifiedAt: user.emailVerifiedAt?.getTime() ?? null,
+      },
+      memberships: memberships.map((m) => ({
+        boardId: m.boardId,
+        boardTitle: m.board.title,
+        role: m.role,
+        acceptedAt: m.acceptedAt?.getTime() ?? null,
+        createdAt: m.createdAt.getTime(),
+      })),
+      boards: boardEnvelopes,
+      warnings,
+      comments: comments.map((c) => ({
+        ...c,
+        createdAt: c.createdAt.getTime(),
+      })),
+      attachments,
+      sessions: sessions.map((s) => ({
+        ...s,
+        createdAt: s.createdAt.getTime(),
+        expiresAt: s.expiresAt.getTime(),
+        revokedAt: s.revokedAt?.getTime() ?? null,
+      })),
+      tokens: tokens.map((t) => ({
+        ...t,
+        createdAt: t.createdAt.getTime(),
+        revokedAt: t.revokedAt?.getTime() ?? null,
+      })),
+      commands: commands.map((c) => ({
+        ...c,
+        createdAt: c.createdAt.getTime(),
+      })),
+      activity: activity.map((a) => ({
+        ...a,
+        createdAt: a.createdAt.getTime(),
+      })),
+    };
+    assertBundleBudget(Buffer.byteLength(JSON.stringify(data), "utf8"));
     return {
       email: user.email,
       generatedAt,
       filename: `janosik-user-${user.id}-${generatedAt}.json`,
-      data: {
-        user: {
-          ...user,
-          createdAt: user.createdAt.getTime(),
-          disabledAt: user.disabledAt?.getTime() ?? null,
-          emailVerifiedAt: user.emailVerifiedAt?.getTime() ?? null,
-        },
-        memberships: memberships.map((m) => ({
-          boardId: m.boardId,
-          boardTitle: m.board.title,
-          role: m.role,
-          acceptedAt: m.acceptedAt?.getTime() ?? null,
-          createdAt: m.createdAt.getTime(),
-        })),
-        comments: comments.map((c) => ({
-          ...c,
-          createdAt: c.createdAt.getTime(),
-        })),
-        attachments,
-        sessions: sessions.map((s) => ({
-          ...s,
-          createdAt: s.createdAt.getTime(),
-          expiresAt: s.expiresAt.getTime(),
-          revokedAt: s.revokedAt?.getTime() ?? null,
-        })),
-        tokens: tokens.map((t) => ({
-          ...t,
-          createdAt: t.createdAt.getTime(),
-          revokedAt: t.revokedAt?.getTime() ?? null,
-        })),
-        commands: commands.map((c) => ({
-          ...c,
-          createdAt: c.createdAt.getTime(),
-        })),
-        activity: activity.map((a) => ({
-          ...a,
-          createdAt: a.createdAt.getTime(),
-        })),
-      },
+      data,
     };
   }
 
@@ -2824,11 +2899,20 @@ export class AdminService {
         this.prisma.attachment.count({ where }),
         this.prisma.column.count({ where }),
       ]);
-    const backupDir = process.env.BACKUP_DIR ?? null;
+    const backupDir = process.env.BACKUP_DIR?.trim() || null;
     return {
-      retentionDays: await this.ops.retentionDays(),
+      // The effective window (30 is the product default, not "unset").
+      retentionDays: (await this.ops.retentionDays()) ?? 30,
       purgeable: { cards, comments, attachments, columns },
-      backups: { configured: backupDir !== null, location: backupDir },
+      // TASK-166 D21: Janosik does not create or verify backups. `external`
+      // only means the operator pointed BACKUP_DIR at their own directory.
+      backups: {
+        mode: backupDir !== null ? "external" : "unconfigured",
+        location: backupDir,
+        automatic: false,
+        lastBackupAt: null,
+        verified: false,
+      },
     };
   }
 

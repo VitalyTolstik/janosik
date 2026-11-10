@@ -9,7 +9,8 @@ import {
 import type { BoardInvitationDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AuthPrincipal } from "@/auth/auth-principal";
-import { actorTypeOf, CurrentPrincipal } from "@/auth/auth-principal";
+import { CurrentPrincipal, SessionOnlyGuard } from "@/auth/auth-principal";
+import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { InvitationsService } from "./invitations.service";
@@ -18,9 +19,12 @@ import { InvitationsService } from "./invitations.service";
  * Invitation feed of the signed-in user (TASK-35 addendum). Plain JWT —
  * the invitee is by definition not a member yet, so the membership guard
  * does not apply here; ownership is enforced per row in the service.
+ *
+ * TASK-166 (D22): invitations are account routes, session-only. A PAT must
+ * not list other invitations or accept one on the owner's behalf.
  */
 @Controller("invitations")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, SessionOnlyGuard)
 export class InvitationsController {
   constructor(private readonly invitations: InvitationsService) {}
 
@@ -36,7 +40,7 @@ export class InvitationsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Param("id") id: string,
   ): Promise<void> {
-    return this.invitations.accept(user.id, id, actorTypeOf(principal));
+    return this.invitations.accept(user.id, id, requestAttribution(principal));
   }
 
   @Post(":id/decline")
@@ -46,6 +50,6 @@ export class InvitationsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Param("id") id: string,
   ): Promise<void> {
-    return this.invitations.decline(user.id, id, actorTypeOf(principal));
+    return this.invitations.decline(user.id, id, requestAttribution(principal));
   }
 }

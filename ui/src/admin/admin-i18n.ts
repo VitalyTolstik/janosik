@@ -31,6 +31,66 @@ const en = {
   "admin.nav.section.security": "Security",
   "admin.nav.section.access": "Access",
   "admin.nav.section.ops": "Operations",
+
+  "admin.hub.overview": "Overview",
+  "admin.hub.users": "Users",
+  "admin.hub.boards": "Boards",
+  "admin.hub.moderation": "Moderation",
+  "admin.hub.audit": "Audit & activity",
+  "admin.hub.communications": "Communications",
+  "admin.hub.access": "Access & security",
+  "admin.hub.settings": "Settings",
+  "admin.settings.readonly":
+    "Owner-only settings are shown read-only. Values come from the server and cannot be changed by an operator.",
+  "admin.hub.group.operate": "Operate",
+  "admin.hub.group.govern": "Govern",
+  "admin.hub.group.configure": "Configure",
+  "admin.hub.allDestinations": "All 26 destinations",
+  "admin.hub.tabNav": "Section",
+  "admin.hub.navLabel": "Admin navigation",
+  "admin.hub.breadcrumb": "Breadcrumb",
+  "admin.hub.openMenu": "Open navigation",
+  "admin.hub.closeMenu": "Close navigation",
+  "admin.hub.railExpand": "Expand navigation",
+  "admin.hub.railCollapse": "Collapse navigation",
+  "admin.hub.ownerOnly": "Owner only",
+  "admin.hub.forbidden.title": "Owner rights required",
+  "admin.hub.forbidden.body":
+    "This area is available to owners only. Ask an owner if you need access.",
+  "admin.hub.forbidden.back": "Back to the panel",
+
+  "admin.density.label": "Density",
+  "admin.density.comfortable": "Comfortable",
+  "admin.density.compact": "Compact",
+  "admin.density.toggle": "Toggle table density",
+
+  "admin.shortcuts.title": "Keyboard shortcuts",
+  "admin.shortcuts.open": "Keyboard shortcuts",
+  "admin.shortcuts.close": "Close",
+  "admin.shortcuts.palette": "Open the command palette",
+  "admin.shortcuts.sidebar": "Collapse or expand the sidebar",
+  "admin.shortcuts.help": "Show this shortcut sheet",
+  "admin.shortcuts.hubs": "Jump to a hub",
+  "admin.shortcuts.hubsHint":
+    "Press g, then d / u / b / m / a / c / s / , for Overview, Users, Boards, Moderation, Audit, Communications, Access, Settings.",
+  "admin.shortcuts.escape": "Close a dialog, drawer or the palette",
+  "admin.shortcuts.enter": "Open the highlighted result",
+
+  "admin.palette.navigate": "Navigate",
+  "admin.palette.actions": "Actions",
+  "admin.palette.recent": "Recent",
+  "admin.palette.emptyQuery":
+    "Type to search people, boards, cards, comments, files and labels — or jump to a hub.",
+  "admin.palette.error":
+    "Search is unavailable. Check your connection and try again.",
+  "admin.palette.retry": "Retry search",
+  "admin.palette.action.theme": "Toggle light or dark theme",
+  "admin.palette.action.density": "Toggle compact density",
+  "admin.palette.action.settings": "Open system settings",
+  "admin.palette.action.shortcuts": "Show keyboard shortcuts",
+  "admin.palette.action.boards": "Back to the boards app",
+  "admin.palette.hint": "↑↓ to move · Enter to open · Esc to close",
+
   "admin.nav.backToBoards": "Back to boards",
   "admin.nav.logout": "Sign out",
   "admin.nav.signedInAs": "Signed in as",
@@ -97,6 +157,9 @@ const en = {
   "admin.shares.copied": "Link copied",
   "admin.shares.open": "Open",
   "admin.shares.revoke": "Revoke",
+  "admin.shares.confirm.title": "Revoke this public link?",
+  "admin.shares.confirm.body":
+    "Anyone with the link loses access immediately. The board itself is not changed.",
   "admin.shares.revoked": "Link revoked",
   "admin.shares.revokedLabel": "revoked",
 
@@ -112,6 +175,7 @@ const en = {
   "admin.announcements.action.activate": "Activate",
   "admin.announcements.action.deactivate": "Deactivate",
   "admin.announcements.action.edit": "Edit",
+  "admin.announcements.action.view": "View",
   "admin.comms.field.startsAt": "Starts at",
   "admin.comms.field.endsAt": "Ends at",
   "admin.announcements.send": "Send announcement",
@@ -119,6 +183,17 @@ const en = {
 
   "admin.common.delete": "Delete",
 
+  "admin.userDetail.tabs": "User sections",
+  "admin.userDetail.tab.overview": "Overview",
+  "admin.userDetail.overview.account": "Account",
+  "admin.userDetail.overview.access": "Access summary",
+  "admin.userDetail.overview.recent": "Recent activity",
+  "admin.userDetail.overview.recentEmpty": "No recorded activity yet.",
+  "admin.userDetail.overview.danger": "Danger zone",
+  "admin.userDetail.overview.dangerHint":
+    "Deleting the account erases everything it authored and cannot be undone. Owner rights are required.",
+  "admin.userDetail.overview.ownerOnly":
+    "Read-only for operators. Owner-only actions are hidden and enforced by the server.",
   "admin.userDetail.verified": "Verified",
   "admin.userDetail.unverified": "Unverified",
   "admin.userDetail.verifiedAt": "Verified {date}",
@@ -213,7 +288,8 @@ const en = {
     "Applies to every account equally, each with its own counter. Leave empty to disable.",
   "admin.ops.retentionDays": "Delete soft-deleted data after (days)",
   "admin.ops.retentionDaysHint":
-    "The grace window before Purge may remove it. Default 30 days.",
+    "The grace window before Purge may remove it. Default 30 days; 90 and 365 are one click away.",
+  "admin.ops.retentionPreset": "{days} days",
   "admin.ops.saved": "Saved",
   "admin.ops.retention": "Soft-deleted data",
   "admin.ops.retention.olderThan":
@@ -225,8 +301,11 @@ const en = {
   "admin.ops.retention.confirm.body":
     "Permanently deletes already-deleted cards, comments, attachments and columns of all users older than {days} days. Live data is never touched.",
   "admin.ops.retention.purged": "Purged {count} rows",
-  "admin.ops.backups.configured": "Backups: {location}",
+  "admin.ops.backups.external":
+    "External backup directory: {location}. Janosik writes nothing there.",
   "admin.ops.backups.none": "No backup location configured",
+  "admin.ops.backups.notAutomatic":
+    "Janosik does not create, verify or schedule backups. Use pg_dump and back up the uploads volume yourself.",
   "admin.ops.schedule": "Scheduled housekeeping",
   "admin.ops.schedule.hint":
     "Background sweeps (expired codes/tokens/shares/invitations, orphaned files). 0 disables the schedule.",
@@ -253,10 +332,81 @@ const en = {
   "admin.comms.announcements.hint":
     "Compose a broadcast; the full history is its own page.",
   "admin.comms.new": "New announcement",
+  "admin.comms.announcement.subtitle":
+    "One announcement, two language versions",
+  "admin.comms.announcement.editTitle": "Edit announcement",
+  "admin.comms.announcementSaved": "Announcement saved",
+  "admin.comms.announcementDraftSaved": "Draft saved",
+  "admin.comms.announcementPublished": "Announcement published",
   "admin.comms.active": "Active",
   "admin.comms.announcements.empty": "No announcements",
   "admin.comms.created": "Announcement created",
   "admin.comms.deleted": "Announcement deleted",
+  "admin.comms.field.sourceLocale": "Source language",
+  "admin.comms.lang.en": "English",
+  "admin.comms.lang.ru": "Russian",
+  "admin.comms.lang.en.short": "EN",
+  "admin.comms.lang.ru.short": "RU",
+  "admin.comms.completeness": "Completeness",
+  "admin.comms.languages": "Languages",
+  "admin.comms.ready": "Ready",
+  "admin.comms.notFilled": "Not filled",
+  "admin.comms.source": "Source",
+  "admin.comms.legacy": "Legacy",
+  "admin.comms.legacy.hint":
+    "The language of this old announcement is unknown. Choose its source language to migrate it to translations.",
+  "admin.comms.legacy.choose": "Choose source language",
+  "admin.comms.policy": "If a translation is missing",
+  "admin.comms.policy.require_all": "Require both languages",
+  "admin.comms.policy.require_all.hint":
+    "Publishing is blocked until English and Russian are filled.",
+  "admin.comms.policy.allow_fallback": "Allow one language with a notice",
+  "admin.comms.policy.allow_fallback.hint":
+    "Users without a translation see the original with an explicit language notice.",
+  "admin.comms.policy.fallbackExample":
+    "Example: “This announcement is available in Russian only.”",
+  "admin.comms.preview.title": "Preview",
+  "admin.comms.preview.banner": "Banner",
+  "admin.comms.preview.email": "Email",
+  "admin.comms.preview.viewAs": "View as",
+  "admin.comms.preview.blocked": "Publishing is blocked: fill {locale}.",
+  "admin.comms.preview.noEmail": "The letter will not be sent.",
+  "admin.comms.preview.subject": "Subject",
+  "admin.comms.preview.emailFallback": "Fallback notice",
+  "admin.comms.saveDraft": "Save draft",
+  "admin.comms.publish": "Publish",
+  "admin.comms.save": "Save",
+  "admin.comms.emailSent": "Email sent",
+  "admin.comms.emailNotSent": "Email not sent",
+  "admin.comms.emailSent.hint":
+    "The letter has already been queued. Edits change only the banner.",
+  "admin.comms.emailActiveHint":
+    "An active announcement does not send email on save. Save it as a draft and publish again to send.",
+  "admin.comms.emailFutureWarning":
+    "The letter will be queued immediately when you save; the banner will appear at {date}.",
+  "admin.comms.staleAnnouncement":
+    "Someone else changed this announcement while you were editing. Close and reopen it to continue.",
+  "admin.comms.schedule": "Schedule (optional)",
+  "admin.comms.schedule.set": "Set date and time",
+  "admin.comms.schedule.clear": "Clear",
+  "admin.comms.schedule.time": "Time",
+  "admin.comms.preview.policyStrict": "Strict: EN and RU required",
+  "admin.comms.preview.policyFallback":
+    "Fallback: a missing language shows a notice",
+  "admin.comms.validation.missing": "Fill the missing languages: {locales}",
+  "admin.comms.validation.source":
+    "Fill the source language or choose another one.",
+  "admin.comms.validation.window": "The end time must be after the start time.",
+  "admin.comms.validation.content": "Fill at least one language version.",
+  "admin.comms.requestFailed": "Could not save the announcement",
+  "admin.comms.email.recipients": "The letter will reach {count} user(s).",
+  "admin.comms.col.languages": "Languages",
+  "admin.comms.col.policy": "Policy",
+  "admin.comms.policy.require_all.short": "EN+RU",
+  "admin.comms.policy.allow_fallback.short": "Fallback",
+  "admin.comms.email.sentBadge": "email queued",
+  "admin.comms.email.pendingBadge": "email pending",
+  "admin.comms.field.schedule": "Schedule",
   "admin.comms.email.title": "Send an email",
   "admin.comms.email.to": "To",
   "admin.comms.email.subject": "Subject",
@@ -392,24 +542,51 @@ const en = {
   "admin.demo.confirmStop":
     "Stop the demo and delete its board, cards and demo users?",
 
-  "admin.login.title": "Master sign-in",
-  "admin.login.subtitle": "Restricted area — platform operators only",
-  "admin.login.email": "Email",
+  "admin.login.title": "Sign in to Janosik",
+  "admin.login.subtitle": "Master console",
+  "admin.login.backToSite": "Back to site",
+  "admin.login.email": "Work email",
   "admin.login.password": "Password",
   "admin.login.totpCode": "Two-factor code",
-  "admin.login.totpHint": "Enter the 6-digit code from your authenticator app.",
+  "admin.login.totpHint":
+    "Enter the 6-digit code from your authenticator app. The code rotates every 30 seconds.",
   "admin.login.totpInvalid": "Invalid two-factor code",
+  "admin.login.totpTitle": "Two-factor verification",
+  "admin.login.totpSubtitle":
+    "Enter the 6-digit code from your authenticator app, then continue.",
   "admin.login.submit": "Sign in",
   "admin.login.submitting": "Signing in…",
+  "admin.login.verify": "Verify and continue",
+  "admin.login.verifying": "Verifying…",
+  "admin.login.backToPassword": "Back to password",
   "admin.login.error": "Invalid credentials",
+  "admin.login.errorBody":
+    "Check your email and password. The attempt was recorded in the audit trail.",
   "admin.login.ipDenied": "Sign-in from this IP address is not allowed",
   "admin.login.ipDeniedHint":
     "Contact the application owner to add your address to the allowed list.",
   "admin.login.disabled": "This master account is disabled — contact an owner.",
+  "admin.login.disabledTitle": "Master account disabled",
+  "admin.login.disabledBody":
+    "An owner has disabled this account. Contact the owner who created it.",
   "admin.login.locked": "Account is temporarily locked",
-  "admin.login.hint":
-    "Master accounts are created on the server via the admin CLI.",
+  "admin.login.lockedBody":
+    "Too many failed attempts. Try again in a few minutes or ask an owner to unlock the account.",
+  "admin.login.offline": "No connection to the server",
+  "admin.login.offlineBody":
+    "Check your network connection and try again. Your session was not created.",
   "admin.login.back": "Back to the app",
+  "admin.login.emailPlaceholder": "you@company.com",
+  "admin.login.passwordPlaceholder": "Enter your password",
+  "admin.login.show": "Show",
+  "admin.login.hide": "Hide",
+  "admin.login.showPassword": "Show password",
+  "admin.login.hidePassword": "Hide password",
+  "admin.login.capsLock": "Caps Lock is on",
+  "admin.login.lostDevice":
+    "Lost your authenticator? Ask an owner for a reset.",
+  "admin.login.theme": "Switch light or dark theme",
+  "admin.login.language": "Change language",
 
   "admin.common.search": "Search…",
   "admin.common.loading": "Loading…",
@@ -442,6 +619,22 @@ const en = {
   "admin.common.details": "Details",
   "admin.common.offline": "No connection to the server",
   "admin.common.forbidden": "Access denied",
+  "admin.common.selectAll": "Select all rows on this page",
+  "admin.common.pageSize": "Rows per page",
+  "admin.common.refresh": "Refresh",
+  "admin.common.errorHint":
+    "The request failed before the panel could render it. Retry, or check the server logs with the reference below.",
+  "admin.common.errorReference": "Reference",
+  "admin.common.emptyFiltered": "No rows match this search or filter.",
+  "admin.common.clearFilters": "Clear filters",
+  "admin.common.forbiddenHint":
+    "Your master role does not include this capability. The server refused the request.",
+  "admin.common.backToPanel": "Back to the panel",
+  "admin.crumb.userDetail": "User detail",
+  "admin.crumb.boardDetail": "Board detail",
+  "admin.crumb.boardContent": "Content",
+  "admin.crumb.boardWorkflow": "Workflow",
+  "admin.crumb.cardDetail": "Card detail",
 
   "admin.email.title": "Email service",
   "admin.email.subtitle":
@@ -536,6 +729,22 @@ const en = {
   "admin.dashboard.activity": "Commands · 14 days",
   "admin.dashboard.recentAudit": "Recent admin actions",
   "admin.dashboard.openAudit": "Open the audit trail",
+  "admin.dashboard.eyebrow": "Overview",
+  "admin.dashboard.status.ok": "All systems operational",
+  "admin.dashboard.status.latency": "API latency",
+  "admin.dashboard.attention": "Needs attention",
+  "admin.dashboard.attention.blocked": "Blocked accounts",
+  "admin.dashboard.attention.blockedHint":
+    "Accounts a master has blocked. Review before unblocking.",
+  "admin.dashboard.attention.archived": "Archived boards",
+  "admin.dashboard.attention.archivedHint":
+    "Archived boards stay readable; deleted boards are recoverable for the retention window.",
+  "admin.dashboard.attention.masters": "Master accounts",
+  "admin.dashboard.attention.mastersHint":
+    "Owner and operator accounts with access to this console.",
+  "admin.dashboard.attention.comments": "Comments on the platform",
+  "admin.dashboard.attention.allClear": "Nothing urgent right now.",
+  "admin.dashboard.open": "Open",
 
   "admin.users.title": "Users",
   "admin.users.subtitle": "{total} registered",
@@ -805,6 +1014,17 @@ const en = {
   "admin.boardDetail.members": "Members",
   "admin.boardDetail.owner": "Owner",
   "admin.boardDetail.updated": "Updated",
+  "admin.workflow.title": "Workflow",
+  "admin.workflow.subtitle": "Card workflow of this board",
+  "admin.workflow.summary":
+    "Control {{state}} · {{active}}/{{count}} active transition(s)",
+  "admin.workflow.on": "enabled",
+  "admin.workflow.off": "disabled",
+  "admin.workflow.notConfigured": "Not configured — every move is allowed.",
+  "admin.workflow.open": "Open workflow editor",
+  "admin.workflow.saved": "Workflow saved",
+  "admin.workflow.disabledHint":
+    "Control is disabled: cards move freely. Enable it and add transitions in the editor below.",
   "admin.boards.column.created": "Created",
   "admin.boards.column.owner": "Owner",
   "admin.boards.column.status": "Status",
@@ -993,6 +1213,66 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.nav.section.security": "Безопасность",
   "admin.nav.section.access": "Доступ",
   "admin.nav.section.ops": "Эксплуатация",
+
+  "admin.hub.overview": "Обзор",
+  "admin.hub.users": "Пользователи",
+  "admin.hub.boards": "Доски",
+  "admin.hub.moderation": "Модерация",
+  "admin.hub.audit": "Аудит и активность",
+  "admin.hub.communications": "Коммуникации",
+  "admin.hub.access": "Доступ и безопасность",
+  "admin.hub.settings": "Настройки",
+  "admin.settings.readonly":
+    "Owner-настройки показаны только для чтения. Значения приходят с сервера, оператор не может их изменить.",
+  "admin.hub.group.operate": "Работа",
+  "admin.hub.group.govern": "Контроль",
+  "admin.hub.group.configure": "Настройка",
+  "admin.hub.allDestinations": "Все 26 разделов",
+  "admin.hub.tabNav": "Раздел",
+  "admin.hub.navLabel": "Навигация админки",
+  "admin.hub.breadcrumb": "Навигационная цепочка",
+  "admin.hub.openMenu": "Открыть навигацию",
+  "admin.hub.closeMenu": "Закрыть навигацию",
+  "admin.hub.railExpand": "Развернуть навигацию",
+  "admin.hub.railCollapse": "Свернуть навигацию",
+  "admin.hub.ownerOnly": "Только владелец",
+  "admin.hub.forbidden.title": "Нужны права владельца",
+  "admin.hub.forbidden.body":
+    "Этот раздел доступен только владельцам. Обратитесь к владельцу, если нужен доступ.",
+  "admin.hub.forbidden.back": "Назад в панель",
+
+  "admin.density.label": "Плотность",
+  "admin.density.comfortable": "Обычная",
+  "admin.density.compact": "Компактная",
+  "admin.density.toggle": "Переключить плотность таблиц",
+
+  "admin.shortcuts.title": "Горячие клавиши",
+  "admin.shortcuts.open": "Горячие клавиши",
+  "admin.shortcuts.close": "Закрыть",
+  "admin.shortcuts.palette": "Открыть командную палитру",
+  "admin.shortcuts.sidebar": "Свернуть или развернуть боковую панель",
+  "admin.shortcuts.help": "Показать эту шпаргалку",
+  "admin.shortcuts.hubs": "Перейти в раздел",
+  "admin.shortcuts.hubsHint":
+    "Нажмите g, затем d / u / b / m / a / c / s / , для обзора, пользователей, досок, модерации, аудита, коммуникаций, доступа и настроек.",
+  "admin.shortcuts.escape": "Закрыть диалог, панель или палитру",
+  "admin.shortcuts.enter": "Открыть выбранный результат",
+
+  "admin.palette.navigate": "Перейти",
+  "admin.palette.actions": "Действия",
+  "admin.palette.recent": "Недавние",
+  "admin.palette.emptyQuery":
+    "Введите запрос, чтобы найти людей, доски, карточки, комментарии, файлы и метки — или перейдите в раздел.",
+  "admin.palette.error":
+    "Поиск недоступен. Проверьте соединение и повторите попытку.",
+  "admin.palette.retry": "Повторить поиск",
+  "admin.palette.action.theme": "Переключить светлую или тёмную тему",
+  "admin.palette.action.density": "Переключить компактную плотность",
+  "admin.palette.action.settings": "Открыть системные настройки",
+  "admin.palette.action.shortcuts": "Показать горячие клавиши",
+  "admin.palette.action.boards": "Вернуться к доскам",
+  "admin.palette.hint": "↑↓ — выбор · Enter — открыть · Esc — закрыть",
+
   "admin.nav.backToBoards": "К доскам",
   "admin.nav.logout": "Выйти",
   "admin.nav.signedInAs": "Вы вошли как",
@@ -1060,6 +1340,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.shares.copied": "Ссылка скопирована",
   "admin.shares.open": "Открыть",
   "admin.shares.revoke": "Отозвать",
+  "admin.shares.confirm.title": "Отозвать публичную ссылку?",
+  "admin.shares.confirm.body":
+    "Доступ по ссылке прекратится сразу. Сама доска не изменится.",
   "admin.shares.revoked": "Ссылка отозвана",
   "admin.shares.revokedLabel": "отозвана",
 
@@ -1075,6 +1358,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.announcements.action.activate": "Включить",
   "admin.announcements.action.deactivate": "Отключить",
   "admin.announcements.action.edit": "Изменить",
+  "admin.announcements.action.view": "Просмотр",
   "admin.comms.field.startsAt": "Начало",
   "admin.comms.field.endsAt": "Окончание",
   "admin.announcements.send": "Отправить объявление",
@@ -1082,6 +1366,17 @@ const ru: Record<AdminMessageKey, string> = {
 
   "admin.common.delete": "Удалить",
 
+  "admin.userDetail.tabs": "Разделы пользователя",
+  "admin.userDetail.tab.overview": "Обзор",
+  "admin.userDetail.overview.account": "Аккаунт",
+  "admin.userDetail.overview.access": "Сводка доступа",
+  "admin.userDetail.overview.recent": "Последняя активность",
+  "admin.userDetail.overview.recentEmpty": "Записей об активности пока нет.",
+  "admin.userDetail.overview.danger": "Опасная зона",
+  "admin.userDetail.overview.dangerHint":
+    "Удаление аккаунта стирает всё созданное им и не отменяется. Нужны права владельца.",
+  "admin.userDetail.overview.ownerOnly":
+    "Только чтение для операторов. Owner-действия скрыты, сервер их проверяет.",
   "admin.userDetail.verified": "Подтверждён",
   "admin.userDetail.unverified": "Не подтверждён",
   "admin.userDetail.verifiedAt": "Подтверждён {date}",
@@ -1179,7 +1474,8 @@ const ru: Record<AdminMessageKey, string> = {
     "Действует на все аккаунты одинаково, у каждого свой счётчик. Пусто — выключено.",
   "admin.ops.retentionDays": "Удалять soft-deleted данные через (дней)",
   "admin.ops.retentionDaysHint":
-    "Срок «на передумать» до того, как очистка их удалит. По умолчанию 30 дней.",
+    "Срок «на передумать» до того, как очистка их удалит. По умолчанию 30 дней; 90 и 365 — в один клик.",
+  "admin.ops.retentionPreset": "{days} дн.",
   "admin.ops.saved": "Сохранено",
   "admin.ops.retention": "Удалённые (soft-delete) данные",
   "admin.ops.retention.olderThan":
@@ -1191,8 +1487,11 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention.confirm.body":
     "Безвозвратно удалит уже удалённые карточки, комментарии, вложения и колонки всех пользователей старше {days} дней. Живые данные не затрагиваются.",
   "admin.ops.retention.purged": "Очищено строк: {count}",
-  "admin.ops.backups.configured": "Бэкапы: {location}",
+  "admin.ops.backups.external":
+    "Внешний каталог бэкапов: {location}. Janosik ничего туда не пишет.",
   "admin.ops.backups.none": "Каталог бэкапов не задан",
+  "admin.ops.backups.notAutomatic":
+    "Janosik не создаёт, не проверяет и не планирует бэкапы. Делайте pg_dump и копию volume с загрузками самостоятельно.",
   "admin.ops.schedule": "Регулярная уборка",
   "admin.ops.schedule.hint":
     "Фоновые уборки (истёкшие коды/токены/шары/инвайты, осиротевшие файлы). 0 отключает расписание.",
@@ -1220,6 +1519,77 @@ const ru: Record<AdminMessageKey, string> = {
     "Составьте рассылку; полная история — на отдельной странице.",
   "admin.comms.new": "Новое объявление",
   "admin.comms.active": "Активно",
+  "admin.comms.announcement.subtitle": "Один анонс — две языковые версии",
+  "admin.comms.announcement.editTitle": "Изменить объявление",
+  "admin.comms.announcementSaved": "Объявление сохранено",
+  "admin.comms.announcementDraftSaved": "Черновик сохранён",
+  "admin.comms.announcementPublished": "Объявление опубликовано",
+  "admin.comms.field.sourceLocale": "Язык оригинала",
+  "admin.comms.lang.en": "Английский",
+  "admin.comms.lang.ru": "Русский",
+  "admin.comms.lang.en.short": "EN",
+  "admin.comms.lang.ru.short": "RU",
+  "admin.comms.completeness": "Полнота",
+  "admin.comms.languages": "Языки",
+  "admin.comms.ready": "Готово",
+  "admin.comms.notFilled": "Не заполнено",
+  "admin.comms.source": "Исходный",
+  "admin.comms.legacy": "Наследие",
+  "admin.comms.legacy.hint":
+    "Язык этого старого объявления неизвестен. Выберите язык оригинала, чтобы перенести текст в переводы.",
+  "admin.comms.legacy.choose": "Выберите язык оригинала",
+  "admin.comms.policy": "Если перевода нет",
+  "admin.comms.policy.require_all": "Требовать оба языка",
+  "admin.comms.policy.require_all.hint":
+    "Публикация недоступна, пока английский и русский не заполнены.",
+  "admin.comms.policy.allow_fallback": "Разрешить один язык с пометкой",
+  "admin.comms.policy.allow_fallback.hint":
+    "Пользователи без перевода увидят оригинал и явную плашку о языке.",
+  "admin.comms.policy.fallbackExample":
+    "Пример: «Это объявление доступно только на русском.»",
+  "admin.comms.preview.title": "Предпросмотр",
+  "admin.comms.preview.banner": "Баннер",
+  "admin.comms.preview.email": "Письмо",
+  "admin.comms.preview.viewAs": "Глазами",
+  "admin.comms.preview.blocked":
+    "Публикация заблокирована: заполните {locale}.",
+  "admin.comms.preview.noEmail": "Письмо не будет отправлено.",
+  "admin.comms.preview.subject": "Тема",
+  "admin.comms.preview.emailFallback": "Пометка о языке",
+  "admin.comms.saveDraft": "Сохранить черновик",
+  "admin.comms.publish": "Опубликовать",
+  "admin.comms.save": "Сохранить",
+  "admin.comms.emailSent": "Письмо отправлено",
+  "admin.comms.emailNotSent": "Письмо не отправлено",
+  "admin.comms.emailSent.hint":
+    "Письмо уже поставлено в очередь. Правки изменят только баннер.",
+  "admin.comms.emailActiveHint":
+    "Активное объявление не отправляет письмо при сохранении. Сохраните черновик и опубликуйте снова, чтобы отправить.",
+  "admin.comms.emailFutureWarning":
+    "Письмо будет поставлено в очередь сразу при сохранении; баннер появится {date}.",
+  "admin.comms.staleAnnouncement":
+    "Кто-то изменил объявление, пока вы редактировали. Закройте и откройте его снова, чтобы продолжить.",
+  "admin.comms.schedule": "Расписание (необязательно)",
+  "admin.comms.schedule.set": "Выбрать дату и время",
+  "admin.comms.schedule.clear": "Очистить",
+  "admin.comms.schedule.time": "Время",
+  "admin.comms.preview.policyStrict": "Строго: нужны EN и RU",
+  "admin.comms.preview.policyFallback":
+    "Fallback: при отсутствии языка показывается плашка",
+  "admin.comms.validation.missing": "Заполните недостающие языки: {locales}",
+  "admin.comms.validation.source":
+    "Заполните язык оригинала или выберите другой.",
+  "admin.comms.validation.window": "Окончание должно быть позже начала.",
+  "admin.comms.validation.content": "Заполните хотя бы одну языковую версию.",
+  "admin.comms.requestFailed": "Не удалось сохранить объявление",
+  "admin.comms.email.recipients": "Письмо получат пользователей: {count}.",
+  "admin.comms.col.languages": "Языки",
+  "admin.comms.col.policy": "Политика",
+  "admin.comms.policy.require_all.short": "EN+RU",
+  "admin.comms.policy.allow_fallback.short": "Fallback",
+  "admin.comms.email.sentBadge": "письмо в очереди",
+  "admin.comms.email.pendingBadge": "письмо ожидает",
+  "admin.comms.field.schedule": "Расписание",
   "admin.comms.announcements.empty": "Объявлений нет",
   "admin.comms.created": "Объявление создано",
   "admin.comms.deleted": "Объявление удалено",
@@ -1360,24 +1730,51 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.confirmStop":
     "Остановить демо и удалить его доску, карточки и демо-аккаунты?",
 
-  "admin.login.title": "Вход мастера",
-  "admin.login.subtitle": "Закрытая зона — только операторы платформы",
-  "admin.login.email": "Email",
+  "admin.login.title": "Вход в Janosik",
+  "admin.login.subtitle": "Мастер-консоль",
+  "admin.login.backToSite": "На сайт",
+  "admin.login.email": "Рабочий email",
   "admin.login.password": "Пароль",
   "admin.login.totpCode": "Код двухфакторной аутентификации",
   "admin.login.totpHint":
-    "Введите 6-значный код из приложения-аутентификатора.",
+    "Введите 6-значный код из приложения-аутентификатора. Код обновляется каждые 30 секунд.",
   "admin.login.totpInvalid": "Неверный код двухфакторной аутентификации",
+  "admin.login.totpTitle": "Двухфакторная проверка",
+  "admin.login.totpSubtitle":
+    "Введите 6-значный код из приложения-аутентификатора и продолжите.",
   "admin.login.submit": "Войти",
   "admin.login.submitting": "Входим…",
+  "admin.login.verify": "Подтвердить и продолжить",
+  "admin.login.verifying": "Проверяем…",
+  "admin.login.backToPassword": "Назад к паролю",
   "admin.login.error": "Неверные данные",
+  "admin.login.errorBody":
+    "Проверьте email и пароль. Попытка записана в журнал аудита.",
   "admin.login.ipDenied": "Вход с этого IP-адреса запрещён",
   "admin.login.ipDeniedHint":
     "Обратитесь к владельцу приложения, чтобы он добавил ваш адрес в список разрешённых.",
   "admin.login.disabled": "Мастер-аккаунт отключён — обратитесь к владельцу.",
+  "admin.login.disabledTitle": "Мастер-аккаунт отключён",
+  "admin.login.disabledBody":
+    "Владелец отключил этот аккаунт. Обратитесь к владельцу, который его создал.",
   "admin.login.locked": "Аккаунт временно заблокирован",
-  "admin.login.hint": "Мастер-аккаунт создаётся на сервере через admin CLI.",
+  "admin.login.lockedBody":
+    "Слишком много неудачных попыток. Повторите через несколько минут или попросите владельца разблокировать аккаунт.",
+  "admin.login.offline": "Нет соединения с сервером",
+  "admin.login.offlineBody":
+    "Проверьте сеть и повторите попытку. Сеанс не был создан.",
   "admin.login.back": "Вернуться в приложение",
+  "admin.login.emailPlaceholder": "you@company.com",
+  "admin.login.passwordPlaceholder": "Введите пароль",
+  "admin.login.show": "Показать",
+  "admin.login.hide": "Скрыть",
+  "admin.login.showPassword": "Показать пароль",
+  "admin.login.hidePassword": "Скрыть пароль",
+  "admin.login.capsLock": "Включён Caps Lock",
+  "admin.login.lostDevice":
+    "Потеряли аутентификатор? Попросите владельца сбросить доступ.",
+  "admin.login.theme": "Переключить светлую или тёмную тему",
+  "admin.login.language": "Сменить язык",
 
   "admin.common.search": "Поиск…",
   "admin.common.loading": "Загружаем…",
@@ -1410,6 +1807,22 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.common.details": "Детали",
   "admin.common.offline": "Нет связи с сервером",
   "admin.common.forbidden": "Доступ запрещён",
+  "admin.common.selectAll": "Выбрать все строки на этой странице",
+  "admin.common.pageSize": "Строк на странице",
+  "admin.common.refresh": "Обновить",
+  "admin.common.errorHint":
+    "Запрос завершился ошибкой до отрисовки панели. Повторите попытку или проверьте логи сервера по номеру ниже.",
+  "admin.common.errorReference": "Номер",
+  "admin.common.emptyFiltered": "Нет строк по этому запросу или фильтру.",
+  "admin.common.clearFilters": "Сбросить фильтры",
+  "admin.common.forbiddenHint":
+    "У вашей роли мастера нет этого разрешения. Сервер отклонил запрос.",
+  "admin.common.backToPanel": "Назад в панель",
+  "admin.crumb.userDetail": "Пользователь",
+  "admin.crumb.boardDetail": "Доска",
+  "admin.crumb.boardContent": "Содержимое",
+  "admin.crumb.boardWorkflow": "Процесс",
+  "admin.crumb.cardDetail": "Карточка",
 
   "admin.email.title": "Email-рассылка",
   "admin.email.subtitle":
@@ -1505,6 +1918,22 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.dashboard.activity": "Команды · 14 дней",
   "admin.dashboard.recentAudit": "Последние действия админов",
   "admin.dashboard.openAudit": "Открыть аудит",
+  "admin.dashboard.eyebrow": "Обзор",
+  "admin.dashboard.status.ok": "Все системы работают",
+  "admin.dashboard.status.latency": "Задержка API",
+  "admin.dashboard.attention": "Требует внимания",
+  "admin.dashboard.attention.blocked": "Заблокированные аккаунты",
+  "admin.dashboard.attention.blockedHint":
+    "Аккаунты, заблокированные мастером. Проверьте перед разблокировкой.",
+  "admin.dashboard.attention.archived": "Архивные доски",
+  "admin.dashboard.attention.archivedHint":
+    "Архивные доски остаются доступными для чтения; удалённые можно восстановить в течение срока хранения.",
+  "admin.dashboard.attention.masters": "Мастер-аккаунты",
+  "admin.dashboard.attention.mastersHint":
+    "Владельцы и операторы с доступом к этой консоли.",
+  "admin.dashboard.attention.comments": "Комментарии на платформе",
+  "admin.dashboard.attention.allClear": "Срочных задач сейчас нет.",
+  "admin.dashboard.open": "Открыть",
 
   "admin.users.title": "Пользователи",
   "admin.users.subtitle": "Зарегистрировано: {total}",
@@ -1774,6 +2203,17 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.boardDetail.members": "Участники",
   "admin.boardDetail.owner": "Владелец",
   "admin.boardDetail.updated": "Обновлена",
+  "admin.workflow.title": "Рабочий процесс",
+  "admin.workflow.subtitle": "Процесс карточек этой доски",
+  "admin.workflow.summary":
+    "Контроль {{state}} · активных переходов: {{active}} из {{count}}",
+  "admin.workflow.on": "включён",
+  "admin.workflow.off": "выключен",
+  "admin.workflow.notConfigured": "Не настроен — разрешены любые перемещения.",
+  "admin.workflow.open": "Открыть редактор процесса",
+  "admin.workflow.saved": "Процесс сохранён",
+  "admin.workflow.disabledHint":
+    "Контроль выключен: карточки двигаются свободно. Включите его и добавьте переходы в редакторе ниже.",
   "admin.boards.column.created": "Создана",
   "admin.boards.column.owner": "Владелец",
   "admin.boards.column.status": "Статус",

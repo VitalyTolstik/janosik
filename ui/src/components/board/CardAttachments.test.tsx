@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -74,6 +74,86 @@ describe("CardAttachments", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([]);
+  });
+
+  it("ignores a stale response after switching cards", async () => {
+    let resolveFirst!: (items: AttachmentDto[]) => void;
+    let resolveSecond!: (items: AttachmentDto[]) => void;
+    vi.spyOn(api, "listAttachments")
+      .mockReturnValueOnce(
+        new Promise<AttachmentDto[]>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<AttachmentDto[]>((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+
+    const tree = (cardId: string) => (
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <CardAttachments cardId={cardId} boardId="b-1" />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>
+    );
+    const { rerender } = render(tree("card-1"));
+    await waitFor(() =>
+      expect(api.listAttachments).toHaveBeenCalledWith("card-1"),
+    );
+
+    rerender(tree("card-2"));
+    await waitFor(() =>
+      expect(api.listAttachments).toHaveBeenCalledWith("card-2"),
+    );
+
+    act(() => resolveFirst([attachment({ id: "old", fileName: "old.pdf" })]));
+    await waitFor(() =>
+      expect(screen.queryByText("old.pdf")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("card-attachments-skeleton")).toBeInTheDocument();
+
+    act(() => resolveSecond([attachment({ id: "new", fileName: "new.pdf" })]));
+    expect(await screen.findByText("new.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("old.pdf")).not.toBeInTheDocument();
+  });
+
+  it("keeps the main list when the detached-bin request fails", async () => {
+    vi.spyOn(api, "listAttachments").mockResolvedValue([attachment()]);
+    vi.spyOn(api, "listDetachedAttachments").mockRejectedValue(
+      new Error("offline"),
+    );
+    renderSection();
+
+    expect(await screen.findByTestId("card-attachment-row")).toHaveTextContent(
+      "spec.pdf",
+    );
+    expect(screen.queryByTestId("card-attachments-empty")).toBeNull();
+  });
+
+  it("shows a busy skeleton until the first list arrives", async () => {
+    let release!: (items: AttachmentDto[]) => void;
+    const gate = new Promise<AttachmentDto[]>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(api, "listAttachments").mockReturnValue(gate);
+    renderSection();
+
+    const skeleton = await screen.findByTestId("card-attachments-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByTestId("card-attachments-empty")).toBeNull();
+
+    act(() => release([attachment()]));
+
+    expect(
+      await screen.findByTestId("card-attachment-row"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("card-attachments-skeleton"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the list with size and offers upload", async () => {

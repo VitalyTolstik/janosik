@@ -13,6 +13,7 @@ import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
 import { BoardDensityMenu } from "@/components/board/BoardDensityMenu";
+import { ColumnStyleMenu } from "@/components/board/ColumnStyleMenu";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
 import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
@@ -21,6 +22,7 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import { boardBackgroundById } from "@/types/board-background";
+import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { hasCard } from "@/utils/card-nav";
 import {
   filterCardIds,
@@ -59,7 +61,7 @@ function readStoredView(): BoardView {
  * duplicated here.
  */
 export function BoardSection() {
-  const { board, roleOf } = useBoard();
+  const { board, roleOf, setBoardColumnStyle } = useBoard();
   const { t } = useI18n();
   const { background } = useBoardBackground();
   // The filter lives in the URL (TASK-162 review, F-02): a reload, a shared
@@ -217,11 +219,17 @@ export function BoardSection() {
           />
         </div>
       ) : null}
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <ViewSwitcher value={view} onChange={setView} />
-        {/* Board-view display controls: column glass + card density. */}
+        {/* Board-view display controls: column style, glass + card density. */}
         {view === "board" ? (
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
+            {readOnly ? null : (
+              <ColumnStyleMenu
+                value={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
+                onChange={setBoardColumnStyle}
+              />
+            )}
             <BoardDensityMenu density={density} onChange={setDensity} />
             <ColumnGlassMenu />
           </div>

@@ -74,7 +74,14 @@ export class AdminAuthService {
     ) {
       await this.auditLoginFailed(admin.email, admin.id, "locked", context.ip);
       throw new HttpException(
-        "Account is temporarily locked",
+        {
+          message: "Account is temporarily locked",
+          code: "login_backoff",
+          retryAfter: Math.max(
+            1,
+            Math.ceil((admin.lockedUntil.getTime() - Date.now()) / 1000),
+          ),
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

@@ -3,6 +3,13 @@ title: Email, security and operations
 description: The email service, OAuth login, security, traffic, the demo swarm, operations, communications, observability, and the user-facing announcements banner.
 ---
 
+:::note
+These pages are now tabs of the **Settings** hub (`/admin/settings?tab=…`).
+Communications and announcements moved to the **Communications** hub, and
+public shares are its third tab. Old URLs redirect. See
+[Admin redesign](../redesign/).
+:::
+
 The settings and operations pages configure the platform and run its
 maintenance. Writes on these pages are owner-only on the server; an operator
 sees the state read-only.
@@ -226,9 +233,17 @@ to every account equally, each with its own counter. The `/admin`, `/auth` and
 ### Soft-deleted data and retention
 
 The retention window is the number of days before the purge may remove
-soft-deleted rows (1 to 3650, default 30). The page shows how many cards,
-comments, attachments and columns are currently eligible, and the backup
-location when `BACKUP_DIR` is configured.
+soft-deleted rows (1 to 3650, default 30). The page offers the 30/90/365
+presets and shows how many cards, comments, attachments and columns are
+currently eligible. The same window trims the command log, activity feed and
+terminal agent sessions; `AdminAuditLog` and `SecurityAuditLog` keep the longer
+`AUDIT_RETENTION_DAYS` window (365 by default).
+
+The backup line is deliberately honest: `BACKUP_DIR` is only a location you
+configured, not a backup Janosik creates. The API reports
+`{mode, automatic: false, lastBackupAt: null, verified: false}` and the UI says
+that Janosik neither creates, schedules nor verifies backups. Use `pg_dump`
+and back up the uploads volume yourself.
 
 `Purge now` permanently deletes already-deleted cards, comments, attachments
 and columns older than the window. Live data is never touched. The action is
@@ -252,7 +267,11 @@ are:
 | `sweep-reminders` | stale due-reminder dedupe rows |
 | `sweep-activity` | membership/comment feed rows past the retention window |
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |
+| `sweep-security-audit` | `SecurityAuditLog` rows older than `AUDIT_RETENTION_DAYS` (deletion lifecycle and `board.cleanup_failed` markers are kept) |
+| `sweep-accounts` | accounts whose seven-day self-service deletion window elapsed (still disabled) |
+| `sweep-orphan-boards` | retries soft-deletion of boards left behind by an account erase (pending invites do not count) |
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
+| `sweep-idempotency` | `IdempotencyRecord` rows past their 24-hour expiry |
 
 When Redis is configured the sweep runs on a durable schedule; without Redis it
 runs inline and the schedule is lost on restart.
@@ -279,19 +298,40 @@ is `Announcements, mail and templates`. Writes are owner-only.
 
 ### Announcements
 
-`New announcement` opens a dialog:
+`New announcement` opens the bilingual editor:
 
 | Field | Notes |
 | --- | --- |
-| Title | at most 200 characters |
-| Body | at most 2000 characters |
+| English / Russian tabs | one logical announcement, one text per language |
+| Source language | the original version; used as the fallback text |
+| Title | at most 200 characters per language |
+| Body | at most 2000 characters per language |
+| If a translation is missing | `Require both languages` (default) blocks publishing until EN and RU exist; `Allow one language with a notice` publishes the source and shows every other viewer an explicit "available only in …" notice |
 | Level | `Info`, `Warning` or `Alert` |
 | Audience | all users or selected users |
 | Recipients | for selected users, an autocomplete over the user directory |
-| Also send by email | queues the letter to the recipients' inbox |
+| Also send by email | queues a localized letter to the recipients' inbox |
+| Schedule | optional start and end times for the banner |
 
-An announcement with `Also send by email` is shown as an in-app banner and also
-emailed to the resolved recipients.
+The editor shows completeness per language and a banner/email preview for both
+audiences. `Save draft` stores an unfinished announcement without emailing;
+`Publish` applies the selected policy. A published announcement cannot be
+published again by editing — the letter is queued only on the draft → active
+transition, and `Email queued` records that the queue accepted the broadcast
+(an in-process SMTP failure can still happen later). Enabling email on an
+already-active announcement is blocked; save it as a draft and publish again.
+If the banner start is in the future, the editor warns that saving queues the
+letter immediately.
+
+Announcement text is part of the product communication, not board data, so it
+is translated. Every banner is rendered in the viewer's language. If a
+translation is missing under the fallback policy, the original text is shown
+with a localized notice and the correct `lang` attribute for screen readers.
+Email is sent per recipient in their language, with the same notice in the
+subject and body when the translation is missing. Accounts without a stored
+language adopt the current interface language once after sign-in (unless a
+`?lng=` handoff is present); the save is best-effort while online. Stored
+accounts keep their chosen language across devices.
 
 ### One-off email
 
@@ -324,23 +364,27 @@ subtitle is `{total} broadcasts, the full announcement history`.
 
 | Column | Value |
 | --- | --- |
-| Title | the announcement title |
+| Title | the source (or legacy) title |
 | Message | the body |
+| Languages | filled `EN`/`RU` chips, or `Legacy` when the language is unknown |
+| Policy | `EN+RU` for strict, `Fallback` for one-language publishing |
 | Level | info, warning or alert |
 | Audience | all users or the segment |
-| Email | an `email` badge when the letter is also emailed |
+| Email | an `email` badge plus `email queued`/`email pending` |
 | Active | on or off |
 | Created | creation time |
 | Author | the creating master |
 
-The page has a search box and status tabs (active, inactive). Row actions:
+The page has a search box and status tabs (active, inactive). Search covers
+every translation, not just the source text. Row actions:
 
 | Action | Effect |
 | --- | --- |
-| Edit | opens a dialog to change title, body, level, audience, segment, start and end times, active and send-by-email |
+| Edit | opens the bilingual editor (tabs, policy, preview, draft/publish) |
+| View | OPERATOR read-only view of the same dialog (no save actions) |
 | Activate | sets `active` true |
-| Deactivate | sets `active` false |
-| Delete | deletes the announcement |
+| Deactivate | sets `active` false (the banner disappears; queued mail cannot be recalled) |
+| Delete | deletes the announcement and its translations |
 
 ## Observability
 
@@ -364,11 +408,16 @@ The page has a search box and status tabs (active, inactive). Row actions:
 Active announcements reach signed-in users as a banner under the app header.
 The endpoint is `GET /announcements/active`, protected by standard user
 authentication, so a signed-out visitor gets nothing and a user sees only
-announcements addressed to them.
+announcements addressed to them. The banner requests the viewer's current
+interface language and re-fetches when it changes.
 
 Each banner is styled by level (info, warning, danger) and can be dismissed.
 A dismissal is remembered per announcement in `localStorage`, so a user sees
-each one once.
+each one once; switching the interface language does not bring a dismissed
+banner back. When the announcement has no translation in the viewer's
+language, the fallback policy decides: strict announcements are not published
+in that state, while a fallback announcement shows the original text with a
+localized "This announcement is available in … only" notice.
 
 ## Where to go next
 

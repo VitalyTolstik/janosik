@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import type { Board, PublicBoardDto } from "@janosik/shared";
@@ -95,6 +95,37 @@ afterEach(() => {
 });
 
 describe("PublicBoardPage", () => {
+  it("shows a busy board skeleton while the payload is in flight", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler = async (): Promise<Response> => {
+      await gate;
+      return new Response(JSON.stringify(dto()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    vi.stubGlobal("fetch", handler);
+
+    renderPage("snaptok");
+
+    const skeleton = screen.getByTestId("public-board-skeleton");
+    expect(skeleton).toHaveAttribute("aria-busy", "true");
+    expect(within(skeleton).getByRole("status")).toHaveTextContent(
+      "Loading shared board…",
+    );
+    expect(screen.getAllByTestId("public-board-skeleton-column")).toHaveLength(
+      3,
+    );
+
+    act(() => release());
+
+    expect(await screen.findByText("Read me")).toBeInTheDocument();
+    expect(screen.queryByTestId("public-board-skeleton")).toBeNull();
+  });
+
   it("renders a snapshot read-only, with no editing affordances", async () => {
     vi.stubGlobal("fetch", () =>
       Promise.resolve(

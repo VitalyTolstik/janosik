@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Prisma, User } from "@prisma/client";
+import { MAX_IMPORT_BYTES } from "@janosik/shared";
 import { argon2id, hash as argonHash, verify as argonVerify } from "argon2";
 import {
   createHash,
@@ -17,7 +18,9 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { env } from "@/config/env";
+import { maxBoardsPerUser } from "@/config/limits";
 import { EmailTemplateService } from "@/ops/email-template.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import type { MailLocale } from "@/mailer/mail.types";
@@ -31,12 +34,15 @@ import type { AuthResult, AuthUser } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { LoginBackoffService } from "./login-backoff.service";
 import { RegisterDto } from "./dto/register.dto";
+import { revokeApiTokens } from "./token-revocation";
 import type { VerifyEmailDto } from "./dto/verify-email.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
 import type { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
 import type { RequestEmailChangeDto } from "./dto/request-email-change.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** TASK-166: marks a refresh token minted by an OAuth login. */
+const OAUTH_REFRESH_PREFIX = "jnko_";
 /** Verification code lifetime (TASK-51). */
 const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000;
 /** Wrong confirmations allowed before the code is destroyed. */
@@ -75,6 +81,7 @@ export class AuthService {
     private readonly emailTemplates: EmailTemplateService,
     private readonly flags: FeatureFlagsService,
     private readonly loginBackoff: LoginBackoffService,
+    private readonly securityAudit: SecurityAuditService,
   ) {}
 
   /**
@@ -87,10 +94,16 @@ export class AuthService {
   async publicConfig(): Promise<{
     allowRegistration: boolean;
     allowPublicShares: boolean;
+    limits: { boards: number | null; importBytes: number };
   }> {
     return {
       allowRegistration: await this.flags.isEnabled("registration_open"),
       allowPublicShares: await this.flags.isEnabled("public_shares"),
+      // TASK-166: the UI shows a board cap only when the operator set one.
+      limits: {
+        boards: maxBoardsPerUser() > 0 ? maxBoardsPerUser() : null,
+        importBytes: MAX_IMPORT_BYTES,
+      },
     };
   }
 
@@ -223,7 +236,7 @@ export class AuthService {
       throw new BadRequestException("Invalid or expired recovery code");
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
-    await this.prisma.$transaction(async (tx) => {
+    const revokedTokenIds = await this.prisma.$transaction(async (tx) => {
       const token = await tx.passwordResetToken.findUnique({
         where: { tokenHash },
         include: { user: true },
@@ -254,10 +267,23 @@ export class AuthService {
         where: { userId: token.userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      await tx.apiToken.updateMany({
-        where: { userId: token.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
+      const tokens = await revokeApiTokens(tx, {
+        userId: token.userId,
+        revokedAt: null,
       });
+      return tokens.tokenIds;
+    });
+    await this.securityAudit.record({
+      userId: candidate.userId,
+      actorId: candidate.userId,
+      action: "token.revoked",
+      targetType: "user",
+      targetId: candidate.userId,
+      details: {
+        reason: "password_reset",
+        scope: "all",
+        tokenIds: revokedTokenIds,
+      },
     });
     await this.loginBackoff.reset(dto.email);
   }
@@ -318,7 +344,13 @@ export class AuthService {
       );
       throw new UnauthorizedException("Refresh token race detected");
     }
-    return this.startSession(stored.user);
+    return this.startSession(
+      stored.user,
+      stored.user.passwordHash === null ||
+        rawToken.startsWith(OAUTH_REFRESH_PREFIX)
+        ? "oauth"
+        : "password",
+    );
   }
 
   /** Idempotent by design: absent/stale/unknown cookies still end in 200. */
@@ -360,17 +392,30 @@ export class AuthService {
       }
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    const revokedTokenIds = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: { passwordHash },
-      }),
-      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
-      this.prisma.apiToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }),
-    ]);
+      });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      const revoked = await revokeApiTokens(tx, {
+        userId,
+        revokedAt: null,
+      });
+      return revoked.tokenIds;
+    });
+    await this.securityAudit.record({
+      userId,
+      actorId: userId,
+      action: "token.revoked",
+      targetType: "user",
+      targetId: userId,
+      details: {
+        reason: "password_changed",
+        scope: "all",
+        tokenIds: revokedTokenIds,
+      },
+    });
     if (refreshToken !== undefined) {
       await this.prisma.refreshToken.updateMany({
         where: {
@@ -644,24 +689,38 @@ export class AuthService {
    * so the OAuth login (TASK-54) converges on the exact same machinery —
    * audience, refresh rotation and TTLs stay in one place.
    */
-  async startSession(user: User): Promise<AuthResult> {
+  async startSession(
+    user: User,
+    authMethod: "password" | "oauth" = "password",
+  ): Promise<AuthResult> {
     // The audience separates the two auth contours (TASK-36): a user token
     // fails the admin strategy and an admin token fails this one, so a
     // leaked session can never be replayed against the other surface.
+    // TASK-166: `authMethod` lets an OAuth-only account prove a fresh OAuth
+    // login on `DELETE /users/me` (ADR §12.5); it is not an authorization
+    // grant by itself.
     const accessToken = await this.jwtService.signAsync(
-      { sub: user.id },
+      { sub: user.id, authMethod },
       { audience: USER_JWT_AUDIENCE },
     );
-    const refreshToken = await this.issueRefreshToken(user.id);
+    const refreshToken = await this.issueRefreshToken(user.id, authMethod);
     return {
       accessToken,
       refreshToken,
-      user: toAuthUser(user),
+      user: { ...toAuthUser(user), authMethod },
     };
   }
 
-  private async issueRefreshToken(userId: string): Promise<string> {
-    const token = randomBytes(48).toString("base64url");
+  private async issueRefreshToken(
+    userId: string,
+    authMethod: "password" | "oauth",
+  ): Promise<string> {
+    // The opaque refresh token carries the origin as a non-secret prefix:
+    // rotation would otherwise lose the OAuth marker (there is no column for
+    // it in the frozen schema). The hash covers the whole string.
+    const token =
+      (authMethod === "oauth" ? OAUTH_REFRESH_PREFIX : "") +
+      randomBytes(48).toString("base64url");
     await this.prisma.refreshToken.create({
       data: {
         tokenHash: this.hashToken(token),

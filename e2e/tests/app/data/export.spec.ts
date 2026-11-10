@@ -17,7 +17,7 @@ test("downloads the workspace as a named Janosik envelope", async ({
 
   expect(exported.filename).toBe("janosik-boards.json");
   expect(exported.envelope.app).toBe("janosik");
-  expect(exported.envelope.schemaVersion).toBe(1);
+  expect(exported.envelope.schemaVersion).toBe(3);
   expect(Number.isInteger(exported.envelope.exportedAt)).toBe(true);
   expect(exported.envelope.boards.map((entry) => entry.id)).toContain(board.id);
 });
@@ -60,6 +60,29 @@ test("exports every board of the workspace", async ({ page, board }) => {
   const ids = exported.envelope.boards.map((entry) => entry.id);
 
   expect(ids).toEqual(expect.arrayContaining([board.id, extra.id]));
+});
+
+test("exports column accents and the board column style", async ({
+  page,
+  board,
+}) => {
+  const columnId = await board.column("Styled column");
+  await board.command({
+    type: "SET_COLUMN_ACCENT",
+    columnId,
+    accent: { type: "color", value: "pink" },
+  });
+  await board.command({ type: "SET_BOARD_COLUMN_STYLE", columnStyle: "band" });
+  await board.open(page);
+
+  const exported = await exportJsonFromMenu(page);
+  const exportedBoard = exported.envelope.boards.find(
+    (entry) => entry.id === board.id,
+  );
+  expect(exportedBoard?.columnStyle).toBe("band");
+  expect(
+    exportedBoard?.columns.find((column) => column.id === columnId)?.accent,
+  ).toEqual({ type: "color", value: "pink" });
 });
 
 test("reports a successful export", async ({ page, board }) => {

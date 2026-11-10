@@ -23,14 +23,20 @@ const prismaMock = {
     update: jest.fn(),
   },
   refreshToken: { updateMany: jest.fn() },
-  apiToken: { updateMany: jest.fn() },
+  apiToken: { findMany: jest.fn(), updateMany: jest.fn() },
+  agentSession: { updateMany: jest.fn() },
+  card: { findMany: jest.fn(), updateMany: jest.fn() },
+  $executeRaw: jest.fn(),
   emailVerificationCode: { deleteMany: jest.fn() },
   emailChangeCode: { deleteMany: jest.fn() },
   $transaction: jest.fn(),
 } as unknown as PrismaService & {
   user: Record<"create" | "findFirst" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"updateMany", jest.Mock>;
-  apiToken: Record<"updateMany", jest.Mock>;
+  apiToken: Record<"findMany" | "updateMany", jest.Mock>;
+  agentSession: Record<"updateMany", jest.Mock>;
+  card: Record<"findMany" | "updateMany", jest.Mock>;
+  $executeRaw: jest.Mock;
   emailVerificationCode: Record<"deleteMany", jest.Mock>;
   emailChangeCode: Record<"deleteMany", jest.Mock>;
   $transaction: jest.Mock;
@@ -58,6 +64,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   disabledAt: null,
   emailVerifiedAt: null,
   notifyDigest: true,
+  locale: null,
   createdAt: new Date("2026-10-01T00:00:00Z"),
   ...overrides,
 });
@@ -78,11 +85,19 @@ describe("OAuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new OAuthService(prismaMock, authMock, settingsMock);
+    service = new OAuthService(prismaMock, authMock, settingsMock, {
+      record: jest.fn(),
+    } as never);
     settingsMock.credentials.mockResolvedValue(CREDENTIALS);
-    // Array-form transactions: every element is already a (mocked) promise.
-    prismaMock.$transaction.mockImplementation((ops: unknown[]) =>
-      Promise.all(ops),
+    prismaMock.apiToken.findMany.mockResolvedValue([]);
+    prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.card.findMany.mockResolvedValue([]);
+    prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.$executeRaw.mockResolvedValue(1);
+    // Interactive transactions run the callback against the same mock.
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock),
     );
     authMock.startSession.mockResolvedValue({
       accessToken: "access-token",
@@ -203,6 +218,8 @@ describe("OAuthService", () => {
       prismaMock.user.update.mockResolvedValue(
         makeUser({ emailVerifiedAt: new Date() }),
       );
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
 
       await service.handleCallback("google", "auth-code", state, state);
 
@@ -216,7 +233,7 @@ describe("OAuthService", () => {
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: "user-1", revokedAt: null },
+        where: { id: { in: ["token-1"] }, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
@@ -225,6 +242,7 @@ describe("OAuthService", () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(authMock.startSession).toHaveBeenCalledWith(
         expect.objectContaining({ id: "user-1" }),
+        "oauth",
       );
     });
 
@@ -242,6 +260,7 @@ describe("OAuthService", () => {
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(authMock.startSession).toHaveBeenCalledWith(
         expect.objectContaining({ id: "user-1", passwordHash: "$argon2id$x" }),
+        "oauth",
       );
     });
 

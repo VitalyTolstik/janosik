@@ -8,7 +8,10 @@ function ctx(
   handler = "board",
 ): ExecutionContext {
   return {
-    switchToHttp: () => ({ getRequest: () => ({ params: { token }, ip }) }),
+    switchToHttp: () => ({
+      getRequest: () => ({ params: { token }, ip }),
+      getResponse: () => ({ setHeader: () => undefined }),
+    }),
     getHandler: () => ({ name: handler }),
   } as unknown as ExecutionContext;
 }
