@@ -322,6 +322,14 @@ const DIGEST_ATTENTION_LABELS: Record<
     en: "approval decisions",
     ru: "решений по запросам",
   },
+  "approval.cancelled": {
+    en: "cancelled approvals",
+    ru: "отменённых запросов",
+  },
+  "approval.consumed": {
+    en: "applied approvals",
+    ru: "применённых запросов",
+  },
   "approval.expired": {
     en: "expired approvals",
     ru: "истёкших запросов",
@@ -333,6 +341,7 @@ const DIGEST_ATTENTION_LABELS: Record<
   },
   "claim.expired": { en: "expired claims", ru: "истёкших захватов" },
   "quota.exceeded": { en: "limit warnings", ru: "предупреждений о лимитах" },
+  "token.revoked": { en: "revoked API keys", ru: "отозванных API-ключей" },
 };
 
 export function digestAttentionHtml(
@@ -403,11 +412,14 @@ export const ATTENTION_EMAIL_TEMPLATE_KEYS: Record<
 > = {
   "approval.requested": "attention_approval_requested",
   "approval.decided": "attention_approval_decided",
+  "approval.cancelled": "attention_approval_cancelled",
+  "approval.consumed": "attention_approval_consumed",
   "approval.expired": "attention_approval_expired",
   "agent.blocked": "attention_agent_blocked",
   "agent.needs_human": "attention_agent_needs_human",
   "claim.expired": "attention_claim_expired",
   "quota.exceeded": "attention_quota_exceeded",
+  "token.revoked": "attention_token_revoked",
 };
 
 export interface AttentionEmailVars {
@@ -423,9 +435,15 @@ export interface AttentionEmailVars {
   comment?: string;
   limit?: string | number;
   current?: string | number;
-  /** `boards` or `plan` — the quota resource. */
+  /** `board` or `plan` — the quota resource. */
   resource?: string;
   expiresAt?: string;
+  /** AgentRun id for an applied approval (never a plan body). */
+  runId?: string;
+  /** API-token display name; never the plaintext token or its hash. */
+  token?: string;
+  /** Machine reason for a revocation (`revoked`, `password_changed`, …). */
+  reason?: string;
 }
 
 const ATTENTION_BODY_STYLE =
@@ -490,6 +508,8 @@ export function attentionEmail(
   const comment = escapeHtml(vars.comment ?? "");
   const limit = String(vars.limit ?? "");
   const current = String(vars.current ?? "");
+  const runId = escapeHtml(vars.runId ?? "");
+  const token = escapeHtml(vars.token ?? "");
 
   switch (type) {
     case "approval.requested":
@@ -533,6 +553,47 @@ export function attentionEmail(
               `Your request for <b>${action}</b> on board <b>${board}</b> was <b>${statusEn}</b>.`,
               `Plan: ${summary}.`,
               ...(comment !== "" ? [`Comment: ${comment}`] : []),
+            ],
+          );
+    }
+    case "approval.cancelled":
+      return ru
+        ? attentionLetter(
+            "Запрос отменён",
+            `${BRAND}: запрос отменён на доске «${board}»`,
+            [
+              `Запрос на действие <b>${action}</b> на доске <b>${board}</b> отменён.`,
+              `План: ${summary}. Ничего не применено.`,
+            ],
+          )
+        : attentionLetter(
+            "Approval cancelled",
+            `${BRAND}: approval cancelled on "${board}"`,
+            [
+              `The request for <b>${action}</b> on board <b>${board}</b> was cancelled.`,
+              `Plan: ${summary}. Nothing was applied.`,
+            ],
+          );
+    case "approval.consumed": {
+      const appliedRu = `Одобренное действие <b>${action}</b> на доске <b>${board}</b> применено.`;
+      const appliedEn = `The approved action <b>${action}</b> on board <b>${board}</b> was applied.`;
+      return ru
+        ? attentionLetter(
+            "Запрос применён",
+            `${BRAND}: запрос применён на доске «${board}»`,
+            [
+              appliedRu,
+              ...(runId !== "" ? [`Запуск: ${runId}.`] : []),
+              "Ничего делать не нужно; запрос использован один раз.",
+            ],
+          )
+        : attentionLetter(
+            "Approval applied",
+            `${BRAND}: approval applied on "${board}"`,
+            [
+              appliedEn,
+              ...(runId !== "" ? [`Run: ${runId}.`] : []),
+              "No action is needed; the request was consumed once.",
             ],
           );
     }
@@ -608,6 +669,18 @@ export function attentionEmail(
               "If the work is still in progress, assign or claim the card again.",
             ],
           );
+    case "token.revoked":
+      return ru
+        ? attentionLetter("API-ключ отозван", `${BRAND}: API-ключ отозван`, [
+            `API-ключ <b>${token}</b> отозван.`,
+            "Его агентские сессии отменены, а захваты карточек освобождены.",
+            "Если это сделали не вы — смените пароль и проверьте активные ключи.",
+          ])
+        : attentionLetter("API key revoked", `${BRAND}: API key revoked`, [
+            `The API key <b>${token}</b> was revoked.`,
+            "Its agent sessions were cancelled and its card claims were released.",
+            "If this was not you, change your password and review the active keys.",
+          ]);
     case "quota.exceeded": {
       const plan = vars.resource === "plan";
       return ru
@@ -768,6 +841,25 @@ const approvalDecidedDefault = attentionDefault(
   },
   ["board", "summary", "status", "action", "comment"],
 );
+const approvalCancelledDefault = attentionDefault(
+  "approval.cancelled",
+  {
+    board: "{{board}}",
+    summary: "{{summary}}",
+    action: "{{action}}",
+  },
+  ["board", "summary", "action"],
+);
+const approvalConsumedDefault = attentionDefault(
+  "approval.consumed",
+  {
+    board: "{{board}}",
+    summary: "{{summary}}",
+    action: "{{action}}",
+    runId: "{{runId}}",
+  },
+  ["board", "summary", "action", "runId"],
+);
 const approvalExpiredDefault = attentionDefault(
   "approval.expired",
   {
@@ -796,6 +888,11 @@ const quotaExceededDefault = attentionDefault(
   "quota.exceeded",
   { limit: "{{limit}}", current: "{{current}}", resource: "{{resource}}" },
   ["limit", "current", "resource"],
+);
+const tokenRevokedDefault = attentionDefault(
+  "token.revoked",
+  { token: "{{token}}" },
+  ["token"],
 );
 
 /** The built-in letters as editable templates, keyed by template key. */
@@ -827,11 +924,14 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   },
   attention_approval_requested: approvalRequestedDefault,
   attention_approval_decided: approvalDecidedDefault,
+  attention_approval_cancelled: approvalCancelledDefault,
+  attention_approval_consumed: approvalConsumedDefault,
   attention_approval_expired: approvalExpiredDefault,
   attention_agent_blocked: agentBlockedDefault,
   attention_agent_needs_human: agentNeedsHumanDefault,
   attention_claim_expired: claimExpiredDefault,
   attention_quota_exceeded: quotaExceededDefault,
+  attention_token_revoked: tokenRevokedDefault,
 };
 
 /** `{{name}}` → value; unknown placeholders are left intact. */

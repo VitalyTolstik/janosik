@@ -498,10 +498,12 @@ recipients, and events for boards the caller no longer belongs to are hidden.
 Every route is session-only; a personal API token answers `403 pat_forbidden`.
 The list is newest-first with an opaque `at:id` cursor and an `unreadCount`.
 `boardId` requires live membership. Event types are `approval.requested`,
-`approval.decided`, `approval.expired`, `agent.blocked`, `agent.needs_human`,
-`claim.expired` and `quota.exceeded`. The scheduled digest also includes
-undigested attention categories once per recipient; immediate attention e-mail
-does not block the approval or comment request that produced it.
+`approval.decided`, `approval.cancelled`, `approval.consumed`,
+`approval.expired`, `agent.blocked`, `agent.needs_human`, `claim.expired`,
+`quota.exceeded` and `token.revoked` (owner only). The scheduled digest also
+includes undigested attention categories once per recipient; immediate
+attention e-mail does not block the approval or comment request that produced
+it.
 
 ## Invitations
 

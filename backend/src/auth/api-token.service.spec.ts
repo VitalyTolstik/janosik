@@ -91,6 +91,7 @@ const makeToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
 
 describe("ApiTokenService", () => {
   let service: ApiTokenService;
+  const attentionMock = { notifyTokenRevoked: jest.fn() };
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -101,9 +102,14 @@ describe("ApiTokenService", () => {
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.card.findMany.mockResolvedValue([]);
     prismaMock.$executeRaw.mockResolvedValue(1);
-    service = new ApiTokenService(prismaMock, {
-      record: jest.fn(),
-    } as never);
+    attentionMock.notifyTokenRevoked.mockResolvedValue(undefined);
+    service = new ApiTokenService(
+      prismaMock,
+      {
+        record: jest.fn(),
+      } as never,
+      attentionMock as never,
+    );
   });
 
   describe("generate / hashToken", () => {
@@ -468,6 +474,24 @@ describe("ApiTokenService", () => {
           leaseUntil: null,
         },
       });
+      expect(attentionMock.notifyTokenRevoked).toHaveBeenCalledWith({
+        userId: "user-1",
+        tokenId: "token-1",
+        tokenName: "CI",
+        reason: "revoked",
+      });
+    });
+
+    it("does not notify again when the token was already revoked", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(
+        makeToken({ revokedAt: new Date("2026-09-03T00:00:00Z") }),
+      );
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.revoke("user-1", "token-1");
+
+      expect(attentionMock.notifyTokenRevoked).not.toHaveBeenCalled();
     });
   });
 

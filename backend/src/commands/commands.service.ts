@@ -638,7 +638,7 @@ export class CommandsService {
     );
 
     if (applied.consumedApproval !== null) {
-      this.approvals.publishState(applied.consumedApproval);
+      await this.approvals.publishState(applied.consumedApproval);
     }
     // Publish after the batch committed, in order. A failed batch throws
     // before this, so nothing half-applied is ever announced.

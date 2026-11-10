@@ -92,6 +92,18 @@ describe("CommsSchedulerService", () => {
       { id: "n2", userId: "u1", boardId: "b1", type: "approval.requested" },
       { id: "n3", userId: "u1", boardId: "b1", type: "claim.expired" },
       { id: "n4", userId: "u2", boardId: "b1", type: "agent.blocked" },
+      {
+        id: "n5",
+        userId: "u1",
+        boardId: "b1",
+        type: "approval.consumed",
+      },
+      {
+        id: "n6",
+        userId: "u1",
+        boardId: "b1",
+        type: "approval.cancelled",
+      },
     ]);
     (prisma.board.findMany as jest.Mock).mockResolvedValue([
       {
@@ -143,6 +155,8 @@ describe("CommsSchedulerService", () => {
       [
         { type: "approval.requested", count: 2 },
         { type: "claim.expired", count: 1 },
+        { type: "approval.consumed", count: 1 },
+        { type: "approval.cancelled", count: 1 },
       ],
     );
     expect(templatesMock.digestEmail).toHaveBeenCalledWith(

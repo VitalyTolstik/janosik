@@ -110,17 +110,22 @@ describe("attentionEmail", () => {
     limit: 2,
     current: 2,
     expiresAt: "2026-11-10T12:00:00.000Z",
+    runId: "run-1",
+    token: "CI key",
   };
 
   it("renders every category in English", () => {
     for (const type of [
       "approval.requested",
       "approval.decided",
+      "approval.cancelled",
+      "approval.consumed",
       "approval.expired",
       "agent.blocked",
       "agent.needs_human",
       "claim.expired",
       "quota.exceeded",
+      "token.revoked",
     ] as const) {
       const mail = attentionEmail(type, vars, "en");
       expect(mail.subject).toContain("Janosik:");
@@ -133,11 +138,14 @@ describe("attentionEmail", () => {
     for (const type of [
       "approval.requested",
       "approval.decided",
+      "approval.cancelled",
+      "approval.consumed",
       "approval.expired",
       "agent.blocked",
       "agent.needs_human",
       "claim.expired",
       "quota.exceeded",
+      "token.revoked",
     ] as const) {
       const mail = attentionEmail(type, vars, "ru");
       expect(mail.subject).toContain("Janosik:");
@@ -167,6 +175,21 @@ describe("attentionEmail", () => {
     expect(attentionEmail("approval.expired", vars, "en").subject).toContain(
       "expired",
     );
+    expect(attentionEmail("approval.cancelled", vars, "en").subject).toContain(
+      "cancelled",
+    );
+    expect(attentionEmail("approval.consumed", vars, "en").subject).toContain(
+      "applied",
+    );
+    expect(attentionEmail("approval.consumed", vars, "en").text).toContain(
+      "run-1",
+    );
+    expect(attentionEmail("token.revoked", vars, "en").subject).toContain(
+      "API key revoked",
+    );
+    expect(attentionEmail("token.revoked", vars, "ru").subject).toContain(
+      "API-ключ отозван",
+    );
   });
 });
 
@@ -192,5 +215,12 @@ describe("digestEmail attention summary", () => {
     ]);
     expect(ru.text).toContain("Требует внимания:");
     expect(ru.text).toContain("истёкших захватов: 1");
+
+    const tokens = digestEmail("Board", 0, 24, "en", [
+      { type: "token.revoked", count: 1 },
+      { type: "approval.consumed", count: 2 },
+    ]);
+    expect(tokens.text).toContain("revoked API keys: 1");
+    expect(tokens.text).toContain("applied approvals: 2");
   });
 });

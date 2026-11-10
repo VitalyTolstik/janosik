@@ -1308,20 +1308,21 @@ export interface RunListQuery {
  * ------------------------------------------------------------------ */
 
 /**
- * Stable wire names of the attention categories. The ADR also names
- * `token.revoked`; the backend reserves the vocabulary but does not emit it in
- * this stream (revocation already closes sessions and surfaces in the audit
- * log), so it is deliberately absent from the accepted list until it has a
- * producer and tests.
+ * Stable wire names of the attention categories (ADR §10.5). `token.revoked`
+ * is emitted by the personal-token revocation path; the owner is the only
+ * recipient.
  */
 export const ATTENTION_NOTIFICATION_TYPES = [
   "approval.requested",
   "approval.decided",
+  "approval.cancelled",
+  "approval.consumed",
   "approval.expired",
   "agent.blocked",
   "agent.needs_human",
   "claim.expired",
   "quota.exceeded",
+  "token.revoked",
 ] as const;
 export type AttentionNotificationType =
   (typeof ATTENTION_NOTIFICATION_TYPES)[number];

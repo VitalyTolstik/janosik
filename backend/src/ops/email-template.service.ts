@@ -31,6 +31,14 @@ export const EMAIL_TEMPLATE_KEYS = [
     label: "Attention: approval requested",
   },
   { key: "attention_approval_decided", label: "Attention: approval decided" },
+  {
+    key: "attention_approval_cancelled",
+    label: "Attention: approval cancelled",
+  },
+  {
+    key: "attention_approval_consumed",
+    label: "Attention: approval applied",
+  },
   { key: "attention_approval_expired", label: "Attention: approval expired" },
   { key: "attention_agent_blocked", label: "Attention: agent blocked" },
   {
@@ -39,6 +47,7 @@ export const EMAIL_TEMPLATE_KEYS = [
   },
   { key: "attention_claim_expired", label: "Attention: card claim expired" },
   { key: "attention_quota_exceeded", label: "Attention: limit reached" },
+  { key: "attention_token_revoked", label: "Attention: API key revoked" },
 ] as const;
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]["key"];

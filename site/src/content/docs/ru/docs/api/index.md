@@ -510,11 +510,12 @@ ADMIN для истёкшего захвата, самому аккаунту д
 Все маршруты доступны только сессии браузера; персональный API-токен получает
 `403 pat_forbidden`. Список идёт от новых к старым с непрозрачным курсором
 `at:id` и `unreadCount`. `boardId` требует активного участия в доске. Типы
-событий: `approval.requested`, `approval.decided`, `approval.expired`,
-`agent.blocked`, `agent.needs_human`, `claim.expired`, `quota.exceeded`.
-Запланированная сводка также один раз включает ещё не включённые в неё
-категории внимания; немедленное письмо не задерживает запрос, который его
-породил.
+событий: `approval.requested`, `approval.decided`, `approval.cancelled`,
+`approval.consumed`, `approval.expired`, `agent.blocked`,
+`agent.needs_human`, `claim.expired`, `quota.exceeded` и `token.revoked`
+(только владелец). Запланированная сводка также один раз включает ещё не
+включённые в неё категории внимания; немедленное письмо не задерживает
+запрос, который его породил.
 
 ## Приглашения
 

@@ -319,6 +319,7 @@ export class ApprovalsService {
     await this.activity(updated, "approval_cancelled", userId, principal, {
       by: byToken ? "requester" : "admin",
     });
+    await this.attention.notifyApprovalCancelled(updated, userId);
     this.publish(updated);
     return this.toDto({ row: updated, includePlan: true });
   }
@@ -532,8 +533,9 @@ export class ApprovalsService {
   }
 
   /** Publish the consumed state after the apply transaction committed. */
-  publishState(row: ApprovalRequest): void {
+  async publishState(row: ApprovalRequest): Promise<void> {
     this.publish(row);
+    await this.attention.notifyApprovalConsumed(row);
   }
 
   /**
@@ -673,6 +675,7 @@ export class ApprovalsService {
       planHash: row.planHash,
       risk: row.risk,
     });
+    await this.attention.notifyApprovalConsumed(row);
     this.publish(row);
   }
 

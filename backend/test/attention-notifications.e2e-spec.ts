@@ -351,6 +351,136 @@ describe("Attention notifications (e2e)", () => {
     ).toBe(2);
   });
 
+  it("notifies the requester and the cancelling ADMIN when an approval is cancelled", async () => {
+    const cardId = await createCard("Approval cancelled");
+    const created = await createApproval(cardId).expect(201);
+    const approval = created.body as ApprovalRequestDto;
+    await waitForMail(OWNER_EMAIL, "approval needed");
+    await waitForMail(RU_ADMIN_EMAIL, "требуется подтверждение");
+    mailer.outbox.length = 0;
+
+    await server()
+      .post(`/api/v1/boards/${boardId}/approvals/${approval.id}/cancel`)
+      .set(auth(ruAdminSession))
+      .expect(200);
+
+    const rows = await notificationsFor("approval.cancelled");
+    expect(rows).toHaveLength(2);
+    const recipients = await prisma.attentionNotification.findMany({
+      where: { type: "approval.cancelled", boardId },
+      select: { userId: true },
+    });
+    expect(new Set(recipients.map((row) => row.userId))).toEqual(
+      new Set([ownerId, ruAdminId]),
+    );
+    await waitForMail(OWNER_EMAIL, "approval cancelled");
+    await waitForMail(RU_ADMIN_EMAIL, "запрос отменён");
+
+    await server()
+      .post(`/api/v1/boards/${boardId}/approvals/${approval.id}/cancel`)
+      .set(auth(ruAdminSession))
+      .expect(409);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      await prisma.attentionNotification.count({
+        where: { type: "approval.cancelled", boardId },
+      }),
+    ).toBe(2);
+  });
+
+  it("notifies the requester and decision actor once when the approval is consumed", async () => {
+    const cardId = await createCard("Approval consumed");
+    const plan = deletePlan(cardId);
+    const created = await createApproval(cardId, agentToken, 30, plan).expect(
+      201,
+    );
+    const approval = created.body as ApprovalRequestDto;
+    await waitForMail(OWNER_EMAIL, "approval needed");
+    await waitForMail(RU_ADMIN_EMAIL, "требуется подтверждение");
+    await decide(approval.id, approval.planHash).expect(200);
+    await waitForMail(OWNER_EMAIL, "approval approved");
+    await waitForMail(RU_ADMIN_EMAIL, "запрос одобрен");
+    mailer.outbox.length = 0;
+
+    const commands = plan.commands as Array<{
+      commandId: string;
+      action: Record<string, unknown>;
+    }>;
+    const applied = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(agentToken))
+      .set("X-Approval-Id", approval.id)
+      .send({
+        commandId: commands[0]!.commandId,
+        action: commands[0]!.action,
+      })
+      .expect(200);
+    expect((applied.body as { seq: number }).seq).toEqual(expect.any(Number));
+
+    const rows = await notificationsFor("approval.consumed");
+    expect(rows).toHaveLength(2);
+    const recipients = await prisma.attentionNotification.findMany({
+      where: { type: "approval.consumed", boardId },
+      select: { userId: true },
+    });
+    expect(new Set(recipients.map((row) => row.userId))).toEqual(
+      new Set([ownerId, ruAdminId]),
+    );
+    expect((rows[0]!.data as { runId: string }).runId).toEqual(
+      expect.any(String),
+    );
+    await waitForMail(OWNER_EMAIL, "approval applied");
+    await waitForMail(RU_ADMIN_EMAIL, "запрос применён");
+
+    // The retry is an idempotent replay; the dedup key keeps it silent.
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(agentToken))
+      .set("X-Approval-Id", approval.id)
+      .send({
+        commandId: commands[0]!.commandId,
+        action: commands[0]!.action,
+      })
+      .expect(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      await prisma.attentionNotification.count({
+        where: { type: "approval.consumed", boardId },
+      }),
+    ).toBe(2);
+  });
+
+  it("notifies only the owner when a personal API token is revoked", async () => {
+    const revoked = await createToken("revoke-me");
+    mailer.outbox.length = 0;
+
+    await server()
+      .delete(`/api/v1/users/me/tokens/${revoked.apiToken.id}`)
+      .set(auth(ownerSession))
+      .expect(200);
+
+    const rows = await notificationsFor("token.revoked", null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.boardId).toBeNull();
+    expect(rows[0]!.data).toMatchObject({
+      tokenId: revoked.apiToken.id,
+      tokenName: "revoke-me",
+    });
+    await waitForMail(OWNER_EMAIL, "API key revoked");
+
+    // Repeating DELETE is idempotent: no second row or letter.
+    await server()
+      .delete(`/api/v1/users/me/tokens/${revoked.apiToken.id}`)
+      .set(auth(ownerSession))
+      .expect(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      await prisma.attentionNotification.count({
+        where: { type: "token.revoked" },
+      }),
+    ).toBe(1);
+  });
+
   it("raises approval.expired exactly once when the lazy sweep expires a request", async () => {
     const cardId = await createCard("Approval expiry");
     const created = await createApproval(cardId).expect(201);

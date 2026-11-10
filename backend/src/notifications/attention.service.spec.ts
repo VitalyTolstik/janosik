@@ -139,6 +139,96 @@ describe("AttentionService", () => {
     expect(mail.enqueue).toHaveBeenCalledTimes(1);
   });
 
+  it("notifies the requester and the cancelling user once", async () => {
+    const { prisma, rows } = makePrisma([
+      recipient("requester"),
+      recipient("canceller"),
+    ]);
+    const { service, mail } = makeService(prisma);
+
+    await service.notifyApprovalCancelled(
+      {
+        ...approval,
+        requestedBy: "requester",
+      },
+      "canceller",
+    );
+    await service.notifyApprovalCancelled(
+      {
+        ...approval,
+        requestedBy: "requester",
+      },
+      "canceller",
+    );
+    await flush();
+
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((row) => row.userId))).toEqual(
+      new Set(["requester", "canceller"]),
+    );
+    expect(rows[0]!.type).toBe("approval.cancelled");
+    expect(mail.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("notifies the requester and decision actor once when consumed", async () => {
+    const { prisma, rows } = makePrisma([
+      recipient("requester"),
+      recipient("decider"),
+    ]);
+    const { service, mail } = makeService(prisma);
+
+    await service.notifyApprovalConsumed({
+      ...approval,
+      requestedBy: "requester",
+      decidedBy: "decider",
+      runId: "run-1",
+    });
+    await service.notifyApprovalConsumed({
+      ...approval,
+      requestedBy: "requester",
+      decidedBy: "decider",
+      runId: "run-1",
+    });
+    await flush();
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.type).toBe("approval.consumed");
+    expect((rows[0]!.data as { runId: string }).runId).toBe("run-1");
+    expect(mail.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("notifies only the token owner when a key is revoked, once", async () => {
+    const { prisma, rows } = makePrisma([recipient("owner")]);
+    const { service, mail } = makeService(prisma);
+
+    await service.notifyTokenRevoked({
+      userId: "owner",
+      tokenId: "token-1",
+      tokenName: "CI",
+      reason: "revoked",
+    });
+    await service.notifyTokenRevoked({
+      userId: "owner",
+      tokenId: "token-1",
+      tokenName: "CI",
+      reason: "revoked",
+    });
+    await flush();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        type: "token.revoked",
+        userId: "owner",
+        boardId: null,
+      }),
+    );
+    expect(mail.enqueue).toHaveBeenCalledTimes(1);
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "owner@example.com" }),
+    );
+  });
+
   it("keeps the in-app row but sends no letter when the admin opted out", async () => {
     const { prisma, rows } = makePrisma([
       recipient("admin-1", { notifyAttention: false }),

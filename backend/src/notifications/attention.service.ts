@@ -85,10 +85,11 @@ export interface ClaimExpiredInput {
  * request path pays for the in-app insert only.
  *
  * Audiences are resolved here, not by callers: board ADMINs for approval and
- * blocker events, the requester/decision actor for a decision, the claimant
- * plus ADMINs for an expired claim, and the account itself for a quota
- * warning. Disabled accounts and expired memberships are dropped. A PAT is
- * never a recipient — the query always reads `User.email`, never a token.
+ * blocker events, the requester/decision actor for a decision, cancellation
+ * or consumption, the claimant plus ADMINs for an expired claim, the account
+ * itself for a quota warning, and the owner alone for a revoked API token.
+ * Disabled accounts and expired memberships are dropped. A PAT is never a
+ * recipient — the query always reads `User.email`, never a token.
  */
 @Injectable()
 export class AttentionService {
@@ -177,6 +178,83 @@ export class AttentionService {
       });
     } catch (error) {
       this.warn("approval decided", error);
+    }
+  }
+
+  /** `approval_cancelled` → requester + the cancelling user. */
+  async notifyApprovalCancelled(
+    row: {
+      id: string;
+      boardId: string;
+      actionType: string;
+      summary: string;
+      requestedBy: string;
+    },
+    actorId: string,
+  ): Promise<void> {
+    try {
+      const board = await this.boardTitle(row.boardId);
+      if (board === null) return;
+      const recipients = await this.members(row.boardId, [
+        row.requestedBy,
+        actorId,
+      ]);
+      await this.notify({
+        type: "approval.cancelled",
+        boardId: row.boardId,
+        dedupKey: `approval.cancelled:${row.id}`,
+        recipients,
+        emailVars: () => ({
+          board,
+          summary: row.summary,
+          action: row.actionType,
+        }),
+        data: {
+          approvalId: row.id,
+          action: row.actionType,
+        },
+      });
+    } catch (error) {
+      this.warn("approval cancelled", error);
+    }
+  }
+
+  /** `approval_consumed` → requester + decision actor, post-commit only. */
+  async notifyApprovalConsumed(row: {
+    id: string;
+    boardId: string;
+    actionType: string;
+    summary: string;
+    requestedBy: string;
+    decidedBy: string | null;
+    runId: string | null;
+  }): Promise<void> {
+    try {
+      const board = await this.boardTitle(row.boardId);
+      if (board === null) return;
+      const recipients = await this.members(row.boardId, [
+        row.requestedBy,
+        ...(row.decidedBy === null ? [] : [row.decidedBy]),
+      ]);
+      await this.notify({
+        type: "approval.consumed",
+        boardId: row.boardId,
+        dedupKey: `approval.consumed:${row.id}`,
+        recipients,
+        emailVars: () => ({
+          board,
+          summary: row.summary,
+          action: row.actionType,
+          ...(row.runId !== null ? { runId: row.runId } : {}),
+        }),
+        data: {
+          approvalId: row.id,
+          action: row.actionType,
+          ...(row.runId !== null ? { runId: row.runId } : {}),
+        },
+      });
+    } catch (error) {
+      this.warn("approval consumed", error);
     }
   }
 
@@ -329,6 +407,41 @@ export class AttentionService {
       });
     } catch (error) {
       this.warn("quota exceeded", error);
+    }
+  }
+
+  /**
+   * `token.revoked` — the owner is the only recipient. The revoked key's
+   * agent sessions are already cancelled by `revokeApiTokens`; a PAT can never
+   * read this inbox or receive this letter. The dedup key is the token id, so
+   * a repeated DELETE or a retry does not produce a second letter.
+   */
+  async notifyTokenRevoked(input: {
+    userId: string;
+    tokenId: string;
+    tokenName: string;
+    reason?: string;
+  }): Promise<void> {
+    try {
+      const recipient = await this.prisma.user.findFirst({
+        where: { id: input.userId, disabledAt: null },
+        select: RECIPIENT_SELECT,
+      });
+      if (recipient === null) return;
+      await this.notify({
+        type: "token.revoked",
+        boardId: null,
+        dedupKey: `token.revoked:${input.tokenId}`,
+        recipients: [recipient],
+        emailVars: () => ({ token: input.tokenName }),
+        data: {
+          tokenId: input.tokenId,
+          tokenName: input.tokenName,
+          ...(input.reason !== undefined ? { reason: input.reason } : {}),
+        },
+      });
+    } catch (error) {
+      this.warn("token revoked", error);
     }
   }
 
