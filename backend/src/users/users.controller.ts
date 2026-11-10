@@ -44,6 +44,7 @@ import { CreateUserTokenDto } from "./dto/create-user-token.dto";
 import { DeleteAccountDto } from "./dto/delete-account.dto";
 import { RequestAccountDeletionCodeDto } from "./dto/request-account-deletion-code.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
+import { UpdateUserTokenDto } from "./dto/update-user-token.dto";
 import { UsersService } from "./users.service";
 
 /**
@@ -214,6 +215,21 @@ export class UsersController {
   ): Promise<{ status: "ok" }> {
     await this.apiTokens.revoke(user.id, id);
     return { status: "ok" };
+  }
+
+  /**
+   * TASK-166.15: the owner can edit a token's human-facing limits and scope
+   * from a browser session. Session-only by construction; the service never
+   * accepts or returns the secret.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Patch("me/tokens/:id")
+  updateToken(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateUserTokenDto,
+  ): Promise<UserTokenDto> {
+    return this.apiTokens.update(user.id, id, dto);
   }
 
   /** TASK-166.3: pause only this token; `resume-all` keeps it paused. */

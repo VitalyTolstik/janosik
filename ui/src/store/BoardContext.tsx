@@ -1456,6 +1456,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         },
         onApproval: (_id, event) => live.agentControl.publishApproval(event),
         onAgent: (id, event) => live.agentControl.publishAgent(id, event),
+        onRun: (_id, event) => live.agentControl.publishRun(event),
       });
       realtimeRef.current.watch(boardId);
     });

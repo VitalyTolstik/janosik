@@ -13,6 +13,7 @@ import type {
   AuthResponseDto,
   AuthUserDto,
   BoardAgentPauseDto,
+  BoardAgentPolicyStateDto,
   BoardAggregate,
   BoardEnvelope,
   BoardInvitationDto,
@@ -34,9 +35,16 @@ import type {
   InviteMemberRequest,
   RequestAccountDeletionCodeRequest,
   RequestAccountDeletionCodeResponse,
+  RevertPreviewDto,
+  RevertRunRequest,
+  RunDetailDto,
+  RunListQuery,
+  RunSummaryDto,
+  UpdateBoardAgentPolicyRequest,
   UpdateMemberRequest,
   UpdateProfileRequest,
   UpdateShareRequest,
+  UpdateUserTokenRequest,
   UserDataExportDto,
   UserTokenDto,
 } from "@janosik/shared";
@@ -544,6 +552,18 @@ export class ApiClient {
     });
   }
 
+  /**
+   * `PATCH /users/me/tokens/:id` — session-only owner edit of the
+   * human-facing limits/scope (TASK-166.15). Never sends or accepts the
+   * secret.
+   */
+  updateToken(id: string, body: UpdateUserTokenRequest): Promise<UserTokenDto> {
+    return this.request<UserTokenDto>(
+      `/users/me/tokens/${encodeURIComponent(id)}`,
+      { method: "PATCH", body },
+    );
+  }
+
   /** `DELETE /users/me/tokens/:id` — revoke (idempotent). */
   revokeToken(id: string): Promise<{ status: "ok" }> {
     return this.request<{ status: "ok" }>(
@@ -625,6 +645,77 @@ export class ApiClient {
     return this.request<ApprovalRequestDto>(
       `/boards/${boardId}/approvals/${encodeURIComponent(approvalId)}/decision`,
       { method: "POST", body },
+    );
+  }
+
+  // ------------------------------------------------- runs + policy (166.15)
+
+  /** `GET /boards/:id/runs` — summaries without commands/pre-images. */
+  listRuns(
+    boardId: string,
+    query: RunListQuery = {},
+  ): Promise<RunSummaryDto[]> {
+    const params = new URLSearchParams();
+    if (query.status !== undefined) params.set("status", query.status);
+    if (query.kind !== undefined) params.set("kind", query.kind);
+    if (query.apiTokenId !== undefined)
+      params.set("apiTokenId", query.apiTokenId);
+    if (query.agentSessionId !== undefined)
+      params.set("agentSessionId", query.agentSessionId);
+    if (query.clientRunId !== undefined)
+      params.set("clientRunId", query.clientRunId);
+    if (query.from !== undefined) params.set("from", String(query.from));
+    if (query.to !== undefined) params.set("to", String(query.to));
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.cursor !== undefined) params.set("cursor", query.cursor);
+    const suffix = params.toString() === "" ? "" : `?${params.toString()}`;
+    return this.request<RunSummaryDto[]>(
+      `/boards/${encodeURIComponent(boardId)}/runs${suffix}`,
+    );
+  }
+
+  /** `GET /boards/:id/runs/:runId` — pre-images are ADMIN JWT only. */
+  getRun(boardId: string, runId: string): Promise<RunDetailDto> {
+    return this.request<RunDetailDto>(
+      `/boards/${encodeURIComponent(boardId)}/runs/${encodeURIComponent(runId)}`,
+    );
+  }
+
+  /** `POST …/runs/:runId/revert/preview` — dry-run, writes nothing. */
+  previewRunRevert(boardId: string, runId: string): Promise<RevertPreviewDto> {
+    return this.request<RevertPreviewDto>(
+      `/boards/${encodeURIComponent(boardId)}/runs/${encodeURIComponent(runId)}/revert/preview`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  /** `POST …/runs/:runId/revert` — session-only board ADMIN apply. */
+  revertRun(
+    boardId: string,
+    runId: string,
+    body: RevertRunRequest,
+  ): Promise<RunDetailDto> {
+    return this.request<RunDetailDto>(
+      `/boards/${encodeURIComponent(boardId)}/runs/${encodeURIComponent(runId)}/revert`,
+      { method: "POST", body },
+    );
+  }
+
+  /** `GET /boards/:id/agent-policy` — session-only board ADMIN (166.15). */
+  getBoardAgentPolicy(boardId: string): Promise<BoardAgentPolicyStateDto> {
+    return this.request<BoardAgentPolicyStateDto>(
+      `/boards/${encodeURIComponent(boardId)}/agent-policy`,
+    );
+  }
+
+  /** `PATCH /boards/:id/agent-policy` — CAS on `agentPolicyVersion`. */
+  updateBoardAgentPolicy(
+    boardId: string,
+    body: UpdateBoardAgentPolicyRequest,
+  ): Promise<BoardAgentPolicyStateDto> {
+    return this.request<BoardAgentPolicyStateDto>(
+      `/boards/${encodeURIComponent(boardId)}/agent-policy`,
+      { method: "PATCH", body },
     );
   }
 

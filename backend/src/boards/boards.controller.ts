@@ -17,6 +17,7 @@ import {
 import type { Response } from "express";
 import { type BoardMember, Role } from "@prisma/client";
 import type {
+  BoardAgentPolicyStateDto,
   BoardAggregate,
   BoardCardSearchResult,
   BoardImportPreviewDto,
@@ -25,7 +26,11 @@ import type {
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
-import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
+import {
+  CurrentAgentSession,
+  CurrentPrincipal,
+  SessionOnlyGuard,
+} from "@/auth/auth-principal";
 import { requestAttribution } from "@/auth/request-attribution";
 import { assertAccountWidePreset } from "@/auth/token-scope";
 import { TokenScope } from "@/auth/token-scope.decorator";
@@ -43,6 +48,7 @@ import { MembershipGuard } from "@/common/membership.guard";
 import { ApprovalsService } from "@/approvals/approvals.service";
 import { plainRecord } from "@/approvals/approval-plan";
 import { BoardsService } from "./boards.service";
+import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
@@ -149,6 +155,31 @@ export class BoardsController {
     @Query("q") q?: string,
   ): Promise<BoardCardSearchResult> {
     return this.boards.searchCards(id, q ?? "");
+  }
+
+  /**
+   * TASK-166.15 policy dashboard (ADR §6.3). Session-only board ADMIN, so an
+   * agent token can neither read the control-plane state nor weaken it.
+   */
+  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @BoardRoles(Role.ADMIN)
+  @Get(":id/agent-policy")
+  agentPolicy(@Param("id") id: string): Promise<BoardAgentPolicyStateDto> {
+    return this.boards.getAgentPolicy(id);
+  }
+
+  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @BoardRoles(Role.ADMIN)
+  @Patch(":id/agent-policy")
+  updateAgentPolicy(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateBoardAgentPolicyDto,
+  ): Promise<BoardAgentPolicyStateDto> {
+    return this.boards.updateAgentPolicy(id, user.id, {
+      policy: dto.policy,
+      version: dto.version,
+    });
   }
 
   @UseGuards(MembershipGuard)

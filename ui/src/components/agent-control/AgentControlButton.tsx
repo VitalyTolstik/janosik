@@ -13,10 +13,12 @@ import { useBoardLive } from "@/store/board-live";
 import { useBoardAccess, useBoardState } from "@/store/BoardContext";
 
 /**
- * Header entry to the agent-control dialog (TASK-166.14), shown to a board
- * ADMIN in server mode only. The pending-approval badge is loaded from the
- * board queue and refreshed by `approval` SSE frames, so a request created by
- * an agent appears without a page reload.
+ * Header entry to the agent-control dialog (TASK-166.14/166.15), shown in
+ * server mode. A board ADMIN gets the control-plane entry with a
+ * pending-approval badge; a MEMBER/VIEWER gets the same dialog on its
+ * read-only Runs tab, so any board member can inspect the timeline and run a
+ * dry-run conflict preview (applying a revert stays ADMIN-only). The badge is
+ * refreshed by `approval` SSE frames, so a request appears without a reload.
  */
 export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
   const { t } = useI18n();
@@ -48,9 +50,14 @@ export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
     };
   }, [boardId, role, revision]);
 
-  if (!isApiEnabled() || boardId === undefined || role !== "ADMIN") {
+  if (!isApiEnabled() || boardId === undefined) {
     return null;
   }
+
+  const admin = role === "ADMIN";
+  const label = admin
+    ? t("agentControl.button")
+    : t("agentControl.runs.button");
 
   return (
     <Tooltip>
@@ -58,13 +65,13 @@ export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={t("agentControl.button")}
-          data-testid="agent-control-trigger"
+          aria-label={label}
+          data-testid={admin ? "agent-control-trigger" : "agent-runs-trigger"}
           onClick={onOpen}
           className="relative"
         >
           <Bot className="h-5 w-5" aria-hidden />
-          {pending > 0 ? (
+          {admin && pending > 0 ? (
             <span
               data-testid="agent-control-pending-count"
               className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger px-1 text-[10px] font-semibold leading-4 text-white"
@@ -74,7 +81,7 @@ export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
           ) : null}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{t("agentControl.button")}</TooltipContent>
+      <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
 }

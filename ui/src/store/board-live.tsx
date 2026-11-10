@@ -14,6 +14,7 @@ import type {
   BoardMemberDto,
   PresenceSseEvent,
   PresenceUser,
+  RunSseEvent,
 } from "@janosik/shared";
 
 import { CommitStore } from "@/store/commit-store";
@@ -423,6 +424,7 @@ export class AgentControlStore {
     (event: ApprovalSseEvent) => void
   >();
   private readonly agentListeners = new Set<(event: AgentSseEvent) => void>();
+  private readonly runListeners = new Set<(event: RunSseEvent) => void>();
   private readonly boardPause = new Map<string, LiveBoardPause>();
   private readonly listeners = new Set<() => void>();
   private version = 0;
@@ -440,6 +442,11 @@ export class AgentControlStore {
       });
     }
     for (const listener of [...this.agentListeners]) listener(event);
+  }
+
+  /** A run-level lifecycle frame (TASK-166.7/166.15 `run.reverted`). */
+  publishRun(event: RunSseEvent): void {
+    for (const listener of [...this.runListeners]) listener(event);
   }
 
   setBoardPause(boardId: string, state: LiveBoardPause): void {
@@ -462,6 +469,11 @@ export class AgentControlStore {
     return () => this.agentListeners.delete(listener);
   };
 
+  subscribeRun = (listener: (event: RunSseEvent) => void): (() => void) => {
+    this.runListeners.add(listener);
+    return () => this.runListeners.delete(listener);
+  };
+
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -472,6 +484,7 @@ export class AgentControlStore {
   clear(): void {
     this.approvalListeners.clear();
     this.agentListeners.clear();
+    this.runListeners.clear();
     this.boardPause.clear();
     this.version += 1;
     for (const listener of [...this.listeners]) listener();

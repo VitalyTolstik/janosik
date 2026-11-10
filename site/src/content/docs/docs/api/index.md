@@ -47,7 +47,7 @@ strategy. Both open board-scoped routes identically.
 A personal API token acts as its owner for board work, but it cannot manage
 the account's credentials. These routes refuse a PAT with `403`:
 
-- `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `GET /users/me/tokens`, `POST /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id`
 - `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
 - `POST /agents/pause-all`, `POST /agents/resume-all`
 - `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
@@ -488,6 +488,7 @@ answers `429`).
 | `GET`    | `/users/:userId/avatar` | image bytes               |
 | `GET`    | `/users/me/tokens`      | `UserTokenDto[]`          |
 | `POST`   | `/users/me/tokens`      | `CreateUserTokenResponse` |
+| `PATCH`  | `/users/me/tokens/:id`  | `UserTokenDto`            |
 | `DELETE` | `/users/me/tokens/:id`  | `{ status: "ok" }`        |
 
 `PATCH /users/me` body:
@@ -522,9 +523,14 @@ aggressively. If the user has no avatar, the server returns `404`.
 
 Returns `{ token, apiToken }`. The plaintext `token` appears exactly once;
 only `apiToken` metadata is returned afterwards. `GET /users/me/tokens` lists
-metadata (never the plaintext). `DELETE /users/me/tokens/:id` revokes one and
-returns `{ status: "ok" }`. Changing the password revokes every token of the
-account. The token DTO also carries `scopePreset`, `trustedCi`,
+metadata (never the plaintext). `PATCH /users/me/tokens/:id` edits `name`,
+`boardId`, `readOnly`, `rateLimitPerMinute`, `scopePreset` or `trustedCi`;
+omitted fields keep their value, `null` clears the board/rate scope, an
+Observer or read-only key cannot enable `trustedCi`, and every change is
+audited with before/after values. It is owner-only and session-only; the
+secret is never accepted or returned. `DELETE /users/me/tokens/:id` revokes
+one and returns `{ status: "ok" }`. Changing the password revokes every token
+of the account. The token DTO also carries `scopePreset`, `trustedCi`,
 `individualPausedAt`/`stopAllPausedAt` (and their `*By` fields), computed
 `paused`, and `effectiveTokenScope` (`observer` when `readOnly` is true).
 `GET /auth/me` with a PAT adds the same non-secret identity as `token`.

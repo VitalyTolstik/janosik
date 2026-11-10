@@ -7,6 +7,8 @@ import {
 } from "@nestjs/common";
 import { Role, Prisma } from "@prisma/client";
 import type {
+  BoardAgentPolicy,
+  BoardAgentPolicyStateDto,
   BoardAggregate,
   BoardCardSearchResult,
   BoardImportPreviewDto,
@@ -16,10 +18,12 @@ import type {
   BoardSummary,
 } from "@janosik/shared";
 import {
+  DEFAULT_BOARD_AGENT_POLICY,
   LIMITS,
   parseExport,
   parseExportValue,
   serializeExport,
+  validateBoardAgentPolicy,
 } from "@janosik/shared";
 import {
   type RequestAttribution,
@@ -33,6 +37,7 @@ import {
   isTransactionTimeout,
 } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
+import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
@@ -73,7 +78,161 @@ export class BoardsService {
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
     private readonly attention: AttentionService,
+    private readonly securityAudit: SecurityAuditService,
   ) {}
+
+  /**
+   * `GET /boards/:id/agent-policy` (TASK-166.15). The stored JSONB is
+   * `null` when the board uses the safe defaults; `effective` is what the
+   * server will actually enforce, and `version` is the CAS token for the next
+   * PATCH. Pause stamps are operational state and are surfaced here only so
+   * the policy dashboard can explain the current state without a second
+   * request.
+   */
+  async getAgentPolicy(boardId: string): Promise<BoardAgentPolicyStateDto> {
+    const board = await this.prisma.board.findFirst({
+      where: { id: boardId, deletedAt: null },
+      select: {
+        agentPolicy: true,
+        agentPolicyVersion: true,
+        agentsPausedAt: true,
+        agentsPausedBy: true,
+        agentsPauseReason: true,
+      },
+    });
+    if (board === null) throw new NotFoundException("Board not found");
+    const checked =
+      board.agentPolicy === null
+        ? null
+        : validateBoardAgentPolicy(board.agentPolicy);
+    const policy = checked?.ok === true ? checked.policy : null;
+    return {
+      policy,
+      effective: policy ?? { ...DEFAULT_BOARD_AGENT_POLICY },
+      version: board.agentPolicyVersion,
+      paused: board.agentsPausedAt !== null,
+      pausedAt: board.agentsPausedAt?.getTime() ?? null,
+      pausedBy: board.agentsPausedBy,
+      pauseReason: board.agentsPauseReason,
+    };
+  }
+
+  /**
+   * `PATCH /boards/:id/agent-policy` — session-only board ADMIN (D14). The
+   * version check is a compare-and-swap inside the board write lock, so two
+   * admins cannot silently overwrite each other; `null` resets the stored
+   * JSONB to the safe defaults. Every successful PATCH increments the version
+   * and leaves both an Activity row and a SecurityAuditLog row.
+   */
+  async updateAgentPolicy(
+    boardId: string,
+    actorId: string,
+    dto: { policy: unknown; version: number },
+  ): Promise<BoardAgentPolicyStateDto> {
+    if (dto.policy === undefined) {
+      throw new BadRequestException({
+        message: "policy is required (use null to restore defaults)",
+        field: "policy",
+      });
+    }
+    let policy: BoardAgentPolicy | null = null;
+    if (dto.policy !== null) {
+      const checked = validateBoardAgentPolicy(dto.policy);
+      if (!checked.ok) {
+        throw new BadRequestException({
+          message: checked.message,
+          field: "policy",
+        });
+      }
+      policy = checked.policy;
+    }
+
+    const result = await this.boardWrite.run(boardId, async (tx) => {
+      const current = await tx.board.findFirst({
+        where: { id: boardId, deletedAt: null },
+        select: { agentPolicyVersion: true },
+      });
+      if (current === null) throw new NotFoundException("Board not found");
+      if (current.agentPolicyVersion !== dto.version) {
+        throw this.policyConflict(current.agentPolicyVersion);
+      }
+      const changed = await tx.board.updateMany({
+        where: {
+          id: boardId,
+          deletedAt: null,
+          agentPolicyVersion: dto.version,
+        },
+        data: {
+          agentPolicy:
+            policy === null
+              ? Prisma.DbNull
+              : (policy as unknown as Prisma.InputJsonValue),
+          agentPolicyVersion: { increment: 1 },
+        },
+      });
+      if (changed.count === 0) {
+        const latest = await tx.board.findFirst({
+          where: { id: boardId },
+          select: { agentPolicyVersion: true },
+        });
+        throw this.policyConflict(latest?.agentPolicyVersion ?? dto.version);
+      }
+      const nextVersion = dto.version + 1;
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "agent_policy_changed",
+          actorId,
+          actorType: "human",
+          details: {
+            version: nextVersion,
+            reset: policy === null,
+            destructive: policy?.destructive ?? "approval",
+            maxCommandsPerRun:
+              policy?.maxCommandsPerRun ??
+              DEFAULT_BOARD_AGENT_POLICY.maxCommandsPerRun,
+            maxCardsPerRun:
+              policy?.maxCardsPerRun ??
+              DEFAULT_BOARD_AGENT_POLICY.maxCardsPerRun,
+            approvalTtlMinutes:
+              policy?.approvalTtlMinutes ??
+              DEFAULT_BOARD_AGENT_POLICY.approvalTtlMinutes,
+          },
+        },
+      });
+      return nextVersion;
+    });
+
+    await this.securityAudit.record({
+      userId: actorId,
+      actorId,
+      actorType: "human",
+      action: "board.agent_policy_changed",
+      targetType: "board",
+      targetId: boardId,
+      details: {
+        version: result,
+        reset: policy === null,
+        destructive: policy?.destructive ?? "approval",
+        requireApprovalFor: policy?.requireApprovalFor ?? null,
+        maxCommandsPerRun: policy?.maxCommandsPerRun ?? null,
+        maxCardsPerRun: policy?.maxCardsPerRun ?? null,
+        approvalTtlMinutes: policy?.approvalTtlMinutes ?? null,
+      },
+    });
+
+    return this.getAgentPolicy(boardId);
+  }
+
+  private policyConflict(currentVersion: number): ConflictException {
+    return new ConflictException({
+      message: "Agent policy changed — reload and try again",
+      code: "version_conflict",
+      conflict: "version",
+      currentVersion,
+      details: { currentVersion },
+    });
+  }
 
   /** Boards where the caller is a member (§7.4). Pending invitations don't
    * count, and neither does an expired VIEWER (TASK-147, B4): the row still

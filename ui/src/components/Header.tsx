@@ -4,6 +4,7 @@ import { Bot } from "lucide-react";
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
 import { AgentControlButton } from "@/components/agent-control/AgentControlButton";
+import type { AgentControlTab } from "@/components/agent-control/AgentControlDialog";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
 import { ShareDialog } from "@/components/board/ShareDialog";
@@ -53,6 +54,8 @@ export function Header() {
   const readOnly = role === "VIEWER";
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentControlOpen, setAgentControlOpen] = useState(false);
+  const [agentControlTab, setAgentControlTab] =
+    useState<AgentControlTab>("approvals");
 
   return (
     <header className="sticky top-0 z-40 flex min-h-14 shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-14 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0">
@@ -81,7 +84,14 @@ export function Header() {
           </TooltipTrigger>
           <TooltipContent>{t("agents.open")}</TooltipContent>
         </Tooltip>
-        <AgentControlButton onOpen={() => setAgentControlOpen(true)} />
+        <AgentControlButton
+          onOpen={() => {
+            // A member/VIEWER starts on the read-only runs view; an ADMIN
+            // keeps the approvals-first flow from TASK-166.14.
+            setAgentControlTab(role === "ADMIN" ? "approvals" : "runs");
+            setAgentControlOpen(true);
+          }}
+        />
         {role === "ADMIN" ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -160,6 +170,7 @@ export function Header() {
           <AgentControlDialog
             open={agentControlOpen}
             onOpenChange={setAgentControlOpen}
+            initialTab={agentControlTab}
           />
         </Suspense>
       ) : null}

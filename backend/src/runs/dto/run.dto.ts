@@ -41,6 +41,20 @@ export class RunListQueryDto {
   @MaxLength(64)
   clientRunId?: string;
 
+  /** Unix ms lower bound on `createdAt` (TASK-166.15 history filter). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  from?: number;
+
+  /** Unix ms upper bound on `createdAt` (TASK-166.15 history filter). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  to?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

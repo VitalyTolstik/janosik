@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { ClipboardCheck, CirclePause, ShieldCheck } from "lucide-react";
+import {
+  ClipboardCheck,
+  CirclePause,
+  FileClock,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
 
 import {
   Dialog,
@@ -13,8 +19,10 @@ import { cn } from "@/lib/utils";
 import { useBoardAccess } from "@/store/BoardContext";
 import { ApprovalsPanel } from "./ApprovalsPanel";
 import { PausePanel } from "./PausePanel";
+import { PolicyPanel } from "./PolicyPanel";
+import { RunsPanel } from "./RunsPanel";
 
-type AgentControlTab = "approvals" | "pause";
+export type AgentControlTab = "approvals" | "pause" | "runs" | "policy";
 
 /**
  * «Agent control» dialog (TASK-166.14): the human side of TASK-166 on one
@@ -28,19 +36,27 @@ type AgentControlTab = "approvals" | "pause";
 export function AgentControlDialog({
   open,
   onOpenChange,
+  initialTab = "approvals",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Members land on the read-only runs view; ADMINs start at approvals. */
+  initialTab?: AgentControlTab;
 }) {
   const { t } = useI18n();
   const { role } = useBoardAccess();
-  const [tab, setTab] = useState<AgentControlTab>("approvals");
+  const [tab, setTab] = useState<AgentControlTab>(initialTab);
 
   const tabs: {
     id: AgentControlTab;
-    labelKey: "agentControl.tab.approvals" | "agentControl.tab.pause";
+    labelKey:
+      | "agentControl.tab.approvals"
+      | "agentControl.tab.pause"
+      | "agentControl.tab.runs"
+      | "agentControl.tab.policy";
     icon: typeof ClipboardCheck;
     testId: string;
+    adminOnly?: boolean;
   }[] = [
     {
       id: "approvals",
@@ -53,6 +69,19 @@ export function AgentControlDialog({
       labelKey: "agentControl.tab.pause",
       icon: CirclePause,
       testId: "agent-pause-tab",
+    },
+    {
+      id: "runs",
+      labelKey: "agentControl.tab.runs",
+      icon: FileClock,
+      testId: "agent-runs-tab",
+    },
+    {
+      id: "policy",
+      labelKey: "agentControl.tab.policy",
+      icon: SlidersHorizontal,
+      testId: "agent-policy-tab",
+      adminOnly: true,
     },
   ];
 
@@ -78,32 +107,38 @@ export function AgentControlDialog({
             aria-label={t("agentControl.title")}
             className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1"
           >
-            {tabs.map(({ id, labelKey, icon: Icon, testId }) => (
-              <button
-                key={id}
-                type="button"
-                data-testid={testId}
-                aria-pressed={tab === id}
-                onClick={() => setTab(id)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  tab === id
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" aria-hidden />
-                {t(labelKey)}
-              </button>
-            ))}
+            {tabs
+              .filter((entry) => !entry.adminOnly || role === "ADMIN")
+              .map(({ id, labelKey, icon: Icon, testId }) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={testId}
+                  aria-pressed={tab === id}
+                  onClick={() => setTab(id)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    tab === id
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                  {t(labelKey)}
+                </button>
+              ))}
           </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
           {tab === "approvals" ? (
             <ApprovalsPanel role={role} />
-          ) : (
+          ) : tab === "pause" ? (
             <PausePanel role={role} />
+          ) : tab === "runs" ? (
+            <RunsPanel role={role} />
+          ) : (
+            <PolicyPanel role={role} />
           )}
         </div>
       </DialogContent>

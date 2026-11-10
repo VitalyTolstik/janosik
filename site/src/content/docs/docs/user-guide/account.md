@@ -98,8 +98,12 @@ connection opened with the key closes within about 25 seconds.
 Keys are managed only here, in a signed-in browser. A key cannot list, create
 or revoke keys, change your password or email, update the profile, or list and
 accept invitations, so a leaked key can never mint a longer-lived one, change
-your account or lock you out. A key's scope cannot be edited: create a new key
-and revoke the old one.
+your account or lock you out. Use `Edit` on an existing key to change its name,
+board scope, scope preset, trusted-CI flag, read-only flag or rate limit; the
+server validates and audits the change and never reveals the secret again. If
+you need a new secret, create a new key and revoke the old one. The row keeps a
+compact summary of the effective scope, board scope, rate limit and pause
+state.
 
 ### Pausing and stopping agents
 

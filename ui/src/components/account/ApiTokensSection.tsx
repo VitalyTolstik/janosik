@@ -6,6 +6,7 @@ import {
   CirclePlay,
   Copy,
   KeyRound,
+  Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -48,6 +49,7 @@ import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { TokenEditDialog } from "./TokenEditDialog";
 
 type ExpiryPreset = "never" | "30" | "90" | "365";
 
@@ -102,6 +104,8 @@ export function ApiTokensSection() {
   const [reveal, setReveal] = useState<CreateUserTokenResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<UserTokenDto | null>(null);
+  // TASK-166.15 owner edit: scope/limits of an existing key.
+  const [editTarget, setEditTarget] = useState<UserTokenDto | null>(null);
   // TASK-166.3 pause controls: one token or the account-wide "stop all".
   const [pauseTarget, setPauseTarget] = useState<UserTokenDto | null>(null);
   const [stopAllOpen, setStopAllOpen] = useState(false);
@@ -134,9 +138,9 @@ export function ApiTokensSection() {
   }, [load]);
 
   // The board-scope picker needs the caller's boards; load them lazily when
-  // the create dialog opens (a failure just leaves "All boards").
+  // the create or edit dialog opens (a failure just leaves "All boards").
   useEffect(() => {
-    if (!createOpen) return;
+    if (!createOpen && editTarget === null) return;
     let alive = true;
     void api
       .listBoards()
@@ -147,7 +151,7 @@ export function ApiTokensSection() {
     return () => {
       alive = false;
     };
-  }, [createOpen]);
+  }, [createOpen, editTarget]);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
@@ -420,6 +424,7 @@ export function ApiTokensSection() {
               onPause={() => setPauseTarget(token)}
               onResume={() => void resumeToken(token)}
               onRevoke={() => setRevokeTarget(token)}
+              onEdit={() => setEditTarget(token)}
             />
           ))}
         </ul>
@@ -700,6 +705,25 @@ export function ApiTokensSection() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={editTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditTarget(null);
+        }}
+      >
+        {editTarget !== null ? (
+          <TokenEditDialog
+            token={editTarget}
+            boards={boards}
+            onClose={() => setEditTarget(null)}
+            onSaved={() => {
+              setEditTarget(null);
+              void load();
+            }}
+          />
+        ) : null}
+      </Dialog>
+
       <ConfirmDialog
         open={revokeTarget !== null}
         title={t("account.tokens.revokeConfirmTitle")}
@@ -766,6 +790,7 @@ function TokenRow({
   onPause,
   onResume,
   onRevoke,
+  onEdit,
 }: {
   token: UserTokenDto;
   lang: Parameters<typeof formatDateOnly>[1];
@@ -773,6 +798,7 @@ function TokenRow({
   onPause: () => void;
   onResume: () => void;
   onRevoke: () => void;
+  onEdit: () => void;
 }) {
   const { t } = useI18n();
   const expired =
@@ -902,6 +928,17 @@ function TokenRow({
       </div>
       {token.revokedAt === null ? (
         <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            data-testid="token-edit"
+            disabled={busy}
+            onClick={onEdit}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+            <span className="hidden sm:inline">{t("account.tokens.edit")}</span>
+          </Button>
           {individual ? (
             <Button
               type="button"

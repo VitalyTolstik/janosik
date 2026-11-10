@@ -8,7 +8,7 @@
  */
 
 import type { BoardAction } from "./store/board-reducer";
-import type { Board, CommentKind } from "./types/kanban";
+import type { Board, BoardAgentPolicy, CommentKind } from "./types/kanban";
 import type { WorkflowCondition, WorkflowRole } from "./workflow";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
@@ -729,6 +729,33 @@ export interface AgentStopAllPauseDto {
 }
 
 /**
+ * `GET /boards/:id/agent-policy` (TASK-166.15). `policy: null` means the safe
+ * defaults are stored; `effective` always carries the policy the server will
+ * apply. `version` is the CAS token for the next PATCH, and the pause fields
+ * are operational state (never exported).
+ */
+export interface BoardAgentPolicyStateDto {
+  policy: BoardAgentPolicy | null;
+  effective: BoardAgentPolicy;
+  version: number;
+  paused: boolean;
+  pausedAt: number | null;
+  pausedBy: string | null;
+  pauseReason: string | null;
+}
+
+/**
+ * Body of `PATCH /boards/:id/agent-policy` (TASK-166.15). Session-only board
+ * ADMIN; `policy: null` restores the defaults. A stale `version` gets
+ * `409 version_conflict` with `details.currentVersion`, and the version
+ * increments on every successful PATCH.
+ */
+export interface UpdateBoardAgentPolicyRequest {
+  policy: BoardAgentPolicy | null;
+  version: number;
+}
+
+/**
  * `GET /boards/:id/search?q=` (TASK-157, D11) — the ids of cards whose title,
  * description, a checklist item or a comment contains the query. A server
  * search reaches text that is not in the board aggregate (comments), so the
@@ -1100,6 +1127,22 @@ export interface CreateUserTokenResponse {
   apiToken: UserTokenDto;
 }
 
+/**
+ * Body of `PATCH /users/me/tokens/:id` (TASK-166.15). Session-only owner
+ * edit: omitted fields keep their value, `null` clears the board scope or
+ * the per-token rate limit. The secret is never accepted or returned.
+ */
+export interface UpdateUserTokenRequest {
+  name?: string;
+  /** `null` = every board; omitted = keep the current scope. */
+  boardId?: string | null;
+  /** `null` = no per-token budget; omitted = keep the current value. */
+  rateLimitPerMinute?: number | null;
+  readOnly?: boolean;
+  scopePreset?: ScopePreset;
+  trustedCi?: boolean;
+}
+
 /* ------------------------------------------------------------------ *
  * TASK-166.5 — approval & handoff API
  * ------------------------------------------------------------------ */
@@ -1301,6 +1344,10 @@ export interface RunListQuery {
   apiTokenId?: string;
   agentSessionId?: string;
   clientRunId?: string;
+  /** Unix ms lower bound on `createdAt` (inclusive). */
+  from?: number;
+  /** Unix ms upper bound on `createdAt` (inclusive). */
+  to?: number;
   limit?: number;
   /** Run id to page after (older rows). */
   cursor?: string;
