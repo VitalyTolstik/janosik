@@ -493,6 +493,29 @@ describe("ApiTokenService", () => {
 
       expect(attentionMock.notifyTokenRevoked).not.toHaveBeenCalled();
     });
+
+    it("notifies the owner for every token in a bulk revoke", async () => {
+      prismaMock.apiToken.findMany.mockResolvedValue([
+        { id: "token-1", name: "CI" },
+        { id: "token-2", name: "Deploy" },
+      ]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 2 });
+
+      expect(await service.revokeAll("user-1")).toBe(2);
+      expect(attentionMock.notifyTokenRevoked).toHaveBeenCalledTimes(2);
+      expect(attentionMock.notifyTokenRevoked).toHaveBeenCalledWith({
+        userId: "user-1",
+        tokenId: "token-1",
+        tokenName: "CI",
+        reason: "revoke_all",
+      });
+      expect(attentionMock.notifyTokenRevoked).toHaveBeenCalledWith({
+        userId: "user-1",
+        tokenId: "token-2",
+        tokenName: "Deploy",
+        reason: "revoke_all",
+      });
+    });
   });
 
   describe("pause / resume", () => {
