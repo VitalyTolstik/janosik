@@ -51,13 +51,23 @@ overwritten.
 
 Tools come in groups. By default the server registers the groups that work
 the board: boards, columns, cards, labels, checklists, card links, comments,
-activity and attachments. The groups that change who can see a board or act
-on your account (`members`, `invitations`, `shares`, `account`) are opt-in:
+activity, attachments and agent sessions. The groups that change who can see a
+board or act on your account (`members`, `shares`, `account`) are opt-in:
 
 | Setting | Effect |
 | --- | --- |
 | `JANOSIK_MCP_TOOLSETS` | Comma-separated groups, e.g. `default,members`, or `all`. |
 | `JANOSIK_MCP_READONLY=1` | Only tools that never change anything. |
+
+Account-only actions are not exposed as tools: invitations, profile writes and
+key management are session-only, so the server removes those tools entirely.
+The token's scope is enforced by the API: an `observer` cannot write, a
+`worker` cannot enter a done column or administer the board, and a destructive
+tool (`delete_card`, `clear_column`, `delete_board`, share/member changes)
+answers `approval_required` unless the token is marked `Trusted CI`. A board
+policy of `destructive: "deny"` returns `destructive_denied` for every agent.
+Do not retry these errors with the same token; report the blocker or ask a
+human.
 
 Data-reading tools accept `response_format: "markdown"` (default) or `"json"`. The
 tool names all start with `janosik_` so they sit alongside other servers

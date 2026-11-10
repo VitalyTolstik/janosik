@@ -170,6 +170,7 @@ export class AttachmentsController {
       attachmentId,
       user,
       requestAttribution(principal, session?.id),
+      principal,
     );
     return { status: "ok" };
   }

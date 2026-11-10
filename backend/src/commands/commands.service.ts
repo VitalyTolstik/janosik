@@ -39,6 +39,8 @@ import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { assertAgentRule, classifyCommandAction } from "@/auth/token-scope";
 import {
   type RequestAttribution,
   attributionFields,
@@ -238,6 +240,8 @@ export class CommandsService {
       actorRole?: Role;
       /** TASK-166 attribution; the server fills it from the principal. */
       attribution?: RequestAttribution;
+      /** TASK-166 scope/destructive gate; only the REST transport passes it. */
+      principal?: AuthPrincipal;
     } = {},
   ): Promise<CommandResponse> {
     const [response] = await this.applyBatch(boardId, actorId, [dto], options);
@@ -267,6 +271,8 @@ export class CommandsService {
       actorRole?: Role;
       /** TASK-166 attribution; the server fills it from the principal. */
       attribution?: RequestAttribution;
+      /** TASK-166 scope/destructive gate; only the REST transport passes it. */
+      principal?: AuthPrincipal;
     } = {},
   ): Promise<CommandResponse[]> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
@@ -314,7 +320,7 @@ export class CommandsService {
         // committed predecessor. We only need the board to exist.
         const board = await tx.board.findFirst({
           where: { id: boardId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, agentPolicy: true },
         });
         if (!board) {
           throw new NotFoundException("Board not found");
@@ -378,6 +384,16 @@ export class CommandsService {
             responses.push(existing.result as unknown as CommandResponse);
             continue;
           }
+          // TASK-166: check the preset and destructive gate at the point the
+          // command would run. `running` already includes earlier commands of
+          // this batch, so a create + move is judged on the moved card. Any
+          // refusal throws inside the board transaction and rolls the whole
+          // batch back — there is no partial apply.
+          assertAgentRule(
+            options.principal,
+            board.agentPolicy,
+            classifyCommandAction(entry.action, running),
+          );
           const outcome = await this.applyPrepared(tx, {
             boardId,
             actorId,

@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -26,6 +25,8 @@ import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
 import { requestAttribution } from "@/auth/request-attribution";
+import { assertAccountWidePreset } from "@/auth/token-scope";
+import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
@@ -65,10 +66,9 @@ export class BoardsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: CreateBoardDto,
   ): Promise<BoardAggregate> {
-    // A board-scoped token cannot mint boards outside its scope (TASK-157).
-    if (principal?.tokenScope?.boardId) {
-      throw new ForbiddenException("Token is scoped to one board");
-    }
+    // Board creation is account-wide `admin` (TASK-166): a board-scoped or
+    // worker/reviewer token cannot mint boards outside its mandate.
+    assertAccountWidePreset(principal, "board.create");
     return this.boards.createBoard(user.id, dto);
   }
 
@@ -79,9 +79,7 @@ export class BoardsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() body: unknown,
   ): Promise<BoardAggregate[]> {
-    if (principal?.tokenScope?.boardId) {
-      throw new ForbiddenException("Token is scoped to one board");
-    }
+    assertAccountWidePreset(principal, "board.import");
     return this.boards.importBoards(user.id, body);
   }
 
@@ -109,6 +107,8 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("board.delete")
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
   async remove(@Param("id") id: string): Promise<{ status: "ok" }> {
@@ -125,6 +125,7 @@ export class BoardsController {
   /** Pending invitations (ADMIN only), so a wrong invite can be cancelled. */
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
   @Get(":id/invitations")
   pendingInvitations(@Param("id") id: string) {
     return this.boards.listPendingInvitations(id);
@@ -132,6 +133,8 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("member.invite")
   @Post(":id/members")
   invite(
     @Param("id") id: string,
@@ -150,6 +153,8 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("member.update")
   @Patch(":id/members/:userId")
   updateMember(
     @Param("id") id: string,
@@ -170,6 +175,8 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
+  @TokenScope("admin")
+  @AgentAction("member.remove")
   @Delete(":id/members/:userId")
   @HttpCode(HttpStatus.OK)
   async removeMember(

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -354,12 +355,16 @@ describe("ApiTokenService", () => {
         async ({ data }: { data: Partial<ApiToken> }) => makeToken(data),
       );
 
-      const result = await service.create("user-1", {
-        name: "Reviewer",
-        expiresAt: null,
-        scopePreset: "reviewer",
-        trustedCi: true,
-      });
+      const result = await service.create(
+        "user-1",
+        {
+          name: "Reviewer",
+          expiresAt: null,
+          scopePreset: "reviewer",
+          trustedCi: true,
+        },
+        { allowTrustedCi: true },
+      );
 
       expect(prismaMock.apiToken.create.mock.calls[0][0].data).toMatchObject({
         scopePreset: "reviewer",
@@ -371,6 +376,17 @@ describe("ApiTokenService", () => {
         effectiveTokenScope: "reviewer",
         paused: false,
       });
+    });
+
+    it("rejects trustedCi unless the caller is a browser session", async () => {
+      await expect(
+        service.create("user-1", {
+          name: "Escalated",
+          expiresAt: null,
+          trustedCi: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
     });
 
     it("rejects a board scope the owner is not a member of", async () => {

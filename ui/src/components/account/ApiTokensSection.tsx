@@ -4,13 +4,16 @@ import {
   API_TOKEN_NAME_MAX,
   API_TOKEN_RATE_MAX,
   API_TOKEN_RATE_MIN,
+  SCOPE_PRESETS,
   type BoardSummary,
   type CreateUserTokenResponse,
+  type ScopePreset,
   type UserTokenDto,
 } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { SelectField } from "@/components/ui/select-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -45,6 +48,14 @@ const EXPIRY_PRESETS: { id: ExpiryPreset; labelKey: MessageKey }[] = [
   { id: "365", labelKey: "account.tokens.expiry365" },
 ];
 
+/** TASK-166 preset labels; the preset never raises the board role. */
+const SCOPE_PRESET_LABELS: Record<ScopePreset, MessageKey> = {
+  observer: "account.tokens.presetObserver",
+  worker: "account.tokens.presetWorker",
+  reviewer: "account.tokens.presetReviewer",
+  admin: "account.tokens.presetAdmin",
+};
+
 /**
  * The `expiresAt` to send. "Never" is an explicit `null`: the server gives a
  * token created *without* the field a 90-day default.
@@ -72,6 +83,8 @@ export function ApiTokensSection() {
   // Scopes (TASK-157): board, read-only and a per-token rate limit.
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [boardId, setBoardId] = useState("");
+  const [scopePreset, setScopePreset] = useState<ScopePreset>("worker");
+  const [trustedCi, setTrustedCi] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
   const [rateLimit, setRateLimit] = useState("");
   const [rateError, setRateError] = useState(false);
@@ -79,6 +92,19 @@ export function ApiTokensSection() {
   const [reveal, setReveal] = useState<CreateUserTokenResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<UserTokenDto | null>(null);
+  // `trustedCi` is meaningless for an observer/read-only key: scope is checked
+  // before the destructive gate, so it cannot raise the preset.
+  const trustedCiDisabled = readOnly || scopePreset === "observer";
+
+  const changeScopePreset = (value: ScopePreset) => {
+    setScopePreset(value);
+    if (value === "observer") setTrustedCi(false);
+  };
+
+  const changeReadOnly = (value: boolean) => {
+    setReadOnly(value);
+    if (value) setTrustedCi(false);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -129,6 +155,8 @@ export function ApiTokensSection() {
         name: name.trim(),
         expiresAt: expiryIso(preset),
         boardId: boardId === "" ? null : boardId,
+        scopePreset,
+        trustedCi,
         readOnly,
         rateLimitPerMinute:
           rate !== null && Number.isInteger(rate) ? rate : null,
@@ -150,6 +178,8 @@ export function ApiTokensSection() {
       setName("");
       setPreset("never");
       setBoardId("");
+      setScopePreset("worker");
+      setTrustedCi(false);
       setReadOnly(false);
       setRateLimit("");
     }
@@ -322,28 +352,90 @@ export function ApiTokensSection() {
                 >
                   {t("account.tokens.boardLabel")}
                 </label>
-                {/* Keep the native <select> semantics (value + change events)
-                    but hide the UA chevron, which rendered black regardless
-                    of the theme, and draw the app's own icon instead. */}
-                <div className="relative">
-                  <select
-                    id="token-board"
-                    data-testid="token-board"
-                    value={boardId}
-                    onChange={(event) => setBoardId(event.target.value)}
-                    className="h-9 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-9 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                {/* The native <select> popup ignores the app theme and shows
+                    a white sheet with light option text on dark dialogs. The
+                    shared SelectField keeps the same trigger footprint but
+                    renders a themed, keyboard-reachable listbox. */}
+                <SelectField
+                  id="token-board"
+                  value={boardId}
+                  ariaLabel={t("account.tokens.boardLabel")}
+                  testId="token-board"
+                  options={[
+                    { value: "", label: t("account.tokens.boardAll") },
+                    ...boards.map((board) => ({
+                      value: board.id,
+                      label: board.title,
+                    })),
+                  ]}
+                  onChange={setBoardId}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("account.tokens.presetLabel")}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="token-scope-preset"
+                      className="w-full justify-between font-normal"
+                    >
+                      {t(SCOPE_PRESET_LABELS[scopePreset])}
+                      <ChevronDown
+                        className="h-3.5 w-3.5 text-muted-foreground"
+                        aria-hidden
+                      />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuRadioGroup
+                      value={scopePreset}
+                      onValueChange={(value) =>
+                        changeScopePreset(value as ScopePreset)
+                      }
+                    >
+                      {SCOPE_PRESETS.map((item) => (
+                        <DropdownMenuRadioItem key={item} value={item}>
+                          {t(SCOPE_PRESET_LABELS[item])}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <p className="text-[11px] text-muted-foreground">
+                  {t("account.tokens.presetHint")}
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="token-trusted-ci"
+                  data-testid="token-trusted-ci"
+                  aria-label={t("account.tokens.trustedCiLabel")}
+                  checked={trustedCi}
+                  disabled={trustedCiDisabled}
+                  onCheckedChange={setTrustedCi}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <label
+                    htmlFor="token-trusted-ci"
+                    className={
+                      trustedCiDisabled
+                        ? "cursor-not-allowed text-sm text-muted-foreground"
+                        : "cursor-pointer text-sm"
+                    }
                   >
-                    <option value="">{t("account.tokens.boardAll")}</option>
-                    {boards.map((board) => (
-                      <option key={board.id} value={board.id}>
-                        {board.title}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
+                    {t("account.tokens.trustedCiLabel")}
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {trustedCiDisabled
+                      ? t("account.tokens.trustedCiUnavailable")
+                      : t("account.tokens.trustedCiHint")}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -352,7 +444,7 @@ export function ApiTokensSection() {
                   data-testid="token-read-only"
                   aria-label={t("account.tokens.readOnlyLabel")}
                   checked={readOnly}
-                  onCheckedChange={setReadOnly}
+                  onCheckedChange={changeReadOnly}
                 />
                 <label
                   htmlFor="token-read-only"
@@ -548,6 +640,14 @@ function TokenRow({
           className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"
           data-testid="token-scope"
         >
+          <span
+            className="rounded bg-muted px-1.5"
+            data-testid="token-effective-scope"
+          >
+            {t("account.tokens.effectiveScope", {
+              scope: t(SCOPE_PRESET_LABELS[token.effectiveTokenScope]),
+            })}
+          </span>
           <span className="rounded bg-muted px-1.5">
             {token.boardId
               ? t("account.tokens.scopeBoard")
@@ -556,6 +656,11 @@ function TokenRow({
           {token.readOnly ? (
             <span className="rounded bg-muted px-1.5">
               {t("account.tokens.scopeReadOnly")}
+            </span>
+          ) : null}
+          {token.trustedCi ? (
+            <span className="rounded bg-muted px-1.5">
+              {t("account.tokens.trustedCiBadge")}
             </span>
           ) : null}
           {token.rateLimitPerMinute !== null ? (

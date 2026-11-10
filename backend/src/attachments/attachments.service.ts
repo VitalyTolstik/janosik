@@ -11,6 +11,8 @@ import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import type { AuthUser } from "@/auth/auth.types";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
@@ -337,6 +339,7 @@ export class AttachmentsService {
     attachmentId: string,
     user: AuthUser,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
   ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, deletedAt: null },
@@ -374,6 +377,18 @@ export class AttachmentsService {
         select: { role: true },
       });
       if (membership?.role !== "ADMIN") throw new ForbiddenException();
+      // TASK-166: deleting another user's upload is admin + destructive.
+      // The board role was checked first; the helper then applies the token
+      // preset (admin) and the approval/trustedCi/deny policy.
+      const board = await this.prisma.board.findUnique({
+        where: { id: row.boardId },
+        select: { agentPolicy: true },
+      });
+      assertAgentRule(
+        principal,
+        board?.agentPolicy,
+        LIFECYCLE_ACTIONS["attachment.delete"],
+      );
     }
 
     const removed = await this.boardWrite.run(row.boardId, async (tx) => {

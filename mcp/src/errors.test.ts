@@ -22,6 +22,74 @@ describe("describeError", () => {
     expect(describeError(new ApiError(403, {}))).toMatch(/permission/i);
   });
 
+  it("explains scope_denied with the required preset and no blind retry", () => {
+    const message = describeError(
+      new ApiError(403, {
+        code: "scope_denied",
+        action: "DELETE_CARD",
+        requiredScope: "worker",
+        effectiveTokenScope: "observer",
+      }),
+    );
+    expect(message).toContain("DELETE_CARD");
+    expect(message).toContain("worker");
+    expect(message).toContain("Do not retry");
+  });
+
+  it("explains a board-scoped token refused on another board", () => {
+    const message = describeError(
+      new ApiError(403, {
+        code: "scope_denied",
+        reason: "board_scope",
+      }),
+    );
+    expect(message).toMatch(/different board/i);
+    expect(message).toMatch(/Do not/);
+  });
+
+  it("explains a board-role scope denial without blaming the preset", () => {
+    const message = describeError(
+      new ApiError(403, {
+        code: "scope_denied",
+        requiredRoles: ["ADMIN"],
+      }),
+    );
+    expect(message).toMatch(/board role/i);
+    expect(message).toContain("ADMIN");
+    expect(message).toMatch(/Do not/);
+  });
+
+  it("explains destructive_denied as a board-policy stop", () => {
+    const message = describeError(
+      new ApiError(403, {
+        code: "destructive_denied",
+        action: "DELETE_CARD",
+        reason: "board_policy",
+      }),
+    );
+    expect(message).toMatch(/policy blocks destructive/i);
+    expect(message).toMatch(/human/i);
+  });
+
+  it("explains pat_forbidden as a session-only route", () => {
+    expect(describeError(new ApiError(403, { code: "pat_forbidden" }))).toMatch(
+      /session-only/i,
+    );
+  });
+
+  it("explains approval_required and who can unblock it", () => {
+    const message = describeError(
+      new ApiError(409, {
+        code: "approval_required",
+        action: "DELETE_CARD",
+      }),
+    );
+    expect(message).toMatch(/approval required/i);
+    expect(message).toContain("DELETE_CARD");
+    expect(message).toMatch(/human/i);
+    expect(message).toMatch(/perform the action/i);
+  });
+
   it("explains a wip conflict with the next step", () => {
     const message = describeError(new ApiError(409, { conflict: "wip" }));
     expect(message).toMatch(/limit/i);

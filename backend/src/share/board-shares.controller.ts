@@ -15,6 +15,7 @@ import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
 import { requestAttribution } from "@/auth/request-attribution";
+import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
@@ -30,6 +31,7 @@ import { ShareService } from "./share.service";
 @Controller("boards/:id/shares")
 @UseGuards(MembershipGuard)
 @BoardRoles(Role.ADMIN)
+@TokenScope("admin")
 export class BoardSharesController {
   constructor(private readonly shares: ShareService) {}
 
@@ -39,6 +41,7 @@ export class BoardSharesController {
   }
 
   @Post()
+  @AgentAction("share.create")
   create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
@@ -66,6 +69,7 @@ export class BoardSharesController {
   }
 
   @Patch(":shareId")
+  @AgentAction("share.update")
   update(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
@@ -77,6 +81,7 @@ export class BoardSharesController {
   }
 
   @Delete(":shareId")
+  @AgentAction("share.revoke")
   revoke(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
@@ -96,6 +101,7 @@ export class BoardSharesController {
   }
 
   @Delete(":shareId/permanent")
+  @AgentAction("share.delete")
   @HttpCode(204)
   async deleteRevoked(
     @Param("id") id: string,

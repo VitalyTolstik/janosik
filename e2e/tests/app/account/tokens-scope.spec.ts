@@ -15,10 +15,11 @@ test("creates a board-scoped read-only key and shows its scope", async ({
 
   await page.getByTestId("token-create").click();
   await page.getByTestId("token-name").fill("Scoped reader");
+  await page.getByTestId("token-board").click();
   await expect(
-    page.getByTestId("token-board").locator(`option[value="${scopedId}"]`),
-  ).toHaveCount(1);
-  await page.getByTestId("token-board").selectOption(scopedId);
+    page.getByTestId(`token-board-option-${scopedId}`),
+  ).toBeVisible();
+  await page.getByTestId(`token-board-option-${scopedId}`).click();
   await page.getByTestId("token-read-only").check();
   await page.getByTestId("token-create-submit").click();
 

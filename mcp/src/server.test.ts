@@ -240,10 +240,6 @@ function fakeApi(
       action === undefined && sessionId === undefined ? 201 : 200,
     );
   }
-  if (path === "/invitations/inv1/accept" && method === "POST") {
-    // The real endpoint answers 200 with an empty body.
-    return new Response(null, { status: 200 });
-  }
   if (path === "/boards/b1/commands" && method === "POST") {
     const request = body as {
       ifMatch?: number;
@@ -415,8 +411,9 @@ describe("janosik MCP server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
-    // Pinned exactly so a dropped or renamed tool fails loudly.
-    expect(names.length).toBe(78);
+    // Pinned exactly so a dropped or renamed tool fails loudly. TASK-166
+    // removed the invitation and profile tools (session-only routes).
+    expect(names.length).toBe(74);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_set_column_accent");
@@ -425,6 +422,12 @@ describe("janosik MCP server", () => {
     expect(names).toContain("janosik_set_card_task_spec");
     expect(names).toContain("janosik_create_share");
     expect(names).toContain("janosik_upload_attachment");
+    // TASK-166: removing a link is a reversible relationship edit, not a
+    // destructive action (ADR §7.1/§13.4.6).
+    const removeLink = tools.find(
+      (tool) => tool.name === "janosik_remove_card_link",
+    );
+    expect(removeLink?.annotations?.destructiveHint).toBe(false);
     // Every tool is prefixed for coexistence with other servers.
     expect(names.every((name) => name.startsWith("janosik_"))).toBe(true);
     await client.close();
@@ -529,14 +532,17 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
-  it("accepts an invitation without reading a body", async () => {
+  it("does not register account-only tools", async () => {
     const client = await connect();
-    const result = await client.callTool({
-      name: "janosik_accept_invitation",
-      arguments: { invitationId: "inv1" },
-    });
-    expect(result.isError).toBeFalsy();
-    expect(firstText(result)).toContain("Accepted invitation inv1");
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    for (const removed of [
+      "janosik_update_profile",
+      "janosik_list_invitations",
+      "janosik_accept_invitation",
+      "janosik_decline_invitation",
+    ]) {
+      expect(names).not.toContain(removed);
+    }
     await client.close();
   });
 
@@ -669,7 +675,6 @@ describe("janosik MCP server", () => {
       "janosik_whoami",
       "janosik_invite_member",
       "janosik_create_share",
-      "janosik_accept_invitation",
     ]) {
       expect(names).not.toContain(optIn);
     }

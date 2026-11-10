@@ -76,19 +76,29 @@ you, so keep it secret.
 
 Use `Create key`, give it a `Name`, and choose when it expires: `Never`,
 `In 30 days`, `In 90 days` or `In a year`. You can also scope the key: pin it
-to one board, make it read-only (every write is refused), and give it its own
-requests-per-minute budget. If an agent only needs to read data, use a read-only
-key restricted to one board. The key itself is shown once, with a `jnk_` prefix;
-copy
-it then and store it in a password manager. The list shows each key's name,
-status (`Active`, `Expired` or `Revoked`), its scope, when it was created, when
-it was last used and when it expires. `Revoke` stops a key immediately and
-cannot be undone; a live connection opened with the key closes within about 25
-seconds.
+to one board, choose a `Scope preset` (`Observer`, `Worker`, `Reviewer` or
+`Admin`), make it read-only (every write is refused), give it its own
+requests-per-minute budget, and optionally mark it `Trusted CI`. A new key
+starts as `Worker`; the preset never raises your board role. `Observer` only
+reads, `Reviewer` may also move cards into a done column, and `Admin` may
+administer the board (members, shares, delete). Even `Admin` cannot delete
+cards, columns or labels without a human approval; `Trusted CI` is the explicit
+exception for a trusted pipeline, and a board policy can block destructive
+actions entirely. The approval request lifecycle ships in 166.5; until then a
+destructive agent call is refused with `409 approval_required` and nothing is
+applied — a human performs the action in the browser. If an agent only needs to
+read data, use an `Observer` key restricted to one board. The key itself is
+shown once, with a `jnk_` prefix; copy it then and store it in a password
+manager. The list shows each key's name, status (`Active`, `Expired` or
+`Revoked`), its effective scope, when it was created, when it was last used and
+when it expires. `Revoke` stops a key immediately and cannot be undone; a live
+connection opened with the key closes within about 25 seconds.
 
 Keys are managed only here, in a signed-in browser. A key cannot list, create
-or revoke keys, or change your password or email, so a leaked key can never
-mint a longer-lived one or lock you out of your account.
+or revoke keys, change your password or email, update the profile, or list and
+accept invitations, so a leaked key can never mint a longer-lived one, change
+your account or lock you out. A key's scope cannot be edited: create a new key
+and revoke the old one.
 
 ### Preferences
 

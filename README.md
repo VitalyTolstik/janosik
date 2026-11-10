@@ -57,7 +57,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ site/                        # @janosik/site — marketing site and documentation
 ├─ video/                       # @janosik/video — product demo clips
 ├─ mcp/                         # @janosik/mcp — the MCP server: the board as agent tools
-│  ├─ src/                      # client + 13 tool groups (71 tools), toolset gating
+│  ├─ src/                      # client + 13 tool groups (74 tools), toolset gating
 │  ├─ server.json               # MCP Registry metadata (published as io.github.vitalytolstik/janosik)
 │  └─ scripts/smoke.mjs         # live smoke test against a running instance
 ├─ skills/janosik/              # workflow guidance for AI agents using the MCP tools
@@ -363,11 +363,12 @@ Rules worth knowing:
 Janosik lets AI agents and people work on shared boards. The MCP server provides
 the tools; the skill describes a consistent workflow for using them:
 
-- **`@janosik/mcp` — the tools.** An MCP server (71 tools across 13 groups)
-  for boards, columns, cards, labels, checklists, links, comments, activity and
-  attachments. Optional toolsets add members, invitations, share links and
-  account actions. Any compatible MCP client can connect with a personal API
-  key (`jnk_…`). Writes use the same command log as the UI, so they can be
+- **`@janosik/mcp` — the tools.** An MCP server (74 tools across 13 groups)
+  for boards, columns, cards, labels, checklists, links, comments, activity,
+  attachments and agent sessions. Optional toolsets add members, share links
+  and account identity. Any compatible MCP client can connect with a personal
+  API key (`jnk_…`) whose scope preset decides what it may read and write.
+  Writes use the same command log as the UI, so they can be
   undone and stream live to other board members.
 - **`skills/janosik` — workflow guidance.** It tells the agent to read before
   writing, claim a card under a time-limited lease, keep its description,
@@ -403,9 +404,12 @@ an agent.
 
 Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex.
 `JANOSIK_APP_BASE` is only needed when the app is not at the site root (e.g.
-`/app`). By default the server registers the board-work tools; member,
-invitation, share and account tools are opt-in (`JANOSIK_MCP_TOOLSETS`), and
-attachment upload/download stays off until you set `JANOSIK_MCP_ALLOW_FS=1`.
+`/app`). By default the server registers the board-work and agent-session
+tools; member, share and account-identity tools are opt-in
+(`JANOSIK_MCP_TOOLSETS`), and attachment upload/download stays off until you set
+`JANOSIK_MCP_ALLOW_FS=1`. An API key also carries an immutable scope preset
+(`observer`, `worker`, `reviewer`, `admin`) and an optional `trustedCi` flag;
+destructive actions need a human approval unless the key is trusted CI.
 
 ### 3. Add the skill
 

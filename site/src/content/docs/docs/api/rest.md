@@ -164,8 +164,54 @@ same fields plus `actorType`; `CommentDto` carries `actorType`, `apiTokenId`,
 streams strip token/session ids and the token name. `GET /auth/me` for a PAT
 adds a non-secret `token` identity object (`scopePreset`, `trustedCi`, pause
 stamps, `effectiveTokenScope`) and a `server` block; a browser session gets
-`token: null`. `scopePreset`/`trustedCi` are persisted here but their
-destructive-action enforcement lands in 166.2, not 166.1.
+`token: null`.
+
+## Token scopes and the destructive gate
+
+Every PAT carries one immutable preset. A new key is `worker`; existing keys
+were grandfathered to `admin` + `trustedCi` (read-only keys keep effective
+`observer`). The preset is chosen when the key is created and cannot be
+changed: create a new key and revoke the old one. `readOnly` remains as a
+deprecated compatibility flag and always wins, yielding `observer`.
+
+| Preset     | Read | Ordinary content write | Done transition (`reviewer`) | Destructive | Board administration |
+| ---------- | ---- | ---------------------- | ---------------------------- | ----------- | -------------------- |
+| `observer` | yes  | no                     | no                           | no          | no                   |
+| `worker`   | yes  | yes                    | no                           | approval / `trustedCi` | no       |
+| `reviewer` | yes  | yes                    | yes                          | approval / `trustedCi` | no       |
+| `admin`    | yes  | yes                    | yes                          | approval / `trustedCi` | yes      |
+
+A preset never raises the board role: an `admin` key owned by a MEMBER cannot
+manage members, and a `worker` key owned by an ADMIN cannot delete a card
+without approval. Destructive actions require a human approval unless the key
+has `trustedCi`; `Board.agentPolicy.destructive = "deny"` is a hard block that
+even `trustedCi` cannot bypass. Approval does not raise scope: a `worker` key
+that needs `admin` gets `scope_denied`, not `approval_required`.
+
+Board-scoped keys are limited to their board and cannot create or import
+boards. Account routes (profile writes, key management, invitations, exports)
+and their sensitive reads are session-only: a PAT gets `403 pat_forbidden`.
+Identity reads (`GET /auth/me`, avatar) remain available.
+
+Error codes are additive and stable:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `scope_denied` | 403 | the preset/board role does not allow the action; preset denial carries `requiredScope`/`action`, board-role denial `requiredRoles`, and a board-scoped token on another board `reason: "board_scope"` |
+| `destructive_denied` | 403 | the board policy is `destructive: "deny"`; `reason: "board_policy"` |
+| `approval_required` | 409 | a destructive action has no approval; the request is refused, nothing is applied |
+| `pat_forbidden` | 403 | an account route is session-only |
+| `pat_read_only` | 403 | legacy read-only key refused a write |
+
+The approval request API (`POST /boards/:id/approvals`) and the decision
+endpoint ship in 166.5. Until then `approval_required` is a refusal, not a
+queued request: nothing is applied, and a human performs the action in the
+browser.
+
+Browser sessions do not pass through the preset/destructive gate; their board
+role rules are unchanged (including ordinary undo). A PAT can never send
+`RESTORE_*` commands (`scope_denied`) — an agent uses compensating edits or asks
+a human to revert a run.
 
 ## Attachments
 
