@@ -273,6 +273,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   glass, header band, dot, signature). The accent is a normal undoable
   command, survives reloads and imports, and appears in other participants'
   boards live.
+- TASK-166.13 agents console: a new `/agents` page lists every agent session
+  the caller can see across their boards, grouped by personal API token, with
+  board/token/status/time filters, live heartbeat/stale state, current card and
+  run. The agent detail page shows all of that token's sessions; a board ADMIN
+  can pause/resume with a reason or end a session with a final status and
+  summary, while MEMBER/VIEWER keep a read-only view. New `agent` SSE frames
+  refresh the affected board without a reload, with a slow poll fallback.
+  Watch now separates two PATs of one account, groups agents by token/session
+  and shows their token/session/run ids; card History and agent comments carry
+  the same attribution next to the unchanged human name. EN/RU copy and the
+  user-guide section cover the console.
 
 ### Changed
 

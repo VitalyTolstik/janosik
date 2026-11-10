@@ -45,6 +45,21 @@ import { allBoardsArchived } from "@/utils/board-list";
 const AdminApp = lazy(() => import("@/admin/AdminApp"));
 
 /**
+ * The agents console spans every board and is not part of the board view
+ * bundle; lazy-load it so ordinary board users never download it (TASK-166.13).
+ */
+const AgentsPage = lazy(() =>
+  import("@/components/agents/AgentsPage").then((module) => ({
+    default: module.AgentsPage,
+  })),
+);
+const AgentDetailPage = lazy(() =>
+  import("@/components/agents/AgentDetailPage").then((module) => ({
+    default: module.AgentDetailPage,
+  })),
+);
+
+/**
  * The public read-only board share (TASK-58) is its own lazy chunk, outside
  * the auth shell: an anonymous visitor downloading a link must not pull in
  * the app's session/board machinery.
@@ -187,6 +202,8 @@ function BoardShell() {
       <Routes>
         <Route path={routes.home} element={<NoBoardRoute />} />
         <Route path={routes.boardPattern} element={<BoardRoute />} />
+        <Route path={routes.agents} element={<AgentsPage />} />
+        <Route path={routes.agentPattern} element={<AgentDetailPage />} />
         {/* The support "view as" entry (U-8): the token was taken from
             the hash at boot; the session lands on the home redirect. */}
         <Route

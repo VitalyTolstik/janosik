@@ -7,6 +7,8 @@ import type {
 } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
+import { AgentAttribution } from "@/components/agents/AgentAttribution";
+import { shortId } from "@/components/agents/agent-model";
 import { WatchFeedSkeleton } from "@/components/board/ViewSkeleton";
 import { SkeletonRegion } from "@/components/ui/skeleton";
 import { useHour12, useI18n } from "@/i18n";
@@ -34,7 +36,13 @@ const AGENT_WINDOW_MS = 180_000;
 
 /** One recently-active agent and how long ago it last acted. */
 interface AgentActivity {
+  /** Token/session identity: two PATs of one account are two agents. */
+  key: string;
   actorId: string;
+  tokenId?: string;
+  sessionId?: string;
+  runId?: string;
+  agentName?: string;
   ageMs: number;
 }
 
@@ -92,8 +100,22 @@ export function WatchView({ boardId }: WatchViewProps) {
   const [activeAgents, setActiveAgents] = useState<AgentActivity[]>([]);
   // Last action time per agent, kept across page loads so membership is a
   // real sliding window (AGENT_WINDOW_MS), not "whoever is on the newest page"
-  // — under a swarm 50 rows can span a few seconds.
-  const agentSeen = useRef(new Map<string, number>());
+  // — under a swarm 50 rows can span a few seconds. The key is the token (or
+  // the session when no token id is present): TASK-166 made two PATs of one
+  // account distinguishable, and the rail must not merge them back.
+  const agentSeen = useRef(
+    new Map<
+      string,
+      {
+        at: number;
+        actorId: string;
+        tokenId?: string;
+        sessionId?: string;
+        runId?: string;
+        agentName?: string;
+      }
+    >(),
+  );
 
   // Cursor that fetches a given page (page 0 has none). A missing entry means
   // the page is not reachable yet — the chain is discovered by walking.
@@ -118,16 +140,38 @@ export function WatchView({ boardId }: WatchViewProps) {
     const seen = agentSeen.current;
     for (const entry of items) {
       if (entry.actorType !== "agent" || !entry.actorId) continue;
-      seen.set(entry.actorId, Math.max(seen.get(entry.actorId) ?? 0, entry.at));
+      const key =
+        entry.apiTokenId ?? entry.agentSessionId ?? `actor:${entry.actorId}`;
+      const current = seen.get(key);
+      // Keep the newest identity snapshot (token name/session id) with the
+      // newest timestamp; older pages must not overwrite it with NULLs.
+      if (current === undefined || entry.at >= current.at) {
+        seen.set(key, {
+          at: Math.max(current?.at ?? 0, entry.at),
+          actorId: entry.actorId,
+          tokenId: entry.apiTokenId ?? current?.tokenId,
+          sessionId: entry.agentSessionId ?? current?.sessionId,
+          runId: entry.runId ?? current?.runId ?? undefined,
+          agentName: entry.agentName ?? current?.agentName,
+        });
+      }
     }
     const now = Date.now();
     const active: AgentActivity[] = [];
-    for (const [actorId, lastAt] of seen) {
-      if (now - lastAt > AGENT_WINDOW_MS) {
-        seen.delete(actorId);
+    for (const [key, last] of seen) {
+      if (now - last.at > AGENT_WINDOW_MS) {
+        seen.delete(key);
         continue;
       }
-      active.push({ actorId, ageMs: now - lastAt });
+      active.push({
+        key,
+        actorId: last.actorId,
+        tokenId: last.tokenId,
+        sessionId: last.sessionId,
+        runId: last.runId,
+        agentName: last.agentName,
+        ageMs: now - last.at,
+      });
     }
     active.sort((a, b) => a.ageMs - b.ageMs);
     setActiveAgents(active);
@@ -417,20 +461,29 @@ export function WatchView({ boardId }: WatchViewProps) {
               <ul data-testid="watch-agents-list">
                 {activeAgents.map((agent) => {
                   const member = membersById.get(agent.actorId);
-                  const name = userLabel(
+                  const human = userLabel(
                     member?.displayName ?? null,
                     member?.email ?? agent.actorId,
                   );
+                  const name = agent.agentName ?? human;
                   return (
                     <li
-                      key={agent.actorId}
+                      key={agent.key}
                       className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-sm last:border-b-0"
                     >
-                      <span
-                        className="min-w-0 truncate text-foreground/90"
-                        title={name}
-                      >
-                        {name}
+                      <span className="min-w-0" title={name}>
+                        <span className="block truncate text-foreground/90">
+                          {name}
+                        </span>
+                        <span
+                          className="block truncate text-[10px] text-muted-foreground/70"
+                          title={`${human}${agent.sessionId ? ` · session ${agent.sessionId}` : ""}`}
+                        >
+                          {human}
+                          {agent.sessionId
+                            ? ` · ${t("agents.attribution.session")} ${shortId(agent.sessionId, 6)}`
+                            : ""}
+                        </span>
                       </span>
                       <span
                         className="shrink-0 tabular-nums text-muted-foreground"
@@ -849,6 +902,16 @@ function WatchRow({
               </span>
             ))}
           </span>
+        ) : null}
+        {entry.actorType === "agent" ? (
+          <AgentAttribution
+            apiTokenId={entry.apiTokenId}
+            agentSessionId={entry.agentSessionId}
+            runId={entry.runId}
+            agentName={entry.agentName}
+            compact
+            className="ml-2 align-baseline"
+          />
         ) : null}
         {canExpand ? (
           <button

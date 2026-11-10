@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { FIELD_KEYS, sentenceFor } from "@/utils/activity";
+import { AgentAttribution } from "@/components/agents/AgentAttribution";
 import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSegment } from "@/utils/diff-words";
 import { foldHistory } from "@/utils/history-fold";
@@ -346,6 +347,16 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
             {formatRelative(entry.at, lang, Date.now(), hour12)}
           </time>
         </div>
+        {entry.actorType === "agent" &&
+        (entry.apiTokenId || entry.agentSessionId || entry.runId) ? (
+          <AgentAttribution
+            apiTokenId={entry.apiTokenId}
+            agentSessionId={entry.agentSessionId}
+            runId={entry.runId}
+            agentName={entry.agentName}
+            className="mt-0.5"
+          />
+        ) : null}
         {changes && changes.length > 0 ? (
           <ul className="mt-1 space-y-0.5" data-testid="history-diff">
             {changes.map((change, index) => {

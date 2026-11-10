@@ -190,6 +190,34 @@ describe("CardHistory", () => {
     );
   });
 
+  it("shows the token, session and run behind an agent command (TASK-166.13)", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      commandEntry({
+        id: "agent",
+        actorType: "agent",
+        apiTokenId: "token-qa-123456",
+        agentSessionId: "session-abcdef",
+        runId: "run-987654",
+        agentName: "QA agent",
+      }),
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+
+    const attribution = await screen.findByTestId("agent-attribution");
+    expect(attribution).toHaveTextContent("QA agent");
+    expect(screen.getByTestId("agent-attribution-token")).toHaveTextContent(
+      "token-qa",
+    );
+    expect(screen.getByTestId("agent-attribution-session")).toHaveTextContent(
+      "session-",
+    );
+    expect(screen.getByTestId("agent-attribution-run")).toHaveTextContent(
+      "run-9876",
+    );
+  });
+
   it("renders the priority sentence with the localized level name", async () => {
     const server = new FakeServer();
     server.seedActivity("card-1", [

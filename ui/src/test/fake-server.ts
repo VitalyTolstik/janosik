@@ -2,6 +2,7 @@ import {
   boardReducer,
   validateBoardAction,
   type ActivityFeedEntry,
+  type AgentSessionDto,
   type ActivitySseEvent,
   type AuthResponseDto,
   type AuthUserDto,
@@ -92,6 +93,8 @@ export class FakeServer {
   };
   /** Personal API tokens of the account (TASK-36.1). */
   readonly apiTokens: UserTokenDto[] = [];
+  /** Agent sessions exposed by the board-scoped TASK-166.1 API. */
+  readonly agentSessions: AgentSessionDto[] = [];
   refreshValid = true;
   /** Email-change (TASK-51) knobs the tests control. */
   emailChangeCode = "123456";
@@ -473,6 +476,8 @@ export class FakeServer {
       return json(200, {
         ...this.publicUser(),
         impersonatedBy: this.impersonatedBy,
+        token: null,
+        session: null,
       });
     }
     if (path === "/api/v1/auth/password" && method === "POST") {
@@ -729,6 +734,74 @@ export class FakeServer {
           searchParams,
         ),
       );
+    }
+
+    // TASK-166.1 agent sessions: read-only list/detail plus the TASK-166.3
+    // pause/resume and the ADMIN end flow used by the agents console tests.
+    const sessionsMatch = /^\/api\/v1\/boards\/([^/]+)\/agent-sessions$/.exec(
+      path,
+    );
+    if (sessionsMatch !== null && method === "GET") {
+      const boardId = sessionsMatch[1];
+      const active = searchParams.get("active");
+      const rows = this.agentSessions.filter(
+        (session) =>
+          session.boardId === boardId &&
+          (active !== "1" || session.endedAt === null),
+      );
+      return json(200, structuredClone(rows));
+    }
+    const sessionMatch =
+      /^\/api\/v1\/boards\/([^/]+)\/agent-sessions\/([^/]+)$/.exec(path);
+    if (sessionMatch !== null && method === "GET") {
+      const row = this.agentSessions.find(
+        (session) =>
+          session.boardId === sessionMatch[1] && session.id === sessionMatch[2],
+      );
+      return row === undefined
+        ? json(404, { message: "Agent session not found" })
+        : json(200, structuredClone(row));
+    }
+    const sessionActionMatch =
+      /^\/api\/v1\/boards\/([^/]+)\/agent-sessions\/([^/]+)\/(pause|resume|end)$/.exec(
+        path,
+      );
+    if (sessionActionMatch !== null && method === "POST") {
+      const row = this.agentSessions.find(
+        (session) =>
+          session.boardId === sessionActionMatch[1] &&
+          session.id === sessionActionMatch[2],
+      );
+      if (row === undefined) {
+        return json(404, { message: "Agent session not found" });
+      }
+      const payload = (body ?? {}) as {
+        reason?: string;
+        status?: AgentSessionDto["status"];
+        summary?: string;
+      };
+      if (sessionActionMatch[3] === "pause") {
+        row.paused = true;
+        row.pausedAt = Date.now();
+        row.pausedBy = this.account.id;
+        row.pausedReason = payload.reason ?? null;
+        row.pauseScope = "session";
+      } else if (sessionActionMatch[3] === "resume") {
+        row.paused = false;
+        row.pausedAt = null;
+        row.pausedBy = null;
+        row.pausedReason = null;
+        row.pauseScope = null;
+      } else {
+        row.status = payload.status ?? "completed";
+        row.endedAt = Date.now();
+        row.endReason = row.status;
+        row.paused = false;
+        row.pausedAt = null;
+        row.pauseScope = null;
+        if (payload.summary !== undefined) row.summary = payload.summary;
+      }
+      return json(200, structuredClone(row));
     }
 
     const commandMatch = /^\/api\/v1\/boards\/([^/]+)\/commands$/.exec(path);
