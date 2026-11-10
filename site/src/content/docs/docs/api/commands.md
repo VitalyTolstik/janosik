@@ -237,9 +237,25 @@ Auth and role are the same as the single endpoint. The body is
 ```json
 {
   "commands": [
-    { "commandId": "…", "action": { "…": "…" } },
-    { "commandId": "…", "action": { "…": "…" } }
-  ]
+    {
+      "commandId": "cg-001",
+      "action": {
+        "type": "ADD_CARD",
+        "newCardId": "card-1",
+        "columnId": "col-1",
+        "title": "Bulk card"
+      }
+    },
+    {
+      "commandId": "cg-002",
+      "action": {
+        "type": "SET_CARD_PRIORITY",
+        "cardId": "card-1",
+        "priority": "high"
+      }
+    }
+  ],
+  "clientRunId": "bulk-import-001"
 }
 ```
 
@@ -251,6 +267,7 @@ as for the single endpoint. The response is `CommandBatchResponse`:
 
 ```json
 {
+  "runId": "run-01",
   "results": [
     { "seq": 42, "versions": { "card:abc": 7 } },
     { "seq": 43, "versions": { "card:abc": 8 } }

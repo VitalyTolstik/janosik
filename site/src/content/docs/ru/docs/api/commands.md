@@ -244,9 +244,25 @@ POST /api/v1/boards/:id/commands/batch
 ```json
 {
   "commands": [
-    { "commandId": "…", "action": { "…": "…" } },
-    { "commandId": "…", "action": { "…": "…" } }
-  ]
+    {
+      "commandId": "cg-001",
+      "action": {
+        "type": "ADD_CARD",
+        "newCardId": "card-1",
+        "columnId": "col-1",
+        "title": "Bulk card"
+      }
+    },
+    {
+      "commandId": "cg-002",
+      "action": {
+        "type": "SET_CARD_PRIORITY",
+        "cardId": "card-1",
+        "priority": "high"
+      }
+    }
+  ],
+  "clientRunId": "bulk-import-001"
 }
 ```
 
@@ -258,6 +274,7 @@ write-локом доски — один лок, одна загрузка аг�
 
 ```json
 {
+  "runId": "run-01",
   "results": [
     { "seq": 42, "versions": { "card:abc": 7 } },
     { "seq": 43, "versions": { "card:abc": 8 } }
