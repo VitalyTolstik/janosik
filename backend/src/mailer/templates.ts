@@ -94,6 +94,58 @@ export function verificationCodeEmail(
   };
 }
 
+/**
+ * TASK-166: the one-time code an OAuth-only account receives before the
+ * self-service `DELETE /users/me`. It is deliberately worded as a warning,
+ * not a routine confirmation.
+ */
+export function accountDeletionCodeEmail(
+  code: string,
+  minutes: number | string,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  if (locale === "ru") {
+    const title = "Удаление аккаунта";
+    const text = [
+      title,
+      "",
+      `Ваш код: ${code}`,
+      "",
+      `Код действует ${minutes} минут и работает один раз.`,
+      "Если вы не запрашивали удаление аккаунта, смените пароль и проигнорируйте письмо.",
+    ].join("\n");
+    return {
+      subject: `${BRAND}: код удаления аккаунта ${code}`,
+      text,
+      html: shell(
+        title,
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Введите этот код, чтобы подтвердить удаление аккаунта:</p>
+         <span ${codeStyleAttr()}>${code}</span>
+         <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Код действует ${minutes} минут и работает один раз.<br>Если вы не запрашивали удаление — смените пароль и проигнорируйте письмо.</p>`,
+      ),
+    };
+  }
+  const title = "Delete your account";
+  const text = [
+    title,
+    "",
+    `Your code: ${code}`,
+    "",
+    `The code expires in ${minutes} minutes and works once.`,
+    "If you did not request account deletion, change your password and ignore this message.",
+  ].join("\n");
+  return {
+    subject: `${BRAND}: account deletion code ${code}`,
+    text,
+    html: shell(
+      title,
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Enter this code to confirm account deletion:</p>
+       <span ${codeStyleAttr()}>${code}</span>
+       <p style="margin:0 0 8px 0;font-size:13px;line-height:1.6;color:#52525b;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">The code expires in ${minutes} minutes and works once.<br>If you did not request deletion, change your password and ignore this message.</p>`,
+    ),
+  };
+}
+
 /** A single-use, high-entropy password recovery code. */
 export function passwordResetEmail(
   code: string,

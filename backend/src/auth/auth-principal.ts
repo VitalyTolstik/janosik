@@ -49,6 +49,12 @@ export interface AuthPrincipal {
    * impersonates this user (TASK-59); `null` for ordinary sessions and PATs.
    */
   impersonatedBy?: string | null;
+  /**
+   * TASK-166: how a browser JWT authenticated — `password` (the default) or
+   * `oauth`. A PAT has no value. `GET /auth/me` exposes it so the account
+   * panel can send the current access token as `oauthProof`.
+   */
+  authMethod?: "password" | "oauth";
 }
 
 /** The request bits the auth layer reads/writes. */

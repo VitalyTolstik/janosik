@@ -256,6 +256,7 @@ that matter most:
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.2.0`). |
 | `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = no delivery; registration auto-verifies and production logs omit message contents. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
+| `MAX_BOARDS_PER_USER` | `0` | Server-mode board cap per account; `0` = unlimited (product default). Local/offline mode keeps its 10-board localStorage guard. |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` well under `POSTGRES_MAX_CONNECTIONS`. |
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id (`X-Request-Id`). `0` disables it. |

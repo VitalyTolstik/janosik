@@ -20,6 +20,7 @@ import {
 } from "@janosik/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
@@ -71,7 +72,10 @@ export interface AuthenticatedToken {
  */
 @Injectable()
 export class ApiTokenService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly securityAudit: SecurityAuditService,
+  ) {}
 
   /** Only the sha256 hash is persisted; also reused by the password change. */
   hashToken(raw: string): string {
@@ -205,6 +209,20 @@ export class ApiTokenService {
       },
     });
     // The plaintext leaves the server exactly here, exactly once.
+    await this.securityAudit.record({
+      userId,
+      actorId: userId,
+      action: "token.created",
+      targetType: "api_token",
+      targetId: created.id,
+      details: {
+        name: created.name,
+        scopePreset: created.scopePreset,
+        trustedCi: created.trustedCi,
+        boardId: created.boardId,
+        readOnly: created.readOnly,
+      },
+    });
     return { token, apiToken: toUserTokenDto(created) };
   }
 
@@ -272,10 +290,24 @@ export class ApiTokenService {
     if (!token) {
       throw new NotFoundException("API token not found");
     }
-    await this.prisma.apiToken.updateMany({
+    const result = await this.prisma.apiToken.updateMany({
       where: { id: tokenId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (result.count > 0) {
+      await this.securityAudit.record({
+        userId,
+        actorId: userId,
+        action: "token.revoked",
+        targetType: "api_token",
+        targetId: tokenId,
+        details: {
+          name: token.name,
+          scopePreset: token.scopePreset,
+          trustedCi: token.trustedCi,
+        },
+      });
+    }
   }
 
   /**

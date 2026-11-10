@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { ValidationPipe } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
-import { MAX_IMPORT_BYTES } from "@janosik/shared";
+import { MAX_COMMAND_BODY_BYTES, MAX_IMPORT_BYTES } from "@janosik/shared";
 import { json } from "express";
 import type { NextFunction, Request, Response } from "express";
 import cookieParser from "cookie-parser";
@@ -12,15 +12,21 @@ import { requestContext } from "./request-context";
 
 /** JSON body cap for every route that is not import/commands. */
 export const DEFAULT_JSON_LIMIT = "256kb";
+const DEFAULT_JSON_LIMIT_BYTES = 256 * 1024;
 
 /**
- * Routes allowed the large body: `POST /boards/import` and
- * `POST /boards/:id/commands` (plus its `batch` sibling, TASK-160, and the
- * admin board-content editor, which submits the same commands on the owner's
- * behalf).
+ * TASK-166 route-specific body caps. The import envelope and a command/plan
+ * body are deliberately different: an import may be 25 MB, while a single
+ * command batch is capped at 10 MB so it cannot inherit the import budget.
  */
-const LARGE_BODY_ROUTE =
-  /^\/api\/v1\/(boards\/import|boards\/[^/]+\/commands(?:\/batch)?|admin\/boards\/[^/]+\/commands(?:\/batch)?)\/?$/;
+const IMPORT_BODY_ROUTE = /^\/api\/v1\/boards\/import\/?$/;
+const COMMAND_BODY_ROUTE =
+  /^\/api\/v1\/(?:boards\/[^/]+\/(?:commands(?:\/batch)?|plans(?:\/apply)?)|admin\/boards\/[^/]+\/commands(?:\/batch)?)\/?$/;
+
+interface BodyParserError extends Error {
+  type?: string;
+  status?: number;
+}
 
 /**
  * The HTTP pipeline shared by main.ts and the e2e specs, so tests always run
@@ -74,20 +80,55 @@ export function setupApp(app: INestApplication): void {
     }),
   );
   app.use(cookieParser());
-  // JSON body limits. Only two routes legitimately carry big bodies: the
-  // board import (up to MAX_IMPORT_BYTES) and the command endpoint (a large
-  // RESTORE_* must reach validation instead of dying in the parser —
-  // `MAX_COMMAND_BYTES` still caps one command inside the service).
-  // Everything else gets `DEFAULT_JSON_LIMIT`, so an unauthenticated
-  // `POST /auth/login` can no longer make the server buffer and parse 5 MB.
+  // JSON body limits (TASK-166): three route classes, one parser each.
+  // Import may carry a 25 MB envelope; a command/plan body is capped at
+  // 10 MB (`MAX_COMMAND_BYTES` still caps one command inside the service);
+  // everything else gets `DEFAULT_JSON_LIMIT`, so an unauthenticated
+  // `POST /auth/login` can no longer make the server buffer a large body.
   const server = app as NestExpressApplication;
-  const large = json({ limit: MAX_IMPORT_BYTES });
-  const small = json({ limit: DEFAULT_JSON_LIMIT });
-  server.use((req: Request, res: Response, next: NextFunction) =>
-    (LARGE_BODY_ROUTE.test(req.path) ? large : small)(req, res, next),
-  );
+  const importParser = json({ limit: MAX_IMPORT_BYTES });
+  const commandParser = json({ limit: MAX_COMMAND_BODY_BYTES });
+  const smallParser = json({ limit: DEFAULT_JSON_LIMIT });
+  server.use((req: Request, res: Response, next: NextFunction) => {
+    const path = req.path;
+    const parser = IMPORT_BODY_ROUTE.test(path)
+      ? importParser
+      : COMMAND_BODY_ROUTE.test(path)
+        ? commandParser
+        : smallParser;
+    const limit = IMPORT_BODY_ROUTE.test(path)
+      ? MAX_IMPORT_BYTES
+      : COMMAND_BODY_ROUTE.test(path)
+        ? MAX_COMMAND_BODY_BYTES
+        : DEFAULT_JSON_LIMIT_BYTES;
+    parser(req, res, (error?: BodyParserError) => {
+      if (error === undefined) {
+        next();
+        return;
+      }
+      // TASK-166: an oversized body is a machine-readable 413, not a generic
+      // parser error. Other parser failures keep their normal path.
+      if (error.type === "entity.too.large") {
+        res.status(413).json({
+          statusCode: 413,
+          code: "payload_too_large",
+          message: `Request body exceeds the ${formatBytes(limit)} limit`,
+          limit,
+          retryable: false,
+        });
+        return;
+      }
+      next(error);
+    });
+  });
   // Nest's own parser stays registered but never sees an unparsed body.
   server.useBodyParser("json", { limit: MAX_IMPORT_BYTES });
   app.setGlobalPrefix("api/v1");
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+}
+
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${Math.round(bytes / (1024 * 1024))} MB`
+    : `${Math.round(bytes / 1024)} KB`;
 }

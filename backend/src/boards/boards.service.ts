@@ -9,13 +9,18 @@ import { Role, Prisma } from "@prisma/client";
 import type {
   BoardAggregate,
   BoardCardSearchResult,
-  BoardEnvelope,
+  BoardImportPreviewDto,
   BoardMemberDto,
   BoardPendingInvitationDto,
   BoardState,
   BoardSummary,
 } from "@janosik/shared";
-import { LIMITS, parseExport, serializeExport } from "@janosik/shared";
+import {
+  LIMITS,
+  parseExport,
+  parseExportValue,
+  serializeExport,
+} from "@janosik/shared";
 import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
@@ -32,6 +37,11 @@ import {
   toBoardSummary,
   toMemberDto,
 } from "./board-aggregate";
+import {
+  assertBoardExportSize,
+  assertBoardQuota,
+  lockBoardQuota,
+} from "./board-limits";
 import { persistBoard } from "./board-import";
 import type { CreateBoardDto } from "./dto/create-board.dto";
 import type { InviteMemberDto } from "./dto/invite-member.dto";
@@ -61,8 +71,7 @@ export class BoardsService {
     private readonly realtime: RealtimeService,
   ) {}
 
-  /**
-   * Boards where the caller is a member (§7.4). Pending invitations don't
+  /** Boards where the caller is a member (§7.4). Pending invitations don't
    * count, and neither does an expired VIEWER (TASK-147, B4): the row still
    * exists until a request lazily cleans it, so the expiry must be in the
    * query or a lapsed guest keeps the board in their listing.
@@ -145,18 +154,26 @@ export class BoardsService {
     if (title.length === 0) {
       throw new BadRequestException("title must not be blank");
     }
-    const board = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.board.create({ data: { title } });
-      await tx.boardMember.create({
-        data: {
-          boardId: created.id,
-          userId,
-          role: Role.ADMIN,
-          acceptedAt: new Date(),
-        },
-      });
-      return created;
-    });
+    const board = await this.prisma.$transaction(
+      async (tx) => {
+        // TASK-166 D19: the count and the insert share one transaction and
+        // one per-account advisory lock, so two parallel creates cannot both
+        // slip past an operator cap.
+        await lockBoardQuota(tx, userId);
+        await assertBoardQuota(tx, userId, 1);
+        const created = await tx.board.create({ data: { title } });
+        await tx.boardMember.create({
+          data: {
+            boardId: created.id,
+            userId,
+            role: Role.ADMIN,
+            acceptedAt: new Date(),
+          },
+        });
+        return created;
+      },
+      { timeout: 15_000, maxWait: 10_000 },
+    );
     return this.getAggregate(board.id);
   }
 
@@ -263,7 +280,27 @@ export class BoardsService {
    * the only record of who may see a restored board); the purge job reclaims
    * them with the rest of the subtree.
    */
-  async deleteBoard(boardId: string): Promise<void> {
+  async deleteBoard(
+    boardId: string,
+    actorId: string,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+  ): Promise<void> {
+    const board = await this.prisma.board.findUnique({
+      where: { id: boardId },
+      select: {
+        title: true,
+        members: {
+          where: { role: Role.ADMIN, acceptedAt: { not: null } },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { userId: true },
+        },
+      },
+    });
+    if (!board) {
+      throw new NotFoundException("Board not found");
+    }
+    const ownerId = board.members[0]?.userId ?? actorId;
     await this.boardWrite.run(boardId, async (tx) => {
       const now = new Date();
 
@@ -323,6 +360,21 @@ export class BoardsService {
       await tx.board.update({
         where: { id: boardId },
         data: { deletedAt: now },
+      });
+      // TASK-166: a board delete is account-contour accountability, not a
+      // board content event. The row survives the soft-delete + purge.
+      await tx.securityAuditLog.create({
+        data: {
+          userId: ownerId,
+          actorId,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          action: "board.deleted",
+          targetType: "board",
+          targetId: boardId,
+          details: { boardTitle: board.title },
+        },
       });
     });
   }
@@ -648,15 +700,97 @@ export class BoardsService {
    * Export the board as the shared envelope (the UI file format), readable
    * by every member including VIEWER (§7.4).
    */
-  async exportBoard(boardId: string): Promise<BoardEnvelope> {
+  /**
+   * Preflight used by both the single-board export and the account bundle:
+   * `pg_column_size` catches a grossly oversized board before `getAggregate`
+   * allocates it. The exact 25 MB check still runs on the serialized string.
+   */
+  async assertExportFitsPreflight(boardId: string): Promise<void> {
+    const [estimate] = await this.prisma.$queryRaw<Array<{ bytes: bigint }>>`
+      SELECT (
+        COALESCE((SELECT SUM(pg_column_size(c.*))
+          FROM "Card" c JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(col.*))
+          FROM "Column" col
+          WHERE col."boardId" = ${boardId} AND col."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(l.*))
+          FROM "Label" l
+          WHERE l."boardId" = ${boardId} AND l."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(cl.*))
+          FROM "CardLink" cl
+          WHERE cl."boardId" = ${boardId} AND cl."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(ca.*))
+          FROM "CardLabel" ca
+          JOIN "Card" c ON c.id = ca."cardId"
+          JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(ch.*))
+          FROM "Checklist" ch
+          JOIN "Card" c ON c.id = ch."cardId"
+          JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL
+            AND ch."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(pg_column_size(ci.*))
+          FROM "ChecklistItem" ci
+          JOIN "Checklist" ch ON ch.id = ci."checklistId"
+          JOIN "Card" c ON c.id = ch."cardId"
+          JOIN "Column" col ON col.id = c."columnId"
+          WHERE col."boardId" = ${boardId} AND c."deletedAt" IS NULL
+            AND ch."deletedAt" IS NULL AND ci."deletedAt" IS NULL), 0)
+      )::bigint AS bytes
+    `;
+    assertBoardExportSize(Number(estimate?.bytes ?? 0));
+  }
+
+  async exportBoardSerialized(boardId: string): Promise<string> {
+    await this.assertExportFitsPreflight(boardId);
+    // `getAggregate` already carries `agentPolicy` (absent = defaults); it is
+    // the only TASK-166 field that belongs in an export. Pause state and
+    // policy version are operational and never travel.
     const board = await this.getAggregate(boardId);
-    // serializeExport owns the envelope shape; round-trip it back to an
-    // object so the endpoint answers JSON rather than a JSON string.
-    return JSON.parse(serializeExport([board])) as BoardEnvelope;
+    const serialized = serializeExport([board]);
+    // TASK-166.6: the guard runs once, on the exact string the controller
+    // streams. No JSON.parse → re-serialize round trip.
+    assertBoardExportSize(Buffer.byteLength(serialized, "utf8"));
+    return serialized;
+  }
+
+  /** `POST /boards/import?dryRun=1`: validate and count, write nothing. */
+  async previewImport(
+    userId: string,
+    body: unknown,
+  ): Promise<BoardImportPreviewDto> {
+    const boards = this.parseEnvelope(body);
+    if (boards.length === 0) {
+      throw new BadRequestException("The envelope contains no boards");
+    }
+    let withinLimit = true;
+    try {
+      await assertBoardQuota(this.prisma, userId, boards.length);
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        withinLimit = false;
+      } else {
+        throw error;
+      }
+    }
+    return {
+      boards: boards.length,
+      cards: boards.reduce(
+        (sum, board) => sum + Object.keys(board.cards).length,
+        0,
+      ),
+      columns: boards.reduce((sum, board) => sum + board.columns.length, 0),
+      labels: boards.reduce((sum, board) => sum + board.labels.length, 0),
+      withinLimit,
+    };
   }
 
   /** Import a board envelope, atomically (TASK-149, B16). */
   async importBoards(userId: string, body: unknown): Promise<BoardAggregate[]> {
+    // The server cap is enforced inside the transaction (below), so this
+    // parse only checks structure; `null` disables the local 10-board guard.
     const boards = this.parseEnvelope(body);
     if (boards.length === 0) {
       throw new BadRequestException("The envelope contains no boards");
@@ -665,6 +799,8 @@ export class BoardsService {
     try {
       createdIds = await this.prisma.$transaction(
         async (tx) => {
+          await lockBoardQuota(tx, userId);
+          await assertBoardQuota(tx, userId, boards.length);
           const ids: string[] = [];
           for (const board of boards) {
             ids.push(await persistBoard(tx, board, userId));
@@ -690,9 +826,13 @@ export class BoardsService {
    * `parseExport` (which runs the lenient `normalizeBoards` clamp mode).
    */
   private parseEnvelope(body: unknown): BoardState {
-    const raw = typeof body === "string" ? body : JSON.stringify(body ?? null);
     try {
-      return parseExport(raw);
+      // Express has already parsed a normal JSON body; only a raw string
+      // (legacy/multipart path) needs JSON.parse. TASK-166.6 removes the old
+      // stringify → parse round trip for the common case.
+      return typeof body === "string"
+        ? parseExport(body, { maxBoards: null })
+        : parseExportValue(body, { maxBoards: null });
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : "Invalid export file",

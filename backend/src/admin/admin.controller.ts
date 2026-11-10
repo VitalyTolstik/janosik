@@ -18,6 +18,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { env } from "@/config/env";
 import { cookieSecure } from "@/config/security";
@@ -622,6 +623,7 @@ export class AdminController {
   }
 
   @Get("users/:id/export")
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   async exportUser(
     @Param("id") id: string,
     @CurrentAdmin() admin: AdminPrincipal,
@@ -635,6 +637,7 @@ export class AdminController {
 
   /** Queues a data export (small accounts build inline and return `ready`). */
   @Post("users/:id/export")
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   async requestExport(
     @Param("id") id: string,
     @CurrentAdmin() admin: AdminPrincipal,

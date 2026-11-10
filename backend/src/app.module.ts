@@ -8,6 +8,7 @@ import Redis from "ioredis";
 import { RedisThrottlerStorage } from "@/common/redis-throttler-storage";
 import { principalTracker } from "@/common/throttle-tracker";
 import { PrismaModule } from "@/common/prisma/prisma.module";
+import { SecurityAuditModule } from "@/common/security-audit/security-audit.module";
 import { BoardWriteModule } from "@/common/board-write.module";
 import { TrafficModule } from "@/common/traffic.module";
 import { HealthModule } from "@/health/health.module";
@@ -16,6 +17,7 @@ import { PasswordResetThrottlerGuard } from "@/auth/password-reset-throttler.gua
 import { PasswordResetAuditService } from "@/auth/password-reset-audit.service";
 import { AuthModule } from "@/auth/auth.module";
 import { UsersModule } from "@/users/users.module";
+import { AccountDeletionModule } from "@/users/account-deletion.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { AgentSessionsModule } from "@/agent-sessions/agent-sessions.module";
@@ -60,12 +62,14 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
         : {}),
     }),
     PrismaModule,
+    SecurityAuditModule,
     BoardWriteModule,
     TrafficModule,
     MailerModule,
     HealthModule,
     AuthModule,
     UsersModule,
+    AccountDeletionModule,
     BoardsModule,
     CommandsModule,
     AgentSessionsModule,

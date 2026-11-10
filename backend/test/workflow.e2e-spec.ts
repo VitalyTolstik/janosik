@@ -838,7 +838,7 @@ describe("Board workflow (e2e)", () => {
       .get(`/api/v1/boards/${ids.boardId}/export`)
       .set(auth(adminToken))
       .expect(200);
-    expect(exported.body.schemaVersion).toBe(2);
+    expect(exported.body.schemaVersion).toBe(3);
     const envelope = exported.body;
 
     const imported = await server()

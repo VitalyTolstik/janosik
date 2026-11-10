@@ -226,7 +226,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUser = useCallback((next: AuthUserDto) => {
-    setUser(next);
+    // TASK-166: `authMethod` is a property of the session, not the profile —
+    // a profile PATCH response does not carry it, so keep the boot value.
+    setUser((current) =>
+      current === null ? next : { ...next, authMethod: current.authMethod },
+    );
   }, []);
 
   // Announcement localization: the server profile is the source of truth for

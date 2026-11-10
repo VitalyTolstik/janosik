@@ -403,7 +403,13 @@ export class FakeAdminServer {
   retention: AdminRetentionDto = {
     retentionDays: null,
     purgeable: { cards: 0, comments: 0, attachments: 0, columns: 0 },
-    backups: { configured: false, location: null },
+    backups: {
+      mode: "unconfigured",
+      location: null,
+      automatic: false,
+      lastBackupAt: null,
+      verified: false,
+    },
   };
 
   /** Observability snapshot (TASK-64). */

@@ -77,5 +77,6 @@ import { ThrottleSettingsService } from "./throttle-settings.service";
     SecurityEventsService,
     ObservabilityService,
   ],
+  exports: [ExportsService],
 })
 export class AdminModule {}

@@ -915,11 +915,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   /**
    * Server hydration (TASK-29): list the boards, then load every aggregate
-   * into the local model (≤ LIMITS.boardsCount boards — the multi-board UI,
-   * global search and export keep working on the same shape). An account
-   * with zero boards inherits the pre-server localStorage data through
-   * `POST /boards/import` once, archived cards included; the local key is
-   * dropped afterwards so the same data cannot be imported twice.
+   * into the local model (server mode has no 10-board product limit — the
+   * operator cap is enforced by the API; the multi-board UI, global search
+   * and export keep working on the same shape). An account with zero boards
+   * inherits the pre-server localStorage data through `POST /boards/import`
+   * once, archived cards included; the local key is dropped afterwards so
+   * the same data cannot be imported twice.
    */
   /**
    * Second hydration phase (U-9): the boards that are not on screen. They
@@ -1568,8 +1569,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           .importBoards(toEnvelope(normalizeBoards(boards)))
           .then(() => hydrateBoards())
           .then(() => true)
-          .catch(() => {
-            toast.error(t("data.importError"));
+          .catch((error: unknown) => {
+            // TASK-166: an operator cap is a limit, not a generic sync
+            // failure — say how many boards are allowed.
+            const limit =
+              error instanceof ApiError && error.code === "limit_exceeded"
+                ? (error.body as { limit?: unknown } | null)?.limit
+                : undefined;
+            toast.error(
+              typeof limit === "number"
+                ? t("limits.maxBoards", { limit })
+                : t("data.importError"),
+            );
             return false;
           });
       }
@@ -1591,12 +1602,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           .createBoard(resolved)
           .then((created) => {
             if (!aliveRef.current) return null;
-            apply({ type: "ADD_BOARD", board: created });
+            apply({ type: "ADD_BOARD", board: created, remote: true });
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
           })
-          .catch(() => {
-            toast.error(t("sync.rejected"));
+          .catch((error: unknown) => {
+            const limit =
+              error instanceof ApiError && error.code === "limit_exceeded"
+                ? (error.body as { limit?: unknown } | null)?.limit
+                : undefined;
+            toast.error(
+              typeof limit === "number"
+                ? t("limits.maxBoards", { limit })
+                : t("sync.rejected"),
+            );
             return null;
           });
       }

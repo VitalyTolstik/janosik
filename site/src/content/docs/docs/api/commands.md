@@ -184,7 +184,8 @@ A blocked move answers:
 `condition_failed` also carries `failedConditions`. The move is checked before
 WIP, and `inverse: true` gets no exemption: undo of a move obeys the current
 workflow. `GET /boards/:id` returns `workflow` when one is stored; export files
-use `schemaVersion: 2` (version 1 files still import). Clients should read the
+use `schemaVersion: 3` (adds the optional `agentPolicy`; version 1 and 2 files
+still import with no policy). Clients should read the
 workflow from the aggregate rather than assume the first/last column.
 
 The `wip` check mirrors the reducer's collection guards: `LIMITS` on columns,

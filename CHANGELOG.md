@@ -68,6 +68,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   full approval lifecycle remains 166.5; this stream returns the documented
   error and leaves the seam clean. Docs EN/RU and the MCP error guidance cover
   the new scopes and codes.
+- TASK-166.6 limits and data safety: server mode no longer has a 10-board
+  product limit (`MAX_BOARDS_PER_USER` defaults to `0` = unlimited; a positive
+  value is an operator cap checked atomically on create/import with
+  `409 limit_exceeded`, while local/offline mode keeps its localStorage
+  10-board guard). Board import and export share a 25 MB envelope
+  (`MAX_IMPORT_BYTES`/`MAX_BOARD_EXPORT_BYTES`), command/plan bodies have a
+  separate 10 MB cap (`MAX_COMMAND_BODY_BYTES`), and an oversized export is an
+  explicit `413 payload_too_large`, never a truncation. Export schema version
+  is now **3** (adds optional `Board.agentPolicy`); v1/v2 files still import
+  with no policy, old clients reject v3. Board export is serialized once and
+  streamed; a `pg_column_size` preflight rejects an obviously oversized board
+  before loading the aggregate; import consumes the parsed body without a
+  stringify→parse round trip. A fresh export replaces the previous ready
+  artifact only after the new build succeeds; queued oversized bundles settle
+  as `failed` without retrying, and a `pg_column_size` preflight rejects
+  obviously oversized boards before loading the aggregate. Empty-board cleanup
+  after account deletion is retried by `sweep-orphan-boards`. Residual risk:
+  the board aggregate is still assembled in memory before the exact 25 MB size
+  check (documented in the ADR). Board deletion and token
+  create/revoke now write `SecurityAuditLog` with token/session attribution.
+  The admin retention endpoint reports an honest backup status
+  (`{mode, automatic: false, lastBackupAt: null, verified: false}`) and the
+  UI no longer advertises automatic server backups; retention keeps the
+  30/90/365 presets (default 30), while `AdminAuditLog` and `SecurityAuditLog`
+  keep the longer 365-day window. Self-service
+  `POST/GET /users/me/export` builds a sequential, 50 MB-bounded JSON bundle
+  (one pending export per account, no full VIEWER-board envelopes), and
+  `DELETE /users/me` disables the account immediately, revokes sessions and
+  tokens, and schedules permanent erasure after seven days from the latest
+  request; password accounts prove the password, OAuth-only accounts use a
+  fresh OAuth token plus a one-time email code (`/auth/me` exposes
+  `hasPassword`/`deletionMethod`). `POST /boards/import?dryRun=1` previews
+  counts without writing. Both export and delete flows are browser-JWT only.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a

@@ -33,6 +33,7 @@ const prismaMock = {
     updateMany: jest.fn(),
   },
   apiToken: {
+    findMany: jest.fn(),
     updateMany: jest.fn(),
   },
   passwordResetToken: { deleteMany: jest.fn() },
@@ -46,7 +47,7 @@ const prismaMock = {
 } as unknown as PrismaService & {
   user: Record<"create" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
-  apiToken: Record<"updateMany", jest.Mock>;
+  apiToken: Record<"findMany" | "updateMany", jest.Mock>;
   passwordResetToken: Record<"deleteMany", jest.Mock>;
   emailChangeCode: Record<
     "findFirst" | "create" | "update" | "deleteMany",
@@ -142,9 +143,11 @@ describe("AuthService", () => {
       emailTemplatesMock,
       flagsMock,
       new LoginBackoffService(),
+      { record: jest.fn() } as never,
     );
     jwtMock.signAsync.mockResolvedValue("access-token");
     prismaMock.refreshToken.create.mockResolvedValue({});
+    prismaMock.apiToken.findMany.mockResolvedValue([]);
   });
 
   describe("register", () => {
@@ -174,12 +177,15 @@ describe("AuthService", () => {
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
         // No mail transport in the unit env — the account auto-verifies.
         emailVerifiedAt: expect.any(Number),
+        // TASK-166: the session method rides along for the account panel.
+        authMethod: "password",
+        hasPassword: true,
       });
       expect(result.accessToken).toBe("access-token");
       // Audience isolation (TASK-36): user tokens are signed for this
       // contour only, so they can never pass the admin strategy.
       expect(jwtMock.signAsync).toHaveBeenCalledWith(
-        { sub: "user-1" },
+        { sub: "user-1", authMethod: "password" },
         { audience: "janosik-user" },
       );
       const { passwordHash } = prismaMock.user.create.mock.calls[0][0].data;

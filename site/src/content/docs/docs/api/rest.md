@@ -36,18 +36,20 @@ invitation does not count.
 title answers `400`.
 
 `POST /boards/import` accepts an export envelope, either as a parsed JSON
-object or as a raw JSON string. It normalizes leniently and creates every
-board in the envelope with the importer as `ADMIN`. An empty or invalid
-envelope answers `400`. The envelope is:
+object or as a raw JSON string; the server validates the parsed object without a
+stringify→parse round trip. It normalizes leniently and creates every board in
+the envelope with the importer as `ADMIN`. An empty or invalid envelope answers
+`400`. `?dryRun=1` returns `{boards, cards, columns, labels, withinLimit}` and
+writes nothing. The envelope is:
 
 ```json
-{ "app": "janosik", "schemaVersion": 2, "exportedAt": 0, "boards": [] }
+{ "app": "janosik", "schemaVersion": 3, "exportedAt": 0, "boards": [] }
 ```
 
-Version 2 added the optional per-board `workflow`; version 1 files still
-import (and simply have no workflow). The importer mints fresh column and card
-ids and rewrites the workflow references; a transition whose column is missing
-is dropped rather than failing the import.
+Version 3 adds the optional per-board `agentPolicy`; version 2 added the
+optional `workflow`; version 1/2 files still import (with no policy). The
+importer mints fresh column and card ids and rewrites the workflow references;
+a transition whose column is missing is dropped rather than failing the import.
 
 `GET /boards/:id` returns the board aggregate and sets an `X-Board-Seq`
 response header carrying the command `seq` the aggregate reflects. A client
@@ -523,7 +525,7 @@ The response bodies are the shared wire types. Key fields:
 | `405`  | a write against the public share API                                                                                                                  |
 | `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
-| `413`  | a command payload over `MAX_COMMAND_BYTES`; a JSON body over 256 KB (5 MB on import and commands)                                                         |
+| `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |
 | `429`  | a rate limit was exceeded; `code: "login_backoff"` during a login backoff                                                                                 |
 | `503`  | maintenance mode; a failed health check; `code: "board_write_timeout"` when a board write timed out (safe to retry)                                       |

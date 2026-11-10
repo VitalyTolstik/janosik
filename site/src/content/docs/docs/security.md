@@ -140,9 +140,10 @@ IPs.
 ### Request size
 
 A JSON body is capped at 256 KB, so an unauthenticated request cannot make
-the server buffer and parse megabytes. Only board import and the command
-endpoints accept up to 5 MB, and one command is capped at 2 MB. File uploads
-have their own limits (25 MB per attachment, 2 MB per avatar).
+the server buffer and parse megabytes. Board import accepts up to 25 MB, the
+command/plan endpoints accept up to 10 MB, and one command is capped at 2 MB.
+File uploads have their own limits (25 MB per attachment, 2 MB per avatar).
+A board export above 25 MB is refused with `413`; it is never truncated.
 
 ### Security headers and CSP
 

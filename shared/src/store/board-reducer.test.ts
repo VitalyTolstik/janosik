@@ -1948,6 +1948,23 @@ describe("boardReducer — collection limits (TASK-20)", () => {
       },
     });
     expect(next).toHaveLength(L.boardsCount);
+
+    // TASK-166: a board the server already accepted is never clipped by the
+    // local quota again.
+    const remote = reduceState(state, {
+      type: "ADD_BOARD",
+      remote: true,
+      board: {
+        id: "server-board",
+        title: "Server board",
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    expect(remote).toHaveLength(L.boardsCount + 1);
   });
 });
 

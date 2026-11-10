@@ -27,6 +27,7 @@ import {
   COVER_GRADIENTS,
   isCardLinkType,
   isColumnAccentStyle,
+  readBoardAgentPolicy,
   readBoardWorkflow,
 } from "@janosik/shared";
 
@@ -139,6 +140,7 @@ export function toBoardAggregate(
     cardsMap[card.id] = toCard(card, boardLabelIds, linksBySource.get(card.id));
   }
   const workflow = readBoardWorkflow(board.workflow);
+  const agentPolicy = readBoardAgentPolicy(board.agentPolicy);
   // A stored workflow that cannot be read (corrupt JSONB, a future schema
   // version, a value from a newer client) must not silently unlock the
   // board. Expose an enabled, edge-less config: every cross-column move is
@@ -195,6 +197,8 @@ export function toBoardAggregate(
     // Absent in the aggregate = no workflow (old boards stay byte-identical).
     ...(effectiveWorkflow ? { workflow: effectiveWorkflow } : {}),
     ...(workflowInvalid ? { workflowInvalid: true as const } : {}),
+    // TASK-166: absent means the safe defaults; old boards stay byte-identical.
+    ...(agentPolicy ? { agentPolicy } : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
   };
 }

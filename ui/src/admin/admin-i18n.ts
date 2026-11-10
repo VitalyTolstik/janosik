@@ -288,7 +288,8 @@ const en = {
     "Applies to every account equally, each with its own counter. Leave empty to disable.",
   "admin.ops.retentionDays": "Delete soft-deleted data after (days)",
   "admin.ops.retentionDaysHint":
-    "The grace window before Purge may remove it. Default 30 days.",
+    "The grace window before Purge may remove it. Default 30 days; 90 and 365 are one click away.",
+  "admin.ops.retentionPreset": "{days} days",
   "admin.ops.saved": "Saved",
   "admin.ops.retention": "Soft-deleted data",
   "admin.ops.retention.olderThan":
@@ -300,8 +301,11 @@ const en = {
   "admin.ops.retention.confirm.body":
     "Permanently deletes already-deleted cards, comments, attachments and columns of all users older than {days} days. Live data is never touched.",
   "admin.ops.retention.purged": "Purged {count} rows",
-  "admin.ops.backups.configured": "Backups: {location}",
+  "admin.ops.backups.external":
+    "External backup directory: {location}. Janosik writes nothing there.",
   "admin.ops.backups.none": "No backup location configured",
+  "admin.ops.backups.notAutomatic":
+    "Janosik does not create, verify or schedule backups. Use pg_dump and back up the uploads volume yourself.",
   "admin.ops.schedule": "Scheduled housekeeping",
   "admin.ops.schedule.hint":
     "Background sweeps (expired codes/tokens/shares/invitations, orphaned files). 0 disables the schedule.",
@@ -1470,7 +1474,8 @@ const ru: Record<AdminMessageKey, string> = {
     "Действует на все аккаунты одинаково, у каждого свой счётчик. Пусто — выключено.",
   "admin.ops.retentionDays": "Удалять soft-deleted данные через (дней)",
   "admin.ops.retentionDaysHint":
-    "Срок «на передумать» до того, как очистка их удалит. По умолчанию 30 дней.",
+    "Срок «на передумать» до того, как очистка их удалит. По умолчанию 30 дней; 90 и 365 — в один клик.",
+  "admin.ops.retentionPreset": "{days} дн.",
   "admin.ops.saved": "Сохранено",
   "admin.ops.retention": "Удалённые (soft-delete) данные",
   "admin.ops.retention.olderThan":
@@ -1482,8 +1487,11 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention.confirm.body":
     "Безвозвратно удалит уже удалённые карточки, комментарии, вложения и колонки всех пользователей старше {days} дней. Живые данные не затрагиваются.",
   "admin.ops.retention.purged": "Очищено строк: {count}",
-  "admin.ops.backups.configured": "Бэкапы: {location}",
+  "admin.ops.backups.external":
+    "Внешний каталог бэкапов: {location}. Janosik ничего туда не пишет.",
   "admin.ops.backups.none": "Каталог бэкапов не задан",
+  "admin.ops.backups.notAutomatic":
+    "Janosik не создаёт, не проверяет и не планирует бэкапы. Делайте pg_dump и копию volume с загрузками самостоятельно.",
   "admin.ops.schedule": "Регулярная уборка",
   "admin.ops.schedule.hint":
     "Фоновые уборки (истёкшие коды/токены/шары/инвайты, осиротевшие файлы). 0 отключает расписание.",

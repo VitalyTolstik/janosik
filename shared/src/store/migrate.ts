@@ -15,6 +15,7 @@ import {
   COVER_GRADIENTS,
   isColumnAccentStyle,
   LABEL_COLORS,
+  readBoardAgentPolicy,
 } from "../types/kanban";
 import type { BoardState } from "./board-reducer";
 import { isCardLinkType, linkPairKey } from "./card-links";
@@ -317,6 +318,13 @@ function isWorkflowCurrent(value: unknown): boolean {
   return JSON.stringify(parsed) === JSON.stringify(value);
 }
 
+function isAgentPolicyCurrent(value: unknown): boolean {
+  if (value === undefined) return true;
+  const parsed = readBoardAgentPolicy(value);
+  if (parsed === undefined) return false;
+  return JSON.stringify(parsed) === JSON.stringify(value);
+}
+
 function normalizeCard(card: LegacyCard): Card {
   const {
     labelId,
@@ -427,9 +435,10 @@ function isLabelRecord(value: unknown): value is Label {
 
 function normalizeBoard(board: Board): Board {
   // Destructure so a stored garbage value never survives `...board`.
-  const { columnStyle, workflow, ...rest } = board;
+  const { columnStyle, workflow, agentPolicy, ...rest } = board;
   const cleanStyle = isColumnAccentStyle(columnStyle) ? columnStyle : undefined;
   const cleanWorkflow = readBoardWorkflow(workflow);
+  const cleanPolicy = readBoardAgentPolicy(agentPolicy);
   return {
     ...rest,
     title: toText(board.title, LIMITS.boardTitle),
@@ -467,6 +476,7 @@ function normalizeBoard(board: Board): Board {
     // garbage so old boards keep their stored shape.
     ...(cleanStyle !== undefined ? { columnStyle: cleanStyle } : {}),
     ...(cleanWorkflow !== undefined ? { workflow: cleanWorkflow } : {}),
+    ...(cleanPolicy !== undefined ? { agentPolicy: cleanPolicy } : {}),
   };
 }
 
@@ -479,6 +489,7 @@ export function normalizeBoards(state: BoardState): BoardState {
       !isTextCurrent(board.title, LIMITS.boardTitle) ||
       !isColumnStyleCurrent(board.columnStyle) ||
       !isWorkflowCurrent(board.workflow) ||
+      !isAgentPolicyCurrent(board.agentPolicy) ||
       board.columns.some(
         (column) =>
           !isTextCurrent(column.title, LIMITS.columnTitle) ||

@@ -147,6 +147,7 @@ export class AuthController {
   config(): Promise<{
     allowRegistration: boolean;
     allowPublicShares: boolean;
+    limits: { boards: number | null; importBytes: number };
   }> {
     return this.auth.publicConfig();
   }
@@ -166,6 +167,12 @@ export class AuthController {
     return {
       ...user,
       impersonatedBy: principal?.impersonatedBy ?? null,
+      ...(user.hasPassword === false
+        ? { deletionMethod: "email_code" as const }
+        : { deletionMethod: "password" as const }),
+      ...(principal?.via === "jwt"
+        ? { authMethod: principal.authMethod ?? "password" }
+        : {}),
       ...(principal?.via === "pat"
         ? { token: principal.tokenIdentity ?? null }
         : { token: null }),
