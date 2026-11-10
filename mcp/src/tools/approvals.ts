@@ -70,9 +70,7 @@ function renderApproval(approval: ApprovalRequestDto): string {
     ...(approval.plan?.operations
       ? [
           "- planned operations:",
-          ...approval.plan.operations.map(
-            (operation) => `  - ${operation.op}`,
-          ),
+          ...approval.plan.operations.map((operation) => `  - ${operation.op}`),
         ]
       : []),
   ].join("\n");

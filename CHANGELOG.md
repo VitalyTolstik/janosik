@@ -277,6 +277,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The server now stamps the route board id on every command action it stores
   and broadcasts, so SSE and delta events reach the open board in the UI even
   when a REST caller omits `boardId` from the action.
+- The PWA "new version" banner now reloads the tab only after the fresh
+  service worker takes control. The old flow called `window.location.reload()`
+  immediately after `SKIP_WAITING`; activating the new worker terminates the
+  old one and could abort that navigation, leaving the tab on the old build
+  with the banner still up. A bounded fallback covers an already-active
+  worker, which emits no `controllerchange`.
 
 ## [0.2.0] - 2026-11-08
 

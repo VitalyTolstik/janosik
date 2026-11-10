@@ -210,8 +210,9 @@ describe("applyServiceWorkerUpdate (TASK-156 review)", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The waiting branch: postMessage runs (the reload follows it in the
-    // same branch); the registration refresh does not.
+    // The waiting branch: postMessage runs and a bounded reload is
+    // scheduled; the registration refresh does not run. The reload itself
+    // waits for `controllerchange` and is not observable in jsdom.
     expect(worker.postMessage).toHaveBeenCalledTimes(1);
     expect(registration.update).not.toHaveBeenCalled();
   });
