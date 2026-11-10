@@ -302,7 +302,7 @@ export class CommandsService {
         entry.action = { ...entry.action, claimedBy: actorId };
         // The stored payload carries the server-normalized holder, so the
         // retry fingerprint must be taken from that same canonical action.
-        entry.fingerprint = actionFingerprint(entry.action);
+        entry.fingerprint = actionFingerprint(entry.action, boardId);
       }
       return entry;
     });
@@ -511,7 +511,7 @@ export class CommandsService {
     return {
       dto,
       action: clampActionAt(validation.action, Date.now()),
-      fingerprint: actionFingerprint(validation.action),
+      fingerprint: actionFingerprint(validation.action, boardId),
     };
   }
 
@@ -730,7 +730,12 @@ export class CommandsService {
     return {
       entries: (truncated ? rows.slice(0, max) : rows).map((row) => ({
         seq: Number(row.seq),
-        action: row.payload as unknown as BoardAction,
+        // Rows written before ingress stamping may lack `boardId`; replay them
+        // scoped to the queried board so the UI's realtime bridge keeps them.
+        action: {
+          ...(row.payload as Record<string, unknown>),
+          boardId,
+        } as BoardAction,
         actorId: row.actorId,
         actorType: row.actorType as ActorType,
         commandId: row.id,
@@ -1476,7 +1481,7 @@ async function entityVersions(
  * is the route board: taking it for the stored payload too keeps an honest
  * retry matching a row written before ingress stamping existed.
  */
-function actionFingerprint(action: unknown, boardId?: string): string {
+export function actionFingerprint(action: unknown, boardId?: string): string {
   if (action === null || typeof action !== "object") {
     return stableStringify(action);
   }

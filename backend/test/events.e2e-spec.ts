@@ -1,5 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import type { Prisma } from "@prisma/client";
 import request from "supertest";
 import type { AddressInfo } from "node:net";
 import type { ReadableStreamReadResult } from "node:stream/web";
@@ -386,41 +387,161 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[1].touches).toContain(`column:col-live`);
   }, 20_000);
 
-  it("scopes live events by the route board when an agent omits boardId", async () => {
+  it("scopes live events by the route board when a REST caller omits boardId", async () => {
     const baseline = await boardSeq(ownerToken);
     const stream = openReader(await openStream(memberToken, baseline));
+    try {
+      // `boardId` is optional on the wire (BoardScopedAction), so a REST
+      // caller may omit it. The route is authoritative: the live frame and
+      // the stored delta must both name the board the command actually ran
+      // on, otherwise the UI's realtime bridge silently drops the event.
+      const seq = await command(
+        ownerToken,
+        {
+          type: "ADD_COLUMN",
+          newColumnId: "col-routed",
+          title: "Routed",
+          at: Date.now(),
+        },
+        "evt-cmd-routed",
+      );
 
-    // `boardId` is optional on the wire (BoardScopedAction), so a REST caller
-    // may omit it. The route is authoritative: the live frame and the stored
-    // delta must both name the board the command actually ran on, otherwise
-    // the UI's realtime bridge silently drops the event.
-    const seq = await command(
-      ownerToken,
-      {
-        type: "ADD_COLUMN",
-        newColumnId: "col-routed",
-        title: "Routed",
-        at: Date.now(),
-      },
-      "evt-cmd-routed",
-    );
+      const [frame] = await stream.next(1, "command");
+      expect(frame.seq).toBe(seq);
+      expect(frame.action).toMatchObject({ type: "ADD_COLUMN", boardId });
 
-    const [frame] = await stream.next(1, "command");
-    expect(frame.seq).toBe(seq);
-    expect(frame.action).toMatchObject({ type: "ADD_COLUMN", boardId });
-    await stream.close();
+      const delta = await server()
+        .get(`/api/v1/boards/${boardId}/commands?since=${baseline}`)
+        .set(auth(ownerToken))
+        .expect(200);
+      const stored = (
+        delta.body as Array<{
+          commandId: string;
+          action: { boardId?: string };
+        }>
+      ).find((entry) => entry.commandId === "evt-cmd-routed");
+      expect(stored?.action.boardId).toBe(boardId);
+    } finally {
+      await stream.close();
+    }
+  }, 20_000);
 
+  it("overwrites a client-supplied boardId that disagrees with the route", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const stream = openReader(await openStream(memberToken, baseline));
+    try {
+      const seq = await command(
+        ownerToken,
+        {
+          type: "ADD_COLUMN",
+          boardId: "some-other-board",
+          newColumnId: "col-mismatched",
+          title: "Mismatched",
+          at: Date.now(),
+        },
+        "evt-cmd-mismatched",
+      );
+
+      const [frame] = await stream.next(1, "command");
+      expect(frame.seq).toBe(seq);
+      expect(frame.action).toMatchObject({ type: "ADD_COLUMN", boardId });
+
+      const delta = await server()
+        .get(`/api/v1/boards/${boardId}/commands?since=${baseline}`)
+        .set(auth(ownerToken))
+        .expect(200);
+      const stored = (
+        delta.body as Array<{
+          commandId: string;
+          action: { boardId?: string };
+        }>
+      ).find((entry) => entry.commandId === "evt-cmd-mismatched");
+      expect(stored?.action.boardId).toBe(boardId);
+    } finally {
+      await stream.close();
+    }
+  }, 20_000);
+
+  it("replays and normalizes a legacy command whose payload lacks boardId", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const commandId = "evt-cmd-legacy-board";
+    const action = {
+      type: "ADD_COLUMN",
+      newColumnId: "col-legacy",
+      title: "Legacy",
+      at: Date.now(),
+    };
+    const seq = await command(ownerToken, action, commandId);
+
+    // Simulate a row written before ingress stamping: the action was stored
+    // exactly as sent, without `boardId`.
+    const stored = await prisma.command.findUniqueOrThrow({
+      where: { id: commandId },
+    });
+    const payload = { ...(stored.payload as Record<string, unknown>) };
+    delete payload.boardId;
+    await prisma.command.update({
+      where: { id: commandId },
+      data: { payload: payload as Prisma.InputJsonValue },
+    });
+
+    // An honest retry still returns the stored result…
+    const retry = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(ownerToken))
+      .send({ commandId, action })
+      .expect(200);
+    expect(retry.body.seq).toBe(seq);
+
+    // …while a changed body is still refused.
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(ownerToken))
+      .send({ commandId, action: { ...action, title: "Changed" } })
+      .expect(409);
+
+    // The delta mapper scopes the legacy payload to the queried board.
     const delta = await server()
       .get(`/api/v1/boards/${boardId}/commands?since=${baseline}`)
       .set(auth(ownerToken))
       .expect(200);
-    const stored = (
+    const entry = (
       delta.body as Array<{
         commandId: string;
         action: { boardId?: string };
       }>
-    ).find((entry) => entry.commandId === "evt-cmd-routed");
-    expect(stored?.action.boardId).toBe(boardId);
+    ).find((row) => row.commandId === commandId);
+    expect(entry?.action.boardId).toBe(boardId);
+  }, 20_000);
+
+  it("stamps the route board on batch command frames", async () => {
+    const baseline = await boardSeq(ownerToken);
+    const stream = openReader(await openStream(memberToken, baseline));
+    try {
+      const res = await server()
+        .post(`/api/v1/boards/${boardId}/commands/batch`)
+        .set(auth(ownerToken))
+        .send({
+          commands: [
+            {
+              commandId: "evt-cmd-batch-routed",
+              action: {
+                type: "ADD_COLUMN",
+                newColumnId: "col-batch-routed",
+                title: "Batch routed",
+                at: Date.now(),
+              },
+            },
+          ],
+        })
+        .expect(200);
+
+      const [frame] = await stream.next(1, "command");
+      expect(frame.seq).toBe(res.body.results[0].seq);
+      expect(frame.action).toMatchObject({ type: "ADD_COLUMN", boardId });
+    } finally {
+      await stream.close();
+    }
   }, 20_000);
 
   it("broadcasts comment activity frames: added and deleted (TASK-37)", async () => {
