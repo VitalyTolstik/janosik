@@ -34,6 +34,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hash mismatch, limit boundaries (100/101, 50/51), approval and one-time
   consumption, replay, plan-run rollback, PAT/browser/VIEWER behavior; docs
   EN/RU updated.
+- TASK-166.15 audit/rollback and scopes/limits UI: the board ADMIN **Agent
+  control** dialog gains **Runs & rollback** and **Policy & limits** tabs. Run
+  history filters by status, kind, token, session and time, pages with a
+  cursor, and opens a detail. A MEMBER/VIEWER gets a read-only **Agent runs**
+  entry that opens the same tab and can run the dry-run conflict preview;
+  applying a revert stays board ADMIN. The detail shows the command
+  timeline/attribution,
+  `firstSeq`/`lastSeq`, plan/approval hash, pre-images and diff (browser-JWT
+  board ADMIN only) and the conflict list. Any board member can request the
+  dry-run preview; applying a revert is a session-only board ADMIN action with
+  a confirmation and a generated `commandId`, surfaces `run_conflict`,
+  `run_expired` and `pat_forbidden`, is all-or-nothing, and refreshes the list
+  and open detail on `run.reverted` SSE. The policy dashboard shows and edits
+  `Board.agentPolicy` (destructive `approval`/`deny`, the fixed
+  `requireApprovalFor` list, `["ADMIN"]` approvers, `maxCommandsPerRun` 1–100,
+  `maxCardsPerRun` 1–50, `approvalTtlMinutes` 5–1440) with CAS on
+  `agentPolicyVersion`, reset to defaults via `policy: null`, Activity and
+  SecurityAudit rows, and the current board pause state. New
+  `GET/PATCH /boards/:id/agent-policy` are session-only board ADMIN; API keys
+  receive `403 pat_forbidden`. Account → API keys now edits an existing
+  token's name, scope preset, trusted CI, board scope, read-only flag and
+  rate limit through the session-only `PATCH /users/me/tokens/:id`
+  (validated, audited, ownership-checked, never returns the secret) while the
+  row keeps a compact effective-scope/board/rate/pause summary; a PAT cannot
+  edit a key. The runs list also accepts optional `from`/`to` bounds. EN/RU
+  i18n and user-guide docs; unit, backend e2e and browser tests cover the
+  timeline/revert/conflict flow, policy defaults/validation/CAS/reset and the
+  token edit/permission paths.
 - TASK-166.9 attention and notification backend: approvals, agent blockers /
   handoffs, expired claims and refused quota now produce one deduplicated
   in-app `AttentionNotification` per recipient and, unless the account opted

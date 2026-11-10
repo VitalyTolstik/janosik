@@ -121,7 +121,7 @@ remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
 | --- | --- | --- | --- |
 | D9 | **PAT grandfathering.** Existing tokens receive `scopePreset = "admin"`, `trustedCi = true` (when `readOnly = false`). `readOnly = true` keeps the flag and effectively means Observer. New tokens are created with `scopePreset = "worker"` and `trustedCi = false`. | This is the only way to close destructive actions by default without breaking current MCP scenarios of old PATs. | Old PATs keep board behavior, but account routes (`profile`, `tokens`, `invitations`) are closed to them as a security fix. `trustedCi` cannot be enabled through a PAT. |
 | D10 | **Scope presets:** `observer`, `worker`, `reviewer`, `admin`; separate boolean `trustedCi`. A preset does not raise the board role. | Simple, explainable model; `readOnly` remains for compatibility. | `admin` grants no account rights; `trustedCi` grants no member/share/board-admin rights; `observer` cannot write. |
-| D11 | **Token scopes are immutable after creation.** Changing scope means creating a new token and revoking the old one. | Immutability prevents self-escalation and makes audit unambiguous. | `PATCH /users/me/tokens/:id` is forbidden for scope/trustedCi. Only pause/resume/revoke are allowed. |
+| D11 | **Token scopes are immutable after creation.** Changing scope means creating a new token and revoking the old one. **Amended by TASK-166.15:** the owner may edit name/scope/limits from a browser session (see §5.3). | Immutability prevents self-escalation and makes audit unambiguous. Audit stays unambiguous with an explicit before/after row. | `PATCH /users/me/tokens/:id` remains session-only and is audited; a PAT can never edit a key, and the secret is never accepted or returned. Only pause/resume/revoke were allowed before TASK-166.15. |
 | D12 | **Approval authorizes but does not apply.** Approve moves the request to `approved`; the agent applies the same plan with `X-Approval-Id`. | One apply path, one transaction, idempotent `commandId`; a human does not execute a stale plan if the agent has died. | Do not auto-apply inside the decision endpoint. Approval is one-time: after apply it is `consumed`. |
 | D13 | **Human control plane is session-only.** Board policy, pause/resume, token pause, approval decision, run revert, self-service export/delete are `browser JWT` only. | An agent must not weaken limits, clear pause, or approve its own plan. | PAT receives `403 pat_forbidden` on these routes; MCP does not register the corresponding tools for an agent. |
 | D14 | **Board policy** is `Board.agentPolicy` JSONB + `Board.agentPolicyVersion`, edited through `PATCH /boards/:id/agent-policy` with CAS. `NULL` means defaults. | Board configuration, not content; no need to add a `BoardAction` or touch the reducer. CAS protects against two admins. | An agent must not change policy. `destructive: "deny"` is a hard block that even `trustedCi` cannot bypass. |
@@ -238,6 +238,15 @@ interface CreateUserTokenRequest {
 compatibility; the new UI writes `scopePreset`. The server accepts both
 fields; `readOnly` wins.
 
+**TASK-166.15 amendment.** `PATCH /users/me/tokens/:id` lets the owner edit
+`name`, `boardId`, `readOnly`, `rateLimitPerMinute`, `scopePreset` and
+`trustedCi`; omitted fields keep their value, `null` clears the board scope or
+the rate limit. The route is session-only (`pat_forbidden` for any PAT), the
+owner is checked (`404` for another user's key), `trustedCi` is refused for an
+Observer/read-only key, and every change writes a `token.updated`
+`SecurityAuditLog` row with before/after values. The plaintext and hash never
+appear in the response. This supersedes D11 for owner-session edits.
+
 ---
 
 ## 6. Data schema
@@ -342,7 +351,10 @@ Policy validation rules:
 `PATCH /boards/:id/agent-policy` is session-only board ADMIN:
 `{ "policy": { ... } | null, "version": 1 }`. `null` restores the defaults.
 `agentPolicyVersion` increments on every PATCH; an old version gets
-`409 version_conflict` with `details.currentVersion`.
+`409 version_conflict` with `details.currentVersion`. `GET
+/boards/:id/agent-policy` returns `{ policy, effective, version, paused,
+pausedAt, pausedBy, pauseReason }` for the same session-only board ADMIN and is
+the dashboard's read path (TASK-166.15).
 
 `agentsPausedAt` is operational state, **not** exported or imported. Pause
 does not survive a board transfer.
@@ -1081,7 +1093,7 @@ considered shipped yet.
 | `DELETE /comments/:id` | `worker` (own comment only) | yes, but self-authored exempt | no for own; another user's → `scope_denied` | same as before; PAT still author-only |
 | `POST /cards/:id/attachments`, `?inline=1` | `worker` | no | no | same as before |
 | `DELETE /attachments/:id` | `worker` (own upload) / `admin` (another user's) | yes | no for own; another user's → `approval` | same as before |
-| `POST /users/me/tokens`, `GET /users/me/tokens`, `DELETE /users/me/tokens/:id` | session-only | — | — | `pat_forbidden` (security fix) |
+| `POST /users/me/tokens`, `GET /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id` | session-only | — | — | `pat_forbidden` (security fix); PATCH is owner-only and audited (TASK-166.15) |
 | `POST /users/me/tokens/:id/pause`, `/resume` | session-only | — | — | `pat_forbidden` |
 | `PATCH /users/me`, `PATCH /users/me/avatar` | session-only | — | — | `pat_forbidden` |
 | `GET /invitations`, `POST /invitations/:id/accept`, `/decline` | session-only | — | — | `pat_forbidden` (security fix) |

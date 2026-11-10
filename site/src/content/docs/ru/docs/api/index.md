@@ -49,7 +49,7 @@ JWT-стратегию. Оба вида токенов подходят для �
 Персональный API-токен действует от имени владельца в работе с досками, но не
 может управлять учётными данными аккаунта. При обращении с PAT эти маршруты возвращают `403`:
 
-- `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `GET /users/me/tokens`, `POST /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id`
 - `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
 - `POST /agents/pause-all`, `POST /agents/resume-all`
 - `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
@@ -496,6 +496,7 @@ API-ключ не может ни перечислить, ни создать, �
 | `GET`    | `/users/:userId/avatar` | байты изображения         |
 | `GET`    | `/users/me/tokens`      | `UserTokenDto[]`          |
 | `POST`   | `/users/me/tokens`      | `CreateUserTokenResponse` |
+| `PATCH`  | `/users/me/tokens/:id`  | `UserTokenDto`            |
 | `DELETE` | `/users/me/tokens/:id`  | `{ status: "ok" }`        |
 
 Тело `PATCH /users/me`:
@@ -533,6 +534,12 @@ API-ключ не может ни перечислить, ни создать, �
 Возвращает `{ token, apiToken }`. Полное значение `token` показывается один раз;
 далее возвращаются только метаданные `apiToken`.
 `GET /users/me/tokens` перечисляет метаданные (без полного значения токена).
+`PATCH /users/me/tokens/:id` меняет `name`, `boardId`, `readOnly`,
+`rateLimitPerMinute`, `scopePreset` или `trustedCi`; пропущенные поля
+сохраняют значение, `null` очищает область доски или лимит. Observer или
+read-only ключ не может включить `trustedCi`, а каждое изменение пишется в
+аудит с парами «до/после». Маршрут доступен только владельцу из браузерной
+сессии; секрет не принимается и не возвращается.
 `DELETE /users/me/tokens/:id` отзывает один токен и возвращает
 `{ status: "ok" }`. Смена пароля отзывает все токены аккаунта. DTO токена
 также содержит `scopePreset`, `trustedCi`, `individualPausedAt`/

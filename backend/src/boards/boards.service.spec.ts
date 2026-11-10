@@ -48,6 +48,7 @@ describe("BoardsService.listBoards", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const summaries = await service.listBoards("u1");
 
@@ -88,6 +89,7 @@ describe("BoardsService.inviteMember — reviving a pending invite", () => {
     const service = new BoardsService(
       prisma,
       boardWrite as never,
+      {} as never,
       {} as never,
       {} as never,
     );

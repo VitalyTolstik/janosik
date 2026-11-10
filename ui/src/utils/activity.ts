@@ -109,6 +109,9 @@ const MEMBERSHIP_KEYS: Record<string, MessageKey> = {
   member_role_changed: "activity.member-role-changed",
   member_expiry_changed: "activity.member-expiry-changed",
   member_removed: "activity.member-removed",
+  // TASK-166.15 agent-control audit events in the board-wide Watch feed.
+  run_reverted: "activity.run-reverted",
+  agent_policy_changed: "activity.agent-policy-changed",
 };
 
 /** Field label keys for the "from → to" lines. */

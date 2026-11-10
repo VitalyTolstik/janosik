@@ -7,6 +7,7 @@ import type {
   CommandSseEvent,
   MembershipChange,
   PresenceSseEvent,
+  RunSseEvent,
 } from "@janosik/shared";
 import { ApiError, api, apiBaseUrl } from "@/api/client";
 
@@ -414,6 +415,8 @@ export interface RealtimeHost {
   onApproval?: (boardId: string, event: ApprovalSseEvent) => void;
   /** An agent session or pause control-plane transition (TASK-166.14). */
   onAgent?: (boardId: string, event: AgentSseEvent) => void;
+  /** A run lifecycle transition such as `run.reverted` (TASK-166.15). */
+  onRun?: (boardId: string, event: RunSseEvent) => void;
   /** Someone else changed these entities: raise the attribution ring. */
   flagForeign: (
     boardId: string,
@@ -668,6 +671,11 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     if (event.type === "agent") {
       const boardId = host.getActiveBoardId();
       if (boardId !== undefined) host.onAgent?.(boardId, event);
+      return;
+    }
+    if (event.type === "run") {
+      const boardId = host.getActiveBoardId();
+      if (boardId !== undefined) host.onRun?.(boardId, event);
       return;
     }
     // The server could not replay the whole gap (the delta was truncated):

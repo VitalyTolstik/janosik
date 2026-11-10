@@ -126,6 +126,16 @@ export class RunsService {
         ...(query.clientRunId !== undefined
           ? { clientRunId: query.clientRunId }
           : {}),
+        ...(query.from !== undefined || query.to !== undefined
+          ? {
+              createdAt: {
+                ...(query.from !== undefined
+                  ? { gte: new Date(query.from) }
+                  : {}),
+                ...(query.to !== undefined ? { lte: new Date(query.to) } : {}),
+              },
+            }
+          : {}),
         ...(cursor !== null
           ? {
               OR: [

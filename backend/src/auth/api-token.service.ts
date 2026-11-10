@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -17,6 +18,7 @@ import {
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
   type ScopePreset,
+  type UpdateUserTokenRequest,
   type UserTokenDto,
 } from "@janosik/shared";
 import { createHash, randomBytes } from "node:crypto";
@@ -244,6 +246,101 @@ export class ApiTokenService {
   }
 
   /**
+   * `PATCH /users/me/tokens/:id` (TASK-166.15). The owner may adjust the
+   * human-facing limits and scope from a browser session; omitted fields keep
+   * their value. Every edit is audited with before/after values (never a
+   * secret), and the effective `trustedCi` is rejected when it could never be
+   * used (Observer / read-only), so the UI cannot persist a misleading flag.
+   */
+  async update(
+    userId: string,
+    tokenId: string,
+    dto: UpdateUserTokenRequest,
+  ): Promise<UserTokenDto> {
+    const token = await this.requireOwnedToken(userId, tokenId);
+    if (token.revokedAt !== null) {
+      throw new ConflictException({
+        message: "Revoked tokens cannot be edited",
+        code: "token_revoked",
+      });
+    }
+
+    let name = token.name;
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (trimmed === "") {
+        throw new BadRequestException({
+          message: "name must not be blank",
+          field: "name",
+        });
+      }
+      name = trimmed;
+    }
+
+    const readOnly = dto.readOnly ?? token.readOnly;
+    const scopePreset =
+      dto.scopePreset !== undefined
+        ? readScopePreset(dto.scopePreset)
+        : readScopePreset(token.scopePreset);
+    const trustedCi = dto.trustedCi ?? token.trustedCi;
+    if (trustedCi && (readOnly || scopePreset === "observer")) {
+      throw new BadRequestException({
+        message:
+          "trustedCi cannot be enabled for an Observer or read-only token",
+        field: "trustedCi",
+      });
+    }
+
+    let boardId = token.boardId;
+    if (dto.boardId !== undefined) {
+      boardId = await this.resolveBoardScope(userId, dto.boardId);
+    }
+
+    let rateLimitPerMinute = token.rateLimitPerMinute;
+    if (dto.rateLimitPerMinute !== undefined) {
+      rateLimitPerMinute = this.resolveRateLimit(dto.rateLimitPerMinute);
+    }
+
+    const updated = await this.prisma.apiToken.update({
+      where: { id: tokenId },
+      data: {
+        name,
+        boardId,
+        readOnly,
+        scopePreset,
+        trustedCi,
+        rateLimitPerMinute,
+      },
+    });
+    await this.securityAudit.record({
+      userId,
+      actorId: userId,
+      action: "token.updated",
+      targetType: "api_token",
+      targetId: tokenId,
+      details: {
+        before: {
+          name: token.name,
+          boardId: token.boardId,
+          readOnly: token.readOnly,
+          scopePreset: readScopePreset(token.scopePreset),
+          trustedCi: token.trustedCi,
+          rateLimitPerMinute: token.rateLimitPerMinute,
+        },
+        after: {
+          name: updated.name,
+          boardId: updated.boardId,
+          readOnly: updated.readOnly,
+          scopePreset: readScopePreset(updated.scopePreset),
+          trustedCi: updated.trustedCi,
+          rateLimitPerMinute: updated.rateLimitPerMinute,
+        },
+      },
+    });
+    return toUserTokenDto(updated);
+  }
+
+  /**
    * Validate the requested scope (TASK-157): a board scope must name a board
    * the owner is an active member of (otherwise the token would be useless),
    * and a rate limit must be a positive integer within bounds.
@@ -256,47 +353,56 @@ export class ApiTokenService {
     readOnly: boolean;
     rateLimitPerMinute: number | null;
   }> {
-    let boardId: string | null = null;
-    if (dto.boardId !== undefined && dto.boardId !== null) {
-      boardId = dto.boardId.trim();
-      if (boardId === "") {
-        throw new BadRequestException("boardId must not be blank");
-      }
-      const membership = await this.prisma.boardMember.findUnique({
-        where: { boardId_userId: { boardId, userId } },
-        select: { acceptedAt: true, expiresAt: true },
+    return {
+      boardId: await this.resolveBoardScope(userId, dto.boardId ?? null),
+      readOnly: dto.readOnly === true,
+      rateLimitPerMinute: this.resolveRateLimit(dto.rateLimitPerMinute ?? null),
+    };
+  }
+
+  private async resolveBoardScope(
+    userId: string,
+    requested: string | null,
+  ): Promise<string | null> {
+    if (requested === null) return null;
+    const boardId = requested.trim();
+    if (boardId === "") {
+      throw new BadRequestException({
+        message: "boardId must not be blank",
+        field: "boardId",
       });
-      if (
-        !membership ||
-        membership.acceptedAt === null ||
-        (membership.expiresAt !== null &&
-          membership.expiresAt.getTime() <= Date.now())
-      ) {
-        throw new BadRequestException(
-          "boardId must be a board you are a member of",
-        );
-      }
     }
-
-    let rateLimitPerMinute: number | null = null;
+    const membership = await this.prisma.boardMember.findUnique({
+      where: { boardId_userId: { boardId, userId } },
+      select: { acceptedAt: true, expiresAt: true },
+    });
     if (
-      dto.rateLimitPerMinute !== undefined &&
-      dto.rateLimitPerMinute !== null
+      !membership ||
+      membership.acceptedAt === null ||
+      (membership.expiresAt !== null &&
+        membership.expiresAt.getTime() <= Date.now())
     ) {
-      const rate = dto.rateLimitPerMinute;
-      if (
-        !Number.isInteger(rate) ||
-        rate < API_TOKEN_RATE_MIN ||
-        rate > API_TOKEN_RATE_MAX
-      ) {
-        throw new BadRequestException(
-          `rateLimitPerMinute must be an integer ${API_TOKEN_RATE_MIN}…${API_TOKEN_RATE_MAX}`,
-        );
-      }
-      rateLimitPerMinute = rate;
+      throw new BadRequestException({
+        message: "boardId must be a board you are a member of",
+        field: "boardId",
+      });
     }
+    return boardId;
+  }
 
-    return { boardId, readOnly: dto.readOnly === true, rateLimitPerMinute };
+  private resolveRateLimit(requested: number | null): number | null {
+    if (requested === null) return null;
+    if (
+      !Number.isInteger(requested) ||
+      requested < API_TOKEN_RATE_MIN ||
+      requested > API_TOKEN_RATE_MAX
+    ) {
+      throw new BadRequestException({
+        message: `rateLimitPerMinute must be an integer ${API_TOKEN_RATE_MIN}…${API_TOKEN_RATE_MAX}`,
+        field: "rateLimitPerMinute",
+      });
+    }
+    return requested;
   }
 
   /** Idempotent: revoking an already-revoked token keeps the first stamp. */

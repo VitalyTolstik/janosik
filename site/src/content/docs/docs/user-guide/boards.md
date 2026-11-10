@@ -139,10 +139,11 @@ Press `J` and `K` to move a highlight down and up through the visible cards,
 `E` or Enter to open the highlighted card, `N` to add a card to the
 highlighted column and `C` to add a column. Escape clears the cursor.
 
-## Agent approvals and pause
+## Agent approvals, runs and policy
 
 A board ADMIN sees an **Agent control** button in the header (the bot icon with
-a pending-count badge). It opens two tabs:
+a pending-count badge). A MEMBER or VIEWER sees an **Agent runs** button that
+opens the same dialog on the read-only runs tab. The dialog has four tabs:
 
 - **Approvals** — the queue of plans agents asked a human to authorize. Select
   a request to see its summary, risk, board/card context, requesting token and
@@ -161,6 +162,24 @@ a pending-count badge). It opens two tabs:
   lists active agent sessions and lets you pause or resume one session with a
   reason. A session paused by a board or token pause shows that scope instead;
   resume the board or the token to release it.
+- **Runs & rollback** — agent batches, plans and single destructive calls,
+  newest first. Filter by status (`applied`, `reverted`, `failed`), kind,
+  token, agent session or time. Select a run to see its timeline, command list
+  with attribution, sequence range, plan/approval hash and, for a signed-in
+  board ADMIN, the stored pre-images and diff. `Revert run` first runs a
+  conflict check; any later change to an affected entity refuses the whole
+  revert and lists the conflicts. Applying a revert is board-ADMIN
+  browser-session only, asks for confirmation and records a separate audit
+  run. A lapsed retention window reports `run_expired`; a reverted run cannot
+  be reverted again.
+- **Policy & limits** — the effective agent limits for this board: destructive
+  mode (`Require approval` or `Hard deny`), the fixed list of actions that
+  always need approval, board-ADMIN approvers, maximum commands/cards per run
+  and the approval TTL. Saving is a compare-and-swap: if another tab changed
+  the policy first, reload and try again. `Reset to defaults` removes the
+  stored policy and restores approval mode, 100 commands, 50 cards and a
+  60-minute TTL. The tab also shows whether board-wide agent pause is active.
+  Only a signed-in board ADMIN can read or change the policy; API keys cannot.
 
 Token-level pause, `Stop all` and kill (revoke) are in [Account → API
 keys](/docs/user-guide/account/#pausing-and-stopping-agents).

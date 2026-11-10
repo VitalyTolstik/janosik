@@ -241,6 +241,14 @@ describe("agent control (TASK-166.14)", () => {
     expect(screen.queryByTestId("approval-reject")).toBeNull();
   });
 
+  it("gives a member the read-only runs entry instead of the admin trigger", () => {
+    mocks.role = "MEMBER";
+    renderButton();
+
+    expect(screen.queryByTestId("agent-control-trigger")).toBeNull();
+    expect(screen.getByTestId("agent-runs-trigger")).toBeInTheDocument();
+  });
+
   it("shows a read-only explanation to a non-admin board member", async () => {
     mocks.role = "MEMBER";
     const row = approval();
