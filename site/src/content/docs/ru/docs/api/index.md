@@ -453,6 +453,7 @@ API-ключ не может ни перечислить, ни создать, �
 | `displayName` | string или null | нет         | не более 50 символов; `null` очищает                                  |
 | `avatarColor` | string или null | нет         | одно из `USER_AVATAR_COLORS`; `null` возвращает значение по умолчанию |
 | `notifyDigest` | boolean        | нет         | `false` отключает запланированные сводки и напоминания                |
+| `notifyAttention` | boolean     | нет         | `false` отключает немедленные письма-уведомления; in-app inbox продолжает работать |
 
 Записываются только переданные ключи.
 
@@ -486,6 +487,34 @@ API-ключ не может ни перечислить, ни создать, �
 `stopAllPausedAt` (и их `*By`), вычисляемый `paused` и
 `effectiveTokenScope` (`observer` при `readOnly: true`). `GET /auth/me` с PAT
 добавляет ту же несекретную идентичность в поле `token`.
+
+## Уведомления внимания
+
+Подтверждения, комментарии агента `blocker`/`handoff`, истёкшие захваты
+карточек и исчерпание лимита досок создают одну дедуплицированную запись
+in-app inbox. То же событие уходит письмом его человеческой аудитории —
+активным ADMIN доски для подтверждений и заблокированных агентов,
+заявителю и принявшему решение для решения/истечения, держателю захвата и
+ADMIN для истёкшего захвата, самому аккаунту для предупреждения о лимите —
+если аккаунт не выключил `notifyAttention`. API-токены никогда не получают
+письма, а события досок, где пользователь больше не участник, скрываются.
+
+| Метод | Путь | Возвращает |
+| ----- | ---- | ---------- |
+| `GET` | `/users/me/notifications?boardId=&unreadOnly=&cursor=&limit=` | `AttentionNotificationPage` |
+| `POST` | `/users/me/notifications/:id/read` | `AttentionNotificationDto` |
+| `POST` | `/users/me/notifications/read-all` | `{ updated }`; тело `{ boardId? }` |
+| `GET` | `/users/me/notification-settings` | `NotificationSettingsDto` |
+| `PATCH` | `/users/me/notification-settings` | `NotificationSettingsDto`; тело `{ notifyDigest?, notifyAttention? }` |
+
+Все маршруты доступны только сессии браузера; персональный API-токен получает
+`403 pat_forbidden`. Список идёт от новых к старым с непрозрачным курсором
+`at:id` и `unreadCount`. `boardId` требует активного участия в доске. Типы
+событий: `approval.requested`, `approval.decided`, `approval.expired`,
+`agent.blocked`, `agent.needs_human`, `claim.expired`, `quota.exceeded`.
+Запланированная сводка также один раз включает ещё не включённые в неё
+категории внимания; немедленное письмо не задерживает запрос, который его
+породил.
 
 ## Приглашения
 

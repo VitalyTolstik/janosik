@@ -17,6 +17,8 @@ export function toAuthUser(user: User): AuthUser {
     // TASK-153: the account digest opt-out reaches the client; the default
     // (on) is omitted like every other optional field.
     ...(user.notifyDigest ? {} : { notifyDigest: false }),
+    // TASK-166.9: same convention for the immediate attention e-mails.
+    ...(user.notifyAttention ? {} : { notifyAttention: false }),
     // Announcement localization: omitted while the account has not chosen a
     // language yet, so old accounts keep their browser language until the
     // client adopts it once on the next sign-in.

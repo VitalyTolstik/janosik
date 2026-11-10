@@ -26,6 +26,7 @@ import { ApprovalsModule } from "@/approvals/approvals.module";
 import { RunsModule } from "@/runs/runs.module";
 import { AgentSessionsModule } from "@/agent-sessions/agent-sessions.module";
 import { ActivityModule } from "@/activity/activity.module";
+import { NotificationsModule } from "@/notifications/notifications.module";
 import { CommentsModule } from "@/comments/comments.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { InvitationsModule } from "@/invitations/invitations.module";
@@ -81,6 +82,7 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     RunsModule,
     AgentSessionsModule,
     ActivityModule,
+    NotificationsModule,
     CommentsModule,
     AttachmentsModule,
     InvitationsModule,

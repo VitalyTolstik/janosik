@@ -64,6 +64,7 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   disabledAt: null,
   emailVerifiedAt: null,
   notifyDigest: true,
+  notifyAttention: true,
   locale: null,
   createdAt: new Date("2026-10-01T00:00:00Z"),
   ...overrides,

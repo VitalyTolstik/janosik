@@ -24,6 +24,7 @@ import {
 } from "@/auth/token-scope";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
+import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import type {
   CreateApprovalDto,
@@ -65,6 +66,7 @@ export class ApprovalsService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly attention: AttentionService,
   ) {}
 
   /** `POST /boards/:id/approvals` — PAT-only. */
@@ -82,7 +84,7 @@ export class ApprovalsService {
     if (aggregate === null) throw this.boardNotFound();
 
     const plan = normalizeApprovalPlan(dto.plan, boardId);
-    this.assertPlanLimits(plan, policy);
+    await this.assertPlanLimitsForUser(plan, policy, userId, boardId);
     const requirement = classifyPlan(
       plan,
       aggregate,
@@ -270,6 +272,11 @@ export class ApprovalsService {
         risk: row.risk,
       },
     });
+    await this.attention.notifyApprovalDecided(
+      updated,
+      dto.decision,
+      dto.comment ?? null,
+    );
     this.publish(updated);
     return this.toDto({ row: updated, includePlan: true });
   }
@@ -363,7 +370,7 @@ export class ApprovalsService {
 
     // A board policy may cap the plan even when the caller reaches this path
     // automatically (without an explicit `POST /approvals`).
-    this.assertPlanLimits(plan, policy);
+    await this.assertPlanLimitsForUser(plan, policy, params.userId, boardId);
     await this.expireOverdue(boardId);
 
     const existing = await this.findByIdempotentPlan(
@@ -725,6 +732,7 @@ export class ApprovalsService {
         expiresAt: row.expiresAt.getTime(),
       },
     );
+    await this.attention.notifyApprovalExpired(updated);
     this.publish(updated);
     return updated;
   }
@@ -804,6 +812,7 @@ export class ApprovalsService {
       return created;
     });
     this.publish(row);
+    await this.attention.notifyApprovalRequested(row);
     return row;
   }
 
@@ -989,6 +998,28 @@ export class ApprovalsService {
     });
     if (board === null) throw this.boardNotFound();
     return board;
+  }
+
+  /**
+   * Enforce the run limits and record one attention event when a plan is
+   * refused. The original `409 limit_exceeded` is always rethrown; the
+   * notification is best-effort and never masks the validation error.
+   */
+  async assertPlanLimitsForUser(
+    plan: ApprovalPlan,
+    policy: BoardAgentPolicy,
+    userId: string,
+    boardId: string,
+  ): Promise<void> {
+    try {
+      this.assertPlanLimits(plan, policy);
+    } catch (error) {
+      await this.attention.notifyLimitExceeded(userId, error, {
+        boardId,
+        resource: "plan",
+      });
+      throw error;
+    }
   }
 
   /**

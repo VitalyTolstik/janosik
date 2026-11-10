@@ -13,6 +13,10 @@ function prismaMock(): PrismaService {
       findMany: jest.fn().mockResolvedValue([]),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    attentionNotification: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   } as unknown as PrismaService;
 }
 
@@ -78,6 +82,121 @@ describe("CommsSchedulerService", () => {
     expect(result.sent).toBe(1);
     expect(mailMock.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ to: "a@example.com" }),
+    );
+  });
+
+  it("includes undigested attention categories and marks them digested", async () => {
+    const prisma = prismaMock();
+    (prisma.attentionNotification.findMany as jest.Mock).mockResolvedValue([
+      { id: "n1", userId: "u1", boardId: "b1", type: "approval.requested" },
+      { id: "n2", userId: "u1", boardId: "b1", type: "approval.requested" },
+      { id: "n3", userId: "u1", boardId: "b1", type: "claim.expired" },
+      { id: "n4", userId: "u2", boardId: "b1", type: "agent.blocked" },
+    ]);
+    (prisma.board.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "b1",
+        title: "Board",
+        members: [
+          {
+            user: {
+              id: "u1",
+              email: "a@example.com",
+              notifyDigest: true,
+              locale: "ru",
+              disabledAt: null,
+            },
+          },
+          {
+            user: {
+              id: "u2",
+              email: "b@example.com",
+              notifyDigest: true,
+              locale: "en",
+              disabledAt: null,
+            },
+          },
+        ],
+        // No content changes: the digest is driven by attention alone.
+        _count: { activity: 0 },
+      },
+    ]);
+    const ops = {
+      digestIntervalHours: jest.fn().mockResolvedValue(24),
+      reminderLeadHours: jest.fn().mockResolvedValue(0),
+    } as unknown as OpsSettingsService;
+    const service = new CommsSchedulerService(
+      prisma,
+      ops,
+      mailMock,
+      templatesMock,
+    );
+
+    const result = await service.run("digest");
+
+    expect(result.sent).toBe(2);
+    expect(templatesMock.digestEmail).toHaveBeenCalledWith(
+      "Board",
+      0,
+      24,
+      "ru",
+      [
+        { type: "approval.requested", count: 2 },
+        { type: "claim.expired", count: 1 },
+      ],
+    );
+    expect(templatesMock.digestEmail).toHaveBeenCalledWith(
+      "Board",
+      0,
+      24,
+      "en",
+      [{ type: "agent.blocked", count: 1 }],
+    );
+    expect(prisma.attentionNotification.updateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not leak another board's attention into a digest", async () => {
+    const prisma = prismaMock();
+    (prisma.attentionNotification.findMany as jest.Mock).mockResolvedValue([
+      { id: "n1", userId: "u1", boardId: "b2", type: "agent.blocked" },
+    ]);
+    (prisma.board.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "b1",
+        title: "Board one",
+        members: [
+          {
+            user: {
+              id: "u1",
+              email: "a@example.com",
+              notifyDigest: true,
+              locale: "en",
+              disabledAt: null,
+            },
+          },
+        ],
+        _count: { activity: 1 },
+      },
+    ]);
+    const ops = {
+      digestIntervalHours: jest.fn().mockResolvedValue(24),
+      reminderLeadHours: jest.fn().mockResolvedValue(0),
+    } as unknown as OpsSettingsService;
+    const service = new CommsSchedulerService(
+      prisma,
+      ops,
+      mailMock,
+      templatesMock,
+    );
+
+    await service.run("digest");
+
+    expect(templatesMock.digestEmail).toHaveBeenCalledWith(
+      "Board one",
+      1,
+      24,
+      "en",
+      [],
     );
   });
 

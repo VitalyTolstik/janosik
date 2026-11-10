@@ -31,6 +31,11 @@ export class UpdateProfileDto {
   @IsBoolean()
   notifyDigest?: boolean;
 
+  /** Opt out of immediate attention e-mails (TASK-166.9). */
+  @IsOptional()
+  @IsBoolean()
+  notifyAttention?: boolean;
+
   /** Canonical language for the UI, announcements and email. */
   @IsOptional()
   @IsIn(["en", "ru"])

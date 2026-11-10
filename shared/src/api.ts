@@ -823,6 +823,11 @@ export interface AuthUserDto {
    */
   notifyDigest?: boolean;
   /**
+   * TASK-166.9 opt-out of immediate attention e-mails. Omitted means on; the
+   * in-app attention inbox is unaffected.
+   */
+  notifyAttention?: boolean;
+  /**
    * Canonical language of the interface, announcement banner and email.
    * Omitted for accounts created before localization; the client adopts its
    * current language once, and the server treats "not chosen" as English for
@@ -985,6 +990,8 @@ export interface UpdateProfileRequest {
   avatarColor?: UserAvatarColor | null;
   /** Opt out of scheduled digests/reminders (TASK-153). */
   notifyDigest?: boolean;
+  /** Opt out of immediate attention e-mails (TASK-166.9). */
+  notifyAttention?: boolean;
   /** Canonical language for the UI, announcements and email. */
   locale?: AnnouncementLocale | null;
 }
@@ -1294,4 +1301,76 @@ export interface RunListQuery {
   limit?: number;
   /** Run id to page after (older rows). */
   cursor?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * TASK-166.9 — attention inbox, notification settings and digest v2
+ * ------------------------------------------------------------------ */
+
+/**
+ * Stable wire names of the attention categories. The ADR also names
+ * `token.revoked`; the backend reserves the vocabulary but does not emit it in
+ * this stream (revocation already closes sessions and surfaces in the audit
+ * log), so it is deliberately absent from the accepted list until it has a
+ * producer and tests.
+ */
+export const ATTENTION_NOTIFICATION_TYPES = [
+  "approval.requested",
+  "approval.decided",
+  "approval.expired",
+  "agent.blocked",
+  "agent.needs_human",
+  "claim.expired",
+  "quota.exceeded",
+] as const;
+export type AttentionNotificationType =
+  (typeof ATTENTION_NOTIFICATION_TYPES)[number];
+
+/**
+ * One in-app attention event for the current user. `boardId` is null only for
+ * account-level events (the board quota); every board-scoped row is filtered
+ * against live membership on read.
+ */
+export interface AttentionNotificationDto {
+  id: string;
+  type: AttentionNotificationType;
+  boardId: string | null;
+  title: string;
+  body: string | null;
+  /** Small, non-sensitive context: ids, risk, action, limit, current. */
+  data: Record<string, unknown> | null;
+  /** Unix ms; null while unread. */
+  readAt: number | null;
+  createdAt: number;
+}
+
+/** Newest-first page of the current user's attention inbox. */
+export interface AttentionNotificationPage {
+  items: AttentionNotificationDto[];
+  nextCursor: string | null;
+  /** Unread rows across every board the user can still see. */
+  unreadCount: number;
+}
+
+/** `GET /users/me/notifications` filters. */
+export interface AttentionNotificationListQuery {
+  /** Restrict to one board; requires live membership. */
+  boardId?: string;
+  unreadOnly?: boolean;
+  cursor?: string;
+  limit?: number;
+}
+
+/** Per-account notification switches used by the attention/digest flows. */
+export interface NotificationSettingsDto {
+  /** Scheduled board digests and due reminders (existing TASK-72 switch). */
+  notifyDigest: boolean;
+  /** Immediate attention e-mails; the in-app inbox is always written. */
+  notifyAttention: boolean;
+}
+
+/** Body of `PATCH /users/me/notification-settings`. */
+export interface UpdateNotificationSettingsRequest {
+  notifyDigest?: boolean;
+  notifyAttention?: boolean;
 }

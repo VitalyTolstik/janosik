@@ -293,7 +293,12 @@ export class CommandsService {
       );
       // Enforce the run limits even when an approval is supplied: an approval
       // authorizes the action, not an oversized plan.
-      this.approvals.assertPlanLimits(plan, policy);
+      await this.approvals.assertPlanLimitsForUser(
+        plan,
+        policy,
+        actorId,
+        boardId,
+      );
       if (approvalId === undefined) {
         await this.approvals.ensureCommandApproval({
           boardId,

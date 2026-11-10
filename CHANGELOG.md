@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.9 attention and notification backend: approvals, agent blockers /
+  handoffs, expired claims and refused quota now produce one deduplicated
+  in-app `AttentionNotification` per recipient and, unless the account opted
+  out with the new `notifyAttention` preference, one EN/RU e-mail through the
+  existing mail queue. Approval requests go to active board ADMINs; decisions
+  and expiries go to the requester and decision actor; a lapsed claim goes to
+  ADMINs and the claimant; the board cap warns the account itself. API tokens
+  are never recipients, removed/expired members and disabled accounts are
+  dropped, and the inbox is session-only (`GET /users/me/notifications`,
+  read/read-all, `GET/PATCH /users/me/notification-settings`). Immediate
+  attention is fire-and-forget, so SMTP never blocks a decision or comment.
+  The scheduled digest (v2) now includes undigested attention categories once
+  per recipient and marks them digested, while the existing board activity and
+  due-reminder behaviour is unchanged. A new maintenance `sweep-claims`
+  releases lapsed card leases and raises one claim-expiry event; `sweep-attention`
+  applies the normal retention window to the inbox.
 - TASK-166.4 reliable write contract: every REST error now uses one
   machine-readable envelope — stable `code`, human `message`, `retryable`,
   `requestId` (same as `X-Request-Id`), `currentVersion`, optional `field`,
