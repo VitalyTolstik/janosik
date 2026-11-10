@@ -36,6 +36,11 @@ const INSTRUCTIONS = `Janosik is a Kanban board. Drive it the way a person would
 3. Act with the focused tools (cards, columns, labels, checklists, links,
    comments, activity, attachments; members, shares and the account only when
    the operator enabled them).
+4. If the account toolset is enabled, call janosik_whoami to confirm the token
+   scope, pause state and server API version before a long run.
+5. For a long run, start a session with janosik_start_session, heartbeat it and
+   end it with janosik_end_session when done; later writes are attributed
+   automatically.
 Board-content edits use the app's command log and stream live to viewers.
 MCP edits do not enter the UI's local undo stack; use unarchive or an explicit
 compensating edit to correct them. MCP does not expose general undo/redo.

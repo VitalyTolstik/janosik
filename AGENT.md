@@ -270,7 +270,10 @@ npm run dev                             # UI :5173 (/api проксируетс�
 `trustedCi`; ключ не повышает роль на доске, а destructive-действия требуют
 подтверждения, если это не доверенный CI. Требует **запущенного API**. Поведение
 агента задаёт скилл `skills/janosik`. Сборка — `npm run build:mcp`; подробности
-в `README.md` и `mcp/README.md`.
+в `README.md` и `mcp/README.md`. Публичный HTTP-контракт — `site/public/openapi.yaml`
+(OpenAPI 3.1: полный агентский контур и основная запись доски), проверяется
+`npm run openapi:check`; каталог инструментов и README сверяет
+`mcp/src/catalog.test.ts`.
 
 ### Agent-ready карточка (TASK-157, Слой 0)
 

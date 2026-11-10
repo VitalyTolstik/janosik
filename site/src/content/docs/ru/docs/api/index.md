@@ -9,6 +9,12 @@ description: Соглашения, аутентификация и группы 
 включая комментарии и вложения, доступны через REST и описаны в [справочнике
 REST API](./rest/).
 
+Машиночитаемый контракт опубликован как
+[документ OpenAPI 3.1](/openapi.yaml). Он покрывает полный агентский контур,
+запись через команды/batch/планы, комментарии, вложения, участников, ссылки и
+активность. Получение учётных данных, публичные ссылки, мастер-API `/admin`,
+уведомления и SSE описаны на этом сайте.
+
 ## Базовый путь и транспорт
 
 Каждый маршрут обслуживается под глобальным префиксом `/api/v1`. Маршрут,
@@ -44,18 +50,55 @@ Authorization: Bearer jnk_<43 base64url chars>
 указывает обработчику аутентификации проверить его по таблице `ApiToken`, а не через
 JWT-стратегию. Оба вида токенов подходят для маршрутов доски.
 
+Агент может передать `X-Agent-Session: <sessionId>` при записи. Сервер
+проверяет, что сессия принадлежит тому же пользователю, токену и доске и ещё
+не закрыта, и записывает `agentSessionId` в команду, комментарий или вложение.
+Несовпадение — `403 agent_session_invalid`, закрытая сессия —
+`403 agent_session_closed`. Сессия создаётся через
+`POST /boards/:id/agent-sessions` (см. [REST API](./rest/#сессии-агентов-и-атрибуция)).
+
+### Области токена
+
+У каждого PAT один неизменяемый пресет возможностей. Новый ключ создаётся как
+`worker`; старые ключи миграция перевела в `admin` с `trustedCi: true`, кроме
+read-only. Пресет никогда не повышает роль пользователя на доске.
+
+| Пресет | Обычная запись контента | Переход в Done | Destructive | Администрирование доски |
+| --- | --- | --- | --- | --- |
+| `observer` | нет | нет | нет | нет |
+| `worker` | да | нет | approval / `trustedCi` | нет |
+| `reviewer` | да | да | approval / `trustedCi` | нет |
+| `admin` | да | да | approval / `trustedCi` | да |
+
+`readOnly: true` — устаревший флаг совместимости, он всегда даёт эффективный
+`observer`. Ключ, ограниченный доской, не видит и не пишет другие доски, не
+создаёт и не импортирует доски и не управляет аккаунтом. Destructive-действие
+без подтверждения отвечает `409 approval_required` и ничего не применяет;
+политика доски `destructive: "deny"` — жёсткий `403 destructive_denied`,
+который не обходит даже `trustedCi`. Подробнее —
+[Области токена и destructive gate](./rest/#области-токена-и-destructive-gate).
+
 ### Маршруты только для сессии
 
 Персональный API-токен действует от имени владельца в работе с досками, но не
-может управлять учётными данными аккаунта. При обращении с PAT эти маршруты возвращают `403`:
+может управлять учётными данными аккаунта или человеческим control plane. При
+обращении с PAT эти маршруты возвращают `403`:
 
 - `GET /users/me/tokens`, `POST /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id`
 - `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
 - `POST /agents/pause-all`, `POST /agents/resume-all`
 - `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
 - `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
+- `POST /boards/:id/approvals/:id/decision` (решение принимает человек-ADMIN; агент не подтверждает сам себя)
+- `POST /boards/:id/runs/:runId/revert` (реальный откат; `dryRun`/preview доступен для чтения)
+- `GET`/`PATCH /boards/:id/agent-policy`
+- `PATCH /users/me`, `PATCH /users/me/avatar`
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
+- `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline`
+- `POST /users/me/export`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
+- `POST /users/me/delete/request-code`, `DELETE /users/me`
+- `GET /users/me/notifications`, `GET`/`PATCH /users/me/notification-settings`
 
 ```json
 {
@@ -125,32 +168,59 @@ Refresh-токен никогда не появляется в теле отве
 | `401` | `unauthorized` | нет учётных данных, истекли или неверны |
 | `403` | `forbidden` | не участник или нет роли на доске |
 | `403` | `scope_denied` | пресет токена не разрешает действие |
+| `403` | `pat_read_only` | устаревший read-only ключ отклонил запись |
 | `403` | `destructive_denied` | политика доски запрещает destructive-действия |
 | `403` | `agent_paused` | агенты приостановлены на доске/в сессии/токене |
+| `403` | `agent_session_closed` | сессия из `X-Agent-Session` уже завершена |
+| `403` | `agent_session_invalid` | сессия не принадлежит этому токену/пользователю/доске |
+| `403` | `pat_required` | start/heartbeat сессии вызван из браузерной сессии |
 | `403` | `pat_forbidden` | персональный API-токен вызвал [маршрут только для сессии](#маршруты-только-для-сессии) |
+| `403` | `approval_owner_mismatch` | подтверждение принадлежит другому токену или сессии |
 | `404` | `not_found` | неизвестный или мягко удалённый ресурс |
-| `409` | `version_conflict` | устарел `ifMatch`/`ifMatchVersions`; см. `currentVersion` |
+| `409` | `version_conflict` | устарел `ifMatch`/`ifMatchVersions`/CAS политики; см. `currentVersion` |
 | `409` | `workflow_conflict` | процесс запрещает переход; см. `workflow` |
-| `409` | `limit_exceeded` | лимит WIP, коллекции, досок или share-ссылок |
-| `409` | `approval_required` | destructive-действию нужно подтверждение человека (166.5) |
+| `409` | `id_conflict` | id принадлежит другой доске |
+| `409` | `limit_exceeded` | лимит WIP, коллекции, досок, плана или run |
+| `409` | `approval_required` | destructive-действию нужно подтверждение человека; `approvalId`/`expiresAt` |
+| `409` | `approval_expired` / `approval_mismatch` | подтверждение истекло или план/хеш не совпал |
+| `409` | `approval_not_pending` / `approval_rejected` / `approval_cancelled` / `approval_consumed` | запрос нельзя применить в этом статусе |
+| `409` | `run_conflict` / `run_expired` | run уже откачен/откатывается или pre-images удалены retention |
 | `409` | `idempotency_conflict` | тот же `Idempotency-Key` использован с другим телом |
 | `409` | `idempotency_in_progress` | первый запрос с этим ключом ещё выполняется; повторите |
 | `413` | `payload_too_large` | тело/файл больше лимита маршрута; см. `limit` |
+| `416` | `range_not_satisfiable` | невыполнимый `Range` для вложения |
 | `429` | `rate_limited` | подождите `retryAfter` секунд и повторите |
 | `429` | `login_backoff` | слишком много неудачных входов; подождите `retryAfter` секунд |
 | `503` | `board_write_timeout` | таймаут блокировки записи доски; повтор безопасен |
 | `503` | `service_unavailable` | обслуживание или временный сбой; повторите позже |
 
 Неожиданный сбой сервера — `500 internal_error` с общим текстом и без
-stack trace. Полная таблица кодов — в `docs/TASK-166-launch-agent-control.md`
-§8.2.
+stack trace. Полный версионированный каталог кодов — в
+[OpenAPI-документе](/openapi.yaml) (`ApiErrorCode`) и
+`docs/TASK-166-launch-agent-control.md` §8.2. `code` расширяем: клиент обязан
+пережить неизвестный код и опереться на HTTP-статус.
 
-| Статус | `code`                | Значение                                                                                                               |
-| ------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `403`  | `pat_forbidden`       | персональный API-токен вызвал [маршрут только для сессии](#маршруты-только-для-сессии)                                 |
-| `403`  | `agent_paused`        | запись заблокирована паузой сессии/токена/доски; см. [Пауза и kill](./rest/#пауза-и-kill)                              |
-| `429`  | `login_backoff`       | адрес в [задержке входа](#задержка-входа); `retryAfter` — это ожидание в секундах                                        |
-| `503`  | `board_write_timeout` | запись в доску превысила время ожидания под нагрузкой; запрос можно безопасно повторить (команду с тем же `commandId`) |
+Ошибки approval, pause и run подсказывают следующий шаг: остановиться и
+позвать человека, перечитать доску или не повторять тот же запрос. Они
+намеренно `retryable: false`; без изменений безопасно повторять только
+`rate_limited`, `board_write_timeout` и `idempotency_in_progress`.
+
+## Версионирование и конкурентность
+
+Версия контракта API — `"1"` (`info.version` в OpenAPI, `server.apiVersion` в
+`GET /auth/me`). Версия сервера сообщается отдельно как `server.version`; она
+меняется без изменения контракта. Поля ответов аддитивны: клиент обязан
+игнорировать неизвестные ключи и неизвестные коды ошибок. Ломающие изменения
+вышли бы под новым префиксом `/api/v2`.
+
+Записи в доску используют последовательность команд. `GET /boards/:id`
+возвращает `X-Board-Seq`; передайте это число в `CommandRequest.ifMatch`, а
+версии сущностей — в `ifMatchVersions`. Устаревшее значение даёт
+`409 version_conflict` с актуальным `seq` в `currentVersion`. Это
+precondition в теле: API **не** читает HTTP-заголовок `If-Match`, а
+`Board.version` (версия сущности для `ifMatchVersions`) не смешивается с
+`ifMatch`/`seq`. Политика доски использует собственный CAS-токен
+`agentPolicyVersion`.
 
 ## Идемпотентность
 
@@ -308,7 +378,14 @@ email, имён файлов, комментариев или текста ка�
 | Вложения                 | `/cards/:cardId/attachments`, `/attachments/:attachmentId` | [REST API](./rest/)               |
 | Управление ссылками (ADMIN) | `/boards/:id/shares`                                       | [REST API](./rest/)               |
 | Публичные ссылки        | `/share/:token`                                            | [REST API](./rest/)               |
+| Сессии агентов           | `/boards/:id/agent-sessions`                               | [REST API](./rest/#сессии-агентов-и-атрибуция) |
+| Пауза и stop-all         | `/boards/:id/agents/*`, `/agents/*`, `/users/me/tokens/:id/*` | [REST API](./rest/#пауза-и-kill) |
+| Подтверждения            | `/boards/:id/approvals`                                    | [REST API](./rest/#подтверждения) |
+| Планы                    | `/boards/:id/plans`, `/plans/apply`                        | [REST API](./rest/#планы) и [API команд](./commands/) |
+| Runs и откат             | `/boards/:id/runs`                                         | [REST API](./rest/#runs-и-откат) |
+| Политика агентов доски   | `/boards/:id/agent-policy`                                 | [REST API](./rest/#политика-агентов-доски) |
 | Ленты активности         | `/boards/:id/activity`, `/cards/:cardId/activity`          | эта страница                            |
+| Персональные API-токены  | `/users/me/tokens`                                         | [REST API](./rest/#персональные-api-токены) |
 | Health                   | `/health`                                                  | эта страница                            |
 | Объявления               | `/announcements`                                           | эта страница                            |
 | Аутентификация мастера   | `/admin/auth`                                              | контур мастер-аккаунта, здесь не описан |

@@ -9,6 +9,34 @@ description: Доски, участники, комментарии, вложе�
 (базовый путь, аутентификация, ошибки, ограничения частоты) см. в
 [Справочнике по API](./).
 
+## Заголовки записи и конкурентность
+
+Любая запись принимает `X-Agent-Session: <sessionId>`, если вызывающий — PAT,
+открывший сессию на этой доске. Сервер проверяет её и записывает атрибуцию в
+команду/комментарий/вложение; несовпадение — `403 agent_session_invalid`,
+закрытая сессия — `403 agent_session_closed`.
+
+Версия для проверки передаётся в JSON, а не в HTTP-заголовке `If-Match`:
+`{ "ifMatch": 42 }` фиксирует `seq` доски (`X-Board-Seq` из
+`GET /boards/:id`), а `ifMatchVersions: { "card:<id>": 7 }` — версии отдельных
+сущностей. Устаревшее значение даёт `409 version_conflict` с актуальным
+значением в `currentVersion`. `Board.version` — версия сущности для
+`ifMatchVersions`, а не последовательность команд.
+
+`Idempotency-Key` действует для перечисленных ниже REST-записей (8–128
+символов из `A-Z a-z 0-9 _ -`). Записи через журнал команд используют
+`commandId`, а `clientRunId` — ключ run для batch/плана. Неудачный запрос
+освобождает ключ; повтор возвращает первый результат; другое тело с тем же
+ключом — `409 idempotency_conflict`. Успешные команды/batch/план/откат могут
+вернуть `X-Run-Id`. `X-Request-Id` совпадает с `requestId` в теле ошибки.
+Заголовки лимитов агента описаны в
+[Справочнике по API](../#бюджеты-агентов-и-заголовки).
+
+Пагинация курсорная: `?cursor=` непрозрачен, `nextCursor: null` означает
+конец. Комментарии и активность по умолчанию отдают 50 записей и не больше
+100; approvals и runs — не больше 100. Поиск использует `?q=`. Offset-
+пагинации нет.
+
 ## Доски и участники
 
 Создание и удаление доски, а также управление участниками выполняются через
@@ -283,6 +311,27 @@ keep-alive PAT-поток получает
 | `agent_paused` | 403 | запись заблокирована паузой сессии, токена или доски; `pauseScope`/`pausedAt`, `retryable: false` |
 | `pat_read_only` | 403 | устаревший read-only ключ отклонил запись |
 
+## Персональные API-токены
+
+Управление токенами — самообслуживание аккаунта, доступное только браузерной
+сессии: PAT получает `403 pat_forbidden` на каждом маршруте ниже.
+
+| Метод | Путь | Запрос | Ответ |
+| --- | --- | --- | --- |
+| `GET` | `/users/me/tokens` | — | `UserTokenDto[]` |
+| `POST` | `/users/me/tokens` | `CreateUserTokenDto` | `{ token, apiToken }` |
+| `PATCH` | `/users/me/tokens/:id` | `UpdateUserTokenDto` | `UserTokenDto` |
+| `DELETE` | `/users/me/tokens/:id` | — | `{ status: "ok" }` |
+| `POST` | `/users/me/tokens/:id/pause` | `AgentPauseDto` | `UserTokenDto` |
+| `POST` | `/users/me/tokens/:id/resume` | `AgentPauseDto` | `UserTokenDto` |
+
+Новый токен по умолчанию `worker`. `scopePreset` (`observer`, `worker`,
+`reviewer`, `admin`), `boardId`, `readOnly`, `rateLimitPerMinute`, `expiresAt`
+и `trustedCi` задаются при создании; `PATCH` меняет любое поле, кроме секрета,
+а пропущенное поле сохраняет значение. Открытый текст токена возвращается
+ровно один раз — в ответе на создание. Отзыв — необратимый kill: он отменяет
+открытые сессии, освобождает claims токена и закрывает его SSE.
+
 ## Подтверждения
 
 Подтверждение разрешает один точный план, но само ничего не применяет. Агент
@@ -397,6 +446,101 @@ PAT-план создаёт один `AgentRun` (`kind: "plan"`, `planHash` и �
 `{ runId, results, planHash }` плюс `X-Run-Id`; этот run виден в `GET /runs`
 и откатывается человеком-ADMIN доски. План из браузера run не создаёт (его
 история — обычный UI undo). План никогда не охватывает несколько досок.
+
+## Runs и откат
+
+Run группирует команды одного PAT-батча, одной одиночной destructive-команды
+PAT, применения плана или человеческого отката для аудита и rollback. Run
+принадлежит одной доске. Браузерный батч и обычные неразрушающие правки
+браузера run не создают (их история — стек undo в UI).
+
+| Метод | Путь | Доступ | Запрос | Ответ |
+| --- | --- | --- | --- | --- |
+| `GET` | `/boards/:id/runs` | участник (`observer`+) | `status`, `kind`, `apiTokenId`, `agentSessionId`, `clientRunId`, `from`, `to`, `limit`, `cursor` | `RunSummaryDto[]` |
+| `GET` | `/boards/:id/runs/:runId` | участник; pre-images — только board `ADMIN` в браузере | — | `RunDetailDto` |
+| `POST` | `/boards/:id/runs/:runId/revert/preview` | участник, dry-run | — | `RevertPreviewDto` |
+| `POST` | `/boards/:id/runs/:runId/revert` | только сессия board `ADMIN`, если `dryRun` = false | `RevertRunDto` | `RunDetailDto` |
+| `POST` | `/boards/:id/runs/:runId/revert` | участник при `{ "dryRun": true }` | `RevertRunDto` | `RevertPreviewDto` |
+
+`RunSummaryDto` содержит `id`, `boardId`, `apiTokenId`, `agentSessionId`,
+`actorId`, `kind` (`batch`, `plan`, `single`, `revert`), `status` (`applied`,
+`reverted`, `failed`), `clientRunId`, `planHash`, `approvalId`, `commandCount`,
+`firstSeq`/`lastSeq`, `revertsRunId`, `createdAt`, `appliedAt` и
+`revertedAt`. Деталь добавляет таймлайн команд и `preimages`. PAT видит
+сводку и команды, но **не** снимки «до», даже если его владелец — board ADMIN.
+
+```json
+{
+  "id": "run-01",
+  "boardId": "board-1",
+  "apiTokenId": "tok-1",
+  "agentSessionId": "sess-1",
+  "actorId": "user-1",
+  "kind": "batch",
+  "status": "applied",
+  "clientRunId": "nightly-import-1",
+  "planHash": null,
+  "approvalId": null,
+  "commandCount": 12,
+  "firstSeq": 101,
+  "lastSeq": 112,
+  "revertsRunId": null,
+  "createdAt": 1762764000000,
+  "appliedAt": 1762764000000,
+  "revertedAt": null
+}
+```
+
+Preview возвращает `{ dryRun: true, run, conflicts, canRevert }`; `diff`
+присутствует только у board ADMIN в браузерной сессии. Конфликт называет
+`touch`, `expectedVersion`, записанную при применении run, и `currentVersion`
+сейчас. Реальный откат all-or-nothing, повторно проверяет конфликты под
+блокировкой доски, разрешён один раз на run (откат отката запрещён) и создаёт
+новый run `kind: "revert"` с `revertsRunId`; исходный становится `reverted`.
+`409 run_conflict` означает, что состояние run это запрещает, `409 run_expired`
+— pre-images удалены retention. Для реального отката нужен `commandId`, чтобы
+сетевой повтор был идемпотентным.
+
+## Политика агентов доски
+
+Политикой управляет человек. Оба маршрута доступны только board `ADMIN` в
+браузерной сессии; PAT получает `403 pat_forbidden`.
+
+| Метод | Путь | Запрос | Ответ |
+| --- | --- | --- | --- |
+| `GET` | `/boards/:id/agent-policy` | — | `BoardAgentPolicyStateDto` |
+| `PATCH` | `/boards/:id/agent-policy` | `{ policy, version }` | `BoardAgentPolicyStateDto` |
+
+`policy: null` означает, что сохранённого значения нет и действуют безопасные
+умолчания; ответ всегда содержит эффективную политику, CAS-токен
+`agentPolicyVersion` и текущее состояние паузы. `PATCH` требует актуальный
+`version`; устаревший — `409 version_conflict` с
+`details.currentVersion`. `policy: null` возвращает умолчания. Лимиты
+проверяются строго:
+
+```json
+{
+  "schemaVersion": 1,
+  "destructive": "approval",
+  "requireApprovalFor": [
+    "member.invite",
+    "member.remove",
+    "share.create",
+    "share.revoke",
+    "attachment.delete",
+    "delete_board"
+  ],
+  "approverRoles": ["ADMIN"],
+  "maxCommandsPerRun": 100,
+  "maxCardsPerRun": 50,
+  "approvalTtlMinutes": 60
+}
+```
+
+`destructive` — `approval` или `deny` (жёсткий запрет, без создания approval);
+`maxCommandsPerRun` — 1–100, `maxCardsPerRun` — 1–50,
+`approvalTtlMinutes` — 5–1440. Каждое изменение политики пишет Activity и
+`SecurityAuditLog`.
 
 ## Вложения
 
@@ -712,6 +856,22 @@ API-токена; в кадрах до появления поля он отсу
   conflicts, canApply }`; `plan` — `ApprovalPlan` с массивом `commands`.
 - `PlanApplyResponse`: `{ runId, planHash, results }`, где `results` — по
   одному `CommandResponse` на команду в порядке применения.
+- `AgentSessionDto`: `id`, `userId`, `apiTokenId`, `boardId`, `name`,
+  `clientName`, `model`, `status`, `currentCardId`, `currentRunId`, `startedAt`,
+  `lastHeartbeatAt`, `stale`, `paused`, отметки паузы, `endedAt`, `endReason`,
+  `summary`.
+- `ApprovalRequestDto`: `id`, `boardId`, `cardId`, `requestedBy`,
+  `requestedByTokenId`, `agentSessionId`, `kind`, `actionType`, `summary`,
+  `risk`, `planHash`, `status`, `expiresAt`, `decidedBy`, `decidedAt`,
+  `decisionComment`, `runId`, `consumedAt`, `createdAt`; деталь добавляет `plan`.
+- `RunSummaryDto` / `RunDetailDto`: поля run, перечисленные выше, плюс
+  `commands[]` и — для board ADMIN в браузерной сессии — `preimages`.
+- `BoardAgentPolicyStateDto`: `{ policy, effective, version, paused, pausedAt,
+  pausedBy, pauseReason }`; `policy` равен `null`, когда сохранены умолчания.
+- `UserTokenDto`: `id`, `name`, `createdAt`, `lastUsedAt`, `expiresAt`,
+  `revokedAt`, `boardId`, `readOnly`, `rateLimitPerMinute`, `scopePreset`,
+  `trustedCi`, отметки индивидуальной/stop-all паузы, `paused`,
+  `effectiveTokenScope`.
 
 ## Ошибки
 

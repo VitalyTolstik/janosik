@@ -9,6 +9,32 @@ comments, attachments, public sharing and the realtime stream. See
 [API reference](./) for the shared conventions (base path, auth, errors,
 rate limits).
 
+## Write headers and concurrency
+
+Every write accepts `X-Agent-Session: <sessionId>` when the caller is a PAT that
+started a session on the same board. It attributes the command/comment/
+attachment and is verified on the server; a mismatch is
+`403 agent_session_invalid`, a closed session `403 agent_session_closed`.
+
+The version precondition is in the JSON body, not in the HTTP `If-Match`
+header: `{ "ifMatch": 42 }` pins the board `seq` (`X-Board-Seq` from
+`GET /boards/:id`), while `ifMatchVersions: { "card:<id>": 7 }` pins individual
+entity versions. A stale value answers `409 version_conflict` with the current
+value in `currentVersion`. `Board.version` is the entity version used by
+`ifMatchVersions`, not the command sequence.
+
+`Idempotency-Key` covers the REST writes listed below (8–128 characters from
+`A-Z a-z 0-9 _ -`). Command-log writes use `commandId`, and `clientRunId` keys a
+batch/plan run. A failed request releases its key; a replay returns the first
+result; a different body with the same key is `409 idempotency_conflict`.
+Successful command/batch/plan/revert responses may carry `X-Run-Id`.
+`X-Request-Id` matches `requestId` in an error body. The agent rate-limit
+headers are described in the [API reference](../#agent-buckets-and-headers).
+
+Pagination is cursor-based: `?cursor=` is opaque and `nextCursor: null` means
+the end. Comments and activity default to 50 and cap at 100; approvals and runs
+cap at 100. Search uses `?q=`. There is no offset pagination.
+
 ## Boards and members
 
 A board is created and deleted over REST; membership changes are REST by
@@ -276,6 +302,27 @@ Error codes are additive and stable:
 | `agent_paused` | 403 | a session, token or board pause blocks the write; `pauseScope`/`pausedAt`, `retryable: false` |
 | `pat_read_only` | 403 | legacy read-only key refused a write |
 
+## Personal API tokens
+
+Token management is account self-service and browser-session only: a PAT gets
+`403 pat_forbidden` on every route here.
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| `GET` | `/users/me/tokens` | none | `UserTokenDto[]` |
+| `POST` | `/users/me/tokens` | `CreateUserTokenDto` | `{ token, apiToken }` |
+| `PATCH` | `/users/me/tokens/:id` | `UpdateUserTokenDto` | `UserTokenDto` |
+| `DELETE` | `/users/me/tokens/:id` | none | `{ status: "ok" }` |
+| `POST` | `/users/me/tokens/:id/pause` | `AgentPauseDto` | `UserTokenDto` |
+| `POST` | `/users/me/tokens/:id/resume` | `AgentPauseDto` | `UserTokenDto` |
+
+A new token is `worker` by default. `scopePreset` (`observer`, `worker`,
+`reviewer`, `admin`), `boardId`, `readOnly`, `rateLimitPerMinute`, `expiresAt`
+and `trustedCi` are chosen at creation; `PATCH` edits every field except the
+secret, and an omitted field keeps its value. The plaintext appears exactly
+once in the create response. Revocation is the irreversible kill: it cancels
+open sessions, releases token claims and closes the token SSE.
+
 ## Approvals
 
 An approval authorizes one exact plan; it does not apply anything by itself.
@@ -404,6 +451,101 @@ A PAT plan creates one `AgentRun` (`kind: "plan"`, the `planHash` and optional
   "planHash": "8f14e45fceea167a5a36dedd4bea2543…"
 }
 ```
+
+## Runs and rollback
+
+A run groups the commands of one PAT batch, one single destructive PAT command,
+one plan apply or one human revert for audit and rollback. It belongs to one
+board. A browser batch and ordinary non-destructive browser edits create no run
+(their history is the UI undo stack).
+
+| Method | Path | Auth / role | Request | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/boards/:id/runs` | member (`observer`+) | `status`, `kind`, `apiTokenId`, `agentSessionId`, `clientRunId`, `from`, `to`, `limit`, `cursor` | `RunSummaryDto[]` |
+| `GET` | `/boards/:id/runs/:runId` | member; pre-images only board `ADMIN` browser session | none | `RunDetailDto` |
+| `POST` | `/boards/:id/runs/:runId/revert/preview` | member, dry run | none | `RevertPreviewDto` |
+| `POST` | `/boards/:id/runs/:runId/revert` | session-only board `ADMIN` when `dryRun` is false | `RevertRunDto` | `RunDetailDto` |
+| `POST` | `/boards/:id/runs/:runId/revert` | member when `{ "dryRun": true }` | `RevertRunDto` | `RevertPreviewDto` |
+
+`RunSummaryDto` carries `id`, `boardId`, `apiTokenId`, `agentSessionId`,
+`actorId`, `kind` (`batch`, `plan`, `single`, `revert`), `status` (`applied`,
+`reverted`, `failed`), `clientRunId`, `planHash`, `approvalId`, `commandCount`,
+`firstSeq`/`lastSeq`, `revertsRunId`, `createdAt`, `appliedAt` and
+`revertedAt`. Detail adds the command timeline and `preimages`. A PAT sees the
+summary and commands but **not** the before-state snapshots, even when its owner
+is a board ADMIN.
+
+```json
+{
+  "id": "run-01",
+  "boardId": "board-1",
+  "apiTokenId": "tok-1",
+  "agentSessionId": "sess-1",
+  "actorId": "user-1",
+  "kind": "batch",
+  "status": "applied",
+  "clientRunId": "nightly-import-1",
+  "planHash": null,
+  "approvalId": null,
+  "commandCount": 12,
+  "firstSeq": 101,
+  "lastSeq": 112,
+  "revertsRunId": null,
+  "createdAt": 1762764000000,
+  "appliedAt": 1762764000000,
+  "revertedAt": null
+}
+```
+
+The preview returns `{ dryRun: true, run, conflicts, canRevert }`; `diff` is
+present only for a board ADMIN browser session. A conflict names the `touch`,
+the `expectedVersion` recorded when the run applied and the
+`currentVersion` now. A real revert is all-or-nothing, re-checks conflicts under
+the board lock, is allowed once per run (no revert of a revert) and creates a
+new `kind: "revert"` run with `revertsRunId`; the original becomes `reverted`.
+`409 run_conflict` means the run state forbids it, `409 run_expired` that
+pre-images were swept by retention. A `commandId` is required for a real revert
+so a network retry is idempotent.
+
+## Board agent policy
+
+The board policy is human-controlled. Both routes are session-only board
+`ADMIN`; a PAT gets `403 pat_forbidden`.
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| `GET` | `/boards/:id/agent-policy` | none | `BoardAgentPolicyStateDto` |
+| `PATCH` | `/boards/:id/agent-policy` | `{ policy, version }` | `BoardAgentPolicyStateDto` |
+
+`policy: null` means the stored value is absent and safe defaults apply; the
+response always carries the effective policy, the `agentPolicyVersion` CAS token
+and the current pause state. `PATCH` requires the current `version`; a stale
+value is `409 version_conflict` with `details.currentVersion`. `policy: null`
+restores the defaults. Limits are validated strictly:
+
+```json
+{
+  "schemaVersion": 1,
+  "destructive": "approval",
+  "requireApprovalFor": [
+    "member.invite",
+    "member.remove",
+    "share.create",
+    "share.revoke",
+    "attachment.delete",
+    "delete_board"
+  ],
+  "approverRoles": ["ADMIN"],
+  "maxCommandsPerRun": 100,
+  "maxCardsPerRun": 50,
+  "approvalTtlMinutes": 60
+}
+```
+
+`destructive` is `approval` or `deny` (hard block, no approval row);
+`maxCommandsPerRun` is 1–100, `maxCardsPerRun` 1–50 and
+`approvalTtlMinutes` 5–1440. Every policy change writes an Activity row and a
+`SecurityAuditLog` entry.
 
 ## Attachments
 
@@ -718,6 +860,22 @@ The response bodies are the shared wire types. Key fields:
   conflicts, canApply }`; `plan` is an `ApprovalPlan` with a `commands` array.
 - `PlanApplyResponse`: `{ runId, planHash, results }` where `results` is one
   `CommandResponse` per command, in order.
+- `AgentSessionDto`: `id`, `userId`, `apiTokenId`, `boardId`, `name`,
+  `clientName`, `model`, `status`, `currentCardId`, `currentRunId`, `startedAt`,
+  `lastHeartbeatAt`, `stale`, `paused`, pause stamps, `endedAt`, `endReason`,
+  `summary`.
+- `ApprovalRequestDto`: `id`, `boardId`, `cardId`, `requestedBy`,
+  `requestedByTokenId`, `agentSessionId`, `kind`, `actionType`, `summary`,
+  `risk`, `planHash`, `status`, `expiresAt`, `decidedBy`, `decidedAt`,
+  `decisionComment`, `runId`, `consumedAt`, `createdAt`; detail adds `plan`.
+- `RunSummaryDto` / `RunDetailDto`: the run fields listed above plus
+  `commands[]` and, for a board ADMIN browser session, `preimages`.
+- `BoardAgentPolicyStateDto`: `{ policy, effective, version, paused, pausedAt,
+  pausedBy, pauseReason }`; `policy` is `null` when defaults are stored.
+- `UserTokenDto`: `id`, `name`, `createdAt`, `lastUsedAt`, `expiresAt`,
+  `revokedAt`, `boardId`, `readOnly`, `rateLimitPerMinute`, `scopePreset`,
+  `trustedCi`, individual/stop-all pause stamps, `paused`,
+  `effectiveTokenScope`.
 
 ## Errors
 

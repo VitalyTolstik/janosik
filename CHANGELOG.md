@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.11 agent DX contract: a public OpenAPI 3.1 document at
+  `site/public/openapi.yaml` covers the complete agent-control surface
+  (sessions, pause/resume, approvals, plans, runs, policy, token/account) and
+  the core board/command write path, with the stable error envelope/codes,
+  idempotency and `X-Approval-Id`/`X-Agent-Session`/version semantics. It is
+  validated on every run (`npm run openapi:check`): OpenAPI 3.1 schema,
+  unique operation ids/paths, declared path parameters and resolvable refs.
+  MCP descriptions/annotations are audited by `mcp/src/catalog.test.ts`
+  (title, description, parameter text, README catalog drift); all 84 tools
+  remain, `apply_plan` now advertises its destructive potential. EN/RU API and
+  MCP docs gained auth/scopes/versioning, runs/rollback, policy, real examples
+  and a prompt-injection warning.
 - TASK-166.12 contract/security suite: new backend
   `agent-control-security` and `agent-control-approval-security` suites pin the
   remaining actor/board-scope boundaries (read-only transports, cross-board

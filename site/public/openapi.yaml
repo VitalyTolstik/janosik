@@ -1,0 +1,4997 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: Janosik REST API
+  version: "1"
+  summary: Board, command, agent-control, approval, plan and run endpoints.
+  description: |
+    Public contract for the Janosik HTTP API (TASK-166.11). The server is a
+    NestJS service; every route is served under the global prefix `/api/v1`
+    and authenticated with a Bearer credential — either a short-lived user
+    access JWT or a personal API token (`jnk_…`, "PAT").
+
+    **Scope of this document.** It covers the complete agent-control surface
+    (agent sessions, pause/resume/stop-all, approvals, plans, runs, agent
+    policy, token management) and the board/card write path (command log,
+    batch, comments, attachments, members, shares, search, activity). It is
+    not a line-by-line copy of every legacy route: credential acquisition
+    (`/auth/login`, registration, refresh, OAuth, password/email change),
+    public share routes (`/share/:token`), the master `/admin` API,
+    invitations addressed to an account, notifications and realtime SSE are
+    documented in the site docs and intentionally omitted here. Fields marked
+    optional/nullable follow the shared DTOs; no field is invented for this
+    document.
+
+    **Versioning.** `info.version` and `x-api-version` are the API contract
+    version (`"1"`), not the server release. `GET /auth/me` returns the live
+    server release as `server.version` and `server.apiVersion`.
+
+    **Errors.** Every error uses `ApiErrorEnvelope`: branch on `code`, not on
+    `message`. `retryable` says whether the identical request may be retried.
+    HTTP statuses are preserved for compatibility.
+
+    **Concurrency and idempotency.** Board writes carry the board sequence in
+    `CommandRequest.ifMatch` and optional per-entity versions in
+    `ifMatchVersions`; the API does not read the HTTP `If-Match` header. A
+    stale precondition is `409 version_conflict`. `commandId` is the
+    command-log idempotency key; `Idempotency-Key` covers the REST writes
+    named per operation, and `clientRunId` keys a run. Retrying the same
+    intent is safe; reusing a key with a different body is
+    `409 idempotency_conflict`.
+
+    **Agent control.** A PAT write may carry `X-Agent-Session`; a destructive
+    action without `X-Approval-Id` answers `409 approval_required` and creates
+    an approval request for the exact plan. The approval decision and every
+    pause/resume route are browser-session only (`403 pat_forbidden`). A
+    paused agent gets `403 agent_paused` before scope or approval checks.
+x-api-version: "1"
+servers:
+  - url: /api/v1
+    description: Same origin (self-hosted default).
+  - url: https://boards.example.com/api/v1
+    description: Example absolute origin; replace with your instance.
+security:
+  - bearerAuth: []
+tags:
+  - name: Boards
+    description: Board lifecycle, search, export, members and shares.
+  - name: Commands
+    description: Ordered board writes through the shared reducer.
+  - name: Plans
+    description: Dry-run preview and atomic apply of a command plan.
+  - name: Agent sessions
+    description: Board-scoped attribution context for a PAT.
+  - name: Agents
+    description: Human control plane — pause, resume and stop-all.
+  - name: Approvals
+    description: Human authorization for one exact destructive plan.
+  - name: Runs
+    description: Audit grouping and rollback preview for agent writes.
+  - name: Agent policy
+    description: Board-level destructive/done policy and run limits.
+  - name: Cards
+    description: Card comments, attachments and activity.
+  - name: Activity
+    description: Board and card audit feeds.
+  - name: Attachments
+    description: Card file upload, listing and download.
+  - name: Comments
+    description: Card discussion and typed evidence/handoff comments.
+  - name: Account
+    description: Identity, personal API tokens, profile, export and deletion.
+paths:
+  /boards:
+    get:
+      tags: [Boards]
+      operationId: listBoards
+      summary: List boards the caller can see
+      description: |
+        Newest first. A board-scoped PAT sees only its board; a pending
+        invitation does not count as membership.
+      responses:
+        "200":
+          description: Board summaries with counters and the caller's role.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardSummary"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Boards]
+      operationId: createBoard
+      summary: Create a board
+      description: |
+        Requires the account-wide `admin` preset; a board-scoped PAT or a
+        `worker`/`reviewer` token gets `403 scope_denied`. The caller becomes
+        the first `ADMIN`. A retry with the same `Idempotency-Key` and body
+        returns the stored board.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBoardRequest"
+      responses:
+        "201":
+          description: The new board aggregate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAggregate"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/import:
+    post:
+      tags: [Boards]
+      operationId: importBoards
+      summary: Import a board envelope
+      description: |
+        Creates every board in an export envelope with the caller as `ADMIN`.
+        Acceptance is lenient: a parsed object or a raw JSON string. `dryRun`
+        validates the file and returns counts without writing. Requires the
+        account-wide `admin` preset. `Idempotency-Key` replays the first
+        import.
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          description: Return a preview and write nothing.
+          schema:
+            type: string
+            enum: ["1", "true"]
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/BoardEnvelope"
+                - type: string
+                  description: A JSON-encoded board envelope.
+      responses:
+        "200":
+          description: Dry-run preview (`dryRun=1`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardImportPreview"
+        "201":
+          description: Imported board aggregates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardAggregate"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: getBoard
+      summary: Read a board aggregate
+      description: |
+        Returns the frontend `Board` model. `X-Board-Seq` carries the command
+        sequence the aggregate reflects, for resuming the SSE delta.
+      responses:
+        "200":
+          description: The board aggregate.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAggregate"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Boards]
+      operationId: deleteBoard
+      summary: Soft-delete a board
+      description: |
+        Requires board `ADMIN` and the `admin` preset. Destructive: repeat the
+        same call with `X-Approval-Id` after a human approved the
+        `board.delete` operation. Cascades the delete flag to children,
+        hard-deletes memberships and revokes live shares; snapshot shares
+        survive.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/search:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: searchBoardCards
+      summary: Search cards in a board
+      description: |
+        Case-insensitive substring search over title, description, checklist
+        items and comments. Returns only card ids; comment matches are not
+        part of the board aggregate.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Query string; longer than 200 characters is `400`.
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: Matching card ids.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardCardSearchResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/export:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: exportBoard
+      summary: Export a board
+      description: |
+        Streams the portable JSON envelope (`schemaVersion: 3`). An export
+        above `MAX_BOARD_EXPORT_BYTES` is refused with `413` instead of being
+        truncated.
+      responses:
+        "200":
+          description: Board export envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardEnvelope"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/members:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: listBoardMembers
+      summary: List board members
+      description: Every accepted member plus the caller's role context; pending invitations are masked rows.
+      responses:
+        "200":
+          description: Members and pending invitations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardMember"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Boards]
+      operationId: inviteBoardMember
+      summary: Invite a member
+      description: |
+        Board `ADMIN` with the `admin` preset. The answer never reveals
+        whether an account exists: the masked row has `userId: ""` and null
+        profile fields. Sensitive lifecycle operation `member.invite`; without
+        `X-Approval-Id` a PAT gets `409 approval_required`.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteMemberRequest"
+      responses:
+        "201":
+          description: The pending membership row (masked for an unknown address).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardMember"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/invitations:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: listBoardPendingInvitations
+      summary: List pending board invitations
+      description: Board `ADMIN` only, so a wrong invite can be withdrawn.
+      responses:
+        "200":
+          description: Pending membership rows.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardPendingInvitation"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/UserId"
+    patch:
+      tags: [Boards]
+      operationId: updateBoardMember
+      summary: Change a member role or VIEWER expiry
+      description: |
+        Board `ADMIN` and `admin` preset. The last `ADMIN` cannot be demoted
+        (`409`). Lifecycle operation `member.update`, subject to approval.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberRequest"
+      responses:
+        "200":
+          description: Updated membership.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardMember"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Boards]
+      operationId: removeBoardMember
+      summary: Remove a member
+      description: |
+        Board `ADMIN` and `admin` preset. The last `ADMIN` cannot be removed
+        (`409`). Destructive lifecycle operation `member.remove`, subject to
+        approval.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/shares:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: listBoardShares
+      summary: List share links
+      description: Board `ADMIN` and `admin` preset.
+      responses:
+        "200":
+          description: Share links for the board.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardShare"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Boards]
+      operationId: createBoardShare
+      summary: Publish a board through a share link
+      description: |
+        Board `ADMIN` and `admin` preset. Publishing a board is sensitive and
+        requires approval (`share.create`) for a PAT. `Idempotency-Key`
+        replays the first link for the same intent.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShareRequest"
+      responses:
+        "201":
+          description: The new share link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardShare"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/shares/{shareId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/ShareId"
+    patch:
+      tags: [Boards]
+      operationId: updateBoardShare
+      summary: Change a share link
+      description: |
+        Board `ADMIN` and `admin` preset. Changing visibility is sensitive and
+        requires approval (`share.update`).
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShareRequest"
+      responses:
+        "200":
+          description: Updated share.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardShare"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Boards]
+      operationId: revokeBoardShare
+      summary: Revoke a share link
+      description: |
+        Board `ADMIN` and `admin` preset. Destructive lifecycle operation
+        `share.revoke`; the token stops resolving at once.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      responses:
+        "200":
+          description: Revoked share.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardShare"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/shares/{shareId}/refresh:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/ShareId"
+    post:
+      tags: [Boards]
+      operationId: refreshBoardShare
+      summary: Refresh a snapshot share
+      description: Re-freezes a snapshot share; a live share answers `400`.
+      responses:
+        "201":
+          description: Refreshed share.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardShare"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/shares/{shareId}/permanent:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/ShareId"
+    delete:
+      tags: [Boards]
+      operationId: deleteBoardSharePermanently
+      summary: Permanently delete a revoked share
+      description: Board `ADMIN` and `admin` preset; destructive `share.delete`.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      responses:
+        "204":
+          description: Deleted.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/commands:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: Last applied command sequence.
+          schema:
+            type: integer
+            minimum: 0
+        - name: runId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: apiTokenId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: agentSessionId
+          in: query
+          required: false
+          schema:
+            type: string
+      tags: [Commands]
+      operationId: listCommands
+      summary: Read the command log delta
+      description: |
+        Returns commands after `since`, oldest first, for catch-up after an
+        SSE gap. If the gap cannot be replayed, the response is an empty array
+        with `X-Delta-Resync: 1`; re-read the board instead of applying a
+        partial history.
+      responses:
+        "200":
+          description: The delta, or an empty array marked for resync.
+          headers:
+            X-Delta-Resync:
+              $ref: "#/components/headers/X-Delta-Resync"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommandDeltaEntry"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Commands]
+      operationId: applyCommand
+      summary: Apply one board command
+      description: |
+        Applies one reducer action in the board write transaction. Returns the
+        command `seq` and the versions of touched entities. A PAT command that
+        creates a run also sets `X-Run-Id`. Destructive actions require
+        `X-Approval-Id` unless the token is trusted CI; `commandId` makes a
+        retry idempotent. `Idempotency-Key` is additionally honoured for
+        `DUPLICATE_CARD`.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandRequest"
+      responses:
+        "200":
+          description: Applied command result.
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /boards/{boardId}/commands/batch:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    post:
+      tags: [Commands]
+      operationId: applyCommandBatch
+      summary: Apply up to 100 commands atomically
+      description: |
+        One board lock, one transaction, all-or-nothing; results are returned
+        in command order. At most 100 commands. A PAT batch creates exactly
+        one `AgentRun` (kind `batch`) and sets `X-Run-Id`. If any action is
+        destructive, the whole batch needs one approval. `clientRunId` keys
+        that run.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandBatchRequest"
+      responses:
+        "200":
+          description: One result per command, in order.
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandBatchResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /boards/{boardId}/plans:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    post:
+      tags: [Plans]
+      operationId: previewPlan
+      summary: Preview a plan (dry run)
+      description: |
+        Validates commands with the batch rules, replays the reducer in memory
+        and returns the canonical `planHash`, diff, warnings and conflicts.
+        Writes no command, run or approval. Board `ADMIN`/`MEMBER` and the
+        `worker` preset. A plan over `min(100, policy.maxCommandsPerRun)`
+        commands or `min(50, policy.maxCardsPerRun)` creates is
+        `409 limit_exceeded`.
+      parameters:
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanRequest"
+      responses:
+        "200":
+          description: Plan preview; conflicts are reported in the body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanPreview"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/plans/apply:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    post:
+      tags: [Plans]
+      operationId: applyPlan
+      summary: Apply exactly the previewed plan
+      description: |
+        Requires the `planHash` returned by the preview. A changed plan is
+        `409 approval_mismatch`; a destructive plan without `X-Approval-Id`
+        creates an approval and applies nothing. A PAT apply creates one
+        `AgentRun` (kind `plan`) and sets `X-Run-Id`; a browser apply creates
+        no run. Atomic and idempotent like a batch.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanApplyRequest"
+      responses:
+        "200":
+          description: Applied results and the run id.
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanApplyResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+  /boards/{boardId}/agent-sessions:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Agent sessions]
+      operationId: listAgentSessions
+      summary: List agent sessions
+      description: Board members can read every session; `active=1` drops terminal sessions.
+      parameters:
+        - name: active
+          in: query
+          required: false
+          description: When `1`/`true`, only non-terminal sessions.
+          schema:
+            type: string
+            enum: ["1", "true"]
+      responses:
+        "200":
+          description: Sessions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentSession"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Agent sessions]
+      operationId: startAgentSession
+      summary: Start an agent session
+      description: |
+        PAT only, board-scoped. The returned id is sent as `X-Agent-Session`
+        on later writes to attribute commands, comments and attachments to
+        this token and session. The session grants no rights beyond the token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentSessionRequest"
+      responses:
+        "201":
+          description: The started session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agent-sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [Agent sessions]
+      operationId: getAgentSession
+      summary: Read one agent session
+      description: Board members can read the session, its heartbeat, pause scope and current card/run.
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agent-sessions/{sessionId}/heartbeat:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Agent sessions]
+      operationId: heartbeatAgentSession
+      summary: Heartbeat an agent session
+      description: |
+        PAT only; the same token that owns the session. Allowed while paused
+        so an agent can finish cleanly. Omitting heartbeat for five minutes
+        makes the session `stale`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentSessionHeartbeatRequest"
+      responses:
+        "200":
+          description: Updated session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agent-sessions/{sessionId}/end:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Agent sessions]
+      operationId: endAgentSession
+      summary: End an agent session
+      description: |
+        Accepted from the owning PAT or a board `ADMIN` browser session.
+        Repeating the call returns the stored terminal state. Claims held by
+        the session are released.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EndAgentSessionRequest"
+      responses:
+        "200":
+          description: The closed session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agent-sessions/{sessionId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Agents]
+      operationId: pauseAgentSession
+      summary: Pause one agent session
+      description: |
+        Browser-session board `ADMIN` only (`403 pat_forbidden` for a PAT).
+        New writes with this session answer `403 agent_paused`; heartbeat,
+        end and reads stay available. Session pause does not release claims.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Paused session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agent-sessions/{sessionId}/resume:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Agents]
+      operationId: resumeAgentSession
+      summary: Resume one agent session
+      description: Browser-session board `ADMIN` only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Resumed session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agents/pause:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    post:
+      tags: [Agents]
+      operationId: pauseBoardAgents
+      summary: Pause every agent write on a board
+      description: |
+        Browser-session board `ADMIN` only. All PAT writes on the board answer
+        `403 agent_paused` with `pauseScope: "board"`; human writes continue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Board pause state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAgentPause"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agents/resume:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    post:
+      tags: [Agents]
+      operationId: resumeBoardAgents
+      summary: Resume agent writes on a board
+      description: Browser-session board `ADMIN` only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Board pause state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAgentPause"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /agents/pause-all:
+    post:
+      tags: [Agents]
+      operationId: pauseAllAgentTokens
+      summary: Stop all of the owner's API tokens
+      description: |
+        Browser-session owner only. Sets the bulk `stopAllPausedAt` stamp on
+        every live token; `resume-all` clears only this stamp, never an
+        individual token pause.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Bulk pause state and affected token count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStopAllPause"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /agents/resume-all:
+    post:
+      tags: [Agents]
+      operationId: resumeAllAgentTokens
+      summary: Clear the bulk token pause
+      description: Browser-session owner only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Bulk pause state and affected token count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStopAllPause"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/approvals:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ApprovalStatus"
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ApprovalKind"
+        - name: cardId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      tags: [Approvals]
+      operationId: listApprovals
+      summary: List approval requests
+      description: |
+        A board `ADMIN` sees every request; another token sees only its own.
+        Newest first; `plan` is omitted from the list.
+      responses:
+        "200":
+          description: Approval requests.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalRequest"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Approvals]
+      operationId: createApproval
+      summary: Request approval for one exact plan
+      description: |
+        PAT board member with the `worker` preset (or the scope the planned
+        action needs). The server computes `planHash` over
+        `{schemaVersion, boardId, commands|operations}` after stripping
+        `action.at` and the action-level `boardId`; a client-supplied hash is
+        not accepted. `ttlMinutes` is clamped to the board policy and a
+        five-minute floor. Nothing is applied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApprovalRequest"
+      responses:
+        "201":
+          description: Pending approval request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/approvals/{approvalId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/ApprovalIdPath"
+    get:
+      tags: [Approvals]
+      operationId: getApproval
+      summary: Read one approval
+      description: Board `ADMIN` or the requesting token.
+      responses:
+        "200":
+          description: Approval with its exact plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/approvals/{approvalId}/decision:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/ApprovalIdPath"
+    post:
+      tags: [Approvals]
+      operationId: decideApproval
+      summary: Approve or reject an approval
+      description: |
+        Browser-session board `ADMIN` only; a PAT gets `403 pat_forbidden`.
+        The `planHash` must match the request. Repeating an approve is
+        idempotent; deciding a non-pending request is
+        `409 approval_not_pending`. The agent never approves its own plan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionRequest"
+      responses:
+        "200":
+          description: Decided approval.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/approvals/{approvalId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/ApprovalIdPath"
+    post:
+      tags: [Approvals]
+      operationId: cancelApproval
+      summary: Cancel a pending approval
+      description: |
+        The requesting token or a board `ADMIN`; a cancelled request can no
+        longer be applied.
+      responses:
+        "200":
+          description: Cancelled approval.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Runs]
+      operationId: listRuns
+      summary: List agent runs
+      description: |
+        Board members (`observer` and above) see summaries without commands or
+        pre-images. Filters are combined with AND; pages are newest first.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AgentRunStatus"
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AgentRunKind"
+        - name: apiTokenId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: agentSessionId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: clientRunId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+        - name: from
+          in: query
+          required: false
+          description: Unix ms lower bound on `createdAt`.
+          schema:
+            type: integer
+            minimum: 0
+        - name: to
+          in: query
+          required: false
+          description: Unix ms upper bound on `createdAt`.
+          schema:
+            type: integer
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Run id to page after (older rows).
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: Run summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentRun"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [Runs]
+      operationId: getRun
+      summary: Read a run with commands and pre-images
+      description: |
+        A board `ADMIN` browser session gets pre-images and before-state.
+        A PAT (even its owner is a board `ADMIN`) gets the run, commands and
+        attribution without `preimages`; pre-image access is not delegated.
+      responses:
+        "200":
+          description: Run detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunDetail"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/runs/{runId}/revert/preview:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/RunId"
+    post:
+      tags: [Runs]
+      operationId: previewRunRevert
+      summary: Preview a run rollback
+      description: |
+        Dry run, writes nothing, creates no run. Any board member can preview;
+        `diff` is present only for a board `ADMIN` browser session.
+      responses:
+        "200":
+          description: Revert conflicts and whether the run can be rolled back.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevertPreview"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/runs/{runId}/revert:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/RunId"
+    post:
+      tags: [Runs]
+      operationId: revertRun
+      summary: Revert a run (human board ADMIN)
+      description: |
+        `{dryRun: true}` is the same dry run as `/revert/preview` and writes
+        nothing. A real revert is browser-session board `ADMIN` only (`403
+        pat_forbidden` for any PAT), all-or-nothing, once per run, checks
+        conflicts under the board lock and creates a `kind: "revert"` run.
+        `409 run_conflict` when already reverted or a revert of a revert;
+        `409 run_expired` when pre-images were swept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevertRunRequest"
+      responses:
+        "200":
+          description: "Reverted run detail, or a preview when `dryRun: true`."
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/RunDetail"
+                  - $ref: "#/components/schemas/RevertPreview"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/agent-policy:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Agent policy]
+      operationId: getAgentPolicy
+      summary: Read the board agent policy
+      description: |
+        Browser-session board `ADMIN` only (`403 pat_forbidden` for a PAT).
+        `policy: null` means safe defaults are stored; `effective` is what the
+        server applies; `version` is the CAS token for the next PATCH.
+      responses:
+        "200":
+          description: Stored and effective policy plus pause state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAgentPolicyState"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    patch:
+      tags: [Agent policy]
+      operationId: updateAgentPolicy
+      summary: Update the board agent policy
+      description: |
+        Browser-session board `ADMIN` only. `policy: null` restores defaults.
+        A stale `version` is `409 version_conflict` with
+        `details.currentVersion = agentPolicyVersion`; every change is
+        audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentPolicyRequest"
+      responses:
+        "200":
+          description: Updated policy state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardAgentPolicyState"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/activity:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Activity]
+      operationId: listBoardActivity
+      summary: Read the board activity feed
+      description: |
+        Merges the command log with Activity rows, newest first. Every board
+        member can read it. The same audit filters apply to both sources.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/ActorTypeFilter"
+        - $ref: "#/components/parameters/ApiTokenIdFilter"
+        - $ref: "#/components/parameters/AgentSessionIdFilter"
+        - $ref: "#/components/parameters/RunIdFilter"
+        - $ref: "#/components/parameters/TypeFilter"
+        - $ref: "#/components/parameters/FromFilter"
+        - $ref: "#/components/parameters/ToFilter"
+      responses:
+        "200":
+          description: One page, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityFeedPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /cards/{cardId}/activity:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [Activity]
+      operationId: listCardActivity
+      summary: Read one card's activity feed
+      description: Same filters as the board feed, scoped to one card.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/ActorTypeFilter"
+        - $ref: "#/components/parameters/ApiTokenIdFilter"
+        - $ref: "#/components/parameters/AgentSessionIdFilter"
+        - $ref: "#/components/parameters/RunIdFilter"
+        - $ref: "#/components/parameters/TypeFilter"
+        - $ref: "#/components/parameters/FromFilter"
+        - $ref: "#/components/parameters/ToFilter"
+      responses:
+        "200":
+          description: One page, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityFeedPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /cards/{cardId}/comments:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [Comments]
+      operationId: listComments
+      summary: List card comments
+      description: |
+        Newest first, opaque cursor. `kind` filters one structured comment
+        type. Default limit 50, maximum 100.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CommentKind"
+      responses:
+        "200":
+          description: A page of comments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Comments]
+      operationId: createComment
+      summary: Add a comment
+      description: |
+        Board `ADMIN`/`MEMBER` (a PAT also needs `worker`). `commandId` is the
+        comment-transport idempotency key; `Idempotency-Key` identifies the
+        same write even when a retry mints a new `commandId`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentRequest"
+      responses:
+        "201":
+          description: The new comment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /comments/{commentId}:
+    parameters:
+      - $ref: "#/components/parameters/CommentId"
+    delete:
+      tags: [Comments]
+      operationId: deleteComment
+      summary: Delete a comment
+      description: |
+        Author only. For a PAT, "own" means the same `apiTokenId`, not merely
+        the same user; another author answers `403`. Self-authored deletion is
+        exempt from the destructive approval gate.
+      parameters:
+        - $ref: "#/components/parameters/AgentSession"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /cards/{cardId}/attachments:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [Attachments]
+      operationId: listAttachments
+      summary: List card attachments
+      description: Live attachments, newest first. `detached=1` also lists hidden inline/description blobs.
+      parameters:
+        - name: detached
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: Attachment metadata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attachment"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Attachments]
+      operationId: uploadAttachment
+      summary: Upload one file to a card
+      description: |
+        `multipart/form-data` with one `file` part, at most 25 MB and 20 live
+        attachments per card. Board `ADMIN`/`MEMBER` and `worker` preset.
+        `inline=1` hides body-embedded media; `description=1` marks a file
+        pasted into a description. `Idempotency-Key` includes the blob bytes
+        in its fingerprint.
+      parameters:
+        - name: inline
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "true"]
+        - name: description
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "true"]
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/AgentSession"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file bytes.
+      responses:
+        "201":
+          description: Stored attachment metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attachment"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /attachments/{attachmentId}/content:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    get:
+      tags: [Attachments]
+      operationId: downloadAttachment
+      summary: Stream attachment content
+      description: |
+        Range-aware (`Range` yields `206`; an unsatisfiable range yields
+        `416`). Served as an attachment disposition, never inline HTML.
+      responses:
+        "200":
+          description: File bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Partial content for a valid `Range`.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "416": { $ref: "#/components/responses/RangeNotSatisfiable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /attachments/{attachmentId}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    get:
+      tags: [Attachments]
+      operationId: downloadAttachmentThumbnail
+      summary: Stream an attachment thumbnail
+      description: |
+        Generated `image/jpeg` preview when ready; otherwise the original for
+        images. A video has no thumbnail and a non-image without a generated
+        preview answers `404`.
+      responses:
+        "200":
+          description: Image bytes.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /attachments/{attachmentId}/poster:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    get:
+      tags: [Attachments]
+      operationId: downloadAttachmentPoster
+      summary: Stream a video poster
+      description: First meaningful frame of a video (`image/jpeg`); `404` when none was generated.
+      responses:
+        "200":
+          description: Image bytes.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /attachments/{attachmentId}:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    delete:
+      tags: [Attachments]
+      operationId: deleteAttachment
+      summary: Delete an attachment
+      description: |
+        Own upload is `worker` without approval; another user's upload needs
+        `admin` and approval (`attachment.delete`). "Own" for a PAT is the
+        same `uploadedByTokenId`; legacy rows fall back to the user id.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/me:
+    get:
+      tags: [Account]
+      operationId: getCurrentUser
+      summary: Read the authenticated identity
+      description: |
+        Accepts a browser JWT or a PAT. With a PAT the response adds the
+        non-secret `token` identity and `server` block; `session` is reserved and
+        currently `null`. `impersonatedBy` is set only for a support session.
+      responses:
+        "200":
+          description: Identity, token metadata and server version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthMe"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/password:
+    post:
+      tags: [Account]
+      operationId: changePassword
+      summary: Change the account password
+      description: |
+        Browser session only (`403 pat_forbidden` for a PAT). Every other
+        session and every personal API token of the account is revoked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me:
+    patch:
+      tags: [Account]
+      operationId: updateProfile
+      summary: Update the caller's profile
+      description: Browser session only. Only provided keys are written; `null` clears a field.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Account]
+      operationId: deleteAccount
+      summary: Schedule account deletion
+      description: |
+        Browser session only. A password account sends `password`; an
+        OAuth-only account sends `oauthProof` and the e-mailed `emailCode`.
+        `confirmEmail` must equal the account email. The account is disabled
+        now and purged after seven days (`202`, `status: "scheduled"`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteAccountRequest"
+      responses:
+        "202":
+          description: Deletion scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteAccountResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/avatar:
+    patch:
+      tags: [Account]
+      operationId: uploadAvatar
+      summary: Upload a profile avatar
+      description: Browser session only; `multipart/form-data` with one image `file` part, at most 2 MB.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/{userId}/avatar:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Account]
+      operationId: getUserAvatar
+      summary: Read a user's avatar
+      description: Any authenticated caller. `404` when the user has no avatar.
+      responses:
+        "200":
+          description: Image bytes.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/export:
+    post:
+      tags: [Account]
+      operationId: requestAccountExport
+      summary: Request a data export
+      description: Browser session only; returns the queued export row.
+      responses:
+        "202":
+          description: Export queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDataExport"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/export/{exportId}:
+    parameters:
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Account]
+      operationId: getAccountExport
+      summary: Read data-export status
+      description: Browser session only.
+      responses:
+        "200":
+          description: Export status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDataExport"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/export/{exportId}/download:
+    parameters:
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Account]
+      operationId: downloadAccountExport
+      summary: Download a ready export
+      description: Browser session only; streams the JSON bundle.
+      responses:
+        "200":
+          description: Export bundle.
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/delete/request-code:
+    post:
+      tags: [Account]
+      operationId: requestAccountDeletionCode
+      summary: Request an account-deletion email code
+      description: |
+        Browser session only, for an OAuth-only account that has no password.
+        `oauthProof` is an access token minted by OAuth no more than ten
+        minutes ago.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestAccountDeletionCodeRequest"
+      responses:
+        "200":
+          description: Code queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestAccountDeletionCodeResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/tokens:
+    get:
+      tags: [Account]
+      operationId: listApiTokens
+      summary: List personal API tokens
+      description: Browser session only (`403 pat_forbidden` for a PAT); never returns the secret.
+      responses:
+        "200":
+          description: Token metadata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserToken"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Account]
+      operationId: createApiToken
+      summary: Create a personal API token
+      description: |
+        Browser session only. The plaintext `token` appears exactly once. A
+        new key defaults to the `worker` preset; `trustedCi` may be enabled
+        only from a session and never widens a `readOnly` or `observer` key.
+        A board-scoped key cannot see other boards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserTokenRequest"
+      responses:
+        "201":
+          description: The plaintext token and its metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUserTokenResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/tokens/{tokenId}:
+    parameters:
+      - $ref: "#/components/parameters/TokenId"
+    patch:
+      tags: [Account]
+      operationId: updateApiToken
+      summary: Edit a personal API token
+      description: |
+        Browser session owner only. Omitted fields keep their value; `null`
+        clears `boardId` or `rateLimitPerMinute`. Every change is audited; the
+        secret is never accepted or returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserTokenRequest"
+      responses:
+        "200":
+          description: Updated token metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserToken"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Account]
+      operationId: revokeApiToken
+      summary: Revoke a personal API token
+      description: |
+        Browser session owner only. This is the irreversible kill: open
+        sessions become `cancelled`, claims held by the token are released and
+        new requests with the key get `401`.
+      responses:
+        "200":
+          description: Revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/tokens/{tokenId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/TokenId"
+    post:
+      tags: [Agents]
+      operationId: pauseApiToken
+      summary: Pause one personal API token
+      description: Browser-session owner only. Reads stay allowed; writes answer `403 agent_paused`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Paused token metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserToken"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/tokens/{tokenId}/resume:
+    parameters:
+      - $ref: "#/components/parameters/TokenId"
+    post:
+      tags: [Agents]
+      operationId: resumeApiToken
+      summary: Resume one personal API token
+      description: |
+        Browser-session owner only. Clears only the individual pause; a token
+        stopped by `pause-all` stays paused until `resume-all`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentPauseRequest"
+      responses:
+        "200":
+          description: Resumed token metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserToken"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT or jnk_… PAT
+      description: |
+        A user access JWT from `/auth/login`/`/auth/refresh`, or a personal API
+        token (`jnk_` + 43 base64url characters). The `jnk_` prefix selects the
+        API-token strategy. A PAT acts as its owner but is limited by its
+        immutable `scopePreset`, board scope and read-only flag, and is refused
+        on every session-only route with `403 pat_forbidden`.
+  parameters:
+    BoardId:
+      name: boardId
+      in: path
+      required: true
+      description: Board id.
+      schema:
+        type: string
+    CardId:
+      name: cardId
+      in: path
+      required: true
+      description: Card id.
+      schema:
+        type: string
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      description: Comment id.
+      schema:
+        type: string
+    AttachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      description: Attachment id.
+      schema:
+        type: string
+    ShareId:
+      name: shareId
+      in: path
+      required: true
+      description: Share id.
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Agent session id.
+      schema:
+        type: string
+    RunId:
+      name: runId
+      in: path
+      required: true
+      description: Agent run id.
+      schema:
+        type: string
+    ApprovalIdPath:
+      name: approvalId
+      in: path
+      required: true
+      description: Approval request id.
+      schema:
+        type: string
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: User id.
+      schema:
+        type: string
+    TokenId:
+      name: tokenId
+      in: path
+      required: true
+      description: Personal API token id.
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Stable retry key for this REST write (8–128 characters from
+        `A-Z a-z 0-9 _ -`). The first successful response is stored for 24
+        hours; the same key with a different body is
+        `409 idempotency_conflict`, a concurrent first attempt is
+        `409 idempotency_in_progress` with `retryable: true`.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,128}$"
+    ApprovalId:
+      name: X-Approval-Id
+      in: header
+      required: false
+      description: |
+        Approved request id for this exact command/batch/plan/lifecycle
+        operation. Without it a destructive PAT write creates the request and
+        answers `409 approval_required`; a changed plan is
+        `409 approval_mismatch`.
+      schema:
+        type: string
+    AgentSession:
+      name: X-Agent-Session
+      in: header
+      required: false
+      description: |
+        Agent session id returned by `POST /boards/{boardId}/agent-sessions`.
+        The server verifies that the session belongs to the same user, token
+        and board and is not closed; it stamps attribution on the write. A
+        mismatch is `403 agent_session_invalid`, a closed session
+        `403 agent_session_closed`.
+      schema:
+        type: string
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned as `nextCursor`; omit for the first page.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size; default 50, maximum 100. Values outside 1–100 are `400`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    ActorTypeFilter:
+      name: actorType
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/ActorType"
+    ApiTokenIdFilter:
+      name: apiTokenId
+      in: query
+      required: false
+      schema:
+        type: string
+    AgentSessionIdFilter:
+      name: agentSessionId
+      in: query
+      required: false
+      schema:
+        type: string
+    RunIdFilter:
+      name: runId
+      in: query
+      required: false
+      schema:
+        type: string
+    TypeFilter:
+      name: type
+      in: query
+      required: false
+      description: Command action type or Activity event type.
+      schema:
+        type: string
+    FromFilter:
+      name: from
+      in: query
+      required: false
+      description: Inclusive lower bound, Unix ms or ISO-8601.
+      schema:
+        type: string
+    ToFilter:
+      name: to
+      in: query
+      required: false
+      description: Inclusive upper bound, Unix ms or ISO-8601.
+      schema:
+        type: string
+  headers:
+    X-Board-Seq:
+      description: Command sequence the returned board aggregate reflects.
+      schema:
+        type: integer
+        minimum: 0
+    X-Run-Id:
+      description: Agent run created by this write, when one exists.
+      schema:
+        type: string
+    X-Delta-Resync:
+      description: "`1` when the command delta cannot be replayed; refetch the board."
+      schema:
+        type: string
+        enum: ["1"]
+    X-Request-Id:
+      description: Correlation id, equal to `requestId` in an error envelope.
+      schema:
+        type: string
+    X-RateLimit-Limit:
+      description: Ceiling of the tightest bucket that counted the request.
+      schema:
+        type: integer
+    X-RateLimit-Remaining:
+      description: Remaining budget in that bucket.
+      schema:
+        type: integer
+    X-RateLimit-Reset:
+      description: Reset time as Unix seconds.
+      schema:
+        type: integer
+    X-RateLimit-Scope:
+      description: Which bucket counted the request.
+      schema:
+        type: string
+        enum: [token, session, board]
+    Retry-After:
+      description: Seconds to wait before retrying a `429`.
+      schema:
+        type: integer
+        minimum: 0
+  responses:
+    BadRequest:
+      description: Validation failed or the request shape is invalid (`400 validation_failed`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Unauthorized:
+      description: Missing, expired or invalid credentials (`401 unauthorized`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Forbidden:
+      description: |
+        Not a member, no board role, or a preset denial (`scope_denied`). A
+        PAT on a session-only route gets `pat_forbidden`; a board policy hard
+        block is `destructive_denied`; a pause is `agent_paused`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    NotFound:
+      description: Unknown, soft-deleted or inaccessible resource (`404 not_found`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Conflict:
+      description: |
+        A semantic conflict: stale version (`version_conflict`), WIP/collection
+        limit (`limit_exceeded`), workflow (`workflow_conflict`), approval
+        (`approval_required`/`approval_mismatch`/`approval_expired`/…), run
+        state (`run_conflict`/`run_expired`), duplicate id or idempotency key.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    PayloadTooLarge:
+      description: Body or file over the route limit (`413 payload_too_large`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    RangeNotSatisfiable:
+      description: Unsatisfiable `Range` header (`416`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    TooManyRequests:
+      description: "Rate limit exceeded (`429 rate_limited`, `retryable: true`)."
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+        X-RateLimit-Scope:
+          $ref: "#/components/headers/X-RateLimit-Scope"
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    ServiceUnavailable:
+      description: Board write lock timed out (`503 board_write_timeout`, safe to retry).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+  schemas:
+    ApiErrorEnvelope:
+      type: object
+      description: |
+        The single error body returned by every REST route. `code` is a stable
+        snake_case identifier; `message` is an English fallback. Clients must
+        branch on `code` and tolerate an unknown code from a newer server.
+      required: [code, message, retryable, requestId, currentVersion]
+      properties:
+        code:
+          $ref: "#/components/schemas/ApiErrorCode"
+        message:
+          type: string
+        retryable:
+          type: boolean
+          description: True only when the identical request may be retried unchanged.
+        requestId:
+          type: string
+          description: Equal to the `X-Request-Id` response header.
+        currentVersion:
+          type: [integer, "null"]
+          description: |
+            Current version of the checked resource: command sequence for a
+            command conflict, `agentPolicyVersion` for policy CAS, run state for
+            `run_conflict`; otherwise `null`.
+        statusCode:
+          type: integer
+          description: Compatibility mirror of the HTTP status.
+        field:
+          type: string
+          description: Rejected input field, when known.
+        details:
+          type: object
+          additionalProperties: true
+          description: Extra machine-readable context (`messages`, `versionOf`, …).
+        conflict:
+          type: string
+          enum: [version, wip, id, workflow]
+        workflow:
+          $ref: "#/components/schemas/WorkflowConflictDetails"
+        allowedToColumnIds:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+          description: Semantic limit (WIP, collection, board, run, file size).
+        current:
+          type: integer
+        key:
+          type: string
+          description: Idempotency key that caused a conflict.
+        retryAfter:
+          type: integer
+          description: Seconds to wait before a retry.
+        resource:
+          type: string
+          description: Resource name for `not_found`.
+        requiredScope:
+          $ref: "#/components/schemas/ScopePreset"
+        effectiveTokenScope:
+          $ref: "#/components/schemas/ScopePreset"
+        requiredRoles:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardRole"
+        approvalId:
+          type: string
+        planHash:
+          type: string
+        expiresAt:
+          type: integer
+          description: Unix ms approval expiry.
+        expectedPlanHash:
+          type: string
+        actualPlanHash:
+          type: string
+        action:
+          type: string
+          description: Action name for a scope/policy/approval error.
+        reason:
+          type: string
+          description: Machine reason such as `board_policy` or `board_scope`.
+        pauseScope:
+          type: string
+          enum: [session, board, token]
+        scope:
+          type: string
+          description: Mirror of `pauseScope` or the tightest rate-limit bucket.
+        pausedAt:
+          type: integer
+        status:
+          type: string
+          description: Approval status for `approval_not_pending`.
+        runId:
+          type: [string, "null"]
+    ApiErrorCode:
+      type: string
+      description: |
+        Published error-code catalog. It is not a closed union: a newer server
+        may add a code, so clients fall back to the HTTP status.
+      enum:
+        - scope_denied
+        - destructive_denied
+        - agent_paused
+        - agent_session_closed
+        - agent_session_invalid
+        - pat_required
+        - pat_forbidden
+        - pat_read_only
+        - approval_required
+        - approval_expired
+        - approval_mismatch
+        - approval_owner_mismatch
+        - approval_not_pending
+        - approval_rejected
+        - approval_cancelled
+        - approval_consumed
+        - version_conflict
+        - id_conflict
+        - workflow_conflict
+        - run_conflict
+        - run_expired
+        - limit_exceeded
+        - idempotency_conflict
+        - idempotency_in_progress
+        - payload_too_large
+        - rate_limited
+        - login_backoff
+        - export_in_progress
+        - announcement_translations_incomplete
+        - announcement_source_translation_required
+        - board_write_timeout
+        - not_found
+        - validation_failed
+        - unauthorized
+        - forbidden
+        - conflict
+        - method_not_allowed
+        - gone
+        - unsupported_media_type
+        - range_not_satisfiable
+        - service_unavailable
+        - internal_error
+    WorkflowConflictDetails:
+      type: object
+      description: Machine-readable details of `409 workflow_conflict`.
+      required: [code, fromColumnId, toColumnId, allowedToColumnIds]
+      properties:
+        code:
+          type: string
+          enum: [transition_not_allowed, role_not_allowed, condition_failed]
+        fromColumnId:
+          type: [string, "null"]
+        toColumnId:
+          type: string
+        allowedToColumnIds:
+          type: array
+          items:
+            type: string
+        requiredRoles:
+          type: array
+          items:
+            type: string
+        failedConditions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    StatusOk:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    ScopePreset:
+      type: string
+      enum: [observer, worker, reviewer, admin]
+      description: |
+        Immutable PAT capability preset. It never raises the board role.
+        `readOnly: true` always yields effective `observer`.
+    BoardRole:
+      type: string
+      enum: [ADMIN, MEMBER, VIEWER]
+    ActorType:
+      type: string
+      enum: [human, agent, admin]
+    BoardSummary:
+      type: object
+      required: [id, title, counters, role]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        archivedAt:
+          type: integer
+          description: Unix ms; omitted while active.
+        counters:
+          type: object
+          required: [cards, columns]
+          properties:
+            cards:
+              type: integer
+            columns:
+              type: integer
+        role:
+          $ref: "#/components/schemas/BoardRole"
+    BoardAggregate:
+      type: object
+      description: The frontend `Board` model.
+      required: [id, title, columns, cards, labels, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        columns:
+          type: array
+          items:
+            $ref: "#/components/schemas/Column"
+        cards:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Card"
+        labels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Label"
+        createdAt:
+          type: integer
+        updatedAt:
+          type: integer
+        columnStyle:
+          $ref: "#/components/schemas/ColumnAccentStyle"
+        workflow:
+          $ref: "#/components/schemas/BoardWorkflow"
+        workflowInvalid:
+          type: boolean
+          const: true
+        agentPolicy:
+          $ref: "#/components/schemas/BoardAgentPolicy"
+        agentsPausedAt:
+          type: integer
+        agentsPausedBy:
+          type: string
+        agentsPauseReason:
+          type: string
+        archivedAt:
+          type: integer
+    Column:
+      type: object
+      required: [id, title, cardIds, createdAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        cardIds:
+          type: array
+          items:
+            type: string
+        wipLimit:
+          type: integer
+          minimum: 1
+        accent:
+          $ref: "#/components/schemas/CardCover"
+        createdAt:
+          type: integer
+    Card:
+      type: object
+      required: [id, title, labelIds, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        checklists:
+          type: array
+          items:
+            $ref: "#/components/schemas/Checklist"
+        dueDate:
+          type: integer
+        priority:
+          $ref: "#/components/schemas/CardPriority"
+        assigneeId:
+          type: string
+        claimedBy:
+          type: string
+        claimedByTokenId:
+          type: string
+        claimedBySessionId:
+          type: string
+        leaseUntil:
+          type: integer
+        acceptanceCriteria:
+          type: array
+          items:
+            type: string
+        definitionOfDone:
+          type: array
+          items:
+            type: string
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/CardLink"
+        cover:
+          $ref: "#/components/schemas/CardCover"
+        labelIds:
+          type: array
+          items:
+            type: string
+        activity:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        createdAt:
+          type: integer
+        updatedAt:
+          type: integer
+        lastActorId:
+          type: string
+        attachmentCount:
+          type: integer
+        archivedAt:
+          type: integer
+        archivedFromColumnId:
+          type: string
+    Label:
+      type: object
+      required: [id, name, color]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          $ref: "#/components/schemas/LabelColor"
+    Checklist:
+      type: object
+      required: [id, title, items]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChecklistItem"
+    ChecklistItem:
+      type: object
+      required: [id, text, done]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        done:
+          type: boolean
+    CardLink:
+      type: object
+      required: [id, type, targetCardId]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [blocks, relates_to, duplicates]
+        targetCardId:
+          type: string
+    CardPriority:
+      type: string
+      enum: [blocker, highest, high, medium, low, lowest]
+    LabelColor:
+      type: string
+      enum:
+        [
+          red,
+          orange,
+          yellow,
+          brown,
+          green,
+          teal,
+          cyan,
+          blue,
+          indigo,
+          brand,
+          fuchsia,
+          pink,
+          slate,
+          plain,
+          amber,
+        ]
+    ColumnAccentStyle:
+      type: string
+      enum: [rail, left, wash, title, glow, glass, band, dot, signature]
+    CardCover:
+      oneOf:
+        - type: object
+          required: [type, value]
+          properties:
+            type:
+              type: string
+              const: color
+            value:
+              type: string
+              enum:
+                [
+                  red,
+                  orange,
+                  yellow,
+                  green,
+                  teal,
+                  cyan,
+                  blue,
+                  indigo,
+                  brand,
+                  fuchsia,
+                  pink,
+                  slate,
+                ]
+        - type: object
+          required: [type, value]
+          properties:
+            type:
+              type: string
+              const: gradient
+            value:
+              type: string
+              enum: [sunset, ocean, forest, candy, grape, steel]
+    BoardWorkflow:
+      type: object
+      description: "Optional admin-configured transition graph. Absent or `enabled: false` means every cross-column move is allowed."
+      required: [schemaVersion, enabled]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        enabled:
+          type: boolean
+        initialColumnId:
+          type: [string, "null"]
+        doneColumnIds:
+          type: array
+          items:
+            type: string
+        transitions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    BoardAgentPolicy:
+      type: object
+      required:
+        [
+          schemaVersion,
+          destructive,
+          requireApprovalFor,
+          approverRoles,
+          maxCommandsPerRun,
+          maxCardsPerRun,
+          approvalTtlMinutes,
+        ]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        destructive:
+          type: string
+          enum: [approval, deny]
+        requireApprovalFor:
+          type: array
+          items:
+            type: string
+            enum:
+              - move_to_done
+              - delete_card
+              - delete_column
+              - delete_label
+              - delete_checklist
+              - delete_checklist_item
+              - archive_column_cards
+              - delete_board
+              - member.invite
+              - member.update
+              - member.remove
+              - share.create
+              - share.update
+              - share.revoke
+              - share.delete
+              - attachment.delete
+              - workflow.update
+        approverRoles:
+          type: array
+          items:
+            type: string
+            const: ADMIN
+          minItems: 1
+          maxItems: 1
+        maxCommandsPerRun:
+          type: integer
+          minimum: 1
+          maximum: 100
+        maxCardsPerRun:
+          type: integer
+          minimum: 1
+          maximum: 50
+        approvalTtlMinutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+    BoardAgentPolicyState:
+      type: object
+      required:
+        [policy, effective, version, paused, pausedAt, pausedBy, pauseReason]
+      properties:
+        policy:
+          oneOf:
+            - $ref: "#/components/schemas/BoardAgentPolicy"
+            - type: "null"
+          description: Stored policy; `null` means defaults.
+        effective:
+          $ref: "#/components/schemas/BoardAgentPolicy"
+        version:
+          type: integer
+          minimum: 1
+        paused:
+          type: boolean
+        pausedAt:
+          type: [integer, "null"]
+        pausedBy:
+          type: [string, "null"]
+        pauseReason:
+          type: [string, "null"]
+    UpdateAgentPolicyRequest:
+      type: object
+      required: [policy, version]
+      properties:
+        policy:
+          oneOf:
+            - $ref: "#/components/schemas/BoardAgentPolicy"
+            - type: "null"
+        version:
+          type: integer
+          minimum: 1
+    CreateBoardRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+    BoardEnvelope:
+      type: object
+      required: [app, schemaVersion, exportedAt, boards]
+      properties:
+        app:
+          type: string
+          const: janosik
+        schemaVersion:
+          type: integer
+          enum: [1, 2, 3]
+        exportedAt:
+          type: integer
+        boards:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardAggregate"
+    BoardImportPreview:
+      type: object
+      required: [boards, cards, columns, labels, withinLimit]
+      properties:
+        boards:
+          type: integer
+        cards:
+          type: integer
+        columns:
+          type: integer
+        labels:
+          type: integer
+        withinLimit:
+          type: boolean
+    BoardCardSearchResult:
+      type: object
+      required: [cardIds]
+      properties:
+        cardIds:
+          type: array
+          items:
+            type: string
+    BoardMember:
+      type: object
+      required:
+        [userId, displayName, email, role, expiresAt, avatarColor, avatarPath]
+      properties:
+        userId:
+          type: string
+          description: Empty string on a masked invite response.
+        displayName:
+          type: [string, "null"]
+        email:
+          type: string
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        expiresAt:
+          type: [integer, "null"]
+        avatarColor:
+          type: [string, "null"]
+        avatarPath:
+          type: [string, "null"]
+    BoardPendingInvitation:
+      type: object
+      required: [id, userId, displayName, email, role, expiresAt, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        displayName:
+          type: [string, "null"]
+        email:
+          type: string
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        expiresAt:
+          type: [integer, "null"]
+        createdAt:
+          type: integer
+    InviteMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: ISO-8601; honored for `VIEWER` only.
+    UpdateMemberRequest:
+      type: object
+      properties:
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: "`null` clears a VIEWER expiry; omitted keeps it."
+    BoardShare:
+      type: object
+      required:
+        [
+          id,
+          token,
+          boardId,
+          boardTitle,
+          mode,
+          title,
+          includeComments,
+          includeAttachments,
+          expiresAt,
+          revokedAt,
+          views,
+          lastViewedAt,
+          createdAt,
+          createdBy,
+        ]
+      properties:
+        id:
+          type: string
+        token:
+          type: string
+        boardId:
+          type: [string, "null"]
+        boardTitle:
+          type: [string, "null"]
+        mode:
+          type: string
+          enum: [snapshot, live]
+        title:
+          type: [string, "null"]
+        includeComments:
+          type: boolean
+        includeAttachments:
+          type: boolean
+        expiresAt:
+          type: [integer, "null"]
+        revokedAt:
+          type: [integer, "null"]
+        views:
+          type: integer
+        lastViewedAt:
+          type: [integer, "null"]
+        createdAt:
+          type: integer
+        createdBy:
+          type: string
+    CreateShareRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [snapshot, live]
+        title:
+          type: [string, "null"]
+          maxLength: 100
+        includeComments:
+          type: boolean
+          description: Defaults to true for live, false for snapshot.
+        includeAttachments:
+          type: boolean
+          description: Defaults to false.
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: Must be in the future.
+    UpdateShareRequest:
+      type: object
+      properties:
+        title:
+          type: [string, "null"]
+          maxLength: 100
+        includeComments:
+          type: boolean
+        includeAttachments:
+          type: boolean
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+    CommandRequest:
+      type: object
+      required: [commandId, action]
+      properties:
+        commandId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Client-generated idempotency key and command primary key.
+        action:
+          $ref: "#/components/schemas/BoardAction"
+        ifMatch:
+          type: integer
+          minimum: 0
+          description: Expected board sequence; a mismatch is `409 version_conflict`.
+        ifMatchVersions:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Per-entity versions keyed by touch label (`card:<id>`, …).
+        clientRunId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{8,64}$"
+          description: Optional idempotency key for a single-command run.
+    CommandBatchRequest:
+      type: object
+      required: [commands]
+      properties:
+        commands:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/CommandRequest"
+        clientRunId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{8,64}$"
+          description: Idempotency key for the PAT batch run.
+    CommandResponse:
+      type: object
+      required: [seq, versions]
+      properties:
+        seq:
+          type: integer
+          minimum: 0
+        versions:
+          type: object
+          additionalProperties:
+            type: integer
+        runId:
+          type: [string, "null"]
+    CommandBatchResponse:
+      type: object
+      required: [results]
+      properties:
+        runId:
+          type: [string, "null"]
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommandResponse"
+    CommandDeltaEntry:
+      type: object
+      required: [seq, action, actorId, commandId, touches]
+      properties:
+        seq:
+          type: integer
+        action:
+          $ref: "#/components/schemas/BoardAction"
+        actorId:
+          type: string
+        actorType:
+          $ref: "#/components/schemas/ActorType"
+        commandId:
+          type: string
+        touches:
+          type: array
+          items:
+            type: string
+        apiTokenId:
+          type: [string, "null"]
+        agentSessionId:
+          type: [string, "null"]
+        runId:
+          type: [string, "null"]
+        agentName:
+          type: [string, "null"]
+        at:
+          type: integer
+    BoardAction:
+      description: |
+        Reducer action posted inside a command. `at` and the action-level
+        `boardId` are transport context: the server stamps them, and the plan
+        hash excludes them. All action types accepted by the shared validator
+        are listed; the `Restore*`/`Import*`/`Add*`/`Remove*` types are
+        browser undo/import operations and are refused to a PAT. Field-level
+        detail for those legacy actions is in the Command API docs.
+      oneOf:
+        - $ref: "#/components/schemas/ActionAddCard"
+        - $ref: "#/components/schemas/ActionUpdateCard"
+        - $ref: "#/components/schemas/ActionTouchCard"
+        - $ref: "#/components/schemas/ActionMoveCard"
+        - $ref: "#/components/schemas/ActionArchiveCard"
+        - $ref: "#/components/schemas/ActionUnarchiveCard"
+        - $ref: "#/components/schemas/ActionDeleteCard"
+        - $ref: "#/components/schemas/ActionDuplicateCard"
+        - $ref: "#/components/schemas/ActionSetCardDueDate"
+        - $ref: "#/components/schemas/ActionSetCardPriority"
+        - $ref: "#/components/schemas/ActionSetCardAssign"
+        - $ref: "#/components/schemas/ActionSetCardTaskSpec"
+        - $ref: "#/components/schemas/ActionSetCardLabel"
+        - $ref: "#/components/schemas/ActionSetCardCover"
+        - $ref: "#/components/schemas/ActionClaimCard"
+        - $ref: "#/components/schemas/ActionAddCardLink"
+        - $ref: "#/components/schemas/ActionRemoveCardLink"
+        - $ref: "#/components/schemas/ActionAddColumn"
+        - $ref: "#/components/schemas/ActionRenameColumn"
+        - $ref: "#/components/schemas/ActionDeleteColumn"
+        - $ref: "#/components/schemas/ActionMoveColumn"
+        - $ref: "#/components/schemas/ActionDuplicateColumn"
+        - $ref: "#/components/schemas/ActionSortColumn"
+        - $ref: "#/components/schemas/ActionSetColumnCardOrder"
+        - $ref: "#/components/schemas/ActionSetColumnWipLimit"
+        - $ref: "#/components/schemas/ActionSetColumnAccent"
+        - $ref: "#/components/schemas/ActionArchiveColumnCards"
+        - $ref: "#/components/schemas/ActionAddLabel"
+        - $ref: "#/components/schemas/ActionRenameLabel"
+        - $ref: "#/components/schemas/ActionSetLabelColor"
+        - $ref: "#/components/schemas/ActionDeleteLabel"
+        - $ref: "#/components/schemas/ActionAddChecklist"
+        - $ref: "#/components/schemas/ActionRenameChecklist"
+        - $ref: "#/components/schemas/ActionDeleteChecklist"
+        - $ref: "#/components/schemas/ActionAddChecklistItem"
+        - $ref: "#/components/schemas/ActionSetChecklistItemDone"
+        - $ref: "#/components/schemas/ActionRenameChecklistItem"
+        - $ref: "#/components/schemas/ActionDeleteChecklistItem"
+        - $ref: "#/components/schemas/ActionRenameBoard"
+        - $ref: "#/components/schemas/ActionSetBoardColumnStyle"
+        - $ref: "#/components/schemas/ActionSetBoardWorkflow"
+        - $ref: "#/components/schemas/ActionArchiveBoard"
+        - $ref: "#/components/schemas/ActionUnarchiveBoard"
+        - $ref: "#/components/schemas/ActionLegacy"
+      discriminator:
+        propertyName: type
+    ActionBase:
+      type: object
+      properties:
+        at:
+          type: integer
+          description: Command clock in Unix ms; the server stamps it when omitted.
+        boardId:
+          type: string
+          description: Board id; the server fills it when omitted.
+    ActionLegacy:
+      type: object
+      description: |
+        Browser undo/import actions beyond the core write path. They are part
+        of the shared reducer but not modelled field-by-field here; the same
+        command validator enforces their shape. `RESTORE_*` is refused to any
+        PAT, and `RESTORE_BOARD` is rejected by `/commands` entirely.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum:
+            - RESTORE_CARD
+            - RESTORE_COLUMN
+            - RESTORE_LABEL
+            - RESTORE_CHECKLIST
+            - RESTORE_CHECKLIST_ITEM
+            - RESTORE_COLUMN_CARDS
+            - RESTORE_BOARD
+            - IMPORT_BOARDS
+            - ADD_BOARD
+            - REMOVE_BOARD
+    ActionAddCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, newCardId, columnId, title]
+          properties:
+            type:
+              type: string
+              const: ADD_CARD
+            newCardId:
+              type: string
+            columnId:
+              type: string
+            title:
+              type: string
+            labelIds:
+              type: array
+              items:
+                type: string
+            atIndex:
+              type: integer
+              minimum: 0
+    ActionUpdateCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: UPDATE_CARD
+            cardId:
+              type: string
+            title:
+              type: string
+            description:
+              type: string
+            quiet:
+              type: boolean
+    ActionTouchCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: TOUCH_CARD
+            cardId:
+              type: string
+    ActionMoveCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, fromColumnId, fromIndex, toColumnId, toIndex]
+          properties:
+            type:
+              type: string
+              const: MOVE_CARD
+            cardId:
+              type: string
+            fromColumnId:
+              type: string
+            fromIndex:
+              type: integer
+              minimum: 0
+            toColumnId:
+              type: string
+            toIndex:
+              type: integer
+              minimum: 0
+    ActionArchiveCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: ARCHIVE_CARD
+            cardId:
+              type: string
+            archivedAt:
+              type: integer
+    ActionUnarchiveCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: UNARCHIVE_CARD
+            cardId:
+              type: string
+            columnId:
+              type: string
+            index:
+              type: integer
+              minimum: 0
+    ActionDeleteCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: DELETE_CARD
+            cardId:
+              type: string
+    ActionDuplicateCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, newCardId]
+          properties:
+            type:
+              type: string
+              const: DUPLICATE_CARD
+            cardId:
+              type: string
+            newCardId:
+              type: string
+            title:
+              type: string
+    ActionSetCardDueDate:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: SET_CARD_DUE_DATE
+            cardId:
+              type: string
+            dueDate:
+              type: integer
+              description: Unix ms; omit to clear the due date.
+    ActionSetCardPriority:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, priority]
+          properties:
+            type:
+              type: string
+              const: SET_CARD_PRIORITY
+            cardId:
+              type: string
+            priority:
+              $ref: "#/components/schemas/CardPriority"
+    ActionSetCardAssign:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, assigneeId]
+          properties:
+            type:
+              type: string
+              const: SET_CARD_ASSIGN
+            cardId:
+              type: string
+            assigneeId:
+              type: [string, "null"]
+              description: "`null` unassigns."
+    ActionSetCardTaskSpec:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: SET_CARD_TASK_SPEC
+            cardId:
+              type: string
+            acceptanceCriteria:
+              type: array
+              items:
+                type: string
+            definitionOfDone:
+              type: array
+              items:
+                type: string
+    ActionSetCardLabel:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, labelId, on]
+          properties:
+            type:
+              type: string
+              const: SET_CARD_LABEL
+            cardId:
+              type: string
+            labelId:
+              type: string
+            on:
+              type: boolean
+            index:
+              type: integer
+              minimum: 0
+    ActionSetCardCover:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId]
+          properties:
+            type:
+              type: string
+              const: SET_CARD_COVER
+            cardId:
+              type: string
+            cover:
+              $ref: "#/components/schemas/CardCover"
+    ActionClaimCard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, claimedBy, leaseUntil]
+          properties:
+            type:
+              type: string
+              const: CLAIM_CARD
+            cardId:
+              type: string
+            claimedBy:
+              type: [string, "null"]
+            leaseUntil:
+              type: [integer, "null"]
+    ActionAddCardLink:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, linkId, targetCardId, linkType]
+          properties:
+            type:
+              type: string
+              const: ADD_CARD_LINK
+            cardId:
+              type: string
+            linkId:
+              type: string
+            targetCardId:
+              type: string
+            linkType:
+              type: string
+              enum: [blocks, relates_to, duplicates]
+    ActionRemoveCardLink:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, linkId, targetCardId, linkType]
+          properties:
+            type:
+              type: string
+              const: REMOVE_CARD_LINK
+            cardId:
+              type: string
+            linkId:
+              type: string
+            targetCardId:
+              type: string
+            linkType:
+              type: string
+              enum: [blocks, relates_to, duplicates]
+    ActionAddColumn:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, newColumnId, title]
+          properties:
+            type:
+              type: string
+              const: ADD_COLUMN
+            newColumnId:
+              type: string
+            title:
+              type: string
+    ActionRenameColumn:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId, title]
+          properties:
+            type:
+              type: string
+              const: RENAME_COLUMN
+            columnId:
+              type: string
+            title:
+              type: string
+    ActionDeleteColumn:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId]
+          properties:
+            type:
+              type: string
+              const: DELETE_COLUMN
+            columnId:
+              type: string
+    ActionMoveColumn:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId, fromIndex, toIndex]
+          properties:
+            type:
+              type: string
+              const: MOVE_COLUMN
+            columnId:
+              type: string
+            fromIndex:
+              type: integer
+              minimum: 0
+            toIndex:
+              type: integer
+              minimum: 0
+    ActionDuplicateColumn:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId, newColumnId, newCardIds]
+          properties:
+            type:
+              type: string
+              const: DUPLICATE_COLUMN
+            columnId:
+              type: string
+            newColumnId:
+              type: string
+            newCardIds:
+              type: array
+              items:
+                type: string
+            title:
+              type: string
+    ActionSortColumn:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId, sortBy]
+          properties:
+            type:
+              type: string
+              const: SORT_COLUMN
+            columnId:
+              type: string
+            sortBy:
+              type: string
+              enum: [createdAt, dueDate, title]
+    ActionSetColumnCardOrder:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId, cardIds]
+          properties:
+            type:
+              type: string
+              const: SET_COLUMN_CARD_ORDER
+            columnId:
+              type: string
+            cardIds:
+              type: array
+              items:
+                type: string
+    ActionSetColumnWipLimit:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId]
+          properties:
+            type:
+              type: string
+              const: SET_COLUMN_WIP_LIMIT
+            columnId:
+              type: string
+            wipLimit:
+              type: integer
+              minimum: 1
+              description: Omit to remove the limit.
+    ActionSetColumnAccent:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId]
+          properties:
+            type:
+              type: string
+              const: SET_COLUMN_ACCENT
+            columnId:
+              type: string
+            accent:
+              $ref: "#/components/schemas/CardCover"
+    ActionArchiveColumnCards:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, columnId]
+          properties:
+            type:
+              type: string
+              const: ARCHIVE_COLUMN_CARDS
+            columnId:
+              type: string
+    ActionAddLabel:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, label]
+          properties:
+            type:
+              type: string
+              const: ADD_LABEL
+            label:
+              $ref: "#/components/schemas/Label"
+    ActionRenameLabel:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, labelId, name]
+          properties:
+            type:
+              type: string
+              const: RENAME_LABEL
+            labelId:
+              type: string
+            name:
+              type: string
+    ActionSetLabelColor:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, labelId, color]
+          properties:
+            type:
+              type: string
+              const: SET_LABEL_COLOR
+            labelId:
+              type: string
+            color:
+              $ref: "#/components/schemas/LabelColor"
+    ActionDeleteLabel:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, labelId]
+          properties:
+            type:
+              type: string
+              const: DELETE_LABEL
+            labelId:
+              type: string
+    ActionAddChecklist:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, newChecklistId, title]
+          properties:
+            type:
+              type: string
+              const: ADD_CHECKLIST
+            cardId:
+              type: string
+            newChecklistId:
+              type: string
+            title:
+              type: string
+    ActionRenameChecklist:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, checklistId, title]
+          properties:
+            type:
+              type: string
+              const: RENAME_CHECKLIST
+            cardId:
+              type: string
+            checklistId:
+              type: string
+            title:
+              type: string
+    ActionDeleteChecklist:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, checklistId]
+          properties:
+            type:
+              type: string
+              const: DELETE_CHECKLIST
+            cardId:
+              type: string
+            checklistId:
+              type: string
+    ActionAddChecklistItem:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, checklistId, newItemId, text]
+          properties:
+            type:
+              type: string
+              const: ADD_CHECKLIST_ITEM
+            cardId:
+              type: string
+            checklistId:
+              type: string
+            newItemId:
+              type: string
+            text:
+              type: string
+    ActionSetChecklistItemDone:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, checklistId, itemId, done]
+          properties:
+            type:
+              type: string
+              const: SET_CHECKLIST_ITEM_DONE
+            cardId:
+              type: string
+            checklistId:
+              type: string
+            itemId:
+              type: string
+            done:
+              type: boolean
+    ActionRenameChecklistItem:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, checklistId, itemId, text]
+          properties:
+            type:
+              type: string
+              const: RENAME_CHECKLIST_ITEM
+            cardId:
+              type: string
+            checklistId:
+              type: string
+            itemId:
+              type: string
+            text:
+              type: string
+    ActionDeleteChecklistItem:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, checklistId, itemId]
+          properties:
+            type:
+              type: string
+              const: DELETE_CHECKLIST_ITEM
+            cardId:
+              type: string
+            checklistId:
+              type: string
+            itemId:
+              type: string
+    ActionRenameBoard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, title]
+          properties:
+            type:
+              type: string
+              const: RENAME_BOARD
+            title:
+              type: string
+    ActionSetBoardColumnStyle:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: SET_BOARD_COLUMN_STYLE
+            columnStyle:
+              $ref: "#/components/schemas/ColumnAccentStyle"
+    ActionSetBoardWorkflow:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: SET_BOARD_WORKFLOW
+            workflow:
+              $ref: "#/components/schemas/BoardWorkflow"
+    ActionArchiveBoard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: ARCHIVE_BOARD
+    ActionUnarchiveBoard:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: UNARCHIVE_BOARD
+    PlanCommand:
+      type: object
+      required: [commandId, action]
+      properties:
+        commandId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        action:
+          $ref: "#/components/schemas/BoardAction"
+        ifMatch:
+          type: integer
+          minimum: 0
+        ifMatchVersions:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+    PlanRequest:
+      type: object
+      required: [commands]
+      properties:
+        commands:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/PlanCommand"
+        clientRunId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{8,64}$"
+    PlanApplyRequest:
+      type: object
+      required: [commands, planHash]
+      properties:
+        commands:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/PlanCommand"
+        planHash:
+          type: string
+          pattern: "^[0-9a-fA-F]{64}$"
+        clientRunId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{8,64}$"
+    PlanPreview:
+      type: object
+      required:
+        [
+          dryRun,
+          schemaVersion,
+          boardId,
+          planHash,
+          plan,
+          commandCount,
+          cardCreates,
+          limits,
+          requirement,
+          diff,
+          warnings,
+          conflicts,
+          canApply,
+        ]
+      properties:
+        dryRun:
+          type: boolean
+          const: true
+        schemaVersion:
+          type: integer
+          const: 1
+        boardId:
+          type: string
+        planHash:
+          type: string
+        plan:
+          $ref: "#/components/schemas/ApprovalPlan"
+        commandCount:
+          type: integer
+        cardCreates:
+          type: integer
+        limits:
+          type: object
+          required: [commands, cards]
+          properties:
+            commands:
+              type: integer
+            cards:
+              type: integer
+        requirement:
+          $ref: "#/components/schemas/PlanRequirement"
+        diff:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanChange"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanWarning"
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanConflict"
+        canApply:
+          type: boolean
+    PlanApplyResponse:
+      type: object
+      required: [planHash, results]
+      properties:
+        runId:
+          type: [string, "null"]
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommandResponse"
+        planHash:
+          type: string
+    PlanRequirement:
+      type: object
+      required: [kind, requiresApproval, requiredScope, action, risk, summary]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ApprovalKind"
+        requiresApproval:
+          type: boolean
+        requiredScope:
+          type: string
+          enum: [worker, reviewer, admin]
+        action:
+          type: string
+        risk:
+          $ref: "#/components/schemas/ApprovalRisk"
+        summary:
+          type: string
+    PlanChange:
+      type: object
+      required: [touch, kind, before, after]
+      properties:
+        touch:
+          type: string
+        kind:
+          type: string
+          enum: [create, update, delete]
+        before:
+          type: [object, "null"]
+          additionalProperties: true
+        after:
+          type: [object, "null"]
+          additionalProperties: true
+        fields:
+          type: array
+          items:
+            type: string
+    PlanWarning:
+      type: object
+      required: [code, message]
+      properties:
+        index:
+          type: integer
+        commandId:
+          type: string
+        code:
+          type: string
+          enum: [approval_required, destructive, reviewer_required, no_op]
+        message:
+          type: string
+    PlanConflict:
+      type: object
+      required: [code, message]
+      properties:
+        index:
+          type: integer
+        commandId:
+          type: string
+        code:
+          type: string
+          enum: [version, wip, workflow, id, scope, destructive_denied, invalid]
+        message:
+          type: string
+        currentVersion:
+          type: integer
+    ApprovalKind:
+      type: string
+      enum: [destructive, done, custom]
+    ApprovalStatus:
+      type: string
+      enum: [pending, approved, rejected, expired, cancelled, consumed]
+    ApprovalRisk:
+      type: string
+      enum: [low, medium, high]
+    ApprovalPlan:
+      type: object
+      required: [schemaVersion, boardId]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        boardId:
+          type: string
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanCommand"
+          description: Mutually exclusive with `operations`.
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalOperation"
+          description: Exactly one lifecycle operation; mutually exclusive with `commands`.
+    ApprovalOperation:
+      type: object
+      required: [op, target, body]
+      properties:
+        op:
+          type: string
+          enum:
+            - board.delete
+            - member.invite
+            - member.update
+            - member.remove
+            - share.create
+            - share.update
+            - share.revoke
+            - share.delete
+            - attachment.delete
+        target:
+          type: object
+          additionalProperties: true
+        body:
+          type: object
+          additionalProperties: true
+    CreateApprovalRequest:
+      type: object
+      required: [kind, plan]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ApprovalKind"
+        cardId:
+          type: string
+          maxLength: 128
+        ttlMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        plan:
+          $ref: "#/components/schemas/ApprovalPlan"
+    ApprovalDecisionRequest:
+      type: object
+      required: [decision, planHash]
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject]
+        planHash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        comment:
+          type: string
+          maxLength: 2000
+    ApprovalRequest:
+      type: object
+      required:
+        [
+          id,
+          boardId,
+          cardId,
+          requestedBy,
+          requestedByTokenId,
+          agentSessionId,
+          kind,
+          actionType,
+          summary,
+          risk,
+          planHash,
+          status,
+          expiresAt,
+          decidedBy,
+          decidedAt,
+          decisionComment,
+          runId,
+          consumedAt,
+          createdAt,
+        ]
+      properties:
+        id:
+          type: string
+        boardId:
+          type: string
+        cardId:
+          type: [string, "null"]
+        requestedBy:
+          type: string
+        requestedByTokenId:
+          type: string
+        agentSessionId:
+          type: [string, "null"]
+        kind:
+          $ref: "#/components/schemas/ApprovalKind"
+        actionType:
+          type: string
+        summary:
+          type: string
+        risk:
+          $ref: "#/components/schemas/ApprovalRisk"
+        planHash:
+          type: string
+        status:
+          $ref: "#/components/schemas/ApprovalStatus"
+        expiresAt:
+          type: integer
+        decidedBy:
+          type: [string, "null"]
+        decidedAt:
+          type: [integer, "null"]
+        decisionComment:
+          type: [string, "null"]
+        runId:
+          type: [string, "null"]
+        consumedAt:
+          type: [integer, "null"]
+        createdAt:
+          type: integer
+        plan:
+          $ref: "#/components/schemas/ApprovalPlan"
+    AgentSessionStatus:
+      type: string
+      enum: [active, idle, waiting_approval, completed, failed, cancelled]
+    CreateAgentSessionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        clientName:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+    AgentSessionHeartbeatRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, idle, waiting_approval]
+        currentCardId:
+          type: [string, "null"]
+        summary:
+          type: string
+          maxLength: 2000
+    EndAgentSessionRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [completed, failed, cancelled]
+        summary:
+          type: string
+          maxLength: 2000
+    AgentSession:
+      type: object
+      required:
+        [
+          id,
+          userId,
+          apiTokenId,
+          boardId,
+          name,
+          clientName,
+          model,
+          status,
+          currentCardId,
+          currentRunId,
+          startedAt,
+          lastHeartbeatAt,
+          stale,
+          paused,
+          pausedAt,
+          pausedBy,
+          pausedReason,
+          pauseScope,
+          endedAt,
+          endReason,
+          summary,
+        ]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        apiTokenId:
+          type: string
+        boardId:
+          type: string
+        name:
+          type: [string, "null"]
+        clientName:
+          type: [string, "null"]
+        model:
+          type: [string, "null"]
+        status:
+          $ref: "#/components/schemas/AgentSessionStatus"
+        currentCardId:
+          type: [string, "null"]
+        currentRunId:
+          type: [string, "null"]
+        startedAt:
+          type: integer
+        lastHeartbeatAt:
+          type: integer
+        stale:
+          type: boolean
+        paused:
+          type: boolean
+        pausedAt:
+          type: [integer, "null"]
+        pausedBy:
+          type: [string, "null"]
+        pausedReason:
+          type: [string, "null"]
+        pauseScope:
+          type: [string, "null"]
+          enum: [board, token, session, null]
+        endedAt:
+          type: [integer, "null"]
+        endReason:
+          type: [string, "null"]
+        summary:
+          type: [string, "null"]
+    AgentPauseRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+    BoardAgentPause:
+      type: object
+      required: [scope, boardId, paused, pausedAt, pausedBy, reason]
+      properties:
+        scope:
+          type: string
+          const: board
+        boardId:
+          type: string
+        paused:
+          type: boolean
+        pausedAt:
+          type: [integer, "null"]
+        pausedBy:
+          type: [string, "null"]
+        reason:
+          type: [string, "null"]
+    AgentStopAllPause:
+      type: object
+      required: [paused, pausedAt, pausedBy, affected]
+      properties:
+        paused:
+          type: boolean
+        pausedAt:
+          type: [integer, "null"]
+        pausedBy:
+          type: [string, "null"]
+        affected:
+          type: integer
+    AgentRunKind:
+      type: string
+      enum: [batch, plan, single, revert]
+    AgentRunStatus:
+      type: string
+      enum: [applied, reverted, failed]
+    AgentRun:
+      type: object
+      required:
+        [
+          id,
+          boardId,
+          apiTokenId,
+          agentSessionId,
+          actorId,
+          kind,
+          status,
+          clientRunId,
+          planHash,
+          approvalId,
+          commandCount,
+          firstSeq,
+          lastSeq,
+          revertsRunId,
+          createdAt,
+          appliedAt,
+          revertedAt,
+        ]
+      properties:
+        id:
+          type: string
+        boardId:
+          type: string
+        apiTokenId:
+          type: [string, "null"]
+        agentSessionId:
+          type: [string, "null"]
+        actorId:
+          type: string
+        kind:
+          $ref: "#/components/schemas/AgentRunKind"
+        status:
+          $ref: "#/components/schemas/AgentRunStatus"
+        clientRunId:
+          type: [string, "null"]
+        planHash:
+          type: [string, "null"]
+        approvalId:
+          type: [string, "null"]
+        commandCount:
+          type: integer
+        firstSeq:
+          type: [integer, "null"]
+        lastSeq:
+          type: [integer, "null"]
+        revertsRunId:
+          type: [string, "null"]
+        createdAt:
+          type: integer
+        appliedAt:
+          type: integer
+        revertedAt:
+          type: [integer, "null"]
+    RunDetail:
+      type: object
+      required: [run, commands]
+      properties:
+        run:
+          $ref: "#/components/schemas/AgentRun"
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommandDeltaEntry"
+        preimages:
+          type: object
+          additionalProperties: true
+          description: Present only for a board ADMIN browser session.
+    RevertConflict:
+      type: object
+      required: [touch, expectedVersion, currentVersion, reason]
+      properties:
+        touch:
+          type: string
+        expectedVersion:
+          type: integer
+        currentVersion:
+          type: integer
+        reason:
+          type: string
+    RevertPreview:
+      type: object
+      required: [dryRun, run, conflicts, canRevert]
+      properties:
+        dryRun:
+          type: boolean
+          const: true
+        run:
+          $ref: "#/components/schemas/AgentRun"
+        conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/RevertConflict"
+        canRevert:
+          type: boolean
+        diff:
+          type: object
+          additionalProperties: true
+          description: Present only for a board ADMIN browser session.
+    RevertRunRequest:
+      type: object
+      properties:
+        dryRun:
+          type: boolean
+          description: Preview only; writes nothing and needs no `commandId`.
+        commandId:
+          type: string
+          maxLength: 64
+          description: Idempotency key for a real revert (required when `dryRun` is false).
+    CommentKind:
+      type: string
+      enum: [note, status, question, blocker, evidence, handoff]
+    Comment:
+      type: object
+      required: [id, cardId, authorId, text, kind, actorType, createdAt]
+      properties:
+        id:
+          type: string
+        cardId:
+          type: string
+        authorId:
+          type: string
+        text:
+          type: string
+        kind:
+          $ref: "#/components/schemas/CommentKind"
+        actorType:
+          $ref: "#/components/schemas/ActorType"
+        apiTokenId:
+          type: [string, "null"]
+        agentSessionId:
+          type: [string, "null"]
+        agentName:
+          type: [string, "null"]
+        createdAt:
+          type: integer
+    CommentPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+        nextCursor:
+          type: [string, "null"]
+    CreateCommentRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        kind:
+          $ref: "#/components/schemas/CommentKind"
+        commandId:
+          type: string
+          maxLength: 64
+          pattern: "^[A-Za-z0-9_-]+$"
+    Attachment:
+      type: object
+      required:
+        [
+          id,
+          cardId,
+          fileName,
+          mimeType,
+          sizeBytes,
+          uploadedById,
+          createdAt,
+          transcodeStatus,
+          hasThumbnail,
+          hasPoster,
+        ]
+      properties:
+        id:
+          type: string
+        cardId:
+          type: string
+        fileName:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        uploadedById:
+          type: string
+        uploadedByTokenId:
+          type: [string, "null"]
+        uploadedBySessionId:
+          type: [string, "null"]
+        createdAt:
+          type: integer
+        transcodeStatus:
+          type: string
+          enum: [none, pending, done, failed]
+        hasThumbnail:
+          type: boolean
+        hasPoster:
+          type: boolean
+    ActivityChange:
+      type: object
+      required: [field, from, to]
+      properties:
+        field:
+          type: string
+        from:
+          type: [string, "null"]
+        to:
+          type: [string, "null"]
+    ActivityFeedEntry:
+      type: object
+      required: [source, id, at, type, actorId]
+      properties:
+        source:
+          type: string
+          enum: [command, activity]
+        id:
+          type: string
+        seq:
+          type: integer
+        at:
+          type: integer
+        type:
+          type: string
+        actorId:
+          type: string
+        actorType:
+          $ref: "#/components/schemas/ActorType"
+        apiTokenId:
+          type: string
+        agentSessionId:
+          type: string
+        runId:
+          type: [string, "null"]
+        agentName:
+          type: string
+        cardId:
+          type: string
+        details:
+          type: [object, "null"]
+          additionalProperties: true
+        detail:
+          type: string
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityChange"
+    ActivityFeedPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityFeedEntry"
+        nextCursor:
+          type: [string, "null"]
+    AuthUser:
+      type: object
+      required: [id, email, displayName, avatarColor, avatarPath, createdAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: [string, "null"]
+        avatarColor:
+          type: [string, "null"]
+        avatarPath:
+          type: [string, "null"]
+        notifyDigest:
+          type: boolean
+        notifyAttention:
+          type: boolean
+        locale:
+          type: string
+          enum: [en, ru]
+        createdAt:
+          type: integer
+        emailVerifiedAt:
+          type: [integer, "null"]
+        hasPassword:
+          type: boolean
+        deletionMethod:
+          type: string
+          enum: [password, email_code]
+        authMethod:
+          type: string
+          enum: [password, oauth]
+    ApiTokenIdentity:
+      type: object
+      required:
+        [
+          id,
+          name,
+          scopePreset,
+          trustedCi,
+          effectiveTokenScope,
+          boardId,
+          readOnly,
+          rateLimitPerMinute,
+          individualPausedAt,
+          stopAllPausedAt,
+          paused,
+        ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        scopePreset:
+          $ref: "#/components/schemas/ScopePreset"
+        trustedCi:
+          type: boolean
+        effectiveTokenScope:
+          $ref: "#/components/schemas/ScopePreset"
+        boardId:
+          type: [string, "null"]
+        readOnly:
+          type: boolean
+        rateLimitPerMinute:
+          type: [integer, "null"]
+        individualPausedAt:
+          type: [integer, "null"]
+        stopAllPausedAt:
+          type: [integer, "null"]
+        paused:
+          type: boolean
+    AuthMe:
+      allOf:
+        - $ref: "#/components/schemas/AuthUser"
+        - type: object
+          required: [impersonatedBy, token, session]
+          properties:
+            impersonatedBy:
+              type: [string, "null"]
+            token:
+              oneOf:
+                - $ref: "#/components/schemas/ApiTokenIdentity"
+                - type: "null"
+            session:
+              oneOf:
+                - $ref: "#/components/schemas/AgentSession"
+                - type: "null"
+            server:
+              $ref: "#/components/schemas/ServerInfo"
+    ServerInfo:
+      type: object
+      required: [version, apiVersion]
+      properties:
+        version:
+          type: string
+          description: Live server release.
+        apiVersion:
+          type: string
+          description: API contract version; currently `"1"`.
+    UserToken:
+      type: object
+      required:
+        [
+          id,
+          name,
+          createdAt,
+          lastUsedAt,
+          expiresAt,
+          revokedAt,
+          boardId,
+          readOnly,
+          rateLimitPerMinute,
+          scopePreset,
+          trustedCi,
+          individualPausedAt,
+          individualPausedBy,
+          individualPausedReason,
+          stopAllPausedAt,
+          stopAllPausedBy,
+          paused,
+          effectiveTokenScope,
+        ]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: integer
+        lastUsedAt:
+          type: [integer, "null"]
+        expiresAt:
+          type: [integer, "null"]
+        revokedAt:
+          type: [integer, "null"]
+        boardId:
+          type: [string, "null"]
+        readOnly:
+          type: boolean
+        rateLimitPerMinute:
+          type: [integer, "null"]
+        scopePreset:
+          $ref: "#/components/schemas/ScopePreset"
+        trustedCi:
+          type: boolean
+        individualPausedAt:
+          type: [integer, "null"]
+        individualPausedBy:
+          type: [string, "null"]
+        individualPausedReason:
+          type: [string, "null"]
+        stopAllPausedAt:
+          type: [integer, "null"]
+        stopAllPausedBy:
+          type: [string, "null"]
+        paused:
+          type: boolean
+        effectiveTokenScope:
+          $ref: "#/components/schemas/ScopePreset"
+    CreateUserTokenRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: Omitted means 90 days; `null` means no expiry.
+        boardId:
+          type: [string, "null"]
+        readOnly:
+          type: boolean
+        rateLimitPerMinute:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 100000
+        scopePreset:
+          $ref: "#/components/schemas/ScopePreset"
+        trustedCi:
+          type: boolean
+    UpdateUserTokenRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        boardId:
+          type: [string, "null"]
+        rateLimitPerMinute:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 100000
+        readOnly:
+          type: boolean
+        scopePreset:
+          $ref: "#/components/schemas/ScopePreset"
+        trustedCi:
+          type: boolean
+    CreateUserTokenResponse:
+      type: object
+      required: [token, apiToken]
+      properties:
+        token:
+          type: string
+          description: Plaintext `jnk_…`; returned exactly once.
+        apiToken:
+          $ref: "#/components/schemas/UserToken"
+    UpdateProfileRequest:
+      type: object
+      properties:
+        displayName:
+          type: [string, "null"]
+          maxLength: 50
+        avatarColor:
+          type: [string, "null"]
+        notifyDigest:
+          type: boolean
+        notifyAttention:
+          type: boolean
+        locale:
+          type: [string, "null"]
+          enum: [en, ru, null]
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          maxLength: 100
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 100
+    UserDataExport:
+      type: object
+      required: [id, status, createdAt, expiresAt, sizeBytes, error]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, ready, failed]
+        createdAt:
+          type: integer
+        expiresAt:
+          type: integer
+        sizeBytes:
+          type: [integer, "null"]
+        error:
+          type: [string, "null"]
+    RequestAccountDeletionCodeRequest:
+      type: object
+      properties:
+        oauthProof:
+          type: string
+          description: OAuth-issued access token no older than ten minutes.
+    RequestAccountDeletionCodeResponse:
+      type: object
+      required: [expiresAt, queued]
+      properties:
+        expiresAt:
+          type: integer
+        queued:
+          type: boolean
+    DeleteAccountRequest:
+      type: object
+      required: [confirmEmail]
+      properties:
+        password:
+          type: string
+        oauthProof:
+          type: string
+        emailCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+        confirmEmail:
+          type: string
+    DeleteAccountResponse:
+      type: object
+      required: [status, deleteAfter]
+      properties:
+        status:
+          type: string
+          const: scheduled
+        deleteAfter:
+          type: integer
