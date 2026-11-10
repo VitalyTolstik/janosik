@@ -22,9 +22,33 @@
  */
 export const UPDATE_EVENT = "janosik:update-available";
 
+/**
+ * How long the click waits for `controllerchange`. The event normally fires
+ * within a frame or two; the bound only covers a worker that is already
+ * active (and therefore emits no change event) so the button never looks
+ * dead.
+ */
+const CONTROLLER_CHANGE_TIMEOUT_MS = 3_000;
+
 let reloading = false;
+let reloadTimer: number | undefined;
 /** The waiting worker whose availability was already announced. */
 let announced: ServiceWorker | null = null;
+
+/**
+ * Reload this tab exactly once. Shared by `controllerchange` and the
+ * fallback timer: `reloading` makes a repeated click or a second change
+ * event a no-op instead of a reload loop.
+ */
+function reloadOnce(): void {
+  if (reloadTimer !== undefined) {
+    window.clearTimeout(reloadTimer);
+    reloadTimer = undefined;
+  }
+  if (reloading) return;
+  reloading = true;
+  window.location.reload();
+}
 
 export function registerServiceWorker(): void {
   if (!import.meta.env.PROD) return;
@@ -43,9 +67,8 @@ export function registerServiceWorker(): void {
   const hadController = navigator.serviceWorker.controller !== null;
 
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!hadController || reloading) return;
-    reloading = true;
-    window.location.reload();
+    if (!hadController) return;
+    reloadOnce();
   });
 
   // A dynamic import that the new worker cannot answer (the chunk was never
@@ -124,6 +147,14 @@ export function registerServiceWorker(): void {
  * and reloading anyway would drop the user's in-flight edits for nothing
  * (TASK-156 review): refresh the registration instead and let a real
  * waiting worker announce itself again.
+ *
+ * The reload is driven by `controllerchange`, not started right after
+ * `postMessage`. Activating the new worker terminates the old one, and a
+ * navigation started against the old controller could be aborted, leaving
+ * the tab on the old build with the banner still up (observed in CI). The
+ * event fires only once the new worker controls this tab, so the reload
+ * lands on the new build; the bounded timer covers the already-active edge
+ * case where no change event follows.
  */
 export function applyServiceWorkerUpdate(): void {
   void navigator.serviceWorker
@@ -134,9 +165,8 @@ export function applyServiceWorkerUpdate(): void {
         void registration?.update().catch(() => undefined);
         return;
       }
-      reloading = true;
       waiting.postMessage({ type: "SKIP_WAITING" });
-      window.location.reload();
+      reloadTimer = window.setTimeout(reloadOnce, CONTROLLER_CHANGE_TIMEOUT_MS);
     })
     .catch(() => {
       /* the registration is unreachable — nothing to apply */
