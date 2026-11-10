@@ -171,6 +171,72 @@ share-ответы и потоки удаляют id токена/сессии �
 метки паузы, `effectiveTokenScope`) и блок `server`; у сессии браузера
 `token: null`.
 
+## Пауза и kill
+
+Человек может остановить агентов, не отзывая ключ. Пауза обратима, kill —
+это отзыв токена. Все маршруты паузы/возобновления доступны только сессии
+браузера: PAT получает `403 pat_forbidden`, поэтому агент не может снять
+паузу, которая его остановила.
+
+| Метод  | Путь                                                | Доступ                | Запрос          | Ответ                 |
+| ------ | --------------------------------------------------- | --------------------- | --------------- | --------------------- |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/pause`       | `ADMIN` доски, сессия | `AgentPauseDto` | `AgentSessionDto`     |
+| `POST` | `/boards/:id/agent-sessions/:sessionId/resume`      | `ADMIN` доски, сессия | `AgentPauseDto` | `AgentSessionDto`     |
+| `POST` | `/boards/:id/agents/pause`                          | `ADMIN` доски, сессия | `AgentPauseDto` | `BoardAgentPauseDto`  |
+| `POST` | `/boards/:id/agents/resume`                         | `ADMIN` доски, сессия | `AgentPauseDto` | `BoardAgentPauseDto`  |
+| `POST` | `/users/me/tokens/:id/pause`                        | владелец, сессия      | `AgentPauseDto` | `UserTokenDto`        |
+| `POST` | `/users/me/tokens/:id/resume`                       | владелец, сессия      | `AgentPauseDto` | `UserTokenDto`        |
+| `POST` | `/agents/pause-all`                                 | владелец, сессия      | `AgentPauseDto` | `AgentStopAllPauseDto` |
+| `POST` | `/agents/resume-all`                                | владелец, сессия      | `AgentPauseDto` | `AgentStopAllPauseDto` |
+
+`AgentPauseDto` — необязательное `{ reason?: string }` (до 500 символов).
+Причина сохраняется в метке сессии/доски; для токена и stop-all она попадает
+в `SecurityAuditLog`. Приоритет `pauseScope` — **токен → доска → сессия**:
+пауза токена (`individualPausedAt` или `stopAllPausedAt`) важнее паузы доски,
+а пауза доски важнее паузы сессии. `resume-all` очищает только
+`stopAllPausedAt` и **не** снимает индивидуальную паузу токена; токен остаётся
+на паузе, пока активен хотя бы один источник.
+
+Любая PAT-запись, заблокированная паузой, отвечает `403` со стабильным кодом:
+
+```json
+{
+  "message": "Agent access is paused at the board level; resume it before writing",
+  "code": "agent_paused",
+  "retryable": false,
+  "pauseScope": "board",
+  "scope": "board",
+  "pausedAt": 1762764000000
+}
+```
+
+Блокируются команды (одиночные и batch), комментарии, загрузка и удаление
+вложений, claim'ы, изменение участников/ссылок доски и другие записи на
+доске. GET-чтение остаётся доступным, а control plane — открытым: `heartbeat`,
+`end` и `GET /boards/:id/agent-sessions/:id` работают во время паузы, чтобы
+агент мог корректно завершиться. Пауза проверяется до роли на доске, области
+токена и destructive/approval-гейтов: на паузе агент получает `agent_paused`,
+а не `scope_denied`, `pat_read_only` или `approval_required`. Пауза не
+освобождает claim. Завершение сессии или отзыв её токена освобождает claim'ы
+сессии/токена.
+
+Пауза проверяется на границе запроса и повторно внутри транзакции записи
+доски после advisory lock. Запрос, прошедший вторую проверку, завершается и
+коммитится; пауза, закоммиченная до неё, отклоняет запись. Эта же вторая
+проверка отклоняет отозванный/истёкший токен (или отключённого владельца) и
+сессию, завершённую до блокировки, поэтому поставленная в очередь запись не
+переживёт `end_session` или `DELETE /users/me/tokens/:id`. На следующем
+keep-alive PAT-поток получает
+`{ "type": "agent", "op": "paused", "scope": "...", "at": ... }` и закрывается.
+Пауза сессии закрывает только поток с `?session=<sessionId>`; переподключение
+во время активной паузы получает `403 agent_paused`. Человеческие SSE-потоки
+не закрываются.
+
+`DELETE /users/me/tokens/:id` — необратимый kill. Он отзывает ключ, помечает
+его открытые сессии `cancelled`, освобождает claim'ы с `claimedByTokenId`
+(legacy-claim'ы без id токена ждут истечения lease) и закрывает SSE токена на
+следующем тике. Новые запросы с ключом получают `401`.
+
 ## Области токена и destructive gate
 
 Каждый PAT несёт один неизменяемый пресет. Новый ключ создаётся как `worker`;
@@ -208,6 +274,7 @@ share-ответы и потоки удаляют id токена/сессии �
 | `destructive_denied` | 403 | политика доски `destructive: "deny"`; `reason: "board_policy"` |
 | `approval_required` | 409 | destructive-действие без подтверждения; запрос отклонён, ничего не применено |
 | `pat_forbidden` | 403 | account-маршрут доступен только сессии |
+| `agent_paused` | 403 | запись заблокирована паузой сессии, токена или доски; `pauseScope`/`pausedAt`, `retryable: false` |
 | `pat_read_only` | 403 | устаревший read-only ключ отклонил запись |
 
 API approval-запросов (`POST /boards/:id/approvals`) и endpoint решения

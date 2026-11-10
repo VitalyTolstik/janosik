@@ -48,6 +48,10 @@ A personal API token acts as its owner for board work, but it cannot manage
 the account's credentials. These routes refuse a PAT with `403`:
 
 - `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
+- `POST /agents/pause-all`, `POST /agents/resume-all`
+- `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
+- `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
 
@@ -100,6 +104,7 @@ Some shapes deviate from the default and are documented where they occur:
 | Status | `code`                | Meaning                                                                                     |
 | ------ | --------------------- | ------------------------------------------------------------------------------------------- |
 | `403`  | `pat_forbidden`       | a personal API token called a [session-only route](#session-only-routes)                    |
+| `403`  | `agent_paused`        | a session/token/board pause blocks the write; see [Pause and kill](./rest/#pause-and-kill)   |
 | `429`  | `login_backoff`       | the address is in [login backoff](#login-backoff); `retryAfter` is the wait in seconds      |
 | `503`  | `board_write_timeout` | the board's write lock timed out under load; safe to retry (a command with its `commandId`) |
 

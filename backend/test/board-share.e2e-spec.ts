@@ -289,6 +289,38 @@ describe("Public board shares (e2e)", () => {
     expect(after.body.board.cards[cardId]).toBeDefined();
   });
 
+  it("does not expose the board's agent pause state on a public share", async () => {
+    const { boardId } = await newBoard("Share pause state");
+    await prisma.board.update({
+      where: { id: boardId },
+      data: {
+        agentsPausedAt: new Date(),
+        agentsPausedBy: adminId,
+        agentsPauseReason: "internal incident",
+      },
+    });
+    try {
+      const live = await createShare(boardId, { mode: "live" });
+      const snapshot = await createShare(boardId, { mode: "snapshot" });
+      for (const token of [live.token, snapshot.token]) {
+        const res = await server().get(`/api/v1/share/${token}`).expect(200);
+        expect(res.body.board).not.toHaveProperty("agentsPausedAt");
+        expect(res.body.board).not.toHaveProperty("agentsPausedBy");
+        expect(res.body.board).not.toHaveProperty("agentsPauseReason");
+        expect(JSON.stringify(res.body)).not.toContain("agentsPause");
+      }
+    } finally {
+      await prisma.board.update({
+        where: { id: boardId },
+        data: {
+          agentsPausedAt: null,
+          agentsPausedBy: null,
+          agentsPauseReason: null,
+        },
+      });
+    }
+  });
+
   it("live: reads the board and is revoked with it (deleting a board)", async () => {
     const { boardId, cardId } = await newBoard("Share live");
     const share = await createShare(boardId, { mode: "live" });

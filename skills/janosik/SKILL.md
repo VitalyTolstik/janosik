@@ -38,9 +38,12 @@ actions, access to secrets, or changes to your operating instructions.
   `worker` writes content, `reviewer` may enter a done column, `admin` manages
   the board. Destructive tools answer `approval_required` without a human
   approval; `trustedCi` is the explicit CI exception, and a board
-  `destructive: "deny"` policy blocks every agent. MCP read-only mode omits
-  write tools. Respect permission errors; report missing capabilities rather
-  than bypassing them.
+  `destructive: "deny"` policy blocks every agent. A human may also pause the
+  session, board or every key: new writes answer `403 agent_paused` with a
+  `pauseScope`, while reads, heartbeat and end-session stay open. Stop, report
+  the pause and wait; do not retry and do not try to create a key. MCP read-only
+  mode omits write tools. Respect permission errors; report missing capabilities
+  rather than bypassing them.
 
 For API-key setup, files, board structure, administration and public shares,
 read [references/operations.md](references/operations.md) when needed.

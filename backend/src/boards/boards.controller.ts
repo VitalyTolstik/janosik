@@ -126,6 +126,7 @@ export class BoardsController {
       id,
       user.id,
       requestAttribution(principal, session?.id),
+      principal,
     );
     return { status: "ok" };
   }
@@ -162,6 +163,7 @@ export class BoardsController {
       user.id,
       dto,
       requestAttribution(principal, session?.id),
+      principal,
     );
   }
 
@@ -184,6 +186,7 @@ export class BoardsController {
       userId,
       dto,
       requestAttribution(principal, session?.id),
+      principal,
     );
   }
 
@@ -205,6 +208,7 @@ export class BoardsController {
       user.id,
       userId,
       requestAttribution(principal, session?.id),
+      principal,
     );
     return { status: "ok" };
   }

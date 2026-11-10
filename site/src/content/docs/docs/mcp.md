@@ -69,6 +69,16 @@ policy of `destructive: "deny"` returns `destructive_denied` for every agent.
 Do not retry these errors with the same token; report the blocker or ask a
 human.
 
+A human can also pause an agent, a board or every token at once. New writes then
+answer `403 agent_paused` with `pauseScope` (`session`, `board` or `token`) and
+`retryable: false`. Reads and the session control plane stay available:
+`janosik_heartbeat` and `janosik_end_session` still work so the agent can finish
+cleanly. Do not retry a paused write and do not try to create a new key; stop,
+report the pause scope and wait for the human to resume. The MCP server
+deliberately exposes no pause/resume tools — those are browser-session only, so
+an agent cannot clear the pause that stopped it. Revoking the key
+(`DELETE /users/me/tokens/:id`) is the irreversible kill.
+
 Data-reading tools accept `response_format: "markdown"` (default) or `"json"`. The
 tool names all start with `janosik_` so they sit alongside other servers
 without clashing.

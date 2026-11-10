@@ -34,6 +34,7 @@ import type { AuthResult, AuthUser } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { LoginBackoffService } from "./login-backoff.service";
 import { RegisterDto } from "./dto/register.dto";
+import { revokeApiTokens } from "./token-revocation";
 import type { VerifyEmailDto } from "./dto/verify-email.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
 import type { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
@@ -266,15 +267,11 @@ export class AuthService {
         where: { userId: token.userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      const tokens = await tx.apiToken.findMany({
-        where: { userId: token.userId, revokedAt: null },
-        select: { id: true },
+      const tokens = await revokeApiTokens(tx, {
+        userId: token.userId,
+        revokedAt: null,
       });
-      await tx.apiToken.updateMany({
-        where: { userId: token.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      return tokens.map((row) => row.id);
+      return tokens.tokenIds;
     });
     await this.securityAudit.record({
       userId: candidate.userId,
@@ -395,23 +392,18 @@ export class AuthService {
       }
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
-    const revokedTokenIds = (
-      await this.prisma.apiToken.findMany({
-        where: { userId, revokedAt: null },
-        select: { id: true },
-      })
-    ).map((row) => row.id);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    const revokedTokenIds = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: { passwordHash },
-      }),
-      this.prisma.passwordResetToken.deleteMany({ where: { userId } }),
-      this.prisma.apiToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }),
-    ]);
+      });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      const revoked = await revokeApiTokens(tx, {
+        userId,
+        revokedAt: null,
+      });
+      return revoked.tokenIds;
+    });
     await this.securityAudit.record({
       userId,
       actorId: userId,

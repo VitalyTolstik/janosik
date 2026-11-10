@@ -4,6 +4,10 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import {
+  assertAgentCanWriteInTransaction,
+  type AgentPauseGate,
+} from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
 /**
@@ -111,12 +115,18 @@ export class BoardWriteService {
    * Run `fn` as the sole writer of `boardId`. `fn` receives a transaction
    * client already holding the board's advisory lock; it must not open its
    * own transaction or call `run` for the same board again.
+   *
+   * `pause` is the TASK-166.3 agent gate: a PAT write passes it and the
+   * pause sources are read again after the advisory lock, so a pause that
+   * committed while the request was queued cancels the write (ADR §9.3).
+   * Human writes omit it.
    */
   run<T>(
     boardId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    pause?: AgentPauseGate,
   ): Promise<T> {
-    return this.enqueue(boardId, () => this.attempt(boardId, fn));
+    return this.enqueue(boardId, () => this.attempt(boardId, fn, pause));
   }
 
   /** Serialize tasks per board without holding a database connection. */
@@ -141,6 +151,7 @@ export class BoardWriteService {
   private async attempt<T>(
     boardId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    pause?: AgentPauseGate,
   ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -149,6 +160,17 @@ export class BoardWriteService {
             // Take the per-board lock first, before any row lock, so every
             // writer acquires locks in the same order (board → children).
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+            // TASK-166.3: the second pause read happens under the lock. A
+            // pause committed before this point refuses the write; a pause
+            // committed after it lets the in-flight transaction finish.
+            if (pause !== undefined) {
+              await assertAgentCanWriteInTransaction(
+                tx,
+                boardId,
+                pause.principal,
+                pause.sessionId,
+              );
+            }
             return fn(tx);
           },
           { maxWait: BOARD_WRITE_MAX_WAIT_MS, timeout: BOARD_WRITE_TIMEOUT_MS },

@@ -77,6 +77,7 @@ export class AttachmentsController {
       inline === "1" || inline === "true",
       requestAttribution(principal, session?.id),
       description === "1",
+      principal,
     );
   }
 

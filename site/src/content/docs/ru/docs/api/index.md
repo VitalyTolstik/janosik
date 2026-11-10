@@ -50,6 +50,10 @@ JWT-стратегию. Оба вида токенов подходят для �
 может управлять учётными данными аккаунта. При обращении с PAT эти маршруты возвращают `403`:
 
 - `GET /users/me/tokens`, `POST /users/me/tokens`, `DELETE /users/me/tokens/:id`
+- `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
+- `POST /agents/pause-all`, `POST /agents/resume-all`
+- `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
+- `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
 
@@ -103,6 +107,7 @@ Refresh-токен никогда не появляется в теле отве
 | Статус | `code`                | Значение                                                                                                               |
 | ------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `403`  | `pat_forbidden`       | персональный API-токен вызвал [маршрут только для сессии](#маршруты-только-для-сессии)                                 |
+| `403`  | `agent_paused`        | запись заблокирована паузой сессии/токена/доски; см. [Пауза и kill](./rest/#пауза-и-kill)                              |
 | `429`  | `login_backoff`       | адрес в [задержке входа](#задержка-входа); `retryAfter` — это ожидание в секундах                                        |
 | `503`  | `board_write_timeout` | запись в доску превысила время ожидания под нагрузкой; запрос можно безопасно повторить (команду с тем же `commandId`) |
 

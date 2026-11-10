@@ -37,6 +37,7 @@ import {
 } from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
 import { tempUploadStorage } from "@/attachments/upload-storage";
+import { AgentPauseDto } from "@/agent-sessions/dto/agent-pause.dto";
 import { pickLocale } from "@/mailer/mail.types";
 import { AccountDataService } from "./account-data.service";
 import { CreateUserTokenDto } from "./dto/create-user-token.dto";
@@ -213,5 +214,28 @@ export class UsersController {
   ): Promise<{ status: "ok" }> {
     await this.apiTokens.revoke(user.id, id);
     return { status: "ok" };
+  }
+
+  /** TASK-166.3: pause only this token; `resume-all` keeps it paused. */
+  @UseGuards(SessionOnlyGuard)
+  @Post("me/tokens/:id/pause")
+  @HttpCode(HttpStatus.OK)
+  pauseToken(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Body() dto: AgentPauseDto,
+  ): Promise<UserTokenDto> {
+    return this.apiTokens.pause(user.id, id, dto.reason);
+  }
+
+  @UseGuards(SessionOnlyGuard)
+  @Post("me/tokens/:id/resume")
+  @HttpCode(HttpStatus.OK)
+  resumeToken(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Body() dto: AgentPauseDto,
+  ): Promise<UserTokenDto> {
+    return this.apiTokens.resume(user.id, id, dto.reason);
   }
 }

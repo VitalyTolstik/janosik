@@ -199,6 +199,17 @@ export function toBoardAggregate(
     ...(workflowInvalid ? { workflowInvalid: true as const } : {}),
     // TASK-166: absent means the safe defaults; old boards stay byte-identical.
     ...(agentPolicy ? { agentPolicy } : {}),
+    ...(board.agentsPausedAt
+      ? {
+          agentsPausedAt: board.agentsPausedAt.getTime(),
+          ...(board.agentsPausedBy
+            ? { agentsPausedBy: board.agentsPausedBy }
+            : {}),
+          ...(board.agentsPauseReason
+            ? { agentsPauseReason: board.agentsPauseReason }
+            : {}),
+        }
+      : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
   };
 }

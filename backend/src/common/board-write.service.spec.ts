@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import type { AuthPrincipal } from "@/auth/auth-principal";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
   BOARD_WRITE_MAX_ATTEMPTS,
@@ -26,6 +27,10 @@ function fakePrisma() {
 
 function service(prisma: unknown) {
   return new BoardWriteService(prisma as PrismaService);
+}
+
+function patPrincipal(): AuthPrincipal {
+  return { via: "pat", apiTokenId: "token-1" };
 }
 
 describe("isTransientConflict", () => {
@@ -78,6 +83,68 @@ describe("BoardWriteService", () => {
 
     expect(order).toEqual(["lock", "body"]);
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the agent pause after the lock and refuses a paused token", async () => {
+    const { prisma, tx } = fakePrisma();
+    const order: string[] = [];
+    tx.$executeRaw = jest.fn(async () => {
+      order.push("lock");
+      return 1;
+    }) as unknown as typeof tx.$executeRaw;
+    (tx as unknown as Record<string, unknown>).apiToken = {
+      findUnique: jest.fn(async () => {
+        order.push("pause");
+        return {
+          individualPausedAt: new Date("2026-11-10T00:00:00Z"),
+          stopAllPausedAt: null,
+        };
+      }),
+    };
+    (tx as unknown as Record<string, unknown>).board = {
+      findUnique: jest.fn(async () => ({ agentsPausedAt: null })),
+    };
+    const body = jest.fn(async () => "committed");
+
+    await expect(
+      service(prisma).run("board-1", body, {
+        principal: patPrincipal(),
+      }),
+    ).rejects.toMatchObject({
+      response: { code: "agent_paused", pauseScope: "token" },
+    });
+    expect(order).toEqual(["lock", "pause"]);
+    expect(body).not.toHaveBeenCalled();
+  });
+
+  it("lets an in-flight body finish when the pause lands after the second read", async () => {
+    const { prisma, tx } = fakePrisma();
+    (tx as unknown as Record<string, unknown>).apiToken = {
+      findUnique: jest.fn(async () => ({
+        individualPausedAt: null,
+        stopAllPausedAt: null,
+      })),
+    };
+    (tx as unknown as Record<string, unknown>).board = {
+      findUnique: jest.fn(async () => ({ agentsPausedAt: null })),
+    };
+
+    const result = await service(prisma).run(
+      "board-1",
+      async () => {
+        // The pause commits while this writer already holds the lock. The
+        // service must not re-read or roll the transaction back.
+        (
+          tx as unknown as { apiToken: { findUnique: jest.Mock } }
+        ).apiToken.findUnique = jest.fn(async () => ({
+          individualPausedAt: new Date(),
+          stopAllPausedAt: null,
+        }));
+        return "committed";
+      },
+      { principal: patPrincipal() },
+    );
+    expect(result).toBe("committed");
   });
 
   it("replays a transaction that lost a race, then succeeds", async () => {

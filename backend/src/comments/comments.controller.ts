@@ -46,6 +46,7 @@ export class CommentsController {
       user.id,
       dto,
       requestAttribution(principal, session?.id),
+      principal,
     );
   }
 
@@ -74,6 +75,7 @@ export class CommentsController {
       commentId,
       user.id,
       requestAttribution(principal, session?.id),
+      principal,
     );
     return { status: "ok" };
   }

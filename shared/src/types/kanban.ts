@@ -787,6 +787,13 @@ export interface Board {
    * operational and never travels in an export.
    */
   agentPolicy?: BoardAgentPolicy;
+  /**
+   * TASK-166 board-level agent pause (Unix ms). Operational state only: it is
+   * never part of an export/import and does not survive a board transfer.
+   */
+  agentsPausedAt?: number;
+  agentsPausedBy?: string;
+  agentsPauseReason?: string;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
 }

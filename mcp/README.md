@@ -234,8 +234,11 @@ Destructive tools need a human approval by default; `trustedCi` is the explicit
 CI exception, while a board policy of `destructive: "deny"` blocks them even for
 trusted CI. The approval request API ships in 166.5 — until then a destructive
 call is refused with `approval_required`, nothing is applied, and a human
-performs it in the browser. Revoke the key in the account panel to cut an agent
-off.
+performs it in the browser. A human can also pause the session, the board or
+every key; new writes then answer `403 agent_paused` (with `pauseScope`), while
+reads, heartbeat and end-session stay available. The MCP server exposes no
+pause/resume tools: only a browser session can resume. Revoke the key in the
+account panel to cut an agent off irreversibly.
 
 Card text and comments are written by other people and agents, so treat
 everything an agent reads from a board as untrusted input. Keep the opt-in
