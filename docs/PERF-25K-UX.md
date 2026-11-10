@@ -10,6 +10,8 @@ document is written to stand alone. It deliberately does **not** repeat that
 analysis. It looks at perceived performance: what the user sees, when they see
 it, and what it costs to get there. Where this document needs a 25k capacity
 number, it quotes the companion as the single source of truth.
+**Relationship:** the companion owns `aggregateRevision`, the canonical ETag
+key, and snapshot merge; this document consumes those contracts.
 
 The target is a 25,000-card board that opens and reacts like a much smaller
 one: a board-shaped first paint on a warm visit, useful columns in about a
@@ -43,14 +45,16 @@ Measured on 2026-11-10 from Amsterdam:
 
 Run-to-run ranges are wide enough that the document reports ranges rather than
 single decimals: category first content 1.02-1.15 s cold / 0.45-0.51 s warm;
-search 1.02-1.55 s cold / 0.45-0.63 s warm. One cold filtered run was an outlier
-at 4.17 s and is excluded from the table.
+search 1.02-1.55 s cold; warm ~0.45 s (the 0.62-0.63 s runs failed the final
+grid check and are excluded). One cold filtered run was an outlier at 4.17 s
+and is excluded from the table.
 
 Janosik's current full-aggregate path does not scale to 25,000 cards. At 10,000
-cards the measured aggregate is 6.75 MB, `GET` p50 is 263 ms, first board render
-is 906 ms, the JS heap is 95 MB, and ten concurrent opens take the API to
-1.48 GB RSS. The companion's 25k estimate is **17.7 MB, GET ~640 ms, UI ~1.7 s,
-heap 150-200 MB, ~3.3 GB for ten concurrent opens**. Those numbers are the
+cards the measured aggregate is 6.75 MiB (7.08 MB decimal), `GET` p50 is
+263 ms, first board render
+is 906 ms, the JS heap is 95 MiB, and ten concurrent opens take the API to
+1.48 GiB RSS. The companion's 25k estimate is **17.7 MB, GET ~640 ms, UI ~1.7 s,
+heap 150-200 MiB, ~3.3 GiB for ten concurrent opens**. Those numbers are the
 data/write architecture fit; this document only derives UX consequences from
 them.
 
@@ -65,7 +69,7 @@ What transfers from McMaster:
    static shell, never a personalized navigation response.
 4. **Conditional GET and explicit validators.** Private board JSON is
    `private, no-store`; static assets are immutable; summary/pages get a weak
-   seq/projection ETag and the client actually sends `If-None-Match`.
+   revision/query/scope ETag and the client actually sends `If-None-Match`.
 5. **Prefetch on intent.** Hovering a board, typing a search, or opening a
    filter is enough notice to fetch the next small payload.
 6. **Server-side search/filter with URL state and bounded summaries.** The
@@ -91,13 +95,16 @@ What does **not** transfer:
 
 The recommended order is two-stage:
 
-1. **P0a quick wins (days):** compression, cache headers, a static shell with a
+1. **P0a quick wins (1-2 weeks: transport days + companion P0.1
+   `aggregateRevision` plumbing ~1 week):** compression, static shell with a
    route-revealed board skeleton, safe SWR of the static shell and assets only,
-   prefetch, and instrumentation. This does not fix 25k memory.
+   prefetch, and instrumentation. Compression/static shell can ship first;
+   content ETags/caching must wait for revision plumbing. This does not fix 25k
+   memory.
 2. **P0b read model v1 (M/L, 4-6 weeks):** summary plus bounded first pages,
    keyset SQL, no `loadBoardAggregate` wrapper. This is the change that makes
-   25k fit: initial view under 2 MB, board under 1.5 s, ten opens under 1.5 GB,
-   heap under 200 MB.
+   25k fit: initial view under 2 MB, board under 1.5 s, ten opens under 1.5 GiB,
+   heap under 200 MiB.
 
 SSR-lite is a **P1 option**, not a P0 default. P1 also adds cursor pagination,
 on-demand card detail, server filter/search, and a read-only offline cache.
@@ -111,7 +118,7 @@ Multi-node/edge scale is TASK-175 (XL, out of scope here).
 
 | Item               | Value                                                                                              |
 | ------------------ | -------------------------------------------------------------------------------------------------- |
-| Measurement window | 2026-11-10, 10:22-10:50 UTC                                                                        |
+| Measurement window | 2026-11-10, 10:22-11:30 UTC (homepage 10:22-10:30; final category/search/filter 11:29)             |
 | Client location    | Amsterdam, NL; public IP 5.253.67.156 (AS200566)                                                   |
 | Host               | WSL2 Ubuntu 24.04.5 on Windows 11; kernel 6.18.58.1-microsoft-standard-WSL2; 16 vCPU; 23.5 GiB RAM |
 | Network path       | Akamai edge 95.101.57.52 (`e11663.b.akamaiedge.net`), HTTP/2, TLS                                  |
@@ -143,8 +150,9 @@ Caveats:
 - The CDN edge is close (Amsterdam) and the connection was unthrottled. These
   are best-case European desktop numbers, not a global median.
 - Run-to-run variance is real. Category first content ranged 1.02-1.15 s cold
-  and 0.45-0.51 s warm; search 1.02-1.55 s cold and 0.45-0.63 s warm. One cold
-  filtered run took 4.17 s to first content and is excluded from the table.
+  and 0.45-0.51 s warm; search 1.02-1.55 s cold and ~0.45 s warm (the 0.62-0.63
+  s runs failed the final grid check and are excluded). One cold filtered run
+  took 4.17 s to first content and is excluded from the table.
 - A couple of direct filter/search loads returned the JavaScript shell without
   populating the grid in headless; those runs were excluded. The shell timings
   are stable; first-content timings are directional.
@@ -172,13 +180,13 @@ filter sidebar; a screenshot confirmed the real catalog.
 Notes:
 
 - The shell paints at 376-456 ms cold and 92-216 ms warm. Product data arrives
-  later: the gap is roughly 0.25-1.0 s on warm pages and 0.6-0.7 s on cold
-  category/search pages.
+  later: the warm data gap is 0.24-0.30 s; the cold category/search gap is
+  0.6-0.7 s.
 - Warm homepage TTFB of 37 ms is the service worker serving the cached shell.
   Warm category TTFB of 170 ms is a **full re-fetch** of the HTML document, not
   a conditional revalidation: the response has no ETag or Last-Modified.
-- Long tasks are modest (one 127-156 ms task cold; 56-145 ms warm). There is no
-  main-thread cliff, but the search cold run accumulated 227 ms TBT.
+- Long tasks are modest (cold 123-156 ms; warm 0-145 ms, category/search). There
+  is no main-thread cliff, but the search cold run accumulated 227 ms TBT.
 
 ### 2.3 Payload, protocol, and caching
 
@@ -186,7 +194,7 @@ Notes:
 | ----------------------- | -------: | -------: | ------: | -----: | ------: | ------------------------------------------------------------------------------------------------------- |
 | Homepage, cold          |  1.87 MB |       98 | 1.09 MB | 168 KB |  374 KB | HTML `no-cache`; ~60 assets 1 year immutable; SW registered, not controlling                            |
 | Homepage, warm          |    31 KB |       94 |       0 |      0 |  1.4 KB | 63 disk-cache hits; 1 service-worker hit; shell from SW                                                 |
-| Category, cold          |  2.85 MB |      343 | 1.05 MB | 115 KB | 1.06 MB | HTML `no-cache`; 304 image responses (a count, not HTTP 304), cached immutable; no SW on direct landing |
+| Category, cold          |  2.85 MB |      343 | 1.05 MB | 115 KB | 1.06 MB | HTML `no-cache`; 305 image responses (a count, not HTTP 304), cached immutable; no SW on direct landing |
 | Category, warm          |   126 KB |      339 |       0 |      0 |   881 B | 80 disk-cache hits; HTML re-fetched (31 KB); no 304                                                     |
 | Search, cold            |  3.93 MB |      241 | 1.05 MB | 115 KB |  856 KB | More data fragments than the category page                                                              |
 | Search, warm            |  88.6 KB |      237 |       0 |      0 |   976 B | HTML + data re-fetched; no validator                                                                    |
@@ -213,7 +221,7 @@ Cache headers observed:
 | Interaction              | Result                                              |                               Time | Notes                                                                                                                |
 | ------------------------ | --------------------------------------------------- | ---------------------------------: | -------------------------------------------------------------------------------------------------------------------- |
 | Search result page, cold | `/products/hex-bolts/`, 93 populated blocks         | FCP 392 ms; first product 1,020 ms | 3.93 MB, 241 requests                                                                                                |
-| Search result page, warm | Same URL, 93 populated blocks                       |   FCP 204 ms; first product 445 ms | 88.6 KB, 237 requests; separate warm run reached 619 ms with a failed final grid check                               |
+| Search result page, warm | Same URL, 93 populated blocks                       |   FCP 204 ms; first product 445 ms | 88.6 KB, 237 requests; a separate 0.62 s run failed the final grid check and is excluded                             |
 | Filtered category, warm  | `system-of-measurement~inch/`, 110 populated blocks |   FCP 216 ms; first product 458 ms | 117 KB, 317 requests; separate run reached 639 ms                                                                    |
 | Filter click             | Full navigation, 110 blocks                         |             505 ms click-to-blocks | From `measurements.json`; a separate click run also recorded 615 ms for search including a 400 ms human typing pause |
 
@@ -315,16 +323,19 @@ commandable; it designs the UX for that case. It does not decide the cap.
 
 The capacity baseline comes from
 `~/.janosik-dev/load/capacity-2026-11-10/REPORT.md`. The 25k column is the
-companion's estimate and is the **only** 25k capacity fit used here:
+companion's estimate and is the **only** 25k capacity fit used here. The
+companion owns `aggregateRevision`, the canonical ETag key, and the snapshot
+merge contract; this document consumes those contracts and does not redefine
+them.
 
-| Metric                       | 10,000 cards (measured) | 25,000 cards (companion estimate) |
-| ---------------------------- | ----------------------: | --------------------------------: |
-| Board aggregate              |                 6.75 MB |                           17.7 MB |
-| `GET /boards/:id` p50        |                  263 ms |                           ~640 ms |
-| UI first render              |                  906 ms |                            ~1.7 s |
-| JS heap                      |                   95 MB |                        150-200 MB |
-| 10 concurrent opens, API RSS |                 1.48 GB |                           ~3.3 GB |
-| DOM nodes                    |                   2,013 |           ~2,000 (virtualization) |
+The baseline:| Metric | 10,000 cards (measured) | 25,000 cards (companion estimate) |
+| ---------------------------- | --------------------------: | --------------------------------: |
+| Board aggregate | 6.75 MiB (7.08 MB decimal) | 17.7 MB (16.9 MiB) |
+| `GET /boards/:id` p50 | 263 ms | ~640 ms |
+| UI first render | 906 ms | ~1.7 s |
+| JS heap | 95 MiB | 150-200 MiB |
+| 10 concurrent opens, API RSS | 1.48 GiB | ~3.3 GiB |
+| DOM nodes | 2,013 | ~2,000 (virtualization) |
 
 Important caveats:
 
@@ -337,8 +348,8 @@ Important caveats:
   labels/checklists/comments/attachments. A real 25k board with metadata is
   heavier. The benchmark plan therefore requires a realistic fixture.
 - Use two board shapes for every gate: **5 columns x 5,000 cards** and
-  **12 columns x ~2,100 cards**. A 5x5,000-only result does not prove the
-  12-column layout.
+  **12 columns x ~2,083 = 25,000 cards**. A 5x5,000-only result does not prove
+  the 12-column layout; the 2,100 label is a rounding, not a different board.
 - The machine also ran the load generator, so absolute latency is
   conservative. The cold/warm and size relationships are what matter.
 
@@ -349,7 +360,7 @@ Janosik is not starting from zero:
 - **Virtualization works.** At 10k, only 50 cards and ~2,013 nodes are mounted;
   scroll long tasks were 0 ms in the board view.
 - **SSE deltas are cheap.** Twenty `UPDATE_CARD` commands at 10k produced zero
-  long tasks and kept the heap at 84 MB.
+  long tasks and kept the heap at 84 MiB.
 - **Static assets are content-hashed and immutable.** The Vite build emits
   hashed assets, Nest sets `public, max-age=31536000, immutable` for
   `/app/assets/*`, and the nginx contract does the same.
@@ -372,8 +383,9 @@ Janosik is not starting from zero:
 
 1. **No compression in the shipped path.** There is no `compression`
    middleware in the Nest app, and the checked-in nginx config does not enable
-   gzip or Brotli. A 6.75 MB JSON aggregate goes over the wire as 6.75 MB; the
-   companion's 17.7 MB aggregate will do the same. This is the largest single
+   gzip or Brotli. A 6.75 MiB (7.08 MB decimal) JSON aggregate goes over the
+   wire as 6.75 MiB; the companion's 17.7 MB aggregate will do the same. This is
+   the largest single
    transport win available.
 2. **The HTML shell is visually empty.** `ui/index.html` has an empty `#root`
    div plus a theme preflight. Until React boots, the user sees a themed
@@ -396,8 +408,9 @@ Janosik is not starting from zero:
 7. **The API has a weak body-hash ETag but no client conditional GET.**
    Express 5 already emits a weak ETag and handles `If-None-Match`; the API
    client does not set or rely on it, and producing the hash still serializes
-   the whole board. There is no seq/page-version validator, and a 304 does not
-   advance the SSE baseline.
+   the whole board. There is no `aggregateRevision`/page-version validator;
+   `seq` alone is not a content revision, and a 304 does not advance the SSE
+   baseline.
 8. **The service worker caches every successful navigation under
    `APP_SHELL_URL`.** Any SSR-lite HTML with a bootstrap would be replayed to
    the next user of the profile. This must be fixed before personalized HTML is
@@ -437,16 +450,19 @@ screenful of cards. Everything else is a prefetch or an on-demand fetch.
 These are shapes, not final route names:
 
 - `GET /api/v1/boards/:id/summary` - board metadata, columns, labels,
-  per-column total/matched counts, current user's role, `seq`, `updatedAt`.
-  Target: under 50 KB. The full member directory is fetched separately; a
-  2,000-member board would otherwise dominate the summary.
-- `GET /api/v1/boards/:id/cards?columnId=&cursor=<position,id>&limit=50&detail=summary&q=&sort=`
-  - bounded card summaries plus per-column counts. Summary fields: id, title,
-    labelIds, dueDate, priority, assigneeId, cover, attachmentCount, updatedAt,
-    position. No description, checklists, links, comments, activity, or
-    attachments. Target: 30-60 KB per page.
+  per-column total/matched counts, current user's role, `seq`, `atSeq`,
+  `snapshotToken`, `aggregateRevision`, `updatedAt`. Target: under 50 KB. The
+  full member directory is fetched separately; a 2,000-member board would
+  otherwise dominate the summary.
+- `GET /api/v1/boards/:id/cards?columnId=&cursor=<position,id>&limit=50&detail=summary&q=&sort=&includeArchived=`
+  - bounded card summaries plus per-column counts, `nextCursor`, `hasMore`,
+    `seq`, `atSeq`, and `aggregateRevision`. Summary fields: id, title, labelIds,
+    dueDate, priority, assigneeId, cover, attachmentCount, updatedAt, position.
+    No description, checklists, links, comments, activity, or attachments.
+    Target: 30-60 KB per page.
 - `GET /api/v1/boards/:id/cards/:cardId` - the full card, fetched when the
-  dialog opens (or prefetched on hover). Comments, activity, and attachments
+  dialog opens (or prefetched on hover), with `boardId`, `columnId`, `version`,
+  `seq`, `atSeq`, and `aggregateRevision`. Comments, activity, and attachments
   stay on their own paginated endpoints.
 - The filtered/search view uses the same page endpoint with `q`/`sort` and
   returns bounded summaries plus per-column counts. **Do not return ids only**
@@ -468,9 +484,25 @@ These endpoints must be **bounded SQL**, not wrappers around
 
 Cursors are `(position, id)`, not offsets. A keyset cursor is stable for
 inserts/deletes at page boundaries, but a concurrent move can make a row skip
-or duplicate across pages. Carry the board `seq` in the response and reconcile
-by id/seq; refetch the page if the seq changed. Do not pretend the cursor is a
-snapshot.
+or duplicate across pages. Carry the board `seq`/`atSeq` and
+`aggregateRevision` in the response and reconcile by id/seq; refetch the page
+if the revision changed. Do not pretend the cursor is a snapshot.
+
+**Snapshot merge (P0b).** Summary and one page per column are separate HTTP
+snapshots. The client:
+
+1. buffers SSE frames while the initial summary + pages are in flight;
+2. takes `summary.atSeq` as the baseline and applies buffered frames with
+   `seq > atSeq`;
+3. for a page with `page.atSeq < summary.atSeq`, applies the known deltas or
+   refetches the page; for `page.atSeq > summary.atSeq`, advances the summary
+   baseline and refetches the summary if needed;
+4. never mixes a pre-move page with a post-move summary without reconciliation.
+
+`snapshotToken` identifies the initial snapshot. A page whose
+`aggregateRevision` differs from the summary's is reconciled, not silently
+merged. Test a move/update/comment arriving during initial load; the final
+window must match a fresh read.
 
 #### 3.4.2 P0 shell choice: static shell + API bootstrap
 
@@ -527,10 +559,11 @@ extra round trip with SSR-lite if the operational cost is justified.
   `seq` jumps, refetch the summary and affected pages instead of replaying an
   unknown gap. Every frame must carry board id and seq; a frame without a board
   id is dropped today, which is a correctness risk.
-- **SSE frame cap:** cap the delta frame at roughly 2 KB of description text.
-  If a card change is larger, send a summary delta plus `detailStale: true` and
-  let the client fetch the card detail. Do not let one long description block
-  the stream for every viewer.
+- **SSE frame cap:** P0.1 caps the **whole frame** below the client's 1 MB
+  parser buffer (for example 256 KiB), not just the description. Keep the ~2 KB
+  description cap as an additional payload optimization. If a frame would
+  exceed the whole-frame cap, send a summary delta plus `detailStale: true` and
+  let the open card fetch detail; never broadcast a 2 MB/8 MB command envelope.
 - **Offline:** P1 caches a **read-only copy of a server board** (summary, last N
   pages, card detail LRU) in IndexedDB, namespaced per user, cleared on logout.
   Show "last synced" and a read-only badge. Queued writes/conflict UX is P2 and
@@ -538,18 +571,18 @@ extra round trip with SSR-lite if the operational cost is justified.
 
 #### 3.4.4 Caching and prefetch rules
 
-| Data                    | Cache policy                                                                           | Invalidation                                        |
-| ----------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Hashed JS/CSS/fonts     | `public, max-age=31536000, immutable`                                                  | New hash on deploy                                  |
-| Static shell HTML       | SW stale-while-revalidate + navigation preload; `no-cache` at origin                   | New SW version; update prompt                       |
-| Board summary           | `private, no-store` (or `private, no-cache` with server auth revalidation) + weak ETag | SSE `seq`, command response, membership/role change |
-| Column/page summaries   | `private, no-store` + weak ETag                                                        | SSE affecting the page, `seq` change                |
-| Card detail             | `private, no-store`; memory/IndexedDB LRU                                              | `UPDATE_CARD`, comments/attachments events          |
-| Facets                  | `private, no-store` + weak ETag                                                        | Commands that change counts/labels                  |
-| SSR-lite bootstrap HTML | `private, no-store`; never SW-cached                                                   | Per request                                         |
-| Public snapshot share   | `public, max-age=...` (immutable snapshot)                                             | New snapshot                                        |
-| Live public share       | `private, no-cache` or short SWR                                                       | SSE                                                 |
-| SSE                     | no compression buffering, `no-transform`, `X-Accel-Buffering: no`                      | n/a                                                 |
+| Data                    | Cache policy                                                                                    | Invalidation                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Hashed JS/CSS/fonts     | `public, max-age=31536000, immutable`                                                           | New hash on deploy                                                                            |
+| Static shell HTML       | SW stale-while-revalidate + navigation preload; `no-cache` at origin                            | New SW version; update prompt                                                                 |
+| Board summary           | `private, no-store` (or `private, no-cache` with server auth revalidation) + weak revision ETag | `aggregateRevision` bump (command or non-command), membership/role change, SSE `seq` ordering |
+| Column/page summaries   | `private, no-store` + weak revision/query ETag                                                  | `aggregateRevision` bump, cursor/query change, SSE affecting the page                         |
+| Card detail             | `private, no-store`; memory/IndexedDB LRU                                                       | `aggregateRevision`/card version, comments/attachments events                                 |
+| Facets                  | `private, no-store` + weak revision ETag                                                        | `aggregateRevision` bump, counts/labels change                                                |
+| SSR-lite bootstrap HTML | `private, no-store`; never SW-cached                                                            | Per request                                                                                   |
+| Public snapshot share   | `public, max-age=...` (immutable snapshot)                                                      | New snapshot                                                                                  |
+| Live public share       | `private, no-cache` or short SWR                                                                | SSE                                                                                           |
+| SSE                     | no compression buffering, `no-transform`, `X-Accel-Buffering: no`                               | n/a                                                                                           |
 
 Why `no-store`:
 
@@ -567,26 +600,51 @@ Why `no-store`:
 
 Validator rules:
 
-- Use a weak ETag for JSON: `W/"board:<id>:<seq>:<projection>"`. Include a
-  membership/role version if the summary includes role-dependent data. If a
-  strong ETag is ever used, it must be byte-identical; one seq value across
-  gzip and Brotli is invalid. Align with the companion's
-  `W/"board:<id>:<seq>:<projection>"`.
-- The client must send `If-None-Match`. On 304, read `X-Board-Seq` (ensure the
-  304 carries it) and advance the SSE `since` baseline; do not "keep current
-  state" without moving the baseline, or the next SSE connection replays a gap.
+- The ETag key is **board id + `aggregateRevision` + route + canonical query
+  (`columnId`, cursor, limit, sort, q, `includeArchived`) + principal scope
+  (member role or share id/scope) + projection**. Two cursors, two queries, two
+  roles or two shares must never share an ETag. Use the companion's canonical
+  shape: `W/"board:<id>:<revision>:<routeHash>:<scope>:<projection>"`.
+- Use a weak ETag for JSON. Weak is correct because gzip and Brotli differ
+  byte-for-byte. If a strong ETag is ever used, it must be byte-identical;
+  include the encoding and membership/role version, or do not use strong.
+- Check `If-None-Match` before `loadBoardAggregate`/JSON serialization. A 304
+  must still carry `X-Board-Seq`; on 304 read it and advance the SSE `since`
+  baseline. Do not "keep current state" without moving the baseline, or the
+  next SSE connection replays a gap.
+- `aggregateRevision` is not `seq`. It must bump on every board-scoped writer,
+  including comments, attachments, agent-session end, and admin
+  restore/recount, even when `seq` does not move.
 - Gate on validator correctness: unchanged content -> 304; changed content ->
-  200 with a new seq. A 304 ratio is not a valid target when every command
-  changes the seq.
+  200 with a new revision. A 304 ratio is not a valid target when every command
+  changes the revision.
+
+Validator tests (required):
+
+- two cursors -> different ETags;
+- two queries (`q`/sort/includeArchived) -> different ETags;
+- two roles or two share scopes -> different ETags;
+- a comment, attachment, or admin write that does not bump `seq` still bumps
+  `aggregateRevision` and invalidates the content ETag;
+- a 304 on unchanged content still returns the seq/revision needed to resume
+  SSE.
 
 Service-worker rules:
 
+- `ui/src/pwa/sw.js` currently stores **every successful navigation** under
+  `APP_SHELL_URL`. That replays a board navigation (and any bootstrap) to the
+  next user. Change it so only a known static shell can be stored.
+- Revalidation path: fetch the known `APP_SHELL_URL` as a normal request, or
+  verify a navigation-preload response is byte-identical to the static shell
+  before storing it. Never store a navigation response merely because it
+  returned 200.
 - Cache only statically known shell/asset URLs. Never cache
-  `request.mode === "navigate"` responses in general, and never cache a response
-  containing a bootstrap or user data.
+  `request.mode === "navigate"` responses in general, and never cache a
+  response containing a bootstrap or user data.
 - On auth change/logout, clear user-scoped caches and IndexedDB namespaces.
-- Add an acceptance test: open a board, then assert the board URL is absent from
-  `caches` and `cache.match(boardUrl)` is undefined.
+- Acceptance test: after opening a board, assert `cache.match(APP_SHELL_URL)`
+  is the static shell and does **not** contain the board id, board title, or
+  bootstrap marker. Test board -> shell navigation and a second account.
 - SWR is limited to non-sensitive static shell/static assets.
 
 Prefetch only on genuine intent and only same-origin, authenticated data:
@@ -607,14 +665,17 @@ private API responses in a shared cache.
 
 Map UX phases to the architecture work explicitly:
 
-| UX phase                 | Architecture dependency                                                    | Main gate                                                           |
-| ------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| P0a quick wins           | None beyond compression/cache/SW fixes; ships on the current aggregate     | Compressed transfer <=5.5 MB; no regression >10%; 10 opens <=3.5 GB |
-| P0b read model v1        | Companion read-model v1: summary + bounded pages, keyset SQL               | Initial view <2 MB; board <1.5 s; 10 opens <1.5 GB; heap <200 MB    |
-| P1 windowed interactions | Companion pagination/search/offline read cache                             | Filter/search/card/scroll budgets; read-only offline                |
-| P2 optional polish       | TASK-175 for multi-node/edge; this plan only static edge/offline hardening | Optional, not a release gate                                        |
+| UX phase                 | Architecture dependency                                                                                    | Main gate                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| P0a quick wins           | Companion P0.1 `aggregateRevision` plumbing; compression/static shell can ship first, content ETags cannot | Compressed transfer <=5.5 MB (capacity fixture); no regression >10%; 10 opens <=3.5 GiB |
+| P0b read model v1        | Companion P0.2: summary + bounded pages, keyset SQL, snapshot merge                                        | Initial view <2 MB; board <1.5 s; 10 opens <1.5 GiB; heap <200 MiB                      |
+| P1 windowed interactions | Companion P1: pagination/search/read-only cache                                                            | Filter/search/card/scroll budgets; read-only offline                                    |
+| P2 optional polish       | TASK-175 for multi-node/edge; this plan only static edge/offline hardening                                 | Optional, not a release gate                                                            |
 
-#### P0a - quick wins (days)
+Phase mapping: **P0a = companion P0.1**, **P0b = companion P0.2**, **P1 =
+companion P1**, **P2 = optional polish/TASK-175**.
+
+#### P0a - quick wins (1-2 weeks: transport days + revision plumbing ~1 week)
 
 Owner: UI platform + API + SRE/self-host.
 
@@ -624,13 +685,17 @@ Owner: UI platform + API + SRE/self-host.
    existing aggregate now; compress summaries/pages when P0b lands. Cache the
    compressed bytes keyed by the validator, skip SSE and images, set `Vary` to
    `Accept-Encoding`, and measure CPU on a 4 vCPU box.
-2. **Cache/validator contract.** Immutable hashed assets stay. Private board
-   JSON becomes `private, no-store` (or `private, no-cache` with auth
-   revalidation). Add weak seq/projection ETags and make the client send
-   `If-None-Match`; on 304 read `X-Board-Seq` (include it on the 304) and
-   advance SSE `since`. Use the companion's
-   `W/"board:<id>:<seq>:<projection>"` shape; start with the existing aggregate
-   and extend it to summary/pages in P0b.
+2. **Cache/validator contract (depends on companion P0.1).** Immutable hashed
+   assets stay. Private board JSON becomes `private, no-store` (or
+   `private, no-cache` with auth revalidation). **Content ETags/304 must not
+   ship before `aggregateRevision` plumbing lands**, because `seq` is not a
+   content revision. Compression and the static shell can ship first; until
+   revision plumbing exists, do not advertise content ETags or cache content.
+   Once it lands, use the canonical key
+   `W/"board:<id>:<revision>:<routeHash>:<scope>:<projection>"` (board id +
+   revision + route + canonical query + principal scope + projection) and make
+   the client send `If-None-Match`; on 304 read `X-Board-Seq` (include it on the 304) and advance SSE `since`. Add the cursor/query/role/share and
+   non-command-writer tests from 3.4.4.
 3. **Static shell + route skeleton.** Neutral static shell for login/admin/
    share; a tiny inline path check reveals the board skeleton on `/board/`.
    Inline critical CSS; update the CSP hash for the inline path check; remove
@@ -639,8 +704,9 @@ Owner: UI platform + API + SRE/self-host.
 4. **Safe SWR shell.** Service worker serves the cached static shell
    immediately, revalidates in the background, and updates on the next
    navigation/update prompt. Never cache navigation responses with a bootstrap;
-   clear user caches on auth change; test that a board navigation is absent
-   from `caches`.
+   clear user caches on auth change. Test that `cache.match(APP_SHELL_URL)` is
+   the static shell and does not contain the board id/title/bootstrap marker;
+   test board -> shell navigation and a second account.
 5. **Prefetch on intent (stopgap).** Prefetch the board route chunk and the
    existing `GET /boards` summary list on switcher hover/focus; do not prefetch
    a full 25k aggregate. Per-board summary/first-page prefetch arrives with
@@ -649,11 +715,20 @@ Owner: UI platform + API + SRE/self-host.
    `board:interactive`, `card:open`, `filter:applied`, `search:results`.
    `board:interactive` means the first cards are painted and card open, column
    scroll, and filter input work without a >50 ms long task.
+7. **SSE whole-frame cap.** Cap the frame below the client's 1 MB parser buffer
+   (for example 256 KiB); if it would exceed, send a summary delta plus
+   `detailStale` and let the open card fetch detail. Keep the ~2 KB description
+   cap as a payload optimization, not the frame cap.
 
-Acceptance: compressed 25k aggregate 3.5-4.5 MB gzip on the realistic fixture;
-cold transfer <=5.5 MB; no regression >10%; 10 concurrent opens <=3.5 GB (this
-still needs >=4 GB RAM or a concurrency cap; do not promise 2.5 GB on a 2 GB
-VPS); heap <=250 MB. P0a does **not** fix the 25k memory profile.
+Acceptance: compressed 25k aggregate 3.5-4.5 MB gzip on the **500-character,
+no-metadata capacity fixture**; the realistic long-description/metadata fixture
+is a separate measured gate, expected to compress worse. Cold transfer
+<=5.5 MB; no regression >10%; 10 concurrent opens <=3.5 GiB (3.5 GB decimal is
+3.26 GiB, below the ~3.3 GiB estimate; the gate is 3.5 GiB). This needs at
+least 6 GiB total host RAM or a concurrency cap; a 2 GiB VPS is not viable.
+Heap <=250 MiB. P0a does **not** fix the 25k memory profile. Content ETags are
+gated on the companion's P0.1 `aggregateRevision` plumbing; do not claim them
+before it lands.
 
 Rollout/rollback: feature-flag the new cache headers/SW; bump the SW cache
 version; keep the old aggregate path as fallback. Roll back by disabling the
@@ -661,15 +736,16 @@ flag and clearing the SW/user caches.
 
 #### P0b - read model v1 (M/L, 4-6 weeks)
 
-Owner: API/read model + UI data layer. Depends on the companion's read-model
-v1.
+Owner: API/read model + UI data layer. Depends on the companion's P0.2
+read-model v1.
 
-1. **Summary endpoint** with columns, labels, counts, role, seq; no member
-   directory, no cards.
+1. **Summary endpoint** with columns, labels, counts, role, `seq`, `atSeq`,
+   `snapshotToken`, `aggregateRevision`; no member directory, no cards.
 2. **Bounded page endpoint** (`cards?columnId=&cursor=&limit=&detail=summary`)
    with keyset SQL, summary projections, no checklist/link joins, and no
-   `loadBoardAggregate` call. Acceptance test asserts the aggregate loader is
-   not called.
+   `loadBoardAggregate` call. Each page carries `seq`, `atSeq`,
+   `aggregateRevision`, and `nextCursor`. Acceptance test asserts the aggregate
+   loader is not called.
 3. **Switch the active board** to summary + first 50 cards/column; prefetch
    summary/first pages on board intent; stop background full-aggregate
    hydration; fetch other boards on demand.
@@ -678,10 +754,11 @@ v1.
    export/import/admin/local mode only. Comments/activity/attachments remain
    P1.
 
-Acceptance: initial view <2 MB cold (compressed, realistic fixture); board
-<1.5 s warm; 10 concurrent opens <1.5 GB RSS; heap <200 MB; card open
-<=400 ms; both 5x5,000 and 12x~2,100 shapes pass. Feature-flag the read model
-and keep an aggregate fallback for one release.
+Acceptance: initial view <2 MB cold (compressed); board <1.5 s warm; 10
+concurrent opens <1.5 GiB RSS; heap <200 MiB; card open <=400 ms; no long task
+over 200 ms; CLS <=0.05; validator correctness 100%; both 5x5,000 and
+12x~2,083 = 25,000 shapes pass. Feature-flag the read model and keep an
+aggregate fallback for one release.
 
 #### P1 - windowed interactions + optional SSR-lite (weeks)
 
@@ -694,16 +771,20 @@ Owner: UI + API.
    ids-only visible lists.
 4. Keep URL-addressable filter state; add view/sort/cursor where useful.
 5. SSE delta application to summary/windows; `seq` gap refetch; board id + seq
-   in every frame; ~2 KB frame cap with `detailStale`.
+   in every frame; whole-frame cap from P0.1; ~2 KB description optimization
+   with `detailStale` when exceeded.
 6. Worker-side filter/sort for loaded data; IndexedDB read-only cache of the
    server board (summary/pages/card LRU), per-user, cleared on logout.
 7. Optional SSR-lite: only with a nginx board-navigation proxy/all-in-one
    image, `private, no-store`, and no SW navigation caching. Trade-off
    documented above.
 
-Acceptance: filter <=100 ms local / <=250 ms server p95; card open <=400 ms;
-no long task >200 ms; read-only offline boot; 304 correctness (unchanged ->
-304, changed -> 200) 100% on the fixture.
+Acceptance (release gate): filter <=50 ms local / <=150 ms server p95;
+card open <=250 ms; longest task <=100 ms; heap <=150 MiB; cold first
+meaningful board paint <=1.5 s; cold transfer <2 MB; read-only offline boot;
+304 correctness (unchanged -> 304, changed -> 200) 100% on the fixture; mobile
+and tablet budgets pass. Do not use a looser 100/250/400/200 ms entry gate as
+the release gate.
 
 Rollout/rollback: feature-flag cursor pages and server search; keep the
 aggregate plus client-filter fallback for one release; roll back by disabling
@@ -723,9 +804,10 @@ Owner: platform/SRE + UI.
 - **Multi-node/edge scale is TASK-175 (XL, out of scope for this document).**
   Do not put it in this plan or imply that this document delivers it.
 
-Acceptance: optional edge cache hit ratio and purge-on-logout test; RUM budgets
-recorded; no regression in P1 gates. None of these are a release gate for the
-25k read model.
+Acceptance: optional static/public-snapshot edge cache hit ratio; the edge
+cache has no user-scoped entries, and purge-on-logout applies only to
+client/SW caches. RUM budgets recorded; no regression in P1 gates. None of
+these are a release gate for the 25k read model.
 
 ### 3.6 UX SLOs for 25,000 cards
 
@@ -737,13 +819,18 @@ Definitions:
 - **WAN profile:** 40 ms RTT, 20 Mbps down / 5 Mbps up. All rows below use WAN
   unless marked LAN; LAN results are diagnostic, not a release gate.
 - **Board fixture:** 25,000 cards, realistic long descriptions and metadata;
-  both 5x5,000 and 12x~2,100. Not the 500-character-only capacity fixture.
+  both 5x5,000 and 12x~2,083 = 25,000. Not the 500-character-only capacity fixture.
 - **First meaningful board paint:** header, column headers, counts, and at
   least 10 cards per visible column; not a spinner.
 - **`board:interactive`:** first cards painted and card open, column scroll,
   and filter input work without a >50 ms long task.
+- **Server baseline:** 4 vCPU / 8 GiB RAM, Postgres on the same host,
+  production build; record the actual hardware in every benchmark report.
 - **Warm TTFB:** report the SW shell response separately from the network/API
   TTFB; do not blend them.
+- **LCP element:** the board header or first card tile, whichever is larger;
+  record the element. If the element varies by run, treat LCP as diagnostic,
+  not a release gate.
 - **SSE delta:** start = server commit/`seq` emission; end = next paint after
   applying to the summary/window. Report p95.
 - **Percentiles:** all gates are p95 over 5 runs unless marked max; a regression
@@ -760,29 +847,32 @@ Definitions:
 | Warm load     | LCP                                         |          <=1.2 s |           <=1.0 s |         <=800 ms |
 | Warm load     | First meaningful board paint                |          <=2.0 s |           <=1.5 s |          <=1.0 s |
 | Navigation    | Board switch, first cards                   |          <=1.2 s |           <=1.0 s |         <=800 ms |
-| Filter/search | Local keypress -> paint                     |         <=150 ms | <=100 ms (loaded) |          <=50 ms |
-| Filter/search | Server p95                                  |         <=300 ms |                 - |         <=150 ms |
+| Filter/search | Local keypress -> paint                     |    no regression | <=100 ms (loaded) |          <=50 ms |
+| Filter/search | Server p95                                  |          measure |                 - |         <=150 ms |
 | Scroll        | Longest task                                |         <=250 ms |          <=200 ms |         <=100 ms |
 | Scroll        | p95 frame                                   |                - |         <=16.7 ms |        <=16.7 ms |
 | Card open     | Summary -> full detail                      |                - |          <=400 ms |         <=250 ms |
 | Live          | SSE delta p95                               |         <=150 ms |          <=100 ms |          <=50 ms |
-| Memory        | UI JS heap                                  |         <=250 MB |           <200 MB |         <=150 MB |
-| Memory        | API RSS, 10 concurrent opens                |         <=3.5 GB |           <1.5 GB |          <1.5 GB |
+| Memory        | UI JS heap                                  |        <=250 MiB |          <200 MiB |        <=150 MiB |
+| Memory        | API RSS, 10 concurrent opens                |        <=3.5 GiB |          <1.5 GiB |         <1.5 GiB |
 | Quality       | CLS                                         |            <=0.1 |            <=0.05 |           <=0.05 |
 | Correctness   | Validator: unchanged -> 304, changed -> 200 |                - |              100% |             100% |
 
 Why these numbers:
 
 - The P0a row is deliberately a stopgap: full-aggregate 25k still needs
-  ~3.3 GB for 10 opens, so a 2 GB VPS cannot be promised. Either require >=4 GB
-  or cap concurrency until P0b. The 1.5 GB gate belongs to the read model.
+  ~3.3 GiB for 10 opens, so a 2 GiB VPS cannot be promised. Either require >=6 GiB
+  or cap concurrency until P0b. The 1.5 GiB gate belongs to the read model.
+- P0a's filter row is **measure/no regression**, not a 150 ms gate; the full
+  filter SLO starts at P1.
 - P0b/P1 align with the companion: initial view <2 MB, board <1.5 s, 10 opens
-  <1.5 GB, heap <200 MB. P1 tightens the interaction budgets.
+  <1.5 GiB, heap <200 MiB. P1 tightens the interaction budgets.
 - P0b only has the loaded windows; its filter gate is for those windows. A
   full-board server filter is P1. Do not claim a 25k filter SLO on P0b.
-- The 304 row is a correctness gate, not a hit-ratio gate. A seq-based
-  validator invalidates on every command, so a high 304 ratio on focus refetch
-  is not a sensible target. Measure unchanged vs changed on the fixture.
+- The 304 row is a correctness gate, not a hit-ratio gate. A
+  revision-based validator invalidates on every content change, so a high 304
+  ratio on focus refetch is not a sensible target. Measure unchanged vs changed
+  on the fixture.
 - Filtering 25k lightweight records in a worker can be under 100 ms. A server
   filter needs a trigram/FTS index to stay under 250 ms p95.
 - The no-long-task budget is the guard against shipping 17.7 MB of JSON. A
@@ -806,7 +896,7 @@ a dedicated, idle environment.
 | Dimension   | Values                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------ |
 | Build       | `main` at 3031d8b, P0a, P0b, P1, P2                                                              |
-| Board size  | 10,000; 25,000 (5x5,000); 25,000 (12x~2,100)                                                     |
+| Board size  | 10,000; 25,000 (5x5,000); 25,000 (12x~2,083)                                                     |
 | Fixture     | realistic: long descriptions, labels, checklists, comments on a sample                           |
 | Cache state | cold context; warm reload; service-worker-controlled second visit                                |
 | Network     | LAN (<1 ms, 1 Gbps); WAN (40 ms, 20/5 Mbps); optional 3G (150 ms, 1.6/0.75 Mbps)                 |
@@ -851,45 +941,50 @@ stability under concurrent moves (reconcile by id/seq), 304 correctness.
    but keep it to a handful of loads and reuse it; do not load-test or scrape
    McMaster. Re-baseline if the network/day changes.
 6. Publish a small table per phase and per board shape; do not collapse
-   5x5,000 and 12x~2,100 into one score.
+   5x5,000 and 12x~2,083 into one score.
 
 #### Pass/fail gates
 
-- P0a: compressed 25k aggregate 3.5-4.5 MB gzip; cold transfer <=5.5 MB; no
-  regression >10%; 10 concurrent <=3.5 GB; heap <=250 MB; no long task >250 ms.
-  Document that this needs >=4 GB RAM or a concurrency cap.
+- P0a: compressed 25k aggregate 3.5-4.5 MB gzip on the 500-character/
+  no-metadata capacity fixture (realistic long-description/metadata fixture is
+  a separate measured gate); cold transfer <=5.5 MB; no regression >10%;
+  10 concurrent <=3.5 GiB; heap <=250 MiB; no long task >250 ms. Report
+  compression on both fixtures; do not extrapolate the realistic fixture.
+  Document that this needs >=6 GiB total host RAM or a concurrency cap, and
+  that content ETags are gated on companion P0.1 `aggregateRevision`.
 - P0b: initial view <2 MB; warm board <1.5 s; cold board <2.0 s; 10 concurrent
-  <1.5 GB; heap <200 MB; both board shapes pass; aggregate loader not called.
-- P1: warm board <1.0 s; filter <=100 ms local / <=250 ms server p95; card
-  open <=400 ms; no long task >200 ms; read-only offline boot; validator
-  correctness 100%; mobile/tablet budgets pass.
+  <1.5 GiB; heap <200 MiB; no long task >200 ms; CLS <=0.05; validator
+  correctness 100%; both board shapes pass; aggregate loader not called.
+- P1: warm board <1.0 s; cold FMBP <=1.5 s; cold transfer <2 MB; filter <=50 ms
+  local / <=150 ms server p95; card open <=250 ms; longest task <=100 ms; heap
+  <=150 MiB; read-only offline boot; validator correctness 100%; mobile/tablet
+  budgets pass.
 - P2: optional only; TASK-175 owns multi-node/edge scale.
 
 Comparison to McMaster: use its warm/cold numbers as a reference line, not a
 pass/fail threshold. Janosik should beat McMaster on first-payload bytes (no
-2.85 MB catalog, no 489 images) and should be within a small multiple of its
-warm paint time. It will not match a 92 ms warm FCP on a cold self-hosted
-server without a CDN; the gate is the user-perceived board, not the CDN's
-homepage.
+2.85 MB catalog, no 489 images) and should be within roughly 5x of its warm
+paint time. It will not match a 92 ms warm FCP on a cold self-hosted server
+without a CDN; the gate is the user-perceived board, not the CDN's homepage.
 
 ### 3.8 Risks and non-goals
 
-| Risk                             | Why it bites                                                                                                           | Mitigation                                                                                                                              |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Private JSON cached across users | `private, max-age` keeps shared caches out but not the next profile user; SW navigation caching can replay a bootstrap | `private, no-store` for board JSON; cache only static shell URLs; clear user caches on auth change; test board URL absent from `caches` |
-| SSR-lite vs SWR shell            | Personalized `no-store` HTML and an SWR-cached shell are mutually exclusive                                            | P0 static shell + API bootstrap; P1 SSR-lite with no SW navigation cache and a nginx proxy/all-in-one                                   |
-| Auth leakage                     | Board HTML/JSON is per-user; a shared cache or CDN would serve one user's board to another                             | Per-request auth; `private, no-store`; no shared edge cache for API; clear caches on logout                                             |
-| Cache invalidation               | Summary/pages/facets go stale after commands, SSE, or reconnects                                                       | Weak seq/projection ETag; SSE invalidation; `seq` gap refetch; 304 advances `since`; short client cache with explicit user scope        |
-| Self-host without CDN            | Brotli/HTTP2/3 may be missing; CPU is limited; TLS termination varies                                                  | Gzip portable default; fast Brotli/precompressed static; HTTP/2 at the proxy (TLS); test 4 vCPU; CDN optional                           |
-| 25k RAM                          | Full aggregate needs ~3.3 GB for 10 opens; a 2 GB VPS cannot host it                                                   | P0a requires >=4 GB or a concurrency cap; P0b read model brings 10 opens <1.5 GB                                                        |
-| Multi-board hydration            | Background loading every aggregate multiplies payload and memory                                                       | Summaries only; active board on demand; cancel prefetch                                                                                 |
-| 25k memory                       | Full card objects, undo history, search indexes, JSON parse                                                            | Windowed pages, worker index, LRU detail, bounded command-pair undo                                                                     |
-| SW staleness                     | Cached shell points at old chunks after deploy                                                                         | SWR + versioned cache + old-cache fallback + update prompt; never cache HTML as JS                                                      |
-| Drag/drop pagination             | Dropping into an unloaded page has no target order; concurrent moves conflict                                          | Prefetch neighbors; server-authoritative position; queue/refuse until loaded                                                            |
-| Filter/search consistency        | Server result and local window diverge while commands arrive                                                           | Carry `seq`; reconcile on response; refetch affected pages; URL source of truth                                                         |
-| Offline confusion                | A read-only server-board cache is not local/offline mode; queued writes/conflict UX is P2                              | Separate the two modes; 25k is server-mode only; P1 read-only, P2 queued writes                                                         |
-| SSE frame size                   | One long description can bloat every delta and block the stream                                                        | ~2 KB description cap in the frame; `detailStale` + detail fetch for larger changes                                                     |
-| Real-time scale                  | SSE fan-out/reconnect storms                                                                                           | Per-board channels, backpressure, resume from `seq`; TASK-175 owns multi-node                                                           |
+| Risk                             | Why it bites                                                                                                           | Mitigation                                                                                                                                                                                         |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Private JSON cached across users | `private, max-age` keeps shared caches out but not the next profile user; SW navigation caching can replay a bootstrap | `private, no-store` for board JSON; cache only static shell URLs; test `cache.match(APP_SHELL_URL)` is the static shell and contains no board id/title/bootstrap; clear user caches on auth change |
+| SSR-lite vs SWR shell            | Personalized `no-store` HTML and an SWR-cached shell are mutually exclusive                                            | P0 static shell + API bootstrap; P1 SSR-lite with no SW navigation cache and a nginx proxy/all-in-one                                                                                              |
+| Auth leakage                     | Board HTML/JSON is per-user; a shared cache or CDN would serve one user's board to another                             | Per-request auth; `private, no-store`; no shared edge cache for API; clear caches on logout                                                                                                        |
+| Cache invalidation               | Summary/pages/facets go stale after commands, SSE, or reconnects                                                       | Revision/query/scope ETag; bump `aggregateRevision` on non-command writers; SSE invalidation; `seq` gap refetch; 304 advances `since`; user-scoped client cache                                    |
+| Self-host without CDN            | Brotli/HTTP2/3 may be missing; CPU is limited; TLS termination varies                                                  | Gzip portable default; fast Brotli/precompressed static; HTTP/2 at the proxy (TLS); test 4 vCPU; CDN optional                                                                                      |
+| 25k RAM                          | Full aggregate needs ~3.3 GiB for 10 opens; a 2 GiB VPS cannot host it                                                 | P0a requires >=6 GiB total host RAM or a concurrency cap; P0b read model brings 10 opens <1.5 GiB                                                                                                  |
+| Multi-board hydration            | Background loading every aggregate multiplies payload and memory                                                       | Summaries only; active board on demand; cancel prefetch                                                                                                                                            |
+| 25k memory                       | Full card objects, undo history, search indexes, JSON parse                                                            | Windowed pages, worker index, LRU detail, bounded command-pair undo                                                                                                                                |
+| SW staleness                     | Cached shell points at old chunks after deploy                                                                         | SWR + versioned cache + old-cache fallback + update prompt; never cache HTML as JS                                                                                                                 |
+| Drag/drop pagination             | Dropping into an unloaded page has no target order; concurrent moves conflict                                          | Prefetch neighbors; server-authoritative position; queue/refuse until loaded                                                                                                                       |
+| Filter/search consistency        | Server result and local window diverge while commands arrive                                                           | Carry `seq`; reconcile on response; refetch affected pages; URL source of truth                                                                                                                    |
+| Offline confusion                | A read-only server-board cache is not local/offline mode; queued writes/conflict UX is P2                              | Separate the two modes; 25k is server-mode only; P1 read-only, P2 queued writes                                                                                                                    |
+| SSE frame size                   | One long description or a command envelope can exceed the client 1 MB parser buffer and block the stream               | P0.1 whole-frame cap (e.g. 256 KiB); ~2 KB description optimization; `detailStale` + detail fetch for larger changes                                                                               |
+| Real-time scale                  | SSE fan-out/reconnect storms                                                                                           | Per-board channels, backpressure, resume from `seq`; TASK-175 owns multi-node                                                                                                                      |
 
 Non-goals:
 
@@ -906,31 +1001,39 @@ Non-goals:
 
 ### 3.9 First two things to build
 
-**1. Compression + cache/validator contract (S: 2-4 days).**
+**1. Compression + cache/validator contract (S for transport, ~1 week for
+revision plumbing).**
 
 Enable gzip (portable default) and fast Brotli where available; precompress
-static assets; use `private, no-store` for board JSON; add weak
-seq/projection ETags and make the client send `If-None-Match`; on 304 read
-`X-Board-Seq` and advance SSE `since`. Do not run Brotli q11 on a 17 MB JSON.
-Expected: 17.7 MB raw -> 3.5-4.5 MB gzip (4-6x); on 20 Mbps that is roughly
-1.4-1.8 s of transfer, not under 1 s. Warm focus refetch becomes a 304 with no
-body when nothing changed. Risk: low-to-medium; SSE exclusion, `Vary`, weak
-ETag/encoding, and 304 baseline handling need tests.
+static assets; use `private, no-store` for board JSON. The content-ETag half
+**depends on companion P0.1 `aggregateRevision` plumbing**; do not claim
+content ETags before it lands. Once it does, use the canonical key
+`W/"board:<id>:<revision>:<routeHash>:<scope>:<projection>"` (board id +
+revision + route + canonical query + principal scope + projection), make the
+client send `If-None-Match`, and on 304 read `X-Board-Seq` and advance SSE
+`since`. Do not run Brotli q11 on a 17 MB JSON. Expected: 17.7 MB raw ->
+3.5-4.5 MB gzip (3.9-5.1x) on the 500-char fixture; on 20 Mbps that is roughly
+1.4-1.8 s of transfer, not under 1 s. The realistic long-description/metadata
+fixture is a separate measured gate. Warm focus refetch becomes a 304 with no
+body when content is unchanged. Risk: low-to-medium; SSE exclusion, `Vary`,
+weak ETag/encoding, non-command revision bumps, and 304 baseline handling need
+tests.
 
 **2. Static shell + route-revealed board skeleton + safe SWR (S: 2-3 days).**
 
 Keep the static shell neutral for login/admin/share; reveal a board skeleton
 only on `/board/` with a tiny inline path check. Cache only the static shell
 URL in the service worker; never cache navigation responses or bootstrap HTML;
-clear user caches on auth change; add the `caches` acceptance test. Expected:
-warm first paint well under 200 ms, no board flash on auth/admin/share, and no
-cross-user replay. Risk: low-to-medium; geometry drift test and SW cache test
-are required.
+clear user caches on auth change. Test that `cache.match(APP_SHELL_URL)` is the
+static shell with no board id/title/bootstrap, board -> shell navigation, and a
+second account. Expected: warm first paint well under 200 ms, no board flash on
+auth/admin/share, and no cross-user replay. Risk: low-to-medium; geometry drift
+test and SW cache test are required.
 
 **Next: read model v1 (M/L: 4-6 weeks).** Summary + bounded first pages with
 keyset SQL; no `loadBoardAggregate` wrapper; stop background aggregate
 hydration. This is the change that makes 25k fit: initial view <2 MB, board
-<1.5 s, 10 opens <1.5 GB, heap <200 MB. It depends on the companion's
+<1.5 s, 10 opens <1.5 GiB, heap <200 MiB. It depends on the companion's
 read-model v1 and should be feature-flagged with an aggregate fallback.
 
 ---
@@ -955,7 +1058,7 @@ Artifacts from the McMaster reconnaissance (not committed; outside the repo):
 
 Janosik capacity source:
 `~/.janosik-dev/load/capacity-2026-11-10/REPORT.md` (WSL, not in git). The
-25k numbers (17.7 MB, ~640 ms, ~1.7 s, 150-200 MB, ~3.3 GB) are quoted from the
+25k numbers (17.7 MB, ~640 ms, ~1.7 s, 150-200 MiB, ~3.3 GiB) are quoted from the
 companion; the companion is not present in this worktree, so they are treated
 as the authoritative capacity fit rather than re-derived here.
 
