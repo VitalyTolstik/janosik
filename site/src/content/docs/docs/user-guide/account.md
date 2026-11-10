@@ -101,6 +101,20 @@ accept invitations, so a leaked key can never mint a longer-lived one, change
 your account or lock you out. A key's scope cannot be edited: create a new key
 and revoke the old one.
 
+### Pausing and stopping agents
+
+Every API key row has two reversible controls and one permanent one. `Pause`
+stops new writes with that key; an in-flight request still finishes, and the
+next write is refused with `403 agent_paused` instead of being queued. Reads,
+heartbeat and end-session keep working. `Resume` releases only that key's own
+pause. `Stop all` at the top of the section pauses every live key at once;
+`Resume all` clears only that bulk stop, so a key paused on its own stays
+paused until you resume it individually. `Revoke` is the kill switch: the key
+stops working at once, its sessions are cancelled, claims it holds are
+released and the connection closes within about 25 seconds. Pause and resume
+are available only in a signed-in browser; an API key cannot clear its own
+pause.
+
 ### Preferences
 
 ![The Preferences section: language, time format, theme and board background.](/screens/account-preferences.png)

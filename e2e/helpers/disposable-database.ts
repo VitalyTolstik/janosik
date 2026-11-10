@@ -104,3 +104,13 @@ export async function ageDeletedCard(cardId: string, days: number) {
     `UPDATE "Card" SET "deletedAt" = NOW() - INTERVAL '${days} days' WHERE id = '${cardId}' AND "deletedAt" IS NOT NULL;`,
   );
 }
+
+/** Make a pending approval overdue so the lazy expiry path runs next read. */
+export async function expireApproval(approvalId: string) {
+  if (!/^[a-z0-9]{20,40}$/i.test(approvalId)) {
+    throw new Error("Invalid approval id");
+  }
+  await runSql(
+    `UPDATE "ApprovalRequest" SET "expiresAt" = NOW() - INTERVAL '1 minute' WHERE id = '${approvalId}';`,
+  );
+}

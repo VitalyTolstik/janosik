@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Check, ChevronDown, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  CirclePause,
+  CirclePlay,
+  Copy,
+  KeyRound,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import {
   API_TOKEN_NAME_MAX,
   API_TOKEN_RATE_MAX,
@@ -34,6 +43,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { NumberStepper } from "@/components/ui/number-stepper";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
 import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
@@ -92,6 +102,10 @@ export function ApiTokensSection() {
   const [reveal, setReveal] = useState<CreateUserTokenResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<UserTokenDto | null>(null);
+  // TASK-166.3 pause controls: one token or the account-wide "stop all".
+  const [pauseTarget, setPauseTarget] = useState<UserTokenDto | null>(null);
+  const [stopAllOpen, setStopAllOpen] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
   // `trustedCi` is meaningless for an observer/read-only key: scope is checked
   // before the destructive gate, so it cannot raise the preset.
   const trustedCiDisabled = readOnly || scopePreset === "observer";
@@ -206,6 +220,71 @@ export function ApiTokensSection() {
     }
   };
 
+  const pauseToken = async (token: UserTokenDto, reason: string) => {
+    setAgentBusy(true);
+    try {
+      await api.pauseToken(token.id, reason === "" ? undefined : reason);
+      toast.success(t("account.tokens.pausedToast"));
+      setPauseTarget(null);
+      void load();
+    } catch {
+      toast.error(t("account.tokens.pauseError"));
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const resumeToken = async (token: UserTokenDto) => {
+    setAgentBusy(true);
+    try {
+      await api.resumeToken(token.id);
+      toast.success(t("account.tokens.resumedToast"));
+      void load();
+    } catch {
+      toast.error(t("account.tokens.resumeError"));
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const pauseAll = async (reason: string) => {
+    setAgentBusy(true);
+    try {
+      const result = await api.pauseAllTokens(
+        reason === "" ? undefined : reason,
+      );
+      toast.success(
+        t("account.tokens.stopAllDone", { count: result.affected }),
+      );
+      setStopAllOpen(false);
+      void load();
+    } catch {
+      toast.error(t("account.tokens.stopAllError"));
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const resumeAll = async () => {
+    setAgentBusy(true);
+    try {
+      await api.resumeAllTokens();
+      toast.success(t("account.tokens.stopAllResumedToast"));
+      void load();
+    } catch {
+      toast.error(t("account.tokens.stopAllResumeError"));
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const stopAllSource =
+    tokens?.find(
+      (token) => token.revokedAt === null && token.stopAllPausedAt !== null,
+    ) ?? null;
+  const hasLiveTokens =
+    tokens?.some((token) => token.revokedAt === null) ?? false;
+
   return (
     <section
       className="space-y-5"
@@ -234,6 +313,69 @@ export function ApiTokensSection() {
 
       {loadError ? (
         <p className="text-xs text-danger">{t("account.tokens.loadError")}</p>
+      ) : null}
+
+      {tokens !== null && hasLiveTokens ? (
+        <div
+          data-testid="token-stop-all-panel"
+          data-paused={stopAllSource !== null ? "true" : "false"}
+          className={cn(
+            "flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3",
+            stopAllSource !== null
+              ? "border-warning/40 bg-warning/10"
+              : "bg-muted/20",
+          )}
+        >
+          <div className="min-w-0 space-y-0.5">
+            <p className="flex items-center gap-1.5 text-sm font-medium">
+              <CirclePause
+                className={cn(
+                  "h-4 w-4",
+                  stopAllSource !== null
+                    ? "text-warning"
+                    : "text-muted-foreground",
+                )}
+                aria-hidden
+              />
+              {stopAllSource !== null
+                ? t("account.tokens.stopAllActive")
+                : t("account.tokens.stopAllTitle")}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {stopAllSource !== null
+                ? stopAllSource.stopAllPausedAt !== null
+                  ? t("account.tokens.stopAllSince", {
+                      date: formatDateOnly(stopAllSource.stopAllPausedAt, lang),
+                    })
+                  : t("account.tokens.stopAllActive")
+                : t("account.tokens.stopAllHint")}
+            </p>
+          </div>
+          {stopAllSource !== null ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="token-stop-all-resume"
+              disabled={agentBusy}
+              onClick={() => void resumeAll()}
+            >
+              <CirclePlay className="h-4 w-4" aria-hidden />
+              {t("account.tokens.stopAllResume")}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="token-stop-all"
+              onClick={() => setStopAllOpen(true)}
+            >
+              <CirclePause className="h-4 w-4" aria-hidden />
+              {t("account.tokens.stopAll")}
+            </Button>
+          )}
+        </div>
       ) : null}
 
       {tokens === null && !loadError ? (
@@ -274,6 +416,9 @@ export function ApiTokensSection() {
               key={token.id}
               token={token}
               lang={lang}
+              busy={agentBusy}
+              onPause={() => setPauseTarget(token)}
+              onResume={() => void resumeToken(token)}
               onRevoke={() => setRevokeTarget(token)}
             />
           ))}
@@ -568,6 +713,48 @@ export function ApiTokensSection() {
           if (!open) setRevokeTarget(null);
         }}
       />
+
+      <Dialog
+        open={pauseTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setPauseTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="token-pause-dialog">
+          {pauseTarget !== null ? (
+            <PauseReasonDialogBody
+              title={t("account.tokens.pauseTitle", {
+                name: pauseTarget.name,
+              })}
+              description={t("account.tokens.pauseDescription")}
+              confirmLabel={t("account.tokens.pause")}
+              busy={agentBusy}
+              testIdPrefix="token-pause"
+              onConfirm={(reason) => void pauseToken(pauseTarget, reason)}
+              onCancel={() => setPauseTarget(null)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={stopAllOpen}
+        onOpenChange={(open) => {
+          if (!open) setStopAllOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="stop-all-dialog">
+          <PauseReasonDialogBody
+            title={t("account.tokens.stopAllConfirmTitle")}
+            description={t("account.tokens.stopAllConfirmDescription")}
+            confirmLabel={t("account.tokens.stopAll")}
+            busy={agentBusy}
+            testIdPrefix="stop-all"
+            onConfirm={(reason) => void pauseAll(reason)}
+            onCancel={() => setStopAllOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -575,10 +762,16 @@ export function ApiTokensSection() {
 function TokenRow({
   token,
   lang,
+  busy,
+  onPause,
+  onResume,
   onRevoke,
 }: {
   token: UserTokenDto;
   lang: Parameters<typeof formatDateOnly>[1];
+  busy: boolean;
+  onPause: () => void;
+  onResume: () => void;
   onRevoke: () => void;
 }) {
   const { t } = useI18n();
@@ -586,6 +779,10 @@ function TokenRow({
     token.expiresAt !== null &&
     token.expiresAt <= Date.now() &&
     !token.revokedAt;
+  const paused = token.paused && token.revokedAt === null && !expired;
+  const individual = token.individualPausedAt !== null;
+  const stoppedByAll =
+    !individual && token.stopAllPausedAt !== null && token.revokedAt === null;
   const status: { label: string; className: string } =
     token.revokedAt !== null
       ? {
@@ -597,15 +794,21 @@ function TokenRow({
             label: t("account.tokens.expired"),
             className: "text-warning",
           }
-        : {
-            label: t("account.tokens.active"),
-            className: "text-success",
-          };
+        : paused
+          ? {
+              label: t("account.tokens.paused"),
+              className: "text-warning",
+            }
+          : {
+              label: t("account.tokens.active"),
+              className: "text-success",
+            };
 
   return (
     <li
       data-testid="token-row"
       data-token-id={token.id}
+      data-paused={paused ? "true" : "false"}
       className="flex items-center gap-3 px-4 py-3"
     >
       <div className="min-w-0 flex-1 space-y-1">
@@ -619,6 +822,16 @@ function TokenRow({
           >
             {status.label}
           </span>
+          {paused ? (
+            <span
+              data-testid="token-paused-badge"
+              className="shrink-0 rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+            >
+              {stoppedByAll
+                ? t("account.tokens.pausedByStopAll")
+                : t("account.tokens.pausedBadge")}
+            </span>
+          ) : null}
         </p>
         <p className="truncate text-[11px] text-muted-foreground">
           {t("account.tokens.meta", {
@@ -636,6 +849,21 @@ function TokenRow({
                 date: formatDateOnly(token.expiresAt, lang),
               })}
         </p>
+        {paused ? (
+          <p
+            className="text-[11px] text-warning"
+            data-testid="token-paused-hint"
+          >
+            {token.individualPausedAt !== null
+              ? t("account.tokens.pausedIndividualHint", {
+                  date: formatDateOnly(token.individualPausedAt, lang),
+                })
+              : t("account.tokens.pausedStopAllHint")}
+            {token.individualPausedReason
+              ? ` — ${token.individualPausedReason}`
+              : ""}
+          </p>
+        ) : null}
         <p
           className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"
           data-testid="token-scope"
@@ -673,19 +901,123 @@ function TokenRow({
         </p>
       </div>
       {token.revokedAt === null ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          data-testid="token-revoke"
-          className="text-danger hover:bg-danger/10 hover:text-danger"
-          onClick={onRevoke}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden />
-          <span className="hidden sm:inline">{t("account.tokens.revoke")}</span>
-        </Button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {individual ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid="token-resume"
+              disabled={busy}
+              onClick={onResume}
+            >
+              <CirclePlay className="h-4 w-4" aria-hidden />
+              <span className="hidden sm:inline">
+                {t("account.tokens.resume")}
+              </span>
+            </Button>
+          ) : stoppedByAll ? null : (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid="token-pause"
+              disabled={busy}
+              onClick={onPause}
+            >
+              <CirclePause className="h-4 w-4" aria-hidden />
+              <span className="hidden sm:inline">
+                {t("account.tokens.pause")}
+              </span>
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            data-testid="token-revoke"
+            className="text-danger hover:bg-danger/10 hover:text-danger"
+            onClick={onRevoke}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+            <span className="hidden sm:inline">
+              {t("account.tokens.revoke")}
+            </span>
+          </Button>
+        </div>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * Shared pause dialog body: a reason field plus the in-flight explanation.
+ * Mounted only while its dialog is open, so closing unmounts the draft.
+ */
+function PauseReasonDialogBody({
+  title,
+  description,
+  confirmLabel,
+  busy,
+  testIdPrefix,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  busy: boolean;
+  testIdPrefix: string;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="space-y-4">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <CirclePause className="h-4 w-4 text-warning" aria-hidden />
+          {title}
+        </DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+      </DialogHeader>
+      <div className="space-y-1.5">
+        <label
+          htmlFor={`${testIdPrefix}-reason`}
+          className="text-xs font-medium text-muted-foreground"
+        >
+          {t("account.tokens.pauseReasonLabel")}
+        </label>
+        <Textarea
+          id={`${testIdPrefix}-reason`}
+          data-testid={`${testIdPrefix}-reason`}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder={t("account.tokens.pauseReasonPlaceholder")}
+          autoFocus
+        />
+      </div>
+      <p className="rounded-md border bg-muted/30 p-2 text-[11px] text-muted-foreground">
+        {t("account.tokens.pauseSemantics")}
+      </p>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          {t("common.cancel")}
+        </Button>
+        <Button
+          type="button"
+          data-testid={`${testIdPrefix}-confirm`}
+          disabled={busy}
+          onClick={() => onConfirm(reason.trim())}
+        >
+          {confirmLabel}
+        </Button>
+      </DialogFooter>
+    </div>
   );
 }
 

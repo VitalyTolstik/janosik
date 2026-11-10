@@ -7,6 +7,8 @@ import {
 } from "react";
 import type {
   ActivitySseEvent,
+  AgentSseEvent,
+  ApprovalSseEvent,
   Board,
   BoardAction,
   BoardMemberDto,
@@ -397,12 +399,107 @@ export class ActivityStore {
   }
 }
 
+/** Board-level pause state carried by an `agent` SSE frame. */
+export interface LiveBoardPause {
+  paused: boolean;
+  at: number | null;
+  reason: string | null;
+}
+
+/**
+ * Approval and agent control-plane frames (TASK-166.14).
+ *
+ * Two kinds of state live here:
+ * - a fan-out of approval/agent events, so the approvals queue and the pause
+ *   panel can refetch without a full-page reload;
+ * - the live board pause flag. The aggregate carries the durable stamp, but a
+ *   second tab must learn about pause/resume from SSE before its next snapshot.
+ *
+ * Events are board-scoped by the stream, so no board id is needed on the
+ * approval frame itself; the agent store keys pause state by board id anyway.
+ */
+export class AgentControlStore {
+  private readonly approvalListeners = new Set<
+    (event: ApprovalSseEvent) => void
+  >();
+  private readonly agentListeners = new Set<(event: AgentSseEvent) => void>();
+  private readonly boardPause = new Map<string, LiveBoardPause>();
+  private readonly listeners = new Set<() => void>();
+  private version = 0;
+
+  publishApproval(event: ApprovalSseEvent): void {
+    for (const listener of [...this.approvalListeners]) listener(event);
+  }
+
+  publishAgent(boardId: string, event: AgentSseEvent): void {
+    if (event.scope === "board") {
+      this.writeBoardPause(boardId, {
+        paused: event.op === "paused",
+        at: event.at,
+        reason: null,
+      });
+    }
+    for (const listener of [...this.agentListeners]) listener(event);
+  }
+
+  setBoardPause(boardId: string, state: LiveBoardPause): void {
+    this.writeBoardPause(boardId, state);
+  }
+
+  getBoardPause(boardId: string | undefined): LiveBoardPause | undefined {
+    return boardId === undefined ? undefined : this.boardPause.get(boardId);
+  }
+
+  subscribeApproval = (
+    listener: (event: ApprovalSseEvent) => void,
+  ): (() => void) => {
+    this.approvalListeners.add(listener);
+    return () => this.approvalListeners.delete(listener);
+  };
+
+  subscribeAgent = (listener: (event: AgentSseEvent) => void): (() => void) => {
+    this.agentListeners.add(listener);
+    return () => this.agentListeners.delete(listener);
+  };
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getVersion = (): number => this.version;
+
+  clear(): void {
+    this.approvalListeners.clear();
+    this.agentListeners.clear();
+    this.boardPause.clear();
+    this.version += 1;
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  private writeBoardPause(boardId: string, next: LiveBoardPause): void {
+    const previous = this.boardPause.get(boardId);
+    if (
+      previous !== undefined &&
+      previous.paused === next.paused &&
+      previous.at === next.at &&
+      previous.reason === next.reason
+    ) {
+      return;
+    }
+    this.boardPause.set(boardId, next);
+    this.version += 1;
+    for (const listener of [...this.listeners]) listener();
+  }
+}
+
 /** The stores, created together and disposed together. */
 export interface BoardLive {
   presence: PresenceStore;
   attribution: AttributionStore;
   members: MembersStore;
   activity: ActivityStore;
+  agentControl: AgentControlStore;
   commits: CommitStore;
   dispose: () => void;
 }
@@ -412,18 +509,21 @@ export function createBoardLive(): BoardLive {
   const attribution = new AttributionStore();
   const members = new MembersStore();
   const activity = new ActivityStore();
+  const agentControl = new AgentControlStore();
   const commits = new CommitStore();
   return {
     presence,
     attribution,
     members,
     activity,
+    agentControl,
     commits,
     dispose: () => {
       presence.clear();
       attribution.clear();
       members.clear();
       activity.clear();
+      agentControl.clear();
       commits.clear();
     },
   };

@@ -139,6 +139,32 @@ Press `J` and `K` to move a highlight down and up through the visible cards,
 `E` or Enter to open the highlighted card, `N` to add a card to the
 highlighted column and `C` to add a column. Escape clears the cursor.
 
+## Agent approvals and pause
+
+A board ADMIN sees an **Agent control** button in the header (the bot icon with
+a pending-count badge). It opens two tabs:
+
+- **Approvals** — the queue of plans agents asked a human to authorize. Select
+  a request to see its summary, risk, board/card context, requesting token and
+  session, exact commands or operations, plan hash, TTL and decision/audit
+  fields. `Approve` or `Reject` sends the plan hash the server requires and an
+  optional comment; approval only authorizes the exact plan, the agent still
+  has to repeat the same call with the approval id. A request that passes its
+  expiry is marked `expired` and cannot be decided. `Consumed` means the plan
+  was applied and the authorization cannot be used again. Approve, reject and
+  the whole queue are available only to a signed-in board ADMIN; an API key
+  cannot decide its own request.
+- **Pause & sessions** — `Pause agents` stops every API key writing to the
+  board. In-flight requests finish; new writes are refused with
+  `403 agent_paused` and are not queued or retried. Reads, heartbeat and
+  end-session stay available, and a pause never releases claims. The same tab
+  lists active agent sessions and lets you pause or resume one session with a
+  reason. A session paused by a board or token pause shows that scope instead;
+  resume the board or the token to release it.
+
+Token-level pause, `Stop all` and kill (revoke) are in [Account → API
+keys](/docs/user-guide/account/#pausing-and-stopping-agents).
+
 ## Next
 
 - [Board workflow](/docs/user-guide/workflow/)

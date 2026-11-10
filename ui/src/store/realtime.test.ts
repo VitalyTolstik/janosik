@@ -392,6 +392,8 @@ describe("presence bridge", () => {
       onMembershipChange: vi.fn(),
       onAccessRevoked: vi.fn(),
       onActivity: vi.fn(),
+      onApproval: vi.fn(),
+      onAgent: vi.fn(),
       isOwnCommand: () => false,
       refetch: vi.fn(async () => "applied" as const),
       getSyncedAt: () => undefined,
@@ -548,6 +550,47 @@ describe("presence bridge", () => {
     expect(bridgeHost.setBaseline).not.toHaveBeenCalled();
     bridge.dispose();
   });
+
+  it("forwards approval and agent frames without touching the command seq", async () => {
+    const approval: BoardSseEvent = {
+      type: "approval",
+      approvalId: "a-1",
+      status: "approved",
+      cardId: "c-1",
+      at: 5,
+    };
+    const agent: BoardSseEvent = {
+      type: "agent",
+      op: "paused",
+      scope: "board",
+      at: 6,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/presence")) {
+          return new Response(null, { status: 204 });
+        }
+        return new Response(streamOf([frame(approval), frame(agent)]), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+
+    const bridgeHost = host();
+    const bridge = createRealtimeBridge(bridgeHost);
+    bridge.watch("b-1");
+
+    await vi.waitFor(() =>
+      expect(bridgeHost.onApproval).toHaveBeenCalledWith("b-1", approval),
+    );
+    expect(bridgeHost.onAgent).toHaveBeenCalledWith("b-1", agent);
+    expect(bridgeHost.apply).not.toHaveBeenCalled();
+    expect(bridgeHost.setBaseline).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
 });
 
 describe("createRealtimeBridge own-echo and resync (U-1, U-7)", () => {
@@ -615,6 +658,8 @@ describe("createRealtimeBridge own-echo and resync (U-1, U-7)", () => {
       onMembershipChange: vi.fn(),
       onAccessRevoked: vi.fn(),
       onActivity: vi.fn(),
+      onApproval: vi.fn(),
+      onAgent: vi.fn(),
       isOwnCommand: (_board, id) => sent.includes(id),
       refetch: vi.fn(async () => {
         baseline.set("b-1", 10);

@@ -1,0 +1,112 @@
+import { useState } from "react";
+import { ClipboardCheck, CirclePause, ShieldCheck } from "lucide-react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
+import { useBoardAccess } from "@/store/BoardContext";
+import { ApprovalsPanel } from "./ApprovalsPanel";
+import { PausePanel } from "./PausePanel";
+
+type AgentControlTab = "approvals" | "pause";
+
+/**
+ * «Agent control» dialog (TASK-166.14): the human side of TASK-166 on one
+ * board. Approvals authorize an exact plan; pause stops new agent writes.
+ * Both are board-ADMIN and browser-session-only; the token owner's own token
+ * pause / stop-all controls stay in Account → API keys.
+ *
+ * The body is mounted inside `DialogContent`, so closing the dialog unmounts
+ * every draft — the project's reset-by-remount rule (AGENT.md).
+ */
+export function AgentControlDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const { role } = useBoardAccess();
+  const [tab, setTab] = useState<AgentControlTab>("approvals");
+
+  const tabs: {
+    id: AgentControlTab;
+    labelKey: "agentControl.tab.approvals" | "agentControl.tab.pause";
+    icon: typeof ClipboardCheck;
+    testId: string;
+  }[] = [
+    {
+      id: "approvals",
+      labelKey: "agentControl.tab.approvals",
+      icon: ClipboardCheck,
+      testId: "agent-approvals-tab",
+    },
+    {
+      id: "pause",
+      labelKey: "agentControl.tab.pause",
+      icon: CirclePause,
+      testId: "agent-pause-tab",
+    },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        data-testid="agent-control-dialog"
+        className="flex h-[min(46rem,calc(100dvh-2rem))] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
+      >
+        <DialogHeader className="shrink-0 space-y-1 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-4 py-3 pr-12">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
+            {t("agentControl.title")}
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            {t("agentControl.description")}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+          <div
+            role="group"
+            aria-label={t("agentControl.title")}
+            className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1"
+          >
+            {tabs.map(({ id, labelKey, icon: Icon, testId }) => (
+              <button
+                key={id}
+                type="button"
+                data-testid={testId}
+                aria-pressed={tab === id}
+                onClick={() => setTab(id)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  tab === id
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden />
+                {t(labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {tab === "approvals" ? (
+            <ApprovalsPanel role={role} />
+          ) : (
+            <PausePanel role={role} />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

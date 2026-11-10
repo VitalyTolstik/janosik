@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board, BoardAction, BoardMemberDto } from "@janosik/shared";
 
 import {
+  AgentControlStore,
   AttributionStore,
   BoardLiveProvider,
   FOREIGN_HIGHLIGHT_MS,
@@ -337,5 +338,69 @@ describe("live hooks", () => {
     expect(orphanAttr.result.current).toBeUndefined();
     const orphanMember = renderHook(() => useBoardMember("b-1", "u-bob"));
     expect(orphanMember.result.current).toBeUndefined();
+  });
+});
+
+describe("AgentControlStore (TASK-166.14)", () => {
+  it("fans approval and agent frames out to their subscribers", () => {
+    const store = new AgentControlStore();
+    const approvals: string[] = [];
+    const agents: string[] = [];
+    store.subscribeApproval((event) => approvals.push(event.approvalId));
+    store.subscribeAgent((event) => agents.push(event.op));
+
+    store.publishApproval({
+      type: "approval",
+      approvalId: "a-1",
+      status: "approved",
+      at: 1,
+    });
+    store.publishAgent("b-1", {
+      type: "agent",
+      op: "started",
+      sessionId: "s-1",
+      at: 2,
+    });
+
+    expect(approvals).toEqual(["a-1"]);
+    expect(agents).toEqual(["started"]);
+    // A session-scoped frame is not a board pause.
+    expect(store.getBoardPause("b-1")).toBeUndefined();
+  });
+
+  it("tracks board pause/resume from SSE and local actions", () => {
+    const store = new AgentControlStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const version = store.getVersion();
+
+    store.publishAgent("b-1", {
+      type: "agent",
+      op: "paused",
+      scope: "board",
+      at: 10,
+    });
+    expect(store.getBoardPause("b-1")).toEqual({
+      paused: true,
+      at: 10,
+      reason: null,
+    });
+    expect(store.getVersion()).toBeGreaterThan(version);
+    expect(listener).toHaveBeenCalled();
+
+    store.setBoardPause("b-1", {
+      paused: true,
+      at: 11,
+      reason: "Release freeze",
+    });
+    expect(store.getBoardPause("b-1")?.reason).toBe("Release freeze");
+
+    store.publishAgent("b-1", {
+      type: "agent",
+      op: "resumed",
+      scope: "board",
+      at: 12,
+    });
+    expect(store.getBoardPause("b-1")?.paused).toBe(false);
   });
 });
