@@ -22,18 +22,22 @@ budget without converting.
 
 The companion document `docs/PERF-25K-UX.md` covers perceived performance and
 the shell/offline UX. This document is the source of truth for capacity,
-storage and write-path numbers; the UX document quotes the same 25k figures
-(17.7 MB, ~640 ms, ~1.7 s, 150-200 MiB, ~3.3 GiB, 3.5-4.5 MB compressed).
+storage and write-path numbers; the UX document quotes the same core 25k
+figures (17.7 MB, ~640 ms, ~1.7 s, 150-200 MiB, ~3.3 GiB). Two UX numbers are
+pending an update there: it still says 6.75 MB (the measured payload is
+6.75 MiB = 7.08 MB decimal) and 4-6x compression (this document uses
+3.9-5.1x).
 
-| Topic               | This document                                   | UX companion                                   | Resolution                                                                            |
-| ------------------- | ----------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Phase names         | P0.1, P0.2, P0.3, P1                            | P0a, P0b, P1                                   | P0.1 = P0a plus aggregateRevision plumbing; P0.2 = P0b; P0.3 is backend-only.         |
-| First work          | Task 0 = P0.1; then P0.2 and P0.3 in parallel   | P0a first, then P0b                            | Same order; P0.3 runs beside P0b because writes block 25k even when reads are fixed.  |
-| Route sketches      | `/boards/:id/cards`, `/cards/:id` are canonical | `/boards/:id/cards/:cardId` is illustrative    | Use the canonical routes; the UX shapes are not wire contracts.                       |
-| Read-model effort   | 4-6 engineer-weeks                              | M/L, 4-6 weeks                                 | Same estimate.                                                                        |
-| 10 concurrent opens | < 1.5 GiB RSS                                   | < 1.5 GiB                                      | Same gate, stated in GiB here.                                                        |
-| Offline stance      | 25k is server-only                              | P1 read-only IndexedDB cache of a server board | The IndexedDB cache is a read cache, not local/offline mode; queued writes remain P2. |
-| Board shape         | 12 x ~2,083 = 25,000 (gate)                     | 12 x ~2,100 (rounded label)                    | Canonical gate is 25,000 total; the UX label is a rounding, not a different board.    |
+| Topic               | This document                                   | UX companion                                   | Resolution                                                                                                                                               |
+| ------------------- | ----------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase names         | P0.1, P0.2, P0.3, P1                            | P0a, P0b, P1                                   | P0.1 is the backend subset of P0a (revision/SSE/MCP); the UX shell/SW/prefetch/instrumentation track runs in parallel. P0.2 = P0b; P0.3 is backend-only. |
+| First work          | Task 0 = P0.1; then P0.2 and P0.3 in parallel   | P0a first, then P0b                            | Same order; P0.3 runs beside P0b because writes block 25k even when reads are fixed.                                                                     |
+| Route sketches      | `/boards/:id/cards`, `/cards/:id` are canonical | `/boards/:id/cards/:cardId` is illustrative    | Use the canonical routes; the UX shapes are not wire contracts.                                                                                          |
+| Read-model effort   | 4-6 engineer-weeks                              | M/L, 4-6 weeks                                 | Same estimate.                                                                                                                                           |
+| 10 concurrent opens | < 1.5 GiB RSS                                   | < 1.5 GiB                                      | Same gate, stated in GiB here.                                                                                                                           |
+| Offline stance      | 25k is server-only                              | P1 read-only IndexedDB cache of a server board | The IndexedDB cache is a read cache, not local/offline mode; queued writes remain P2.                                                                    |
+| Board shape         | 12 x ~2,083 = 25,000 (gate)                     | 12 x ~2,100 (pending update)                   | Canonical gate is 25,000 total; treat the UX label as a rounding until its update lands.                                                                 |
+| Compression/payload | 6.75 MiB = 7.08 MB; 3.9-5.1x                    | 6.75 MB; 4-6x (pending update)                 | This document is canonical; the UX doc will be updated to the same units/ratio.                                                                          |
 
 The UX companion has corrected its earlier claim that the aggregate carries
 activity feeds; this document's architecture is consistent with the corrected
@@ -70,8 +74,8 @@ only promises < 1.5 GiB once P0.2/P0b lands, so the two gates do not conflict.
   the expected product shape, with 5 columns x 5,000 as the **mandatory stress
   shape**. The plan optimizes the per-column bound for 5,000 cards, because a
   single fat column is the worst case for position rewrites and command
-  latency; 12 x ~2,083 then follows. The UX companion rounds this to
-  12 x ~2,100; the gate total remains 25,000.
+  latency; 12 x ~2,083 then follows. The UX companion currently rounds this to
+  12 x ~2,100 pending its update; the gate total remains 25,000.
 - **Recommended plan:** ship low-risk transport/CPU fixes first (compression,
   ETag, removing the double full-board `stableStringify`), then the read model
   v1 (summary + per-column cursor windows + card detail), then the write-path
@@ -137,18 +141,18 @@ most of its cards in one Done column, so the design must bound the work for a
 These are product SLOs, not benchmark wishes. They apply to the 5 x 5,000
 stress shape unless stated otherwise.
 
-| Dimension                 | Target at 25k                                                                  | Reasoning                                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Initial board view        | server p95 < 300 ms; < 2 MB transferred; <= 1,000 card summaries               | One screen shows 5-12 columns x 50 cards, not 25k. 2 MB is a practical mobile/agent budget.                              |
-| Full-board page           | any single page <= 200 cards; p95 < 300 ms; keyset cursor                      | Keep every response bounded; never materialize all 25k for one view.                                                     |
-| Single command            | p50 < 150 ms; p95 < 500 ms (UPDATE/MOVE/ADD)                                   | 150 ms is the interactive threshold; 500 ms still feels responsive under load.                                           |
-| 10 concurrent agents      | >= 10 commands/s aggregate; p95 < 1 s                                          | The measured 5-writer p95 of 13.9 s at 10k is the failure mode to remove.                                                |
-| 10 concurrent board opens | API RSS < 1.5 GiB; p95 < 1 s per open                                          | A 2 GiB VPS must survive a small swarm; today 10 opens at 10k already take 1.48 GiB.                                     |
-| UI board                  | first render < 1.5 s; no long task > 200 ms; DOM < 3,000 nodes; heap < 200 MiB | Virtualization already keeps DOM small; the remaining cost is payload parse, store shape and projections.                |
-| UI table                  | first render < 1 s; scroll long task < 100 ms                                  | Table currently flattens and optionally sorts all cards; 25k must not run that on the main thread per edit.              |
-| UI filter/search          | keystroke-to-result < 100 ms; no main-thread block > 50 ms                     | Current filter scans every card and lowercases descriptions on every keystroke.                                          |
-| SSE                       | 10 agents x 10 commands/s applied without long task > 50 ms                    | SSE deltas are already cheap at 10k; keep them cheap when frames carry large descriptions.                               |
-| Correctness               | zero reducer divergence; idempotent replay; undo/export round-trip             | Performance changes must not weaken the command log, undo, `ifMatch`, plan/apply (when TASK-166.5 lands) or idempotency. |
+| Dimension                 | Target at 25k                                                                                | Reasoning                                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Initial board view        | server p95 < 300 ms; < 2 MB transferred; <= 1,000 card summaries                             | One screen shows 5-12 columns x 50 cards, not 25k. 2 MB is a practical mobile/agent budget.                              |
+| Full-board page           | any single page <= 200 cards; p95 < 300 ms; keyset cursor                                    | Keep every response bounded; never materialize all 25k for one view.                                                     |
+| Single command            | per-action budgets in 5.6: UPDATE p50/p95 < 100/300 ms; MOVE < 200/500 ms; ADD < 150/400 ms  | UPDATE is one card; MOVE/ADD may still rewrite whole columns, so they get separate budgets.                              |
+| 10 concurrent agents      | >= 10 commands/s aggregate; p95 < 1 s                                                        | The measured 5-writer p95 of 13.9 s at 10k is the failure mode to remove.                                                |
+| 10 concurrent board opens | API RSS < 1.5 GiB; p95 < 1 s per open                                                        | A 2 GiB VPS must survive a small swarm; today 10 opens at 10k already take 1.48 GiB.                                     |
+| UI board                  | first render < 1.5 s; no long task > 200 ms; DOM < 3,000 nodes; heap < 200 MiB               | Virtualization already keeps DOM small; the remaining cost is payload parse, store shape and projections.                |
+| UI table                  | first render < 1 s; scroll long task < 100 ms                                                | Table currently flattens and optionally sorts all cards; 25k must not run that on the main thread per edit.              |
+| UI filter/search          | local keystroke-to-result < 100 ms; server filter p95 < 250 ms; no main-thread block > 50 ms | Current filter scans every card and lowercases descriptions and labels on every keystroke.                               |
+| SSE                       | 10 agents x 10 commands/s applied without long task > 50 ms                                  | SSE deltas are already cheap at 10k; keep them cheap when frames carry large descriptions.                               |
+| Correctness               | zero reducer divergence; idempotent replay; undo/export round-trip                           | Performance changes must not weaken the command log, undo, `ifMatch`, plan/apply (when TASK-166.5 lands) or idempotency. |
 
 The initial-view SLO deliberately excludes the full board. A user who scrolls
 to the end or opens the table may fetch more pages; those pages have their own
@@ -224,22 +228,22 @@ evaluates it at 25,000. This is an **estimate**. The 25k point is 2.5x beyond
 the largest measurement, and queueing/GC effects are not linear, so treat the
 p95 and memory numbers as ranges, not promises.
 
-| Metric                       |            10k measured |                         25k estimate | Basis / assumption                                                                                |
-| ---------------------------- | ----------------------: | -----------------------------------: | ------------------------------------------------------------------------------------------------- |
-| Payload (uncompressed JSON)  |      6.75 MiB (7.08 MB) |               **17.7 MB (16.9 MiB)** | 707.5 bytes/card, linear; same 500-char descriptions, no labels/checklists.                       |
-| `GET` p50 / p95              |              263/275 ms |                      **~640/670 ms** | Linear fit: ~5.9 ms + 25.3 us/card. At 25k CPU and JSON serialize may add more.                   |
-| `UPDATE_CARD` p50 / p95      |              299/313 ms |                      **~710/745 ms** | Linear fit: ~16 ms + 27.8 us/card.                                                                |
-| `MOVE_CARD` p50 / p95        |              288/364 ms |                      **~690/850 ms** | Linear fit: ~14 ms + 27.0 us/card; p95 slope steeper (33.4 us/card).                              |
-| `ADD_CARD` p50 / p95         |              340/343 ms |                      **~810/815 ms** | Linear fit: ~24 ms + 31.5 us/card.                                                                |
-| 5-writer throughput          |               3.4 cmd/s |                       **~1.4 cmd/s** | Linear fit of seconds/command (0.0123 + 27.6 us/card); writes serialize per board.                |
-| 5-writer p95 latency         |                  13.9 s |                         **~30-35 s** | Fit over the 50-command burst; queueing is the least linear number here.                          |
-| 10 concurrent opens, API RSS |               1,479 MiB |                         **~3.3 GiB** | Linear fit: 220 MiB + 125 MiB per 1k cards; includes per-request aggregate copies.                |
-| UI board first render        |                  906 ms |                           **~1.7 s** | Linear fit: 360 ms + 54 us/card; parse/store/render, not DOM (virtualized).                       |
-| UI table first render        |                  812 ms |                           **~1.8 s** | Linear fit from 5k/10k: 166 ms + 65 us/card; flatten + sort + render.                             |
-| UI heap (board / table)      |            95 / 124 MiB |                     **~150-200 MiB** | Linear-ish from 5k/10k; object overhead per card is the driver.                                   |
-| DOM nodes                    |                  ~2,013 |                           **~2,000** | Virtualization; effectively flat.                                                                 |
-| Filter keystroke             |            not measured |                         **~0.1-1 s** | O(cards x text length), description lowercasing; estimate only.                                   |
-| Export, compact / pretty     | 6.75 MiB / not measured | **17.7 MB / > 25 MB (must measure)** | Compact 707 B/card; `serializeExport` pretty-prints, so the inline file may exceed the 25 MB cap. |
+| Metric                       |            10k measured |                                   25k estimate | Basis / assumption                                                                                 |
+| ---------------------------- | ----------------------: | ---------------------------------------------: | -------------------------------------------------------------------------------------------------- |
+| Payload (uncompressed JSON)  |      6.75 MiB (7.08 MB) |                         **17.7 MB (16.9 MiB)** | 707.5 bytes/card, linear; same 500-char descriptions, no labels/checklists.                        |
+| `GET` p50 / p95              |              263/275 ms |                                **~640/670 ms** | Linear fit: ~5.9 ms + 25.3 us/card. At 25k CPU and JSON serialize may add more.                    |
+| `UPDATE_CARD` p50 / p95      |              299/313 ms |                                **~710/745 ms** | Linear fit: ~16 ms + 27.8 us/card.                                                                 |
+| `MOVE_CARD` p50 / p95        |              288/364 ms |                                **~690/850 ms** | Linear fit: ~14 ms + 27.0 us/card; p95 slope steeper (33.4 us/card).                               |
+| `ADD_CARD` p50 / p95         |              340/343 ms |                                **~810/815 ms** | Linear fit: ~24 ms + 31.5 us/card.                                                                 |
+| 5-writer throughput          |               3.4 cmd/s |                                 **~1.4 cmd/s** | Linear fit of seconds/command (0.0123 + 27.6 us/card); writes serialize per board.                 |
+| 5-writer p95 latency         |                  13.9 s |                                   **~30-35 s** | Fit over the 50-command burst; queueing is the least linear number here.                           |
+| 10 concurrent opens, API RSS |               1,479 MiB |                                   **~3.3 GiB** | Linear fit: 220 MiB + 125 MiB per 1k cards; includes per-request aggregate copies.                 |
+| UI board first render        |                  906 ms |                                     **~1.7 s** | Linear fit: 360 ms + 54 us/card; parse/store/render, not DOM (virtualized).                        |
+| UI table first render        |                  812 ms |                                     **~1.8 s** | Linear fit from 5k/10k: 166 ms + 65 us/card; flatten + sort + render.                              |
+| UI heap (board / table)      |            95 / 124 MiB |                               **~150-200 MiB** | Linear-ish from 5k/10k; object overhead per card is the driver.                                    |
+| DOM nodes                    |                  ~2,013 |                                     **~2,000** | Virtualization; effectively flat.                                                                  |
+| Filter keystroke             |            not measured |                                   **~0.1-1 s** | O(cards x text length), description lowercasing; estimate only.                                    |
+| Export, compact / pretty     | 6.75 MiB / not measured | **17.7 MB / > 25 MiB (26.2 MB), must measure** | Compact 707 B/card; `serializeExport` pretty-prints, so the inline file may exceed the 25 MiB cap. |
 
 Assumptions: same 5-column shape, same 500-character descriptions, same
 hardware, one API process, no compression, no other traffic. The aggregate
@@ -276,10 +280,11 @@ these into commitments.
 `serializeExport` writes the whole board with `JSON.stringify(payload, null,
 2)` (`shared/src/utils/board-serialization.ts:39-50`). The compact 25k board is
 ~17.7 MB; pretty-printing adds whitespace, so the inline export is larger and
-may exceed the 25 MB cap. The exact expansion has **not** been measured and
-must be measured with `serializeExport` on the 25k fixture; do not assume a
-fixed expansion ratio. The cap is 25 MB (`MAX_IMPORT_BYTES` /
-`MAX_BOARD_EXPORT_BYTES`, `shared/src/types/kanban.ts:380-383`), and the
+may exceed the 25 MiB (26.2 MB) cap. The exact expansion has **not** been
+measured and must be measured with `serializeExport` on the 25k fixture; do not
+assume a fixed expansion ratio. The cap is 25 MiB (26.2 MB;
+`MAX_IMPORT_BYTES` / `MAX_BOARD_EXPORT_BYTES`,
+`shared/src/types/kanban.ts:380-383`), and the
 preflight uses `pg_column_size` plus an exact string check
 (`backend/src/boards/boards.service.ts:708-755`). A 25k board with checklists,
 labels or long descriptions will exceed it. This is an **estimate** based on
@@ -301,7 +306,7 @@ JSON size, not a measured export.
 | 6   | Table/calendar/filter projections     | `TableView.tsx:306-333`, `CalendarView.tsx:347-390`, `filter.ts:379-412`         | cards, on every edit/keystroke                | server/worker projection, pagination (P0/P1)                |
 | 7   | SSE frames carry full action          | `commands.service.ts:430-447`, `realtime.ts`                                     | description size x subscribers                | frame cap / detail-stale signal (P0)                        |
 | 8   | MCP reads the whole board per call    | `mcp/src/tools/boards.ts:121`, `mcp/src/tools/cards.ts:271`, `client.ts:342-390` | cards x tool calls                            | use new read endpoints (P0)                                 |
-| 9   | Export/import inline 25 MB            | `boards.service.ts:708-788`, `board-serialization.ts`                            | cards + descriptions                          | streaming/async export (P0.4)                               |
+| 9   | Export/import inline 25 MiB           | `boards.service.ts:708-788`, `board-serialization.ts`                            | cards + descriptions                          | streaming/async export (P0.4)                               |
 | 10  | DB query shape                        | `board-aggregate.ts:64-100`                                                      | cards, but small at 25k                       | projections/partial indexes (P1, not the blocker)           |
 | 11  | Archived cards lack a page path       | archive UI/export read `board.cards`; pages exclude archived                     | archived count + bytes                        | `includeArchived`/archived endpoint, quota (P0)             |
 | 12  | Live shares load the full aggregate   | `share.service.ts:393,512-535` + `getAggregateWithSeq`                           | cards x share viewers                         | share summary/pages or live-share cap (P0)                  |
@@ -313,7 +318,8 @@ JSON size, not a measured export.
 (`backend/src/commands/commands.service.ts:264-452`). Inside the per-board
 write lock it:
 
-1. loads the board row and resolves `commandId` replays (`:321-355`);
+1. loads the board row (`:321-327`) and resolves `commandId` replays
+   (`:329-355`);
 2. runs `assertIdsBelongToBoard` (`:370`, seven `findFirst` queries);
 3. calls `loadBoardAggregate(tx, boardId)` (`:372`);
 4. for every command, checks assignee/claim/management/version/workflow
@@ -358,8 +364,10 @@ chunks of 1,000 at `:212`). It is called by:
   `SORT_COLUMN` / `SET_COLUMN_CARD_ORDER` (`:725-738`).
 
 Because positions are dense integers 0..N-1, inserting at the top shifts every
-following card. At 5,000 cards that is five statements touching 5,000 rows per
-add/move; at a 25,000-card column it would be 25 statements. The write is
+following card. At 5,000 cards that is five statements touching 5,000 rows
+**per rewritten column**; a cross-column `MOVE_CARD` rewrites both source and
+destination (~10 statements / 10,000 rows for two 5k columns). At a 25,000-card
+column it would be 25 statements per rewritten column. The write is
 inside the board transaction and the board lock, so it directly reduces command
 throughput. Even an append rewrites the whole column, although appending only
 needs the new row.
@@ -437,7 +445,7 @@ the same aggregate shape as the server problem, not a React leak.
   the main thread. A date-range query (`dueFrom`/`dueTo`) and a paginated
   unscheduled list are the natural fixes.
 - **Filter.** `filterCardIds` iterates every card and, for a query, lowercases
-  the title, description and checklist items and scans them
+  the title, description, checklist item text and label names and scans them
   (`ui/src/utils/filter.ts:295-412`). The filter runs on every keystroke and on
   every board change while active. At 25k with 64 KB descriptions this can
   block the main thread for hundreds of milliseconds. Move it to a worker or
@@ -498,7 +506,7 @@ once -- not two aggregate copies, but still a large transient allocation.
 and inserts in one 120 s transaction with chunked `createMany`
 (`boards.service.ts:760-815`, `board-import.ts:226-265`). 25k rows fit, but the
 parsed object, normalized state and insert buffers can be several hundred MiB.
-The 25 MB import cap is a hard wall for a 25k board with 500-char descriptions
+The 25 MiB (26.2 MB) import cap is a hard wall for a 25k board with 500-char descriptions
 once the pretty export exceeds it.
 
 **Backups:** the API export is a share/transfer format, not a database backup
@@ -515,16 +523,16 @@ The command path, not the stream, was the cost.
 Three things become relevant at 25k:
 
 - **Frame size and the client buffer.** A `CommandSseEvent` carries the whole
-  action (`commands.service.ts:414-424` publishes it after commit). An
-  `UPDATE_CARD` with a 64 KB description broadcasts 64 KB to every subscriber.
-  Ten readers = 640 KB per edit; 100 readers = 6.4 MB per edit. The action is
-  also stored in `Command.payload` as JSONB. The browser's SSE parser caps one
-  frame at `MAX_EVENT_BUFFER_BYTES = 1_000_000` (`ui/src/store/realtime.ts:63`),
-  while the server accepts a 2 MiB client command and an 8 MiB internal restore
-  (`MAX_COMMAND_BYTES` / `MAX_COMMAND_BYTES_INTERNAL`,
-  `commands.service.ts:183`). A 2 KB description cap alone is not enough: cap
-  the whole frame below the client buffer, or send a summary delta plus
-  `detailStale`.
+  action (assembled at `commands.service.ts:414-424`, published at
+  `:430-447`). An `UPDATE_CARD` with a 64 KB description broadcasts 64 KB to
+  every subscriber. Ten readers = 640 KB per edit; 100 readers = 6.4 MB per
+  edit. The action is also stored in `Command.payload` as JSONB. The browser's
+  SSE parser caps one frame at `MAX_EVENT_BUFFER_BYTES = 1_000_000`
+  (`ui/src/store/realtime.ts:63`), while the server accepts a 2 MiB client
+  command and an 8 MiB internal restore (`MAX_COMMAND_BYTES` /
+  `MAX_COMMAND_BYTES_INTERNAL`, `commands.service.ts:183`). A 2 KB description
+  cap alone is not enough: cap the whole frame below the client buffer, or send
+  a summary delta plus `detailStale`.
 - **Route board id.** A REST caller that omits `boardId` produces an SSE frame
   the UI drops (`boardIdOf` in `ui/src/store/realtime.ts`). The fix exists on
   branch `fix/commands-board-id-sse` (commits `a68efeb`, `c7f2f23`): stamp the
@@ -566,8 +574,8 @@ bounded read model, not a larger cap. Add two or three read primitives
 (`get_card_by_id`, `list_cards` with cursor, `get_board_summary`) and extend
 existing tools with `cursor`/`detail`, then make the MCP client use
 `GET /cards/:id` and `GET /boards/:id/cards` instead of the full aggregate.
-`commandOnFreshBoard` should accept a card context (card + column + version +
-neighbors) rather than requiring the whole board.
+`commandOnFreshBoard` should accept a card context (card + column + board
+`seq` + version + neighbors) rather than requiring the whole board.
 
 ### 3.11 Archived cards and public shares
 
@@ -589,7 +597,10 @@ view:
   scoped) or explicitly cap live shares below 25k and make snapshot creation
   an async, size-checked job. Snapshot shares already freeze a full aggregate
   in `BoardShare.snapshot` (`share.service.ts:118-121`), so snapshot creation
-  at 25k has the same memory/export problem as inline export.
+  at 25k has the same memory/export problem as inline export. The existing
+  `ShareAggregateCache` is keyed by command `seq` and defaults to a 2 s TTL
+  (`SHARE_AGGREGATE_CACHE_MS`), so a comment/attachment can be stale for up to
+  2 s; add it to the aggregate-revision audit or document that TTL staleness.
 
 ---
 
@@ -673,15 +684,17 @@ Because `BoardWriteService` already serializes all writers for one board
 (`backend/src/common/board-write.service.ts:115-179`), there is at most one
 in-flight mutation per board per process. The revision comparison is the
 correctness backstop for anything that writes outside the cache (another API
-process, admin restore, import, manual SQL, comments, attachments, session
-end). `seq` remains the command ordering and SSE resume point; it is correct
-**for command writes only**.
+process, admin restore, import, comments, attachments, session end). Manual SQL
+is covered only if it bumps/invalidates the revision; otherwise it is outside
+the cache/ETag guarantee. `seq` remains the command ordering and SSE resume
+point; it is correct **for command writes only**.
 
 **Coherency.** Every board-content writer must either go through the command
 path (cache is updated) or call `invalidate(boardId)` **and** bump the
 revision. Audit at least: `BoardsService.deleteBoard`, `importBoards`, admin
-restore/backup/recount, demo seeding, comments, attachments, agent sessions and
-any direct `tx.card`/`tx.column` writes. Do not rely on `seq` alone.
+restore/backup/recount, demo seeding, comments, attachments, agent sessions,
+`ShareAggregateCache` (or its documented 2 s TTL), and any direct
+`tx.card`/`tx.column` writes. Do not rely on `seq` alone.
 
 **Multi-process / multi-node.** With the revision, the cache is correct across
 multiple API instances: a stale entry is detected and reloaded. Without it,
@@ -704,10 +717,12 @@ versions used for validation. Apply must re-check `ifMatch`/`planHash` inside
 the lock before using the cache. A cache hit must never make a stale plan look
 valid.
 
-**Idempotency.** Resolve existing `commandId`s first. If the whole request is a
-replay, return stored results without applying, publishing or mutating the
-cache. Today the code still loads the aggregate before discovering replays
-(`commands.service.ts:372`); move the early return before that load.
+**Idempotency.** Existing `commandId`s are already resolved before
+`loadBoardAggregate` (`commands.service.ts:329-355`). The missing piece is an
+early return when **every** prepared command is a replay; today the code
+proceeds to `loadBoardAggregate` (`:372`) and only skips inside the loop.
+Return stored results without applying, publishing or mutating the cache when
+the whole request is a replay.
 
 **Restart / warm-up.** A cold process has an empty cache; the first command per
 board pays one aggregate load. That is acceptable. Optionally prewarm the
@@ -788,21 +803,21 @@ add it speculatively. 25k is a payload/CPU problem, not a DB problem.
 
 ### 4.4 Client options
 
-| Option                                                          | Effort | Impact                                                                 | Risk / note                                                                                             |
-| --------------------------------------------------------------- | :----: | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Split store: meta + `CardSummary` map + detail LRU + window map |   L    | Initial board 250-1,000 summaries instead of 25k full cards; heap ~10x | Biggest client change; deep links, DnD, undo, offline adapter need coverage                             |
-| Selector-driven subscriptions (`useCard`, `useColumnWindow`)    |   M    | Stops full-board re-renders on every command                           | React context refactor; keep the existing `useBoard()` for small boards                                 |
-| Server-side filter for large boards                             |   M    | Removes O(25k) main-thread filter scans                                | Board filter fields: title/description/labels/checklist. Global search fields differ; see parity matrix |
-| Global search via existing `GET /boards/:id/search`             |   M    | Reuses server search; cursor/snippet added                             | Currently searches title/description/checklist/comments but **not labels**; returns ids only            |
-| Filter/sort in a Web Worker                                     |   M    | Keeps main thread free if server round-trip is undesirable             | Worker bundle, transfer of summaries, duplicated filter logic                                           |
-| Table pagination / server sort                                  |   M    | Table < 1 s at 25k                                                     | Sort semantics across columns; cursor by sort key + id                                                  |
-| Calendar date-range query + paginated unscheduled list          |   M    | No full-board scan for a month                                         | New endpoint/params; timezone/day-key semantics                                                         |
-| Move contract: `beforeCardId`/`afterCardId` or absolute ordinal |   M    | DnD works across page boundaries; compatible with gap positions        | Legacy `toIndex` remains for small boards; server must compute absolute index                           |
-| Undo pre-image or detail-before-destructive                     |   M    | Summary-only clients can undo delete/archive/move safely               | `invert(before, action)` needs the full card/column snapshot; server inverse is larger                  |
-| Snapshot token / per-page `atSeq` merge                         |   S    | Initial summary + pages converge without losing a concurrent edit      | Buffer SSE during load; refetch page when `page.atSeq < summary.atSeq`                                  |
-| SSE coalescing per animation frame                              |   S    | Avoids 10 agents x 10 events/s causing 100 renders/s                   | Event ordering must be preserved; apply in seq order                                                    |
-| Memory ceilings and detail eviction                             |   S    | Heap < 200 MiB; no unbounded detail cache                              | Need metrics and a cap per board                                                                        |
-| Offline/local mode stays on the full aggregate                  |   S    | No change for small/local boards                                       | 25k is server-only; P1 IndexedDB is a read cache, not local mode                                        |
+| Option                                                          | Effort | Impact                                                                 | Risk / note                                                                                                     |
+| --------------------------------------------------------------- | :----: | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Split store: meta + `CardSummary` map + detail LRU + window map |   L    | Initial board 250-1,000 summaries instead of 25k full cards; heap ~10x | Biggest client change; deep links, DnD, undo, offline adapter need coverage                                     |
+| Selector-driven subscriptions (`useCard`, `useColumnWindow`)    |   M    | Stops full-board re-renders on every command                           | React context refactor; keep the existing `useBoard()` for small boards                                         |
+| Server-side filter for large boards                             |   M    | Removes O(25k) main-thread filter scans                                | Gate on board size/capability, not loaded count; server returns matches/count outside the window; parity matrix |
+| Global search via existing `GET /boards/:id/search`             |   M    | Reuses server search; cursor/snippet added                             | Currently searches title/description/checklist/comments but **not labels**; returns ids only                    |
+| Filter/sort in a Web Worker                                     |   M    | Keeps main thread free if server round-trip is undesirable             | Worker bundle, transfer of summaries, duplicated filter logic                                                   |
+| Table pagination / server sort                                  |   M    | Table < 1 s at 25k                                                     | Sort semantics across columns; cursor by sort key + id                                                          |
+| Calendar date-range query + paginated unscheduled list          |   M    | No full-board scan for a month                                         | New endpoint/params; timezone/day-key semantics                                                                 |
+| Move contract: `beforeCardId`/`afterCardId` or absolute ordinal |   M    | DnD works across page boundaries; compatible with gap positions        | Legacy `toIndex` remains for small boards; server must compute absolute index                                   |
+| Undo pre-image or detail-before-destructive                     |   M    | Summary-only clients can undo delete/archive/move safely               | `invert(before, action)` needs the full card/column snapshot; server inverse is larger                          |
+| Snapshot token / per-page `atSeq` merge                         |   S    | Initial summary + pages converge without losing a concurrent edit      | Buffer SSE during load; refetch page when `page.atSeq < summary.atSeq` or revision differs                      |
+| SSE coalescing per animation frame                              |   S    | Avoids 10 agents x 10 events/s causing 100 renders/s                   | Event ordering must be preserved; apply in seq order                                                            |
+| Memory ceilings and detail eviction                             |   S    | Heap < 200 MiB; no unbounded detail cache                              | Need metrics and a cap per board                                                                                |
+| Offline/local mode stays on the full aggregate                  |   S    | No change for small/local boards                                       | 25k is server-only; P1 IndexedDB is a read cache, not local mode                                                |
 
 **Recommendation:** split the store, keep the full `Board` adapter for small
 boards and local mode, and move table/calendar/filter work off the main thread
@@ -840,7 +855,7 @@ store or the projections.
     "title": "Platform",
     "seq": 4210,
     "atSeq": 4210,
-    "snapshotToken": "eyJib2FyZCI6ImJyZF8uLi4iLCJzZXEiOjQyMTB9",
+    "snapshotToken": "opaque-token-v1",
     "aggregateRevision": 9021,
     "role": "MEMBER",
     "updatedAt": 1762750000000,
@@ -859,6 +874,10 @@ store or the projections.
 }
 ```
 
+`snapshotToken` is opaque and binds the board id, command `seq` and
+`aggregateRevision`. Decode it only server-side; do not treat it as a client
+cursor.
+
 `GET /api/v1/boards/:id/cards?columnId=col_...&limit=100&detail=summary`
 
 ```json
@@ -873,11 +892,11 @@ store or the projections.
       "dueDate": 1762800000000,
       "updatedAt": 1762750000000,
       "version": 7,
-      "position": 5000,
-      "startIndex": 5000,
+      "position": 5120,
       "ordinal": 5000
     }
   ],
+  "startIndex": 5000,
   "nextCursor": "eyJwb3NpdGlvbiI6NTA5OSwiaWQiOiJjYXJkXy4uLiJ9",
   "hasMore": true,
   "seq": 4210,
@@ -886,10 +905,10 @@ store or the projections.
 }
 ```
 
-`startIndex`/`ordinal` are the absolute 0-based column position; `position`
-is the stored ordering key (dense today, gap-based later). A page is not a
-transactional snapshot; the client reconciles by `id`, `atSeq` and
-`aggregateRevision`.
+`startIndex` is page-level and `ordinal` is per-item, both the absolute 0-based
+column position. `position` is the stored ordering key and may diverge from
+`ordinal` once gap positions are introduced. A page is not a transactional
+snapshot; the client reconciles by `id`, `atSeq` and `aggregateRevision`.
 
 `GET /api/v1/cards/:id`
 
@@ -908,6 +927,9 @@ transactional snapshot; the client reconciles by `id`, `atSeq` and
   "version": 8
 }
 ```
+
+The detail example is abbreviated: the full response also carries `links`,
+`attachmentCount`, `lastActorId` and `archivedAt` when set.
 
 **Cursor contract:** opaque base64 of `{ position, id }` (or
 `{ columnPosition, position, id }` for a board-wide table). Ordering is
@@ -930,15 +952,15 @@ capability negotiation and migration window.
 | Raise `cardsPerColumn`/board cap only                                      |   S    | None; makes the outage reachable                       | **Do not** until read/write gates pass                                  |
 | Soft/hard caps: board 25k hard, 20k soft; column 10k hard, 5k soft         |  S-M   | Prevents pathological shapes; honest errors            | Shared `LIMITS` is client-visible; server-driven limits need a contract |
 | Per-board byte quota (active + archived cards + descriptions + checklists) |   M    | Bounds payload/export/memory independent of card count | Product decision; UI must show the quota                                |
-| Asynchronous streaming export (NDJSON/zip) + import job                    |  M-L   | 25k export/import without 25 MB/2x memory              | New job/status/download contract; cleanup/expiry                        |
-| Keep inline export <= 25 MB, raise cap only with streaming                 |   S    | Avoids silent truncation; clear 413                    | The cap remains a product limit for inline path                         |
+| Asynchronous streaming export (NDJSON/zip) + import job                    |  M-L   | 25k export/import without 25 MiB/2x memory             | New job/status/download contract; cleanup/expiry                        |
+| Keep inline export <= 25 MiB, raise cap only with streaming                |   S    | Avoids silent truncation; clear 413                    | The cap remains a product limit for inline path                         |
 | Backups via `pg_dump`, documented RPO/RTO                                  |   S    | Real disaster recovery at 25k                          | Operational, not code; document in self-hosting                         |
 | API memory sizing and alerts (1.5 GiB warning, 2 GiB limit)                |   S    | Prevents OOM at 10 opens + cache                       | Container limit must match; monitor RSS/heap                            |
 | Live shares at 25k (summary/pages or cap)                                  |  S-M   | Avoids 17.7 MB per share viewer                        | Snapshot creation freezes an aggregate; async/size check                |
 | Multi-node/Redis fan-out                                                   |   XL   | Out of scope (TASK-175)                                | Do not pretend a single-node cache solves it                            |
 
 **Recommendation:** make 25k a **server-mode** capability with a board-level
-hard cap and a per-column hard cap. Keep the inline 25 MB export as a
+hard cap and a per-column hard cap. Keep the inline 25 MiB export as a
 convenience; add a streaming/async path for larger boards. Do not raise the
 cap until the read and write gates have passed on both target shapes.
 
@@ -997,8 +1019,10 @@ cap until the read and write gates have passed on both target shapes.
    (`columnId`, cursor, limit, sort, q, includeArchived) **+ principal scope**
    (role for members, share id/scope for public shares) **+ projection**, e.g.
    `W/"board:<id>:<revision>:<routeHash>:<scope>:<projection>"`. Two cursors,
-   two searches, two roles or two shares must never share an ETag. Weak ETag is
-   correct because gzip/Brotli representations differ.
+   two searches, two roles or two shares must never share an ETag. Use a weak
+   validator because it identifies a semantically equivalent representation,
+   not a byte-identical one; content coding is negotiated separately via
+   `Vary: Accept-Encoding`.
 5. For conditional requests, read `aggregateRevision`/`seq` first. If
    `If-None-Match` matches, answer 304 **before** `loadBoardAggregate` or JSON
    serialization; otherwise load the representation in the same snapshot and
@@ -1011,18 +1035,26 @@ cap until the read and write gates have passed on both target shapes.
 
 Summary + one page per column are separate HTTP snapshots. Each page returns
 `atSeq` (the command seq it reflects) and `aggregateRevision`; the summary
-returns a `snapshotToken`/`atSeq`. The client:
+returns a `snapshotToken` carrying the board id, `atSeq` and
+`aggregateRevision`. The client:
 
 1. buffers SSE frames while the initial summary + pages are in flight;
-2. takes the summary's `atSeq` as the baseline and applies buffered frames with
-   `seq > atSeq`;
-3. for any page whose `atSeq < summary.atSeq`, applies the known deltas to that
-   page or refetches it; for a page with `atSeq > summary.atSeq`, advances the
-   summary baseline and refetches the summary if needed;
-4. never mixes a page from before a move with a summary from after it without
-   reconciliation.
+2. takes the summary's `atSeq` and `aggregateRevision` as the baseline and
+   applies buffered command frames with `seq > atSeq`; because a comment or
+   attachment changes `aggregateRevision` without moving `seq`, also refetch
+   the summary/window when a buffered event changes the revision;
+3. for any page whose `atSeq < summary.atSeq` **or**
+   `aggregateRevision !== summary.aggregateRevision`, refetches the page. A
+   page older than the summary is never merged as-is; unless the page endpoint
+   accepts an `atSeq`/`snapshotToken` parameter and returns that snapshot, the
+   client must refetch it.
+4. for a page with `atSeq > summary.atSeq` or a newer revision, advances the
+   baseline and refetches the summary if needed;
+5. never mixes a page from before a move/comment/attachment with a summary
+   from after it without reconciliation.
 
-Test a move/update arriving during initial load; the final window must match a
+Test **a command and a comment during initial load** (two different revision
+changes, one with a `seq` bump and one without); the final window must match a
 fresh read.
 
 **Client behavior**
@@ -1052,10 +1084,14 @@ fresh read.
    action changes a card whose detail is open, patch it or mark it stale. If
    the event seq is ahead of the page seq and the gap is not replayable, fetch
    the summary + current window, not the full board.
-7. On filter/sort: below 2,000 loaded cards, use the existing client filter;
-   above, debounce and call the board-filter endpoint (or a worker). Global
-   search uses the extended `/boards/:id/search`; they are different field
-   sets (see 5.4).
+7. On filter/sort: gate on **board size/capability**, not on how many cards
+   happen to be loaded. Any board above the read-model threshold must call the
+   server filter/count endpoint and render the server's total/matched count;
+   client-side filtering only narrows already-loaded windows. A 25k board with
+   ~600 loaded summaries must never silently return "matches" from only those
+   600; a match outside the window must still be returned by the server.
+   Global search uses the extended `/boards/:id/search`; they are different
+   field sets (see 5.4).
 
 **Fallback and migration:** do not use a bare 2,000-card threshold. At the
 base commit the current maximum is 2,400, and after PR #222 it is 12,000; a
@@ -1074,15 +1110,15 @@ release.
 Every new read route must prove board access before returning data, including
 when the identifier is a card, cursor or share token:
 
-| Route / input              | Required check                                                                                          | Failure                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `GET /boards/:id/summary`  | membership/role; board not deleted                                                                      | 404 if not a member; share token path uses share scope      |
-| `GET /boards/:id/cards`    | membership/role; `columnId` belongs to `:id`; cursor decodes to same board/column                       | 404 for foreign column/card; 400 for malformed cursor/limit |
-| `GET /cards/:id`           | resolve card -> column -> board; require membership; never trust a client boardId                       | 404 for a foreign card (not 403, to avoid an id oracle)     |
-| `GET /boards/:id/cards?q=` | same membership; query length cap; no cross-board search                                                | 400 for overlong query                                      |
-| ETag / `If-None-Match`     | ETag includes board, revision, route, query, principal scope, projection; never match across principals | 200, not 304, if any key component differs                  |
-| Public share summary/pages | share token exists, not expired/revoked; snapshot cutoff respected                                      | 404/410 as today                                            |
-| Cursor/limit               | limit 1..200; cursor signed/opaque and scoped to board+column+sort+query                                | 400 for invalid; 404 for foreign scope                      |
+| Route / input              | Required check                                                                                            | Failure                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `GET /boards/:id/summary`  | membership/role; board not deleted                                                                        | 404 if not a member; share token path uses share scope      |
+| `GET /boards/:id/cards`    | membership/role; `columnId` belongs to `:id`; cursor decodes to same board/column                         | 404 for foreign column/card; 400 for malformed cursor/limit |
+| `GET /cards/:id`           | resolve card -> column -> board; require membership; never trust a client boardId                         | 404 for a foreign card (not 403, to avoid an id oracle)     |
+| `GET /boards/:id/cards?q=` | same membership; query length cap; no cross-board search                                                  | 400 for overlong query                                      |
+| ETag / `If-None-Match`     | ETag includes board, revision, route, query, principal scope, projection; never match across principals   | 200, not 304, if any key component differs                  |
+| Public share summary/pages | share token exists, not expired/revoked; snapshot cutoff respected                                        | 404/410 as today                                            |
+| Cursor/limit               | limit 1..200; cursor is opaque base64, scoped to board+column+sort+query; reject malformed/tampered input | 400 for invalid; 404 for foreign scope                      |
 
 Add IDOR tests: a member of board A requests a card/column/cursor from board B;
 a share token for board A requests board B; a role change between page requests;
@@ -1163,8 +1199,9 @@ Even with a cache, the per-command pre-checks are worth batching:
 
 - `currentSeq` once per batch, not once per command; the batch knows its own
   increments.
-- `assertIdsBelongToBoard` only for the entity types the batch references, and
-  in one query per type (already grouped by type; skip unused types).
+- `assertIdsBelongToBoard` needs a typed index (ids by entity type), not the
+  flat `string[]` from `referencedEntityIds`; query only non-empty types.
+  Today it runs seven sequential `findFirst` queries.
 - Prefetch assignee membership and claim rows for the batch in one query each.
 - Keep `assertWorkflowReferences` on the cached columns.
 - Skip `assertNoWipConflict` work when the action does not change a column.
@@ -1236,16 +1273,20 @@ O(column) rebalance, and makes 5,000-card columns cheap.
   \* Add label matching to global search or document the difference; do not
   silently reuse the board-filter rules.
 
-- **Filter execution:** client-side under 2,000 loaded cards for instant
-  feedback; server-side or worker above that. Debounce 150-250 ms, keep the URL
-  contract.
+- **Filter execution:** gate on board size/capability. Above the read-model
+  threshold, always call the server filter/count endpoint (debounce 150-250 ms,
+  keep the URL contract); client-side filtering may only narrow already-loaded
+  windows and must not present a window-local result as the board result.
+  Below the threshold, the existing client filter is fine.
 - **DnD/undo:** a summary-only client cannot compute `invert(before, action)`
   for delete/archive/move. Fetch the full card/column context before a
   destructive command or use a server-side inverse/pre-image endpoint; test
   page-boundary drops and undo after a page has been evicted.
 - **Snapshot merge:** buffer SSE while summary + pages load; use `atSeq` and
-  `aggregateRevision` to merge or refetch; never assume the summary and pages
-  are one transaction.
+  `aggregateRevision` to merge or refetch; a page older than the summary or
+  with a different revision must be refetched unless the page endpoint accepts
+  an `atSeq`/snapshot token. Never assume the summary and pages are one
+  transaction.
 - **SSE:** apply in `seq` order; coalesce per animation frame; update summary
   and loaded windows; if a detail is open and the event touches it, patch or
   mark stale; on `resync`, fetch summary + current window.
@@ -1271,7 +1312,7 @@ limit_exceeded` with `scope`, `limit`, `current`.
   25k; snapshot creation freezes a full aggregate and is subject to the same
   byte/memory check as export. Do not leave live shares on
   `getAggregateWithSeq` at 25k.
-- **Export/import:** keep inline export <= 25 MB with a clear 413; add an
+- **Export/import:** keep inline export <= 25 MiB (26.2 MB) with a clear 413; add an
   async streaming export (NDJSON or zip) and a chunked/streaming import for
   larger boards. Do not raise the cap without streaming: current code holds the
   aggregate and the serialized string at once.
@@ -1314,10 +1355,10 @@ limit_exceeded` with `scope`, `limit`, `current`.
 | -------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **P0.1** | Wire bytes -70-80%; command CPU -20-40% (**both estimates, not measured**)                                 | Clean 10k p95 not worse; compression/ETag/no-op tests; revision bump tests; SSE board-id tests; 10k failures measured |
 | **P0.2** | Initial view 17.7 MB/~640 ms -> < 2 MB/< 300 ms; 10 opens 3.3 GiB -> < 1.5 GiB; board first render < 1.5 s | G1; DnD page-boundary, snapshot-merge, undo-detail, archived and share tests                                          |
-| **P0.3** | Command 0.7-0.8 s -> p50 < 150 ms; 5-10 writers 1.4 -> >= 10 cmd/s with batches                            | G2; per-action UPDATE/MOVE/ADD budgets; cache revision + all non-command-writer tests                                 |
+| **P0.3** | Command 0.7-0.8 s -> per-action budgets in 5.6 (worst p50 < 200 ms, worst p95 < 500 ms)                    | G2; per-action UPDATE/MOVE/ADD budgets; cache revision + all non-command-writer tests                                 |
 | **P0.4** | Safe enablement; bounded memory/export/share                                                               | G5; 25k export/import or explicit async path; live-share cap; archived quota                                          |
 | **P0.5** | Production capability                                                                                      | All gates on 25k, both shapes; no P0 regressions                                                                      |
-| **P1.1** | Table < 1 s; filter < 100 ms; no main-thread block > 50 ms                                                 | G3; board-filter/global-search parity matrix                                                                          |
+| **P1.1** | Table < 1 s; local filter < 100 ms; server filter p95 < 250 ms; no main-thread block > 50 ms               | G3; board-filter/global-search parity matrix                                                                          |
 | **P1.2** | O(1) adds/moves; command p95 headroom; less lock time                                                      | G2 with 5k columns; ordering/undo/import/archive tests                                                                |
 | **P1.3** | Stable p95; faster first command after restart; visibility                                                 | Hit rate > 80% on active boards; no memory growth; per-entry skip works                                               |
 | **P1.4** | Agent loops drop from 5+ full-board calls to 1-2 bounded calls                                             | MCP path request count/latency; plan/approval dependency on TASK-166.5 recorded                                       |
@@ -1400,18 +1441,18 @@ Every cell is a separate run with a fresh board or a documented reset. Record
 the exact fixture (`cards`, `columns`, `cards/column`, description length,
 labels/checklists/links, archived %) in the result JSON.
 
-| Dimension     | Values                                                                                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Board size    | 10,000 (reference, but currently fails 60/100 concurrent reads), 15,000, 25,000                                                                                 |
-| Shape         | 5 x 2,000/3,000/5,000; 12 x ~833/1,250/~2,083                                                                                                                   |
-| Content       | Baseline (500-char descriptions, no relations); realistic (10% 64 KB descriptions, labels/checklists/links on 20%, 10% archived); archived-heavy (30% archived) |
-| Readers       | 1, 5, 10 concurrent; sequential and concurrent; cold/warm cache; capture success/failure status per request                                                     |
-| Writers       | 1, 5, 10 concurrent; batch 1, 5, 100; UPDATE/MOVE/ADD mix                                                                                                       |
-| UI            | Board, table, calendar, filter; 1600x900 and 390x844 if feasible                                                                                                |
-| Memory        | Cold API, 10 concurrent opens, cache warm, 20 sequential reads, one long-description board to exercise the per-entry cap                                        |
-| Export/import | 25k inline (expect 413), 25k streaming/async, snapshot share creation, round-trip deep equality                                                                 |
-| Shares        | Live share read, snapshot creation and refresh at 25k; share-token authz                                                                                        |
-| Correctness   | Random command fuzz vs fresh aggregate; replay; undo; resync; cache invalidation; IDOR; snapshot merge; DnD page boundary                                       |
+| Dimension     | Values                                                                                                                                                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Board size    | 10,000 (reference, but currently fails 60/100 concurrent reads), 15,000, 25,000                                                                                      |
+| Shape         | 5 x 2,000/3,000/5,000; 12 x ~833/1,250/~2,083                                                                                                                        |
+| Content       | Baseline (500-char descriptions, no relations); realistic (10% 64 KB descriptions, labels/checklists/links on 20%, 10% archived); archived-heavy (30% archived)      |
+| Readers       | 1, 5, 10 concurrent; sequential and concurrent; cold/warm cache; capture success/failure status per request                                                          |
+| Writers       | 1, 5, 10 concurrent; batch 1, 5, 100; UPDATE/MOVE/ADD mix                                                                                                            |
+| UI            | Board, table, calendar, filter; 1600x900 and 390x844 if feasible                                                                                                     |
+| Memory        | Cold API, 10 concurrent opens, cache warm, 20 sequential reads, one long-description board to exercise the per-entry cap                                             |
+| Export/import | 25k inline (expect 413), 25k streaming/async, snapshot share creation, round-trip deep equality                                                                      |
+| Shares        | Live share read, snapshot creation and refresh at 25k; share-token authz                                                                                             |
+| Correctness   | Random command fuzz vs fresh aggregate; replay; undo; resync; cache invalidation; IDOR; snapshot merge (command + comment); DnD page boundary; filter outside window |
 
 ### 6.3 Metrics to capture
 
@@ -1461,14 +1502,14 @@ labels/checklists/links, archived %) in the result JSON.
 
 ### 6.4 Pass/fail gates
 
-| Gate               | Scenario                                                                                                                                                                                 | Pass                                                                                                                     |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **G1 read**        | 25k initial board, both shapes, 10 concurrent opens                                                                                                                                      | p95 < 300 ms; < 2 MB wire; success rate >= 99%; 10 opens < 1.5 GiB RSS; no 5xx                                           |
-| **G2 write**       | 25k, 5 x 5,000 and 12 x ~2,083, UPDATE/MOVE/ADD, 1/5/10 writers                                                                                                                          | single p50 < 150 ms, p95 < 500 ms; per-action budgets met; 10 writers >= 10 cmd/s, p95 < 1 s; no 5xx; conflict rate < 1% |
-| **G3 UI**          | 25k board/table/calendar/filter                                                                                                                                                          | board < 1.5 s; table < 1 s; filter < 100 ms; no long task > 200 ms; heap < 200 MiB; DOM < 3,000                          |
-| **G4 correctness** | fuzz, replay, undo, plan/approval when TASK-166.5 lands, export/import, cache invalidation, restart, IDOR, ETag cursor/query collisions, board-id SSE, snapshot merge, DnD page boundary | zero divergence; all invariants pass; no cross-board read; every SSE frame has board id                                  |
-| **G5 ops**         | export/import 25k, snapshot/live share, backup/restore, memory limits, archived-heavy board                                                                                              | inline 413 is clear; streaming path completes; share/snapshot path bounded; archived bytes counted; no OOM at 2 GiB      |
-| **G6 regression**  | 10k reference, same fixture and host, clean status capture                                                                                                                               | success rate >= 99%; no p95 regression > 10%; bytes not worse; no new long tasks                                         |
+| Gate               | Scenario                                                                                                                                                                                                        | Pass                                                                                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **G1 read**        | 25k initial board, both shapes, 10 concurrent opens                                                                                                                                                             | p95 < 300 ms; < 2 MB wire; success rate >= 99%; 10 opens < 1.5 GiB RSS; no 5xx                                                                                           |
+| **G2 write**       | 25k, 5 x 5,000 and 12 x ~2,083, UPDATE/MOVE/ADD, 1/5/10 writers                                                                                                                                                 | per-action budgets in 5.6 met (worst p50 < 200 ms, worst p95 < 500 ms); 10 writers >= 10 cmd/s, p95 < 1 s; no 5xx; conflict rate < 1%                                    |
+| **G3 UI**          | 25k board/table/calendar/filter; ~600 loaded summaries, filter matches outside the window                                                                                                                       | board < 1.5 s; table < 1 s; local filter < 100 ms / server p95 < 250 ms; server returns outside-window matches/count; no long task > 200 ms; heap < 200 MiB; DOM < 3,000 |
+| **G4 correctness** | fuzz, replay, undo, plan/approval when TASK-166.5 lands, export/import, cache invalidation, restart, IDOR, ETag cursor/query collisions, board-id SSE, snapshot merge with command + comment, DnD page boundary | zero divergence; all invariants pass; no cross-board read; every SSE frame has board id                                                                                  |
+| **G5 ops**         | export/import 25k, snapshot/live share, backup/restore, memory limits, archived-heavy board                                                                                                                     | inline 413 is clear; streaming path completes; share/snapshot path bounded; archived bytes counted; no OOM at 2 GiB                                                      |
+| **G6 regression**  | 10k reference, same fixture and host, clean status capture                                                                                                                                                      | success rate >= 99%; no p95 regression > 10%; bytes not worse; no new long tasks                                                                                         |
 
 Run G1-G4 on both shapes. A pass on 12 x ~2,083 does not excuse a failure on
 5 x 5,000; the stress shape is the one that breaks position writes and command
@@ -1494,9 +1535,10 @@ the existing 60/100 failure run cannot be a baseline.
    artificial `ifMatch` conflicts; run a second variant with `ifMatch` to
    measure retry amplification.
 6. **UI:** add 15k/25k to `perf-ui.mjs` and `perf-table.mjs`; add a filter
-   scenario (type a query, measure keystroke-to-result), a calendar range
-   switch, DnD at a page boundary, and undo after eviction. Capture
-   `PerformanceObserver` long tasks.
+   scenario (type a query, measure keystroke-to-result, and assert a match
+   outside the loaded window is returned), a calendar range switch, DnD at a
+   page boundary, and undo after eviction. Capture `PerformanceObserver` long
+   tasks.
 7. **Memory:** run cold, warm-cache, 10 opens, 20 sequential reads, and a
    long-description board that exceeds the per-entry cap; report API RSS and
    `heapUsed` separately (V8 may not return RSS).
@@ -1504,7 +1546,7 @@ the existing 60/100 failure run cannot be a baseline.
    the API, then compares the client/aggregate with a fresh `GET`; include
    cache invalidation by writing through a second API process (command and
    non-command), IDOR probes, ETag cursor collisions, snapshot merge during
-   initial load, and share-token access.
+   initial load with a command and a comment, and share-token access.
 
 ### 6.6 Rollout and rollback
 
@@ -1540,7 +1582,7 @@ the existing 60/100 failure run cannot be a baseline.
 | DnD sends a page-local index across a page boundary     |    High    |  High  | Send `beforeCardId`/`afterCardId` or server absolute ordinal; never page-local `toIndex`; page-boundary test.                                       |
 | Summary-only undo cannot invert delete/archive/move     |    High    |  High  | Fetch full context before destructive commands or add server inverse/pre-image; test undo after eviction.                                           |
 | ETag collision across cursor/query/role                 |   Medium   |  High  | Canonical ETag key with route+query+role+revision+projection; two-cursor/two-role tests.                                                            |
-| Snapshot merge loses a concurrent move                  |   Medium   |  High  | `atSeq`/`aggregateRevision` merge, SSE buffering, page refetch; test command during initial load.                                                   |
+| Snapshot merge loses a concurrent move                  |   Medium   |  High  | `atSeq`/`aggregateRevision` merge, SSE buffering, page refetch; test command **and comment** during initial load.                                   |
 | IDOR via card/column/cursor/share token                 |   Medium   |  High  | Authorization matrix, board-scoped cursors, 404 foreign cards, IDOR tests.                                                                          |
 | Archived cards omitted from page/quota                  |   Medium   | Medium | `includeArchived`/archived endpoint; count archived bytes; archived-heavy benchmark.                                                                |
 | Live share/snapshot still loads 17.7 MB                 |   Medium   |  High  | Share summary/pages or cap live shares; async size-checked snapshot creation; share gates.                                                          |
@@ -1642,33 +1684,33 @@ strength of P0.2 or P0.3 alone.
 
 ## Appendix A: code map
 
-| Concern                          | File / lines                                                                  |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| Board aggregate load             | `backend/src/boards/board-aggregate.ts:55-103`                                |
-| Per-column filtering in JS       | `backend/src/boards/board-aggregate.ts:165-172`                               |
-| Full aggregate read + seq        | `backend/src/boards/boards.service.ts:249-276`                                |
-| Board controller / `X-Board-Seq` | `backend/src/boards/boards.controller.ts:92-103`                              |
-| Command batch + aggregate load   | `backend/src/commands/commands.service.ts:264-452`, load at `:372`            |
-| Reducer + full-board diff        | `backend/src/commands/commands.service.ts:578-584`, `:1365-1372`              |
-| Command writes / touches         | `backend/src/commands/commands.service.ts:599-643`                            |
-| Position rewrites                | `backend/src/commands/command-writers.ts:185-205`, `:782`, `:1431-1455`       |
-| Per-board serialization          | `backend/src/common/board-write.service.ts:115-179`                           |
-| Cache key / aggregate revision   | `backend/prisma/schema.prisma` (`Board`), `commands.service.ts`               |
-| Limits / import-export caps      | `shared/src/types/kanban.ts:306-404`                                          |
-| Export serializer                | `shared/src/utils/board-serialization.ts:39-50`                               |
-| Export/import service            | `backend/src/boards/boards.service.ts:708-815`                                |
-| Search (ILIKE)                   | `backend/src/boards/boards.service.ts:192-225`                                |
-| Client store/hydration           | `ui/src/store/BoardContext.tsx:936-1064`                                      |
-| Realtime/SSE bridge              | `ui/src/store/realtime.ts`                                                    |
-| Virtualized card window          | `ui/src/hooks/use-card-window.ts`                                             |
-| Column rendering                 | `ui/src/components/board/ColumnView.tsx:199-205`                              |
-| Table projections                | `ui/src/components/board/TableView.tsx:306-349`                               |
-| Calendar projections             | `ui/src/components/board/CalendarView.tsx:347-390`                            |
-| Board filter                     | `ui/src/components/BoardSection.tsx:97-108`, `ui/src/utils/filter.ts:295-412` |
-| MCP get board                    | `mcp/src/tools/boards.ts:77-141`                                              |
-| MCP get card                     | `mcp/src/tools/cards.ts:257-285`                                              |
-| MCP read-before-write            | `mcp/src/client.ts:342-390`                                                   |
-| Command docs                     | `site/src/content/docs/docs/api/commands.md`                                  |
+| Concern                          | File / lines                                                                             |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| Board aggregate load             | `backend/src/boards/board-aggregate.ts:55-103`                                           |
+| Per-column filtering in JS       | `backend/src/boards/board-aggregate.ts:165-172`                                          |
+| Full aggregate read + seq        | `backend/src/boards/boards.service.ts:249-276`                                           |
+| Board controller / `X-Board-Seq` | `backend/src/boards/boards.controller.ts:92-103`                                         |
+| Command batch + aggregate load   | `backend/src/commands/commands.service.ts:264-452`, load at `:372`                       |
+| Reducer + full-board diff        | `backend/src/commands/commands.service.ts:578-584`, `:1365-1372`                         |
+| Command writes / touches         | `backend/src/commands/commands.service.ts:599-643`                                       |
+| Position rewrites                | `backend/src/commands/command-writers.ts:185-205`, `:782`, `:1431-1455`                  |
+| Per-board serialization          | `backend/src/common/board-write.service.ts:115-179`                                      |
+| Cache key / aggregate revision   | Target: `Board.aggregateRevision` in `backend/prisma/schema.prisma`; not present at base |
+| Limits / import-export caps      | `shared/src/types/kanban.ts:306-404`                                                     |
+| Export serializer                | `shared/src/utils/board-serialization.ts:39-50`                                          |
+| Export/import service            | `backend/src/boards/boards.service.ts:708-815`                                           |
+| Search (ILIKE)                   | `backend/src/boards/boards.service.ts:192-225`                                           |
+| Client store/hydration           | `ui/src/store/BoardContext.tsx:936-1064`                                                 |
+| Realtime/SSE bridge              | `ui/src/store/realtime.ts`                                                               |
+| Virtualized card window          | `ui/src/hooks/use-card-window.ts`                                                        |
+| Column rendering                 | `ui/src/components/board/ColumnView.tsx:199-205`                                         |
+| Table projections                | `ui/src/components/board/TableView.tsx:306-349`                                          |
+| Calendar projections             | `ui/src/components/board/CalendarView.tsx:347-390`                                       |
+| Board filter                     | `ui/src/components/BoardSection.tsx:97-108`, `ui/src/utils/filter.ts:295-412`            |
+| MCP get board                    | `mcp/src/tools/boards.ts:77-141`                                                         |
+| MCP get card                     | `mcp/src/tools/cards.ts:257-285`                                                         |
+| MCP read-before-write            | `mcp/src/client.ts:342-390`                                                              |
+| Command docs                     | `site/src/content/docs/docs/api/commands.md`                                             |
 
 ## Appendix B: measurement sources
 
