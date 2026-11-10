@@ -56,10 +56,12 @@ test("the create dialog uses themed controls in light and dark", async ({
   await expect(
     dialog.getByRole("checkbox", { name: "Read-only (writes refused)" }),
   ).toBeVisible();
-  await expect(dialog.getByTestId("token-board")).toHaveCSS(
-    "appearance",
-    "none",
-  );
+  // The board picker is a themed listbox, not a native <select> whose popup
+  // would be painted white over the dark dialog.
+  await dialog.getByTestId("token-board").click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await expect(page.getByRole("option").first()).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(dialog.getByTestId("token-rate")).toHaveAttribute(
     "type",
     "text",

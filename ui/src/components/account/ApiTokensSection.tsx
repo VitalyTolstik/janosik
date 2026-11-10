@@ -13,6 +13,7 @@ import {
 
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { SelectField } from "@/components/ui/select-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -351,29 +352,24 @@ export function ApiTokensSection() {
                 >
                   {t("account.tokens.boardLabel")}
                 </label>
-                {/* Keep the native <select> semantics (value + change events)
-                    but hide the UA chevron, which rendered black regardless
-                    of the theme, and draw the app's own icon instead. */}
-                <div className="relative">
-                  <select
-                    id="token-board"
-                    data-testid="token-board"
-                    value={boardId}
-                    onChange={(event) => setBoardId(event.target.value)}
-                    className="h-9 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-9 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">{t("account.tokens.boardAll")}</option>
-                    {boards.map((board) => (
-                      <option key={board.id} value={board.id}>
-                        {board.title}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  />
-                </div>
+                {/* The native <select> popup ignores the app theme and shows
+                    a white sheet with light option text on dark dialogs. The
+                    shared SelectField keeps the same trigger footprint but
+                    renders a themed, keyboard-reachable listbox. */}
+                <SelectField
+                  id="token-board"
+                  value={boardId}
+                  ariaLabel={t("account.tokens.boardLabel")}
+                  testId="token-board"
+                  options={[
+                    { value: "", label: t("account.tokens.boardAll") },
+                    ...boards.map((board) => ({
+                      value: board.id,
+                      label: board.title,
+                    })),
+                  ]}
+                  onChange={setBoardId}
+                />
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-medium text-muted-foreground">
