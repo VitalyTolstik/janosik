@@ -23,10 +23,9 @@ budget without converting.
 The companion document `docs/PERF-25K-UX.md` covers perceived performance and
 the shell/offline UX. This document is the source of truth for capacity,
 storage and write-path numbers; the UX document quotes the same core 25k
-figures (17.7 MB, ~640 ms, ~1.7 s, 150-200 MiB, ~3.3 GiB). Two UX numbers are
-pending an update there: it still says 6.75 MB (the measured payload is
-6.75 MiB = 7.08 MB decimal) and 4-6x compression (this document uses
-3.9-5.1x).
+figures (17.7 MB, ~640 ms, ~1.7 s, 150-200 MiB, ~3.3 GiB). UX now matches:
+12 × ~2,083 = 25,000; 6.75 MiB = 7.08 MB decimal; 3.9–5.1x; the 2,100 value
+is only a rounding label.
 
 | Topic               | This document                                   | UX companion                                   | Resolution                                                                                                                                               |
 | ------------------- | ----------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -36,8 +35,8 @@ pending an update there: it still says 6.75 MB (the measured payload is
 | Read-model effort   | 4-6 engineer-weeks                              | M/L, 4-6 weeks                                 | Same estimate.                                                                                                                                           |
 | 10 concurrent opens | < 1.5 GiB RSS                                   | < 1.5 GiB                                      | Same gate, stated in GiB here.                                                                                                                           |
 | Offline stance      | 25k is server-only                              | P1 read-only IndexedDB cache of a server board | The IndexedDB cache is a read cache, not local/offline mode; queued writes remain P2.                                                                    |
-| Board shape         | 12 x ~2,083 = 25,000 (gate)                     | 12 x ~2,100 (pending update)                   | Canonical gate is 25,000 total; treat the UX label as a rounding until its update lands.                                                                 |
-| Compression/payload | 6.75 MiB = 7.08 MB; 3.9-5.1x                    | 6.75 MB; 4-6x (pending update)                 | This document is canonical; the UX doc will be updated to the same units/ratio.                                                                          |
+| Board shape         | 12 x ~2,083 = 25,000 (gate)                     | 12 x ~2,083 = 25,000                           | UX now matches; the 2,100 value is only a rounding label.                                                                                                |
+| Compression/payload | 6.75 MiB = 7.08 MB; 3.9–5.1x                    | 6.75 MiB = 7.08 MB; 3.9–5.1x                   | UX now matches.                                                                                                                                          |
 
 The UX companion has corrected its earlier claim that the aggregate carries
 activity feeds; this document's architecture is consistent with the corrected
@@ -74,8 +73,8 @@ only promises < 1.5 GiB once P0.2/P0b lands, so the two gates do not conflict.
   the expected product shape, with 5 columns x 5,000 as the **mandatory stress
   shape**. The plan optimizes the per-column bound for 5,000 cards, because a
   single fat column is the worst case for position rewrites and command
-  latency; 12 x ~2,083 then follows. The UX companion currently rounds this to
-  12 x ~2,100 pending its update; the gate total remains 25,000.
+  latency; 12 x ~2,083 then follows. The UX companion uses 12 x ~2,083 =
+  25,000; the 2,100 value is only a rounding label.
 - **Recommended plan:** ship low-risk transport/CPU fixes first (compression,
   ETag, removing the double full-board `stableStringify`), then the read model
   v1 (summary + per-column cursor windows + card detail), then the write-path
