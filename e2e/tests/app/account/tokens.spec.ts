@@ -61,7 +61,9 @@ test("the create dialog uses themed controls in light and dark", async ({
   await dialog.getByTestId("token-board").click();
   await expect(page.getByRole("listbox")).toBeVisible();
   await expect(page.getByRole("option").first()).toBeVisible();
-  await page.keyboard.press("Escape");
+  // Toggle the popover closed; Escape would close the whole token dialog.
+  await dialog.getByTestId("token-board").click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
   await expect(dialog.getByTestId("token-rate")).toHaveAttribute(
     "type",
     "text",
