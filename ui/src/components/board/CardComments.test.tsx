@@ -208,6 +208,30 @@ describe("CardComments", () => {
     });
   });
 
+  it("labels an agent comment with its token and session (TASK-166.13)", async () => {
+    const server = new FakeServer();
+    server.commentsByCard.set("card-1", [
+      comment({
+        actorType: "agent",
+        apiTokenId: "token-qa-123456",
+        agentSessionId: "session-abcdef",
+        agentName: "QA agent",
+      }),
+    ]);
+    renderComments(server);
+
+    const row = await screen.findByTestId("comment");
+    expect(within(row).getByTestId("comment-agent-badge")).toHaveTextContent(
+      "AI",
+    );
+    expect(within(row).getByTestId("agent-attribution")).toHaveTextContent(
+      "QA agent",
+    );
+    expect(
+      within(row).getByTestId("agent-attribution-token"),
+    ).toHaveTextContent("token-qa");
+  });
+
   it("renders a kind badge for a typed comment", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [

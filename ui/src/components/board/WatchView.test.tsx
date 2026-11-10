@@ -455,6 +455,57 @@ describe("WatchView (TASK-142)", () => {
     );
   });
 
+  it("keeps two tokens of one account apart and shows their attribution", async () => {
+    hoisted.enabled.value = true;
+    const now = Date.now();
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "command",
+          id: "a-1",
+          seq: 12,
+          at: now,
+          type: "MOVE_CARD",
+          actorId: "u-2",
+          actorType: "agent",
+          apiTokenId: "token-qa",
+          agentSessionId: "session-qa-1",
+          runId: "run-qa-1",
+          agentName: "QA agent",
+          cardId: "card-1",
+        },
+        {
+          source: "command",
+          id: "a-2",
+          seq: 11,
+          at: now - 1000,
+          type: "CREATE_CARD",
+          actorId: "u-2",
+          actorType: "agent",
+          apiTokenId: "token-docs",
+          agentSessionId: "session-docs-1",
+          agentName: "Docs agent",
+          cardId: "card-2",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    renderWatch();
+
+    const agents = await screen.findByTestId("watch-agents-list");
+    expect(agents).toHaveTextContent("QA agent");
+    expect(agents).toHaveTextContent("Docs agent");
+    expect(screen.getByTestId("watch-agents")).toHaveTextContent("2");
+
+    const qaEntry = screen
+      .getAllByTestId("watch-entry")
+      .find((entry) => entry.textContent?.includes("QA agent"));
+    expect(qaEntry).toBeDefined();
+    expect(qaEntry).toHaveTextContent("token-qa");
+    expect(qaEntry).toHaveTextContent("session-");
+  });
+
   it("lists recently-active agents apart from the humans online", async () => {
     hoisted.enabled.value = true;
     const now = Date.now();

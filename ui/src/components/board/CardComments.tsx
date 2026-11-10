@@ -33,6 +33,7 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
+import { AgentAttribution } from "@/components/agents/AgentAttribution";
 import { userLabel } from "@/utils/avatar";
 import { createId } from "@/utils/id";
 
@@ -574,6 +575,15 @@ function CommentRow({
           >
             {name}
           </button>
+          {comment.actorType === "agent" ? (
+            <span
+              data-testid="comment-agent-badge"
+              className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              title={t("activity.agent")}
+            >
+              {t("activity.agent")}
+            </span>
+          ) : null}
           <time
             className="shrink-0 text-[11px] text-muted-foreground/70"
             dateTime={new Date(comment.createdAt).toISOString()}
@@ -602,6 +612,15 @@ function CommentRow({
             </button>
           ) : null}
         </div>
+        {comment.actorType === "agent" &&
+        (comment.apiTokenId || comment.agentSessionId) ? (
+          <AgentAttribution
+            apiTokenId={comment.apiTokenId}
+            agentSessionId={comment.agentSessionId}
+            agentName={comment.agentName}
+            className="mt-0.5"
+          />
+        ) : null}
         <div className="mt-0.5 text-foreground/90">
           <Suspense
             fallback={

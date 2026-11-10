@@ -1,8 +1,10 @@
 import type {
   ActivityFeedPage,
+  AgentSessionDto,
   AnnouncementDto,
   AttachmentDto,
   AuthConfigResponse,
+  AuthMeResponseDto,
   AuthOAuthProvidersResponse,
   AuthResponseDto,
   AuthUserDto,
@@ -23,6 +25,7 @@ import type {
   CreateUserTokenResponse,
   DeleteAccountRequest,
   DeleteAccountResponse,
+  EndAgentSessionRequest,
   InviteMemberRequest,
   RequestAccountDeletionCodeRequest,
   RequestAccountDeletionCodeResponse,
@@ -323,9 +326,13 @@ export class ApiClient {
     }
   }
 
-  /** `GET /auth/me` — verifies the in-memory access token. */
-  me(): Promise<AuthUserDto> {
-    return this.request<AuthUserDto>("/auth/me");
+  /**
+   * `GET /auth/me` — verifies the in-memory access token. The response also
+   * carries the TASK-166 token identity when the caller authenticated with a
+   * personal API token, and `token: null` for a browser session.
+   */
+  me(): Promise<AuthMeResponseDto> {
+    return this.request<AuthMeResponseDto>("/auth/me");
   }
 
   /** `GET /announcements/active` — banners the signed-in user should see. */
@@ -904,6 +911,66 @@ export class ApiClient {
   ): Promise<ActivityFeedPage> {
     return this.request<ActivityFeedPage>(
       `/boards/${encodeURIComponent(boardId)}/activity${pageQuery(cursor, limit)}`,
+    );
+  }
+
+  /** `GET /boards/:id/agent-sessions` — any board member (TASK-166.1). */
+  listAgentSessions(
+    boardId: string,
+    active = false,
+  ): Promise<AgentSessionDto[]> {
+    const query = active ? "?active=1" : "";
+    return this.request<AgentSessionDto[]>(
+      `/boards/${encodeURIComponent(boardId)}/agent-sessions${query}`,
+    );
+  }
+
+  /** `GET /boards/:id/agent-sessions/:sessionId` — any board member. */
+  getAgentSession(
+    boardId: string,
+    sessionId: string,
+  ): Promise<AgentSessionDto> {
+    return this.request<AgentSessionDto>(
+      `/boards/${encodeURIComponent(boardId)}/agent-sessions/${encodeURIComponent(sessionId)}`,
+    );
+  }
+
+  /** `POST .../:sessionId/pause` — session-only board ADMIN (TASK-166.3). */
+  pauseAgentSession(
+    boardId: string,
+    sessionId: string,
+    reason?: string,
+  ): Promise<AgentSessionDto> {
+    return this.request<AgentSessionDto>(
+      `/boards/${encodeURIComponent(boardId)}/agent-sessions/${encodeURIComponent(sessionId)}/pause`,
+      { method: "POST", body: { reason } },
+    );
+  }
+
+  /** `POST .../:sessionId/resume` — session-only board ADMIN (TASK-166.3). */
+  resumeAgentSession(
+    boardId: string,
+    sessionId: string,
+    reason?: string,
+  ): Promise<AgentSessionDto> {
+    return this.request<AgentSessionDto>(
+      `/boards/${encodeURIComponent(boardId)}/agent-sessions/${encodeURIComponent(sessionId)}/resume`,
+      { method: "POST", body: { reason } },
+    );
+  }
+
+  /**
+   * `POST .../:sessionId/end` — the session's own token or a board ADMIN.
+   * Ending releases the claims the session holds.
+   */
+  endAgentSession(
+    boardId: string,
+    sessionId: string,
+    body: EndAgentSessionRequest = {},
+  ): Promise<AgentSessionDto> {
+    return this.request<AgentSessionDto>(
+      `/boards/${encodeURIComponent(boardId)}/agent-sessions/${encodeURIComponent(sessionId)}/end`,
+      { method: "POST", body },
     );
   }
 

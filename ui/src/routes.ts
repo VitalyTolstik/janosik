@@ -16,6 +16,11 @@ export const routes = {
    * accepts an `#impersonate=` token; it then lands on the home redirect.
    */
   impersonate: "/impersonate",
+  /** Agents console (TASK-166.13) — sessions across the caller's boards. */
+  agents: "/agents",
+  /** Detail of one agent token and its sessions. */
+  agentPattern: "/agents/:tokenId",
+  agent: (tokenId: string) => `/agents/${encodeURIComponent(tokenId)}`,
   /** Master panel (TASK-36) — lazy-loaded, never linked from user UI. */
   admin: "/admin",
   adminPattern: "/admin/*",

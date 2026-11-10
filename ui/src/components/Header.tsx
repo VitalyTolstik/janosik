@@ -1,3 +1,6 @@
+import { Link } from "react-router-dom";
+import { Bot } from "lucide-react";
+
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
@@ -18,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { routes } from "@/routes";
 import { PresenceStack } from "@/components/board/PresenceStack";
 import {
   useBoardAccess,
@@ -49,6 +53,22 @@ export function Header() {
         <NotificationsBell />
         <BoardMembersDialog />
         <ShareDialog />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              asChild
+              aria-label={t("agents.open")}
+              data-testid="agents-trigger"
+            >
+              <Link to={routes.agents}>
+                <Bot className="h-5 w-5" aria-hidden />
+              </Link>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("agents.open")}</TooltipContent>
+        </Tooltip>
         {role === "ADMIN" ? (
           <Tooltip>
             <TooltipTrigger asChild>
