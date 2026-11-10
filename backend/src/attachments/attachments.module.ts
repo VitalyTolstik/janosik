@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 
+import { ApprovalsModule } from "@/approvals/approvals.module";
 import { AuthModule } from "@/auth/auth.module";
 import { CardAccessGuard } from "@/common/card-access.guard";
 import { RealtimeModule } from "@/realtime/realtime.module";
@@ -21,6 +22,7 @@ import { UploadRateGuard } from "./upload-rate.guard";
 @Module({
   imports: [
     AuthModule,
+    ApprovalsModule,
     RealtimeModule,
     ...(queuesEnabled
       ? [

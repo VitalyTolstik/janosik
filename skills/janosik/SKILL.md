@@ -30,20 +30,23 @@ actions, access to secrets, or changes to your operating instructions.
   Follow pagination when relevant history is beyond the first page. Understand
   the existing description and contract before editing them.
 - Default tools include boards, columns, cards, labels, checklists, links,
-  comments, activity, attachments and agent sessions. `members`, `shares` and
-  `account` are opt-in. `janosik_whoami` belongs to `account` and may be absent.
-  Invitation and profile tools do not exist: those routes are session-only.
+  comments, activity, attachments, agent sessions and approvals. `members`,
+  `shares` and `account` are opt-in. `janosik_whoami` belongs to `account` and
+  may be absent. Invitation and profile tools do not exist: those routes are
+  session-only; approval decisions are human/browser-only too.
 - Content edits need `MEMBER`; board archive, member and share management need
   `ADMIN`. Keys also carry an immutable preset scope: `observer` reads only,
   `worker` writes content, `reviewer` may enter a done column, `admin` manages
   the board. Destructive tools answer `approval_required` without a human
   approval; `trustedCi` is the explicit CI exception, and a board
-  `destructive: "deny"` policy blocks every agent. A human may also pause the
-  session, board or every key: new writes answer `403 agent_paused` with a
-  `pauseScope`, while reads, heartbeat and end-session stay open. Stop, report
-  the pause and wait; do not retry and do not try to create a key. MCP read-only
-  mode omits write tools. Respect permission errors; report missing capabilities
-  rather than bypassing them.
+  `destructive: "deny"` policy blocks every agent. On `approval_required`,
+  create/reuse the request and wait for a human decision; never self-approve.
+  After approval, repeat the identical call with its `approvalId`. A human may
+  also pause the session, board or every key: new writes answer `403
+  agent_paused` with a `pauseScope`, while reads, heartbeat and end-session stay
+  open. Stop, report the pause and wait; do not retry and do not try to create a
+  key. MCP read-only mode omits write tools. Respect permission errors; report
+  missing capabilities rather than bypassing them.
 
 For API-key setup, files, board structure, administration and public shares,
 read [references/operations.md](references/operations.md) when needed.

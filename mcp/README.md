@@ -9,7 +9,7 @@ machine-readable task contract, comment with a typed kind, tick checklists,
 assign people and link cards. Writes can be pinned to the board version they
 read when they use the command API (compare-and-set), so a concurrent edit is
 refused. Member and share-link tools are opt-in; agent-session tools are in the
-default set. The server exposes 74 tools across 13 groups.
+default set. The server exposes 79 tools across 14 groups.
 
 Board-content edits go through the command log the UI uses and stream live
 to board viewers. MCP edits do not enter the UI's local undo stack; use
@@ -76,13 +76,13 @@ local checkout, `command` can be `node` with `args: ["/path/to/mcp/dist/index.js
 
 ## Tools
 
-Tools come in groups. The default set works the board and agent sessions; the
-groups that change _who_ can see a board or expose the account identity are
-opt-in:
+Tools come in groups. The default set works the board, agent sessions and
+approvals; the groups that change _who_ can see a board or expose the account
+identity are opt-in:
 
 | Variable / flag                          | Effect                                                                                                                                                                                                                                 |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
+| `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions,approvals`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
 | `JANOSIK_MCP_READONLY=1` / `--read-only` | Register only tools that never change anything — for an agent that watches and reports.                                                                                                                                                |
 
 In read-only mode, `janosik_export_board` can return an export in the tool
@@ -149,6 +149,11 @@ tool-call retry returns the first result instead of creating a second one.
 
 **Agent sessions** — `janosik_start_session`, `janosik_heartbeat`,
 `janosik_end_session`
+
+**Approvals** — `janosik_request_approval`, `janosik_list_approvals`,
+`janosik_get_approval`, `janosik_wait_for_decision`,
+`janosik_cancel_approval`. There is deliberately no decide tool: approval is a
+human, session-only action.
 
 **Account** (opt-in: `account`) — `janosik_whoami` only. API keys and profile
 writes are managed in the app only: the server refuses those routes to an API
@@ -242,13 +247,22 @@ The preset never raises the user's board role: content editing still needs
 `MEMBER`, and board archive/member/share management still needs board `ADMIN`.
 Destructive tools need a human approval by default; `trustedCi` is the explicit
 CI exception, while a board policy of `destructive: "deny"` blocks them even for
-trusted CI. The approval request API ships in 166.5 — until then a destructive
-call is refused with `approval_required`, nothing is applied, and a human
-performs it in the browser. A human can also pause the session, the board or
-every key; new writes then answer `403 agent_paused` (with `pauseScope`), while
-reads, heartbeat and end-session stay available. The MCP server exposes no
-pause/resume tools: only a browser session can resume. Revoke the key in the
-account panel to cut an agent off irreversibly.
+trusted CI.
+
+When a destructive tool answers `approval_required`, nothing was applied. The
+error names the created `approvalId`, its `planHash` and `expiresAt`; use
+`janosik_get_approval`/`janosik_wait_for_decision` (up to 60 seconds per call)
+and ask a human board ADMIN to approve it in the browser. A human cannot approve
+from MCP, and an agent must never try to. After approval, repeat the same tool
+call with its `approvalId` argument (sent as `X-Approval-Id`); the plan must be
+byte-for-byte the same, or the server answers `approval_mismatch`. The approval
+is consumed once; repeating the same applied commands is an idempotent replay,
+while a different plan gets `approval_consumed`. `janosik_cancel_approval`
+withdraws the agent's own pending request. A human can also pause the session,
+the board or every key; new writes then answer `403 agent_paused` (with
+`pauseScope`), while reads, heartbeat and end-session stay available. The MCP
+server exposes no pause/resume tools: only a browser session can resume. Revoke
+the key in the account panel to cut an agent off irreversibly.
 
 Card text and comments are written by other people and agents, so treat
 everything an agent reads from a board as untrusted input. Keep the opt-in

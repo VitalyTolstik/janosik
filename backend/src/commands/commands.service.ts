@@ -4,10 +4,9 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  PayloadTooLargeException,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
+import type { ApprovalRequest, Prisma } from "@prisma/client";
 import type {
   ActorType,
   Board,
@@ -25,8 +24,6 @@ import {
   evaluateTransition,
   hasLinkedPair,
   LIMITS,
-  MAX_COMMAND_BYTES,
-  validateBoardAction,
   workflowReferenceError,
   wouldCloseBlocksCycle,
 } from "@janosik/shared";
@@ -35,12 +32,23 @@ import type {
   WorkflowConflictDetails,
   WorkflowDecision,
 } from "@janosik/shared";
+import { ApprovalsService } from "@/approvals/approvals.service";
+import {
+  approvalPlanHash,
+  classifyPlan,
+  planFromPreparedCommands,
+  type PlanRequirement,
+} from "@/approvals/approval-plan";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import type { AuthPrincipal } from "@/auth/auth-principal";
-import { assertAgentRule, classifyCommandAction } from "@/auth/token-scope";
+import {
+  assertAgentRule,
+  classifyCommandAction,
+  readBoardAgentPolicy,
+} from "@/auth/token-scope";
 import { pauseGateFor } from "@/auth/agent-pause";
 import {
   type RequestAttribution,
@@ -54,8 +62,20 @@ import {
 } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import { commandDetails } from "./command-details";
+import {
+  actionFingerprint,
+  jsonSafe,
+  prepareCommandDto,
+  type PreparedCommand,
+} from "./command-validation";
 import { referencedEntityIds } from "./referenced-entity-ids";
 import type { CreateCommandDto } from "./dto/create-command.dto";
+
+export {
+  COMMAND_AT_MAX_SKEW_MS,
+  MAX_COMMAND_BYTES_INTERNAL,
+  actionFingerprint,
+} from "./command-validation";
 
 /**
  * Command-log transport (§7.4, TASK-26).
@@ -76,79 +96,6 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
  * and are still recorded (a replay returns the stored no-op result): the
  * API mirrors the reducer instead of second-guessing it (§7.4.1).
  */
-/**
- * Every action type the command endpoint understands: the reducer's
- * board-scoped surface plus the two board-management commands. The four
- * aggregate-level actions (`RESTORE_BOARD`, `IMPORT_BOARDS`, `ADD_BOARD`,
- * `REMOVE_BOARD`) are board create/import/delete and are rejected here.
- */
-type CommandActionType = Exclude<
-  BoardAction["type"],
-  "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD"
->;
-
-/**
- * TASK-96: the registry is a `Record` keyed by every command type, so a new
- * `BoardAction` is a *compile* error here until it is classified — the
- * endpoint can no longer silently reject it. The `Set` is derived from the
- * registry so the two can never drift.
- */
-const SUPPORTED_ACTION_REGISTRY: Record<CommandActionType, true> = {
-  RENAME_BOARD: true,
-  SET_BOARD_COLUMN_STYLE: true,
-  SET_BOARD_WORKFLOW: true,
-  ARCHIVE_BOARD: true,
-  UNARCHIVE_BOARD: true,
-  ADD_COLUMN: true,
-  RENAME_COLUMN: true,
-  DELETE_COLUMN: true,
-  DUPLICATE_COLUMN: true,
-  MOVE_COLUMN: true,
-  SORT_COLUMN: true,
-  SET_COLUMN_WIP_LIMIT: true,
-  SET_COLUMN_ACCENT: true,
-  SET_COLUMN_CARD_ORDER: true,
-  ADD_CARD: true,
-  UPDATE_CARD: true,
-  TOUCH_CARD: true,
-  DELETE_CARD: true,
-  ARCHIVE_CARD: true,
-  UNARCHIVE_CARD: true,
-  ARCHIVE_COLUMN_CARDS: true,
-  SET_CARD_DUE_DATE: true,
-  SET_CARD_PRIORITY: true,
-  SET_CARD_ASSIGN: true,
-  CLAIM_CARD: true,
-  SET_CARD_TASK_SPEC: true,
-  ADD_CARD_LINK: true,
-  REMOVE_CARD_LINK: true,
-  SET_CARD_COVER: true,
-  MOVE_CARD: true,
-  DUPLICATE_CARD: true,
-  SET_CARD_LABEL: true,
-  ADD_LABEL: true,
-  RENAME_LABEL: true,
-  SET_LABEL_COLOR: true,
-  DELETE_LABEL: true,
-  ADD_CHECKLIST: true,
-  RENAME_CHECKLIST: true,
-  DELETE_CHECKLIST: true,
-  ADD_CHECKLIST_ITEM: true,
-  SET_CHECKLIST_ITEM_DONE: true,
-  RENAME_CHECKLIST_ITEM: true,
-  DELETE_CHECKLIST_ITEM: true,
-  RESTORE_CARD: true,
-  RESTORE_COLUMN: true,
-  RESTORE_COLUMN_CARDS: true,
-  RESTORE_LABEL: true,
-  RESTORE_CHECKLIST: true,
-  RESTORE_CHECKLIST_ITEM: true,
-};
-
-const SUPPORTED_ACTIONS = new Set<string>(
-  Object.keys(SUPPORTED_ACTION_REGISTRY),
-);
-
 /**
  * TASK-80: the only actions allowed to skip the collection/WIP guards. They
  * re-add data that already existed (undo of a delete), so refusing them would
@@ -173,31 +120,6 @@ const RESTORE_ACTIONS = new Set<string>([
 export const COMMAND_DELTA_MAX = 5_000;
 
 /**
- * TASK-156 (item 17): the ceiling the internal `allowOversize` bypass may
- * reach — the companion of the shared `MAX_COMMAND_BYTES` (2 MiB) client cap.
- * Internal admin restores pack a whole column's snapshot into one
- * `RESTORE_COLUMN`. The old ~6 MB estimate described the 200-card cap; a
- * 1000-card column of large cards can exceed this 8 MiB ceiling and 413.
- * The bypass still may not be unlimited: everything above this lands in
- * `Command.action` JSONB and in one SSE frame per subscriber, so it stays
- * finite (8 MiB, 4× the client cap) and everything larger is a 413.
- */
-export const MAX_COMMAND_BYTES_INTERNAL = 8 * 1024 * 1024;
-
-/**
- * B-5: how far a client's `action.at` may drift from the server clock and
- * still be trusted. The reducer turns `at` into `createdAt`/`updatedAt`/
- * `deletedAt`/`archivedAt`; an unbounded value let a client backdate a
- * delete to 1970 (→ the next purge erased it past the restore window) or
- * send `1e300` (→ Invalid Date → 500). Anything outside the window is
- * replaced by the server's own clock before the reducer runs.
- */
-export const COMMAND_AT_MAX_SKEW_MS = 5 * 60 * 1000;
-
-/** ECMAScript's Date range: ±8.64e15 ms around the epoch. */
-const MAX_DATE_MS = 8.64e15;
-
-/**
  * One page of the command delta (B-3). `resync` means the gap since the
  * caller's baseline can *not* be replayed faithfully — the delta hit its cap,
  * or the baseline command was trimmed from the log — so the caller must
@@ -208,23 +130,13 @@ export interface CommandDelta {
   resync: boolean;
 }
 
-/**
- * A command validated and normalized outside the board lock (TASK-160): the
- * wire DTO, the action the reducer and the writers receive (with a clamped
- * `at`), and the canonical identity for the idempotency check (no `at`).
- */
-interface PreparedCommand {
-  dto: CreateCommandDto;
-  action: BoardAction;
-  fingerprint: string;
-}
-
 @Injectable()
 export class CommandsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /**
@@ -244,6 +156,8 @@ export class CommandsService {
       attribution?: RequestAttribution;
       /** TASK-166 scope/destructive gate; only the REST transport passes it. */
       principal?: AuthPrincipal;
+      /** TASK-166.5 `X-Approval-Id` for the exact plan being applied. */
+      approvalId?: string;
     } = {},
   ): Promise<CommandResponse> {
     const [response] = await this.applyBatch(boardId, actorId, [dto], options);
@@ -275,6 +189,8 @@ export class CommandsService {
       attribution?: RequestAttribution;
       /** TASK-166 scope/destructive gate; only the REST transport passes it. */
       principal?: AuthPrincipal;
+      /** TASK-166.5 `X-Approval-Id` for the exact plan being applied. */
+      approvalId?: string;
     } = {},
   ): Promise<CommandResponse[]> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
@@ -309,6 +225,48 @@ export class CommandsService {
       return entry;
     });
 
+    // TASK-166.5: classify the whole plan before the board lock. If policy
+    // requires approval and the caller sent no `X-Approval-Id`, create the
+    // exact request and refuse; the transaction below is then never started,
+    // so there is no partial apply. A granted approval is re-checked inside
+    // the transaction, where it is consumed atomically with the commands.
+    const approvalId =
+      options.principal?.via === "pat" ? options.approvalId : undefined;
+    const plan = planFromPreparedCommands(boardId, prepared);
+    let requirement: PlanRequirement | null = null;
+    if (options.principal?.via === "pat") {
+      const boardRow = await this.prisma.board.findFirst({
+        where: { id: boardId, deletedAt: null },
+        select: { agentPolicy: true },
+      });
+      if (boardRow === null) throw new NotFoundException("Board not found");
+      const aggregate = await loadBoardAggregate(this.prisma, boardId);
+      if (aggregate === null) throw new NotFoundException("Board not found");
+      const policy = readBoardAgentPolicy(boardRow.agentPolicy);
+      requirement = classifyPlan(
+        plan,
+        aggregate,
+        policy,
+        options.principal.tokenIdentity?.trustedCi === true,
+      );
+      // Enforce the run limits even when an approval is supplied: an approval
+      // authorizes the action, not an oversized plan.
+      this.approvals.assertPlanLimits(plan, policy);
+      if (approvalId === undefined) {
+        await this.approvals.ensureCommandApproval({
+          boardId,
+          userId: actorId,
+          role: actorRole,
+          principal: options.principal,
+          agentSessionId: attribution.agentSessionId,
+          plan,
+          requirement,
+          policy,
+          prepared,
+        });
+      }
+    }
+
     const applied = await this.boardWrite.run(
       boardId,
       async (
@@ -316,6 +274,7 @@ export class CommandsService {
       ): Promise<{
         responses: CommandResponse[];
         events: InternalCommandEvent[];
+        consumedApproval: ApprovalRequest | null;
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` checks below see each
@@ -326,6 +285,40 @@ export class CommandsService {
         });
         if (!board) {
           throw new NotFoundException("Board not found");
+        }
+
+        let approval: ApprovalRequest | null = null;
+        let approvalReplay = false;
+        if (approvalId !== undefined && requirement !== null) {
+          const authorized = await this.approvals.authorizeCommandApply(tx, {
+            boardId,
+            approvalId,
+            plan,
+            planHash: approvalPlanHash(plan),
+            requirement,
+            principal: options.principal,
+            agentSessionId: attribution.agentSessionId,
+          });
+          approval = authorized.row;
+          approvalReplay = authorized.replay;
+        }
+        let applyAttribution = attribution;
+        if (approval !== null && !approvalReplay) {
+          const run = await tx.agentRun.create({
+            data: {
+              boardId,
+              apiTokenId: options.principal?.apiTokenId ?? null,
+              agentSessionId: attribution.agentSessionId,
+              actorId,
+              kind: prepared.length > 1 ? "batch" : "single",
+              planHash: approvalPlanHash(plan),
+              approvalId: approval.id,
+              commandCount: prepared.length,
+            },
+          });
+          // Every command of the run carries the id, so the feed and the run
+          // detail agree without a second lookup.
+          applyAttribution = { ...attribution, runId: run.id };
         }
 
         // Resolve every `commandId` up front: a retried batch returns the
@@ -400,13 +393,14 @@ export class CommandsService {
             options.principal,
             board.agentPolicy,
             classifyCommandAction(entry.action, running),
+            { approvalApplied: approval !== null },
           );
           const outcome = await this.applyPrepared(tx, {
             boardId,
             actorId,
             actorType,
             actorRole,
-            attribution,
+            attribution: applyAttribution,
             entry,
             board: running,
           });
@@ -427,14 +421,37 @@ export class CommandsService {
             commandId: entry.dto.commandId,
             touches: outcome.touches,
             prevSeq: outcome.prevSeq,
-            ...attributionFields(attribution),
+            ...attributionFields(applyAttribution),
           });
         }
-        return { responses, events };
+
+        const runId = applyAttribution.runId;
+        if (approval !== null && !approvalReplay && runId !== null) {
+          const seqs = responses.map((response) => response.seq);
+          await tx.agentRun.update({
+            where: { id: runId },
+            data: {
+              firstSeq: BigInt(Math.min(...seqs)),
+              lastSeq: BigInt(Math.max(...seqs)),
+            },
+          });
+          const consumed = await this.approvals.consumeCommandApproval(
+            tx,
+            approval,
+            runId,
+            actorId,
+            options.principal,
+          );
+          return { responses, events, consumedApproval: consumed };
+        }
+        return { responses, events, consumedApproval: null };
       },
       pauseGateFor(options.principal, attribution.agentSessionId),
     );
 
+    if (applied.consumedApproval !== null) {
+      this.approvals.publishState(applied.consumedApproval);
+    }
     // Publish after the batch committed, in order. A failed batch throws
     // before this, so nothing half-applied is ever announced.
     for (const event of applied.events) {
@@ -469,56 +486,22 @@ export class CommandsService {
   private prepareCommand(
     boardId: string,
     dto: CreateCommandDto,
-    options: { allowOversize?: boolean },
+    options: { allowOversize?: boolean; approvalId?: string },
   ): PreparedCommand {
-    // The route is authoritative: overwrite any client-supplied `boardId`
-    // before the size check, validation, fingerprint and storage, so the
-    // command log, delta replay and SSE frame all name the board the command
-    // actually ran on (the UI realtime bridge routes by `action.boardId`).
-    const routed = { ...dto.action, boardId };
-    // An oversized action is refused before anything else runs (TASK-30.2):
-    // the writers would happily persist megabytes of snapshot/activity ids.
-    // Internal admin restores may exceed the client cap (RESTORE_COLUMN
-    // carries a whole column's snapshot, TASK-156) but not the internal one
-    // — the caller is trusted, the JSONB row and the SSE frame are not.
-    const bytes = Buffer.byteLength(JSON.stringify(routed), "utf8");
-    const cap =
-      options.allowOversize === true
-        ? MAX_COMMAND_BYTES_INTERNAL
-        : MAX_COMMAND_BYTES;
-    if (bytes > cap) {
-      throw new PayloadTooLargeException({
-        message: `Command is too large (${bytes} bytes, max ${cap})`,
-        field: "action",
-        code: "payload_too_large",
-        limit: cap,
-        retryable: false,
-      });
-    }
-    const validation = validateBoardAction(routed);
-    if (!validation.ok) {
-      throw new BadRequestException({
-        message: `Invalid command (${validation.field}): ${validation.message}`,
-        field: validation.field,
-      });
-    }
-    if (!SUPPORTED_ACTIONS.has(validation.action.type)) {
-      throw new BadRequestException({
-        message: `Unsupported command type: ${validation.action.type}`,
-        field: "action.type",
-      });
-    }
-    assertDatesInRange(validation.action);
     // TASK-147 follow-up: the `ifMatchVersions` cap is enforced HERE, before
     // `boardWrite.run` takes the per-board queue and the advisory lock — an
     // oversized map must be a cheap 400, not 5 MB serialized through the
     // board writer (the in-transaction check stays as defence in depth).
+    // The action itself is validated by the shared command-validation
+    // helper, so an approval plan and the live transport agree.
     this.assertIfMatchVersionsSize(dto.ifMatchVersions);
-    return {
-      dto,
-      action: clampActionAt(validation.action, Date.now()),
-      fingerprint: actionFingerprint(validation.action, boardId),
-    };
+    return prepareCommandDto(dto, {
+      boardId,
+      ...(options.allowOversize === true ? { allowOversize: true } : {}),
+      // An approved plan is stored without `at` (it is server context, not
+      // intent); applying it stamps the server clock here.
+      ...(options.approvalId !== undefined ? { allowMissingAt: true } : {}),
+    });
   }
 
   /**
@@ -1375,11 +1358,6 @@ export class CommandsService {
   }
 }
 
-/** JSON round-trip so no `undefined` reaches a Prisma `Json` column. */
-function jsonSafe(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
-}
-
 /** Deterministic serialization for the before/after "did it change?" check. */
 function stableStringify(value: unknown): string {
   return JSON.stringify(value, (_key, entry) => {
@@ -1478,63 +1456,4 @@ async function entityVersions(
     );
   }
   return out;
-}
-
-/**
- * Stable identity of an action for the idempotency check: canonical JSON
- * without `at` (the client clock is not part of *what* the command does, and
- * the stored copy may carry the server-clamped value). `boardId`, when given,
- * is the route board: taking it for the stored payload too keeps an honest
- * retry matching a row written before ingress stamping existed.
- */
-export function actionFingerprint(action: unknown, boardId?: string): string {
-  if (action === null || typeof action !== "object") {
-    return stableStringify(action);
-  }
-  const rest: Record<string, unknown> = {
-    ...(jsonSafe(action) as Record<string, unknown>),
-  };
-  if (boardId !== undefined) rest.boardId = boardId;
-  delete rest.at;
-  return stableStringify(rest);
-}
-
-/** B-5: replace an `at` outside the trusted skew window with server time. */
-function clampActionAt<T extends BoardAction>(action: T, now: number): T {
-  const at = (action as { at?: unknown }).at;
-  if (typeof at !== "number") return action;
-  if (Number.isFinite(at) && Math.abs(at - now) <= COMMAND_AT_MAX_SKEW_MS) {
-    return action;
-  }
-  return { ...action, at: now };
-}
-
-/** Field names whose numeric values the writers turn into `Date`s. */
-const DATE_FIELD = /^(at|dueDate|[a-z]+At)$/;
-
-/**
- * Every timestamp in the payload (`dueDate`, `RESTORE_*` snapshots'
- * `createdAt`/`updatedAt`/…) must be a representable Date — `new Date(1e300)`
- * is Invalid Date and would surface as a Prisma 500 instead of a 400. `at`
- * itself is clamped afterwards; here it only has to be finite.
- */
-function assertDatesInRange(action: unknown): void {
-  const visit = (value: unknown, path: string, depth: number): void => {
-    if (depth > 8 || value === null || typeof value !== "object") return;
-    for (const [key, entry] of Object.entries(value)) {
-      const field = Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`;
-      if (
-        typeof entry === "number" &&
-        DATE_FIELD.test(key) &&
-        !(Number.isFinite(entry) && Math.abs(entry) <= MAX_DATE_MS)
-      ) {
-        throw new BadRequestException({
-          message: `Invalid command (${field}): must be a valid timestamp`,
-          field,
-        });
-      }
-      visit(entry, field, depth + 1);
-    }
-  };
-  visit(action, "action", 0);
 }

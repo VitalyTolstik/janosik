@@ -11,6 +11,7 @@ import type { JanosikClient } from "../client.js";
 import { textOnly } from "../format.js";
 import { newId, stableCommandId } from "../ids.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   cardIdSchema,
   expectedVersionSchema,
@@ -234,10 +235,18 @@ export function registerChecklistTools(
         checklistId: checklistIdSchema,
         itemId: itemIdSchema,
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, checklistId, itemId, expectedVersion }) => {
+    async ({
+      boardId,
+      cardId,
+      checklistId,
+      itemId,
+      expectedVersion,
+      approvalId,
+    }) => {
       await client.command(
         boardId,
         {
@@ -246,7 +255,10 @@ export function registerChecklistTools(
           checklistId,
           itemId,
         },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Deleted item ${itemId}.`);
     },
@@ -263,10 +275,11 @@ export function registerChecklistTools(
         cardId: cardIdSchema,
         checklistId: checklistIdSchema,
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, checklistId, expectedVersion }) => {
+    async ({ boardId, cardId, checklistId, expectedVersion, approvalId }) => {
       await client.command(
         boardId,
         {
@@ -274,7 +287,10 @@ export function registerChecklistTools(
           cardId,
           checklistId,
         },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Deleted checklist ${checklistId}.`);
     },

@@ -40,6 +40,8 @@ let searchFailure: number | null;
 let archivedBoard: boolean;
 let reorderOnConflict: boolean;
 let boardWorkflow: unknown;
+let approvalStatus:
+  "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -259,6 +261,56 @@ function fakeApi(
       server: { version: "0.2.0", apiVersion: "1" },
     });
   }
+  const approval =
+    /^\/boards\/([^/]+)\/approvals(?:\/([^/]+)(\/cancel|\/decision)?)?$/.exec(
+      path,
+    );
+  if (approval) {
+    const [, approvalBoard, approvalId, action] = approval;
+    const request = body as
+      { kind?: string; cardId?: string; plan?: unknown } | undefined;
+    const dto = {
+      id: approvalId ?? "apr-1",
+      boardId: approvalBoard,
+      cardId: request?.cardId ?? null,
+      requestedBy: "u1",
+      requestedByTokenId: "tok1",
+      agentSessionId: null,
+      kind: request?.kind ?? "destructive",
+      actionType: "DELETE_CARD",
+      summary: "Apply DELETE_CARD (1 command)",
+      risk: "medium",
+      planHash: "a".repeat(64),
+      status:
+        action === "/cancel"
+          ? "cancelled"
+          : action === "/decision"
+            ? "approved"
+            : approvalStatus,
+      expiresAt: Date.now() + 3_600_000,
+      decidedBy: action === "/decision" ? "u1" : null,
+      decidedAt: action === "/decision" ? Date.now() : null,
+      decisionComment: null,
+      runId: approvalStatus === "consumed" ? "run-1" : null,
+      consumedAt: approvalStatus === "consumed" ? Date.now() : null,
+      createdAt: Date.now(),
+      plan: request?.plan ?? {
+        schemaVersion: 1,
+        boardId: approvalBoard,
+        commands: [],
+      },
+    };
+    if (method === "POST" && approvalId === undefined) {
+      return respond(dto, 201);
+    }
+    if (method === "GET" && approvalId === undefined) {
+      return respond([dto]);
+    }
+    if (method === "GET" || method === "POST") {
+      return respond(dto);
+    }
+  }
+
   const agentSession =
     /^\/boards\/([^/]+)\/agent-sessions(?:\/([^/]+)\/(heartbeat|end))?$/.exec(
       path,
@@ -435,6 +487,7 @@ beforeEach(() => {
   archivedBoard = false;
   reorderOnConflict = false;
   boardWorkflow = null;
+  approvalStatus = "pending";
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -465,9 +518,15 @@ describe("janosik MCP server", () => {
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly. TASK-166
     // removed the invitation and profile tools (session-only routes).
-    expect(names.length).toBe(74);
+    expect(names.length).toBe(79);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
+    expect(names).toContain("janosik_request_approval");
+    expect(names).toContain("janosik_get_approval");
+    expect(names).toContain("janosik_wait_for_decision");
+    expect(names).toContain("janosik_cancel_approval");
+    // Decision is session-only: an agent must not approve its own plan.
+    expect(names).not.toContain("janosik_decide_approval");
     expect(names).toContain("janosik_set_column_accent");
     expect(names).toContain("janosik_claim_card");
     expect(names).toContain("janosik_release_card");
@@ -1362,6 +1421,112 @@ describe("janosik MCP server", () => {
       arguments: { boardId: "b3", timeoutMs: 0 },
     });
     expect(result.structuredContent).toMatchObject({ card: null });
+    await client.close();
+  });
+
+  it("requests an approval for an exact command plan", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_request_approval",
+      arguments: {
+        boardId: "b1",
+        kind: "destructive",
+        cardId: "k1",
+        ttlMinutes: 30,
+        plan: {
+          schemaVersion: 1,
+          boardId: "b1",
+          commands: [
+            {
+              commandId: "cmd-1",
+              action: { type: "DELETE_CARD", cardId: "k1" },
+            },
+          ],
+        },
+        response_format: "json",
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      approval: {
+        id: "apr-1",
+        status: "pending",
+        kind: "destructive",
+        planHash: "a".repeat(64),
+      },
+    });
+    const call = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/approvals" && entry.method === "POST",
+    );
+    expect(call?.body).toMatchObject({
+      kind: "destructive",
+      cardId: "k1",
+      ttlMinutes: 30,
+      plan: { schemaVersion: 1, boardId: "b1" },
+    });
+    await client.close();
+  });
+
+  it("lists, reads and waits for an approval decision", async () => {
+    const client = await connect();
+    const list = await client.callTool({
+      name: "janosik_list_approvals",
+      arguments: { boardId: "b1", status: "pending", response_format: "json" },
+    });
+    expect(list.structuredContent).toMatchObject({
+      count: 1,
+      approvals: [{ id: "apr-1" }],
+    });
+
+    approvalStatus = "approved";
+    const waited = await client.callTool({
+      name: "janosik_wait_for_decision",
+      arguments: { boardId: "b1", approvalId: "apr-1", timeoutSeconds: 1 },
+    });
+    expect(waited.isError).toBeFalsy();
+    expect(waited.structuredContent).toMatchObject({
+      approval: { id: "apr-1", status: "approved" },
+      waited: true,
+    });
+    const getCall = calls.find(
+      (entry) => entry.path === "/boards/b1/approvals/apr-1",
+    );
+    expect(getCall?.method).toBe("GET");
+    await client.close();
+  });
+
+  it("cancels a pending approval", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_cancel_approval",
+      arguments: { boardId: "b1", approvalId: "apr-1" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      approval: { id: "apr-1", status: "cancelled" },
+    });
+    const call = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/approvals/apr-1/cancel" &&
+        entry.method === "POST",
+    );
+    expect(call).toBeDefined();
+    await client.close();
+  });
+
+  it("passes an approved id as X-Approval-Id on a destructive tool", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_delete_card",
+      arguments: { boardId: "b1", cardId: "k1", approvalId: "apr-1" },
+    });
+    expect(result.isError).toBeFalsy();
+    const call = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/commands" && entry.method === "POST",
+    );
+    expect(call?.headers?.["X-Approval-Id"]).toBe("apr-1");
     await client.close();
   });
 });

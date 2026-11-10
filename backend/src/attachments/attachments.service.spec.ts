@@ -74,6 +74,10 @@ describe("AttachmentsService.create — blob cleanup after the rename (TASK-156,
       { enqueue: jest.fn() } as never,
       { enqueue: jest.fn() } as never,
       flags as never,
+      {
+        authorizeOperation: jest.fn().mockResolvedValue(null),
+        consumeOperation: jest.fn(),
+      } as never,
     );
   });
 

@@ -69,6 +69,7 @@ export class CommandsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateCommandDto,
     @Headers("idempotency-key") rawKey?: string,
   ): Promise<CommandResponse> {
@@ -78,6 +79,7 @@ export class CommandsController {
         actorRole: membership.role,
         attribution: requestAttribution(principal, session?.id),
         principal,
+        ...(approvalId !== undefined ? { approvalId } : {}),
       });
     // Commands are already idempotent through `commandId`; the ADR's
     // `duplicate_card` operation additionally accepts the REST-level
@@ -128,6 +130,7 @@ export class CommandsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateCommandBatchDto,
   ): Promise<CommandBatchResponse> {
     const results = await this.commands.applyBatch(id, user.id, dto.commands, {
@@ -135,6 +138,7 @@ export class CommandsController {
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
       principal,
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
     return { results };
   }

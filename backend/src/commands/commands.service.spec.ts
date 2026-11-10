@@ -20,7 +20,17 @@ function service(findMany: jest.Mock, findFirst = jest.fn()) {
   const prisma = {
     command: { findMany, findFirst },
   } as unknown as PrismaService;
-  return new CommandsService(prisma, {} as never, {} as never);
+  return new CommandsService(
+    prisma,
+    {} as never,
+    {} as never,
+    {
+      ensureCommandApproval: jest.fn(),
+      authorizeCommandApply: jest.fn(),
+      consumeCommandApproval: jest.fn(),
+      publishState: jest.fn(),
+    } as never,
+  );
 }
 
 /** TASK-84 / B-3: the delta catch-up is bounded and admits truncation. */
@@ -196,7 +206,17 @@ describe("CommandsService.applyBatch size caps", () => {
     const prisma = {
       command: { findMany: jest.fn(), findFirst: jest.fn() },
     } as unknown as PrismaService;
-    const svc = new CommandsService(prisma, boardWrite as never, {} as never);
+    const svc = new CommandsService(
+      prisma,
+      boardWrite as never,
+      {} as never,
+      {
+        ensureCommandApproval: jest.fn(),
+        authorizeCommandApply: jest.fn(),
+        consumeCommandApproval: jest.fn(),
+        publishState: jest.fn(),
+      } as never,
+    );
 
     await expect(
       svc.applyBatch(boardId, actorId, [

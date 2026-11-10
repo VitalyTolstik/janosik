@@ -265,15 +265,69 @@ Error codes are additive and stable:
 | --- | --- | --- |
 | `scope_denied` | 403 | the preset/board role does not allow the action; preset denial carries `requiredScope`/`action`, board-role denial `requiredRoles`, and a board-scoped token on another board `reason: "board_scope"` |
 | `destructive_denied` | 403 | the board policy is `destructive: "deny"`; `reason: "board_policy"` |
-| `approval_required` | 409 | a destructive action has no approval; the request is refused, nothing is applied |
+| `approval_required` | 409 | a destructive action has no approval; the request is created and nothing is applied; carries `approvalId`, `planHash`, `expiresAt` |
+| `approval_expired` | 409 | the approval expired before decision/apply; carries `approvalId`, `expiresAt` |
+| `approval_mismatch` | 409 | the plan/planHash or kind does not match; carries `approvalId` and the hash prefixes |
+| `approval_owner_mismatch` | 403 | the approval belongs to another token/agent session |
+| `approval_not_pending` | 409 | a decision/cancel/apply hit a non-pending state; carries `status` |
+| `approval_rejected` / `approval_cancelled` | 409 | the request was rejected/cancelled; applying it is refused |
+| `approval_consumed` | 409 | the approval was already applied; carries `runId` when known |
 | `pat_forbidden` | 403 | an account route is session-only |
 | `agent_paused` | 403 | a session, token or board pause blocks the write; `pauseScope`/`pausedAt`, `retryable: false` |
 | `pat_read_only` | 403 | legacy read-only key refused a write |
 
-The approval request API (`POST /boards/:id/approvals`) and the decision
-endpoint ship in 166.5. Until then `approval_required` is a refusal, not a
-queued request: nothing is applied, and a human performs the action in the
-browser.
+## Approvals
+
+An approval authorizes one exact plan; it does not apply anything by itself.
+The agent creates a request with its PAT, a human board ADMIN decides it in a
+browser session, and the agent repeats the same plan with the returned id.
+
+| Method | Path | Auth / role | Request | Response |
+| --- | --- | --- | --- | --- |
+| `POST` | `/boards/:id/approvals` | PAT, board member | `CreateApprovalRequest` | `ApprovalRequestDto` |
+| `GET` | `/boards/:id/approvals` | board ADMIN or requesting PAT | `status`, `kind`, `cardId`, `limit` | `ApprovalRequestDto[]` |
+| `GET` | `/boards/:id/approvals/:approvalId` | board ADMIN or requesting PAT | none | `ApprovalRequestDto` |
+| `POST` | `/boards/:id/approvals/:approvalId/decision` | session-only board ADMIN | `{ decision, planHash, comment? }` | `ApprovalRequestDto` |
+| `POST` | `/boards/:id/approvals/:approvalId/cancel` | requesting PAT or board ADMIN | none | `ApprovalRequestDto` |
+
+The body of `POST /boards/:id/approvals` is
+`{ kind, cardId?, ttlMinutes?, plan }`, where `kind` is `destructive`, `done` or
+`custom`, and `plan` is either `{ schemaVersion: 1, boardId, commands }` or
+`{ schemaVersion: 1, boardId, operations }` (exactly one). `commands` use the
+same validator and limits as `/commands/batch` (100 commands, 50 card creates by
+default); `operations` contain exactly one whitelisted lifecycle operation
+(`board.delete`, `member.*`, `share.*`, `attachment.delete`). `action.at` and
+the action-level `boardId` are not part of the intent: the server strips them
+before computing `planHash = sha256(canonicalJson({schemaVersion, boardId,
+commands|operations}))`, so the same body always hashes identically. The server
+returns the hash; a client-supplied hash is not accepted.
+
+If a destructive command/batch or lifecycle REST call arrives without
+`X-Approval-Id`, the server creates the same request for the exact plan and
+answers `409 approval_required` with `approvalId`, `planHash` and `expiresAt`;
+nothing is applied. The preset must already allow the action after approval: a
+`worker` key cannot turn a board-delete plan into an approval (it gets
+`scope_denied`), and `destructive: "deny"` is a hard `403 destructive_denied`
+with no row created.
+
+To apply, repeat the identical plan/commands with `X-Approval-Id: <id>` on
+`POST /commands`, `/commands/batch` or the original lifecycle route.
+`requestedByTokenId` must match the current PAT; if the request recorded an
+agent session, `X-Agent-Session` must match too. A consumed approval is
+one-time: the same applied commands are an idempotent replay, a different plan
+gets `approval_mismatch` or `approval_consumed`. Batch/command application
+creates an `AgentRun` with `approvalId`, stamps `runId` on every command and
+writes `approval_consumed`; a lifecycle operation leaves `runId` null. The
+decision endpoint is session-only, so a PAT gets `pat_forbidden` — the human
+token owner approves their agent's request, the agent never approves itself.
+
+TTL is `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)`
+with a five-minute floor. Expired rows are transitioned lazily on read,
+decision and apply, and a maintenance sweep may finish the rest. Every step
+writes an `Activity` row (`approval_requested`, `approval_approved`,
+`approval_rejected`, `approval_cancelled`, `approval_expired`,
+`approval_consumed`) and publishes an `approval` SSE frame; decision audit also
+lands in `SecurityAuditLog` (`approval.decided`).
 
 Browser sessions do not pass through the preset/destructive gate; their board
 role rules are unchanged (including ordinary undo). A PAT can never send

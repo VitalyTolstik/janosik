@@ -24,6 +24,7 @@ import {
 } from "../fs-policy.js";
 import { renderAttachments } from "../render.js";
 import {
+  approvalIdSchema,
   cardIdSchema,
   idempotencyKeySchema,
   responseFormatSchema,
@@ -194,11 +195,12 @@ export function registerAttachmentTools(
         "Delete a card attachment (the uploader or a board ADMIN). Destructive.",
       inputSchema: {
         attachmentId: idSchema.describe("Attachment id."),
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ attachmentId }) => {
-      await client.deleteAttachment(attachmentId);
+    async ({ attachmentId, approvalId }) => {
+      await client.deleteAttachment(attachmentId, approvalId);
       return textOnly(`Deleted attachment ${attachmentId}.`);
     },
   );

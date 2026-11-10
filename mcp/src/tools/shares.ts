@@ -12,6 +12,7 @@ import type { JanosikClient } from "../client.js";
 import { respond, textOnly } from "../format.js";
 import { renderShares } from "../render.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   responseFormatSchema,
   idempotencyKeySchema,
@@ -100,6 +101,7 @@ export function registerShareTools(
           .max(MAX_SHARE_HOURS)
           .optional()
           .describe("Expire the link after this many hours (default: never)."),
+        approvalId: approvalIdSchema,
         idempotencyKey: idempotencyKeySchema,
       },
       annotations: WRITE,
@@ -111,6 +113,7 @@ export function registerShareTools(
       includeComments,
       includeAttachments,
       expiresInHours,
+      approvalId,
       idempotencyKey,
     }) => {
       const share = await client.createShare(
@@ -128,6 +131,7 @@ export function registerShareTools(
               }
             : {}),
         },
+        approvalId,
         idempotencyKey,
       );
       return textOnly(
@@ -160,6 +164,7 @@ export function registerShareTools(
           .boolean()
           .optional()
           .describe("true removes any expiry, making the link permanent."),
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
@@ -170,13 +175,19 @@ export function registerShareTools(
       includeComments,
       includeAttachments,
       clearExpiry,
+      approvalId,
     }) => {
-      await client.updateShare(boardId, shareId, {
-        ...(title !== undefined ? { title } : {}),
-        ...(includeComments !== undefined ? { includeComments } : {}),
-        ...(includeAttachments !== undefined ? { includeAttachments } : {}),
-        ...(clearExpiry ? { expiresAt: null } : {}),
-      });
+      await client.updateShare(
+        boardId,
+        shareId,
+        {
+          ...(title !== undefined ? { title } : {}),
+          ...(includeComments !== undefined ? { includeComments } : {}),
+          ...(includeAttachments !== undefined ? { includeAttachments } : {}),
+          ...(clearExpiry ? { expiresAt: null } : {}),
+        },
+        approvalId,
+      );
       return textOnly(`Updated share ${shareId}.`);
     },
   );
@@ -211,11 +222,12 @@ export function registerShareTools(
       inputSchema: {
         boardId: boardIdSchema,
         shareId: idSchema.describe("Share id."),
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, shareId }) => {
-      await client.revokeShare(boardId, shareId);
+    async ({ boardId, shareId, approvalId }) => {
+      await client.revokeShare(boardId, shareId, approvalId);
       return textOnly(`Revoked share ${shareId}.`);
     },
   );

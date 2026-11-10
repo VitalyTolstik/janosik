@@ -12,6 +12,7 @@ import { errorResult, textOnly } from "../format.js";
 import { newId, stableCommandId } from "../ids.js";
 import { findColumnIndex } from "../locate.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   columnIdSchema,
   expectedVersionSchema,
@@ -328,17 +329,21 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, columnId, expectedVersion }) => {
+    async ({ boardId, columnId, expectedVersion, approvalId }) => {
       await client.command(
         boardId,
         {
           type: "ARCHIVE_COLUMN_CARDS",
           columnId,
         },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Archived every card in column ${columnId}.`);
     },
@@ -357,14 +362,18 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, columnId, expectedVersion }) => {
+    async ({ boardId, columnId, expectedVersion, approvalId }) => {
       await client.command(
         boardId,
         { type: "DELETE_COLUMN", columnId },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Deleted column ${columnId}.`);
     },

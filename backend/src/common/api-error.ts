@@ -117,6 +117,10 @@ const RESERVED_BODY_KEYS = new Set([
   "expiresAt",
   "action",
   "reason",
+  "pauseScope",
+  "scope",
+  "pausedAt",
+  "runId",
 ]);
 
 type RawBody = Record<string, unknown>;
@@ -350,6 +354,24 @@ export function apiErrorEnvelope(
     ...(stringField(body?.reason) !== undefined
       ? { reason: stringField(body?.reason) as string }
       : {}),
+    ...(stringField(body?.pauseScope) !== undefined
+      ? { pauseScope: stringField(body?.pauseScope) as string }
+      : {}),
+    ...(stringField(body?.scope) !== undefined
+      ? { scope: stringField(body?.scope) as string }
+      : {}),
+    ...(numberField(body?.pausedAt) !== undefined
+      ? { pausedAt: numberField(body?.pausedAt) as number }
+      : {}),
+    ...(stringField(body?.status) !== undefined &&
+    (code.startsWith("approval_") || code.startsWith("run_"))
+      ? { status: stringField(body?.status) as string }
+      : {}),
+    ...(body?.runId === null
+      ? { runId: null }
+      : stringField(body?.runId) !== undefined
+        ? { runId: stringField(body?.runId) as string }
+        : {}),
   };
 }
 

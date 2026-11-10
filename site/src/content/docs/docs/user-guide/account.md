@@ -84,9 +84,10 @@ reads, `Reviewer` may also move cards into a done column, and `Admin` may
 administer the board (members, shares, delete). Even `Admin` cannot delete
 cards, columns or labels without a human approval; `Trusted CI` is the explicit
 exception for a trusted pipeline, and a board policy can block destructive
-actions entirely. The approval request lifecycle ships in 166.5; until then a
-destructive agent call is refused with `409 approval_required` and nothing is
-applied — a human performs the action in the browser. If an agent only needs to
+actions entirely. A destructive agent call without approval is refused with
+`409 approval_required`; the request names the exact plan, and a human board
+ADMIN approves or rejects it in the browser before the agent repeats the call
+with `X-Approval-Id`. Nothing is applied before that decision. If an agent only needs to
 read data, use an `Observer` key restricted to one board. The key itself is
 shown once, with a `jnk_` prefix; copy it then and store it in a password
 manager. The list shows each key's name, status (`Active`, `Expired` or

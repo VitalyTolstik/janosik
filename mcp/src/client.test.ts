@@ -90,7 +90,7 @@ describe("JanosikClient REST idempotency", () => {
       { app: "janosik", schemaVersion: 3, exportedAt: 0, boards: [] },
       "import-key-1",
     );
-    await client.createShare("b1", { mode: "live" }, "share-key-1");
+    await client.createShare("b1", { mode: "live" }, undefined, "share-key-1");
     await client.addComment("c1", "hi", undefined, "comment-key-1");
     await client.uploadAttachment(
       "c1",

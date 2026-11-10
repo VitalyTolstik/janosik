@@ -13,6 +13,7 @@ import type { JanosikClient } from "../client.js";
 import { respond, textOnly } from "../format.js";
 import { newId, stableCommandId } from "../ids.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   cardIdSchema,
   expectedVersionSchema,
@@ -151,14 +152,18 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         labelId: idSchema.describe("Label id."),
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, labelId, expectedVersion }) => {
+    async ({ boardId, labelId, expectedVersion, approvalId }) => {
       await client.command(
         boardId,
         { type: "DELETE_LABEL", labelId },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Deleted label ${labelId}.`);
     },

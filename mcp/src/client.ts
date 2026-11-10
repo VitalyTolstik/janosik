@@ -16,6 +16,9 @@ import type {
   ActivityFeedPage,
   AgentSessionDto,
   AgentSessionHeartbeatRequest,
+  ApprovalDecisionRequest,
+  ApprovalListQuery,
+  ApprovalRequestDto,
   AttachmentDto,
   AuthMeResponseDto,
   BoardAction,
@@ -34,6 +37,7 @@ import type {
   CommandRequest,
   CommandResponse,
   CreateAgentSessionRequest,
+  CreateApprovalRequest,
   CreateShareRequest,
   EndAgentSessionRequest,
   InviteMemberRequest,
@@ -75,6 +79,12 @@ export interface CommandOptions {
    */
   commandId?: string;
   /**
+   * TASK-166.5: the approval that authorizes this exact plan. Sent as
+   * `X-Approval-Id`; omit it and a destructive call answers
+   * `409 approval_required` with the created request id.
+   */
+  approvalId?: string;
+  /**
    * TASK-166.4: optional REST-level `Idempotency-Key`. Honoured by the
    * server for `duplicate_card`; other commands are already idempotent by
    * `commandId`.
@@ -106,6 +116,11 @@ export interface BatchCommandItem {
    * server returns the first result instead of minting a duplicate.
    */
   commandId?: string;
+  /**
+   * TASK-166.5: approval for this batch. All items must name the same
+   * approval; the header authorizes the whole batch.
+   */
+  approvalId?: string;
 }
 
 /**
@@ -141,6 +156,8 @@ interface RequestOptions {
   form?: FormData;
   /** Return the raw response instead of parsed JSON (used by download). */
   raw?: boolean;
+  /** TASK-166.5: send `X-Approval-Id` with a lifecycle REST operation. */
+  approvalId?: string;
   /** Extra request headers (`Idempotency-Key`, TASK-166.4). */
   headers?: Record<string, string>;
 }
@@ -189,7 +206,15 @@ export class JanosikClient {
   }
 
   private async send<T>(path: string, options: RequestOptions): Promise<T> {
-    const { method = "GET", body, query, form, raw, headers: extra } = options;
+    const {
+      method = "GET",
+      body,
+      query,
+      form,
+      raw,
+      approvalId,
+      headers: extra,
+    } = options;
     const url = `${this.baseUrl}${API_PREFIX}${path}${buildQuery(query)}`;
 
     const headers: Record<string, string> = {
@@ -197,6 +222,7 @@ export class JanosikClient {
       Accept: "application/json",
       ...extra,
     };
+    if (approvalId !== undefined) headers["X-Approval-Id"] = approvalId;
     const boardId = boardIdOfPath(path);
     const agentSessionId =
       boardId === null ? undefined : this.agentSessions.get(boardId);
@@ -263,6 +289,7 @@ export class JanosikClient {
     const response = await this.sendCommand<CommandResponse>(
       apiPath`/boards/${boardId}/commands`,
       request,
+      opts.approvalId,
       opts.idempotencyKey,
     );
     // A committed change always bumps the board version, so an empty map
@@ -300,9 +327,13 @@ export class JanosikClient {
           : {}),
       })),
     };
+    const approvalId = items.find(
+      (item) => item.approvalId !== undefined,
+    )?.approvalId;
     const response = await this.sendCommand<CommandBatchResponse>(
       apiPath`/boards/${boardId}/commands/batch`,
       request,
+      approvalId,
     );
     return response.results;
   }
@@ -316,6 +347,7 @@ export class JanosikClient {
   private async sendCommand<T>(
     path: string,
     body: unknown,
+    approvalId?: string,
     idempotencyKey?: string,
   ): Promise<T> {
     const headers = idempotencyHeaders(idempotencyKey);
@@ -324,6 +356,7 @@ export class JanosikClient {
         return await this.send<T>(path, {
           method: "POST",
           body,
+          ...(approvalId !== undefined ? { approvalId } : {}),
           ...(headers !== undefined ? { headers } : {}),
         });
       } catch (error) {
@@ -360,12 +393,20 @@ export class JanosikClient {
    */
   async commandOnFreshBoard<R>(
     boardId: string,
-    build: (
-      board: Board,
-    ) =>
-      | { action?: CommandAction; result: R }
+    build: (board: Board) =>
+      | {
+          action?: CommandAction;
+          result: R;
+          approvalId?: string;
+          commandId?: string;
+        }
       | null
-      | Promise<{ action?: CommandAction; result: R } | null>,
+      | Promise<{
+          action?: CommandAction;
+          result: R;
+          approvalId?: string;
+          commandId?: string;
+        } | null>,
     attempts = 3,
     expectedVersion?: number,
     prefetched?: { board: Board; seq: number },
@@ -382,6 +423,12 @@ export class JanosikClient {
       try {
         await this.command(boardId, plan.action, {
           ifMatch: expectedVersion ?? seq,
+          ...(plan.commandId !== undefined
+            ? { commandId: plan.commandId }
+            : {}),
+          ...(plan.approvalId !== undefined
+            ? { approvalId: plan.approvalId }
+            : {}),
         });
         return plan.result;
       } catch (error) {
@@ -462,8 +509,11 @@ export class JanosikClient {
     return this.request(apiPath`/boards/${id}/export`);
   }
 
-  deleteBoard(id: string): Promise<{ status: "ok" }> {
-    return this.request(apiPath`/boards/${id}`, { method: "DELETE" });
+  deleteBoard(id: string, approvalId?: string): Promise<{ status: "ok" }> {
+    return this.request(apiPath`/boards/${id}`, {
+      method: "DELETE",
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
   }
 
   // --- Members -----------------------------------------------------------
@@ -475,10 +525,12 @@ export class JanosikClient {
   inviteMember(
     boardId: string,
     dto: InviteMemberRequest,
+    approvalId?: string,
   ): Promise<BoardMemberDto> {
     return this.request(apiPath`/boards/${boardId}/members`, {
       method: "POST",
       body: dto,
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
   }
 
@@ -486,16 +538,23 @@ export class JanosikClient {
     boardId: string,
     userId: string,
     dto: UpdateMemberRequest,
+    approvalId?: string,
   ): Promise<BoardMemberDto> {
     return this.request(apiPath`/boards/${boardId}/members/${userId}`, {
       method: "PATCH",
       body: dto,
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
   }
 
-  removeMember(boardId: string, userId: string): Promise<{ status: "ok" }> {
+  removeMember(
+    boardId: string,
+    userId: string,
+    approvalId?: string,
+  ): Promise<{ status: "ok" }> {
     return this.request(apiPath`/boards/${boardId}/members/${userId}`, {
       method: "DELETE",
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
   }
 
@@ -593,8 +652,11 @@ export class JanosikClient {
     };
   }
 
-  deleteAttachment(id: string): Promise<{ status: "ok" }> {
-    return this.request(apiPath`/attachments/${id}`, { method: "DELETE" });
+  deleteAttachment(id: string, approvalId?: string): Promise<{ status: "ok" }> {
+    return this.request(apiPath`/attachments/${id}`, {
+      method: "DELETE",
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
   }
 
   // --- Shares ------------------------------------------------------------
@@ -606,12 +668,14 @@ export class JanosikClient {
   createShare(
     boardId: string,
     dto: CreateShareRequest,
+    approvalId?: string,
     idempotencyKey?: string,
   ): Promise<BoardShareDto> {
     const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/boards/${boardId}/shares`, {
       method: "POST",
       body: dto,
+      ...(approvalId !== undefined ? { approvalId } : {}),
       ...(headers !== undefined ? { headers } : {}),
     });
   }
@@ -620,10 +684,12 @@ export class JanosikClient {
     boardId: string,
     shareId: string,
     dto: UpdateShareRequest,
+    approvalId?: string,
   ): Promise<BoardShareDto> {
     return this.request(apiPath`/boards/${boardId}/shares/${shareId}`, {
       method: "PATCH",
       body: dto,
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
   }
 
@@ -633,9 +699,14 @@ export class JanosikClient {
     });
   }
 
-  revokeShare(boardId: string, shareId: string): Promise<BoardShareDto> {
+  revokeShare(
+    boardId: string,
+    shareId: string,
+    approvalId?: string,
+  ): Promise<BoardShareDto> {
     return this.request(apiPath`/boards/${boardId}/shares/${shareId}`, {
       method: "DELETE",
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
   }
 
@@ -681,6 +752,65 @@ export class JanosikClient {
       this.agentSessions.delete(boardId);
     }
     return session;
+  }
+
+  // --- Approvals (TASK-166.5) --------------------------------------------
+
+  requestApproval(
+    boardId: string,
+    body: CreateApprovalRequest,
+  ): Promise<ApprovalRequestDto> {
+    return this.request(apiPath`/boards/${boardId}/approvals`, {
+      method: "POST",
+      body,
+    });
+  }
+
+  listApprovals(
+    boardId: string,
+    query: ApprovalListQuery = {},
+  ): Promise<ApprovalRequestDto[]> {
+    return this.request(apiPath`/boards/${boardId}/approvals`, {
+      query: {
+        status: query.status,
+        kind: query.kind,
+        cardId: query.cardId,
+        limit: query.limit,
+      },
+    });
+  }
+
+  getApproval(
+    boardId: string,
+    approvalId: string,
+  ): Promise<ApprovalRequestDto> {
+    return this.request(apiPath`/boards/${boardId}/approvals/${approvalId}`);
+  }
+
+  cancelApproval(
+    boardId: string,
+    approvalId: string,
+  ): Promise<ApprovalRequestDto> {
+    return this.request(
+      apiPath`/boards/${boardId}/approvals/${approvalId}/cancel`,
+      { method: "POST" },
+    );
+  }
+
+  /**
+   * Session-only on the server. Kept on the client for completeness (a
+   * future browser-backed transport), but the MCP tool is not registered:
+   * an agent must never approve its own request.
+   */
+  decideApproval(
+    boardId: string,
+    approvalId: string,
+    body: ApprovalDecisionRequest,
+  ): Promise<ApprovalRequestDto> {
+    return this.request(
+      apiPath`/boards/${boardId}/approvals/${approvalId}/decision`,
+      { method: "POST", body },
+    );
   }
 
   // --- Account -----------------------------------------------------------

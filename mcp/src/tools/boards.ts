@@ -15,6 +15,7 @@ import { writeSandboxedFile, type FsOptions } from "../fs-policy.js";
 import { summarizeBoard } from "../project.js";
 import { renderBoard, renderBoardSummaries } from "../render.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   columnIdSchema,
   detailSchema,
@@ -254,11 +255,11 @@ export function registerBoardTools(
         "For routine cleanup, use janosik_archive_board so the board can " +
         "be restored through normal board tools. Use deletion only when " +
         "removal is specifically intended.",
-      inputSchema: { boardId: boardIdSchema },
+      inputSchema: { boardId: boardIdSchema, approvalId: approvalIdSchema },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId }) => {
-      await client.deleteBoard(boardId);
+    async ({ boardId, approvalId }) => {
+      await client.deleteBoard(boardId, approvalId);
       return textOnly(`Deleted board ${boardId}.`);
     },
   );

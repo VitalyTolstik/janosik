@@ -209,6 +209,16 @@ export interface ApiErrorEnvelope {
   action?: string;
   /** `board_policy`, `board_scope`, … */
   reason?: string;
+  /** Pause scope for `agent_paused` (`session`, `board`, `token`). */
+  pauseScope?: string;
+  /** Mirror of `pauseScope` used by the agent-pause contract. */
+  scope?: string;
+  /** When the pause/approval state was set (Unix ms). */
+  pausedAt?: number;
+  /** Approval state for `approval_not_pending`/`approval_consumed`. */
+  status?: string;
+  /** Run that consumed an approval. */
+  runId?: string | null;
 }
 
 /** Header carrying a REST idempotency key (ADR §6.12). */
@@ -377,6 +387,15 @@ export interface AgentSseEvent {
   at: number;
 }
 
+/** TASK-166: an approval changed state (TASK-166.5). */
+export interface ApprovalSseEvent {
+  type: "approval";
+  approvalId: string;
+  status: ApprovalStatus;
+  cardId?: string;
+  at: number;
+}
+
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 /**
  * The server could not replay the full gap since `?since=` (the delta hit
@@ -394,7 +413,8 @@ export type BoardSseEvent =
   | MembershipSseEvent
   | KeepAliveSseEvent
   | ResyncSseEvent
-  | AgentSseEvent;
+  | AgentSseEvent
+  | ApprovalSseEvent;
 
 /**
  * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
@@ -1038,4 +1058,115 @@ export interface CreateUserTokenRequest {
 export interface CreateUserTokenResponse {
   token: string;
   apiToken: UserTokenDto;
+}
+
+/* ------------------------------------------------------------------ *
+ * TASK-166.5 — approval & handoff API
+ * ------------------------------------------------------------------ */
+
+export const APPROVAL_KINDS = ["destructive", "done", "custom"] as const;
+export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
+
+export const APPROVAL_STATUSES = [
+  "pending",
+  "approved",
+  "rejected",
+  "expired",
+  "cancelled",
+  "consumed",
+] as const;
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+
+export const APPROVAL_RISKS = ["low", "medium", "high"] as const;
+export type ApprovalRisk = (typeof APPROVAL_RISKS)[number];
+
+/** Lifecycle operations a plan may carry instead of commands (§6.7). */
+export const APPROVAL_OPERATIONS = [
+  "board.delete",
+  "member.invite",
+  "member.update",
+  "member.remove",
+  "share.create",
+  "share.update",
+  "share.revoke",
+  "share.delete",
+  "attachment.delete",
+] as const;
+export type ApprovalOperationName = (typeof APPROVAL_OPERATIONS)[number];
+
+/**
+ * One command in an approval plan. `action.at` is deliberately absent: the
+ * server clock is not part of the intent or the `planHash`.
+ */
+export interface ApprovalPlanCommand {
+  commandId: string;
+  action: Record<string, unknown> & { type: string };
+  ifMatch?: number;
+  ifMatchVersions?: Record<string, number>;
+}
+
+/** One lifecycle operation in an approval plan. */
+export interface ApprovalPlanOperation {
+  op: ApprovalOperationName;
+  target: Record<string, unknown>;
+  body: Record<string, unknown>;
+}
+
+/** The exact executable plan an approval authorizes (§6.7). */
+export interface ApprovalPlan {
+  schemaVersion: 1;
+  boardId: string;
+  commands?: ApprovalPlanCommand[];
+  operations?: ApprovalPlanOperation[];
+}
+
+/** Body of `POST /boards/:id/approvals` (PAT only). */
+export interface CreateApprovalRequest {
+  kind: ApprovalKind;
+  cardId?: string;
+  /** Requested lifetime; the server clamps it to the board policy and 5 min. */
+  ttlMinutes?: number;
+  plan: ApprovalPlan;
+}
+
+/** Body of `POST /boards/:id/approvals/:approvalId/decision` (session only). */
+export interface ApprovalDecisionRequest {
+  decision: "approve" | "reject";
+  planHash: string;
+  comment?: string;
+}
+
+/**
+ * One `ApprovalRequest` row. `plan` is present on a detail read for a board
+ * ADMIN or the requesting token; the list omits it to keep pages small.
+ */
+export interface ApprovalRequestDto {
+  id: string;
+  boardId: string;
+  cardId: string | null;
+  requestedBy: string;
+  requestedByTokenId: string;
+  agentSessionId: string | null;
+  kind: ApprovalKind;
+  actionType: string;
+  summary: string;
+  risk: ApprovalRisk;
+  planHash: string;
+  status: ApprovalStatus;
+  expiresAt: number;
+  decidedBy: string | null;
+  decidedAt: number | null;
+  decisionComment: string | null;
+  runId: string | null;
+  consumedAt: number | null;
+  createdAt: number;
+  plan?: ApprovalPlan;
+}
+
+/** `GET /boards/:id/approvals` filters. */
+export interface ApprovalListQuery {
+  status?: ApprovalStatus;
+  kind?: ApprovalKind;
+  cardId?: string;
+  limit?: number;
 }

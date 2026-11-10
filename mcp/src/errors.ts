@@ -83,6 +83,8 @@ interface ScopedErrorBody {
   approvalId?: string;
   planHash?: string;
   expiresAt?: number;
+  status?: string;
+  runId?: string | null;
   retryable?: boolean;
   requestId?: string;
   limit?: number;
@@ -287,13 +289,13 @@ function describeApiErrorBody(error: ApiError): string {
   }
   if (code === "approval_consumed") {
     return (
-      "Error: this approval was already consumed by an applied run. Do not " +
-      "apply it again; re-read the board to see the committed result."
+      "Error: this approval was already applied and consumed by a run. Do " +
+      "not apply it again; re-read the board to see the committed result."
     );
   }
   if (code === "approval_mismatch") {
     return (
-      "Error: the approval does not match this plan (plan hash mismatch). " +
+      "Error: the approval does not match this plan (planHash mismatch). " +
       "Re-read the plan and request a new approval; do not reuse this id."
     );
   }
@@ -351,6 +353,13 @@ function describeApiErrorBody(error: ApiError): string {
           "human must perform this action."
         );
       }
+      if (scoped.code === "approval_owner_mismatch") {
+        return (
+          "Error: this approval belongs to another API token or agent " +
+          "session. Do not retry it with this token; create a fresh request " +
+          "with janosik_request_approval."
+        );
+      }
       if (scoped.code === "pat_forbidden") {
         return (
           "Error: this route is session-only and a personal API token cannot " +
@@ -382,21 +391,58 @@ function describeApiErrorBody(error: ApiError): string {
       const scoped = body as ScopedErrorBody;
       if (scoped.code === "approval_required") {
         const action = scoped.action ? ` (${scoped.action})` : "";
-        const approval =
+        const next =
           scoped.approvalId !== undefined
-            ? ` Approval ${scoped.approvalId}` +
+            ? ` The request is ${scoped.approvalId}; wait with ` +
+              "janosik_wait_for_decision" +
               (scoped.expiresAt !== undefined
-                ? ` expires at ${new Date(scoped.expiresAt).toISOString()}`
+                ? ` (expires ${new Date(scoped.expiresAt).toISOString()})`
                 : "") +
-              "."
-            : "";
+              ", then repeat the same plan with that approvalId."
+            : " Ask a human to approve it in the browser.";
         return (
-          `Error: approval required${action}. This destructive action is ` +
-          "refused until a human approves it; nothing was applied." +
-          `${approval} Wait for a human approver — do not retry the same ` +
-          "call until an approval is granted (janosik_request_approval when " +
-          "the approval API is available). Until then, ask a human to " +
-          "perform the action in the browser."
+          `Error: approval required${action}. Nothing was applied.${next} ` +
+          "Do not retry the destructive call without an approved approvalId."
+        );
+      }
+      if (scoped.code === "approval_expired") {
+        return (
+          "Error: the approval expired before it could be applied. Nothing " +
+          "was applied. Request a fresh approval with " +
+          "janosik_request_approval; do not reuse the old plan."
+        );
+      }
+      if (scoped.code === "approval_mismatch") {
+        return (
+          "Error: the plan does not match the approved planHash. The approval " +
+          "stays approved but cannot authorize a different plan; repeat the " +
+          "exact plan (same command ids and fields) or request a new approval."
+        );
+      }
+      if (scoped.code === "approval_consumed") {
+        return (
+          "Error: this approval was already applied" +
+          (scoped.runId ? ` by run ${scoped.runId}` : "") +
+          ". Do not retry it; re-read the board to confirm the result."
+        );
+      }
+      if (scoped.code === "approval_not_pending") {
+        return (
+          `Error: the approval is ${scoped.status ?? "not pending"}, so it ` +
+          "cannot be decided or applied. Read it with janosik_get_approval " +
+          "and request a new one if the work is still needed."
+        );
+      }
+      if (scoped.code === "approval_rejected") {
+        return (
+          "Error: a human rejected this approval. Nothing was applied. Do not " +
+          "retry the same plan; ask the human why before requesting another."
+        );
+      }
+      if (scoped.code === "approval_cancelled") {
+        return (
+          "Error: this approval was cancelled. Nothing was applied. Request a " +
+          "new approval if the work is still needed."
         );
       }
       if (scoped.code === "limit_exceeded") {

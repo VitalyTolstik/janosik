@@ -143,6 +143,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fresh OAuth token plus a one-time email code (`/auth/me` exposes
   `hasPassword`/`deletionMethod`). `POST /boards/import?dryRun=1` previews
   counts without writing. Both export and delete flows are browser-JWT only.
+- TASK-166.5 approval and handoff API: a PAT can request a human decision on
+  one exact command/lifecycle plan (`POST /boards/:id/approvals`), with a
+  server-computed canonical `planHash`, policy-clamped TTL (5-minute floor),
+  summary/risk and idempotency by token + hash. Destructive commands, batches
+  and lifecycle REST calls without `X-Approval-Id` now create that request and
+  answer `409 approval_required` with `approvalId`, `planHash` and `expiresAt`
+  instead of the previous stateless refusal; nothing is applied. A
+  session-only board ADMIN decides (`approve`/`reject`, repeated approve is
+  idempotent) or cancels; expiry is transitioned lazily. Applying the same
+  plan with `X-Approval-Id` consumes it once in the same board transaction as
+  the commands, creates an `AgentRun` and stamps `runId`; the same applied
+  commands stay an idempotent replay, while mismatch/ownership/session/reuse
+  failures return the documented `approval_*` codes. Adds approval
+  `Activity`/SSE/audit rows, `ApprovalRequestDto`/`ApprovalSseEvent` in shared,
+  and MCP tools `request_approval`, `list_approvals`, `get_approval`,
+  `wait_for_decision`, `cancel_approval` (decision stays session-only).
+  Docs EN/RU cover the API, MCP workflow and error codes.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a
