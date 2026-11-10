@@ -53,7 +53,7 @@ Janosik's current full-aggregate path does not scale to 25,000 cards. At 10,000
 cards the measured aggregate is 6.75 MiB (7.08 MB decimal), `GET` p50 is
 263 ms, first board render
 is 906 ms, the JS heap is 95 MiB, and ten concurrent opens take the API to
-1.48 GiB RSS. The companion's 25k estimate is **17.7 MB, GET ~640 ms, UI ~1.7 s,
+1,479 MiB RSS. The companion's 25k estimate is **17.7 MB, GET ~640 ms, UI ~1.7 s,
 heap 150-200 MiB, ~3.3 GiB for ten concurrent opens**. Those numbers are the
 data/write architecture fit; this document only derives UX consequences from
 them.
@@ -328,14 +328,16 @@ companion owns `aggregateRevision`, the canonical ETag key, and the snapshot
 merge contract; this document consumes those contracts and does not redefine
 them.
 
-The baseline:| Metric | 10,000 cards (measured) | 25,000 cards (companion estimate) |
-| ---------------------------- | --------------------------: | --------------------------------: |
-| Board aggregate | 6.75 MiB (7.08 MB decimal) | 17.7 MB (16.9 MiB) |
-| `GET /boards/:id` p50 | 263 ms | ~640 ms |
-| UI first render | 906 ms | ~1.7 s |
-| JS heap | 95 MiB | 150-200 MiB |
-| 10 concurrent opens, API RSS | 1.48 GiB | ~3.3 GiB |
-| DOM nodes | 2,013 | ~2,000 (virtualization) |
+The baseline:
+
+| Metric                       |    10,000 cards (measured) | 25,000 cards (companion estimate) |
+| ---------------------------- | -------------------------: | --------------------------------: |
+| Board aggregate              | 6.75 MiB (7.08 MB decimal) |                17.7 MB (16.9 MiB) |
+| `GET /boards/:id` p50        |                     263 ms |                           ~640 ms |
+| UI first render              |                     906 ms |                            ~1.7 s |
+| JS heap                      |                     95 MiB |                       150-200 MiB |
+| 10 concurrent opens, API RSS |                  1,479 MiB |                          ~3.3 GiB |
+| DOM nodes                    |                      2,013 |           ~2,000 (virtualization) |
 
 Important caveats:
 
