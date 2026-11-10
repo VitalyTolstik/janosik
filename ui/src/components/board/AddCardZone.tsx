@@ -51,7 +51,7 @@ function AddCardZoneBody({
         data-testid={`card-insert-${index}`}
         aria-label={t("composer.add")}
         // Hover-only ghost (TASK-152, C16): keeping it in the tab order made
-        // every gap (~2400 on a full board) a keyboard stop. Pointer users
+        // every gap (~12,000 on a full board) a keyboard stop. Pointer users
         // still reach it; keyboard users create cards via the column menu.
         tabIndex={-1}
         onClick={onInsert ? () => onInsert(index) : undefined}

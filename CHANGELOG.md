@@ -165,6 +165,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The per-column card cap is now 1000 active cards (was 200), decided after
+  the 2026-11-10 load test: a 5×1000 board renders in ~0.63 s with 50 cards in
+  the DOM and 76 MB of JS heap, and the API reads its 3.37 MB payload in
+  ~128 ms. A 10k-card board on five columns needs 2000/column and is heavier on
+  writes and memory, so it was not chosen; archived cards do not count. See
+  [`docs/PERF-CAPACITY.md`](docs/PERF-CAPACITY.md).
 - The admin omnibox is now a command palette: `Ctrl/Cmd+K` still opens it and
   entity result test ids are unchanged, but it also offers the eight hubs,
   theme/density actions, recent pages and shortcut help. `?` opens a shortcut

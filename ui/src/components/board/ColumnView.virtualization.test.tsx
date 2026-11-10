@@ -7,18 +7,19 @@ import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
+import { CARD_ROW_HEIGHT } from "@/hooks/use-card-window";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
-import type { Board, Card } from "@janosik/shared";
+import { LIMITS, type Board, type Card } from "@janosik/shared";
 
 /**
- * Large-board windowing (TASK-139): a full 200-card column mounts only the
- * rows around its scroll position, scrolling swaps the window, and the j/k
- * cursor can walk all the way to the last card.
+ * Large-board windowing (TASK-139): a full `cardsPerColumn`-card column
+ * mounts only the rows around its scroll position, scrolling swaps the
+ * window, and the j/k cursor can walk all the way to the last card.
  */
 
-const CARDS = 200;
+const CARDS = LIMITS.cardsPerColumn;
 
 function board(): Board {
   const cardIds = Array.from({ length: CARDS }, (_, index) => `card-${index}`);
@@ -80,16 +81,16 @@ describe("column card windowing (TASK-139)", () => {
     expect(titles).toHaveLength(8);
     expect(titles[0]).toHaveTextContent("Card 0");
     expect(titles.length).toBeLessThan(CARDS);
-    expect(screen.queryByText("Card 199")).toBeNull();
+    expect(screen.queryByText(`Card ${CARDS - 1}`)).toBeNull();
   });
 
   it("swaps the mounted rows when the column scrolls", () => {
     render(boardTree());
     const scroller = screen.getByTestId("column-card-scroll");
-    scroller.scrollTop = 19_500;
+    scroller.scrollTop = (CARDS - 1) * CARD_ROW_HEIGHT;
     fireEvent.scroll(scroller);
 
-    expect(screen.getByText("Card 199")).toBeInTheDocument();
+    expect(screen.getByText(`Card ${CARDS - 1}`)).toBeInTheDocument();
     expect(screen.queryByText("Card 0")).toBeNull();
   });
 
