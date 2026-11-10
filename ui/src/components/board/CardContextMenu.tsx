@@ -94,9 +94,9 @@ import {
 import { createId } from "@/utils/id";
 
 /**
- * Right-click (mouse button 2) menu for a card, on every surface that shows
- * one: the board face, the calendar (date chips, the unscheduled list,
- * day-panel rows) and the table rows. The menu carries the card's quick
+ * Right-click (mouse) or the explicit "Card actions" button (touch) opens the
+ * card menu, on every surface that shows one: the board face, the calendar
+ * (date chips, the unscheduled list, day-panel rows) and the table rows. The menu carries the card's quick
  * editors — labels, due date, priority, assignee, link card, cover,
  * checklist, comment — plus open / copy-link / new-tab / duplicate / archive.
  *
@@ -107,8 +107,10 @@ import { createId } from "@/utils/id";
  */
 export interface CardContextMenuProps {
   cardId: string;
-  /** The element the menu opens from — rendered as-is, right-click attached. */
-  children: ReactElement;
+  /** The element the menu opens from — rendered as-is, right-click attached.
+   *  A function receives `open()` so an explicit "Card actions" button can
+   *  open the same menu on touch (where long-press belongs to the drag). */
+  children: ReactElement | ((controls: { open: () => void }) => ReactElement);
   /** VIEWER mode (TASK-35): only the read-only actions stay in the menu. */
   readOnly?: boolean;
   /** Opens the card dialog — the "Open card" item. */
@@ -129,10 +131,14 @@ export function CardContextMenu({
 }: CardContextMenuProps) {
   const [open, setOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const trigger =
+    typeof children === "function"
+      ? children({ open: () => setOpen(true) })
+      : children;
   return (
     <>
       <ContextMenu open={open} onOpenChange={setOpen}>
-        <ContextMenuTrigger render={children} />
+        <ContextMenuTrigger render={trigger} />
         <ContextMenuContent data-testid="card-context-menu">
           <CardContextMenuBody
             cardId={cardId}

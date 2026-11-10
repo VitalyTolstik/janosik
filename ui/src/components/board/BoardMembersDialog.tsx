@@ -646,14 +646,14 @@ export function BoardMembersPanel({
                   data-testid="board-member-row"
                   data-role={member.role}
                   data-user-id={member.userId}
-                  className="flex items-center gap-3 px-4 py-3"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 sm:flex-nowrap sm:px-4"
                 >
                   <button
                     type="button"
                     data-testid="board-member-open"
                     aria-label={t("profile.open", { name: label })}
                     onClick={() => openProfile(member.userId)}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80"
+                    className="flex w-full min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80 sm:w-auto"
                   >
                     <UserAvatar
                       userId={member.userId}
@@ -663,10 +663,10 @@ export function BoardMembersPanel({
                       avatarPath={member.avatarPath}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {label}
+                      <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                        <span className="truncate">{label}</span>
                         {member.userId === user?.id ? (
-                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
                             {t("board.members.you")}
                           </span>
                         ) : null}
@@ -695,7 +695,7 @@ export function BoardMembersPanel({
                   </button>
 
                   {canManage ? (
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1 sm:flex-nowrap">
                       {member.role === "VIEWER" ? (
                         <ExpiryPicker
                           value={member.expiresAt}

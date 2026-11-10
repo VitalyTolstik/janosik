@@ -20,9 +20,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
   // Same-origin API in dev (TASK-29): the UI calls `/api/v1`, Vite forwards
   // to the backend on :3000 — production nginx proxies the same path.
+  // `UI_API_PROXY` lets a secondary checkout (E2E against a disposable stack)
+  // point its dev server at another backend without touching :3000.
   server: {
     proxy: {
-      "/api": "http://localhost:3000",
+      "/api": process.env.UI_API_PROXY ?? "http://localhost:3000",
     },
   },
   resolve: {

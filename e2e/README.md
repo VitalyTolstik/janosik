@@ -48,7 +48,16 @@ with a chosen column and labels (including Cancel), read-only VIEWER controls,
 and the 12/24-hour preference. Table: inline due date (set and remove), title,
 labels and column edits, sorting every header asc → desc → board order with
 `aria-sort` on the column header, optional columns persisted across reloads,
-and the filtered empty state. Watch: status counts (archived cards excluded),
+and the filtered empty state. `tests/app/mobile/` runs the same surfaces at
+390×844 with `hasTouch` and sends long-press drags through Chrome's touch
+transport (CDP): a calendar chip reschedules, an unscheduled chip is planned,
+a table row moves between columns, the due-date popover is tapped, the header,
+filters and every board dialog stay inside the viewport without sideways
+scroll, and double-tap rename, touch card creation and column scrolling keep
+working. Its 16 scenarios also cover the slow tap (no accidental drop),
+edge auto-scroll to a day or a far row outside the first viewport (including a
+virtualized table), same-column reordering, WIP refusal, and the explicit `⋯`
+card menu on both the calendar day panel and table rows. Watch: status counts (archived cards excluded),
 WIP limits, online roster, agent attribution, empty feed, board deletion
 (visible feed error + retry), paging with page sizes 20/50/100 and retention
 boundaries. The watch scenarios cover board, column and card activity, diffs,

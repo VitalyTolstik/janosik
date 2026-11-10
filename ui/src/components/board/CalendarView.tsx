@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  MoreHorizontal,
   Plus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,6 +47,7 @@ import {
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { useToast } from "@/components/Toast";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { useTouchDrag } from "@/hooks/use-touch-drag";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
@@ -101,6 +103,45 @@ interface DayEntry {
   columnId: string;
   columnTitle: string;
   labels: Label[];
+}
+
+/**
+ * Explicit "Card actions" trigger (TASK-31 review): the touch drag owns the
+ * long-press, so the context menu needs a visible button on touch surfaces.
+ * Desktop keeps the right-click menu; the button fades in on hover there.
+ */
+function CardMenuButton({
+  onOpen,
+  testId,
+  compact = false,
+}: {
+  onOpen: () => void;
+  testId: string;
+  /** Month chips are ~43 px wide; a 24 px overlay would swallow the chip. */
+  compact?: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-label={t("card.actions")}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      className={cn(
+        "absolute right-0 top-1/2 z-10 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 sm:opacity-0 sm:group-hover/chip:opacity-100",
+        compact ? "hidden h-5 w-5 sm:flex" : "flex h-6 w-6",
+      )}
+    >
+      <MoreHorizontal
+        className={compact ? "h-3 w-3" : "h-3.5 w-3.5"}
+        aria-hidden
+      />
+    </button>
+  );
 }
 
 /**
@@ -249,7 +290,8 @@ export function CalendarView({
   readOnly = false,
   isFiltering = false,
 }: CalendarViewProps) {
-  const { board, addCard, setCardDueDate } = useBoard();
+  const { board, addCard, setCardDueDate, duplicateCard, archiveCard } =
+    useBoard();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
   const { t, tp, lang } = useI18n();
   const hour12 = useHour12();
@@ -259,7 +301,15 @@ export function CalendarView({
 
   const [anchor, setAnchor] = useState(() => startOfMonth(new Date()));
   const [scale, setScale] = useState<CalendarScale>(readStoredScale);
-  const [unscheduledOpen, setUnscheduledOpen] = useState(true);
+  // On a phone the side panel would leave ~100px for the seven day columns,
+  // so it starts collapsed there. The toggle in its header still opens it.
+  const [unscheduledOpen, setUnscheduledOpen] = useState(() => {
+    try {
+      return !window.matchMedia("(max-width: 639px)").matches;
+    } catch {
+      return true;
+    }
+  });
   /** Day key whose day panel (composer + full card list) is open. */
   const [openDayKey, setOpenDayKey] = useState<string | null>(null);
   /** Day key currently highlighted as a drag target. */
@@ -355,7 +405,8 @@ export function CalendarView({
     ? unscheduledVirtualizer.getVirtualItems()
     : [];
 
-  if (!board) return null;
+  // Grid dates (independent of the board): the drop targets and the touch
+  // layer need them above the `!board` early return, where hooks still run.
   const isWeek = scale === "week";
   const gridStart = isWeek
     ? startOfWeek(anchor, { weekStartsOn })
@@ -365,6 +416,7 @@ export function CalendarView({
     addDays(gridStart, i),
   );
   const weekdays = Array.from({ length: 7 }, (_, i) => addDays(gridStart, i));
+  const daysByKey = new Map(days.map((day) => [dayKey(day), day]));
 
   const headerLabel = isWeek
     ? `${format(gridStart, "d LLL", { locale })} – ${format(gridEnd, "d LLL yyyy", { locale })}`
@@ -382,6 +434,39 @@ export function CalendarView({
   const stepTo = (date: Date) => {
     setAnchor(isWeek ? startOfWeek(date, { locale }) : startOfMonth(date));
   };
+
+  /**
+   * Touch reschedule (TASK-31): HTML5 drag events never fire on a phone, so
+   * a long press lifts a chip and the day under the finger becomes the drop
+   * target. The day keeps the chip's time-of-day, exactly like the desktop
+   * `drop` handler below.
+   */
+  const handleTouchDrop = (cardId: string, key: string) => {
+    if (readOnly || isFiltering || !board) return;
+    const day = daysByKey.get(key);
+    const card = board.cards[cardId];
+    if (!day || !card) return;
+    const source = card.dueDate;
+    // A long press released over its own day is not a reschedule.
+    if (typeof source === "number" && dayKey(new Date(source)) === key) return;
+    setCardDueDate(
+      cardId,
+      dayTimestamp(
+        day,
+        typeof source === "number" ? new Date(source) : undefined,
+      ),
+    );
+  };
+
+  const touchDrag = useTouchDrag({
+    targetSelector: '[data-testid="calendar-day"]',
+    targetKeyAttribute: "data-date",
+    disabled: readOnly || isFiltering,
+    onOverChange: setDragOverKey,
+    onDrop: handleTouchDrop,
+  });
+
+  if (!board) return null;
 
   const handleDrop = (event: React.DragEvent, day: Date) => {
     event.preventDefault();
@@ -421,7 +506,6 @@ export function CalendarView({
 
   // The grid's days array is the source of truth for drop targets; map a
   // key back to its Date for the drop handler.
-  const daysByKey = new Map(days.map((day) => [dayKey(day), day]));
   function dayKeyToDate(key: string): Date {
     return daysByKey.get(key) ?? new Date();
   }
@@ -511,6 +595,13 @@ export function CalendarView({
     return true;
   };
 
+  /** The card menu's duplicate action (the calendar used to lack it). */
+  const duplicateFromMenu = (cardId: string) => {
+    const card = board?.cards[cardId];
+    if (!card) return;
+    duplicateCard(cardId, t("card.duplicateTitle", { title: card.title }));
+  };
+
   /** One unscheduled-panel row, shared by the plain and windowed lists. */
   const renderUnscheduledCard = ({
     card,
@@ -524,29 +615,46 @@ export function CalendarView({
       cardId={card.id}
       readOnly={readOnly}
       onOpen={onCardClick}
+      onDuplicate={readOnly ? undefined : duplicateFromMenu}
+      onArchive={readOnly ? undefined : archiveCard}
     >
-      <button
-        type="button"
-        draggable={!readOnly && !isFiltering}
-        onDragStart={
-          readOnly || isFiltering
-            ? undefined
-            : (event) => chipDragStart(event, card.id)
-        }
-        onAuxClick={(event) => chipAuxOpen(event, card.id)}
-        title={`${columnTitle} · ${card.title}`}
-        data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
-        onClick={(event) => {
-          if (chipModifierOpen(event, card.id)) return;
-          onCardClick(card.id);
-        }}
-        className={cn(
-          "block w-full truncate rounded-md border border-border/60 bg-muted/40 px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
-          !readOnly && "cursor-grab active:cursor-grabbing",
-        )}
-      >
-        {card.title}
-      </button>
+      {({ open }) => (
+        <span
+          className="group/chip relative flex w-full min-w-0"
+          onTouchStart={touchDrag.onTouchStart}
+        >
+          <button
+            type="button"
+            draggable={!readOnly && !isFiltering}
+            onDragStart={
+              readOnly || isFiltering
+                ? undefined
+                : (event) => chipDragStart(event, card.id)
+            }
+            onPointerDown={
+              readOnly || isFiltering
+                ? undefined
+                : (event) => touchDrag.onPointerDown(event, card.id)
+            }
+            onAuxClick={(event) => chipAuxOpen(event, card.id)}
+            title={`${columnTitle} · ${card.title}`}
+            data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
+            onClick={(event) => {
+              if (chipModifierOpen(event, card.id)) return;
+              onCardClick(card.id);
+            }}
+            className={cn(
+              "block min-h-6 w-full touch-manipulation truncate rounded-md border border-border/60 bg-muted/40 py-1 pl-1.5 pr-7 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
+              !readOnly && "cursor-grab active:cursor-grabbing",
+              touchDrag.activePayload === card.id &&
+                "opacity-60 ring-1 ring-primary/50",
+            )}
+          >
+            {card.title}
+          </button>
+          <CardMenuButton onOpen={open} testId="unscheduled-card-menu" />
+        </span>
+      )}
     </CardContextMenu>
   );
 
@@ -557,44 +665,67 @@ export function CalendarView({
       cardId={entry.card.id}
       readOnly={readOnly}
       onOpen={onCardClick}
+      onDuplicate={readOnly ? undefined : duplicateFromMenu}
+      onArchive={readOnly ? undefined : archiveCard}
     >
-      <button
-        type="button"
-        draggable={!readOnly && !isFiltering}
-        onDragStart={
-          readOnly || isFiltering
-            ? undefined
-            : (event) => chipDragStart(event, entry.card.id)
-        }
-        onAuxClick={(event) => chipAuxOpen(event, entry.card.id)}
-        onClick={(event) => {
-          if (chipModifierOpen(event, entry.card.id)) return;
-          event.stopPropagation();
-          onCardClick(entry.card.id);
-        }}
-        data-card-href={boardId ? cardHref(boardId, entry.card.id) : undefined}
-        title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
-        className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
-      >
-        {entry.labels.length > 0 ? (
-          <span
-            className="flex w-[3px] shrink-0 self-stretch flex-col overflow-hidden rounded-full"
-            aria-hidden
-          >
-            {entry.labels.map((label) => (
-              <span
-                key={label.id}
-                className={cn("min-h-0.5 flex-1", LABEL_COLOR_DOT[label.color])}
-              />
-            ))}
-          </span>
-        ) : null}
+      {({ open }) => (
         <span
-          className={cn("truncate", entry.labels.length === 0 && "pl-[7px]")}
+          className="group/chip relative flex w-full min-w-0"
+          onTouchStart={touchDrag.onTouchStart}
         >
-          {entry.card.title}
+          <button
+            type="button"
+            draggable={!readOnly && !isFiltering}
+            onDragStart={
+              readOnly || isFiltering
+                ? undefined
+                : (event) => chipDragStart(event, entry.card.id)
+            }
+            onPointerDown={
+              readOnly || isFiltering
+                ? undefined
+                : (event) => touchDrag.onPointerDown(event, entry.card.id)
+            }
+            onAuxClick={(event) => chipAuxOpen(event, entry.card.id)}
+            onClick={(event) => {
+              if (chipModifierOpen(event, entry.card.id)) return;
+              event.stopPropagation();
+              onCardClick(entry.card.id);
+            }}
+            data-card-href={
+              boardId ? cardHref(boardId, entry.card.id) : undefined
+            }
+            title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
+            className="flex min-h-6 w-full touch-manipulation items-center gap-1.5 rounded-md py-1 pl-1.5 pr-7 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
+          >
+            {entry.labels.length > 0 ? (
+              <span
+                className="flex w-[3px] shrink-0 self-stretch flex-col overflow-hidden rounded-full"
+                aria-hidden
+              >
+                {entry.labels.map((label) => (
+                  <span
+                    key={label.id}
+                    className={cn(
+                      "min-h-0.5 flex-1",
+                      LABEL_COLOR_DOT[label.color],
+                    )}
+                  />
+                ))}
+              </span>
+            ) : null}
+            <span
+              className={cn(
+                "truncate",
+                entry.labels.length === 0 && "pl-[7px]",
+              )}
+            >
+              {entry.card.title}
+            </span>
+          </button>
+          <CardMenuButton onOpen={open} testId="day-panel-card-menu" />
         </span>
-      </button>
+      )}
     </CardContextMenu>
   );
 
@@ -609,87 +740,113 @@ export function CalendarView({
         cardId={card.id}
         readOnly={readOnly}
         onOpen={onCardClick}
+        onDuplicate={readOnly ? undefined : duplicateFromMenu}
+        onArchive={readOnly ? undefined : archiveCard}
       >
-        <button
-          type="button"
-          draggable={!readOnly && !isFiltering}
-          data-testid="calendar-chip"
-          data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
-          onDragStart={
-            readOnly || isFiltering
-              ? undefined
-              : (event) => chipDragStart(event, card.id)
-          }
-          onAuxClick={(event) => chipAuxOpen(event, card.id)}
-          title={`${
-            withTime
-              ? `${formatTime(
-                  formatTimeOfDay(new Date(card.dueDate as number)),
-                  lang,
-                  hour12,
-                )} · `
-              : ""
-          }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
-          onClick={(event) => {
-            // Cmd/Ctrl+click is the browser's new-tab gesture; a plain click
-            // opens the dialog in place.
-            if (chipModifierOpen(event, card.id)) return;
-            event.stopPropagation();
-            onCardClick(card.id);
-          }}
-          className={cn(
-            "flex items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
-            status === "overdue" && "border-danger/40 bg-danger/10 text-danger",
-            status === "soon" && "border-warning/40 bg-warning/10 text-warning",
-            status === "later" &&
-              "border-border/60 bg-muted/40 text-foreground/80",
-          )}
-        >
-          {/* Label stripe: one thin bar, segmented per label — every label
-            stays visible regardless of count (TASK-14.1). */}
-          {labels.length > 0 ? (
-            <span
-              className="flex w-[3px] shrink-0 flex-col overflow-hidden rounded-l-md"
-              aria-hidden
-            >
-              {labels.map((label) => (
-                <span
-                  key={label.id}
-                  className={cn(
-                    "min-h-0.5 flex-1",
-                    LABEL_COLOR_DOT[label.color],
-                  )}
-                />
-              ))}
-            </span>
-          ) : null}
+        {({ open }) => (
           <span
-            className={cn(
-              "flex min-w-0 items-center gap-1 py-0.5 pr-1.5",
-              // Chips without a stripe start the title at the same offset as
-              // striped ones (stripe 3px + gap).
-              labels.length === 0 && "pl-[7px]",
-            )}
+            className="group/chip relative flex w-full min-w-0"
+            onTouchStart={touchDrag.onTouchStart}
           >
-            {withTime ? (
-              <span className="shrink-0 tabular-nums opacity-70">
-                {formatTime(
-                  formatTimeOfDay(new Date(card.dueDate as number)),
-                  lang,
-                  hour12,
+            <button
+              type="button"
+              draggable={!readOnly && !isFiltering}
+              data-testid="calendar-chip"
+              data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
+              onDragStart={
+                readOnly || isFiltering
+                  ? undefined
+                  : (event) => chipDragStart(event, card.id)
+              }
+              onPointerDown={
+                readOnly || isFiltering
+                  ? undefined
+                  : (event) => touchDrag.onPointerDown(event, card.id)
+              }
+              onAuxClick={(event) => chipAuxOpen(event, card.id)}
+              title={`${
+                withTime
+                  ? `${formatTime(
+                      formatTimeOfDay(new Date(card.dueDate as number)),
+                      lang,
+                      hour12,
+                    )} · `
+                  : ""
+              }${columnTitle} · ${card.title}${labels.length > 0 ? ` · ${labels.map((l) => l.name).join(", ")}` : ""}`}
+              onClick={(event) => {
+                // Cmd/Ctrl+click is the browser's new-tab gesture; a plain
+                // click opens the dialog in place.
+                if (chipModifierOpen(event, card.id)) return;
+                event.stopPropagation();
+                onCardClick(card.id);
+              }}
+              className={cn(
+                "flex min-h-6 w-full touch-manipulation items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
+                status === "overdue" &&
+                  "border-danger/40 bg-danger/10 text-danger",
+                status === "soon" &&
+                  "border-warning/40 bg-warning/10 text-warning",
+                status === "later" &&
+                  "border-border/60 bg-muted/40 text-foreground/80",
+                touchDrag.activePayload === card.id &&
+                  "opacity-60 ring-1 ring-primary/50",
+              )}
+            >
+              {/* Label stripe: one thin bar, segmented per label — every label
+            stays visible regardless of count (TASK-14.1). */}
+              {labels.length > 0 ? (
+                <span
+                  className="flex w-[3px] shrink-0 flex-col overflow-hidden rounded-l-md"
+                  aria-hidden
+                >
+                  {labels.map((label) => (
+                    <span
+                      key={label.id}
+                      className={cn(
+                        "min-h-0.5 flex-1",
+                        LABEL_COLOR_DOT[label.color],
+                      )}
+                    />
+                  ))}
+                </span>
+              ) : null}
+              <span
+                className={cn(
+                  "flex min-w-0 items-center gap-1 py-0.5",
+                  // Week chips keep the explicit menu; month chips reserve
+                  // nothing and open it from the day panel instead.
+                  withTime ? "pr-7" : "pr-1.5",
+                  // Chips without a stripe start the title at the same offset as
+                  // striped ones (stripe 3px + gap).
+                  labels.length === 0 && "pl-[7px]",
                 )}
+              >
+                {withTime ? (
+                  <span className="shrink-0 tabular-nums opacity-70">
+                    {formatTime(
+                      formatTimeOfDay(new Date(card.dueDate as number)),
+                      lang,
+                      hour12,
+                    )}
+                  </span>
+                ) : null}
+                <span className="truncate">{card.title}</span>
               </span>
-            ) : null}
-            <span className="truncate">{card.title}</span>
+            </button>
+            <CardMenuButton
+              onOpen={open}
+              testId="calendar-chip-menu"
+              compact={!withTime}
+            />
           </span>
-        </button>
+        )}
       </CardContextMenu>
     );
   };
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
-      <header className="flex items-center gap-1 border-b border-border/60 px-3 py-2">
+      <header className="flex flex-wrap items-center gap-1 border-b border-border/60 px-2 py-2 sm:px-3">
         {/* The period label is interactive: clicking it opens a month/year
             picker popover (same visual language as the filter's date
             calendar, reduced to month + year + arrows). */}
@@ -781,17 +938,20 @@ export function CalendarView({
         </span>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden sm:flex-row">
         {/* Unscheduled panel (TASK-14.1): drag a card onto a day to plan it. */}
         <aside
           className={cn(
-            "flex shrink-0 flex-col border-r border-border/60 transition-all",
-            unscheduledOpen ? "w-56" : "w-11",
+            "flex shrink-0 flex-col border-b border-border/60 transition-all sm:border-b-0 sm:border-r",
+            unscheduledOpen
+              ? "max-h-56 w-full sm:max-h-none sm:w-56"
+              : "w-full sm:w-11",
           )}
         >
           <button
             type="button"
             aria-expanded={unscheduledOpen}
+            aria-label={t("view.calendar.unscheduled")}
             data-testid="unscheduled-toggle"
             onClick={() => setUnscheduledOpen((o) => !o)}
             className="flex items-center gap-1.5 border-b border-border/60 px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
@@ -825,7 +985,7 @@ export function CalendarView({
               )}
               <div
                 ref={unscheduledScrollRef}
-                className="flex-1 overflow-y-auto p-2"
+                className="min-h-0 flex-1 overflow-y-auto p-2"
                 data-testid="unscheduled-list"
               >
                 {unscheduled.length === 0 ? (
@@ -875,7 +1035,7 @@ export function CalendarView({
             {weekdays.map((day) => (
               <div
                 key={day.getTime()}
-                className="px-2 py-1.5 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="px-1 py-1.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:px-2 sm:text-[11px]"
               >
                 {format(day, "EEEEEE", { locale })}
               </div>
@@ -883,10 +1043,7 @@ export function CalendarView({
           </div>
           <div
             ref={calendarGridRef}
-            className={cn(
-              "grid grid-cols-7 overflow-y-auto",
-              isWeek && "flex-1",
-            )}
+            className={cn("grid min-h-0 flex-1 grid-cols-7 overflow-y-auto")}
             data-testid="calendar-grid"
           >
             {days.map((day) => {
@@ -915,8 +1072,8 @@ export function CalendarView({
                     data-date={key}
                     onClick={() => setOpenDayKey(key)}
                     className={cn(
-                      "group/cell relative flex flex-col overflow-hidden border-b border-r border-border/40 p-1.5 [&:nth-child(7n)]:border-r-0",
-                      isWeek ? "min-h-72" : "h-28",
+                      "group/cell relative flex flex-col overflow-hidden border-b border-r border-border/40 p-1 sm:p-1.5 [&:nth-child(7n)]:border-r-0",
+                      isWeek ? "min-h-72" : "h-32 sm:h-28",
                       !isSameMonth(day, anchor) && !isWeek && "bg-muted/30",
                       dragOverKey === key &&
                         "bg-primary/10 ring-1 ring-inset ring-primary/40",
@@ -926,7 +1083,7 @@ export function CalendarView({
                       <span className="flex items-center gap-1">
                         <span
                           className={cn(
-                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums",
+                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums sm:text-xs",
                             isToday(day) &&
                               "bg-primary font-semibold text-primary-foreground",
                             !isToday(day) &&
@@ -947,11 +1104,11 @@ export function CalendarView({
                                 setOpenDayKey(isDayOpen ? null : key);
                               }}
                               className={cn(
-                                "no-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
+                                "no-hover:opacity-100 absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
                                 isDayOpen && "opacity-100",
                               )}
                             >
-                              <Plus className="h-3 w-3" aria-hidden />
+                              <Plus className="h-3.5 w-3.5" aria-hidden />
                             </button>
                           </PopoverAnchor>
                         )}
@@ -964,7 +1121,7 @@ export function CalendarView({
                             event.stopPropagation();
                             setOpenDayKey(key);
                           }}
-                          className="rounded px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                          className="hidden rounded px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground sm:block"
                         >
                           {tp("view.calendar.moreCards", overflow)}
                         </button>

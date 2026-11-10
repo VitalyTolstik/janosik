@@ -17,6 +17,23 @@
    duplicate/archive actions live in the card dialog. */
 @custom-variant no-hover (@media (hover: none));
 
+/* Touch input does not get tooltips (TASK-31). A tap focuses an icon-only
+   header button, and the still-open tooltip would cover its neighbour and
+   swallow the next tap (measured at 390 px). `data-input` is set by App.tsx
+   on the first pointerdown and flips back to mouse on a mouse press. ARIA
+   labels keep every control named for assistive tech. */
+html[data-input="touch"] [role="tooltip"] {
+  display: none;
+}
+
+/* An active touch drag owns the finger: no text selection or caret movement
+   under it, and a grabbing cursor on hybrid devices. */
+body.janosik-touch-dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 @theme inline {
   /* Wordmark display font — the family stack comes from the brand tokens. */
   --font-display: var(--janosik-font-display);

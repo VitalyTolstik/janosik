@@ -39,40 +39,40 @@ export function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-4 backdrop-blur-md sm:px-6">
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* `group` re-enables the CSS hover animations (feather sway +
-            sparkle twinkle) that key off `.group:hover` in index.css. */}
-        <div className="group flex items-center gap-1.5">
-          <BrandMark />
-          {/* Board title (inline-editable) + its switcher — the Trello model:
-              one name on screen, switch and rename are separate triggers. */}
-          <BoardTitle />
-          <BoardSwitcher />
-          <NotificationsBell />
-          <BoardMembersDialog />
-          <ShareDialog />
-          {role === "ADMIN" ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t("board.settings.button")}
-                  data-testid="board-settings-trigger"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <LazyAnimatedIcon name="settings" size={20} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("board.settings.button")}</TooltipContent>
-            </Tooltip>
-          ) : null}
+    <header className="sticky top-0 z-40 flex min-h-14 shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-14 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0">
+      <div className="group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-3">
+        <BrandMark />
+        {/* Board title (inline-editable) + its switcher — the Trello model:
+            one name on screen, switch and rename are separate triggers. */}
+        <BoardTitle />
+        <BoardSwitcher />
+        <NotificationsBell />
+        <BoardMembersDialog />
+        <ShareDialog />
+        {role === "ADMIN" ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t("board.settings.button")}
+                data-testid="board-settings-trigger"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <LazyAnimatedIcon name="settings" size={20} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("board.settings.button")}</TooltipContent>
+          </Tooltip>
+        ) : null}
+        {/* The presence stack needs more width than a phone header can
+            give; the roster stays reachable from the members dialog. */}
+        <div className="hidden sm:block">
           <PresenceStack />
         </div>
       </div>
 
-      <div className="flex items-center gap-0.5">
+      <div className="ml-auto flex w-full shrink-0 items-center justify-end gap-0.5 sm:w-auto sm:justify-start">
         <GlobalSearch />
         <HelpMenu />
 

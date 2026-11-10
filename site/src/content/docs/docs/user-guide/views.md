@@ -18,6 +18,11 @@ due date sit in the `Unscheduled` panel on the left.
 
 - **Schedule a card**: drag it from the `Unscheduled` panel onto a day.
 - **Reschedule a card**: drag its chip between days; the time of day is kept.
+- **On a phone**: press and hold a chip until it lifts, then drag it to
+  another day; holding near an edge scrolls the grid, and the `⋯` button on a
+  day-panel row opens the card menu. A quick tap still opens the card. The
+  `Unscheduled` panel starts collapsed — tap its header to plan a card from
+  there.
 - **A day's panel**: click a day to open it — a small composer that creates a
   card due that day, plus the full list of that day's cards.
 - **Quick menu**: right-click a card chip for the same quick menu as on the
@@ -38,6 +43,11 @@ Inside the table you can:
 - **add a card** with the `+ Add a card` button;
 - choose which columns to show with the `Columns` menu — priority, assignee,
   checklists, description, dates and activity;
+- **on a phone**, press and hold a row until it lifts, then drop it on another
+  row to move the card into that row's column (workflow and WIP rules apply).
+  Holding near an edge scrolls the table, the `⋯` button opens the card menu,
+  and the phone table keeps the title, column and due date while labels and
+  optional columns are edited from the card dialog;
 - **right-click a row** for the quick menu.
 
 ## Watch

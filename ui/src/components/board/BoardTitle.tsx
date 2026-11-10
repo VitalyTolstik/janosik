@@ -40,7 +40,7 @@ export function BoardTitle() {
   // VIEWER renames nothing — the header shows a plain heading (TASK-35).
   if (roleOf(id) === "VIEWER") {
     return (
-      <h2 className="max-w-[40vw] truncate px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:text-xl">
+      <h2 className="max-w-[32vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:text-xl">
         {title}
       </h2>
     );
@@ -60,7 +60,7 @@ export function BoardTitle() {
           else if (e.key === "Escape") setEditing(false);
         }}
         aria-label={t("board.editTitleAria")}
-        className="h-8 w-48 rounded-md border border-primary/40 bg-background/80 px-2 text-lg font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64"
+        className="h-8 w-36 max-w-[40vw] rounded-md border border-primary/40 bg-background/80 px-2 text-base font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64 sm:text-lg"
       />
       <LimitCounter
         length={draft.length}
