@@ -221,6 +221,26 @@ describe("parseExport — strict structure and integrity (S-7)", () => {
     expect(parseExport(wrap([board()]))[0].cards["k1"].title).toBe("One");
   });
 
+  it("accepts a column at exactly LIMITS.cardsPerColumn cards", () => {
+    const cardIds = Array.from(
+      { length: LIMITS.cardsPerColumn },
+      (_, i) => `k${i}`,
+    );
+    const cards = Object.fromEntries(
+      cardIds.map((id) => [
+        id,
+        { id, title: id, labelIds: [], createdAt: 1, updatedAt: 1 },
+      ]),
+    );
+    const value = board({
+      columns: [{ id: "col", title: "Todo", cardIds, createdAt: 1 }],
+      cards,
+    });
+    expect(parseExport(wrap([value]))[0].columns[0].cardIds).toHaveLength(
+      LIMITS.cardsPerColumn,
+    );
+  });
+
   it.each([
     ["a null label", board({ labels: [null] }), "boards[0].labels[0]"],
     [

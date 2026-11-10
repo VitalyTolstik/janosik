@@ -1083,10 +1083,11 @@ model Comment {
 `@janosik/shared` (`LIMITS`)**, включая `@db.VarChar(N)` в схеме выше:
 TASK-21.5 (`limits-rebalance`) меняет `cardsPerColumn`, `description` и
 `boardsCount`, и любой захардкоженный здесь дубль сразу разъедется.
-Актуальные значения после калибровки (§6.0.1 «Решённые вопросы» п.4,
-внедряет TASK-21.5): чеклистов ≤ 20/карточка, пунктов ≤ 100, меток ≤ 20 на
-карточке и ≤ 50 на доске, **колонок ≤ 12, карточек ≤ 200 в колонке, досок
-≤ 10 на юзера**, `description` ≤ 10000, `comment` ≤ 2000 (TASK-37).
+Исторический снимок калибровки TASK-21.5 (§6.0.1 «Решённые вопросы» п.4;
+актуальные значения — в `shared/src/types/kanban.ts`): чеклистов
+≤ 20/карточка, пунктов ≤ 100, меток ≤ 20 на карточке и ≤ 50 на доске,
+**колонок ≤ 12, карточек ≤ 200 в колонке, досок ≤ 10 на юзера**,
+`description` ≤ 10000, `comment` ≤ 2000 (TASK-37).
 
 **Soft-delete — семантика (§7.0):** все `DELETE`-endpoint'ы проставляют
 `deletedAt` у сущности **и её детей** (каскад — кодом сервиса или
@@ -4644,6 +4645,9 @@ launch-гейт держит головной поток.
   `GET /capabilities`, OpenAPI, compatibility matrix.
 - **173.8 Limits, quotas & retention** — поднять/сделать конфигурируемыми
   лимиты, серверный board cap/tenant quotas, retention/audit export.
+  **2026-11-10:** `cardsPerColumn` 200→**1000** вынесено вперёд после
+  TASK-139 (виртуализация) и нагрузочного теста (`docs/PERF-CAPACITY.md`);
+  остальное — конфигурируемые лимиты, quotas, retention — остаётся post-1.0.
 - **173.9 UX, analytics & token lifecycle** — edit комментариев и board-wide
   фильтр, короткие ключи/шаблоны, MCP undo/history filters, `X-RateLimit-*`/
   usage/cost, token rotation/multi-board, agent analytics/budgets,
@@ -4718,7 +4722,7 @@ launch-гейт держит головной поток.
 | P1-13 | Create card contract / URLs | 173.5 |
 | P1-14 | Remote MCP / OAuth / OpenAPI | 166.11, 173.7 |
 | P1-15 | Docs / tests drift / MCP e2e | 172 |
-| P2-16 | Limits raise | 173.8 |
+| P2-16 | Limits raise | 173.8 — `cardsPerColumn=1000` pulled forward 2026-11-10; the rest post-1.0 |
 | P2-17 | Board cap / tenant quotas | 166.6, 173.8 |
 | P2-18 | Comment edit / board-wide filter | 173.9 |
 | P2-19 | Short keys / templates | 173.9 |

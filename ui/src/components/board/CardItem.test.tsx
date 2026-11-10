@@ -11,7 +11,7 @@ import {
   createBoardLive,
   type BoardLive,
 } from "@/store/board-live";
-import type { Card, Label } from "@janosik/shared";
+import { LIMITS, type Card, type Label } from "@janosik/shared";
 
 const baseCard: Card = {
   id: "c-1",
@@ -292,7 +292,7 @@ describe("CardItem hover duplicate (column limits)", () => {
             card={baseCard}
             {...base}
             duplicateDisabled
-            duplicateDisabledReason="Column is full (200 cards)"
+            duplicateDisabledReason={`Column is full (${LIMITS.cardsPerColumn} cards)`}
           />
         </TooltipProvider>
       </I18nProvider>,

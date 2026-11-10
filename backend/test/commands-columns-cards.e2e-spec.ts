@@ -1022,8 +1022,8 @@ describe("Commands API (e2e)", () => {
       expect(loser.body.conflict).toBe("version");
     });
 
-    it("mirrors the reducer's hard cardsPerColumn cap as 409", async () => {
-      const boardId = await createBoard("Hard cap board");
+    it("mirrors the reducer's WIP limit as 409", async () => {
+      const boardId = await createBoard("WIP limit board");
       await apply(
         boardId,
         scoped(boardId, {
