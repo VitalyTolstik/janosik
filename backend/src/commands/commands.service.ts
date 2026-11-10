@@ -175,10 +175,11 @@ export const COMMAND_DELTA_MAX = 5_000;
  * TASK-156 (item 17): the ceiling the internal `allowOversize` bypass may
  * reach — the companion of the shared `MAX_COMMAND_BYTES` (2 MiB) client cap.
  * Internal admin restores pack a whole column's snapshot into one
- * `RESTORE_COLUMN` (~6 MB for a full column of large cards), which must not
- * 413 — but the bypass still may not be unlimited: everything above this
- * lands in `Command.action` JSONB and in one SSE frame per subscriber, so it
- * stays finite (8 MiB, 4× the client cap) and everything larger is a 413.
+ * `RESTORE_COLUMN`. The old ~6 MB estimate described the 200-card cap; a
+ * 1000-card column of large cards can exceed this 8 MiB ceiling and 413.
+ * The bypass still may not be unlimited: everything above this lands in
+ * `Command.action` JSONB and in one SSE frame per subscriber, so it stays
+ * finite (8 MiB, 4× the client cap) and everything larger is a 413.
  */
 export const MAX_COMMAND_BYTES_INTERNAL = 8 * 1024 * 1024;
 

@@ -405,8 +405,11 @@ export const MAX_COMMAND_BODY_BYTES = 10 * 1024 * 1024;
 
 /**
  * One command payload larger than this (bytes) is rejected (TASK-30.2).
- * Sized for the biggest legitimate command — a `RESTORE_COLUMN` snapshot
- * with a full column of large cards — while still bounding abuse.
+ * This is a size guard, not a promise that a full column always fits: at the
+ * current 1000-card cap the budget is only ~2 KB per card. A 1000-card
+ * `RESTORE_COLUMN` at the measured ~500-character description is ~0.67 MB,
+ * but long descriptions or heavy activity can still 413 the undo; chunking
+ * such restores is a follow-up.
  */
 export const MAX_COMMAND_BYTES = 2 * 1024 * 1024;
 

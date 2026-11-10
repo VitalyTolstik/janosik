@@ -65,7 +65,26 @@ Live updates: 20 `UPDATE_CARD` commands on the 10,000-card board took
   throughput halves, and both API RSS and JS heap grow substantially.
 - Therefore the cap is **1000**, not 2000. Archived cards do not count
   toward it.
-- Operational caveat: at exactly 1000 cards in a column, moves into that
-  column are refused with `409 wip` (the same hard-cap check as the
-  reducer). Keep headroom in workflow columns or archive the Done column
-  before bulk-loading it.
+- Operational caveat: at exactly 1000 cards in a column, every insert path is
+  refused with `409 wip` (the server's `assertNoWipConflict` and the shared
+  reducer apply the same hard-cap rule): `ADD_CARD`, `DUPLICATE_CARD`,
+  `UNARCHIVE_CARD` and a cross-column `MOVE_CARD`. `RESTORE_*` is exempt (it
+  re-adds data that already existed). Keep headroom in workflow columns or
+  archive the Done column before bulk-loading it.
+
+## Known limitations
+
+- **Column restores are size-bounded.** A browser undo of a deleted column is
+  a `RESTORE_COLUMN` through the 2 MB `MAX_COMMAND_BYTES`; internal admin
+  restores use the 8 MB `MAX_COMMAND_BYTES_INTERNAL`. At the measured
+  ~500-character description, a 1000-card column is ~0.67 MB and fits, but
+  long descriptions or heavy activity can still make the restore 413.
+  Follow-up: chunk the restore or reject it with a clear preflight error.
+- **Import/export is capped at 25 MB.** A 12×1000 board at the measured shape
+  is ~8.1 MB and fits; larger descriptions or attachments can exceed it.
+- **Local/offline mode has a ~5 MB localStorage budget.** One 5×1000 board at
+  3.37 MB fits; a 12×1000 or 10k-card board does not. Server mode skips local
+  persistence.
+- **The measured shape was five columns** (5×1000, and 5×2000 for the 10k
+  case). A 12×1000 board was not measured; its ~8.1 MB payload is
+  extrapolated from the same per-card shape.
