@@ -78,7 +78,13 @@ export function registerRunTools(server: McpServer, client: JanosikClient) {
           .string()
           .optional()
           .describe("Filter by the client's idempotency key."),
-        limit: z.number().int().min(1).max(100).optional(),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum number of runs to return (1–100)."),
         cursor: z
           .string()
           .optional()

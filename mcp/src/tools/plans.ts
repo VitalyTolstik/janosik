@@ -20,7 +20,7 @@ import type {
 import type { JanosikClient } from "../client.js";
 import { bullets, code, respond, textOnly } from "../format.js";
 import { responseFormatSchema } from "../schemas.js";
-import { READ, WRITE, defineTool } from "./helpers.js";
+import { DESTRUCTIVE, READ, defineTool } from "./helpers.js";
 
 /**
  * One plan command. It is the wire `CommandRequest` minus `at`/`boardId`:
@@ -172,7 +172,9 @@ export function registerPlanTools(server: McpServer, client: JanosikClient) {
           .optional()
           .describe("The same run idempotency key used in the preview."),
       },
-      annotations: WRITE,
+      // A plan may contain destructive commands; the approval gate is still
+      // the authority, but clients must not treat this call as reversible.
+      annotations: DESTRUCTIVE,
     },
     async ({ boardId, planHash, commands, approvalId, clientRunId }) => {
       const result = await client.applyPlan(

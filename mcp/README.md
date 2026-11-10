@@ -172,6 +172,105 @@ writes are managed in the app only: the server refuses those routes to an API
 key, so an agent can never mint itself a new one or change the owner's profile.
 The invitation and profile tools were removed in TASK-166.
 
+## Common flows
+
+Tool arguments are ordinary JSON. The server returns human-readable text plus
+`structuredContent`; names below omit the `janosik_` prefix.
+
+```json
+{ "tool": "whoami", "arguments": { "response_format": "json" } }
+{ "tool": "list_boards", "arguments": {} }
+{ "tool": "get_board", "arguments": { "boardId": "b1", "detail": "summary" } }
+{ "tool": "create_card",
+  "arguments": { "boardId": "b1", "columnId": "col1", "title": "Fix login" } }
+```
+
+`whoami` returns `{ user, token, session, server }`; `server.version` is the
+live release and `server.apiVersion` is `"1"`. `create_card` returns
+`{ ok: true, resourceId, seq, runId }`.
+
+**Plan / apply.** Preview a bulk edit, then apply exactly the returned commands
+and hash:
+
+```json
+{ "tool": "plan_changes",
+  "arguments": {
+    "boardId": "b1",
+    "commands": [
+      { "commandId": "cg-001", "action": {
+          "type": "ADD_CARD", "newCardId": "card-1",
+          "columnId": "col-1", "title": "Bulk card" } },
+      { "commandId": "cg-002", "action": {
+          "type": "SET_CARD_PRIORITY", "cardId": "card-1", "priority": "high" } }
+    ]
+  } }
+```
+
+`plan_changes` returns `planHash`, `plan`, `diff`, `warnings`, `conflicts` and
+`canApply`, and writes nothing. `apply_plan` with the same `commands` and
+`planHash` returns `{ runId, planHash, results }`; add `approvalId` when the
+preview requires approval.
+
+**Approval.**
+
+```json
+{ "tool": "request_approval",
+  "arguments": { "boardId": "b1", "kind": "destructive",
+    "plan": { "schemaVersion": 1, "boardId": "b1", "commands": [
+      { "commandId": "cg-del-1", "action": {
+          "type": "DELETE_CARD", "cardId": "card-1" } } ] } } }
+{ "tool": "wait_for_decision",
+  "arguments": { "boardId": "b1", "approvalId": "apr-1", "timeoutSeconds": 60 } }
+{ "tool": "get_approval", "arguments": { "boardId": "b1", "approvalId": "apr-1" } }
+{ "tool": "cancel_approval", "arguments": { "boardId": "b1", "approvalId": "apr-1" } }
+```
+
+`request_approval` returns a pending `approval` and applies nothing. A human
+board ADMIN approves in the browser; `wait_for_decision` polls up to 60 seconds
+per call and can be repeated until the approval expires.
+
+**Runs.**
+
+```json
+{ "tool": "list_runs",
+  "arguments": { "boardId": "b1", "kind": "plan", "limit": 20 } }
+{ "tool": "get_run", "arguments": { "boardId": "b1", "runId": "run-1" } }
+{ "tool": "preview_run_revert",
+  "arguments": { "boardId": "b1", "runId": "run-1" } }
+```
+
+`preview_run_revert` returns `{ dryRun: true, run, conflicts, canRevert }` and
+writes nothing. Applying a rollback is a human board-ADMIN action in the
+browser; no MCP tool exposes it.
+
+**Sessions.**
+
+```json
+{ "tool": "start_session",
+  "arguments": { "boardId": "b1", "name": "nightly-fix", "model": "agent-x" } }
+{ "tool": "heartbeat",
+  "arguments": { "boardId": "b1", "sessionId": "sess-1", "status": "active" } }
+{ "tool": "end_session",
+  "arguments": { "boardId": "b1", "sessionId": "sess-1", "status": "completed" } }
+```
+
+The client attaches `X-Agent-Session` to later writes. Heartbeat and end remain
+available during a pause so the agent can finish cleanly.
+
+**Pause / resume** is human-only and deliberately has no MCP tool. A browser
+session calls the REST route directly:
+
+```http
+POST /api/v1/boards/b1/agents/pause
+Authorization: Bearer <browser access JWT>
+Content-Type: application/json
+
+{ "reason": "Stop the nightly agent" }
+```
+
+The same shape works for board, session, token and `/agents/pause-all`
+pause/resume routes. A PAT receives `403 pat_forbidden`.
+
 ## Behaviour agents can rely on
 
 - **No silent no-ops.** A write that changed nothing — an id that is not on

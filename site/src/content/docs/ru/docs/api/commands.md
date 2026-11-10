@@ -244,9 +244,25 @@ POST /api/v1/boards/:id/commands/batch
 ```json
 {
   "commands": [
-    { "commandId": "…", "action": { "…": "…" } },
-    { "commandId": "…", "action": { "…": "…" } }
-  ]
+    {
+      "commandId": "cg-001",
+      "action": {
+        "type": "ADD_CARD",
+        "newCardId": "card-1",
+        "columnId": "col-1",
+        "title": "Bulk card"
+      }
+    },
+    {
+      "commandId": "cg-002",
+      "action": {
+        "type": "SET_CARD_PRIORITY",
+        "cardId": "card-1",
+        "priority": "high"
+      }
+    }
+  ],
+  "clientRunId": "bulk-import-001"
 }
 ```
 
@@ -258,6 +274,7 @@ write-локом доски — один лок, одна загрузка аг�
 
 ```json
 {
+  "runId": "run-01",
   "results": [
     { "seq": 42, "versions": { "card:abc": 7 } },
     { "seq": 43, "versions": { "card:abc": 8 } }
@@ -281,6 +298,17 @@ write-локом доски — один лок, одна загрузка аг�
 Пачка и делает многошаговое редактирование агента одним round-trip:
 `create_card` с описанием, приоритетом, исполнителем и сроком — это одна пачка
 `ADD_CARD` + команд полей, а не пять запросов.
+
+Пачка **PAT** создаёт ровно один `AgentRun` в рамках доски (`kind: "batch"`) и
+возвращает его id в `runId` (и в `X-Run-Id`). Необязательный `clientRunId`
+(8–64 символа `[A-Za-z0-9_-]`) служит ключом run; другой план с тем же ключом —
+`409 run_conflict`. Пачка из браузера run не создаёт. Если хотя бы одно
+действие destructive, подтверждение нужно всей пачке: передайте
+`X-Approval-Id` после одобрения человеком ровно этого плана, иначе первый
+вызов ответит `409 approval_required` с `approvalId`, `planHash` и `expiresAt`
+и ничего не применит. См. [Подтверждения](/ru/docs/api/rest/#подтверждения) и
+[Runs и откат](/ru/docs/api/rest/#runs-и-откат). PAT никогда не отправляет
+`RESTORE_*`: это браузерный undo, ответ — `403 scope_denied`.
 
 ## Чтение журнала команд
 

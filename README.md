@@ -445,6 +445,12 @@ records whether a person or an agent caused it, so an agent's entries carry an
 Full guide in-repo: [mcp/README.md](./mcp/README.md) and
 [skills/janosik/SKILL.md](./skills/janosik/SKILL.md).
 
+The HTTP contract behind both MCP and the UI is published as an
+[OpenAPI 3.1 document](./site/public/openapi.yaml); it covers the agent-control
+surface and the core board write path, and lists the stable error codes and
+headers. See also [mcp/README.md](./mcp/README.md) and the
+[site API reference](https://janosik.app/docs/api/).
+
 ---
 
 ## Scripts
@@ -462,6 +468,8 @@ Root scripts cover the npm workspaces:
 | `npm run preview` | Serve the built UI locally |
 | `npm test` | Vitest suites for UI, shared, brand, site and MCP (not backend) |
 | `npm run test:backend` | Backend Jest unit + e2e (e2e creates/migrates `janosik_test` first) |
+| `npm run openapi:check` | Validate the public OpenAPI 3.1 contract and its operation ids/refs |
+| `npm run openapi:test` | Negative tests for the OpenAPI validator |
 | `npm run test:e2e` | Playwright against configured running servers; see [e2e/README.md](./e2e/README.md) for the isolated Docker runner |
 | `npm run test:coverage` | Vitest coverage for UI, shared and brand |
 | `npm run lint` | ESLint in the seven application and tooling workspaces |

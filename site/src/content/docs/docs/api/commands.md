@@ -237,9 +237,25 @@ Auth and role are the same as the single endpoint. The body is
 ```json
 {
   "commands": [
-    { "commandId": "…", "action": { "…": "…" } },
-    { "commandId": "…", "action": { "…": "…" } }
-  ]
+    {
+      "commandId": "cg-001",
+      "action": {
+        "type": "ADD_CARD",
+        "newCardId": "card-1",
+        "columnId": "col-1",
+        "title": "Bulk card"
+      }
+    },
+    {
+      "commandId": "cg-002",
+      "action": {
+        "type": "SET_CARD_PRIORITY",
+        "cardId": "card-1",
+        "priority": "high"
+      }
+    }
+  ],
+  "clientRunId": "bulk-import-001"
 }
 ```
 
@@ -251,6 +267,7 @@ as for the single endpoint. The response is `CommandBatchResponse`:
 
 ```json
 {
+  "runId": "run-01",
   "results": [
     { "seq": 42, "versions": { "card:abc": 7 } },
     { "seq": 43, "versions": { "card:abc": 8 } }
@@ -276,6 +293,17 @@ command's `seq`.
 The batch is what makes an agent's multi-step edit one round-trip:
 `create_card` with a description, priority, assignee and due date is a single
 `ADD_CARD` + field-commands batch, not five requests.
+
+A **PAT** batch creates exactly one board-scoped `AgentRun` (`kind: "batch"`)
+and returns its id as `runId` (also in `X-Run-Id`). Reuse the optional
+`clientRunId` (8–64 `[A-Za-z0-9_-]`) to key that run; another plan on the same
+key is `409 run_conflict`. A browser batch creates no run. If any action is
+destructive, the whole batch needs one approval: send `X-Approval-Id` after a
+human approved the exact plan, or the first call answers `409
+approval_required` with `approvalId`, `planHash` and `expiresAt` without
+applying anything. See [Approvals](/docs/api/rest/#approvals) and
+[Runs and rollback](/docs/api/rest/#runs-and-rollback). A PAT never sends
+`RESTORE_*` commands; those are browser undo and answer `403 scope_denied`.
 
 ## Read the command log
 

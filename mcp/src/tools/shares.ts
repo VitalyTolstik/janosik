@@ -158,8 +158,14 @@ export function registerShareTools(
           .nullable()
           .optional()
           .describe("New label."),
-        includeComments: z.boolean().optional(),
-        includeAttachments: z.boolean().optional(),
+        includeComments: z
+          .boolean()
+          .optional()
+          .describe("Show comments on the public view."),
+        includeAttachments: z
+          .boolean()
+          .optional()
+          .describe("Allow downloading attachments on the public view."),
         clearExpiry: z
           .boolean()
           .optional()

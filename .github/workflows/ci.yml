@@ -76,6 +76,11 @@ jobs:
           npm run build -w site
           node scripts/check-built-docs-version.mjs
 
+      - name: OpenAPI contract
+        run: |
+          npm run openapi:check
+          npm run openapi:test
+
       # The MCP server: type-check, unit tests and a bundle, so a broken
       # tool schema fails the build before it reaches `npx @janosik/mcp`.
       - name: MCP server typecheck

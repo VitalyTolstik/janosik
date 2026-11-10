@@ -160,7 +160,13 @@ export function registerApprovalTools(
           .optional()
           .describe("Filter by kind."),
         cardId: z.string().optional().describe("Filter by card id."),
-        limit: z.number().int().min(1).max(100).optional(),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum number of approvals to return (1–100)."),
         response_format: responseFormatSchema,
       },
       annotations: READ,

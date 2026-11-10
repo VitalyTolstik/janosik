@@ -52,9 +52,12 @@
     "size": "npm run size -w ui",
     "demo:swarm": "node scripts/demo-board-swarm.mjs",
     "demo:100": "node scripts/demo-board-100.mjs",
+    "openapi:check": "node scripts/validate-openapi.mjs",
+    "openapi:test": "node --test scripts/validate-openapi.test.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@seriousme/openapi-schema-validator": "^2.11.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",

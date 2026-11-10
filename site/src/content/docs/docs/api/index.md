@@ -8,6 +8,12 @@ shared by all routes, then lists the top-level endpoint groups. Changes to board
 content use the [Command API](./commands/); other operations, including comments
 and attachments, use REST, documented in [REST endpoints](./rest/).
 
+The machine-readable contract is available as an
+[OpenAPI 3.1 document](/openapi.yaml). It covers the complete agent-control
+surface, the command/batch/plan write path, comments, attachments, membership,
+shares and activity. Credential acquisition, public share routes, the master
+`/admin` API, notifications and SSE are documented on this site instead.
+
 ## Base path and transport
 
 Every route is served under the global prefix `/api/v1`. A route named
@@ -42,18 +48,54 @@ second is a personal API token (PAT): a value whose `jnk_` prefix tells the
 guard to authenticate it against the `ApiToken` table instead of the JWT
 strategy. Both open board-scoped routes identically.
 
+An agent may attach `X-Agent-Session: <sessionId>` to a write. The server
+verifies that the session belongs to the same user, token and board and is not
+closed, then records `agentSessionId` on the command, comment or attachment.
+A mismatch is `403 agent_session_invalid`; a closed session is
+`403 agent_session_closed`. Sessions are created with
+`POST /boards/:id/agent-sessions` (see [REST endpoints](./rest/#agent-sessions-and-attribution)).
+
+### Token scopes
+
+Every PAT has one immutable capability preset. A new key is `worker`; existing
+keys were migrated to `admin` with `trustedCi: true` unless they were read-only.
+A preset never raises the user's board role.
+
+| Preset | Ordinary content write | Done transition | Destructive | Board administration |
+| --- | --- | --- | --- | --- |
+| `observer` | no | no | no | no |
+| `worker` | yes | no | approval / `trustedCi` | no |
+| `reviewer` | yes | yes | approval / `trustedCi` | no |
+| `admin` | yes | yes | approval / `trustedCi` | yes |
+
+`readOnly: true` is the deprecated compatibility flag and always yields
+effective `observer`. A board-scoped key cannot read or write another board,
+create/import boards, or manage the account. A destructive action without
+approval answers `409 approval_required` and applies nothing; the board policy
+`destructive: "deny"` is a hard `403 destructive_denied` that even `trustedCi`
+cannot bypass. See [Token scopes and the destructive gate](./rest/#token-scopes-and-the-destructive-gate).
+
 ### Session-only routes
 
 A personal API token acts as its owner for board work, but it cannot manage
-the account's credentials. These routes refuse a PAT with `403`:
+the account's credentials or the human control plane. These routes refuse a PAT
+with `403`:
 
 - `GET /users/me/tokens`, `POST /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id`
 - `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
 - `POST /agents/pause-all`, `POST /agents/resume-all`
 - `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
 - `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
+- `POST /boards/:id/approvals/:id/decision` (a human board ADMIN approves; an agent never approves itself)
+- `POST /boards/:id/runs/:runId/revert` (a real rollback; `dryRun`/preview is readable)
+- `GET`/`PATCH /boards/:id/agent-policy`
+- `PATCH /users/me`, `PATCH /users/me/avatar`
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
+- `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline`
+- `POST /users/me/export`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
+- `POST /users/me/delete/request-code`, `DELETE /users/me`
+- `GET /users/me/notifications`, `GET`/`PATCH /users/me/notification-settings`
 
 ```json
 {
@@ -121,32 +163,58 @@ it. `statusCode` is kept as a compatibility mirror.
 | `401` | `unauthorized` | missing, expired or invalid credentials |
 | `403` | `forbidden` | not a member or no board role |
 | `403` | `scope_denied` | the token preset does not allow the action |
+| `403` | `pat_read_only` | a legacy read-only key refused a write |
 | `403` | `destructive_denied` | board policy blocks destructive actions |
 | `403` | `agent_paused` | agents are paused for the board/session/token |
+| `403` | `agent_session_closed` | the `X-Agent-Session` session was already ended |
+| `403` | `agent_session_invalid` | the session is not owned by this token/user/board |
+| `403` | `pat_required` | an agent-session start/heartbeat was called from a browser session |
 | `403` | `pat_forbidden` | a personal API token called a [session-only route](#session-only-routes) |
+| `403` | `approval_owner_mismatch` | the approval belongs to another token or session |
 | `404` | `not_found` | unknown or soft-deleted resource |
-| `409` | `version_conflict` | `ifMatch`/`ifMatchVersions` is stale; see `currentVersion` |
+| `409` | `version_conflict` | `ifMatch`/`ifMatchVersions`/policy CAS is stale; see `currentVersion` |
 | `409` | `workflow_conflict` | workflow forbids the transition; see `workflow` |
-| `409` | `limit_exceeded` | WIP, collection, board or share limit |
-| `409` | `approval_required` | a destructive action needs a human approval (166.5) |
+| `409` | `id_conflict` | the id belongs to another board |
+| `409` | `limit_exceeded` | WIP, collection, board, plan or run limit |
+| `409` | `approval_required` | a destructive action needs a human approval; `approvalId`/`expiresAt` |
+| `409` | `approval_expired` / `approval_mismatch` | the approval expired or the plan/hash differs |
+| `409` | `approval_not_pending` / `approval_rejected` / `approval_cancelled` / `approval_consumed` | the request cannot be applied in that state |
+| `409` | `run_conflict` / `run_expired` | the run is already reverted/being reverted, or its pre-images were swept |
 | `409` | `idempotency_conflict` | the same `Idempotency-Key` was used with another body |
 | `409` | `idempotency_in_progress` | the first request with that key is still running; retry |
 | `413` | `payload_too_large` | body/file over the route limit; see `limit` |
+| `416` | `range_not_satisfiable` | an unsatisfiable `Range` on an attachment |
 | `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
 | `429` | `login_backoff` | too many failed sign-ins; wait `retryAfter` seconds |
 | `503` | `board_write_timeout` | the board write lock timed out; safe to retry |
 | `503` | `service_unavailable` | maintenance or a transient outage; retry later |
 
 An unexpected server failure is `500 internal_error` with a generic message and
-no stack trace. The full code table lives in
-`docs/TASK-166-launch-agent-control.md` §8.2.
+no stack trace. The full, versioned code catalog is in the
+[OpenAPI document](/openapi.yaml) (`ApiErrorCode`) and
+`docs/TASK-166-launch-agent-control.md` §8.2. `code` is additive: a client must
+tolerate an unknown code and fall back to the HTTP status.
 
-| Status | `code`                | Meaning                                                                                     |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------- |
-| `403`  | `pat_forbidden`       | a personal API token called a [session-only route](#session-only-routes)                    |
-| `403`  | `agent_paused`        | a session/token/board pause blocks the write; see [Pause and kill](./rest/#pause-and-kill)   |
-| `429`  | `login_backoff`       | the address is in [login backoff](#login-backoff); `retryAfter` is the wait in seconds      |
-| `503`  | `board_write_timeout` | the board's write lock timed out under load; safe to retry (a command with its `commandId`) |
+Approval, pause and run errors describe the next action: stop and ask a human,
+re-read the board, or do not retry the same request. They are intentionally
+`retryable: false`; only `rate_limited`, `board_write_timeout` and
+`idempotency_in_progress` are safe to retry unchanged.
+
+## Versioning and concurrency
+
+The API contract version is `"1"` (`info.version` in the OpenAPI document,
+`server.apiVersion` in `GET /auth/me`). The server release is reported
+separately as `server.version`; it changes without changing the contract.
+Response fields are additive: a client must ignore unknown keys and unknown
+error codes. Breaking changes would ship as a new `/api/v2` prefix.
+
+Board writes use the command sequence for concurrency control. `GET
+/boards/:id` returns `X-Board-Seq`; pass that number as `CommandRequest.ifMatch`
+and optional per-entity versions as `ifMatchVersions`. A stale value answers
+`409 version_conflict` with the current `seq` in `currentVersion`. This is a
+body-level precondition: the API does **not** read the HTTP `If-Match` header,
+and `Board.version` (entity version for `ifMatchVersions`) is not mixed with
+`ifMatch`/`seq`. Board policy uses its own `agentPolicyVersion` CAS token.
 
 ## Idempotency
 
@@ -302,7 +370,14 @@ and switch maintenance off.
 | Attachments           | `/cards/:cardId/attachments`, `/attachments/:attachmentId` | [REST endpoints](./rest/)                |
 | Board shares (owner)  | `/boards/:id/shares`                                       | [REST endpoints](./rest/)                |
 | Public shares         | `/share/:token`                                            | [REST endpoints](./rest/)                |
-| Activity feeds        | `/boards/:id/activity`, `/cards/:cardId/activity`          | this page                                |
+| Agent sessions        | `/boards/:id/agent-sessions`                               | [REST endpoints](./rest/#agent-sessions-and-attribution) |
+| Pause and stop-all    | `/boards/:id/agents/*`, `/agents/*`, `/users/me/tokens/:id/*` | [REST endpoints](./rest/#pause-and-kill) |
+| Approvals             | `/boards/:id/approvals`                                    | [REST endpoints](./rest/#approvals)      |
+| Plans                 | `/boards/:id/plans`, `/plans/apply`                        | [REST endpoints](./rest/#plans) and [Command API](./commands/) |
+| Runs and rollback     | `/boards/:id/runs`                                         | [REST endpoints](./rest/#runs-and-rollback) |
+| Board agent policy    | `/boards/:id/agent-policy`                                 | [REST endpoints](./rest/#board-agent-policy) |
+| Activity feeds        | `/boards/:id/activity`, `/cards/:cardId/activity`          | this page and [REST endpoints](./rest/)  |
+| Personal API tokens   | `/users/me/tokens`                                         | [REST endpoints](./rest/#personal-api-tokens) |
 | Health                | `/health`                                                  | this page                                |
 | Announcements         | `/announcements`                                           | this page                                |
 | Master auth           | `/admin/auth`                                              | administrative authentication system, not covered here |
