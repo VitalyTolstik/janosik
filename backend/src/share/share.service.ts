@@ -184,7 +184,12 @@ export class ShareService {
       },
     });
     if (count >= SHARE_LIMITS.activePerBoard[mode]) {
-      throw new ConflictException("Active share limit reached");
+      throw new ConflictException({
+        message: "Active share limit reached",
+        code: "limit_exceeded",
+        limit: SHARE_LIMITS.activePerBoard[mode],
+        current: count,
+      });
     }
   }
 

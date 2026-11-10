@@ -9,7 +9,11 @@ describe("respond", () => {
     const result = respond("json", huge, "# big", "Narrow it.");
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toMatch(/Narrow it\./);
-    expect(result.structuredContent).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      code: "payload_too_large",
+      retryable: false,
+    });
   });
 
   it("renders markdown by default and attaches structured content", () => {
@@ -47,10 +51,19 @@ describe("cap", () => {
 });
 
 describe("textOnly", () => {
-  it("returns a single text block", () => {
+  it("returns a text block and mutation structured content", () => {
     const result = textOnly("done");
     expect(result.content).toEqual([{ type: "text", text: "done" }]);
-    expect(result.structuredContent).toBeUndefined();
+    expect(result.structuredContent).toEqual({ ok: true });
+  });
+
+  it("carries the resource id a mutation created", () => {
+    const result = textOnly("done", { resourceId: "card-1", seq: 4 });
+    expect(result.structuredContent).toEqual({
+      ok: true,
+      resourceId: "card-1",
+      seq: 4,
+    });
   });
 });
 

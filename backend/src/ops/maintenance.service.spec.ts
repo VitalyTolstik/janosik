@@ -50,6 +50,9 @@ function makePrisma(): PrismaService {
     },
     command: sweepable(0),
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    idempotencyRecord: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   } as unknown as PrismaService;
 }
 
@@ -101,6 +104,23 @@ describe("MaintenanceService", () => {
     // codes 2+1, tokens 4+1, shares 3, invitations 5.
     expect(total).toBe(16);
     expect(results.map((entry) => entry.job)).toContain("sweep-codes");
+  });
+
+  it("sweeps expired idempotency records (TASK-166.4)", async () => {
+    const prisma = makePrisma();
+    (prisma.idempotencyRecord.deleteMany as jest.Mock).mockResolvedValue({
+      count: 2,
+    });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
+    expect(await service.sweepIdempotency()).toBe(2);
+    expect(prisma.idempotencyRecord.deleteMany).toHaveBeenCalledWith({
+      where: { expiresAt: { lte: expect.any(Date) } },
+    });
   });
 
   it("deletes expired export artifacts", async () => {

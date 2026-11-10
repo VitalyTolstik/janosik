@@ -102,7 +102,27 @@ between. Command-log write tools accept `expectedVersion` (the board `seq` from
 `janosik_get_board`): pass it and the write is refused if the board changed
 since, instead of silently overwriting another agent's edit. Create tools take a
 client id (`cardId`, `checklistId`, …) reused as the idempotency key, so a
-retried call returns the first entity rather than a duplicate.
+retried call returns the first entity rather than a duplicate. The REST-backed
+writes (`janosik_create_board`, `janosik_duplicate_card`,
+`janosik_add_comment`, `janosik_create_share`, `janosik_upload_attachment`)
+also accept `idempotencyKey`: reuse it only for the same request body.
+
+Mutation results carry `structuredContent` with `ok: true` and, when known,
+`resourceId`, `seq`, `runId` or `approvalId`, so an agent does not have to parse
+the human text. Errors stay `isError: true` and additionally carry
+`structuredContent` with `ok: false`, the server's `code`, `retryable`,
+`requestId` and any conflict details (`currentVersion`, `allowedToColumnIds`,
+`approvalId`/`expiresAt`). Read the code, not the sentence:
+
+- `retryable: false` (validation, scope, workflow, approval) — do not repeat the
+  same call; fix the input or ask a human.
+- `version_conflict` — re-read the board with `janosik_get_board` and rebuild the
+  write; do not blind-retry the same `expectedVersion`.
+- `approval_required` — stop and wait for a human; nothing was applied.
+- `idempotency_conflict` — the key was reused with another body; send the new
+  intent under a fresh key.
+- `rate_limited` / `board_write_timeout` — wait `retryAfter` or a moment and
+  retry the identical request; the server marks these `retryable: true`.
 
 ## The skill: teach the agent how to work
 

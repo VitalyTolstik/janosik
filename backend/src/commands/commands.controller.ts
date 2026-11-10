@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -28,6 +29,12 @@ import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CurrentMembership } from "@/common/current-membership.decorator";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CommandsService } from "./commands.service";
 import { CreateCommandBatchDto } from "./dto/create-command-batch.dto";
@@ -47,26 +54,62 @@ export const DELTA_RESYNC_HEADER = "X-Delta-Resync";
  */
 @Controller("boards/:id/commands")
 export class CommandsController {
-  constructor(private readonly commands: CommandsService) {}
+  constructor(
+    private readonly commands: CommandsService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN, Role.MEMBER)
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(
+  async create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
     @Body() dto: CreateCommandDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<CommandResponse> {
-    return this.commands.apply(id, user.id, dto, {
-      actorType: actorTypeOf(principal),
-      actorRole: membership.role,
-      attribution: requestAttribution(principal, session?.id),
-      principal,
+    const apply = (): Promise<CommandResponse> =>
+      this.commands.apply(id, user.id, dto, {
+        actorType: actorTypeOf(principal),
+        actorRole: membership.role,
+        attribution: requestAttribution(principal, session?.id),
+        principal,
+      });
+    // Commands are already idempotent through `commandId`; the ADR's
+    // `duplicate_card` operation additionally accepts the REST-level
+    // `Idempotency-Key` so an agent can retry a whole tool call.
+    if (dto.action.type !== "DUPLICATE_CARD") return apply();
+    const action = dto.action;
+    const outcome = await this.idempotency.run({
+      scope: "duplicate_card",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      // `at` and `commandId` are transport stamps, not intent: an honest
+      // retry may carry a later clock and still must replay.
+      requestHash: hashIdempotentRequest({
+        boardId: id,
+        type: action.type,
+        cardId: action.cardId,
+        newCardId: action.newCardId,
+        title: action.title,
+      }),
+      run: async () => {
+        const response = await apply();
+        return {
+          body: response,
+          status: 200,
+          resourceId:
+            typeof dto.action.newCardId === "string"
+              ? dto.action.newCardId
+              : null,
+        };
+      },
     });
+    return outcome.body;
   }
 
   /**

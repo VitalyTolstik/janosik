@@ -96,7 +96,12 @@ export class CommentsService {
           (existing.apiTokenId !== null &&
             existing.apiTokenId !== attribution.apiTokenId)
         ) {
-          throw new ConflictException("commandId already used");
+          throw new ConflictException({
+            message: "commandId already used",
+            code: "idempotency_conflict",
+            key: id,
+            field: "commandId",
+          });
         }
         return toCommentDto(existing);
       }
@@ -169,14 +174,24 @@ export class CommentsService {
             (existing.apiTokenId !== null &&
               existing.apiTokenId !== attribution.apiTokenId)
           ) {
-            throw new ConflictException("Comment idempotency key is in use");
+            throw new ConflictException({
+              message: "Comment idempotency key is in use",
+              code: "idempotency_conflict",
+              key: id,
+              field: "commandId",
+            });
           }
           return toCommentDto(existing);
         }
         // The id exists but on another card: a collision, not a retry. A raw
         // P2002 here used to surface as a 500 (review follow-up).
         if (existing) {
-          throw new ConflictException("Comment idempotency key is in use");
+          throw new ConflictException({
+            message: "Comment idempotency key is in use",
+            code: "idempotency_conflict",
+            key: id,
+            field: "commandId",
+          });
         }
       }
       throw error;

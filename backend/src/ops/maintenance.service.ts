@@ -34,6 +34,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-orphan-boards",
   "sweep-security-audit",
   "sweep-orphan-blobs",
+  "sweep-idempotency",
 ] as const;
 
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[number] | "all";
@@ -112,6 +113,8 @@ export class MaintenanceService {
         return this.accountDeletion.reapOrphanBoards();
       case "sweep-orphan-blobs":
         return this.sweepOrphanBlobs();
+      case "sweep-idempotency":
+        return this.sweepIdempotency();
       default:
         return 0;
     }
@@ -726,6 +729,19 @@ export class MaintenanceService {
           })
         ).count,
     );
+  }
+
+  /**
+   * TASK-166.4: idempotency records live 24 h (ADR §6.11). The row is also
+   * ignored by the service after `expiresAt`, but the sweep keeps the table
+   * from growing with every retried write.
+   */
+  async sweepIdempotency(): Promise<number> {
+    return (
+      await this.prisma.idempotencyRecord.deleteMany({
+        where: { expiresAt: { lte: new Date() } },
+      })
+    ).count;
   }
 
   /**

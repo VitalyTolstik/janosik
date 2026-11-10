@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -31,6 +32,12 @@ import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
 import { BoardsService } from "./boards.service";
 import { CreateBoardDto } from "./dto/create-board.dto";
@@ -46,7 +53,10 @@ import { UpdateMemberDto } from "./dto/update-member.dto";
  */
 @Controller("boards")
 export class BoardsController {
-  constructor(private readonly boards: BoardsService) {}
+  constructor(
+    private readonly boards: BoardsService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -62,30 +72,57 @@ export class BoardsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  create(
+  async create(
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() dto: CreateBoardDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardAggregate> {
     // Board creation is account-wide `admin` (TASK-166): a board-scoped or
     // worker/reviewer token cannot mint boards outside its mandate.
     assertAccountWidePreset(principal, "board.create");
-    return this.boards.createBoard(user.id, dto);
+    const outcome = await this.idempotency.run({
+      scope: "create_board",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      requestHash: hashIdempotentRequest({ title: dto.title }),
+      run: async () => {
+        const board = await this.boards.createBoard(user.id, dto);
+        return { body: board, status: 201, resourceId: board.id };
+      },
+    });
+    return outcome.body;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("import")
-  import(
+  async import(
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() body: unknown,
     @Query("dryRun") dryRun?: string,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardAggregate[] | BoardImportPreviewDto> {
     assertAccountWidePreset(principal, "board.import");
-    if (dryRun === "1" || dryRun === "true") {
+    const preview = dryRun === "1" || dryRun === "true";
+    if (preview) {
       return this.boards.previewImport(user.id, body);
     }
-    return this.boards.importBoards(user.id, body);
+    const outcome = await this.idempotency.run({
+      scope: "import_boards",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      requestHash: hashIdempotentRequest(body),
+      run: async () => {
+        const boards = await this.boards.importBoards(user.id, body);
+        return {
+          body: boards,
+          status: 201,
+          resourceId: boards[0]?.id ?? null,
+        };
+      },
+    });
+    return outcome.body;
   }
 
   @UseGuards(MembershipGuard)

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Patch,
@@ -18,6 +19,12 @@ import { requestAttribution } from "@/auth/request-attribution";
 import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CreateShareDto, UpdateShareDto } from "./dto/share.dto";
 import { ShareService } from "./share.service";
@@ -33,7 +40,10 @@ import { ShareService } from "./share.service";
 @BoardRoles(Role.ADMIN)
 @TokenScope("admin")
 export class BoardSharesController {
-  constructor(private readonly shares: ShareService) {}
+  constructor(
+    private readonly shares: ShareService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Get()
   list(@Param("id") id: string): Promise<BoardShareDto[]> {
@@ -42,20 +52,41 @@ export class BoardSharesController {
 
   @Post()
   @AgentAction("share.create")
-  create(
+  async create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: CreateShareDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardShareDto> {
-    return this.shares.create(
-      id,
-      user.id,
-      dto,
-      "user",
-      requestAttribution(principal, session?.id),
-    );
+    const outcome = await this.idempotency.run({
+      scope: "create_share",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      // `expiresAt` is derived by the caller (the MCP tool uses
+      // `Date.now() + expiresInHours`), so it must not change the fingerprint:
+      // a retry of the same share intent replays the first link even a moment
+      // later. The other fields are the actual intent.
+      requestHash: hashIdempotentRequest({
+        boardId: id,
+        mode: dto.mode,
+        title: dto.title,
+        includeComments: dto.includeComments,
+        includeAttachments: dto.includeAttachments,
+      }),
+      run: async () => {
+        const share = await this.shares.create(
+          id,
+          user.id,
+          dto,
+          "user",
+          requestAttribution(principal, session?.id),
+        );
+        return { body: share, status: 201, resourceId: share.id };
+      },
+    });
+    return outcome.body;
   }
 
   @Post(":shareId/refresh")

@@ -66,7 +66,11 @@ export function registerSessionTools(server: McpServer, client: JanosikClient) {
         ...(clientName !== undefined ? { clientName } : {}),
         ...(model !== undefined ? { model } : {}),
       });
-      return respond(response_format, { session }, renderSession(session));
+      return respond(
+        response_format,
+        { session, ok: true, resourceId: session.id },
+        renderSession(session),
+      );
     },
   );
 
@@ -111,7 +115,11 @@ export function registerSessionTools(server: McpServer, client: JanosikClient) {
         ...(currentCardId !== undefined ? { currentCardId } : {}),
         ...(summary !== undefined ? { summary } : {}),
       });
-      return respond(response_format, { session }, renderSession(session));
+      return respond(
+        response_format,
+        { session, ok: true, resourceId: session.id },
+        renderSession(session),
+      );
     },
   );
 
@@ -139,7 +147,11 @@ export function registerSessionTools(server: McpServer, client: JanosikClient) {
         ...(status !== undefined ? { status } : {}),
         ...(summary !== undefined ? { summary } : {}),
       });
-      return respond(response_format, { session }, renderSession(session));
+      return respond(
+        response_format,
+        { session, ok: true, resourceId: session.id },
+        renderSession(session),
+      );
     },
   );
 }

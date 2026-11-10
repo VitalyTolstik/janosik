@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -19,6 +20,12 @@ import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
+import {
+  hashIdempotentRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { CommentsService } from "./comments.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
 
@@ -29,25 +36,45 @@ import { CreateCommentDto } from "./dto/create-comment.dto";
  */
 @Controller()
 export class CommentsController {
-  constructor(private readonly comments: CommentsService) {}
+  constructor(
+    private readonly comments: CommentsService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @UseGuards(CardAccessGuard)
   @BoardRoles(Role.ADMIN, Role.MEMBER)
   @Post("cards/:cardId/comments")
-  create(
+  async create(
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @Body() dto: CreateCommentDto,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<CommentDto> {
-    return this.comments.create(
-      cardId,
-      user.id,
-      dto,
-      requestAttribution(principal, session?.id),
-      principal,
-    );
+    const outcome = await this.idempotency.run({
+      scope: "add_comment",
+      key: normalizeIdempotencyKey(rawKey),
+      actorKey: idempotencyActorKey(user.id, principal),
+      // `commandId` is the comment-transport idempotency key; the REST-level
+      // key identifies the same intent even if a retry mints a new commandId.
+      requestHash: hashIdempotentRequest({
+        cardId,
+        text: dto.text,
+        kind: dto.kind,
+      }),
+      run: async () => {
+        const comment = await this.comments.create(
+          cardId,
+          user.id,
+          dto,
+          requestAttribution(principal, session?.id),
+          principal,
+        );
+        return { body: comment, status: 201, resourceId: comment.id };
+      },
+    });
+    return outcome.body;
   }
 
   @UseGuards(CardAccessGuard)

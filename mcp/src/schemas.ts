@@ -126,6 +126,22 @@ export const detailSchema = z
       "checklists; 'summary' omits them (a size hint is kept).",
   );
 
+/**
+ * TASK-166.4 REST idempotency key (`Idempotency-Key`, 24 h). Send a stable
+ * key when retrying the same create/share/comment/upload; a different body
+ * with the same key is refused with `idempotency_conflict`.
+ */
+export const idempotencyKeySchema = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/, "must be a stable idempotency key")
+  .optional()
+  .describe(
+    "Optional idempotency key for a safe retry. Reuse the same key with the " +
+      "same body to get the first result; a different body is refused.",
+  );
+
 /** A cursor-paginated page request (comments, activity). */
 export const pageSchema = z.object({
   cursor: z

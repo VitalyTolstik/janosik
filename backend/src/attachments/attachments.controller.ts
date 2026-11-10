@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -15,12 +16,19 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { rm } from "node:fs/promises";
 import type { Request, Response } from "express";
 import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
+import {
+  hashUploadRequest,
+  idempotencyActorKey,
+  IdempotencyService,
+  normalizeIdempotencyKey,
+} from "@/common/idempotency.service";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
@@ -45,6 +53,7 @@ export class AttachmentsController {
     private readonly attachments: AttachmentsService,
     private readonly storage: StorageService,
     private readonly media: MediaService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   /** Upload one file (multipart field `file`); ≤ `LIMITS.attachmentSize`.
@@ -61,7 +70,7 @@ export class AttachmentsController {
       limits: { files: 1, fileSize: LIMITS.attachmentSize },
     }),
   )
-  create(
+  async create(
     @Param("cardId") cardId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
@@ -69,16 +78,65 @@ export class AttachmentsController {
     @UploadedFile() file: UploadedBlob,
     @Query("inline") inline?: string,
     @Query("description") description?: string,
+    @Headers("idempotency-key") rawKey?: string,
   ): Promise<AttachmentDto> {
-    return this.attachments.create(
-      cardId,
-      user,
-      file,
-      inline === "1" || inline === "true",
-      requestAttribution(principal, session?.id),
-      description === "1",
-      principal,
-    );
+    const isInline = inline === "1" || inline === "true";
+    const isDescription = description === "1" || description === "true";
+    const tempPath = file?.path;
+    try {
+      const key = normalizeIdempotencyKey(rawKey);
+      if (key === undefined || tempPath === undefined) {
+        return await this.attachments.create(
+          cardId,
+          user,
+          file,
+          isInline,
+          requestAttribution(principal, session?.id),
+          isDescription,
+          principal,
+        );
+      }
+      // The fingerprint covers the blob bytes too: the same key with another
+      // file is a client bug, not a retry, and must not return the first file.
+      const requestHash = await hashUploadRequest(
+        {
+          cardId,
+          inline: isInline,
+          description: isDescription,
+          fileName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+        },
+        tempPath,
+      );
+      const outcome = await this.idempotency.run({
+        scope: "upload_attachment",
+        key,
+        actorKey: idempotencyActorKey(user.id, principal),
+        requestHash,
+        run: async () => {
+          const attachment = await this.attachments.create(
+            cardId,
+            user,
+            file,
+            isInline,
+            requestAttribution(principal, session?.id),
+            isDescription,
+            principal,
+          );
+          return { body: attachment, status: 201, resourceId: attachment.id };
+        },
+      });
+      return outcome.body;
+    } finally {
+      // A bad Idempotency-Key, a replay, a conflict or a hashing failure never
+      // reaches the service cleanup, so the retry's temporary upload must
+      // still be dropped here. A successful create has already renamed it,
+      // and `force` makes that a no-op.
+      if (tempPath !== undefined) {
+        await rm(tempPath, { force: true });
+      }
+    }
   }
 
   /** Live attachments of one card, newest-first. */

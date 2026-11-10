@@ -83,7 +83,9 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
           ...(labelId ? { commandId: stableCommandId(labelId, "create") } : {}),
         },
       );
-      return textOnly(`Created label "${name}" (${color}) — \`${id}\`.`);
+      return textOnly(`Created label "${name}" (${color}) — \`${id}\`.`, {
+        resourceId: id,
+      });
     },
   );
 

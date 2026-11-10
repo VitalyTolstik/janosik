@@ -140,6 +140,58 @@ function fakeApi(
       },
     ]);
   }
+  if (path === "/boards" && method === "POST") {
+    const title = (body as { title?: string } | undefined)?.title ?? "New";
+    return respond(
+      {
+        id: "b-new",
+        title,
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      201,
+    );
+  }
+  if (path === "/boards/import" && method === "POST") {
+    return respond(
+      [
+        {
+          id: "b-import",
+          title: "Imported",
+          columns: [],
+          cards: {},
+          labels: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      201,
+    );
+  }
+  if (path === "/boards/b1/shares" && method === "POST") {
+    return respond(
+      {
+        id: "share-1",
+        token: "share-token",
+        boardId: "b1",
+        boardTitle: "Alpha",
+        mode: "live",
+        title: null,
+        includeComments: true,
+        includeAttachments: false,
+        expiresAt: null,
+        revokedAt: null,
+        views: 0,
+        lastViewedAt: null,
+        createdAt: 1,
+        createdBy: "u1",
+      },
+      201,
+    );
+  }
   if (path === "/boards/b1" && method === "GET") {
     const snapshot = board(cardOverrides);
     if (reorderOnConflict) {
@@ -446,6 +498,121 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("returns structured mutation results and forwards an idempotency key", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_create_board",
+      arguments: { title: "New board", idempotencyKey: "create-board-key" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "b-new",
+      board: { id: "b-new", title: "New board" },
+    });
+    const call = calls.find(
+      (entry) => entry.path === "/boards" && entry.method === "POST",
+    );
+    expect(call?.headers?.["Idempotency-Key"]).toBe("create-board-key");
+    await client.close();
+  });
+
+  it("replays import_board with the same key and returns structured ids", async () => {
+    const client = await connect();
+    const args = {
+      envelope: { app: "janosik", schemaVersion: 3, boards: [] },
+      idempotencyKey: "import-key-1",
+    };
+    const first = await client.callTool({
+      name: "janosik_import_board",
+      arguments: args,
+    });
+    const second = await client.callTool({
+      name: "janosik_import_board",
+      arguments: args,
+    });
+    expect(first.isError).toBeFalsy();
+    expect(first.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "b-import",
+      boards: [{ id: "b-import" }],
+    });
+    expect(second.structuredContent).toMatchObject({
+      resourceId: "b-import",
+    });
+    const imports = calls.filter(
+      (call) => call.path === "/boards/import" && call.method === "POST",
+    );
+    expect(imports).toHaveLength(2);
+    expect(imports.map((call) => call.headers?.["Idempotency-Key"])).toEqual([
+      "import-key-1",
+      "import-key-1",
+    ]);
+    await client.close();
+  });
+
+  it("forwards an idempotency key when creating a share", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      mode: "live",
+      expiresInHours: 24,
+      idempotencyKey: "share-key-1",
+    };
+    const result = await client.callTool({
+      name: "janosik_create_share",
+      arguments: args,
+    });
+    const retry = await client.callTool({
+      name: "janosik_create_share",
+      arguments: { ...args, expiresInHours: 25 },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "share-1",
+    });
+    expect(retry.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "share-1",
+    });
+    const shareCalls = calls.filter(
+      (entry) => entry.path === "/boards/b1/shares" && entry.method === "POST",
+    );
+    expect(shareCalls.map((call) => call.headers?.["Idempotency-Key"])).toEqual(
+      ["share-key-1", "share-key-1"],
+    );
+    await client.close();
+  });
+
+  it("keeps duplicate_card args stable across a keyed retry", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      cardId: "k1",
+      idempotencyKey: "duplicate-key-1",
+    };
+    await client.callTool({ name: "janosik_duplicate_card", arguments: args });
+    await client.callTool({ name: "janosik_duplicate_card", arguments: args });
+    const writes = calls.filter(
+      (call) => call.path === "/boards/b1/commands" && call.method === "POST",
+    );
+    expect(writes).toHaveLength(2);
+    const bodies = writes.map((call) => call.body as Record<string, unknown>);
+    const commands = bodies.map(
+      (body) => (body as { commandId: string }).commandId,
+    );
+    expect(commands[0]).toBe(commands[1]);
+    expect((bodies[0]!.action as { newCardId: string }).newCardId).toBe(
+      (bodies[1]!.action as { newCardId: string }).newCardId,
+    );
+    expect(writes.map((call) => call.headers?.["Idempotency-Key"])).toEqual([
+      "duplicate-key-1",
+      "duplicate-key-1",
+    ]);
+    await client.close();
+  });
+
   it("reads the workflow and validates a card's moves", async () => {
     boardWorkflow = {
       schemaVersion: 1,
@@ -507,6 +674,10 @@ describe("janosik MCP server", () => {
     });
     expect(action.newCardId).toMatch(/^[0-9a-f-]{36}$/);
     expect(firstText(result)).toContain("New task");
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: action.newCardId,
+    });
     await client.close();
   });
 
@@ -518,6 +689,11 @@ describe("janosik MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(firstText(result)).toMatch(/limit/i);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      status: 409,
+      conflict: "wip",
+    });
     await client.close();
   });
 
@@ -888,17 +1064,27 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
-  it("posts a typed comment", async () => {
+  it("posts a typed comment and forwards its idempotency key", async () => {
     const client = await connect();
     const result = await client.callTool({
       name: "janosik_add_comment",
-      arguments: { cardId: "k1", text: "stuck", kind: "blocker" },
+      arguments: {
+        cardId: "k1",
+        text: "stuck",
+        kind: "blocker",
+        idempotencyKey: "comment-key-1",
+      },
     });
     expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "cm1",
+    });
     const call = calls.find(
       (entry) => entry.path === "/cards/k1/comments" && entry.method === "POST",
     );
     expect(call?.body).toMatchObject({ text: "stuck", kind: "blocker" });
+    expect(call?.headers?.["Idempotency-Key"]).toBe("comment-key-1");
     expect(firstText(result)).toMatch(/blocker/);
     await client.close();
   });

@@ -271,6 +271,7 @@ are:
 | `sweep-accounts` | accounts whose seven-day self-service deletion window elapsed (still disabled) |
 | `sweep-orphan-boards` | retries soft-deletion of boards left behind by an account erase (pending invites do not count) |
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
+| `sweep-idempotency` | `IdempotencyRecord` rows past their 24-hour expiry |
 
 When Redis is configured the sweep runs on a durable schedule; without Redis it
 runs inline and the schedule is lost on restart.

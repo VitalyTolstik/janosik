@@ -107,7 +107,27 @@ VS Code, opencode, Codex). Агент подключается с персона
 `janosik_get_board`): с ней запись отклонится, если доска успела измениться,
 чтобы не перезаписать чужую правку. Инструменты создания принимают клиентский
 id (`cardId`, `checklistId`, …), который служит ключом идемпотентности, поэтому
-повторный вызов вернёт первую сущность, а не дубликат.
+повторный вызов вернёт первую сущность, а не дубликат. REST-записи
+(`janosik_create_board`, `janosik_duplicate_card`, `janosik_add_comment`,
+`janosik_create_share`, `janosik_upload_attachment`) также принимают
+`idempotencyKey`: используйте его повторно только с тем же телом запроса.
+
+Результаты мутаций несут `structuredContent` с `ok: true` и, когда известно,
+`resourceId`, `seq`, `runId` или `approvalId`, поэтому агенту не нужно
+разбирать человеческий текст. Ошибки остаются `isError: true` и дополнительно
+несут `structuredContent` с `ok: false`, серверным `code`, `retryable`,
+`requestId` и деталями конфликта (`currentVersion`, `allowedToColumnIds`,
+`approvalId`/`expiresAt`). Реагируйте на код, а не на фразу:
+
+- `retryable: false` (валидация, права, workflow, approval) — не повторяйте
+  тот же вызов; исправьте входные данные или попросите человека.
+- `version_conflict` — перечитайте доску через `janosik_get_board` и заново
+  постройте запись; не повторяйте вслепую с тем же `expectedVersion`.
+- `approval_required` — остановитесь и ждите человека; ничего не применено.
+- `idempotency_conflict` — ключ использован с другим телом; отправьте новое
+  намерение с новым ключом.
+- `rate_limited` / `board_write_timeout` — подождите `retryAfter` или немного
+  и повторите тот же запрос; сервер помечает их `retryable: true`.
 
 ## Скилл: научите агента, как работать
 

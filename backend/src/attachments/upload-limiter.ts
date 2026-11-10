@@ -33,7 +33,11 @@ export class UploadLimiter {
     bucket.count += 1;
     if (bucket.count > limit) {
       throw new HttpException(
-        { message: "Too many uploads, try again shortly", field: "file" },
+        {
+          message: "Too many uploads, try again shortly",
+          field: "file",
+          retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

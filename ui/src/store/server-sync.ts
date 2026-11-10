@@ -321,7 +321,18 @@ export function classify(error: unknown): SendFailure {
     }
     // A transient refusal (the board's write lock timed out): rolled back
     // like any failure, but reported as "busy, try again", not "rejected".
-    if (error.status === 503 && error.code === "board_write_timeout") {
+    if (
+      error.status === 503 &&
+      (error.code === "board_write_timeout" || error.retryable === true)
+    ) {
+      return { kind: "busy" };
+    }
+    // A rate-limited write is safe to retry after the advertised pause.
+    if (error.status === 429 && error.retryable === true) {
+      return { kind: "busy" };
+    }
+    // A concurrent retry of the same idempotent write is safe to repeat.
+    if (error.code === "idempotency_in_progress" && error.retryable === true) {
       return { kind: "busy" };
     }
     return {

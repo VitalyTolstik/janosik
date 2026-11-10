@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.4 reliable write contract: every REST error now uses one
+  machine-readable envelope — stable `code`, human `message`, `retryable`,
+  `requestId` (same as `X-Request-Id`), `currentVersion`, optional `field`,
+  `details`, `limit`, `conflict`, `allowedToColumnIds` and the approval seam —
+  while preserving the existing HTTP statuses and legacy `conflict`/
+  `workflow`/`field`/`retryAfter` fields. Unexpected exceptions become
+  `500 internal_error` without a stack trace or secrets. The ADR's REST writes
+  (`POST /boards`, import, `add_comment`, `create_share`, attachment upload and
+  a `DUPLICATE_CARD` command) honour `Idempotency-Key` for 24 h: the same key
+  and body replay the stored response, another body is
+  `409 idempotency_conflict`, and a concurrent retry is
+  `409 idempotency_in_progress` with `retryable: true`. MCP mutations expose
+  `structuredContent` (`ok`, `resourceId`, `seq`, `runId`, `approvalId`), MCP
+  errors carry the same code/retryable/requestId envelope plus next-step
+  guidance, and the REST writes accept an optional `idempotencyKey` (8–128
+  `[A-Za-z0-9_-]`). Rate-limit responses keep the limiter's real
+  `Retry-After` and mirror it into `retryAfter`. The UI
+  error type reads the new fields; docs EN/RU and CHANGELOG cover the envelope
+  and idempotency.
 - TASK-31 mobile UX: the calendar and table now have a real touch layer.
   A long press lifts a calendar chip (month, week and the unscheduled panel)
   and a table row; dropping reschedules the chip with its time-of-day kept,

@@ -7,6 +7,7 @@ import type { NextFunction, Request, Response } from "express";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { env } from "@/config/env";
+import { apiErrorEnvelope } from "./api-error";
 import { inlineScriptHashes } from "./csp";
 import { requestContext } from "./request-context";
 
@@ -109,13 +110,14 @@ export function setupApp(app: INestApplication): void {
       // TASK-166: an oversized body is a machine-readable 413, not a generic
       // parser error. Other parser failures keep their normal path.
       if (error.type === "entity.too.large") {
-        res.status(413).json({
-          statusCode: 413,
-          code: "payload_too_large",
-          message: `Request body exceeds the ${formatBytes(limit)} limit`,
-          limit,
-          retryable: false,
-        });
+        res.status(413).json(
+          apiErrorEnvelope(413, {
+            code: "payload_too_large",
+            message: `Request body exceeds the ${formatBytes(limit)} limit`,
+            limit,
+            retryable: false,
+          }),
+        );
         return;
       }
       next(error);
