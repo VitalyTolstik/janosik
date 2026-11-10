@@ -206,14 +206,70 @@ share-ответы и потоки удаляют id токена/сессии �
 | --- | --- | --- |
 | `scope_denied` | 403 | пресет или роль на доске не разрешают действие; для пресета — `requiredScope`/`action`, для роли — `requiredRoles`, для ключа, привязанного к другой доске, — `reason: "board_scope"` |
 | `destructive_denied` | 403 | политика доски `destructive: "deny"`; `reason: "board_policy"` |
-| `approval_required` | 409 | destructive-действие без подтверждения; запрос отклонён, ничего не применено |
+| `approval_required` | 409 | destructive-действие без подтверждения; запрос создан, ничего не применено; содержит `approvalId`, `planHash`, `expiresAt` |
+| `approval_expired` | 409 | подтверждение истекло до решения/применения; содержит `approvalId`, `expiresAt` |
+| `approval_mismatch` | 409 | план/`planHash` или `kind` не совпадают; содержит `approvalId` и префиксы хешей |
+| `approval_owner_mismatch` | 403 | подтверждение принадлежит другому токену/агентской сессии |
+| `approval_not_pending` | 409 | решение/отмена/применение попали в состояние не `pending`; содержит `status` |
+| `approval_rejected` / `approval_cancelled` | 409 | запрос отклонён/отменён; применять его нельзя |
+| `approval_consumed` | 409 | подтверждение уже применено; при наличии содержит `runId` |
 | `pat_forbidden` | 403 | account-маршрут доступен только сессии |
 | `pat_read_only` | 403 | устаревший read-only ключ отклонил запись |
 
-API approval-запросов (`POST /boards/:id/approvals`) и endpoint решения
-появятся в 166.5. До этого `approval_required` — это отказ, а не поставленный
-в очередь запрос: ничего не применяется, а действие выполняет человек в
-браузере.
+## Подтверждения
+
+Подтверждение разрешает один точный план, но само ничего не применяет. Агент
+создаёт запрос своим PAT, человек-ADMIN доски решает его в браузерной сессии,
+а агент повторяет тот же план с полученным id.
+
+| Метод | Путь | Доступ | Запрос | Ответ |
+| --- | --- | --- | --- | --- |
+| `POST` | `/boards/:id/approvals` | PAT, участник доски | `CreateApprovalRequest` | `ApprovalRequestDto` |
+| `GET` | `/boards/:id/approvals` | ADMIN доски или создавший PAT | `status`, `kind`, `cardId`, `limit` | `ApprovalRequestDto[]` |
+| `GET` | `/boards/:id/approvals/:approvalId` | ADMIN доски или создавший PAT | — | `ApprovalRequestDto` |
+| `POST` | `/boards/:id/approvals/:approvalId/decision` | только сессия, ADMIN доски | `{ decision, planHash, comment? }` | `ApprovalRequestDto` |
+| `POST` | `/boards/:id/approvals/:approvalId/cancel` | создавший PAT или ADMIN доски | — | `ApprovalRequestDto` |
+
+Тело `POST /boards/:id/approvals` — `{ kind, cardId?, ttlMinutes?, plan }`, где
+`kind` ∈ `destructive`/`done`/`custom`, а `plan` — либо
+`{ schemaVersion: 1, boardId, commands }`, либо
+`{ schemaVersion: 1, boardId, operations }` (ровно одно). `commands`
+проверяются тем же валидатором и лимитами, что `/commands/batch` (по умолчанию
+100 команд, 50 создаваемых карточек); в `operations` ровно одна разрешённая
+lifecycle-операция (`board.delete`, `member.*`, `share.*`,
+`attachment.delete`). `action.at` и `boardId` внутри действия не входят в
+намерение: сервер убирает их перед вычислением
+`planHash = sha256(canonicalJson({schemaVersion, boardId, commands|operations}))`,
+поэтому одно и то же тело всегда даёт один хеш. Хеш возвращает сервер; хеш
+клиента не принимается как истина.
+
+Если destructive-команда/батч или lifecycle REST-вызов приходят без
+`X-Approval-Id`, сервер создаёт такой же запрос для точного плана и отвечает
+`409 approval_required` с `approvalId`, `planHash`, `expiresAt`; ничего не
+применяется. Пресет должен уже позволять действие после подтверждения: ключ
+`worker` не может превратить удаление доски в approval (получит
+`scope_denied`), а `destructive: "deny"` — жёсткий `403 destructive_denied` без
+создания строки.
+
+Чтобы применить, повторите тот же план/команды с `X-Approval-Id: <id>` на
+`POST /commands`, `/commands/batch` или исходном lifecycle-маршруте.
+`requestedByTokenId` должен совпадать с текущим PAT; если запрос записал
+агентскую сессию, `X-Agent-Session` тоже должен совпасть. Подтверждение
+одноразовое: те же уже применённые команды — идемпотентный повтор, другой
+план получает `approval_mismatch` или `approval_consumed`. Применение
+batch/commands создаёт `AgentRun` с `approvalId`, проставляет `runId` каждой
+команде и пишет `approval_consumed`; lifecycle-операция оставляет `runId`
+`null`. Решение доступно только браузерной сессии, PAT получает
+`pat_forbidden`: человек-владелец токена подтверждает запрос агента, агент не
+подтверждает себя сам.
+
+TTL = `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)` с
+нижней границей 5 минут. Просроченные строки переводятся в `expired` лениво
+при чтении, решении и применении; остальные может добрать maintenance-sweep.
+Каждый шаг пишет `Activity` (`approval_requested`, `approval_approved`,
+`approval_rejected`, `approval_cancelled`, `approval_expired`,
+`approval_consumed`) и публикует SSE-кадр `approval`; решение также попадает
+в `SecurityAuditLog` (`approval.decided`).
 
 Сессии браузера не проходят через пресет/destructive gate; их правила ролей на
 доске не меняются (включая обычный undo). PAT никогда не отправляет команды

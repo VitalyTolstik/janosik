@@ -27,6 +27,7 @@ import { findCardLocation } from "../locate.js";
 import { blockedIds } from "../project.js";
 import { renderCard } from "../render.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   cardIdSchema,
   columnIdSchema,
@@ -159,6 +160,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             "Zero-based insert position in the column (defaults to the end).",
           ),
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
@@ -174,6 +176,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       assigneeId,
       dueDate,
       expectedVersion,
+      approvalId,
     }) => {
       // Validate everything the follow-up commands need first: once ADD_CARD
       // lands, a failure would leave a card the agent does not know about,
@@ -209,6 +212,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             : {}),
           // A client id determines the idempotency key, so a retry replays.
           ...(cardId ? { commandId: stableCommandId(cardId, "create") } : {}),
+          ...(approvalId !== undefined ? { approvalId } : {}),
         },
       ];
       if (description !== undefined) {
@@ -391,10 +395,18 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .optional()
           .describe("Zero-based insert position in the destination column."),
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, toColumnId, position, expectedVersion }) => {
+    async ({
+      boardId,
+      cardId,
+      toColumnId,
+      position,
+      expectedVersion,
+      approvalId,
+    }) => {
       // Definition-of-Done gate (TASK-157, D12). This MCP tool uses the
       // board's configured done columns (`workflowDoneColumnIds`, which
       // falls back to the last column); a card that
@@ -449,6 +461,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
               toIndex,
             },
             result: { title: destination.title, toIndex },
+            ...(approvalId !== undefined ? { approvalId } : {}),
           };
         },
         3,
@@ -485,10 +498,11 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .optional()
           .describe("Title for the copy."),
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, title, expectedVersion }) => {
+    async ({ boardId, cardId, title, expectedVersion, approvalId }) => {
       const newCardId = newId();
       await client.command(
         boardId,
@@ -498,7 +512,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           newCardId,
           ...(title !== undefined ? { title } : {}),
         },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`);
     },
@@ -846,10 +863,18 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .optional()
           .describe("Zero-based insert position."),
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, columnId, position, expectedVersion }) => {
+    async ({
+      boardId,
+      cardId,
+      columnId,
+      position,
+      expectedVersion,
+      approvalId,
+    }) => {
       let destination = columnId;
       if (destination === undefined) {
         const board = await client.getBoard(boardId);
@@ -863,7 +888,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           ...(destination !== undefined ? { columnId: destination } : {}),
           ...(position !== undefined ? { index: position } : {}),
         },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Unarchived card ${cardId}.`);
     },
@@ -882,14 +910,18 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
         expectedVersion: expectedVersionSchema,
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, expectedVersion }) => {
+    async ({ boardId, cardId, expectedVersion, approvalId }) => {
       await client.command(
         boardId,
         { type: "DELETE_CARD", cardId },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        },
       );
       return textOnly(`Deleted card ${cardId}.`);
     },

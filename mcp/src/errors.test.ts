@@ -77,17 +77,35 @@ describe("describeError", () => {
     );
   });
 
-  it("explains approval_required and who can unblock it", () => {
+  it("explains approval_required with the created request and next step", () => {
     const message = describeError(
       new ApiError(409, {
         code: "approval_required",
         action: "DELETE_CARD",
+        approvalId: "apr_1",
+        expiresAt: Date.now() + 60_000,
       }),
     );
     expect(message).toMatch(/approval required/i);
     expect(message).toContain("DELETE_CARD");
-    expect(message).toMatch(/human/i);
-    expect(message).toMatch(/perform the action/i);
+    expect(message).toContain("apr_1");
+    expect(message).toMatch(/janosik_wait_for_decision/);
+    expect(message).toMatch(/do not retry/i);
+  });
+
+  it("explains the other approval refusals without a blind retry", () => {
+    for (const [code, pattern] of [
+      ["approval_expired", /expired/i],
+      ["approval_mismatch", /planHash/i],
+      ["approval_consumed", /already applied/i],
+      ["approval_not_pending", /not pending|approved|rejected/i],
+      ["approval_rejected", /rejected/i],
+      ["approval_cancelled", /cancelled/i],
+    ] as const) {
+      const message = describeError(new ApiError(409, { code }));
+      expect(message).toMatch(pattern);
+      expect(message).toMatch(/do not retry|request a (new|fresh)|re-read/i);
+    }
   });
 
   it("explains a wip conflict with the next step", () => {

@@ -3,21 +3,25 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Patch,
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { Role } from "@prisma/client";
+import { type BoardMember, Role } from "@prisma/client";
 import type { BoardShareDto } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
 import { requestAttribution } from "@/auth/request-attribution";
-import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
+import { TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
+import { ApprovalsService } from "@/approvals/approvals.service";
+import { plainRecord } from "@/approvals/approval-plan";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import { CurrentMembership } from "@/common/current-membership.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
 import { CreateShareDto, UpdateShareDto } from "./dto/share.dto";
 import { ShareService } from "./share.service";
@@ -33,7 +37,10 @@ import { ShareService } from "./share.service";
 @BoardRoles(Role.ADMIN)
 @TokenScope("admin")
 export class BoardSharesController {
-  constructor(private readonly shares: ShareService) {}
+  constructor(
+    private readonly shares: ShareService,
+    private readonly approvals: ApprovalsService,
+  ) {}
 
   @Get()
   list(@Param("id") id: string): Promise<BoardShareDto[]> {
@@ -41,21 +48,40 @@ export class BoardSharesController {
   }
 
   @Post()
-  @AgentAction("share.create")
-  create(
+  async create(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateShareDto,
   ): Promise<BoardShareDto> {
-    return this.shares.create(
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "share.create",
+      target: { boardId: id },
+      body: plainRecord(dto),
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
+    const result = await this.shares.create(
       id,
       user.id,
       dto,
       "user",
       requestAttribution(principal, session?.id),
     );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "share.create",
+        shareId: result.id,
+      });
+    }
+    return result;
   }
 
   @Post(":shareId/refresh")
@@ -69,39 +95,75 @@ export class BoardSharesController {
   }
 
   @Patch(":shareId")
-  @AgentAction("share.update")
-  update(
-    @Param("id") id: string,
-    @Param("shareId") shareId: string,
-    @Body() dto: UpdateShareDto,
-  ): Promise<BoardShareDto> {
-    return this.shares
-      .requireShareOnBoard(shareId, id)
-      .then(() => this.shares.update(shareId, dto));
-  }
-
-  @Delete(":shareId")
-  @AgentAction("share.revoke")
-  revoke(
+  async update(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
+    @Body() dto: UpdateShareDto,
   ): Promise<BoardShareDto> {
-    return this.shares
-      .requireShareOnBoard(shareId, id)
-      .then(() =>
-        this.shares.revoke(
-          shareId,
-          user.id,
-          requestAttribution(principal, session?.id),
-        ),
-      );
+    await this.shares.requireShareOnBoard(shareId, id);
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "share.update",
+      target: { boardId: id, shareId },
+      body: plainRecord(dto),
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
+    const result = await this.shares.update(shareId, dto);
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "share.update",
+        shareId,
+      });
+    }
+    return result;
+  }
+
+  @Delete(":shareId")
+  async revoke(
+    @Param("id") id: string,
+    @Param("shareId") shareId: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
+  ): Promise<BoardShareDto> {
+    await this.shares.requireShareOnBoard(shareId, id);
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "share.revoke",
+      target: { boardId: id, shareId },
+      body: {},
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
+    const result = await this.shares.revoke(
+      shareId,
+      user.id,
+      requestAttribution(principal, session?.id),
+    );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "share.revoke",
+        shareId,
+      });
+    }
+    return result;
   }
 
   @Delete(":shareId/permanent")
-  @AgentAction("share.delete")
   @HttpCode(204)
   async deleteRevoked(
     @Param("id") id: string,
@@ -109,12 +171,32 @@ export class BoardSharesController {
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
   ): Promise<void> {
+    await this.shares.requireShareOnBoard(shareId, id);
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "share.delete",
+      target: { boardId: id, shareId },
+      body: {},
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
     await this.shares.deleteRevoked(
       id,
       shareId,
       user.id,
       requestAttribution(principal, session?.id),
     );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "share.delete",
+        shareId,
+      });
+    }
   }
 }

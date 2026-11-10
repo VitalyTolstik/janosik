@@ -87,9 +87,10 @@ then send it in the `Authorization` header as `Bearer jnk_<token>`. A token
 works on boards, members and share links according to its scope preset, but not
 on invitations, profile/key/password/email management, which need a browser
 sign-in. Destructive actions need a human approval unless the token is marked
-`Trusted CI`; the approval request API ships in 166.5, so until then a
-destructive agent call is refused with `409 approval_required` and a human
-performs the action in the browser. The API
+`Trusted CI`; a destructive agent call without approval is refused with
+`409 approval_required`, the server creates an approval request for that exact
+plan, and a human board ADMIN approves or rejects it in the browser before the
+agent repeats the call with `X-Approval-Id`. The API
 base path is `/api/v1`. Board mutations travel through the command log at
 `POST /boards/:id/commands`. See the [API reference](/docs/api/) and the
 [Command API](/docs/api/commands/).

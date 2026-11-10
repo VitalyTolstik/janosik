@@ -114,6 +114,20 @@ export const expectedVersionSchema = z
   );
 
 /**
+ * TASK-166.5 approval id. A destructive write that answered
+ * `409 approval_required` is repeated with the id of the approved request;
+ * sent as `X-Approval-Id`.
+ */
+export const approvalIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,128}$/)
+  .optional()
+  .describe(
+    "Approved request id from janosik_request_approval / " +
+      "janosik_wait_for_decision. Required to apply a destructive plan.",
+  );
+
+/**
  * Read projection (TASK-157, E16). 'full' returns every card as stored;
  * 'summary' drops each card's description and checklists (keeping a size
  * hint), so scanning a board whose cards carry 64k documents stays small.

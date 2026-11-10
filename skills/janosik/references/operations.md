@@ -40,9 +40,13 @@ identity. A board-scoped key cannot create or import other boards.
 If connection fails: 401 calls for checking the configured credential/expiry;
 403 can indicate board role, key preset/read-only restrictions, a board-scoped
 key aimed at another board, or a session-only route. Destructive tools answer
-409 `approval_required` without a trusted-CI key. The approval request API ships
-in 166.5; until then nothing is queued and a human performs the action in the
-browser. A missing tool can indicate a disabled group or MCP read-only mode.
+409 `approval_required` without a trusted-CI key. That response carries the
+created `approvalId`, `planHash` and `expiresAt`; use
+`janosik_get_approval`/`janosik_wait_for_decision`, let a human board ADMIN
+decide in the browser, then repeat the identical call with its `approvalId`.
+`janosik_cancel_approval` withdraws your own pending request. Never self-approve
+or change the plan between request and apply. A missing tool can indicate a
+disabled group or MCP read-only mode.
 Report the specific limitation rather than repeatedly retrying an unchanged
 request.
 

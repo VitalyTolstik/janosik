@@ -20,6 +20,7 @@ import { UsersModule } from "@/users/users.module";
 import { AccountDeletionModule } from "@/users/account-deletion.module";
 import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
+import { ApprovalsModule } from "@/approvals/approvals.module";
 import { AgentSessionsModule } from "@/agent-sessions/agent-sessions.module";
 import { ActivityModule } from "@/activity/activity.module";
 import { CommentsModule } from "@/comments/comments.module";
@@ -72,6 +73,7 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     AccountDeletionModule,
     BoardsModule,
     CommandsModule,
+    ApprovalsModule,
     AgentSessionsModule,
     ActivityModule,
     CommentsModule,

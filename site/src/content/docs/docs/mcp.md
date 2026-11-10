@@ -51,8 +51,9 @@ overwritten.
 
 Tools come in groups. By default the server registers the groups that work
 the board: boards, columns, cards, labels, checklists, card links, comments,
-activity, attachments and agent sessions. The groups that change who can see a
-board or act on your account (`members`, `shares`, `account`) are opt-in:
+activity, attachments, agent sessions and approvals. The groups that change
+who can see a board or act on your account (`members`, `shares`, `account`) are
+opt-in:
 
 | Setting | Effect |
 | --- | --- |
@@ -68,6 +69,18 @@ answers `approval_required` unless the token is marked `Trusted CI`. A board
 policy of `destructive: "deny"` returns `destructive_denied` for every agent.
 Do not retry these errors with the same token; report the blocker or ask a
 human.
+
+`approval_required` is a queue, not a dead end. Call
+`janosik_request_approval` with the exact plan (or use the `approvalId` the API
+already returned), then `janosik_wait_for_decision` for up to 60 seconds per
+call. `janosik_get_approval`/`janosik_list_approvals` show the status, and
+`janosik_cancel_approval` withdraws the agent's own pending request. A human
+board ADMIN decides in the browser; no MCP tool can approve a request. Once
+approved, repeat the same write with its `approvalId` argument, which is sent
+as `X-Approval-Id`. Do not change command ids or fields between request and
+apply — a different plan is `approval_mismatch`. An approval is one-time:
+after success it is `consumed`, and repeating the same applied commands is an
+idempotent replay.
 
 Data-reading tools accept `response_format: "markdown"` (default) or `"json"`. The
 tool names all start with `janosik_` so they sit alongside other servers

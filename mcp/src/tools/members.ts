@@ -11,6 +11,7 @@ import type { JanosikClient } from "../client.js";
 import { respond, textOnly } from "../format.js";
 import { renderMembers } from "../render.js";
 import {
+  approvalIdSchema,
   boardIdSchema,
   responseFormatSchema,
   roleSchema,
@@ -55,17 +56,22 @@ export function registerMemberTools(server: McpServer, client: JanosikClient) {
           .string()
           .optional()
           .describe("ISO-8601 expiry, only meaningful for a VIEWER."),
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, email, role, expiresAt }) => {
+    async ({ boardId, email, role, expiresAt, approvalId }) => {
       // The server answers the same way whether or not the address has an
       // account (so an invite cannot probe for accounts): no user id here.
-      await client.inviteMember(boardId, {
-        email,
-        role,
-        ...(expiresAt !== undefined ? { expiresAt } : {}),
-      });
+      await client.inviteMember(
+        boardId,
+        {
+          email,
+          role,
+          ...(expiresAt !== undefined ? { expiresAt } : {}),
+        },
+        approvalId,
+      );
       return textOnly(
         `Invited ${email} as ${role}. If they have a Janosik account, they ` +
           "will see the invitation and gain access once they accept.",
@@ -90,14 +96,20 @@ export function registerMemberTools(server: McpServer, client: JanosikClient) {
           .nullable()
           .optional()
           .describe("ISO-8601 expiry, or null to clear it."),
+        approvalId: approvalIdSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, userId, role, expiresAt }) => {
-      const member = await client.updateMember(boardId, userId, {
-        ...(role !== undefined ? { role } : {}),
-        ...(expiresAt !== undefined ? { expiresAt } : {}),
-      });
+    async ({ boardId, userId, role, expiresAt, approvalId }) => {
+      const member = await client.updateMember(
+        boardId,
+        userId,
+        {
+          ...(role !== undefined ? { role } : {}),
+          ...(expiresAt !== undefined ? { expiresAt } : {}),
+        },
+        approvalId,
+      );
       return textOnly(`Updated member ${userId} — now ${member.role}.`);
     },
   );
@@ -113,11 +125,12 @@ export function registerMemberTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: boardIdSchema,
         userId: idSchema.describe("Member user id."),
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, userId }) => {
-      await client.removeMember(boardId, userId);
+    async ({ boardId, userId, approvalId }) => {
+      await client.removeMember(boardId, userId, approvalId);
       return textOnly(`Removed member ${userId} from board ${boardId}.`);
     },
   );

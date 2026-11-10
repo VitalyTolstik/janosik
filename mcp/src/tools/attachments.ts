@@ -23,7 +23,12 @@ import {
   type FsOptions,
 } from "../fs-policy.js";
 import { renderAttachments } from "../render.js";
-import { cardIdSchema, responseFormatSchema, idSchema } from "../schemas.js";
+import {
+  approvalIdSchema,
+  cardIdSchema,
+  responseFormatSchema,
+  idSchema,
+} from "../schemas.js";
 import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
 
 /** A tiny extension → mime map; the server re-checks the allowlist anyway. */
@@ -186,11 +191,12 @@ export function registerAttachmentTools(
         "Delete a card attachment (the uploader or a board ADMIN). Destructive.",
       inputSchema: {
         attachmentId: idSchema.describe("Attachment id."),
+        approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ attachmentId }) => {
-      await client.deleteAttachment(attachmentId);
+    async ({ attachmentId, approvalId }) => {
+      await client.deleteAttachment(attachmentId, approvalId);
       return textOnly(`Deleted attachment ${attachmentId}.`);
     },
   );

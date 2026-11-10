@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ApprovalsModule } from "@/approvals/approvals.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { AuthModule } from "@/auth/auth.module";
 import { BoardsModule } from "@/boards/boards.module";
@@ -21,6 +22,7 @@ import { ShareService } from "./share.service";
 @Module({
   imports: [
     AuthModule,
+    ApprovalsModule,
     BoardsModule,
     CommentsModule,
     AttachmentsModule,

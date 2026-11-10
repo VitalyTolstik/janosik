@@ -76,9 +76,10 @@ token never raises the owner's board role. Ordinary content writes need
 needs `admin` (and still the board ADMIN role). Destructive actions require a
 human approval by default; `trustedCi` is an explicit opt-out for a trusted CI
 pipeline, while a board policy of `destructive: "deny"` blocks them even for
-`trustedCi`. The approval request lifecycle ships in 166.5: until then a
-destructive agent call gets `409 approval_required` and nothing is applied; a
-human performs the action in the browser. Existing keys were grandfathered to
+`trustedCi`. A destructive agent call without approval gets
+`409 approval_required` and nothing is applied; the server creates the exact
+plan request, a human board ADMIN decides it in the browser, and the agent
+repeats the call with `X-Approval-Id`. Approval is one-time. Existing keys were grandfathered to
 `admin` + `trustedCi` unless read-only. Changing a key's scope means creating a
 new key and revoking the old one.
 

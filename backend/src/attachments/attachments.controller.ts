@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -165,12 +166,14 @@ export class AttachmentsController {
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @Headers("x-approval-id") approvalId: string | undefined,
   ): Promise<{ status: "ok" }> {
     await this.attachments.remove(
       attachmentId,
       user,
       requestAttribution(principal, session?.id),
       principal,
+      approvalId,
     );
     return { status: "ok" };
   }

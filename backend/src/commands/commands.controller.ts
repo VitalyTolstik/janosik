@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -59,6 +60,7 @@ export class CommandsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateCommandDto,
   ): Promise<CommandResponse> {
     return this.commands.apply(id, user.id, dto, {
@@ -66,6 +68,7 @@ export class CommandsController {
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
       principal,
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
   }
 
@@ -85,6 +88,7 @@ export class CommandsController {
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
     @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateCommandBatchDto,
   ): Promise<CommandBatchResponse> {
     const results = await this.commands.applyBatch(id, user.id, dto.commands, {
@@ -92,6 +96,7 @@ export class CommandsController {
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
       principal,
+      ...(approvalId !== undefined ? { approvalId } : {}),
     });
     return { results };
   }

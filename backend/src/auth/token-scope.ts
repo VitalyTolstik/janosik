@@ -352,9 +352,10 @@ function boardScopeError(action: string): ForbiddenException {
 }
 
 function approvalError(rule: AgentActionRule) {
-  // 166.5 adds `approvalId`/`planHash`/`expiresAt` when it creates the
-  // ApprovalRequest. Until then this is the documented, clean seam: the
-  // destructive action is refused and nothing is applied.
+  // The approval-aware transports (commands, batch, lifecycle operations)
+  // replace this refusal with the created ApprovalRequest's id/hash/expiry.
+  // This fallback keeps the seam clean for any caller that has not adopted
+  // the 166.5 gate yet: nothing is applied and the next step is a human.
   return new ConflictException({
     message:
       `${rule.action} is destructive and needs human approval; ` +
@@ -420,35 +421,38 @@ export function assertTokenBoardScope(
   throw boardScopeError(action);
 }
 
+/** The non-throwing decision `assertAgentRule` implements (§5.2 order). */
+export type AgentRuleEvaluation =
+  | { outcome: "allowed" }
+  | { outcome: "scope"; actual: ScopePreset }
+  | { outcome: "denied" }
+  | { outcome: "approval"; rule: AgentActionRule };
+
 /**
- * Apply the preset and destructive/approval gate for one action.
- *
- * Order (ADR §5.2): pattern denied → preset → destructive hard block →
- * trustedCi → approval. A human browser JWT is not gated.
+ * Evaluate one action without throwing. The approval transport uses this to
+ * decide whether it must create a request before the board transaction; the
+ * command transaction still calls `assertAgentRule` as defence in depth.
  */
-export function assertAgentRule(
+export function evaluateAgentRule(
   principal: AuthPrincipal | undefined,
   policy: unknown,
   rule: AgentActionRule,
-): void {
-  if (principal?.via !== "pat") return;
+): AgentRuleEvaluation {
+  if (principal?.via !== "pat") return { outcome: "allowed" };
   const actual = effectiveTokenScope(principal);
   if (rule.patForbidden === true) {
-    throw scopeError(rule, actual);
+    return { outcome: "scope", actual };
   }
   if (SCOPE_RANK[actual] < SCOPE_RANK[rule.requiredScope]) {
-    throw scopeError(rule, actual);
+    return { outcome: "scope", actual };
   }
 
   const effectivePolicy = readBoardAgentPolicy(policy);
   const trusted = principal.tokenIdentity?.trustedCi === true;
 
   if (rule.destructive) {
-    if (effectivePolicy.destructive === "deny") {
-      throw destructiveDeniedError(rule);
-    }
-    if (!trusted) throw approvalError(rule);
-    return;
+    if (effectivePolicy.destructive === "deny") return { outcome: "denied" };
+    return trusted ? { outcome: "allowed" } : { outcome: "approval", rule };
   }
 
   if (
@@ -456,6 +460,34 @@ export function assertAgentRule(
     effectivePolicy.requireApprovalFor.includes(rule.policyKey) &&
     !trusted
   ) {
-    throw approvalError(rule);
+    return { outcome: "approval", rule };
   }
+  return { outcome: "allowed" };
+}
+
+/**
+ * Apply the preset and destructive/approval gate for one action.
+ *
+ * Order (ADR §5.2): pattern denied → preset → destructive hard block →
+ * trustedCi → approval. A human browser JWT is not gated. `approvalApplied`
+ * is set only by a transport that has already verified the exact plan and
+ * ownership (TASK-166.5), so the second evaluation inside the board
+ * transaction does not refuse the same call again.
+ */
+export function assertAgentRule(
+  principal: AuthPrincipal | undefined,
+  policy: unknown,
+  rule: AgentActionRule,
+  options: { approvalApplied?: boolean } = {},
+): void {
+  const evaluation = evaluateAgentRule(principal, policy, rule);
+  if (evaluation.outcome === "allowed") return;
+  if (evaluation.outcome === "scope") {
+    throw scopeError(rule, evaluation.actual);
+  }
+  if (evaluation.outcome === "denied") {
+    throw destructiveDeniedError(rule);
+  }
+  if (options.approvalApplied === true) return;
+  throw approvalError(rule);
 }

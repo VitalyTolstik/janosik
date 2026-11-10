@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -14,7 +15,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { Role } from "@prisma/client";
+import { type BoardMember, Role } from "@prisma/client";
 import type {
   BoardAggregate,
   BoardCardSearchResult,
@@ -27,11 +28,14 @@ import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
 import { requestAttribution } from "@/auth/request-attribution";
 import { assertAccountWidePreset } from "@/auth/token-scope";
-import { AgentAction, TokenScope } from "@/auth/token-scope.decorator";
+import { TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import { CurrentMembership } from "@/common/current-membership.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
+import { ApprovalsService } from "@/approvals/approvals.service";
+import { plainRecord } from "@/approvals/approval-plan";
 import { BoardsService } from "./boards.service";
 import { CreateBoardDto } from "./dto/create-board.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
@@ -46,7 +50,10 @@ import { UpdateMemberDto } from "./dto/update-member.dto";
  */
 @Controller("boards")
 export class BoardsController {
-  constructor(private readonly boards: BoardsService) {}
+  constructor(
+    private readonly boards: BoardsService,
+    private readonly approvals: ApprovalsService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -113,7 +120,6 @@ export class BoardsController {
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
   @TokenScope("admin")
-  @AgentAction("board.delete")
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
   async remove(
@@ -121,12 +127,30 @@ export class BoardsController {
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
   ): Promise<{ status: "ok" }> {
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "board.delete",
+      target: { boardId: id },
+      body: {},
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
     await this.boards.deleteBoard(
       id,
       user.id,
       requestAttribution(principal, session?.id),
     );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "board.delete",
+      });
+    }
     return { status: "ok" };
   }
 
@@ -148,49 +172,84 @@ export class BoardsController {
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
   @TokenScope("admin")
-  @AgentAction("member.invite")
   @Post(":id/members")
-  invite(
+  async invite(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: InviteMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.inviteMember(
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "member.invite",
+      target: { boardId: id },
+      body: plainRecord(dto),
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
+    const result = await this.boards.inviteMember(
       id,
       user.id,
       dto,
       requestAttribution(principal, session?.id),
     );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "member.invite",
+      });
+    }
+    return result;
   }
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
   @TokenScope("admin")
-  @AgentAction("member.update")
   @Patch(":id/members/:userId")
-  updateMember(
+  async updateMember(
     @Param("id") id: string,
     @Param("userId") userId: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: UpdateMemberDto,
   ): Promise<BoardMemberDto> {
-    return this.boards.updateMember(
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "member.update",
+      target: { boardId: id, userId },
+      body: plainRecord(dto),
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
+    const result = await this.boards.updateMember(
       id,
       user.id,
       userId,
       dto,
       requestAttribution(principal, session?.id),
     );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "member.update",
+      });
+    }
+    return result;
   }
 
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
   @TokenScope("admin")
-  @AgentAction("member.remove")
   @Delete(":id/members/:userId")
   @HttpCode(HttpStatus.OK)
   async removeMember(
@@ -199,13 +258,31 @@ export class BoardsController {
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
   ): Promise<{ status: "ok" }> {
+    const approval = await this.approvals.authorizeOperation({
+      boardId: id,
+      userId: user.id,
+      role: membership.role,
+      principal,
+      agentSessionId: session?.id ?? null,
+      op: "member.remove",
+      target: { boardId: id, userId },
+      body: {},
+      ...(approvalId !== undefined ? { approvalId } : {}),
+    });
     await this.boards.removeMember(
       id,
       user.id,
       userId,
       requestAttribution(principal, session?.id),
     );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "member.remove",
+      });
+    }
     return { status: "ok" };
   }
 

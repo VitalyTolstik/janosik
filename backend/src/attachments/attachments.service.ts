@@ -10,9 +10,9 @@ import {
 import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
+import { ApprovalsService } from "@/approvals/approvals.service";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AuthPrincipal } from "@/auth/auth-principal";
-import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
@@ -62,6 +62,7 @@ export class AttachmentsService {
     private readonly transcode: TranscodeService,
     private readonly media: MediaService,
     private readonly flags: FeatureFlagsService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /**
@@ -340,6 +341,7 @@ export class AttachmentsService {
     user: AuthUser,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
+    approvalId?: string,
   ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, deletedAt: null },
@@ -367,6 +369,8 @@ export class AttachmentsService {
           ? row.uploadedByTokenId === attribution.apiTokenId
           : row.uploadedById === user.id
         : row.uploadedById === user.id;
+    let approval: Awaited<ReturnType<ApprovalsService["authorizeOperation"]>> =
+      null;
     if (!ownUpload) {
       const membership = await this.prisma.boardMember.findFirst({
         where: {
@@ -378,17 +382,21 @@ export class AttachmentsService {
       });
       if (membership?.role !== "ADMIN") throw new ForbiddenException();
       // TASK-166: deleting another user's upload is admin + destructive.
-      // The board role was checked first; the helper then applies the token
-      // preset (admin) and the approval/trustedCi/deny policy.
-      const board = await this.prisma.board.findUnique({
-        where: { id: row.boardId },
-        select: { agentPolicy: true },
-      });
-      assertAgentRule(
+      // The board role was checked first; the approval gate then applies the
+      // token preset (admin), the board policy and the exact
+      // `attachment.delete` plan. Without a header it creates the request and
+      // refuses; with one it validates ownership/hash/status.
+      approval = await this.approvals.authorizeOperation({
+        boardId: row.boardId,
+        userId: user.id,
+        role: membership.role,
         principal,
-        board?.agentPolicy,
-        LIFECYCLE_ACTIONS["attachment.delete"],
-      );
+        agentSessionId: attribution.agentSessionId,
+        op: "attachment.delete",
+        target: { boardId: row.boardId, attachmentId },
+        body: {},
+        ...(approvalId !== undefined ? { approvalId } : {}),
+      });
     }
 
     const removed = await this.boardWrite.run(row.boardId, async (tx) => {
@@ -425,6 +433,12 @@ export class AttachmentsService {
       return activity.id;
     });
     if (!removed) return;
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "attachment.delete",
+        attachmentId,
+      });
+    }
 
     // TASK-88: the blob and its derivatives stay on disk — soft-delete is
     // reversible (`POST /admin/entities/attachments/:id/restore`), so a

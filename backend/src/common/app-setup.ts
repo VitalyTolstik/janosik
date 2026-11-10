@@ -21,7 +21,7 @@ const DEFAULT_JSON_LIMIT_BYTES = 256 * 1024;
  */
 const IMPORT_BODY_ROUTE = /^\/api\/v1\/boards\/import\/?$/;
 const COMMAND_BODY_ROUTE =
-  /^\/api\/v1\/(?:boards\/[^/]+\/(?:commands(?:\/batch)?|plans(?:\/apply)?)|admin\/boards\/[^/]+\/commands(?:\/batch)?)\/?$/;
+  /^\/api\/v1\/(?:boards\/[^/]+\/(?:commands(?:\/batch)?|plans(?:\/apply)?|approvals)|admin\/boards\/[^/]+\/commands(?:\/batch)?)\/?$/;
 
 interface BodyParserError extends Error {
   type?: string;
