@@ -261,6 +261,65 @@ function fakeApi(
       server: { version: "0.2.0", apiVersion: "1" },
     });
   }
+  const planMatch = /^\/boards\/([^/]+)\/plans(\/apply)?$/.exec(path);
+  if (planMatch && method === "POST") {
+    const [, planBoard, action] = planMatch;
+    const request = body as {
+      commands: Array<{ commandId: string; action: { type: string } }>;
+      planHash?: string;
+    };
+    if (action === "/apply") {
+      return respond({
+        runId: "run-plan-1",
+        planHash: request.planHash ?? "b".repeat(64),
+        results: request.commands.map((_command, index) => ({
+          seq: boardSeq + index + 1,
+          versions: { [`board:${planBoard}`]: 2 },
+          runId: "run-plan-1",
+        })),
+      });
+    }
+    return respond({
+      dryRun: true,
+      schemaVersion: 1,
+      boardId: planBoard,
+      planHash: "b".repeat(64),
+      plan: {
+        schemaVersion: 1,
+        boardId: planBoard,
+        commands: request.commands.map((command) => ({
+          commandId: command.commandId,
+          action: command.action,
+        })),
+      },
+      commandCount: request.commands.length,
+      cardCreates: request.commands.filter(
+        (command) => command.action.type === "ADD_CARD",
+      ).length,
+      limits: { commands: 100, cards: 50 },
+      requirement: {
+        kind: "custom",
+        requiresApproval: false,
+        requiredScope: "worker",
+        action: "batch",
+        risk: "low",
+        summary: `Apply ${request.commands.length} commands`,
+      },
+      diff: [
+        {
+          touch: "card:k1",
+          kind: "update",
+          before: { title: "First" },
+          after: { title: "Second" },
+          fields: ["title"],
+        },
+      ],
+      warnings: [],
+      conflicts: [],
+      canApply: true,
+    });
+  }
+
   const runMatch =
     /^\/boards\/([^/]+)\/runs(?:\/([^/]+)(\/revert\/preview)?)?$/.exec(path);
   if (runMatch) {
@@ -570,14 +629,17 @@ describe("janosik MCP server", () => {
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly. TASK-166
     // removed the invitation and profile tools (session-only routes);
-    // TASK-166.7 added the three read-only run tools.
-    expect(names.length).toBe(82);
+    // TASK-166.7 added three read-only run tools; TASK-166.8 added the
+    // plan/apply pair.
+    expect(names.length).toBe(84);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_request_approval");
     expect(names).toContain("janosik_get_approval");
     expect(names).toContain("janosik_wait_for_decision");
     expect(names).toContain("janosik_cancel_approval");
+    expect(names).toContain("janosik_plan_changes");
+    expect(names).toContain("janosik_apply_plan");
     expect(names).toContain("janosik_list_runs");
     expect(names).toContain("janosik_get_run");
     expect(names).toContain("janosik_preview_run_revert");
@@ -1632,6 +1694,90 @@ describe("janosik MCP server", () => {
         entry.method === "POST",
     );
     expect(previewCall).toBeDefined();
+    await client.close();
+  });
+
+  it("previews a plan and applies exactly the returned commands and hash", async () => {
+    const client = await connect();
+    const commands = [
+      {
+        commandId: "cmd-plan-1",
+        action: {
+          type: "ADD_CARD",
+          newCardId: "c-new",
+          columnId: "col1",
+          title: "Bulk one",
+        },
+      },
+      {
+        commandId: "cmd-plan-2",
+        action: { type: "UPDATE_CARD", cardId: "k1", title: "First!" },
+      },
+    ];
+    const preview = await client.callTool({
+      name: "janosik_plan_changes",
+      arguments: { boardId: "b1", commands },
+    });
+    expect(preview.isError).toBeFalsy();
+    expect(preview.structuredContent).toMatchObject({
+      dryRun: true,
+      boardId: "b1",
+      commandCount: 2,
+      cardCreates: 1,
+      canApply: true,
+    });
+    expect(firstText(preview)).toContain("planHash");
+    const previewCall = calls.find(
+      (entry) => entry.path === "/boards/b1/plans" && entry.method === "POST",
+    );
+    expect(previewCall?.body).toMatchObject({ commands });
+
+    const previewHash = (preview.structuredContent as { planHash: string })
+      .planHash;
+    const applied = await client.callTool({
+      name: "janosik_apply_plan",
+      arguments: { boardId: "b1", planHash: previewHash, commands },
+    });
+    expect(applied.isError).toBeFalsy();
+    expect(applied.structuredContent).toMatchObject({
+      ok: true,
+      planHash: previewHash,
+      runId: "run-plan-1",
+      commandCount: 2,
+    });
+    const applyCall = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/plans/apply" && entry.method === "POST",
+    );
+    expect(applyCall?.body).toMatchObject({ planHash: previewHash, commands });
+    expect(applyCall?.headers?.["X-Approval-Id"]).toBeUndefined();
+    await client.close();
+  });
+
+  it("passes approvalId on a plan apply and keeps the plan hash", async () => {
+    const client = await connect();
+    const commands = [
+      {
+        commandId: "cmd-delete-1",
+        action: { type: "DELETE_CARD", cardId: "k1" },
+      },
+    ];
+    const result = await client.callTool({
+      name: "janosik_apply_plan",
+      arguments: {
+        boardId: "b1",
+        planHash: "c".repeat(64),
+        commands,
+        approvalId: "apr-1",
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const call = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/plans/apply" && entry.method === "POST",
+    );
+    expect(call?.headers?.["X-Approval-Id"]).toBe("apr-1");
+    expect(call?.body).toMatchObject({ planHash: "c".repeat(64), commands });
     await client.close();
   });
 });

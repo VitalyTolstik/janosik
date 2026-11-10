@@ -51,7 +51,7 @@ overwritten.
 
 Tools come in groups. By default the server registers the groups that work
 the board: boards, columns, cards, labels, checklists, card links, comments,
-activity, attachments, agent sessions, approvals and runs. The groups that
+activity, attachments, agent sessions, approvals, plans and runs. The groups that
 change who can see a board or act on your account (`members`, `shares`,
 `account`) are opt-in:
 
@@ -82,12 +82,23 @@ apply — a different plan is `approval_mismatch`. An approval is one-time:
 after success it is `consumed`, and repeating the same applied commands is an
 idempotent replay.
 
-Every PAT batch and every single destructive PAT command creates one
-board-scoped **run** (a plan/apply run will arrive with TASK-166.8).
-`janosik_list_runs` and `janosik_get_run` show what an agent changed, with the
-token, session, command range and attribution. `janosik_preview_run_revert` is a
-dry run: it returns the conflicts and whether the run can be rolled back, and
-writes nothing. Applying the rollback is a human board-ADMIN action in the
+For multi-step and bulk edits use the plan pair. `janosik_plan_changes` is a
+dry run: it validates every command, replays the reducer in memory and returns
+the canonical `planHash`, a before/after diff, warnings and conflicts; nothing
+is written and no run is created. Pass the returned commands and hash unchanged
+to `janosik_apply_plan`, which applies them atomically in one board
+transaction. A changed hash is `approval_mismatch`; a destructive plan without
+approval is `approval_required`, and after a human approves the exact hash you
+repeat the same call with `approvalId`. The per-plan limit is 100 commands and
+50 card creates (`min` with the board policy); split a larger job into several
+plans — there is no cross-plan atomicity. An applied plan creates one
+`kind: "plan"` run.
+
+Every PAT batch, every single destructive PAT command and every PAT plan apply
+creates one board-scoped **run**. `janosik_list_runs` and `janosik_get_run`
+show what an agent changed, with the token, session, command range and
+attribution. `janosik_preview_run_revert` is a dry run: it returns the
+conflicts and whether the run can be rolled back, and writes nothing. Applying the rollback is a human board-ADMIN action in the
 browser — no MCP tool can revert a run (ADR D17). If a preview reports
 conflicts, do not try to force it; report the touched entities and let a human
 decide.

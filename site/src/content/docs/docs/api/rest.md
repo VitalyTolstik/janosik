@@ -334,6 +334,77 @@ role rules are unchanged (including ordinary undo). A PAT can never send
 `RESTORE_*` commands (`scope_denied`) — an agent uses compensating edits or asks
 a human to revert a run.
 
+## Plans
+
+A plan is a dry-run first and an atomic apply of exactly the previewed intent
+afterwards. Both routes are board writes: `ADMIN`/`MEMBER` and a `worker` (or
+higher) token preset. A plan may contain at most
+`min(100, policy.maxCommandsPerRun)` commands and
+`min(50, policy.maxCardsPerRun)` card creates (`ADD_CARD`, `DUPLICATE_CARD`,
+`DUPLICATE_COLUMN`); a larger plan is `409 limit_exceeded` and the client
+splits the work into several plans. There is deliberately no cross-plan
+atomicity.
+
+| Method | Path | Auth / role | Request | Response |
+| --- | --- | --- | --- | --- |
+| `POST` | `/boards/:id/plans` | board `ADMIN`/`MEMBER`, `worker` preset | `{ commands, clientRunId? }` | `PlanPreviewDto` |
+| `POST` | `/boards/:id/plans/apply` | same; optional `X-Approval-Id` | `{ commands, planHash, clientRunId? }` | `PlanApplyResponse` |
+
+`commands` is the same array `/commands/batch` accepts and goes through the
+same validator, WIP/workflow/version checks, scope preset and destructive
+classification. `action.at` and the action-level `boardId` are transport
+context, not intent: the server strips them and computes
+`planHash = sha256(canonicalJson({ schemaVersion: 1, boardId, commands }))`
+with recursively sorted keys, array order preserved and no spaces. The
+preview returns the hash; a client hash is never trusted on its own.
+
+`POST /plans` writes nothing: it does not create a command, an `AgentRun` or
+an `ApprovalRequest`. It replays the reducer in memory and returns:
+
+- `planHash` and the canonical `plan` (the commands without `at`/`boardId`);
+- `diff` — net `create`/`update`/`delete` changes with the touched `card:`/
+  `column:`/`label:`/`board:` entity, the full state for a create/delete and
+  the changed fields for an update;
+- `warnings` — `approval_required`, `destructive`, `reviewer_required`,
+  `no_op`;
+- `conflicts` — `version`, `wip`, `workflow`, `id`, `scope`,
+  `destructive_denied` or `invalid`, with the command `index` and
+  `currentVersion` where known;
+- `requirement` (kind/scope/risk/summary), effective `limits` and `canApply`.
+
+`POST /plans/apply` requires the exact preview `planHash`. A changed plan is
+`409 approval_mismatch` with `expectedPlanHash`/`actualPlanHash` prefixes and
+the `approvalId` when a header was sent. Apply then behaves exactly like
+`/commands/batch`: one board lock, one transaction, all-or-nothing, results in
+command order, idempotent by `commandId`, and `409 idempotency_conflict` for a
+reused key with another body. A destructive plan without `X-Approval-Id`
+creates the exact approval request and answers `409 approval_required`
+without partial application; with an approved id it applies and consumes the
+approval once. A retry of the same applied commands is an idempotent replay.
+
+A PAT plan creates one `AgentRun` (`kind: "plan"`, the `planHash` and optional
+`clientRunId`), stores a pre-image for every command and returns
+`{ runId, results, planHash }` plus `X-Run-Id`; that run can be inspected with
+`GET /runs` and reverted by a human board ADMIN. A browser plan creates no run
+(its history is the ordinary UI undo). A plan never spans boards.
+
+```json
+{
+  "commands": [
+    {
+      "commandId": "cmd-1",
+      "action": {
+        "type": "ADD_CARD",
+        "newCardId": "card-1",
+        "columnId": "col-1",
+        "title": "Bulk card"
+      }
+    }
+  ],
+  "planHash": "8f14e45fceea167a5a36dedd4bea2543…"
+}
+```
+
 ## Attachments
 
 Files are uploaded over REST as `multipart/form-data` with a single `file`
@@ -601,6 +672,17 @@ Field presence and nullability are specified separately:
 { "includeComments": false }
 ```
 
+### PlanRequest / PlanApplyRequest
+
+| Field         | Type   | Required | Constraints                                                     |
+| ------------- | ------ | -------- | --------------------------------------------------------------- |
+| `commands`    | array  | required | 1–1000 items; the per-board cap is `min(100, policy.maxCommandsPerRun)` and answers `409 limit_exceeded` |
+| `clientRunId` | string | optional | `^[A-Za-z0-9_-]{8,64}$`; the `AgentRun` idempotency key on apply |
+| `planHash`    | string | required on apply | 64 hex characters from the preview                 |
+
+Each command is `{ commandId, action, ifMatch?, ifMatchVersions? }`. `action`
+is the reducer payload including `type`; `at` and `boardId` may be omitted.
+
 ### PresencePingDto
 
 | Field      | Type   | Required | Constraints             |
@@ -631,6 +713,11 @@ The response bodies are the shared wire types. Key fields:
   `includeComments`, `includeAttachments`. Members are `{ id, displayName,
   avatarColor, avatarPath }` with no emails.
 - `BoardEnvelope`: `{ app, schemaVersion, exportedAt, boards[] }`.
+- `PlanPreviewDto`: `{ dryRun: true, schemaVersion: 1, boardId, planHash,
+  plan, commandCount, cardCreates, limits, requirement, diff, warnings,
+  conflicts, canApply }`; `plan` is an `ApprovalPlan` with a `commands` array.
+- `PlanApplyResponse`: `{ runId, planHash, results }` where `results` is one
+  `CommandResponse` per command, in order.
 
 ## Errors
 

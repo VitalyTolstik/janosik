@@ -343,6 +343,61 @@ TTL = `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)` 
 `RESTORE_*` (`scope_denied`) — агент делает компенсирующие правки или просит
 человека откатить run.
 
+## Планы
+
+План — это сначала dry-run, а затем атомарное применение ровно того намерения,
+которое было показано. Оба маршрута — запись на доске: `ADMIN`/`MEMBER` и
+пресет токена `worker` или выше. В плане не больше
+`min(100, policy.maxCommandsPerRun)` команд и
+`min(50, policy.maxCardsPerRun)` созданий карточек (`ADD_CARD`,
+`DUPLICATE_CARD`, `DUPLICATE_COLUMN`); больший план получает
+`409 limit_exceeded`, и клиент делит работу на несколько планов. Межатомарности
+между планами намеренно нет.
+
+| Метод | Путь | Аутентификация / роль | Запрос | Ответ |
+| --- | --- | --- | --- | --- |
+| `POST` | `/boards/:id/plans` | `ADMIN`/`MEMBER`, пресет `worker` | `{ commands, clientRunId? }` | `PlanPreviewDto` |
+| `POST` | `/boards/:id/plans/apply` | то же; необязательный `X-Approval-Id` | `{ commands, planHash, clientRunId? }` | `PlanApplyResponse` |
+
+`commands` — тот же массив, что принимает `/commands/batch`; он проходит тот
+же валидатор, проверки WIP/workflow/версий, пресет и destructive-классификацию.
+`action.at` и `boardId` уровня действия — транспортный контекст, а не
+намерение: сервер их вырезает и считает
+`planHash = sha256(canonicalJson({ schemaVersion: 1, boardId, commands }))`
+с рекурсивной сортировкой ключей, сохранением порядка массива и без пробелов.
+Хеш возвращает сервер; клиентское значение само по себе не принимается.
+
+`POST /plans` ничего не пишет: не создаёт команду, `AgentRun` или
+`ApprovalRequest`. Он проигрывает редьюсер в памяти и возвращает:
+
+- `planHash` и канонический `plan` (команды без `at`/`boardId`);
+- `diff` — итоговые изменения `create`/`update`/`delete` с затронутой
+  сущностью `card:`/`column:`/`label:`/`board:`, полным состоянием для
+  создания/удаления и изменёнными полями для обновления;
+- `warnings` — `approval_required`, `destructive`, `reviewer_required`,
+  `no_op`;
+- `conflicts` — `version`, `wip`, `workflow`, `id`, `scope`,
+  `destructive_denied` или `invalid`, с `index` команды и `currentVersion`,
+  когда он известен;
+- `requirement` (kind/scope/risk/summary), эффективные `limits` и `canApply`.
+
+`POST /plans/apply` требует ровно тот `planHash`, который вернул preview.
+Изменённый план — `409 approval_mismatch` с префиксами
+`expectedPlanHash`/`actualPlanHash` и `approvalId`, если заголовок был
+передан. Дальше apply ведёт себя как `/commands/batch`: одна блокировка доски,
+одна транзакция, all-or-nothing, результаты в порядке команд, идемпотентность
+по `commandId` и `409 idempotency_conflict` при повторном ключе с другим телом.
+Destructive-план без `X-Approval-Id` создаёт точный запрос подтверждения и
+отвечает `409 approval_required` без частичного применения; с одобренным id
+план применяется и одноразово расходует подтверждение. Повтор тех же
+применённых команд — идемпотентный replay.
+
+PAT-план создаёт один `AgentRun` (`kind: "plan"`, `planHash` и необязательный
+`clientRunId`), сохраняет pre-image для каждой команды и возвращает
+`{ runId, results, planHash }` плюс `X-Run-Id`; этот run виден в `GET /runs`
+и откатывается человеком-ADMIN доски. План из браузера run не создаёт (его
+история — обычный UI undo). План никогда не охватывает несколько досок.
+
 ## Вложения
 
 Файлы загружаются через REST как `multipart/form-data` с единственной частью
@@ -611,6 +666,17 @@ API-токена; в кадрах до появления поля он отсу
 { "includeComments": false }
 ```
 
+### PlanRequest / PlanApplyRequest
+
+| Поле          | Тип    | Обязательно | Ограничения                                                     |
+| ------------- | ------ | ----------- | --------------------------------------------------------------- |
+| `commands`    | array  | да          | 1–1000 элементов; лимит доски `min(100, policy.maxCommandsPerRun)` и `409 limit_exceeded` |
+| `clientRunId` | string | нет         | `^[A-Za-z0-9_-]{8,64}$`; ключ идемпотентности `AgentRun` при apply |
+| `planHash`    | string | да при apply | 64 hex-символа из preview                                      |
+
+Каждая команда — `{ commandId, action, ifMatch?, ifMatchVersions? }`.
+`action` — payload редьюсера с `type`; `at` и `boardId` можно опустить.
+
 ### PresencePingDto
 
 | Поле       | Тип    | Обязательно | Ограничения             |
@@ -641,6 +707,11 @@ API-токена; в кадрах до появления поля он отсу
   `includeComments`, `includeAttachments`. Участники — это `{ id, displayName,
   avatarColor, avatarPath }` без email.
 - `BoardEnvelope`: `{ app, schemaVersion, exportedAt, boards[] }`.
+- `PlanPreviewDto`: `{ dryRun: true, schemaVersion: 1, boardId, planHash,
+  plan, commandCount, cardCreates, limits, requirement, diff, warnings,
+  conflicts, canApply }`; `plan` — `ApprovalPlan` с массивом `commands`.
+- `PlanApplyResponse`: `{ runId, planHash, results }`, где `results` — по
+  одному `CommandResponse` на команду в порядке применения.
 
 ## Ошибки
 

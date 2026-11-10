@@ -221,6 +221,9 @@ export interface ApiErrorEnvelope {
   approvalId?: string;
   planHash?: string;
   expiresAt?: number;
+  /** Prefixes of the expected/actual hash when a plan did not match. */
+  expectedPlanHash?: string;
+  actualPlanHash?: string;
   /** Action name for scope/policy/approval errors (`DELETE_CARD`, …). */
   action?: string;
   /** `board_policy`, `board_scope`, … */
@@ -1301,6 +1304,130 @@ export interface RunListQuery {
   limit?: number;
   /** Run id to page after (older rows). */
   cursor?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * TASK-166.8 — plan preview & atomic apply
+ * ------------------------------------------------------------------ */
+
+/**
+ * One command of a plan. A plan is the exact intent stored in the approval
+ * and hashed by `planHash`; `action.at` and the action-level `boardId` are
+ * transport context, so the server strips them before hashing and stamps the
+ * clock again on apply.
+ */
+export interface PlanCommandRequest {
+  commandId: string;
+  action: Record<string, unknown> & { type: string };
+  ifMatch?: number;
+  ifMatchVersions?: Record<string, number>;
+}
+
+/** Body of `POST /boards/:id/plans` (dry-run) and `/plans/apply`. */
+export interface PlanRequest {
+  commands: PlanCommandRequest[];
+  /** Idempotency key for the `AgentRun` (`kind: "plan"`) on apply. */
+  clientRunId?: string;
+}
+
+/** Body of `POST /boards/:id/plans/apply`. */
+export interface PlanApplyRequest extends PlanRequest {
+  /** Lower-case sha256 of the canonical plan returned by the preview. */
+  planHash: string;
+}
+
+/** Why the preview expects the apply to be refused (all-or-nothing). */
+export type PlanConflictCode =
+  | "version"
+  | "wip"
+  | "workflow"
+  | "id"
+  | "scope"
+  | "destructive_denied"
+  | "invalid";
+
+/**
+ * One reason the plan would not apply as it stands. `index` is the zero-based
+ * command position; plan-level conflicts (scope, policy) omit it.
+ */
+export interface PlanConflictDto {
+  index?: number;
+  commandId?: string;
+  code: PlanConflictCode;
+  message: string;
+  /** Board `seq` at the command's point in the plan, for version conflicts. */
+  currentVersion?: number;
+}
+
+/**
+ * A non-blocking observation. `approval_required` is a warning, not a
+ * conflict: a human decision makes the plan applicable.
+ */
+export type PlanWarningCode =
+  "approval_required" | "destructive" | "reviewer_required" | "no_op";
+
+export interface PlanWarningDto {
+  index?: number;
+  commandId?: string;
+  code: PlanWarningCode;
+  message: string;
+}
+
+/** One entity changed by the plan, with the state before and after. */
+export interface PlanChangeDto {
+  /** `touch` label (`card:<id>`, `column:<id>`, `label:<id>`, `board:<id>`). */
+  touch: string;
+  kind: "create" | "update" | "delete";
+  /**
+   * Full entity for a create/delete; for an update only the changed
+   * top-level fields.
+   */
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  /** Top-level fields that differ on an update. */
+  fields?: string[];
+}
+
+/** How the server classifies the plan against the board and token. */
+export interface PlanRequirementDto {
+  kind: ApprovalKind;
+  requiresApproval: boolean;
+  requiredScope: "worker" | "reviewer" | "admin";
+  action: string;
+  risk: ApprovalRisk;
+  summary: string;
+}
+
+/**
+ * `200` body of `POST /boards/:id/plans` — a pure dry-run. Nothing is written,
+ * no `AgentRun` and no `ApprovalRequest` is created. `plan` is the canonical
+ * intent (without `at`), so an agent can echo it back to `/plans/apply`.
+ */
+export interface PlanPreviewDto {
+  dryRun: true;
+  schemaVersion: 1;
+  boardId: string;
+  planHash: string;
+  plan: ApprovalPlan;
+  commandCount: number;
+  /** Commands that create cards (`ADD_CARD`/`DUPLICATE_CARD`/`DUPLICATE_COLUMN`). */
+  cardCreates: number;
+  /** Effective caps after the board policy is applied. */
+  limits: { commands: number; cards: number };
+  requirement: PlanRequirementDto;
+  diff: PlanChangeDto[];
+  warnings: PlanWarningDto[];
+  conflicts: PlanConflictDto[];
+  /** True when `conflicts` is empty; approval may still be required. */
+  canApply: boolean;
+}
+
+/**
+ * `200` body of `POST /boards/:id/plans/apply` — one `CommandResponse` per
+ * command, in order, plus the run that groups them (PAT only).
+ */
+export interface PlanApplyResponse extends CommandBatchResponse {
+  planHash: string;
 }
 
 /* ------------------------------------------------------------------ *

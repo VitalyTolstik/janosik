@@ -42,6 +42,10 @@ import type {
   CreateShareRequest,
   EndAgentSessionRequest,
   InviteMemberRequest,
+  PlanApplyRequest,
+  PlanApplyResponse,
+  PlanPreviewDto,
+  PlanRequest,
   RevertPreviewDto,
   RunDetailDto,
   RunListQuery,
@@ -845,6 +849,37 @@ export class JanosikClient {
     return this.request(
       apiPath`/boards/${boardId}/runs/${runId}/revert/preview`,
       { method: "POST", body: {} },
+    );
+  }
+
+  // --- Plans (TASK-166.8) ------------------------------------------------
+
+  /**
+   * Dry-run a plan: the server validates the commands, replays the reducer
+   * and returns the canonical `planHash`, diff, warnings and conflicts.
+   * Writes nothing.
+   */
+  planChanges(boardId: string, body: PlanRequest): Promise<PlanPreviewDto> {
+    return this.request(apiPath`/boards/${boardId}/plans`, {
+      method: "POST",
+      body,
+    });
+  }
+
+  /**
+   * Apply the exact commands from a preview. The body is passed through
+   * unchanged (no `at`/`boardId` stamping) so the server recomputes the same
+   * `planHash`; a retry after a timeout reuses the same `commandId`s.
+   */
+  applyPlan(
+    boardId: string,
+    body: PlanApplyRequest,
+    approvalId?: string,
+  ): Promise<PlanApplyResponse> {
+    return this.sendCommand<PlanApplyResponse>(
+      apiPath`/boards/${boardId}/plans/apply`,
+      body,
+      approvalId,
     );
   }
 

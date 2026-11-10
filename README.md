@@ -57,7 +57,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 ├─ site/                        # @janosik/site — marketing site and documentation
 ├─ video/                       # @janosik/video — product demo clips
 ├─ mcp/                         # @janosik/mcp — the MCP server: the board as agent tools
-│  ├─ src/                      # client + 15 tool groups (82 tools), toolset gating
+│  ├─ src/                      # client + 16 tool groups (84 tools), toolset gating
 │  ├─ server.json               # MCP Registry metadata (published as io.github.vitalytolstik/janosik)
 │  └─ scripts/smoke.mjs         # live smoke test against a running instance
 ├─ skills/janosik/              # workflow guidance for AI agents using the MCP tools
@@ -363,7 +363,7 @@ Rules worth knowing:
 Janosik lets AI agents and people work on shared boards. The MCP server provides
 the tools; the skill describes a consistent workflow for using them:
 
-- **`@janosik/mcp` — the tools.** An MCP server (82 tools across 15 groups)
+- **`@janosik/mcp` — the tools.** An MCP server (84 tools across 16 groups)
   for boards, columns, cards, labels, checklists, links, comments, activity,
   attachments, agent sessions, approvals and run inspection. Optional toolsets add members,
   share links and account identity. Any compatible MCP client can connect with a personal
