@@ -24,6 +24,7 @@
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "jest --selectProjects unit",
     "test:e2e": "node scripts/migrate-test-db.cjs && jest --selectProjects e2e --runInBand",
+    "test:security": "node scripts/migrate-test-db.cjs && jest --selectProjects e2e --runInBand test/agent-control-security.e2e-spec.ts test/agent-control-approval-security.e2e-spec.ts",
     "test:ci": "npm run test"
   },
   "dependencies": {
