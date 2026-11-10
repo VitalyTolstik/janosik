@@ -523,15 +523,8 @@ export interface AgentSessionDto {
 }
 
 /**
- * Body of the TASK-166.3 pause/resume routes. `reason` is a human note stored
- * on the pause stamp (session, board) or in the security audit (token,
- * stop-all) so the UI can explain why agents were stopped.
+ * The pause state of one level (TASK-166.3).
  */
-export interface AgentPauseRequest {
-  reason?: string;
-}
-
-/** The pause state of one level (TASK-166.3). */
 export interface AgentPauseStateDto {
   scope: "board" | "token" | "session";
   paused: boolean;

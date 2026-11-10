@@ -24,6 +24,9 @@ const prismaMock = {
   },
   refreshToken: { updateMany: jest.fn() },
   apiToken: { findMany: jest.fn(), updateMany: jest.fn() },
+  agentSession: { updateMany: jest.fn() },
+  card: { findMany: jest.fn(), updateMany: jest.fn() },
+  $executeRaw: jest.fn(),
   emailVerificationCode: { deleteMany: jest.fn() },
   emailChangeCode: { deleteMany: jest.fn() },
   $transaction: jest.fn(),
@@ -31,6 +34,9 @@ const prismaMock = {
   user: Record<"create" | "findFirst" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"updateMany", jest.Mock>;
   apiToken: Record<"findMany" | "updateMany", jest.Mock>;
+  agentSession: Record<"updateMany", jest.Mock>;
+  card: Record<"findMany" | "updateMany", jest.Mock>;
+  $executeRaw: jest.Mock;
   emailVerificationCode: Record<"deleteMany", jest.Mock>;
   emailChangeCode: Record<"deleteMany", jest.Mock>;
   $transaction: jest.Mock;
@@ -84,9 +90,14 @@ describe("OAuthService", () => {
     } as never);
     settingsMock.credentials.mockResolvedValue(CREDENTIALS);
     prismaMock.apiToken.findMany.mockResolvedValue([]);
-    // Array-form transactions: every element is already a (mocked) promise.
-    prismaMock.$transaction.mockImplementation((ops: unknown[]) =>
-      Promise.all(ops),
+    prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.card.findMany.mockResolvedValue([]);
+    prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.$executeRaw.mockResolvedValue(1);
+    // Interactive transactions run the callback against the same mock.
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock),
     );
     authMock.startSession.mockResolvedValue({
       accessToken: "access-token",
@@ -207,6 +218,8 @@ describe("OAuthService", () => {
       prismaMock.user.update.mockResolvedValue(
         makeUser({ emailVerifiedAt: new Date() }),
       );
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
 
       await service.handleCallback("google", "auth-code", state, state);
 
@@ -220,7 +233,7 @@ describe("OAuthService", () => {
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: "user-1", revokedAt: null },
+        where: { id: { in: ["token-1"] }, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({

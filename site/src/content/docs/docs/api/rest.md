@@ -210,12 +210,17 @@ The block covers commands (single and batch), comments, attachment upload and
 delete, claims, board member/share changes and other board writes. GET reads
 stay allowed, and the control plane stays open: `heartbeat`, `end` and
 `GET /boards/:id/agent-sessions/:id` work while paused so an agent can finish
-cleanly. Pause does not release a claim. Ending a session or revoking its token
-releases the session/token claims.
+cleanly. Pause is evaluated before the board role, token scope and destructive/
+approval gates: a paused agent gets `agent_paused`, not `scope_denied`,
+`pat_read_only` or `approval_required`. Pause does not release a claim. Ending a
+session or revoking its token releases the session/token claims.
 
 Pause is checked at the request boundary and again inside the board-write
 transaction after the advisory lock. A request that passed the second check
-finishes and commits; a pause that committed before it is refused. On the next
+finishes and commits; a pause that committed before it is refused. The same
+second read rejects a token revoked or expired (or a disabled owner) and a
+session that ended before the lock, so a queued write cannot outlive an
+`end_session` or `DELETE /users/me/tokens/:id`. On the next
 SSE keep-alive a PAT stream receives
 `{ "type": "agent", "op": "paused", "scope": "...", "at": ... }` and closes.
 Session pause closes only a stream opened with `?session=<sessionId>`; a

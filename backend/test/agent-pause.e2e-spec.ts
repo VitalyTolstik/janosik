@@ -20,6 +20,8 @@ import { sseTiming } from "@/realtime/sse-timing";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "agent-pause@example.com";
+const MEMBER_EMAIL = "agent-pause-member@example.com";
+const OUTSIDER_EMAIL = "agent-pause-outsider@example.com";
 const PASSWORD = "correct horse battery";
 
 interface SseFrame {
@@ -28,6 +30,7 @@ interface SseFrame {
   scope?: string;
   sessionId?: string;
   seq?: number;
+  at?: number;
 }
 
 /**
@@ -45,11 +48,18 @@ describe("Agent pause and kill (e2e)", () => {
   let session: string;
   let ownerId: string;
   let boardId: string;
+  let otherBoardId: string;
   let cardId: string;
+  let legacyCardId: string;
   let tokenA: string;
   let tokenB: string;
   let tokenAId: string;
   let tokenBId: string;
+  let observerToken: string;
+  let readOnlyToken: string;
+  let memberSession: string;
+  let memberToken: string;
+  let outsiderSession: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -72,24 +82,65 @@ describe("Agent pause and kill (e2e)", () => {
     ownerId = registered.body.user.id as string;
 
     boardId = await createBoard("Pause board");
+    otherBoardId = await createBoard("Other pause board");
     cardId = "card-pause-1";
+    legacyCardId = "card-pause-legacy";
     await command(null, {
       type: "ADD_COLUMN",
       newColumnId: "col-pause",
       title: "Todo",
     });
-    await command(null, {
-      type: "ADD_CARD",
-      newCardId: cardId,
-      columnId: "col-pause",
-      title: "Pause target",
-    });
+    for (const [id, title] of [
+      [cardId, "Pause target"],
+      [legacyCardId, "Legacy claim target"],
+    ] as const) {
+      await command(null, {
+        type: "ADD_CARD",
+        newCardId: id,
+        columnId: "col-pause",
+        title,
+      });
+    }
 
     tokenA = await createToken("agent-A");
     tokenB = await createToken("agent-B");
+    observerToken = await createToken("agent-observer", {
+      scopePreset: "observer",
+    });
+    readOnlyToken = await createToken("agent-readonly", { readOnly: true });
     const tokens = await listTokens();
     tokenAId = tokens.find((token) => token.name === "agent-A")!.id;
     tokenBId = tokens.find((token) => token.name === "agent-B")!.id;
+
+    const memberRegistered = await server()
+      .post("/api/v1/auth/register")
+      .send({
+        email: MEMBER_EMAIL,
+        password: PASSWORD,
+        displayName: "Member",
+      })
+      .expect(201);
+    memberSession = memberRegistered.body.accessToken as string;
+    const memberId = memberRegistered.body.user.id as string;
+    await prisma.boardMember.create({
+      data: {
+        boardId,
+        userId: memberId,
+        role: "MEMBER",
+        acceptedAt: new Date(),
+      },
+    });
+    memberToken = await createToken("agent-member", {}, memberSession);
+
+    outsiderSession = await server()
+      .post("/api/v1/auth/register")
+      .send({
+        email: OUTSIDER_EMAIL,
+        password: PASSWORD,
+        displayName: "Outsider",
+      })
+      .expect(201)
+      .then((res) => res.body.accessToken as string);
   });
 
   afterAll(async () => {
@@ -116,15 +167,20 @@ describe("Agent pause and kill (e2e)", () => {
       .then((res) => res.body.id as string);
   }
 
-  async function createToken(name: string): Promise<string> {
+  async function createToken(
+    name: string,
+    options: Record<string, unknown> = {},
+    sessionToken: string = session,
+  ): Promise<string> {
     return server()
       .post("/api/v1/users/me/tokens")
-      .set(auth(session))
+      .set(auth(sessionToken))
       .send({
         name,
         expiresAt: null,
         scopePreset: "worker",
         trustedCi: false,
+        ...options,
       })
       .expect(201)
       .then((res) => res.body.token as string);
@@ -136,6 +192,11 @@ describe("Agent pause and kill (e2e)", () => {
       .set(auth(session))
       .expect(200)
       .then((res) => res.body as UserTokenDto[]);
+  }
+
+  async function tokenIdByName(name: string): Promise<string> {
+    const tokens = await listTokens();
+    return tokens.find((token) => token.name === name)!.id;
   }
 
   async function command(
@@ -173,6 +234,51 @@ describe("Agent pause and kill (e2e)", () => {
       .set(auth(session))
       .expect(200);
     return Number(res.headers["x-board-seq"]);
+  }
+
+  /**
+   * Deterministic barrier for the in-flight races: hold the same advisory
+   * lock as `BoardWriteService`, then wait until the queued HTTP command
+   * actually blocks on it (visible as an ungranted advisory lock).
+   */
+  async function holdBoardLock(): Promise<{
+    release: () => void;
+    done: Promise<void>;
+  }> {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const done = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+        locked();
+        await gate;
+      },
+      { maxWait: 5_000, timeout: 15_000 },
+    );
+    await acquired;
+    return { release, done };
+  }
+
+  async function waitForWaitingLock(expected = 1): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT count(*)::bigint AS count
+        FROM pg_locks
+        WHERE locktype = 'advisory' AND NOT granted
+      `;
+      if (Number(rows[0]?.count ?? 0) >= expected) return;
+      if (Date.now() > deadline) {
+        throw new Error("Timed out waiting for the queued board lock");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   }
 
   it("pauses one session, keeps its claim, allows heartbeat/end and resumes", async () => {
@@ -284,6 +390,18 @@ describe("Agent pause and kill (e2e)", () => {
     expect(activity).toEqual(
       expect.arrayContaining(["agent_session_paused", "agent_session_resumed"]),
     );
+    const sessionPaused = await prisma.activity.findFirstOrThrow({
+      where: { boardId, type: "agent_session_paused" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(sessionPaused).toMatchObject({
+      actorId: ownerId,
+      actorType: "human",
+    });
+    expect(sessionPaused.details).toMatchObject({
+      sessionId: agentSession.id,
+      reason: "inspect the run",
+    });
   });
 
   it("pauses the whole board, blocks every PAT write and keeps humans/reads open", async () => {
@@ -320,6 +438,31 @@ describe("Agent pause and kill (e2e)", () => {
         pauseScope: "board",
       });
     }
+    // Pause precedes the destructive/approval and scope gates (ADR §5.2).
+    const destructive = await command(tokenA, {
+      type: "DELETE_CARD",
+      cardId,
+    });
+    expect(destructive.status).toBe(403);
+    expect(destructive.body).toMatchObject({
+      code: "agent_paused",
+      pauseScope: "board",
+    });
+    const observer = await command(observerToken, {
+      type: "TOUCH_CARD",
+      cardId,
+    });
+    expect(observer.status).toBe(403);
+    expect(observer.body).toMatchObject({
+      code: "agent_paused",
+      pauseScope: "board",
+    });
+    const memberPause = await server()
+      .post(`/api/v1/boards/${boardId}/agents/pause`)
+      .set(auth(memberSession))
+      .send({})
+      .expect(403);
+    expect(memberPause.body.code).toBe("scope_denied");
     // Session control writes are not a bypass, but heartbeat/end are.
     const blockedStart = await server()
       .post(`/api/v1/boards/${boardId}/agent-sessions`)
@@ -398,6 +541,17 @@ describe("Agent pause and kill (e2e)", () => {
     expect(activity).toEqual(
       expect.arrayContaining(["agents_paused", "agents_resumed"]),
     );
+    const pausedRow = await prisma.activity.findFirstOrThrow({
+      where: { boardId, type: "agents_paused" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(pausedRow).toMatchObject({
+      actorId: ownerId,
+      actorType: "human",
+    });
+    expect(pausedRow.details).toMatchObject({
+      reason: "incident response",
+    });
   });
 
   it("keeps individual and stop-all pauses independent", async () => {
@@ -492,9 +646,67 @@ describe("Agent pause and kill (e2e)", () => {
         "agents.resumed_all",
       ]),
     );
+    const tokenPausedAudit = await prisma.securityAuditLog.findFirstOrThrow({
+      where: { action: "token.paused" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(tokenPausedAudit).toMatchObject({
+      userId: ownerId,
+      actorId: ownerId,
+    });
+    expect(tokenPausedAudit.details).toMatchObject({
+      reason: "rotate credentials",
+    });
   });
 
-  it("cancels sessions and releases token claims on kill", async () => {
+  it("enforces session-only controls and ownership", async () => {
+    const agentSession = await start(tokenA, "security-controls");
+
+    const foreignOwner = await server()
+      .post(`/api/v1/users/me/tokens/${tokenAId}/pause`)
+      .set(auth(outsiderSession))
+      .send({})
+      .expect(404);
+    expect(foreignOwner.body.message).toMatch(/not found/i);
+
+    const patPauseAll = await server()
+      .post("/api/v1/agents/pause-all")
+      .set(auth(tokenA))
+      .send({})
+      .expect(403);
+    expect(patPauseAll.body.code).toBe("pat_forbidden");
+
+    const memberPat = await server()
+      .post(`/api/v1/boards/${boardId}/agent-sessions/${agentSession.id}/pause`)
+      .set(auth(memberToken))
+      .send({})
+      .expect(403);
+    expect(memberPat.body.code).toBe("pat_forbidden");
+
+    const readOnlyPat = await server()
+      .post(`/api/v1/boards/${boardId}/agents/pause`)
+      .set(auth(readOnlyToken))
+      .send({})
+      .expect(403);
+    expect(readOnlyPat.body.code).toBe("pat_forbidden");
+
+    const crossBoard = await server()
+      .post(
+        `/api/v1/boards/${otherBoardId}/agent-sessions/${agentSession.id}/pause`,
+      )
+      .set(auth(session))
+      .send({})
+      .expect(403);
+    expect(crossBoard.body.code).toBe("agent_session_invalid");
+
+    await server()
+      .post(`/api/v1/boards/${boardId}/agent-sessions/${agentSession.id}/end`)
+      .set(auth(session))
+      .send({})
+      .expect(200);
+  });
+
+  it("cancels sessions, closes SSE and releases token claims on kill", async () => {
     const agentSession = await start(tokenB, "kill-me");
     await command(
       tokenB,
@@ -506,11 +718,32 @@ describe("Agent pause and kill (e2e)", () => {
       },
       agentSession.id,
     ).then((res) => expect(res.status).toBe(200));
+    // A legacy claim has no token id; revoke must leave it to its lease.
+    await command(null, {
+      type: "CLAIM_CARD",
+      cardId: legacyCardId,
+      claimedBy: ownerId,
+      leaseUntil: Date.now() + 120_000,
+    }).then((res) => expect(res.status).toBe(200));
 
-    await server()
-      .delete(`/api/v1/users/me/tokens/${tokenBId}`)
-      .set(auth(session))
-      .expect(200);
+    const previous = sseTiming.keepAliveMs;
+    sseTiming.keepAliveMs = 150;
+    const since = await boardSeq();
+    const killedStream = await fetch(
+      `${baseUrl}/boards/${boardId}/events?since=${since}&presence=0`,
+      { headers: { Accept: "text/event-stream", ...auth(tokenB) } },
+    );
+    expect(killedStream.status).toBe(200);
+    try {
+      await server()
+        .delete(`/api/v1/users/me/tokens/${tokenBId}`)
+        .set(auth(session))
+        .expect(200);
+      await expectStreamEnded(killedStream);
+    } finally {
+      sseTiming.keepAliveMs = previous;
+      await cancelBody(killedStream);
+    }
 
     const killed = await prisma.agentSession.findUniqueOrThrow({
       where: { id: agentSession.id },
@@ -525,7 +758,32 @@ describe("Agent pause and kill (e2e)", () => {
     expect(card.claimedByTokenId).toBeNull();
     expect(card.claimedBySessionId).toBeNull();
     expect(card.leaseUntil).toBeNull();
+    const legacy = await prisma.card.findUniqueOrThrow({
+      where: { id: legacyCardId },
+    });
+    expect(legacy).toMatchObject({
+      claimedBy: ownerId,
+      claimedByTokenId: null,
+      claimedBySessionId: null,
+    });
+    expect(legacy.leaseUntil).not.toBeNull();
 
+    // Kill is idempotent; pausing a revoked token is an explicit no-op.
+    await server()
+      .delete(`/api/v1/users/me/tokens/${tokenBId}`)
+      .set(auth(session))
+      .expect(200);
+    const pausedAfterKill = await server()
+      .post(`/api/v1/users/me/tokens/${tokenBId}/pause`)
+      .set(auth(session))
+      .send({ reason: "too late" })
+      .expect(200)
+      .then((res) => res.body as UserTokenDto);
+    expect(pausedAfterKill).toMatchObject({
+      revokedAt: expect.any(Number),
+      individualPausedAt: null,
+      paused: false,
+    });
     await server()
       .post(`/api/v1/boards/${boardId}/commands`)
       .set(auth(tokenB))
@@ -554,16 +812,22 @@ describe("Agent pause and kill (e2e)", () => {
         },
       },
     );
+    const tokenLevelStream = await fetch(
+      `${baseUrl}/boards/${boardId}/events?since=${since}&presence=0`,
+      { headers: { Accept: "text/event-stream", ...auth(tokenA) } },
+    );
     expect(humanStream.status).toBe(200);
     expect(agentStream.status).toBe(200);
+    expect(tokenLevelStream.status).toBe(200);
     try {
-      await server()
+      const pausedSession = await server()
         .post(
           `/api/v1/boards/${boardId}/agent-sessions/${agentSession.id}/pause`,
         )
         .set(auth(session))
         .send({ reason: "sse check" })
-        .expect(200);
+        .expect(200)
+        .then((res) => res.body as AgentSessionDto);
 
       const paused = await readFrame(
         agentStream,
@@ -573,6 +837,7 @@ describe("Agent pause and kill (e2e)", () => {
         type: "agent",
         op: "paused",
         scope: "session",
+        at: pausedSession.pausedAt,
       });
       await expectStreamEnded(agentStream);
       await server()
@@ -583,15 +848,16 @@ describe("Agent pause and kill (e2e)", () => {
         .send({})
         .expect(200);
 
-      // The human stream stays open through the agent pause.
-      await command(null, { type: "TOUCH_CARD", cardId }).then((res) =>
+      // The token-level stream (no `?session`) is not closed by a session
+      // pause: after resume it still receives a normal command frame.
+      await command(tokenA, { type: "TOUCH_CARD", cardId }).then((res) =>
         expect(res.status).toBe(200),
       );
-      const commandFrame = await readFrame(
-        humanStream,
+      const tokenLevelFrame = await readFrame(
+        tokenLevelStream,
         (frame) => frame.type === "command",
       );
-      expect(commandFrame.type).toBe("command");
+      expect(tokenLevelFrame.type).toBe("command");
 
       // A token pause closes a token-level PAT stream and blocks reconnect.
       const tokenSince = await boardSeq();
@@ -600,11 +866,12 @@ describe("Agent pause and kill (e2e)", () => {
         { headers: { Accept: "text/event-stream", ...auth(tokenA) } },
       );
       expect(tokenStream.status).toBe(200);
-      await server()
+      const tokenPausedState = await server()
         .post(`/api/v1/users/me/tokens/${tokenAId}/pause`)
         .set(auth(session))
         .send({ reason: "stream stop" })
-        .expect(200);
+        .expect(200)
+        .then((res) => res.body as UserTokenDto);
       const tokenPaused = await readFrame(
         tokenStream,
         (frame) => frame.op === "paused",
@@ -613,6 +880,7 @@ describe("Agent pause and kill (e2e)", () => {
         type: "agent",
         op: "paused",
         scope: "token",
+        at: tokenPausedState.individualPausedAt,
       });
       await expectStreamEnded(tokenStream);
       const reconnect = await fetch(
@@ -642,11 +910,12 @@ describe("Agent pause and kill (e2e)", () => {
         { headers: { Accept: "text/event-stream", ...auth(tokenA) } },
       );
       expect(boardStream.status).toBe(200);
-      await server()
+      const boardPausedState = await server()
         .post(`/api/v1/boards/${boardId}/agents/pause`)
         .set(auth(session))
         .send({ reason: "stream board stop" })
-        .expect(200);
+        .expect(200)
+        .then((res) => res.body as BoardAgentPauseDto);
       const boardPaused = await readFrame(
         boardStream,
         (frame) => frame.op === "paused",
@@ -655,8 +924,28 @@ describe("Agent pause and kill (e2e)", () => {
         type: "agent",
         op: "paused",
         scope: "board",
+        at: boardPausedState.pausedAt,
       });
       await expectStreamEnded(boardStream);
+      const boardReconnect = await fetch(
+        `${baseUrl}/boards/${boardId}/events?since=${boardSince}&presence=0`,
+        { headers: { Accept: "text/event-stream", ...auth(tokenA) } },
+      );
+      expect(boardReconnect.status).toBe(403);
+      expect(await boardReconnect.json()).toMatchObject({
+        code: "agent_paused",
+        pauseScope: "board",
+      });
+      // Human SSE is unaffected by the board pause: a human write still
+      // commits and reaches the open human stream.
+      await command(null, { type: "TOUCH_CARD", cardId }).then((res) =>
+        expect(res.status).toBe(200),
+      );
+      const humanFrame = await readFrame(
+        humanStream,
+        (frame) => frame.type === "command",
+      );
+      expect(humanFrame.type).toBe("command");
       await server()
         .post(`/api/v1/boards/${boardId}/agents/resume`)
         .set(auth(session))
@@ -666,6 +955,7 @@ describe("Agent pause and kill (e2e)", () => {
       sseTiming.keepAliveMs = previous;
       await cancelBody(humanStream);
       await cancelBody(agentStream);
+      await cancelBody(tokenLevelStream);
       await server()
         .post(`/api/v1/boards/${boardId}/agent-sessions/${agentSession.id}/end`)
         .set(auth(session))
@@ -674,7 +964,7 @@ describe("Agent pause and kill (e2e)", () => {
     }
   });
 
-  it("checks pause again under the board lock (in-flight semantics)", async () => {
+  it("checks pause, revoke and end again under the board lock", async () => {
     // A writer that already passed the second read and holds the lock must
     // finish even if the pause commits inside its body.
     const committed = await boardWrite.run(
@@ -709,39 +999,116 @@ describe("Agent pause and kill (e2e)", () => {
       .send({})
       .expect(200);
 
-    // A queued request that has not acquired the lock when the pause commits
-    // is refused by the second read.
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let locked!: () => void;
-    const lockHeld = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const holder = prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
-      locked();
-      await gate;
-    });
-    await lockHeld;
-    const queued = command(tokenA, { type: "TOUCH_CARD", cardId });
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await server()
-      .post(`/api/v1/users/me/tokens/${tokenAId}/pause`)
-      .set(auth(session))
-      .send({ reason: "queued" })
-      .expect(200);
-    release();
-    await holder;
-    const refused = await queued;
-    expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe("agent_paused");
+    // A command queued before a pause but not yet holding the lock is
+    // refused by the second read.
+    const pausedLock = await holdBoardLock();
+    try {
+      const queued = command(tokenA, { type: "TOUCH_CARD", cardId });
+      await waitForWaitingLock();
+      await server()
+        .post(`/api/v1/users/me/tokens/${tokenAId}/pause`)
+        .set(auth(session))
+        .send({ reason: "queued" })
+        .expect(200);
+      pausedLock.release();
+      await pausedLock.done;
+      const refused = await queued;
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe("agent_paused");
+    } finally {
+      pausedLock.release();
+      await pausedLock.done;
+    }
     await server()
       .post(`/api/v1/users/me/tokens/${tokenAId}/resume`)
       .set(auth(session))
       .send({})
       .expect(200);
+
+    // Kill before the lock: the queued command is rejected with 401.
+    const revokedToken = await createToken("agent-queued-revoked");
+    const revokedTokenId = await tokenIdByName("agent-queued-revoked");
+    const revokedLock = await holdBoardLock();
+    try {
+      const queued = command(revokedToken, {
+        type: "TOUCH_CARD",
+        cardId,
+      });
+      await waitForWaitingLock();
+      await server()
+        .delete(`/api/v1/users/me/tokens/${revokedTokenId}`)
+        .set(auth(session))
+        .expect(200);
+      revokedLock.release();
+      await revokedLock.done;
+      const refused = await queued;
+      expect(refused.status).toBe(401);
+    } finally {
+      revokedLock.release();
+      await revokedLock.done;
+    }
+
+    // End session before the lock: the queued command sees a closed session.
+    const endedSession = await start(tokenA, "queued-end");
+    const endedLock = await holdBoardLock();
+    try {
+      const queued = command(
+        tokenA,
+        { type: "TOUCH_CARD", cardId },
+        endedSession.id,
+      );
+      await waitForWaitingLock();
+      await prisma.agentSession.update({
+        where: { id: endedSession.id },
+        data: {
+          status: "completed",
+          endedAt: new Date(),
+          endReason: "completed",
+        },
+      });
+      endedLock.release();
+      await endedLock.done;
+      const refused = await queued;
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe("agent_session_closed");
+    } finally {
+      endedLock.release();
+      await endedLock.done;
+    }
+
+    // Kill before the lock: a queued CLAIM_CARD cannot resurrect a claim.
+    const claimToken = await createToken("agent-queued-claim");
+    const claimTokenId = await tokenIdByName("agent-queued-claim");
+    const claimLock = await holdBoardLock();
+    try {
+      const queued = command(
+        claimToken,
+        {
+          type: "CLAIM_CARD",
+          cardId,
+          claimedBy: ownerId,
+          leaseUntil: Date.now() + 120_000,
+        },
+        undefined,
+      );
+      await waitForWaitingLock();
+      await server()
+        .delete(`/api/v1/users/me/tokens/${claimTokenId}`)
+        .set(auth(session))
+        .expect(200);
+      claimLock.release();
+      await claimLock.done;
+      const refused = await queued;
+      expect(refused.status).toBe(401);
+    } finally {
+      claimLock.release();
+      await claimLock.done;
+    }
+    const resurrected = await prisma.card.findUniqueOrThrow({
+      where: { id: cardId },
+    });
+    expect(resurrected.claimedByTokenId).toBeNull();
+    expect(resurrected.claimedBySessionId).toBeNull();
   });
 
   async function activityTypes(): Promise<string[]> {

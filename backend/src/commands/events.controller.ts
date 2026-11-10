@@ -229,7 +229,7 @@ export class EventsController {
                 type: "agent",
                 op: "paused",
                 scope: outcome.pause.scope,
-                at: Date.now(),
+                at: outcome.pause.at ?? Date.now(),
               });
               subscriber.complete();
               return;

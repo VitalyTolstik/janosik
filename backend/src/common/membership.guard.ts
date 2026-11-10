@@ -16,7 +16,7 @@ import {
 import { ApiTokenService } from "@/auth/api-token.service";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
-import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
+import { JwtAuthGuard, assertPatScopeAllows } from "@/auth/jwt-auth.guard";
 import {
   assertAgentRule,
   assertPatPreset,
@@ -141,53 +141,18 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       throw new ForbiddenException("Board membership expired");
     }
 
-    const required: Role[] = this.reflector.getAllAndOverride<Role[]>(
-      BOARD_ROLES_KEY,
-      [context.getHandler(), context.getClass()],
-    ) ?? [Role.ADMIN, Role.MEMBER, Role.VIEWER];
-    if (!required.includes(membership.role)) {
-      throw new ForbiddenException({
-        message: "Insufficient board role",
-        code: "scope_denied",
-        requiredRoles: required,
-      });
-    }
-
     const write = isWriteMethod(method);
     const isSse = method === "GET" && SSE_PATH.test(path);
-
-    // TASK-166: board role first, then token scope. `readOnly` is already
-    // refused in `JwtAuthGuard` with the legacy `pat_read_only` code; this
-    // check covers an explicit `observer` preset and the admin-only routes.
-    const requiredScope =
-      this.reflector.getAllAndOverride<ScopePreset>(TOKEN_SCOPE_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ]) ?? (write ? "worker" : "observer");
-    assertPatPreset(request.auth, requiredScope, `${method} ${path}`);
-
-    // Lifecycle actions (member/share/board delete, workflow, restore) carry
-    // their own policy key; the command transport classifies its actions in
-    // `CommandsService` instead.
-    const agentAction = this.reflector.getAllAndOverride<LifecycleAction>(
-      AGENT_ACTION_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-    if (agentAction !== undefined) {
-      assertAgentRule(
-        request.auth,
-        board.agentPolicy,
-        LIFECYCLE_ACTIONS[agentAction],
-      );
-    }
-
     request.boardMembership = membership;
+
+    // TASK-166.3 pause precedence (ADR §5.2): token → board → session comes
+    // before the role, preset and destructive/approval gates. A paused agent
+    // must see `agent_paused`, not a role or scope error.
     const pauseChecked =
       request.auth?.via === "pat" &&
       (write || isSse) &&
       !isPauseExemptPath(path);
     if (pauseChecked) {
-      // Token and board first: pause precedence is token → board → session.
       assertAgentNotPaused({
         tokenIndividualPausedAt:
           request.auth?.tokenIdentity?.individualPausedAt ?? null,
@@ -243,6 +208,50 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       assertAgentNotPaused({
         sessionPausedAt: request.agentSession?.pausedAt ?? null,
       });
+    }
+
+    // The legacy read-only refusal is deferred here for board-scoped writes,
+    // after pause, so an observer/read-only PAT sees `agent_paused` while a
+    // board is paused. Non-board routes already enforced it in `JwtAuthGuard`.
+    if (write) {
+      assertPatScopeAllows(method, request.auth?.tokenScope);
+    }
+
+    const required: Role[] = this.reflector.getAllAndOverride<Role[]>(
+      BOARD_ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    ) ?? [Role.ADMIN, Role.MEMBER, Role.VIEWER];
+    if (!required.includes(membership.role)) {
+      throw new ForbiddenException({
+        message: "Insufficient board role",
+        code: "scope_denied",
+        requiredRoles: required,
+      });
+    }
+
+    // TASK-166: board role first, then token scope. `readOnly` is already
+    // refused above with the legacy `pat_read_only` code; this check covers
+    // an explicit `observer` preset and the admin-only routes.
+    const requiredScope =
+      this.reflector.getAllAndOverride<ScopePreset>(TOKEN_SCOPE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? (write ? "worker" : "observer");
+    assertPatPreset(request.auth, requiredScope, `${method} ${path}`);
+
+    // Lifecycle actions (member/share/board delete, workflow, restore) carry
+    // their own policy key; the command transport classifies its actions in
+    // `CommandsService` instead.
+    const agentAction = this.reflector.getAllAndOverride<LifecycleAction>(
+      AGENT_ACTION_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (agentAction !== undefined) {
+      assertAgentRule(
+        request.auth,
+        board.agentPolicy,
+        LIFECYCLE_ACTIONS[agentAction],
+      );
     }
     return true;
   }

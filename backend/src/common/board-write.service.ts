@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import {
-  assertAgentNotPausedInTransaction,
+  assertAgentCanWriteInTransaction,
   type AgentPauseGate,
 } from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -164,7 +164,7 @@ export class BoardWriteService {
             // pause committed before this point refuses the write; a pause
             // committed after it lets the in-flight transaction finish.
             if (pause !== undefined) {
-              await assertAgentNotPausedInTransaction(
+              await assertAgentCanWriteInTransaction(
                 tx,
                 boardId,
                 pause.principal,

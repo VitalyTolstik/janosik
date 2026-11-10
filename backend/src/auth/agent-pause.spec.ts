@@ -1,9 +1,9 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import {
   agentPausedError,
+  assertAgentCanWriteInTransaction,
   assertAgentNotPaused,
-  assertAgentNotPausedInTransaction,
   assertTokenNotPaused,
   isPauseExemptPath,
   resolveAgentPause,
@@ -137,7 +137,29 @@ describe("request boundary pause checks", () => {
   });
 });
 
-describe("in-transaction pause read", () => {
+describe("in-transaction write gate", () => {
+  function tokenRow(overrides: Record<string, unknown> = {}) {
+    return {
+      individualPausedAt: null,
+      stopAllPausedAt: null,
+      revokedAt: null,
+      expiresAt: null,
+      user: { disabledAt: null },
+      ...overrides,
+    };
+  }
+
+  function sessionRow(overrides: Record<string, unknown> = {}) {
+    return {
+      pausedAt: null,
+      endedAt: null,
+      status: "active",
+      boardId: "board-1",
+      apiTokenId: "token-1",
+      ...overrides,
+    };
+  }
+
   function txWith(
     token: unknown,
     board: unknown,
@@ -152,11 +174,8 @@ describe("in-transaction pause read", () => {
 
   it("refuses when the board pause committed before the second read", async () => {
     await expect(
-      assertAgentNotPausedInTransaction(
-        txWith(
-          { individualPausedAt: null, stopAllPausedAt: null },
-          { agentsPausedAt: at("2026-11-10T10:00:00Z") },
-        ),
+      assertAgentCanWriteInTransaction(
+        txWith(tokenRow(), { agentsPausedAt: at("2026-11-10T10:00:00Z") }),
         "board-1",
         pat(),
         null,
@@ -167,19 +186,86 @@ describe("in-transaction pause read", () => {
   });
 
   it("refuses a session pause only when the request names that session", async () => {
-    const pausedSession = { pausedAt: at("2026-11-10T10:00:00Z") };
     const tx = txWith(
-      { individualPausedAt: null, stopAllPausedAt: null },
+      tokenRow(),
       { agentsPausedAt: null },
-      pausedSession,
+      sessionRow({ pausedAt: at("2026-11-10T10:00:00Z") }),
     );
     await expect(
-      assertAgentNotPausedInTransaction(tx, "board-1", pat(), "session-1"),
+      assertAgentCanWriteInTransaction(tx, "board-1", pat(), "session-1"),
     ).rejects.toMatchObject({
       response: { code: "agent_paused", pauseScope: "session" },
     });
     await expect(
-      assertAgentNotPausedInTransaction(tx, "board-1", pat(), null),
+      assertAgentCanWriteInTransaction(tx, "board-1", pat(), null),
     ).resolves.toBeUndefined();
+  });
+
+  it("refuses a revoked, expired or disabled token", async () => {
+    for (const token of [
+      tokenRow({ revokedAt: new Date() }),
+      tokenRow({ expiresAt: new Date(Date.now() - 1_000) }),
+      tokenRow({ user: { disabledAt: new Date() } }),
+      null,
+    ]) {
+      await expect(
+        assertAgentCanWriteInTransaction(
+          txWith(token, { agentsPausedAt: null }),
+          "board-1",
+          pat(),
+          null,
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+  });
+
+  it("refuses a session ended or terminal before the second read", async () => {
+    for (const session of [
+      sessionRow({ endedAt: new Date() }),
+      sessionRow({ status: "completed" }),
+      sessionRow({ status: "cancelled" }),
+    ]) {
+      await expect(
+        assertAgentCanWriteInTransaction(
+          txWith(tokenRow(), { agentsPausedAt: null }, session),
+          "board-1",
+          pat(),
+          "session-1",
+        ),
+      ).rejects.toMatchObject({
+        response: { code: "agent_session_closed", sessionId: "session-1" },
+      });
+    }
+  });
+
+  it("refuses a session from another board or token", async () => {
+    await expect(
+      assertAgentCanWriteInTransaction(
+        txWith(
+          tokenRow(),
+          { agentsPausedAt: null },
+          sessionRow({ boardId: "board-2" }),
+        ),
+        "board-1",
+        pat(),
+        "session-1",
+      ),
+    ).rejects.toMatchObject({
+      response: { code: "agent_session_invalid" },
+    });
+    await expect(
+      assertAgentCanWriteInTransaction(
+        txWith(
+          tokenRow(),
+          { agentsPausedAt: null },
+          sessionRow({ apiTokenId: "token-2" }),
+        ),
+        "board-1",
+        pat(),
+        "session-1",
+      ),
+    ).rejects.toMatchObject({
+      response: { code: "agent_session_invalid" },
+    });
   });
 });

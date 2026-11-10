@@ -13,6 +13,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import type { AuthResult } from "@/auth/auth.types";
 import { AuthService } from "@/auth/auth.service";
+import { revokeApiTokens } from "@/auth/token-revocation";
 import {
   OAUTH_PROVIDERS,
   OAUTH_STATE_TTL_MS,
@@ -285,28 +286,24 @@ export class OAuthService {
    */
   private async claimUnverifiedAccount(userId: string): Promise<User> {
     const now = new Date();
-    const tokenIds = (
-      await this.prisma.apiToken.findMany({
-        where: { userId, revokedAt: null },
-        select: { id: true },
-      })
-    ).map((row) => row.id);
-    const [, , , , user] = await this.prisma.$transaction([
-      this.prisma.refreshToken.updateMany({
+    const { user, tokenIds } = await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: now },
-      }),
-      this.prisma.apiToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: now },
-      }),
-      this.prisma.emailVerificationCode.deleteMany({ where: { userId } }),
-      this.prisma.emailChangeCode.deleteMany({ where: { userId } }),
-      this.prisma.user.update({
+      });
+      const revoked = await revokeApiTokens(
+        tx,
+        { userId, revokedAt: null },
+        now,
+      );
+      await tx.emailVerificationCode.deleteMany({ where: { userId } });
+      await tx.emailChangeCode.deleteMany({ where: { userId } });
+      const claimed = await tx.user.update({
         where: { id: userId },
         data: { passwordHash: null, emailVerifiedAt: now },
-      }),
-    ]);
+      });
+      return { user: claimed, tokenIds: revoked.tokenIds };
+    });
     this.logger.warn(
       `OAuth claimed unverified account ${userId}: password cleared, sessions and API tokens revoked`,
     );

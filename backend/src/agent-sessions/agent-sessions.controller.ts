@@ -102,7 +102,7 @@ export class AgentSessionsController {
    * TASK-166.3: session-level pause/resume. Human control plane only — a PAT
    * gets `403 pat_forbidden`; a paused PAT cannot clear its own pause.
    */
-  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @UseGuards(SessionOnlyGuard)
   @BoardRoles(Role.ADMIN)
   @Post(":sessionId/pause")
   @HttpCode(HttpStatus.OK)
@@ -115,7 +115,7 @@ export class AgentSessionsController {
     return this.sessions.pauseSession(boardId, sessionId, user.id, dto.reason);
   }
 
-  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @UseGuards(SessionOnlyGuard)
   @BoardRoles(Role.ADMIN)
   @Post(":sessionId/resume")
   @HttpCode(HttpStatus.OK)

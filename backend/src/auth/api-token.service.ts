@@ -25,6 +25,7 @@ import { SecurityAuditService } from "@/common/security-audit/security-audit.ser
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
+import { revokeApiTokens } from "./token-revocation";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -160,11 +161,10 @@ export class ApiTokenService {
    * the old credential.
    */
   async revokeAll(userId: string): Promise<number> {
-    const result = await this.prisma.apiToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    return result.count;
+    const result = await this.prisma.$transaction((tx) =>
+      revokeApiTokens(tx, { userId, revokedAt: null }),
+    );
+    return result.revokedCount;
   }
 
   /** Every token of the user — active and revoked — newest first. */
@@ -291,37 +291,16 @@ export class ApiTokenService {
     if (!token) {
       throw new NotFoundException("API token not found");
     }
-    // TASK-166.3 kill semantics: revoke is the irreversible stop. In one
-    // pass, cancel the token's open sessions, release the claims it holds
-    // (legacy claims without `claimedByTokenId` wait for their lease) and
-    // stamp the token. Open PAT SSE closes on its next keep-alive because
-    // `isActive` sees the revocation; there is no separate kill endpoint.
-    const revokedAt = new Date();
-    const result = await this.prisma.$transaction(async (tx) => {
-      const changed = await tx.apiToken.updateMany({
-        where: { id: tokenId, revokedAt: null },
-        data: { revokedAt },
-      });
-      await tx.agentSession.updateMany({
-        where: { apiTokenId: tokenId, endedAt: null },
-        data: {
-          status: "cancelled",
-          endedAt: revokedAt,
-          endReason: "cancelled",
-        },
-      });
-      await tx.card.updateMany({
-        where: { claimedByTokenId: tokenId },
-        data: {
-          claimedBy: null,
-          claimedByTokenId: null,
-          claimedBySessionId: null,
-          leaseUntil: null,
-        },
-      });
-      return changed.count;
-    });
-    if (result > 0) {
+    // TASK-166.3 kill semantics: revoke is the irreversible stop. The shared
+    // helper cancels the token's open sessions, releases the claims it holds
+    // under the board locks (legacy claims without `claimedByTokenId` wait
+    // for their lease) and stamps the token. Open PAT SSE closes on its next
+    // keep-alive because `isActive` sees the revocation; there is no separate
+    // kill endpoint.
+    const result = await this.prisma.$transaction((tx) =>
+      revokeApiTokens(tx, { id: tokenId, userId }),
+    );
+    if (result.revokedCount > 0) {
       await this.securityAudit.record({
         userId,
         actorId: userId,
@@ -347,6 +326,9 @@ export class ApiTokenService {
     reason: string | undefined,
   ): Promise<UserTokenDto> {
     const token = await this.requireOwnedToken(userId, tokenId);
+    // A revoked token is already terminal; pausing it is an idempotent no-op
+    // rather than a misleading success that rewrites an inert row.
+    if (token.revokedAt !== null) return toUserTokenDto(token);
     const result = await this.prisma.apiToken.updateMany({
       where: { id: tokenId, userId, individualPausedAt: null },
       data: {
@@ -382,6 +364,8 @@ export class ApiTokenService {
     reason: string | undefined,
   ): Promise<UserTokenDto> {
     const token = await this.requireOwnedToken(userId, tokenId);
+    // Revoked is terminal: resume cannot make the key usable again.
+    if (token.revokedAt !== null) return toUserTokenDto(token);
     const result = await this.prisma.apiToken.updateMany({
       where: { id: tokenId, userId, individualPausedAt: { not: null } },
       data: {

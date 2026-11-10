@@ -705,7 +705,12 @@ export function sanitizePublicBoard(board: BoardAggregate): BoardAggregate {
       return [id, copy];
     }),
   );
-  return { ...board, cards };
+  const copy = { ...board, cards };
+  // Pause is operational and never leaves the member surface (ADR §6.3).
+  delete copy.agentsPausedAt;
+  delete copy.agentsPausedBy;
+  delete copy.agentsPauseReason;
+  return copy;
 }
 
 /** Comments on a public share keep their text/kind, not the agent identity. */

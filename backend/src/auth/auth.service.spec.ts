@@ -37,6 +37,9 @@ const prismaMock = {
     updateMany: jest.fn(),
   },
   passwordResetToken: { deleteMany: jest.fn() },
+  agentSession: { updateMany: jest.fn() },
+  card: { findMany: jest.fn(), updateMany: jest.fn() },
+  $executeRaw: jest.fn(),
   emailChangeCode: {
     findFirst: jest.fn(),
     create: jest.fn(),
@@ -49,6 +52,9 @@ const prismaMock = {
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
   apiToken: Record<"findMany" | "updateMany", jest.Mock>;
   passwordResetToken: Record<"deleteMany", jest.Mock>;
+  agentSession: Record<"updateMany", jest.Mock>;
+  card: Record<"findMany" | "updateMany", jest.Mock>;
+  $executeRaw: jest.Mock;
   emailChangeCode: Record<
     "findFirst" | "create" | "update" | "deleteMany",
     jest.Mock
@@ -148,6 +154,14 @@ describe("AuthService", () => {
     jwtMock.signAsync.mockResolvedValue("access-token");
     prismaMock.refreshToken.create.mockResolvedValue({});
     prismaMock.apiToken.findMany.mockResolvedValue([]);
+    prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.card.findMany.mockResolvedValue([]);
+    prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.$executeRaw.mockResolvedValue(1);
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock),
+    );
   });
 
   describe("register", () => {
@@ -465,6 +479,8 @@ describe("AuthService", () => {
       prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
       prismaMock.user.update.mockResolvedValue(makeUser());
       prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
 
       await service.changePassword(
         "user-1",
@@ -485,8 +501,16 @@ describe("AuthService", () => {
       });
       // B-2: a password rotation also kills every personal API token.
       expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
-        where: { userId: "user-1", revokedAt: null },
+        where: { id: { in: ["token-1"] }, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
+      });
+      expect(prismaMock.agentSession.updateMany).toHaveBeenCalledWith({
+        where: { apiTokenId: { in: ["token-1"] }, endedAt: null },
+        data: {
+          status: "cancelled",
+          endedAt: expect.any(Date),
+          endReason: "cancelled",
+        },
       });
     });
 

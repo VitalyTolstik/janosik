@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { ApiTokenIdentityDto } from "@janosik/shared";
 import type { AuthPrincipal } from "./auth-principal";
@@ -122,12 +122,17 @@ export function assertAgentNotPaused(snapshot: AgentPauseSnapshot): void {
   if (pause !== null) throw agentPausedError(pause);
 }
 
+const TERMINAL_SESSION_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
 /**
- * Read the pause sources again inside the board-write transaction, after the
- * advisory lock (ADR §9.3). A pause that committed before this read cancels
- * the write; one that commits afterwards leaves the transaction to finish.
+ * Read the token, board and session state again inside the board-write
+ * transaction, after the advisory lock (ADR §9.3). A pause, revocation,
+ * expiry, disabled account, or closed session that committed before this
+ * read cancels the write; a change after it leaves the in-flight transaction
+ * to finish. Claim commands go through the same gate, so a queued
+ * `CLAIM_CARD` cannot resurrect a claim for a revoked token or ended session.
  */
-export async function assertAgentNotPausedInTransaction(
+export async function assertAgentCanWriteInTransaction(
   tx: Prisma.TransactionClient,
   boardId: string,
   principal: AuthPrincipal | undefined,
@@ -137,26 +142,75 @@ export async function assertAgentNotPausedInTransaction(
   const [token, board] = await Promise.all([
     tx.apiToken.findUnique({
       where: { id: principal.apiTokenId },
-      select: { individualPausedAt: true, stopAllPausedAt: true },
+      select: {
+        individualPausedAt: true,
+        stopAllPausedAt: true,
+        revokedAt: true,
+        expiresAt: true,
+        user: { select: { disabledAt: true } },
+      },
     }),
     tx.board.findUnique({
       where: { id: boardId },
       select: { agentsPausedAt: true },
     }),
   ]);
-  const session =
-    sessionId === null || sessionId === undefined
-      ? null
-      : await tx.agentSession.findUnique({
-          where: { id: sessionId },
-          select: { pausedAt: true },
-        });
-  assertAgentNotPaused({
-    tokenIndividualPausedAt: token?.individualPausedAt ?? null,
-    tokenStopAllPausedAt: token?.stopAllPausedAt ?? null,
+
+  // Kill/expiry wins over pause: the token is no longer a valid principal.
+  if (token === null) throw new UnauthorizedException("Invalid API token");
+  if (
+    token.revokedAt != null ||
+    token.user?.disabledAt != null ||
+    (token.expiresAt != null && token.expiresAt.getTime() <= Date.now())
+  ) {
+    throw new UnauthorizedException("API token is no longer active");
+  }
+
+  const pause = resolveAgentPause({
+    tokenIndividualPausedAt: token.individualPausedAt,
+    tokenStopAllPausedAt: token.stopAllPausedAt,
     boardPausedAt: board?.agentsPausedAt ?? null,
-    sessionPausedAt: session?.pausedAt ?? null,
   });
+  if (pause !== null) throw agentPausedError(pause);
+
+  if (sessionId === null || sessionId === undefined) return;
+  const session = await tx.agentSession.findUnique({
+    where: { id: sessionId },
+    select: {
+      pausedAt: true,
+      endedAt: true,
+      status: true,
+      boardId: true,
+      apiTokenId: true,
+    },
+  });
+  if (
+    session === null ||
+    session.boardId !== boardId ||
+    session.apiTokenId !== principal.apiTokenId
+  ) {
+    throw new ForbiddenException({
+      message: "Agent session does not belong to this token and board",
+      code: "agent_session_invalid",
+      sessionId,
+    });
+  }
+  if (
+    session.endedAt != null ||
+    TERMINAL_SESSION_STATUSES.has(session.status)
+  ) {
+    throw new ForbiddenException({
+      message: "Agent session is closed",
+      code: "agent_session_closed",
+      sessionId,
+    });
+  }
+  if (session.pausedAt != null) {
+    throw agentPausedError({
+      scope: "session",
+      at: session.pausedAt.getTime(),
+    });
+  }
 }
 
 /** The optional third argument of `BoardWriteService.run`. */

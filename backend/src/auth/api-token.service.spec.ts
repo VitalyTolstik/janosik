@@ -24,10 +24,11 @@ const prismaMock = {
     updateMany: jest.fn(),
   },
   agentSession: { updateMany: jest.fn() },
-  card: { updateMany: jest.fn() },
+  card: { updateMany: jest.fn(), findMany: jest.fn() },
   boardMember: {
     findUnique: jest.fn(),
   },
+  $executeRaw: jest.fn(),
   $transaction: jest.fn(),
 } as unknown as PrismaService & {
   apiToken: Record<
@@ -41,8 +42,9 @@ const prismaMock = {
     jest.Mock
   >;
   agentSession: Record<"updateMany", jest.Mock>;
-  card: Record<"updateMany", jest.Mock>;
+  card: Record<"updateMany" | "findMany", jest.Mock>;
   boardMember: Record<"findUnique", jest.Mock>;
+  $executeRaw: jest.Mock;
   $transaction: jest.Mock;
 };
 
@@ -96,6 +98,8 @@ describe("ApiTokenService", () => {
     );
     prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.card.findMany.mockResolvedValue([]);
+    prismaMock.$executeRaw.mockResolvedValue(1);
     service = new ApiTokenService(prismaMock, {
       record: jest.fn(),
     } as never);
@@ -434,6 +438,7 @@ describe("ApiTokenService", () => {
 
     it("stamps an active token and stays idempotent", async () => {
       prismaMock.apiToken.findFirst.mockResolvedValue(makeToken());
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
       prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
 
       await service.revoke("user-1", "token-1");
@@ -442,11 +447,11 @@ describe("ApiTokenService", () => {
         where: { id: "token-1", userId: "user-1" },
       });
       expect(prismaMock.apiToken.updateMany).toHaveBeenCalledWith({
-        where: { id: "token-1", revokedAt: null },
+        where: { id: { in: ["token-1"] }, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.agentSession.updateMany).toHaveBeenCalledWith({
-        where: { apiTokenId: "token-1", endedAt: null },
+        where: { apiTokenId: { in: ["token-1"] }, endedAt: null },
         data: {
           status: "cancelled",
           endedAt: expect.any(Date),
@@ -454,7 +459,7 @@ describe("ApiTokenService", () => {
         },
       });
       expect(prismaMock.card.updateMany).toHaveBeenCalledWith({
-        where: { claimedByTokenId: "token-1" },
+        where: { claimedByTokenId: { in: ["token-1"] } },
         data: {
           claimedBy: null,
           claimedByTokenId: null,
@@ -513,6 +518,16 @@ describe("ApiTokenService", () => {
           individualPausedReason: null,
         },
       });
+    });
+
+    it("is an explicit no-op on an already revoked token", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(
+        makeToken({ revokedAt: new Date("2026-09-03T00:00:00Z") }),
+      );
+
+      const dto = await service.pause("user-1", "token-1", "late");
+      expect(dto.revokedAt).toBe(new Date("2026-09-03T00:00:00Z").getTime());
+      expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
     });
 
     it("pause-all touches only stopAll; resume-all does not clear an individual pause", async () => {
