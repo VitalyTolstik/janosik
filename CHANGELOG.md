@@ -215,6 +215,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Narrow desktop windows down to 640 px keep the icon rail instead of
   switching to the phone sheet; the 280 px sheet and labelled table cards now
   start at the same 639 px breakpoint.
+- The server now stamps the route board id on every command action it stores
+  and broadcasts, so SSE and delta events reach the open board in the UI even
+  when a REST caller omits `boardId` from the action.
 
 ## [0.2.0] - 2026-11-08
 

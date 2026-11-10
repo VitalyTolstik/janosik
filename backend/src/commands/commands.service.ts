@@ -291,7 +291,7 @@ export class CommandsService {
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
     const prepared = dtos.map((dto) => {
-      const entry = this.prepareCommand(dto, options);
+      const entry = this.prepareCommand(boardId, dto, options);
       // TASK-166 (D23): the claim holder is the authenticated actor. A
       // client cannot claim on behalf of another user; token/session fields
       // are written by `command-writers` from the attribution, never from
@@ -303,7 +303,7 @@ export class CommandsService {
         entry.action = { ...entry.action, claimedBy: actorId };
         // The stored payload carries the server-normalized holder, so the
         // retry fingerprint must be taken from that same canonical action.
-        entry.fingerprint = actionFingerprint(entry.action);
+        entry.fingerprint = actionFingerprint(entry.action, boardId);
       }
       return entry;
     });
@@ -347,7 +347,9 @@ export class CommandsService {
           // A reused key with a different body is a client bug (or a key
           // collision), not a retry: answering with the first command's
           // result would tell the caller its *new* action was applied.
-          if (actionFingerprint(existing.payload) !== entry.fingerprint) {
+          if (
+            actionFingerprint(existing.payload, boardId) !== entry.fingerprint
+          ) {
             throw new ConflictException({
               message: "commandId already used with a different payload",
               field: "commandId",
@@ -460,15 +462,21 @@ export class CommandsService {
    * retry (same body, later wall clock) still matches the stored command.
    */
   private prepareCommand(
+    boardId: string,
     dto: CreateCommandDto,
     options: { allowOversize?: boolean },
   ): PreparedCommand {
+    // The route is authoritative: overwrite any client-supplied `boardId`
+    // before the size check, validation, fingerprint and storage, so the
+    // command log, delta replay and SSE frame all name the board the command
+    // actually ran on (the UI realtime bridge routes by `action.boardId`).
+    const routed = { ...dto.action, boardId };
     // An oversized action is refused before anything else runs (TASK-30.2):
     // the writers would happily persist megabytes of snapshot/activity ids.
     // Internal admin restores may exceed the client cap (RESTORE_COLUMN
     // carries a whole column's snapshot, TASK-156) but not the internal one
     // — the caller is trusted, the JSONB row and the SSE frame are not.
-    const bytes = Buffer.byteLength(JSON.stringify(dto.action), "utf8");
+    const bytes = Buffer.byteLength(JSON.stringify(routed), "utf8");
     const cap =
       options.allowOversize === true
         ? MAX_COMMAND_BYTES_INTERNAL
@@ -482,7 +490,7 @@ export class CommandsService {
         retryable: false,
       });
     }
-    const validation = validateBoardAction(dto.action);
+    const validation = validateBoardAction(routed);
     if (!validation.ok) {
       throw new BadRequestException({
         message: `Invalid command (${validation.field}): ${validation.message}`,
@@ -504,7 +512,7 @@ export class CommandsService {
     return {
       dto,
       action: clampActionAt(validation.action, Date.now()),
-      fingerprint: actionFingerprint(validation.action),
+      fingerprint: actionFingerprint(validation.action, boardId),
     };
   }
 
@@ -723,7 +731,12 @@ export class CommandsService {
     return {
       entries: (truncated ? rows.slice(0, max) : rows).map((row) => ({
         seq: Number(row.seq),
-        action: row.payload as unknown as BoardAction,
+        // Rows written before ingress stamping may lack `boardId`; replay them
+        // scoped to the queried board so the UI's realtime bridge keeps them.
+        action: {
+          ...(row.payload as Record<string, unknown>),
+          boardId,
+        } as BoardAction,
         actorId: row.actorId,
         actorType: row.actorType as ActorType,
         commandId: row.id,
@@ -1465,15 +1478,18 @@ async function entityVersions(
 /**
  * Stable identity of an action for the idempotency check: canonical JSON
  * without `at` (the client clock is not part of *what* the command does, and
- * the stored copy may carry the server-clamped value).
+ * the stored copy may carry the server-clamped value). `boardId`, when given,
+ * is the route board: taking it for the stored payload too keeps an honest
+ * retry matching a row written before ingress stamping existed.
  */
-function actionFingerprint(action: unknown): string {
+export function actionFingerprint(action: unknown, boardId?: string): string {
   if (action === null || typeof action !== "object") {
     return stableStringify(action);
   }
   const rest: Record<string, unknown> = {
     ...(jsonSafe(action) as Record<string, unknown>),
   };
+  if (boardId !== undefined) rest.boardId = boardId;
   delete rest.at;
   return stableStringify(rest);
 }
