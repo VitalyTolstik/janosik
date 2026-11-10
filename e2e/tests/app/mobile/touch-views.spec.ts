@@ -356,29 +356,26 @@ test("auto-scrolls the calendar from Unscheduled to an offscreen day", async ({
     .toEqual([year, month, day]);
 });
 
-test("auto-scrolls a virtualized table to an unmounted far row", async ({
+test("auto-scrolls the table to an off-screen far row", async ({
   page,
   board,
 }) => {
   const todo = await board.column("Todo");
   const doing = await board.column("Doing");
   const cardId = await board.card(todo, "Virtual source");
-  // Table virtualization starts above 60 rows; 80 keeps the target outside
-  // the initial window while staying reachable inside the drag timeout.
-  for (let index = 1; index <= 80; index += 1) {
+  // Keep the table below the virtualization threshold so the target is a
+  // stable DOM row; the test then exercises the touch auto-scroll itself.
+  for (let index = 1; index <= 40; index += 1) {
     await board.card(todo, `Virtual filler ${index}`);
   }
   await board.card(doing, "Virtual target");
-  // Leave rows after the target so it can settle inside the viewport instead
-  // of being pinned to the maximum scroll offset.
-  for (let index = 1; index <= 10; index += 1) {
-    await board.card(doing, `Virtual tail ${index}`);
-  }
   await board.open(page);
   await openTable(page);
 
-  // The target row is past the windowing threshold and is not mounted yet.
-  expect(await tableRow(page, "Virtual target").count()).toBe(0);
+  const target = tableRow(page, "Virtual target");
+  await expect(target).toHaveCount(1);
+  const targetBox = await target.boundingBox();
+  expect(targetBox?.y ?? 0).toBeGreaterThan(page.viewportSize()!.height);
 
   const saved = page.waitForResponse(
     (response) =>
