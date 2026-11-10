@@ -190,9 +190,10 @@ workflow from the aggregate rather than assume the first/last column.
 
 The `wip` check mirrors the reducer's collection guards: `LIMITS` on columns,
 cards per column, labels per board, labels per card, links per card, checklists
-per card and items per checklist, plus the column WIP limit. The `RESTORE_*`
-family is exempt (it re-adds data that already existed). A client-supplied
-`inverse: true` flag buys no exemption.
+per card and items per checklist, plus the column WIP limit. The current hard
+cap is **1000 active cards per column**; archived cards do not count toward
+it. The `RESTORE_*` family is exempt (it re-adds data that already existed). A
+client-supplied `inverse: true` flag buys no exemption.
 
 The `id` check exists because entity ids are global primary keys while
 commands are board-scoped: an id that already lives on another board would be

@@ -292,7 +292,7 @@ describe("CardItem hover duplicate (column limits)", () => {
             card={baseCard}
             {...base}
             duplicateDisabled
-            duplicateDisabledReason="Column is full (200 cards)"
+            duplicateDisabledReason="Column is full (1000 cards)"
           />
         </TooltipProvider>
       </I18nProvider>,

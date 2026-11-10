@@ -361,8 +361,15 @@ export const LIMITS = {
   labelsPerBoard: 50,
   /** Columns on one board. */
   columnsPerBoard: 12,
-  /** Cards in one column. */
-  cardsPerColumn: 200,
+  /**
+   * Active cards in one column. Raised from 200 on 2026-11-10 after the
+   * TASK-139 virtualization and a load test: a 5×1000 board rendered in
+   * ~0.63 s with 50 cards in the DOM and a 76 MB heap, and the API read its
+   * 3.37 MB payload in ~128 ms. A 10k-card board needs 2000/column and still
+   * renders, but writes and memory degrade, so 1000 is the cap. Archived
+   * cards do not count. See `docs/PERF-CAPACITY.md`.
+   */
+  cardsPerColumn: 1000,
   /** WIP limit per column (1…max). */
   wipLimitMax: 99,
   /**

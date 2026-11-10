@@ -14,6 +14,10 @@ function columnWith(count: number, wipLimit?: number): Column {
 }
 
 describe("isColumnFull", () => {
+  it("pins the product cap at 1000 cards per active column", () => {
+    expect(LIMITS.cardsPerColumn).toBe(1000);
+  });
+
   it("is false while the column is under the hard limit", () => {
     expect(isColumnFull(columnWith(LIMITS.cardsPerColumn - 1))).toBe(false);
   });
