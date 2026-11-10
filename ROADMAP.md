@@ -448,7 +448,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25), TASK-176 — отдельный admin/comment backlog (§7.26). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25), TASK-176 — отдельный admin/comment backlog (§7.26), TASK-177 — human-last-mile backlog (§7.27). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1685,6 +1685,7 @@ TASK-36 и TASK-37.)*
 | 105 | TASK-174 `human-control-phase2` | `feat/TASK-174.x-*` | §7.25: post-1.0 P1/P2 из human-control — comment moderation, share privacy, 2FA/sessions, token rotation, invite email, limits/a11y, service accounts, legal/SIEM/messaging/templates | **Отложено:** после 1.0.0; 5 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
 | 106 | TASK-175 `scale-phase2` | `feat/TASK-175.x-*` | §7.25: post-1.0 масштабирование — глобальный потолок команд и шардинг, multi-node/Redis fan-out, presence после TASK-145 | **Отложено:** после 1.0.0; 3 потока; не блокирует self-host-запуск. См. §7.25 |
 | 107 | TASK-176 `admin-connections` | `docs/TASK-176-admin-connections.md` → отдельные `feat/TASK-176.x-*` | §7.26: исправить подтверждённые баги и пробелы мастер-панели (bulk между страницами, честные счётчики/выборки, прямые ссылки, URL-состояние, адресуемые фильтры, per-row действия) и добавить **author-only редактирование своих комментариев** в обычном продукте | **Запланировано:** 12 подзадач; первая волна — 176.1 bulk-контракт, 176.2 редактирование комментариев, 176.3 честные счётчики; админский редактор карточки и атрибуция мастера — отдельные решения (176.8–176.10), раздел агентов — осознанно вне scope (176.11). См. §7.26 |
+| 108 | TASK-177 `human-last-mile` | `design/project-gaps-review/REVIEW.md` → отдельные `feat/TASK-177.x-*` | §7.27: закрыть 18 подтверждённых разрывов обычного UI — share edit, self-leave, потеря черновика комментария, честные activity-счётчики, task spec/claim, admin shares, notification opt-out, per-board export, «permanent» copy и мелкие UX-пропуски | **Запланировано:** 10 подзадач; первая волна — 177.1 share edit, 177.3 draft+counts, 177.5 admin shares, 177.8 small UX; 177.2 self-leave отдельным PR; 177.4/177.7 — после продуктового решения; 177.9/177.10 — отдельно. См. §7.27 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4837,6 +4838,84 @@ TASK-176, не дублировать в других задачах.
 или мержить последовательно. 176.5/176.6 меняют `use-admin-list` и admin
 list DTO; 176.2 — `Comment`/`comments` и `shared/src/api.ts`; 176.8 — только
 после решения по атрибуции.
+
+---
+
+### 7.27. Human last mile: честные списки, share/invite и agent-owned состояние (TASK-177)
+
+> **Статус:** запланировано, отдельно от TASK-166/176.
+> **Полный отчёт:** [`design/project-gaps-review/REVIEW.md`](design/project-gaps-review/REVIEW.md).
+> **База отчёта:** `main` = `a858c75`; проверка статическая, без интерактивного E2E.
+> **Связь:** TASK-176 уже закрывает bulk, admin-счётчики, admin-ссылки и author-only редактирование комментариев; TASK-177 не дублирует его, а закрывает **обычный пользовательский UI** и несколько admin-поверхностей.
+
+**Зачем.** Проверка нашла **18 новых подтверждённых разрывов**: 0 P0, 1 P1, 6 P2, 11 P3.
+Главный паттерн — **API/MCP-first, UI last mile**: сервер уже умеет share edit,
+task spec, pending invite, per-board export и `notifyAttention`, но
+человеческий интерфейс не доводит операцию до кнопки. Второй паттерн —
+**односторонние действия + admin-only recovery**: soft-delete есть, а
+пользователь после reload восстановить не может, хотя копирайт обещает
+«permanently». Третий — **загруженная выборка выдаётся за полный счётчик**.
+
+**Все находки и куда они уходят.**
+
+| ID | Находка | Класс | Sev | Effort | Surface | Куда |
+| --- | --- | --- | --- | --- | --- | --- |
+| G-01 | Share-ссылку нельзя отредактировать после создания | product gap / surface asymmetry | P2 | S/M | normal UI ↔ REST/MCP | 177.1 |
+| G-02 | MEMBER/VIEWER не может выйти из доски | permission asymmetry | P2 | S/M | normal UI ↔ REST | 177.2 |
+| G-03 | Task spec read-only, claim невидим и снимается только завершением сессии | permission asymmetry / product decision | P2 | M | normal UI ↔ MCP | 177.4 |
+| G-04 | Черновик комментария теряется при закрытии карточки | real bug / data loss | **P1** | S | normal UI | 177.3 |
+| G-05 | Бейджи Comments/History считают загруженную страницу, а не всего | misleading counts | P2 | S | normal UI | 177.3 |
+| G-06 | Kind комментария write-once и без фильтра | product gap | P3 | S | normal UI ↔ REST/MCP | 177.8 (фильтр); edit kind — решение |
+| G-07 | Pending invitation нельзя изменить/продлить/переотправить | write path without edit | P3 | S | normal UI ↔ REST | 177.8 |
+| G-08 | Revoke share без подтверждения | destructive too easy | P3 | S | normal UI | 177.8 |
+| G-09 | Admin shares показывает первые 100 и молчит об остальных | misleading total | P3 | S | admin UI | 177.5 |
+| G-10 | Admin shares не показывает expiry; истёкшая ссылка выглядит активной | misleading status | P3 | S | admin UI | 177.5 |
+| G-11 | Счётчик карточек в board switcher включает архивные | misleading count | P3 | S | normal UI | 177.8 |
+| G-12 | Удаление комментария/ссылки — hover-only без touch-fallback | mobile/a11y | P3 | S | mobile UI | 177.8 |
+| G-13 | Файл из «Removed from descriptions» нельзя вернуть, только удалить | UX dead end | P3 | M | normal UI | 177.9 |
+| G-14 | Per-board export есть в API/доках, но не в UI | docs mismatch / missing surface | P3 | S | normal UI ↔ REST | 177.7 |
+| G-15 | «Permanent» delete — soft-delete, восстановимый мастером | docs mismatch / admin-only recovery | P2 | M | normal UI ↔ admin | 177.7 |
+| G-16 | `notifyAttention` и attention-inbox не имеют UI | docs mismatch / product gap | P2 | S/M | normal UI ↔ REST | 177.6 |
+| G-17 | Global search обрезает 20 до группировки; board-hits исчезают | UX dead end | P3 | S | normal UI | 177.10 |
+| G-18 | Тост «Board exported» при экспорте всех досок | docs/copy mismatch | P3 | S | normal UI | 177.8 |
+
+**Подзадачи TASK-177.**
+
+| ID | Что делаем | Приоритет | Зависимость |
+| --- | --- | --- | --- |
+| 177.1 | **Share link edit**: Edit в строке share, title/`includeComments`/`includeAttachments`/`expiresAt` через существующий `PATCH`; mode/token не менять; confirm для live privacy-флагов; audit уже серверный | P2, S | G-01 |
+| 177.2 | **Self-leave board**: `DELETE /boards/:id/members/me`, кнопка `Leave board` в своей строке, last-ADMIN guard, Activity/SSE, закрытие доступа и switcher | P2, M | G-02 |
+| 177.3 | **Comment draft safety + honest activity counts**: module-level draft map/confirm, `50+`/`N of M` бейджи, тест >50; не терять draft при ошибке send | **P1**, S | G-04, G-05 |
+| 177.4 | **Agent-owned card state**: edit/clear task spec через `SET_CARD_TASK_SPEC`, claim pill + `Release claim`, атрибуция в History; только после решения, кто владеет контрактом | P2, M | G-03, решение |
+| 177.5 | **Admin shares truthful list**: pagination/total, Expires/Expired/Last viewed; не показывать первые 100 как полный список | P3, S | G-09, G-10 |
+| 177.6 | **Notification preferences**: тумблер `notifyAttention` (PATCH уже есть); attention-inbox — после 173.6, сейчас хотя бы честно писать в docs | P2, S/M | G-16, 173.6 для inbox |
+| 177.7 | **Delete semantics + per-board export**: `Export this board` в Data menu через `GET /boards/:id/export`; решить true purge vs честный copy «admin can restore during retention»; user restore, если решение (б) | P2, M | G-14, G-15, решение |
+| 177.8 | **Small UX batch**: pending-invite role/expiry edit, revoke confirm, switcher active-count, `no-hover:opacity-100`, export-all toast, comment-kind filter (серверный `?kind=` уже есть) | P3, S | G-06 (фильтр), G-07, G-08, G-11, G-12, G-18 |
+| 177.9 | **Detached attachments**: `Restore to description` или минимум Download/copy URL для файла из «Removed from descriptions»; re-attach требует решения | P3, M | G-13, решение |
+| 177.10 | **Global search grouping**: группировать Cards/Boards до cap или добавить `Show all`/`20 of N`; board-hit не должен исчезать | P3, S | G-17 |
+
+**Порядок.** 177.1 + 177.3 + 177.5 + 177.8 — один-два маленьких PR (первая
+волна). 177.2 — отдельный backend+UI PR. 177.9/177.10 — после первой волны.
+177.4 и 177.7 — только после продуктового решения; 177.6 без inbox можно
+делать сразу, с inbox — после 173.6.
+
+**Продуктовые решения, без которых нельзя закрывать.**
+
+1. Кто владеет task spec и claim: может ли человек переписать контракт агента, какая роль, как атрибутировать? (G-03)
+2. Что значит «удалить навсегда»: true purge или soft-delete с admin restore и retention? (G-15)
+3. Нужен ли self-leave для MEMBER/VIEWER и что происходит с их комментариями/вложениями? (G-02)
+4. Можно ли менять `includeComments`/`includeAttachments` у уже разосланной live-ссылки? (G-01)
+5. Detached attachments: re-attach или только download/delete? (G-13)
+6. Global search cap 20 — продуктовый лимит или техническая защита? (G-17)
+7. Attention inbox: делать сейчас или только opt-out; что показывать в bell? (G-16)
+8. Может ли board ADMIN редактировать/удалять чужие комментарии? (открыто; 176.2 берёт только author-only)
+9. Нужен ли user-facing «Recently deleted» на retention? (G-15)
+
+**DoD.** Для каждой подзадачи: EN/RU copy, unit/component + backend/e2e где
+есть поведение, `CHANGELOG.md`, никаких ослабленных тестов, keyboard/touch
+проверка, 390 px для UI, audit/activity для новых записей. Не смешивать с
+TASK-176 и board-settings redesign; 177.3 не должен ломать 176.2, а 177.4 —
+не начинать до ответа по атрибуции.
 
 ---
 
