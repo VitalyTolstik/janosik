@@ -108,6 +108,8 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   ...overrides,
 });
 
+// codeql[js/insufficient-password-hash] -- test fixture for hashing random
+// refresh tokens, not a password storage path.
 const sha256 = (value: string): string =>
   createHash("sha256").update(value).digest("hex");
 

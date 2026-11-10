@@ -139,12 +139,12 @@ export async function dataFile(
   };
 }
 
-/** A file larger than the 5 MB import limit, built without committing it. */
+/** A file larger than the 25 MB import limit, built without committing it. */
 export function oversizedDataFile(): ImportFile {
   return {
     name: "oversized.json",
     mimeType: "application/json",
-    buffer: Buffer.alloc(5 * 1024 * 1024 + 1, 0x20),
+    buffer: Buffer.alloc(25 * 1024 * 1024 + 1, 0x20),
   };
 }
 

@@ -287,6 +287,9 @@ export class AuthController {
   }
 
   private withRefreshCookie(res: Response, result: AuthResult): AuthResponse {
+    // codeql[js/clear-text-storage-of-sensitive-information] -- the refresh
+    // token is intentionally delivered as an httpOnly SameSite=Strict cookie,
+    // never written to localStorage or a readable response body.
     res.cookie(REFRESH_COOKIE, result.refreshToken, {
       ...this.cookieOptions(),
       maxAge: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,

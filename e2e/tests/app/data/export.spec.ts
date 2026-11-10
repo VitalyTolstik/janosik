@@ -17,7 +17,7 @@ test("downloads the workspace as a named Janosik envelope", async ({
 
   expect(exported.filename).toBe("janosik-boards.json");
   expect(exported.envelope.app).toBe("janosik");
-  expect(exported.envelope.schemaVersion).toBe(2);
+  expect(exported.envelope.schemaVersion).toBe(3);
   expect(Number.isInteger(exported.envelope.exportedAt)).toBe(true);
   expect(exported.envelope.boards.map((entry) => entry.id)).toContain(board.id);
 });
