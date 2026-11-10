@@ -28,6 +28,7 @@ import {
   wouldCloseBlocksCycle,
 } from "@janosik/shared";
 import type {
+  AgentRunKind,
   BoardRole,
   WorkflowConflictDetails,
   WorkflowDecision,
@@ -68,6 +69,12 @@ import {
   prepareCommandDto,
   type PreparedCommand,
 } from "./command-validation";
+import {
+  capturePreimage,
+  finalizePreimage,
+  inverseOf,
+  writePreimage,
+} from "./run-preimage";
 import { referencedEntityIds } from "./referenced-entity-ids";
 import type { CreateCommandDto } from "./dto/create-command.dto";
 
@@ -130,6 +137,56 @@ export interface CommandDelta {
   resync: boolean;
 }
 
+/**
+ * TASK-166.7: an explicit run to create for this transport call. The command
+ * controller passes it for a PAT batch (`kind: "batch"`) and the run-revert
+ * service for an internal audit run (`kind: "revert"`); 166.8 will pass
+ * `kind: "plan"` from `POST /plans/apply`. A single destructive PAT command
+ * is classified automatically and does not need this.
+ */
+export interface RunContext {
+  kind: AgentRunKind;
+  clientRunId?: string;
+  planHash?: string;
+  revertsRunId?: string;
+}
+
+/** Result of {@link CommandsService.applyBatch}. */
+export interface BatchApplyResult {
+  results: CommandResponse[];
+  runId: string | null;
+}
+
+/** Options shared by the single-command and batch transports. */
+export interface ApplyOptions {
+  allowOversize?: boolean;
+  actorType?: ActorType;
+  actorRole?: Role;
+  /** TASK-166 attribution; the server fills it from the principal. */
+  attribution?: RequestAttribution;
+  /** TASK-166 scope/destructive gate; only the REST transport passes it. */
+  principal?: AuthPrincipal;
+  /** TASK-166.5 `X-Approval-Id` for the exact plan being applied. */
+  approvalId?: string;
+  /** TASK-166.7 explicit run; omitted lets the service classify the call. */
+  run?: RunContext;
+  /** TASK-166.7 idempotency key from a single-command body. */
+  clientRunId?: string;
+  /**
+   * TASK-166.7: revalidation hook that runs inside the board transaction,
+   * after the advisory lock and before any command is applied. The run-revert
+   * path uses it to close the TOCTOU gap between its pre-flight conflict
+   * check and the inverse writes.
+   */
+  guard?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /** TASK-166.7 internal post-apply hook, inside the board transaction. */
+  afterRun?: (
+    tx: Prisma.TransactionClient,
+    runId: string,
+    results: CommandResponse[],
+  ) => Promise<void>;
+}
+
 @Injectable()
 export class CommandsService {
   constructor(
@@ -148,20 +205,15 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dto: CreateCommandDto,
-    options: {
-      allowOversize?: boolean;
-      actorType?: ActorType;
-      actorRole?: Role;
-      /** TASK-166 attribution; the server fills it from the principal. */
-      attribution?: RequestAttribution;
-      /** TASK-166 scope/destructive gate; only the REST transport passes it. */
-      principal?: AuthPrincipal;
-      /** TASK-166.5 `X-Approval-Id` for the exact plan being applied. */
-      approvalId?: string;
-    } = {},
+    options: ApplyOptions = {},
   ): Promise<CommandResponse> {
-    const [response] = await this.applyBatch(boardId, actorId, [dto], options);
-    return response;
+    const applied = await this.applyBatch(boardId, actorId, [dto], {
+      ...options,
+      ...(options.run === undefined && dto.clientRunId !== undefined
+        ? { clientRunId: dto.clientRunId }
+        : {}),
+    });
+    return applied.results[0]!;
   }
 
   /**
@@ -181,18 +233,8 @@ export class CommandsService {
     boardId: string,
     actorId: string,
     dtos: CreateCommandDto[],
-    options: {
-      allowOversize?: boolean;
-      actorType?: ActorType;
-      actorRole?: Role;
-      /** TASK-166 attribution; the server fills it from the principal. */
-      attribution?: RequestAttribution;
-      /** TASK-166 scope/destructive gate; only the REST transport passes it. */
-      principal?: AuthPrincipal;
-      /** TASK-166.5 `X-Approval-Id` for the exact plan being applied. */
-      approvalId?: string;
-    } = {},
-  ): Promise<CommandResponse[]> {
+    options: ApplyOptions = {},
+  ): Promise<BatchApplyResult> {
     // TASK-157: who issued the commands — a person or an agent (a PAT). The
     // transport resolves it from the request principal; internal callers
     // (admin restores, the demo seeder) default to "human".
@@ -267,6 +309,22 @@ export class CommandsService {
       }
     }
 
+    // TASK-166.7 (D16): a run is created for a PAT batch, a single destructive
+    // PAT command, a plan/apply seam, and the internal human run-revert. An
+    // ordinary non-destructive PAT command and every browser command stay
+    // outside the run log and keep the existing undo path.
+    const requestedRun =
+      options.run !== undefined ||
+      (options.principal?.via === "pat" &&
+        (prepared.length > 1 ||
+          requirement?.kind === "destructive" ||
+          // An approved plan is always auditable by a run (ADR §10.4), even
+          // when it is a single `done`/`custom` command.
+          (approvalId !== undefined && requirement !== null)));
+    const runKind: AgentRunKind =
+      options.run?.kind ?? (prepared.length > 1 ? "batch" : "single");
+    const clientRunId = options.run?.clientRunId ?? options.clientRunId ?? null;
+
     const applied = await this.boardWrite.run(
       boardId,
       async (
@@ -275,6 +333,7 @@ export class CommandsService {
         responses: CommandResponse[];
         events: InternalCommandEvent[];
         consumedApproval: ApprovalRequest | null;
+        runId: string | null;
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` checks below see each
@@ -285,6 +344,11 @@ export class CommandsService {
         });
         if (!board) {
           throw new NotFoundException("Board not found");
+        }
+        // TASK-166.7: the revert guard re-reads the conflict state now that
+        // the board lock is held, before any inverse command can be written.
+        if (options.guard !== undefined) {
+          await options.guard(tx);
         }
 
         let approval: ApprovalRequest | null = null;
@@ -302,31 +366,19 @@ export class CommandsService {
           approval = authorized.row;
           approvalReplay = authorized.replay;
         }
-        let applyAttribution = attribution;
-        if (approval !== null && !approvalReplay) {
-          const run = await tx.agentRun.create({
-            data: {
-              boardId,
-              apiTokenId: options.principal?.apiTokenId ?? null,
-              agentSessionId: attribution.agentSessionId,
-              actorId,
-              kind: prepared.length > 1 ? "batch" : "single",
-              planHash: approvalPlanHash(plan),
-              approvalId: approval.id,
-              commandCount: prepared.length,
-            },
-          });
-          // Every command of the run carries the id, so the feed and the run
-          // detail agree without a second lookup.
-          applyAttribution = { ...attribution, runId: run.id };
-        }
 
         // Resolve every `commandId` up front: a retried batch returns the
         // stored results without re-applying (idempotency), and only the
         // *fresh* commands need their ids checked against the entity tables.
         const existingRows = await tx.command.findMany({
           where: { id: { in: prepared.map((entry) => entry.dto.commandId) } },
-          select: { id: true, boardId: true, payload: true, result: true },
+          select: {
+            id: true,
+            boardId: true,
+            payload: true,
+            result: true,
+            runId: true,
+          },
         });
         const existingById = new Map(existingRows.map((row) => [row.id, row]));
         for (const entry of prepared) {
@@ -352,6 +404,105 @@ export class CommandsService {
               code: "idempotency_conflict",
             });
           }
+        }
+
+        const fresh = prepared.filter(
+          (entry) => !existingById.has(entry.dto.commandId),
+        );
+        let applyAttribution = attribution;
+        let runId: string | null = null;
+
+        if (fresh.length === 0) {
+          // Every command is a stored replay. Return their original run when
+          // the set is unambiguous; a clientRunId pins the expected run.
+          const runIds = new Set(
+            existingRows
+              .map((row) => row.runId)
+              .filter((id): id is string => id !== null),
+          );
+          if (runIds.size > 1) {
+            throw new ConflictException({
+              message: "Commands in this replay belong to different runs",
+              code: "run_conflict",
+            });
+          }
+          runId = [...runIds][0] ?? null;
+          if (clientRunId !== null) {
+            const existingRun = await tx.agentRun.findUnique({
+              where: {
+                boardId_clientRunId: { boardId, clientRunId },
+              },
+            });
+            if (
+              existingRun === null ||
+              existingRun.id !== runId ||
+              existingRun.agentSessionId !== attribution.agentSessionId ||
+              !(await this.runMatchesCommands(tx, existingRun.id, prepared))
+            ) {
+              throw new ConflictException({
+                message: "clientRunId does not match the stored command run",
+                code: "run_conflict",
+                clientRunId,
+              });
+            }
+            runId = existingRun.id;
+          } else if (runId !== null) {
+            // A request that replays only *part* of a run must not get the run
+            // id back as if the whole run had been applied.
+            if (!(await this.runMatchesCommands(tx, runId, prepared))) {
+              runId = null;
+            }
+          }
+        } else if (requestedRun) {
+          // A run is all-or-nothing: commands already applied by another run
+          // cannot be folded into a new one (ADR §11.2).
+          if (existingRows.length > 0) {
+            throw new ConflictException({
+              message:
+                "This batch mixes stored commands with a new run; repeat the original request",
+              code: "run_conflict",
+            });
+          }
+          if (clientRunId !== null) {
+            const existingRun = await tx.agentRun.findUnique({
+              where: { boardId_clientRunId: { boardId, clientRunId } },
+            });
+            if (existingRun !== null) {
+              throw new ConflictException({
+                message: "clientRunId already used for another plan",
+                code: "run_conflict",
+                clientRunId,
+              });
+            }
+          }
+          const run = await tx.agentRun.create({
+            data: {
+              boardId,
+              apiTokenId: options.principal?.apiTokenId ?? null,
+              agentSessionId: attribution.agentSessionId,
+              actorId,
+              kind: runKind,
+              clientRunId,
+              planHash:
+                options.run?.planHash ??
+                (approval !== null ? approvalPlanHash(plan) : null),
+              approvalId: approval !== null ? approval.id : null,
+              commandCount: prepared.length,
+              revertsRunId: options.run?.revertsRunId ?? null,
+            },
+          });
+          runId = run.id;
+          // Every command of the run carries the id, so the feed and the run
+          // detail agree without a second lookup.
+          applyAttribution = { ...attribution, runId };
+          if (attribution.agentSessionId !== null) {
+            await tx.agentSession.updateMany({
+              where: { id: attribution.agentSessionId, boardId },
+              data: { currentRunId: run.id },
+            });
+          }
+        } else if (approvalReplay && approval?.runId !== undefined) {
+          runId = approval.runId;
         }
 
         // Entity ids are global primary keys while commands are board-scoped:
@@ -381,7 +532,10 @@ export class CommandsService {
           if (existing) {
             // A replay of an existing `commandId` publishes nothing — that
             // `seq` already went out on the stream.
-            responses.push(existing.result as unknown as CommandResponse);
+            responses.push({
+              ...(existing.result as unknown as CommandResponse),
+              ...(existing.runId !== null ? { runId: existing.runId } : {}),
+            });
             continue;
           }
           // TASK-166: check the preset and destructive gate at the point the
@@ -395,6 +549,18 @@ export class CommandsService {
             classifyCommandAction(entry.action, running),
             { approvalApplied: approval !== null },
           );
+          // TASK-166.7: capture the exact before-state and the compensating
+          // action at the only moment both are known. Only commands that
+          // belong to a run carry a pre-image.
+          const seed =
+            runId === null
+              ? null
+              : await capturePreimage(tx, {
+                  before: running,
+                  action: entry.action,
+                });
+          const inverse =
+            runId === null ? null : inverseOf(running, entry.action);
           const outcome = await this.applyPrepared(tx, {
             boardId,
             actorId,
@@ -404,6 +570,19 @@ export class CommandsService {
             entry,
             board: running,
           });
+          if (runId !== null && seed !== null) {
+            const preimage = await finalizePreimage(tx, {
+              seed,
+              touches: outcome.touches,
+              inverse,
+            });
+            await writePreimage(tx, {
+              commandId: entry.dto.commandId,
+              boardId,
+              runId,
+              data: preimage,
+            });
+          }
           responses.push(outcome.response);
           running = outcome.board;
           // Collected here, published by the caller only after the commit: a
@@ -425,8 +604,7 @@ export class CommandsService {
           });
         }
 
-        const runId = applyAttribution.runId;
-        if (approval !== null && !approvalReplay && runId !== null) {
+        if (runId !== null && fresh.length > 0) {
           const seqs = responses.map((response) => response.seq);
           await tx.agentRun.update({
             where: { id: runId },
@@ -435,6 +613,11 @@ export class CommandsService {
               lastSeq: BigInt(Math.max(...seqs)),
             },
           });
+          if (options.afterRun !== undefined) {
+            await options.afterRun(tx, runId, responses);
+          }
+        }
+        if (approval !== null && !approvalReplay && runId !== null) {
           const consumed = await this.approvals.consumeCommandApproval(
             tx,
             approval,
@@ -442,9 +625,9 @@ export class CommandsService {
             actorId,
             options.principal,
           );
-          return { responses, events, consumedApproval: consumed };
+          return { responses, events, consumedApproval: consumed, runId };
         }
-        return { responses, events, consumedApproval: null };
+        return { responses, events, consumedApproval: null, runId };
       },
       pauseGateFor(options.principal, attribution.agentSessionId),
     );
@@ -473,7 +656,25 @@ export class CommandsService {
     // A successful PAT write refreshes the session heartbeat at most once a
     // minute (ADR §6.5), but only after the transaction committed.
     await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
-    return applied.responses;
+    return { results: applied.responses, runId: applied.runId };
+  }
+
+  /**
+   * Does `runId` contain exactly the commands of this request (each command
+   * id present once, no extra rows)? Used to prove a `clientRunId` replay.
+   */
+  private async runMatchesCommands(
+    tx: Prisma.TransactionClient,
+    runId: string,
+    prepared: PreparedCommand[],
+  ): Promise<boolean> {
+    const rows = await tx.command.findMany({
+      where: { runId },
+      select: { id: true },
+    });
+    if (rows.length !== prepared.length) return false;
+    const stored = new Set(rows.map((row) => row.id));
+    return prepared.every((entry) => stored.has(entry.dto.commandId));
   }
 
   /**
@@ -628,7 +829,11 @@ export class CommandsService {
       });
     }
     const versions = changed ? await collectVersions(tx, boardId, touches) : {};
-    const response: CommandResponse = { seq, versions };
+    const response: CommandResponse = {
+      seq,
+      versions,
+      ...(attribution.runId !== null ? { runId: attribution.runId } : {}),
+    };
 
     await tx.command.update({
       where: { id: created.id },
@@ -677,9 +882,10 @@ export class CommandsService {
       apiTokenId?: string;
       agentSessionId?: string;
     } = {},
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<CommandDelta> {
     if (since > 0) {
-      const baseline = await this.prisma.command.findFirst({
+      const baseline = await client.command.findFirst({
         where: { boardId, seq: BigInt(since) },
         select: { seq: true },
       });
@@ -687,7 +893,7 @@ export class CommandsService {
         return { entries: [], resync: true };
       }
     }
-    const rows = await this.prisma.command.findMany({
+    const rows = await client.command.findMany({
       where: {
         boardId,
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),

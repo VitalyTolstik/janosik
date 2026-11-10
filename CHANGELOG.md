@@ -160,6 +160,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and MCP tools `request_approval`, `list_approvals`, `get_approval`,
   `wait_for_decision`, `cancel_approval` (decision stays session-only).
   Docs EN/RU cover the API, MCP workflow and error codes.
+- TASK-166.7 run grouping and rollback foundation: a PAT batch now creates one
+  board-scoped `AgentRun` (`kind: "batch"`), a single destructive PAT command
+  creates `kind: "single"`, and the internal plan/apply seam is ready for
+  TASK-166.8. Browser batches and ordinary non-destructive single commands stay
+  outside the run log (D16). `clientRunId` is a board-scoped idempotency key;
+  every command carries `runId` plus the existing token/session/name
+  attribution. Every run command stores a `CommandPreimage` with the affected
+  entities' before-state, before/after versions, and the compensating action;
+  destructive deletes include nested cards/checklists/labels. Adds
+  `GET /boards/:id/runs` (filters + cursor paging),
+  `GET /boards/:id/runs/:runId` (pre-images only for a board ADMIN browser
+  session), `POST …/revert/preview` (dry-run conflicts, ADMIN diff) and
+  `POST …/revert` (browser-JWT board ADMIN only; PAT gets `pat_forbidden`).
+  Revert is conflict-checked, all-or-nothing and one-time; it creates a
+  `kind: "revert"` run with `revertsRunId`, marks the original
+  `reverted`/`revertedAt`, writes Activity + `run.reverted` SSE + audit, and
+  leaves the ordinary browser undo path untouched. Shared adds
+  `AgentRunDto`/`RunSummaryDto`/`RunDetailDto`/`RevertConflictDto`/
+  `RevertPreviewDto`, run fields on command DTOs and `RunSseEvent`. MCP exposes
+  only `janosik_list_runs`, `janosik_get_run` and
+  `janosik_preview_run_revert` — no apply tool (D17); the tool count is now 82.
+- TASK-166.7 hardening: run revert revalidates the version/deletedAt conflict
+  set again inside the board advisory-lock transaction, after the pre-flight
+  check and before any inverse command, closing the TOCTOU window. Retention
+  now follows ADR §6.14: `sweep-commands` deletes stale `CommandPreimage` rows
+  before their commands, the new `sweep-runs` job removes only empty runs
+  older than the window (a `reverted` original goes together with its
+  `kind:"revert"` child), and board/account purge paths delete preimages →
+  commands → runs in that order. Command, batch and real-revert responses also
+  expose `X-Run-Id` (only when a run exists) so the structured request log can
+  attribute an operation to its run.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a

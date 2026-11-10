@@ -72,15 +72,23 @@ export class CommandsController {
     @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateCommandDto,
     @Headers("idempotency-key") rawKey?: string,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<CommandResponse> {
-    const apply = (): Promise<CommandResponse> =>
-      this.commands.apply(id, user.id, dto, {
+    const apply = async (): Promise<CommandResponse> => {
+      const response = await this.commands.apply(id, user.id, dto, {
         actorType: actorTypeOf(principal),
         actorRole: membership.role,
         attribution: requestAttribution(principal, session?.id),
         principal,
         ...(approvalId !== undefined ? { approvalId } : {}),
       });
+      // TASK-166.7/166.10: the structured request log attributes an operation
+      // to its run from this response header; no run means no header.
+      if (response.runId !== undefined && response.runId !== null) {
+        res?.setHeader("X-Run-Id", response.runId);
+      }
+      return response;
+    };
     // Commands are already idempotent through `commandId`; the ADR's
     // `duplicate_card` operation additionally accepts the REST-level
     // `Idempotency-Key` so an agent can retry a whole tool call.
@@ -132,15 +140,33 @@ export class CommandsController {
     @CurrentMembership() membership: BoardMember,
     @Headers("x-approval-id") approvalId: string | undefined,
     @Body() dto: CreateCommandBatchDto,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<CommandBatchResponse> {
     const results = await this.commands.applyBatch(id, user.id, dto.commands, {
       actorType: actorTypeOf(principal),
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
       principal,
+      // TASK-166.7: a PAT batch always creates one board-scoped run. A browser
+      // batch stays outside the run log (D16) and keeps its local undo.
+      ...(principal?.via === "pat"
+        ? {
+            run: {
+              kind: "batch" as const,
+              ...(dto.clientRunId !== undefined
+                ? { clientRunId: dto.clientRunId }
+                : {}),
+            },
+          }
+        : {}),
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    return { results };
+    if (results.runId !== null) {
+      // TASK-166.7/166.10: see the single-command path; a human batch has no
+      // run and therefore no header.
+      res?.setHeader("X-Run-Id", results.runId);
+    }
+    return { runId: results.runId, results: results.results };
   }
 
   /**

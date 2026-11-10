@@ -261,6 +261,58 @@ function fakeApi(
       server: { version: "0.2.0", apiVersion: "1" },
     });
   }
+  const runMatch =
+    /^\/boards\/([^/]+)\/runs(?:\/([^/]+)(\/revert\/preview)?)?$/.exec(path);
+  if (runMatch) {
+    const [, runBoard, runId, action] = runMatch;
+    const runDto = {
+      id: runId ?? "run-1",
+      boardId: runBoard,
+      apiTokenId: "tok1",
+      agentSessionId: null,
+      actorId: "u1",
+      kind: "batch",
+      status: "applied",
+      clientRunId: null,
+      planHash: null,
+      approvalId: null,
+      commandCount: 1,
+      firstSeq: 4,
+      lastSeq: 4,
+      revertsRunId: null,
+      createdAt: 1,
+      appliedAt: 1,
+      revertedAt: null,
+    };
+    if (action === "/revert/preview" && method === "POST") {
+      return respond({
+        dryRun: true,
+        run: runDto,
+        conflicts: [],
+        canRevert: true,
+      });
+    }
+    if (runId === undefined && method === "GET") {
+      return respond([runDto]);
+    }
+    if (runId !== undefined && method === "GET") {
+      return respond({
+        run: runDto,
+        commands: [
+          {
+            seq: 4,
+            action: { type: "UPDATE_CARD", boardId: runBoard, cardId: "k1" },
+            actorId: "u1",
+            commandId: "cmd-1",
+            touches: ["card:k1"],
+            runId: runDto.id,
+          },
+        ],
+        preimages: {},
+      });
+    }
+  }
+
   const approval =
     /^\/boards\/([^/]+)\/approvals(?:\/([^/]+)(\/cancel|\/decision)?)?$/.exec(
       path,
@@ -517,14 +569,21 @@ describe("janosik MCP server", () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     // Pinned exactly so a dropped or renamed tool fails loudly. TASK-166
-    // removed the invitation and profile tools (session-only routes).
-    expect(names.length).toBe(79);
+    // removed the invitation and profile tools (session-only routes);
+    // TASK-166.7 added the three read-only run tools.
+    expect(names.length).toBe(82);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_request_approval");
     expect(names).toContain("janosik_get_approval");
     expect(names).toContain("janosik_wait_for_decision");
     expect(names).toContain("janosik_cancel_approval");
+    expect(names).toContain("janosik_list_runs");
+    expect(names).toContain("janosik_get_run");
+    expect(names).toContain("janosik_preview_run_revert");
+    // Rollback itself is human-only (ADR D17): no MCP apply tool.
+    expect(names).not.toContain("janosik_revert_run");
+    expect(names).not.toContain("janosik_apply_run_revert");
     // Decision is session-only: an agent must not approve its own plan.
     expect(names).not.toContain("janosik_decide_approval");
     expect(names).toContain("janosik_set_column_accent");
@@ -1527,6 +1586,52 @@ describe("janosik MCP server", () => {
         entry.path === "/boards/b1/commands" && entry.method === "POST",
     );
     expect(call?.headers?.["X-Approval-Id"]).toBe("apr-1");
+    await client.close();
+  });
+
+  it("lists, reads and previews runs without exposing an apply tool", async () => {
+    const client = await connect();
+    const list = await client.callTool({
+      name: "janosik_list_runs",
+      arguments: { boardId: "b1", kind: "batch", response_format: "json" },
+    });
+    expect(list.isError).toBeFalsy();
+    expect(list.structuredContent).toMatchObject({
+      count: 1,
+      runs: [{ id: "run-1", kind: "batch", status: "applied" }],
+    });
+    const listCall = calls.find(
+      (entry) => entry.path === "/boards/b1/runs" && entry.method === "GET",
+    );
+    expect(listCall).toBeDefined();
+
+    const detail = await client.callTool({
+      name: "janosik_get_run",
+      arguments: { boardId: "b1", runId: "run-1", response_format: "json" },
+    });
+    expect(detail.isError).toBeFalsy();
+    expect(detail.structuredContent).toMatchObject({
+      run: { id: "run-1" },
+      commands: [{ commandId: "cmd-1" }],
+      preimages: {},
+    });
+
+    const preview = await client.callTool({
+      name: "janosik_preview_run_revert",
+      arguments: { boardId: "b1", runId: "run-1", response_format: "json" },
+    });
+    expect(preview.isError).toBeFalsy();
+    expect(preview.structuredContent).toMatchObject({
+      canRevert: true,
+      conflicts: [],
+      run: { id: "run-1" },
+    });
+    const previewCall = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/runs/run-1/revert/preview" &&
+        entry.method === "POST",
+    );
+    expect(previewCall).toBeDefined();
     await client.close();
   });
 });

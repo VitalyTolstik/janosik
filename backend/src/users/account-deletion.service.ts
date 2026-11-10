@@ -342,7 +342,17 @@ export class AccountDeletionService {
       await tx.attachment.deleteMany({ where: { uploadedById: userId } });
       await tx.comment.deleteMany({ where: { authorId: userId } });
       await tx.activity.deleteMany({ where: { actorId: userId } });
+      // ADR §6.14 purge order: preimages → commands → runs. The preimage
+      // table has no actor column, so resolve the user's commands in SQL
+      // before the command rows disappear.
+      await tx.$executeRaw`
+        DELETE FROM "CommandPreimage"
+        WHERE "commandId" IN (
+          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
+        )
+      `;
       await tx.command.deleteMany({ where: { actorId: userId } });
+      await tx.agentRun.deleteMany({ where: { actorId: userId } });
       await tx.boardMember.deleteMany({ where: { userId } });
       await tx.boardMember.updateMany({
         where: { invitedById: userId },

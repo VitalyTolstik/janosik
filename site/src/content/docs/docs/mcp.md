@@ -51,9 +51,9 @@ overwritten.
 
 Tools come in groups. By default the server registers the groups that work
 the board: boards, columns, cards, labels, checklists, card links, comments,
-activity, attachments, agent sessions and approvals. The groups that change
-who can see a board or act on your account (`members`, `shares`, `account`) are
-opt-in:
+activity, attachments, agent sessions, approvals and runs. The groups that
+change who can see a board or act on your account (`members`, `shares`,
+`account`) are opt-in:
 
 | Setting | Effect |
 | --- | --- |
@@ -81,6 +81,16 @@ as `X-Approval-Id`. Do not change command ids or fields between request and
 apply — a different plan is `approval_mismatch`. An approval is one-time:
 after success it is `consumed`, and repeating the same applied commands is an
 idempotent replay.
+
+Every PAT batch and every single destructive PAT command creates one
+board-scoped **run** (a plan/apply run will arrive with TASK-166.8).
+`janosik_list_runs` and `janosik_get_run` show what an agent changed, with the
+token, session, command range and attribution. `janosik_preview_run_revert` is a
+dry run: it returns the conflicts and whether the run can be rolled back, and
+writes nothing. Applying the rollback is a human board-ADMIN action in the
+browser — no MCP tool can revert a run (ADR D17). If a preview reports
+conflicts, do not try to force it; report the touched entities and let a human
+decide.
 
 A human can also pause an agent, a board or every token at once. New writes then
 answer `403 agent_paused` with `pauseScope` (`session`, `board` or `token`) and

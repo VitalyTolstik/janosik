@@ -4,6 +4,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
 } from "class-validator";
@@ -34,4 +35,13 @@ export class CreateCommandDto {
   @IsOptional()
   @IsObject()
   ifMatchVersions?: Record<string, number>;
+
+  /**
+   * TASK-166.7: optional idempotency key for the `AgentRun` created for a
+   * single destructive PAT command (ADR §11.2). 8–64 `[A-Za-z0-9_-]`.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{8,64}$/)
+  clientRunId?: string;
 }

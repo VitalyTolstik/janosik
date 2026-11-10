@@ -33,6 +33,7 @@ export const TOOLSETS = [
   "attachments",
   "sessions",
   "approvals",
+  "runs",
   "members",
   "shares",
   "account",
@@ -52,6 +53,7 @@ export const DEFAULT_TOOLSETS: readonly Toolset[] = [
   "attachments",
   "sessions",
   "approvals",
+  "runs",
 ];
 
 export interface Config {

@@ -21,6 +21,7 @@ import { registerCommentTools } from "./tools/comments.js";
 import { registerLabelTools } from "./tools/labels.js";
 import { registerLinkTools } from "./tools/links.js";
 import { registerMemberTools } from "./tools/members.js";
+import { registerRunTools } from "./tools/runs.js";
 import { registerSessionTools } from "./tools/sessions.js";
 import { restrictToReadOnly } from "./tools/helpers.js";
 import { registerShareTools } from "./tools/shares.js";
@@ -50,6 +51,9 @@ tools accept response_format: "markdown" (default) or "json". Your API token's
 preset limits what you may write; destructive tools can answer
 approval_required — create or reuse the approval request, wait for a human
 decision, then repeat the same plan with its approvalId; never work around it.
+Use janosik_list_runs / janosik_preview_run_revert to inspect an agent run and
+its rollback conflicts; applying a revert is a human board-ADMIN action and no
+MCP tool exposes it.
 For
 routine cleanup, archive a card or board so it can be restored. Clear a column
 by archiving its cards; use delete tools only when removal is specifically
@@ -75,6 +79,7 @@ const GROUPS: Record<
     registerAttachmentTools(server, client, fsOptions(config)),
   sessions: (server, client) => registerSessionTools(server, client),
   approvals: (server, client) => registerApprovalTools(server, client),
+  runs: (server, client) => registerRunTools(server, client),
   members: (server, client) => registerMemberTools(server, client),
   shares: (server, client, config) =>
     registerShareTools(server, client, config.url, config.appBase),

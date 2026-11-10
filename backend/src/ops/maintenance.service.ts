@@ -27,6 +27,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-invitations",
   "sweep-exports",
   "sweep-commands",
+  "sweep-runs",
   "sweep-reminders",
   "sweep-activity",
   "sweep-audit",
@@ -99,6 +100,8 @@ export class MaintenanceService {
         return this.sweepExports();
       case "sweep-commands":
         return this.sweepCommands();
+      case "sweep-runs":
+        return this.sweepRuns();
       case "sweep-reminders":
         return this.sweepReminders();
       case "sweep-activity":
@@ -356,6 +359,22 @@ export class MaintenanceService {
         );
         await this.purgeChunks(
           (take) =>
+            this.prisma.commandPreimage.findMany({
+              where: { boardId: { in: ids } },
+              select: { commandId: true },
+              take,
+            }),
+          async (page) =>
+            (
+              await this.prisma.commandPreimage.deleteMany({
+                where: {
+                  commandId: { in: page.map((row) => row.commandId) },
+                },
+              })
+            ).count,
+        );
+        await this.purgeChunks(
+          (take) =>
             this.prisma.command.findMany({
               where: { boardId: { in: ids } },
               select: { id: true },
@@ -368,9 +387,9 @@ export class MaintenanceService {
               })
             ).count,
         );
-        // Small final transaction: the feed and log are already paged away,
-        // so only the child rows a retried chunk may still find, the live
-        // shares, the memberships and the board itself remain.
+        // ADR §6.14 purge order: preimages → commands → runs. The command
+        // pages above have removed the log, so every run of the board is now
+        // empty and can go in the small final transaction.
         const results = await this.prisma.$transaction([
           this.prisma.checklistItem.deleteMany({
             where: {
@@ -395,6 +414,7 @@ export class MaintenanceService {
           }),
           this.prisma.column.deleteMany({ where: { boardId: { in: ids } } }),
           this.prisma.label.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.agentRun.deleteMany({ where: { boardId: { in: ids } } }),
           // Snapshot shares are detached by the FK (`SET NULL`) and keep
           // serving; only a live share dies with its board (TASK-156).
           this.prisma.boardShare.deleteMany({
@@ -607,17 +627,34 @@ export class MaintenanceService {
   }
 
   /**
-   * Trims the command log to the retention window (TASK-84). The `Command`
-   * table is the board's replay log and grows forever otherwise; a client
-   * whose `seq` baseline falls outside the window simply re-reads the board
-   * envelope on its next connection. Window = `OpsSettings.retentionDays`
-   * (same knob as the soft-delete purge), default 30 days.
+   * Trims the command log to the retention window (TASK-84, ADR §6.14). The
+   * `Command` table is the board's replay log and grows forever otherwise; a
+   * client whose `seq` baseline falls outside the window simply re-reads the
+   * board envelope on its next connection. Pre-images go first: they have no
+   * value once their command is gone, and deleting them in the same pass
+   * keeps the ordering preimages → commands. Window =
+   * `OpsSettings.retentionDays` (same knob as the soft-delete purge), default
+   * 30 days.
    */
   async sweepCommands(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const stale = { createdAt: { lt: cutoff } };
-    return this.purgeChunks(
+    let removed = await this.purgeChunks(
+      (take) =>
+        this.prisma.commandPreimage.findMany({
+          where: stale,
+          select: { commandId: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.commandPreimage.deleteMany({
+            where: { commandId: { in: rows.map((row) => row.commandId) } },
+          })
+        ).count,
+    );
+    removed += await this.purgeChunks(
       (take) =>
         this.prisma.command.findMany({
           where: stale,
@@ -631,6 +668,135 @@ export class MaintenanceService {
           })
         ).count,
     );
+    return removed;
+  }
+
+  /**
+   * Removes runs that no longer have a command log to audit (ADR §6.14).
+   * A run younger than the window or still referenced by any `Command` is
+   * kept. A `reverted` original and its `kind: "revert"` child are removed
+   * together once both are stale and empty; deleting one without the other
+   * would leave a dangling audit half.
+   */
+  async sweepRuns(): Promise<number> {
+    const days = await this.retentionDays();
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    let removed = 0;
+    let cursor: string | undefined;
+    let withCommands = new Set<string>();
+    let childWithCommands = new Set<string>();
+
+    for (let page = 0; page < PURGE_MAX_CHUNKS; page += 1) {
+      const runs = await this.prisma.agentRun.findMany({
+        where: {
+          createdAt: { lt: cutoff },
+          ...(cursor !== undefined ? { id: { gt: cursor } } : {}),
+        },
+        orderBy: { id: "asc" },
+        take: PURGE_CHUNK,
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          revertsRunId: true,
+          createdAt: true,
+        },
+      });
+      if (runs.length === 0) break;
+      cursor = runs[runs.length - 1]!.id;
+
+      const ids = runs.map((run) => run.id);
+      const usedBy = await this.prisma.command.findMany({
+        where: { runId: { in: ids } },
+        select: { runId: true },
+        distinct: ["runId"],
+      });
+      withCommands = new Set(
+        usedBy
+          .map((row) => row.runId)
+          .filter((id): id is string => id !== null),
+      );
+
+      const revertedIds = runs
+        .filter((run) => run.status === "reverted")
+        .map((run) => run.id);
+      const children =
+        revertedIds.length === 0
+          ? []
+          : await this.prisma.agentRun.findMany({
+              where: { revertsRunId: { in: revertedIds } },
+              select: {
+                id: true,
+                kind: true,
+                status: true,
+                revertsRunId: true,
+                createdAt: true,
+              },
+            });
+      const childIds = children.map((child) => child.id);
+      const childUsedBy =
+        childIds.length === 0
+          ? []
+          : await this.prisma.command.findMany({
+              where: { runId: { in: childIds } },
+              select: { runId: true },
+              distinct: ["runId"],
+            });
+      childWithCommands = new Set(
+        childUsedBy
+          .map((row) => row.runId)
+          .filter((id): id is string => id !== null),
+      );
+
+      // A revert child is deleted by its original's pair branch, never on its
+      // own; an orphan child (original already gone) is deletable normally.
+      const originals = runs
+        .filter((run) => run.kind === "revert" && run.revertsRunId !== null)
+        .map((run) => run.revertsRunId!);
+      const existingOriginals =
+        originals.length === 0
+          ? []
+          : await this.prisma.agentRun.findMany({
+              where: { id: { in: originals } },
+              select: { id: true },
+            });
+      const originalIds = new Set(existingOriginals.map((row) => row.id));
+
+      const deletable = new Set<string>();
+      for (const run of runs) {
+        if (withCommands.has(run.id)) continue;
+        if (run.kind === "revert" && run.revertsRunId !== null) {
+          if (!originalIds.has(run.revertsRunId)) deletable.add(run.id);
+          continue;
+        }
+        if (run.status !== "reverted") {
+          deletable.add(run.id);
+          continue;
+        }
+        const child = children.find(
+          (entry) => entry.kind === "revert" && entry.revertsRunId === run.id,
+        );
+        if (child === undefined) {
+          deletable.add(run.id);
+          continue;
+        }
+        if (
+          child.createdAt.getTime() >= cutoff.getTime() ||
+          childWithCommands.has(child.id)
+        ) {
+          continue;
+        }
+        deletable.add(run.id);
+        deletable.add(child.id);
+      }
+
+      if (deletable.size === 0) continue;
+      const result = await this.prisma.agentRun.deleteMany({
+        where: { id: { in: [...deletable] } },
+      });
+      removed += result.count;
+    }
+    return removed;
   }
 
   /**
