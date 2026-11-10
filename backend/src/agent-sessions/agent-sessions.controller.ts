@@ -14,6 +14,7 @@ import type { AgentSessionDto } from "@janosik/shared";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
+import { TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { CurrentMembership } from "@/common/current-membership.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
@@ -32,6 +33,7 @@ import {
  */
 @Controller("boards/:id/agent-sessions")
 @UseGuards(MembershipGuard)
+@TokenScope("observer")
 export class AgentSessionsController {
   constructor(private readonly sessions: AgentSessionsService) {}
 

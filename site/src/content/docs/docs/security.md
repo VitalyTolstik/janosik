@@ -64,9 +64,23 @@ hashes.
 A personal API key (`jnk_…`) acts as its owner for board work, but it cannot
 manage the account's credentials. Listing, creating and revoking keys,
 changing the password and changing the email all require a browser session; a
-key on those routes gets `403` with `code: "pat_forbidden"`. A key leaked
-through a log line or a prompt-injected agent therefore cannot mint a
-longer-lived key, lock the owner out or move the account to another mailbox.
+key on those routes gets `403` with `code: "pat_forbidden"`. The same applies
+to invitations and profile writes. A key leaked through a log line or a
+prompt-injected agent therefore cannot mint a longer-lived key, accept an
+invitation, change the profile, lock the owner out or move the account to
+another mailbox.
+
+Every key also carries an immutable scope preset. New keys are `worker`; a
+token never raises the owner's board role. Ordinary content writes need
+`worker`, a done-column transition needs `reviewer`, and board administration
+needs `admin` (and still the board ADMIN role). Destructive actions require a
+human approval by default; `trustedCi` is an explicit opt-out for a trusted CI
+pipeline, while a board policy of `destructive: "deny"` blocks them even for
+`trustedCi`. The approval request lifecycle ships in 166.5: until then a
+destructive agent call gets `409 approval_required` and nothing is applied; a
+human performs the action in the browser. Existing keys were grandfathered to
+`admin` + `trustedCi` unless read-only. Changing a key's scope means creating a
+new key and revoking the old one.
 
 Changing the password revokes every API key as well as other sessions, which is
 useful if you suspect a credential leak. A key created

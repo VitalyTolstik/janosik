@@ -35,8 +35,9 @@ import { UsersService } from "./users.service";
  * Account self-service (§7.4, TASK-36.1): profile and personal API tokens.
  * Password changes live in `AuthController` (the refresh cookie is scoped to
  * `/auth`). Every route is behind `JwtAuthGuard`, which accepts both a user
- * access token and a `jnk_` PAT — except the token routes, which refuse a
- * PAT (`SessionOnlyGuard`, B-2).
+ * access token and a `jnk_` PAT — but TASK-166 (D22) closes all account
+ * writes and token reads to a PAT (`SessionOnlyGuard`, B-2); only the
+ * identity (`GET /auth/me`) and avatar reads stay open to an agent key.
  */
 @Controller("users")
 @UseGuards(JwtAuthGuard)
@@ -47,6 +48,7 @@ export class UsersController {
     private readonly storage: StorageService,
   ) {}
 
+  @UseGuards(SessionOnlyGuard)
   @Patch("me")
   updateProfile(
     @CurrentUser() user: AuthUser,
@@ -56,6 +58,7 @@ export class UsersController {
   }
 
   /** Upload the profile avatar (multipart field `file`) — TASK-47. */
+  @UseGuards(SessionOnlyGuard)
   @Patch("me/avatar")
   @UseInterceptors(
     FileInterceptor("file", {
@@ -106,7 +109,9 @@ export class UsersController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateUserTokenDto,
   ): Promise<CreateUserTokenResponse> {
-    return this.apiTokens.create(user.id, dto);
+    // SessionOnlyGuard above proves a browser session; only it may enable
+    // the privileged `trustedCi` flag (TASK-166 D9/D10).
+    return this.apiTokens.create(user.id, dto, { allowTrustedCi: true });
   }
 
   @UseGuards(SessionOnlyGuard)

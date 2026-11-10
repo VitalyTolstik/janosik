@@ -65,6 +65,7 @@ export class CommandsController {
       actorType: actorTypeOf(principal),
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
+      principal,
     });
   }
 
@@ -90,6 +91,7 @@ export class CommandsController {
       actorType: actorTypeOf(principal),
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
+      principal,
     });
     return { results };
   }

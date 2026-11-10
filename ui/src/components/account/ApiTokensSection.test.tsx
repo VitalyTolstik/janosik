@@ -109,6 +109,8 @@ describe("ApiTokensSection (TASK-36.1)", () => {
         name: "CI pipeline",
         expiresAt: null,
         boardId: null,
+        scopePreset: "worker",
+        trustedCi: false,
         readOnly: false,
         rateLimitPerMinute: null,
       },
@@ -234,10 +236,112 @@ describe("ApiTokensSection (TASK-36.1)", () => {
         name: "Agent",
         expiresAt: null,
         boardId: null,
+        scopePreset: "worker",
+        trustedCi: false,
         readOnly: true,
         rateLimitPerMinute: 120,
       },
     });
+  });
+
+  it("sends the chosen scope preset and trusted CI flag (TASK-166)", async () => {
+    const server = new FakeServer();
+    renderTokens(server);
+
+    await screen.findByText("No API keys yet");
+    await userEvent.click(screen.getByTestId("token-create"));
+    await userEvent.type(screen.getByTestId("token-name"), "Release bot");
+    await userEvent.click(screen.getByTestId("token-scope-preset"));
+    await userEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Reviewer" }),
+    );
+    await userEvent.click(screen.getByTestId("token-trusted-ci"));
+    await userEvent.click(screen.getByTestId("token-create-submit"));
+
+    await screen.findByTestId("token-reveal");
+    expect(server.requests).toContainEqual({
+      method: "POST",
+      path: "/api/v1/users/me/tokens",
+      body: {
+        name: "Release bot",
+        expiresAt: null,
+        boardId: null,
+        scopePreset: "reviewer",
+        trustedCi: true,
+        readOnly: false,
+        rateLimitPerMinute: null,
+      },
+    });
+    expect(server.apiTokens[0]).toMatchObject({
+      scopePreset: "reviewer",
+      trustedCi: true,
+      effectiveTokenScope: "reviewer",
+    });
+
+    await userEvent.click(screen.getByTestId("token-done"));
+    const row = await screen.findByTestId("token-row");
+    expect(within(row).getByTestId("token-effective-scope")).toHaveTextContent(
+      "Reviewer scope",
+    );
+    expect(row).toHaveTextContent("Trusted CI");
+  });
+
+  it("disables trusted CI for an Observer or read-only key", async () => {
+    const server = new FakeServer();
+    renderTokens(server);
+    await screen.findByText("No API keys yet");
+    await userEvent.click(screen.getByTestId("token-create"));
+
+    const trusted = screen.getByTestId("token-trusted-ci");
+    expect(trusted).toBeEnabled();
+    await userEvent.click(screen.getByTestId("token-scope-preset"));
+    await userEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Observer" }),
+    );
+    expect(trusted).toBeDisabled();
+    expect(
+      screen.getByText(/Not available for an Observer or read-only key/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("token-scope-preset"));
+    await userEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Worker" }),
+    );
+    expect(trusted).toBeEnabled();
+    await userEvent.click(screen.getByTestId("token-read-only"));
+    expect(trusted).toBeDisabled();
+    expect(trusted).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("shows readOnly as an effective observer scope", async () => {
+    const server = new FakeServer();
+    server.apiTokens.push({
+      id: "token-ro",
+      name: "Auditor",
+      createdAt: Date.UTC(2026, 0, 1),
+      lastUsedAt: null,
+      expiresAt: null,
+      revokedAt: null,
+      boardId: null,
+      readOnly: true,
+      rateLimitPerMinute: null,
+      scopePreset: "admin",
+      trustedCi: false,
+      individualPausedAt: null,
+      individualPausedBy: null,
+      individualPausedReason: null,
+      stopAllPausedAt: null,
+      stopAllPausedBy: null,
+      paused: false,
+      effectiveTokenScope: "observer",
+    });
+    renderTokens(server);
+
+    const row = await screen.findByTestId("token-row");
+    expect(within(row).getByTestId("token-effective-scope")).toHaveTextContent(
+      "Observer scope",
+    );
+    expect(row).toHaveTextContent("Read-only");
   });
 
   it("revokes only after the confirmation", async () => {

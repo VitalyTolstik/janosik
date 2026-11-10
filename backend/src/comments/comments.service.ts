@@ -254,16 +254,24 @@ export class CommentsService {
     // a legacy row without one falls back to the author. A browser session
     // keeps the historical author-only rule.
     if (comment.authorId !== userId) {
-      throw new ForbiddenException("Only the author can delete a comment");
+      throw new ForbiddenException({
+        message: "Only the author can delete a comment",
+        code: "scope_denied",
+        requiredScope: "worker",
+        action: "comment.delete",
+      });
     }
     if (
       attribution.actorType === "agent" &&
       comment.apiTokenId !== null &&
       comment.apiTokenId !== attribution.apiTokenId
     ) {
-      throw new ForbiddenException(
-        "Only the author token can delete a comment",
-      );
+      throw new ForbiddenException({
+        message: "Only the author token can delete a comment",
+        code: "scope_denied",
+        requiredScope: "worker",
+        action: "comment.delete",
+      });
     }
     const removed = await this.boardWrite.run(
       comment.card.column.boardId,

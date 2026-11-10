@@ -82,8 +82,12 @@ docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 80
 
 They authenticate with a personal API token. Create one in your account panel,
 then send it in the `Authorization` header as `Bearer jnk_<token>`. A token
-works on boards, members, shares and invitations, but not on key, password or
-email management, which needs a browser sign-in. The API
+works on boards, members and share links according to its scope preset, but not
+on invitations, profile/key/password/email management, which need a browser
+sign-in. Destructive actions need a human approval unless the token is marked
+`Trusted CI`; the approval request API ships in 166.5, so until then a
+destructive agent call is refused with `409 approval_required` and a human
+performs the action in the browser. The API
 base path is `/api/v1`. Board mutations travel through the command log at
 `POST /boards/:id/commands`. See the [API reference](/docs/api/) and the
 [Command API](/docs/api/commands/).

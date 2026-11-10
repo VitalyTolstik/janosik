@@ -6,7 +6,7 @@
  *   the same reducer action the UI dispatches, with the idempotency key and
  *   clock stamped here so tools never touch those details;
  * - the **REST surface** — boards, members, comments, attachments, shares,
- *   activity, invitations and the caller's own account.
+ *   activity and the caller's own account.
  *
  * Auth is a personal API token (`Bearer jnk_…`), which every guarded route
  * accepts alongside a session JWT (TASK-36.1).
@@ -18,12 +18,10 @@ import type {
   AgentSessionHeartbeatRequest,
   AttachmentDto,
   AuthMeResponseDto,
-  AuthUserDto,
   BoardAction,
   BoardAggregate,
   BoardCardSearchResult,
   BoardEnvelope,
-  BoardInvitationDto,
   BoardMemberDto,
   BoardRole,
   BoardShareDto,
@@ -40,7 +38,6 @@ import type {
   EndAgentSessionRequest,
   InviteMemberRequest,
   UpdateMemberRequest,
-  UpdateProfileRequest,
   UpdateShareRequest,
 } from "@janosik/shared";
 import type { Board } from "@janosik/shared";
@@ -437,7 +434,7 @@ export class JanosikClient {
     return this.request(apiPath`/boards/${id}`, { method: "DELETE" });
   }
 
-  // --- Members & invitations --------------------------------------------
+  // --- Members -----------------------------------------------------------
 
   listMembers(boardId: string): Promise<BoardMemberDto[]> {
     return this.request(apiPath`/boards/${boardId}/members`);
@@ -467,22 +464,6 @@ export class JanosikClient {
   removeMember(boardId: string, userId: string): Promise<{ status: "ok" }> {
     return this.request(apiPath`/boards/${boardId}/members/${userId}`, {
       method: "DELETE",
-    });
-  }
-
-  listInvitations(): Promise<BoardInvitationDto[]> {
-    return this.request("/invitations");
-  }
-
-  // Both accept and decline answer `200` with an empty body (the backend
-  // returns `void`), so the result is intentionally ignored.
-  acceptInvitation(id: string): Promise<void> {
-    return this.request(apiPath`/invitations/${id}/accept`, { method: "POST" });
-  }
-
-  declineInvitation(id: string): Promise<void> {
-    return this.request(apiPath`/invitations/${id}/decline`, {
-      method: "POST",
     });
   }
 
@@ -665,10 +646,6 @@ export class JanosikClient {
 
   whoami(): Promise<AuthMeResponseDto> {
     return this.request("/auth/me");
-  }
-
-  updateProfile(dto: UpdateProfileRequest): Promise<AuthUserDto> {
-    return this.request("/users/me", { method: "PATCH", body: dto });
   }
 }
 

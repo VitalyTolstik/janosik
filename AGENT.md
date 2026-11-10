@@ -262,11 +262,14 @@ npm run dev                             # UI :5173 (/api проксируетс�
 
 ### MCP (`mcp/`, `@janosik/mcp`)
 
-Отдельный MCP-сервер отдаёт доску агенту (71 tools) по персональному API-ключу.
+Отдельный MCP-сервер отдаёт доску агенту (74 tools) по персональному API-ключу.
 Нужны `JANOSIK_URL` (origin инстанса, напр. `http://localhost:3000`) и
-`JANOSIK_TOKEN` (`jnk_…`; создаётся в UI: Account → API keys). Требует
-**запущенного API**. Поведение агента задаёт скилл `skills/janosik`. Сборка —
-`npm run build:mcp`; подробности в `README.md` и `mcp/README.md`.
+`JANOSIK_TOKEN` (`jnk_…`; создаётся в UI: Account → API keys). У ключа есть
+неизменяемый preset (`observer`, `worker`, `reviewer`, `admin`) и опциональный
+`trustedCi`; ключ не повышает роль на доске, а destructive-действия требуют
+подтверждения, если это не доверенный CI. Требует **запущенного API**. Поведение
+агента задаёт скилл `skills/janosik`. Сборка — `npm run build:mcp`; подробности
+в `README.md` и `mcp/README.md`.
 
 ### Agent-ready карточка (TASK-157, Слой 0)
 

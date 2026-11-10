@@ -298,12 +298,6 @@ describe("JanosikClient.request", () => {
     );
   });
 
-  it("resolves an empty 200 body (accept invitation)", async () => {
-    stubFetch(() => new Response(null, { status: 200 }));
-    const client = new JanosikClient("http://api.test", "t");
-    await expect(client.acceptInvitation("inv1")).resolves.toBeUndefined();
-  });
-
   it("throws ApiError with the parsed body on non-2xx", async () => {
     stubFetch(() => json({ conflict: "wip" }, 409));
     const client = new JanosikClient("http://api.test", "t");

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -173,7 +174,21 @@ export class ApiTokenService {
   async create(
     userId: string,
     dto: CreateUserTokenRequest,
+    options: {
+      /**
+       * Only the session-only token route sets this. `trustedCi` is a human
+       * control: a PAT must never mint a trusted-CI sibling, even if a future
+       * caller forgets to put the route behind `SessionOnlyGuard`.
+       */
+      allowTrustedCi?: boolean;
+    } = {},
   ): Promise<CreateUserTokenResponse> {
+    if (dto.trustedCi === true && options.allowTrustedCi !== true) {
+      throw new ForbiddenException({
+        message: "trustedCi can only be enabled from a browser session",
+        code: "pat_forbidden",
+      });
+    }
     const token = this.generate();
     const scope = await this.resolveScope(userId, dto);
     const created = await this.prisma.apiToken.create({
@@ -182,6 +197,8 @@ export class ApiTokenService {
         name: dto.name,
         tokenHash: this.hashToken(token),
         expiresAt: this.resolveExpiresAt(dto.expiresAt),
+        // TASK-166: immutable after creation (D11). There is deliberately no
+        // scope-editing endpoint; a different scope means a new token.
         scopePreset: dto.scopePreset ?? "worker",
         trustedCi: dto.trustedCi === true,
         ...scope,

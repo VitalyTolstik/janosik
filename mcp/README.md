@@ -8,15 +8,18 @@ claim one with a self-expiring lease so competing claims are rejected, set its
 machine-readable task contract, comment with a typed kind, tick checklists,
 assign people and link cards. Writes can be pinned to the board version they
 read when they use the command API (compare-and-set), so a concurrent edit is
-refused. Member, share-link and account tools are available too, but opt-in.
+refused. Member and share-link tools are opt-in; agent-session tools are in the
+default set. The server exposes 74 tools across 13 groups.
 
 Board-content edits go through the command log the UI uses and stream live
 to board viewers. MCP edits do not enter the UI's local undo stack; use
 unarchive tools or explicit compensating edits to correct them. Comments, attachments, board
 creation/import/deletion, membership, shares and account changes use separate
 API routes. Activity records identify the user and whether a command came
-from a human session or an API key. A key can be scoped to one board or made
-read-only, with its own per-minute rate limit.
+from a human session or an API key. A key can be scoped to one board, carry an
+immutable scope preset (`observer`, `worker`, `reviewer`, `admin`), be made
+read-only, and have its own per-minute rate limit. Its scope never raises the
+board role.
 
 > **Companion skill.** The tools are the "hands"; the
 > [`janosik` skill](../skills/janosik/SKILL.md) is the "behaviour" — when to
@@ -26,8 +29,10 @@ read-only, with its own per-minute rate limit.
 ## Quick start
 
 1. In Janosik, open **Account → API keys** and create a key (it starts with
-   `jnk_`). Choose its board scope, read-only setting, rate limit and expiry
-   for this agent. Copy it now — it is shown once.
+   `jnk_`). Choose its board scope, scope preset (`Worker` for ordinary content
+   writes, `Reviewer` to enter Done, `Admin` for board administration),
+   read-only setting, trusted-CI flag, rate limit and expiry for this agent.
+   Copy it now — it is shown once.
 2. Point your MCP client at the server with these variables:
 
    | Variable           | Example                      | Meaning                                                                                                                                                |
@@ -71,12 +76,13 @@ local checkout, `command` can be `node` with `args: ["/path/to/mcp/dist/index.js
 
 ## Tools
 
-Tools come in groups. The default set works the board; the groups that
-change _who_ can see a board or act on the account are opt-in:
+Tools come in groups. The default set works the board and agent sessions; the
+groups that change _who_ can see a board or expose the account identity are
+opt-in:
 
 | Variable / flag                          | Effect                                                                                                                                                                                                                                 |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments`. Opt-in: `members`, `invitations`, `shares`, `account`. `all` enables everything; `default,members` extends the default. |
+| `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
 | `JANOSIK_MCP_READONLY=1` / `--read-only` | Register only tools that never change anything — for an agent that watches and reports.                                                                                                                                                |
 
 In read-only mode, `janosik_export_board` can return an export in the tool
@@ -120,10 +126,8 @@ truncated into JSON that does not parse.
 **Comments** — `janosik_list_comments`, `janosik_add_comment`,
 `janosik_delete_comment`
 
-**Members & invitations** (opt-in: `members`, `invitations`) — `janosik_list_members`, `janosik_invite_member`,
-`janosik_update_member`, `janosik_remove_member`,
-`janosik_list_invitations`, `janosik_accept_invitation`,
-`janosik_decline_invitation`
+**Members** (opt-in: `members`) — `janosik_list_members`, `janosik_invite_member`,
+`janosik_update_member`, `janosik_remove_member`
 
 **Shares** (opt-in: `shares`) — `janosik_list_shares`, `janosik_create_share`,
 `janosik_update_share`, `janosik_refresh_share`, `janosik_revoke_share`
@@ -133,9 +137,13 @@ truncated into JSON that does not parse.
 **Attachments** — `janosik_list_attachments`, `janosik_upload_attachment`,
 `janosik_download_attachment`, `janosik_delete_attachment`
 
-**Account** (opt-in: `account`) — `janosik_whoami`, `janosik_update_profile`.
-API keys are managed in the app only: the server refuses key management to
-an API key, so an agent can never mint itself a new one.
+**Agent sessions** — `janosik_start_session`, `janosik_heartbeat`,
+`janosik_end_session`
+
+**Account** (opt-in: `account`) — `janosik_whoami` only. API keys and profile
+writes are managed in the app only: the server refuses those routes to an API
+key, so an agent can never mint itself a new one or change the owner's profile.
+The invitation and profile tools were removed in TASK-166.
 
 ## Behaviour agents can rely on
 
@@ -207,29 +215,35 @@ the attachment size limit are read, and existing files are never overwritten.
 ## Out of scope
 
 The server covers the board operations available through the app: board,
-column, card, label, checklist, link, comment, attachment, member, invitation,
-share and activity actions. A single `janosik_move_card` covers the UI's
+column, card, label, checklist, link, comment, attachment, agent-session,
+member, share and activity actions. A single `janosik_move_card` covers the UI's
 drag-and-drop card order; internal `RESTORE_*` actions belong to undo/redo.
 The server does not expose API-key management, the master admin panel,
-account security (password and email changes), profile avatar upload,
-browser-local backup scheduling, undo/redo or realtime presence. Those stay
-in the app.
+account security (password and email changes), invitations, profile writes,
+profile avatar upload, browser-local backup scheduling, undo/redo or realtime
+presence. Those stay in the app.
 
 ## Permissions and safety
 
-The key acts as the user who created it, with the same roles they hold: an
-agent can only touch boards the user is a member of, content editing needs
-`MEMBER`, and board archive, member and share management need `ADMIN`.
-Revoke the key in the account panel
-to cut an agent off.
+The key acts as the user who created it, but its immutable scope preset limits
+what it may do: `observer` reads only, `worker` writes ordinary content,
+`reviewer` may also enter a done column, and `admin` may administer the board.
+The preset never raises the user's board role: content editing still needs
+`MEMBER`, and board archive/member/share management still needs board `ADMIN`.
+Destructive tools need a human approval by default; `trustedCi` is the explicit
+CI exception, while a board policy of `destructive: "deny"` blocks them even for
+trusted CI. The approval request API ships in 166.5 — until then a destructive
+call is refused with `approval_required`, nothing is applied, and a human
+performs it in the browser. Revoke the key in the account panel to cut an agent
+off.
 
 Card text and comments are written by other people and agents, so treat
 everything an agent reads from a board as untrusted input. Keep the opt-in
 groups off unless an agent needs them, and give each agent **its own user
 account and key**: the activity feed then shows which agent did what, and
-revoking one key stops one agent. A key can also be scoped to a single board
-or made read-only, with its own per-minute rate limit; choose these when you
-create it in the account panel.
+revoking one key stops one agent. A key can also be scoped to a single board,
+carry a narrower preset, or be made read-only, with its own per-minute rate
+limit; choose these when you create it in the account panel.
 
 ## Development
 

@@ -792,6 +792,14 @@ describe("Agent sessions and attribution (e2e)", () => {
       })
       .expect(200);
 
+    // TASK-166: publishing a share is admin + destructive, so a plain worker
+    // token is refused. This test is about share *attribution*, not the
+    // destructive gate; grant tokenA the legacy-equivalent capability for the
+    // two share calls below (this is the last test in the suite).
+    await prisma.apiToken.update({
+      where: { id: tokenAId },
+      data: { scopePreset: "admin", trustedCi: true },
+    });
     const share = await server()
       .post(`/api/v1/boards/${boardId}/shares`)
       .set(header(tokenA, agentSession.id))
@@ -892,6 +900,12 @@ describe("Agent sessions and attribution (e2e)", () => {
 
     // Share audit rows carry the same attribution as the command/activity
     // surfaces; revoke and permanent delete are separate write paths.
+    // TASK-166 gates them as admin + destructive, so both PATs are granted
+    // the legacy-equivalent capability for this attribution check.
+    await prisma.apiToken.update({
+      where: { id: tokenBId },
+      data: { scopePreset: "admin", trustedCi: true },
+    });
     await server()
       .delete(`/api/v1/boards/${boardId}/shares/${share.id}`)
       .set(header(tokenA, agentSession.id))

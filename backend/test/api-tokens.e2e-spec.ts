@@ -106,7 +106,13 @@ describe("API tokens gate (e2e)", () => {
       const res = await server()
         .post("/api/v1/users/me/tokens")
         .set(auth(sessionToken))
-        .send({ name: "integration", expiresAt: null })
+        .send({
+          name: "integration",
+          expiresAt: null,
+          // TASK-166: creating boards is account-wide admin; the default
+          // worker preset writes board content but does not mint boards.
+          scopePreset: "admin",
+        })
         .expect(201);
 
       const body = res.body as CreateUserTokenResponse;

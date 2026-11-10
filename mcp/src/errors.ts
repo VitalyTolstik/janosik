@@ -70,6 +70,16 @@ interface ValidationBody {
   message?: string | string[];
 }
 
+/** TASK-166 scope/destructive errors carry a machine-readable code. */
+interface ScopedErrorBody {
+  code?: string;
+  action?: string;
+  requiredScope?: string;
+  effectiveTokenScope?: string;
+  requiredRoles?: string[];
+  reason?: string;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -172,6 +182,50 @@ function describeApiError(error: ApiError): string {
         "JANOSIK_TOKEN."
       );
     case 403: {
+      const scoped = body as ScopedErrorBody;
+      if (scoped.code === "scope_denied") {
+        if (scoped.reason === "board_scope") {
+          return (
+            "Error: this API token is scoped to a different board. Do not " +
+            "retry it here; use a token created for this board."
+          );
+        }
+        if (scoped.requiredRoles !== undefined) {
+          return (
+            "Error: permission denied — this action needs a board role you do " +
+            `not hold (requires ${scoped.requiredRoles.join(" or ")}). Do not ` +
+            "retry with the same user; ask a board ADMIN to perform it."
+          );
+        }
+        const action = scoped.action ? ` ${scoped.action}` : " this action";
+        return (
+          `Error: permission denied — the API token cannot perform${action} ` +
+          `(requires the ${scoped.requiredScope ?? "higher"} preset, token is ` +
+          `${scoped.effectiveTokenScope ?? "lower"}). Do not retry with the ` +
+          "same token; use a token with the required preset, or ask the board " +
+          "owner to perform it."
+        );
+      }
+      if (scoped.code === "destructive_denied") {
+        return (
+          "Error: this board's policy blocks destructive actions for agents " +
+          '(destructive: "deny"). Do not retry or look for a workaround; a ' +
+          "human must perform this action."
+        );
+      }
+      if (scoped.code === "pat_forbidden") {
+        return (
+          "Error: this route is session-only and a personal API token cannot " +
+          "use it. Sign in with a browser to manage keys, profile, " +
+          "invitations or account data."
+        );
+      }
+      if (scoped.code === "pat_read_only") {
+        return (
+          "Error: this API token is read-only. Create a read/write token " +
+          "(or a higher scope preset) to change the board."
+        );
+      }
       const detail = restMessage(body);
       return (
         `Error: permission denied${detail ? `: ${detail}` : ""}. This action ` +
@@ -187,6 +241,17 @@ function describeApiError(error: ApiError): string {
             "another account or have been deleted.";
     }
     case 409: {
+      const scoped = body as ScopedErrorBody;
+      if (scoped.code === "approval_required") {
+        const action = scoped.action ? ` (${scoped.action})` : "";
+        return (
+          `Error: approval required${action}. This destructive action is ` +
+          "refused until a human approves it; nothing was applied. The approval " +
+          "request API ships in 166.5, so until then do not retry the same " +
+          "call: ask a human to perform the action in the browser, or use a " +
+          "token explicitly marked trusted CI when the board allows it."
+        );
+      }
       const { conflict, currentVersion, workflow } = body as ConflictBody;
       if (conflict === "workflow") {
         return describeWorkflowConflict(workflow);

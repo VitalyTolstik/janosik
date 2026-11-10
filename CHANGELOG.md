@@ -29,6 +29,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tokens are grandfathered to `scopePreset = "admin"` + `trustedCi = true`
   (read-only tokens keep effective observer), and clients without the header
   keep working.
+- TASK-166.2 token scopes and destructive gate: every PAT now has an immutable
+  preset (`observer`, `worker`, `reviewer`, `admin`) with a separate
+  `trustedCi` flag. New keys default to `worker`; legacy keys stay
+  `admin` + `trustedCi` unless read-only. The preset never raises the board
+  role: observers cannot write, done-column transitions need `reviewer`, and
+  board administration needs `admin`. Board-scoped keys stay on their board
+  and cannot create/import boards. Account routes and sensitive account reads
+  (profile writes, key management, invitations) are session-only and answer
+  `403 pat_forbidden`; the profile and invitation MCP tools are removed.
+  Destructive commands and lifecycle actions (board delete, member/share
+  changes, another user's attachment, `workflow.update`) return
+  `409 approval_required` without approval; `trustedCi` is the explicit
+  exception, while `Board.agentPolicy.destructive = "deny"` returns
+  `403 destructive_denied` even for trusted CI. Any PAT sending `RESTORE_*`
+  gets `scope_denied`; browser undo is unchanged. The account API-key panel
+  exposes the preset and trusted-CI choice and shows the effective scope; the
+  MCP README/skill document the smaller 74-tool set and the new scope gate, and
+  an old `JANOSIK_MCP_TOOLSETS=…,invitations,…` value is accepted as a no-op
+  with a warning. The
+  full approval lifecycle remains 166.5; this stream returns the documented
+  error and leaves the seam clean. Docs EN/RU and the MCP error guidance cover
+  the new scopes and codes.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a

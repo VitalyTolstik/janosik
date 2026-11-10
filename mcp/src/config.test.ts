@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ConfigError,
@@ -95,6 +95,22 @@ describe("loadConfig", () => {
     expect(loadConfig(["--toolsets", "all"], env).toolsets.size).toBe(
       TOOLSETS.length,
     );
+  });
+
+  it("accepts the removed invitations toolset as a no-op with a warning", () => {
+    const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const config = loadConfig([], {
+        JANOSIK_URL: "http://x",
+        JANOSIK_TOKEN: "t",
+        JANOSIK_MCP_TOOLSETS: "default,invitations",
+      });
+      expect(config.toolsets.has("cards")).toBe(true);
+      expect(config.toolsets.has("members")).toBe(false);
+      expect(write.mock.calls.flat().join("")).toMatch(/invitations.*removed/i);
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it("rejects an unknown toolset name", () => {

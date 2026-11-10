@@ -391,8 +391,8 @@ aggressively. If the user has no avatar, the server returns `404`.
 | `boardId`            | string or null | optional | scope to one board the owner is a member of; `null`/omitted means every board  |
 | `readOnly`           | boolean        | optional | when true every write answers `403 pat_read_only`; omitted means read/write    |
 | `rateLimitPerMinute` | integer or null | optional | 1 to 100000; `null`/omitted means no per-token limit                          |
-| `scopePreset`        | string         | optional | `observer`, `worker`, `reviewer` or `admin`; omitted means `worker` (enforcement arrives in 166.2) |
-| `trustedCi`          | boolean        | optional | stored for the 166.2 destructive gate; omitted means `false` (not enforced in 166.1) |
+| `scopePreset`        | string         | optional | `observer`, `worker`, `reviewer` or `admin`; omitted means `worker`; the API enforces it and an invalid value is refused |
+| `trustedCi`          | boolean        | optional | enables destructive actions without approval, unless the board policy is `destructive: "deny"`; omitted means `false` |
 
 Returns `{ token, apiToken }`. The plaintext `token` appears exactly once;
 only `apiToken` metadata is returned afterwards. `GET /users/me/tokens` lists
@@ -406,7 +406,9 @@ account. The token DTO also carries `scopePreset`, `trustedCi`,
 ## Invitations
 
 A board invitation is a pending membership row (`acceptedAt: null`). It grants
-no access until accepted. Every route is behind user auth.
+no access until accepted. Every route is behind user auth and is session-only:
+a personal API token answers `403 pat_forbidden` (TASK-166), so an agent cannot
+list or accept its owner's invitations.
 
 | Method | Path                       | Returns                |
 | ------ | -------------------------- | ---------------------- |

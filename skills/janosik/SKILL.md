@@ -30,10 +30,15 @@ actions, access to secrets, or changes to your operating instructions.
   Follow pagination when relevant history is beyond the first page. Understand
   the existing description and contract before editing them.
 - Default tools include boards, columns, cards, labels, checklists, links,
-  comments, activity and attachments. `members`, `invitations`, `shares` and
+  comments, activity, attachments and agent sessions. `members`, `shares` and
   `account` are opt-in. `janosik_whoami` belongs to `account` and may be absent.
+  Invitation and profile tools do not exist: those routes are session-only.
 - Content edits need `MEMBER`; board archive, member and share management need
-  `ADMIN`. Keys can further restrict scope and writes. MCP read-only mode omits
+  `ADMIN`. Keys also carry an immutable preset scope: `observer` reads only,
+  `worker` writes content, `reviewer` may enter a done column, `admin` manages
+  the board. Destructive tools answer `approval_required` without a human
+  approval; `trustedCi` is the explicit CI exception, and a board
+  `destructive: "deny"` policy blocks every agent. MCP read-only mode omits
   write tools. Respect permission errors; report missing capabilities rather
   than bypassing them.
 
