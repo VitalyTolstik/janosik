@@ -20,9 +20,9 @@ import {
   workflowInitialColumnId,
 } from "@janosik/shared";
 import type { BatchCommandItem, JanosikClient } from "../client.js";
-import { ApiError, describeError } from "../errors.js";
+import { ApiError, describeError, errorStructuredContent } from "../errors.js";
 import { errorResult, respond, textOnly } from "../format.js";
-import { newId, stableCommandId } from "../ids.js";
+import { newId, stableCommandId, stableId } from "../ids.js";
 import { findCardLocation } from "../locate.js";
 import { blockedIds } from "../project.js";
 import { renderCard } from "../render.js";
@@ -34,6 +34,7 @@ import {
   detailSchema,
   expectedVersionSchema,
   idSchema,
+  idempotencyKeySchema,
   prioritySchema,
   responseFormatSchema,
 } from "../schemas.js";
@@ -70,6 +71,7 @@ function cardNotFound(cardId: string, boardId: string) {
   return errorResult(
     `Error: card ${cardId} is not on board ${boardId}. Re-read the board ` +
       "with janosik_get_board for current ids.",
+    { ok: false, code: "not_found", retryable: false, resource: "card" },
   );
 }
 
@@ -246,9 +248,11 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       } catch (error) {
         // The batch is atomic: the card was not created, so a plain retry is
         // safe (the same ids would otherwise leave a duplicate behind).
-        return errorResult(describeError(error));
+        return errorResult(describeError(error), errorStructuredContent(error));
       }
-      return textOnly(`Created card "${title}" — \`${newCardId}\`.`);
+      return textOnly(`Created card "${title}" — \`${newCardId}\`.`, {
+        resourceId: newCardId,
+      });
     },
   );
 
@@ -484,12 +488,18 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .max(LIMITS.cardTitle)
           .optional()
           .describe("Title for the copy."),
+        idempotencyKey: idempotencyKeySchema,
         expectedVersion: expectedVersionSchema,
       },
       annotations: WRITE,
     },
-    async ({ boardId, cardId, title, expectedVersion }) => {
-      const newCardId = newId();
+    async ({ boardId, cardId, title, idempotencyKey, expectedVersion }) => {
+      // A retry with the same key must send the identical action, including
+      // the copy's id and commandId, or the server sees another request.
+      const newCardId =
+        idempotencyKey !== undefined
+          ? stableId(`duplicate:${idempotencyKey}`)
+          : newId();
       await client.command(
         boardId,
         {
@@ -498,9 +508,17 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           newCardId,
           ...(title !== undefined ? { title } : {}),
         },
-        { ifMatch: expectedVersion },
+        {
+          ifMatch: expectedVersion,
+          idempotencyKey,
+          ...(idempotencyKey !== undefined
+            ? { commandId: stableCommandId(idempotencyKey, "duplicate") }
+            : {}),
+        },
       );
-      return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`);
+      return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`, {
+        resourceId: newCardId,
+      });
     },
   );
 

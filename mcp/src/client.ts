@@ -75,6 +75,12 @@ export interface CommandOptions {
    */
   commandId?: string;
   /**
+   * TASK-166.4: optional REST-level `Idempotency-Key`. Honoured by the
+   * server for `duplicate_card`; other commands are already idempotent by
+   * `commandId`.
+   */
+  idempotencyKey?: string;
+  /**
    * Accept a command the server applied as a no-op. By default an empty
    * `versions` map (nothing changed: an unknown id, or the value was already
    * set) is reported as a {@link NoChangeError}, so an agent never reads
@@ -135,6 +141,8 @@ interface RequestOptions {
   form?: FormData;
   /** Return the raw response instead of parsed JSON (used by download). */
   raw?: boolean;
+  /** Extra request headers (`Idempotency-Key`, TASK-166.4). */
+  headers?: Record<string, string>;
 }
 
 function buildQuery(query?: Record<string, string | number | undefined>) {
@@ -181,12 +189,13 @@ export class JanosikClient {
   }
 
   private async send<T>(path: string, options: RequestOptions): Promise<T> {
-    const { method = "GET", body, query, form, raw } = options;
+    const { method = "GET", body, query, form, raw, headers: extra } = options;
     const url = `${this.baseUrl}${API_PREFIX}${path}${buildQuery(query)}`;
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
+      ...extra,
     };
     const boardId = boardIdOfPath(path);
     const agentSessionId =
@@ -254,6 +263,7 @@ export class JanosikClient {
     const response = await this.sendCommand<CommandResponse>(
       apiPath`/boards/${boardId}/commands`,
       request,
+      opts.idempotencyKey,
     );
     // A committed change always bumps the board version, so an empty map
     // means the reducer found nothing to do.
@@ -303,10 +313,19 @@ export class JanosikClient {
    * `commandId`s — if the first attempt did commit, the server answers the
    * retry with the stored results instead of applying it twice.
    */
-  private async sendCommand<T>(path: string, body: unknown): Promise<T> {
+  private async sendCommand<T>(
+    path: string,
+    body: unknown,
+    idempotencyKey?: string,
+  ): Promise<T> {
+    const headers = idempotencyHeaders(idempotencyKey);
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.send<T>(path, { method: "POST", body });
+        return await this.send<T>(path, {
+          method: "POST",
+          body,
+          ...(headers !== undefined ? { headers } : {}),
+        });
       } catch (error) {
         if (attempt >= COMMAND_RETRIES || !isTransientNetworkError(error)) {
           throw error;
@@ -382,8 +401,13 @@ export class JanosikClient {
     return this.request("/boards");
   }
 
-  createBoard(title: string): Promise<BoardAggregate> {
-    return this.request("/boards", { method: "POST", body: { title } });
+  createBoard(title: string, idempotencyKey?: string): Promise<BoardAggregate> {
+    const headers = idempotencyHeaders(idempotencyKey);
+    return this.request("/boards", {
+      method: "POST",
+      body: { title },
+      ...(headers !== undefined ? { headers } : {}),
+    });
   }
 
   importBoards(envelope: BoardEnvelope): Promise<BoardAggregate[]> {
@@ -484,10 +508,13 @@ export class JanosikClient {
     cardId: string,
     text: string,
     kind?: CommentKind,
+    idempotencyKey?: string,
   ): Promise<CommentDto> {
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/comments`, {
       method: "POST",
       body: { text, ...(kind ? { kind } : {}) },
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -528,6 +555,7 @@ export class JanosikClient {
     fileName: string,
     mimeType: string,
     data: Buffer,
+    idempotencyKey?: string,
   ): Promise<AttachmentDto> {
     const form = new FormData();
     form.append(
@@ -535,9 +563,11 @@ export class JanosikClient {
       new Blob([new Uint8Array(data)], { type: mimeType }),
       fileName,
     );
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/attachments`, {
       method: "POST",
       form,
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -568,10 +598,13 @@ export class JanosikClient {
   createShare(
     boardId: string,
     dto: CreateShareRequest,
+    idempotencyKey?: string,
   ): Promise<BoardShareDto> {
+    const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/boards/${boardId}/shares`, {
       method: "POST",
       body: dto,
+      ...(headers !== undefined ? { headers } : {}),
     });
   }
 
@@ -662,6 +695,15 @@ function boardIdOfPath(path: string): string | null {
   } catch {
     return match[1];
   }
+}
+
+/** Extra headers for a REST idempotent write, or `undefined` when absent. */
+function idempotencyHeaders(
+  key: string | undefined,
+): Record<string, string> | undefined {
+  return key !== undefined && key !== ""
+    ? { "Idempotency-Key": key }
+    : undefined;
 }
 
 /** Read a JSON error body, tolerating an empty or non-JSON response. */

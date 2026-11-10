@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 
-import { describeError } from "../errors.js";
+import { describeError, errorStructuredContent } from "../errors.js";
 import { errorResult, type ToolResult } from "../format.js";
 
 /** Behaviour hints the MCP spec exposes to clients (advisory, not security). */
@@ -75,7 +75,7 @@ export function defineTool<S extends z.ZodRawShape>(
     try {
       return await handler(args);
     } catch (error) {
-      return errorResult(describeError(error));
+      return errorResult(describeError(error), errorStructuredContent(error));
     }
   };
   const register = server.registerTool.bind(server) as unknown as (

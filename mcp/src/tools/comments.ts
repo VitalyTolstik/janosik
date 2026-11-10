@@ -14,6 +14,7 @@ import { renderComments } from "../render.js";
 import {
   cardIdSchema,
   commentKindSchema,
+  idempotencyKeySchema,
   pageSchema,
   responseFormatSchema,
   idSchema,
@@ -69,13 +70,20 @@ export function registerCommentTools(server: McpServer, client: JanosikClient) {
         kind: commentKindSchema
           .optional()
           .describe("Comment kind (default: note)."),
+        idempotencyKey: idempotencyKeySchema,
       },
       annotations: WRITE,
     },
-    async ({ cardId, text, kind }) => {
-      const comment = await client.addComment(cardId, text, kind);
+    async ({ cardId, text, kind, idempotencyKey }) => {
+      const comment = await client.addComment(
+        cardId,
+        text,
+        kind,
+        idempotencyKey,
+      );
       return textOnly(
         `Added ${kind ?? "note"} comment \`${comment.id}\` on card ${cardId}.`,
+        { resourceId: comment.id },
       );
     },
   );

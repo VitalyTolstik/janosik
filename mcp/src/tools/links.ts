@@ -52,6 +52,7 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
       );
       return textOnly(
         `Linked card ${cardId} --${linkType}--> ${targetCardId}.`,
+        { resourceId: linkId },
       );
     },
   );

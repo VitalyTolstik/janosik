@@ -100,11 +100,32 @@ export class ApiError extends Error {
 
   /**
    * Machine-readable error code, when the server named one
-   * (`login_backoff`, `board_write_timeout`, …).
+   * (`scope_denied`, `board_write_timeout`, `idempotency_conflict`, …).
    */
   get code(): string | undefined {
     const body = this.body as { code?: unknown } | null;
     return typeof body?.code === "string" ? body.code : undefined;
+  }
+
+  /** TASK-166.4: whether the same request may be retried unchanged. */
+  get retryable(): boolean | undefined {
+    const body = this.body as { retryable?: unknown } | null;
+    return typeof body?.retryable === "boolean" ? body.retryable : undefined;
+  }
+
+  /** TASK-166.4: correlation id shared with `X-Request-Id` and the server log. */
+  get requestId(): string | undefined {
+    const body = this.body as { requestId?: unknown } | null;
+    return typeof body?.requestId === "string" ? body.requestId : undefined;
+  }
+
+  /** TASK-166.4: the server's current version on a conflict, when supplied. */
+  get currentVersion(): number | null | undefined {
+    const body = this.body as { currentVersion?: unknown } | null;
+    return typeof body?.currentVersion === "number" ||
+      body?.currentVersion === null
+      ? body.currentVersion
+      : undefined;
   }
 
   /** `400 {field}` — the exact command field the strict validator rejected. */

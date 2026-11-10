@@ -140,6 +140,21 @@ function fakeApi(
       },
     ]);
   }
+  if (path === "/boards" && method === "POST") {
+    const title = (body as { title?: string } | undefined)?.title ?? "New";
+    return respond(
+      {
+        id: "b-new",
+        title,
+        columns: [],
+        cards: {},
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      201,
+    );
+  }
   if (path === "/boards/b1" && method === "GET") {
     const snapshot = board(cardOverrides);
     if (reorderOnConflict) {
@@ -446,6 +461,25 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("returns structured mutation results and forwards an idempotency key", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_create_board",
+      arguments: { title: "New board", idempotencyKey: "create-board-key" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: "b-new",
+      board: { id: "b-new", title: "New board" },
+    });
+    const call = calls.find(
+      (entry) => entry.path === "/boards" && entry.method === "POST",
+    );
+    expect(call?.headers?.["Idempotency-Key"]).toBe("create-board-key");
+    await client.close();
+  });
+
   it("reads the workflow and validates a card's moves", async () => {
     boardWorkflow = {
       schemaVersion: 1,
@@ -507,6 +541,10 @@ describe("janosik MCP server", () => {
     });
     expect(action.newCardId).toMatch(/^[0-9a-f-]{36}$/);
     expect(firstText(result)).toContain("New task");
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      resourceId: action.newCardId,
+    });
     await client.close();
   });
 

@@ -19,6 +19,7 @@ import {
   columnIdSchema,
   detailSchema,
   expectedVersionSchema,
+  idempotencyKeySchema,
   responseFormatSchema,
 } from "../schemas.js";
 import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
@@ -154,13 +155,18 @@ export function registerBoardTools(
           .min(1)
           .max(LIMITS.boardTitle)
           .describe("Board title."),
+        idempotencyKey: idempotencyKeySchema,
         response_format: responseFormatSchema,
       },
       annotations: WRITE,
     },
-    async ({ title, response_format }) => {
-      const board = await client.createBoard(title);
-      return respond(response_format, { board }, renderBoard(board));
+    async ({ title, idempotencyKey, response_format }) => {
+      const board = await client.createBoard(title, idempotencyKey);
+      return respond(
+        response_format,
+        { board, ok: true, resourceId: board.id, approvalId: null },
+        renderBoard(board),
+      );
     },
   );
 

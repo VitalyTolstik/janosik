@@ -343,6 +343,8 @@ export class CommandsService {
             throw new ConflictException({
               message: "commandId already used on another board",
               field: "commandId",
+              code: "id_conflict",
+              conflict: "id",
             });
           }
           // A reused key with a different body is a client bug (or a key
@@ -354,6 +356,7 @@ export class CommandsService {
             throw new ConflictException({
               message: "commandId already used with a different payload",
               field: "commandId",
+              code: "idempotency_conflict",
             });
           }
         }

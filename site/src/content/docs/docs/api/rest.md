@@ -580,6 +580,10 @@ The response bodies are the shared wire types. Key fields:
 
 ## Errors
 
+Every error below uses the shared [`code`/`message`/`retryable`/`requestId`
+envelope](../#error-envelope). The status is still the HTTP status; `code`
+names the cause.
+
 | Status | When                                                                                                                                                      |
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `400`  | validation failed, a blank required text, an invalid limit or expiry, an invalid or empty envelope, a rejected file                                       |
