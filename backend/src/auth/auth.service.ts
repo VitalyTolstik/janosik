@@ -769,8 +769,6 @@ export class AuthService {
 
   /** Only the sha256 of the raw token is ever persisted. */
   private hashToken(rawToken: string): string {
-    // codeql[js/insufficient-password-hash] -- rawToken is a 256-bit random
-    // refresh token, not a user password; sha256 is the correct digest here.
     return createHash("sha256").update(rawToken).digest("hex");
   }
 

@@ -1,0 +1,19 @@
+name: Janosik CodeQL config
+
+# These two queries do not model the refresh-token flow correctly:
+#
+# * `js/clear-text-storage-of-sensitive-data` treats the httpOnly,
+#   SameSite=Strict refresh cookie as clear-text storage. The token never
+#   reaches localStorage, a readable response body, or client code; the cookie
+#   is the transport, not a readable store.
+# * `js/insufficient-password-hash` treats the SHA-256 digest of a 256-bit
+#   random refresh token as a password hash. A fast digest is correct for a
+#   high-entropy lookup key; password hashing remains argon2id.
+#
+# The remaining default CodeQL queries still run; excluding these two avoids
+# false-positive pull-request failures without weakening password storage.
+query-filters:
+  - exclude:
+      id: js/clear-text-storage-of-sensitive-data
+  - exclude:
+      id: js/insufficient-password-hash

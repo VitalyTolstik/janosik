@@ -28,5 +28,7 @@ test("does not cap the workspace at ten boards in server mode", async ({
   await page.reload();
   await page.getByRole("button", { name: "Switch board" }).click();
   await expect(page.getByRole("option")).toHaveCount(11);
-  await expect(page.getByText("Eleventh")).toHaveCount(1);
+  await expect(
+    page.getByRole("option").filter({ hasText: "Eleventh" }),
+  ).toHaveCount(1);
 });
