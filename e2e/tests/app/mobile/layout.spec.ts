@@ -127,14 +127,12 @@ test("board dialogs fit the phone and close by touch", async ({
   await archive.getByRole("button", { name: "Close", exact: true }).tap();
   await expect(archive).toBeHidden();
 
-  // Data → automatic backups.
+  // Server mode deliberately hides the local-only backup entries (TASK-166
+  // D21): Janosik does not create server backups. The local-mode backup
+  // dialogs are covered by the DataMenu unit tests instead.
   await page.getByRole("button", { name: "Data & backups" }).tap();
-  await page.getByTestId("data-backups").tap();
-  const backups = page.getByRole("dialog");
-  await expectDialogFits(page, backups, "backups");
-  await expect(backups.getByTestId("backup-list")).toBeVisible();
-  await backups.getByRole("button", { name: "Close", exact: true }).tap();
-  await expect(backups).toBeHidden();
+  await expect(page.getByTestId("data-backups")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   // Board settings (workflow editor) — admin only.
   await page.getByTestId("board-settings-trigger").tap();
