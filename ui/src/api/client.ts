@@ -628,41 +628,6 @@ export class ApiClient {
     );
   }
 
-  /** `GET /boards/:id/agent-sessions?active=1` — board member read. */
-  listAgentSessions(
-    boardId: string,
-    active = false,
-  ): Promise<AgentSessionDto[]> {
-    const suffix = active ? "?active=1" : "";
-    return this.request<AgentSessionDto[]>(
-      `/boards/${boardId}/agent-sessions${suffix}`,
-    );
-  }
-
-  /** `POST /boards/:id/agent-sessions/:sessionId/pause` — board ADMIN. */
-  pauseAgentSession(
-    boardId: string,
-    sessionId: string,
-    reason?: string,
-  ): Promise<AgentSessionDto> {
-    return this.request<AgentSessionDto>(
-      `/boards/${boardId}/agent-sessions/${encodeURIComponent(sessionId)}/pause`,
-      { method: "POST", body: reason === undefined ? {} : { reason } },
-    );
-  }
-
-  /** `POST /boards/:id/agent-sessions/:sessionId/resume` — board ADMIN. */
-  resumeAgentSession(
-    boardId: string,
-    sessionId: string,
-    reason?: string,
-  ): Promise<AgentSessionDto> {
-    return this.request<AgentSessionDto>(
-      `/boards/${boardId}/agent-sessions/${encodeURIComponent(sessionId)}/resume`,
-      { method: "POST", body: reason === undefined ? {} : { reason } },
-    );
-  }
-
   /** `POST /boards/:id/agents/pause` — board-level agent stop. */
   pauseBoardAgents(
     boardId: string,
