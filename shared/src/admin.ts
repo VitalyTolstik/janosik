@@ -1036,6 +1036,47 @@ export interface AdminTrafficDto {
   limit: number;
   /** Unix ms when the snapshot was taken. */
   at: number;
+  /** TASK-166.10 breakdown of the same rolling window. */
+  telemetry?: AdminTrafficTelemetryDto;
+}
+
+/**
+ * TASK-166.10: attributable request/operation counters. All windows are the
+ * last 60 seconds; the values come from the structured request log, so the
+ * panel sees exactly what an operator can grep for.
+ */
+export interface AdminTrafficTelemetryDto {
+  requests: {
+    human: number;
+    agent: number;
+    admin: number;
+    anonymous: number;
+  };
+  writes: number;
+  /** Server errors (status >= 500); 4xx are client outcomes, not incidents. */
+  errors: number;
+  rateLimited: {
+    total: number;
+    ip: number;
+    token: number;
+    session: number;
+    board: number;
+  };
+  operations: {
+    approvalsCreated: number;
+    approvalsDecided: number;
+    agentsPaused: number;
+    agentsResumed: number;
+    runsApplied: number;
+    runsReverted: number;
+  };
+  /** Approximate percentiles over the bounded in-memory sample ring. */
+  latencyMs: {
+    count: number;
+    p50: number;
+    p95: number;
+    max: number;
+  };
 }
 
 /**

@@ -12,8 +12,12 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   DEFAULT_JOB_OPTIONS,
+  jobAttribution,
+  logQueueJob,
   QUEUE_NAMES,
   redisQueueStats,
+  type AttributedJob,
+  type JobAttribution,
   type QueueStats,
 } from "@/ops/queue-core";
 import { StorageService } from "./storage.service";
@@ -37,7 +41,7 @@ const DERIVE_TIMEOUT_MS = 60 * 1000;
 export const MEDIA_QUEUE = QUEUE_NAMES.media;
 export const MEDIA_JOB = "derive";
 
-export interface MediaJob {
+export interface MediaJob extends AttributedJob {
   attachmentId: string;
 }
 
@@ -111,12 +115,17 @@ export class MediaService implements OnModuleInit {
   }
 
   /** Queue one attachment for derivative generation; safe to call twice. */
-  enqueue(attachmentId: string): void {
+  enqueue(attachmentId: string, source?: JobAttribution): void {
+    const attribution = jobAttribution(source);
+    logQueueJob(MEDIA_QUEUE, MEDIA_JOB, attribution);
     if (this.queue) {
       void this.queue
         .add(
           MEDIA_JOB,
-          { attachmentId },
+          {
+            attachmentId,
+            ...(attribution !== undefined ? { attribution } : {}),
+          },
           { ...DEFAULT_JOB_OPTIONS, jobId: attachmentId },
         )
         .catch((error: unknown) => {

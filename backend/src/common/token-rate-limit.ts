@@ -1,48 +1,48 @@
+import {
+  consumeRateLimit,
+  resetRateLimits,
+  type RateLimitDecision,
+} from "./rate-limit";
+
 /**
- * Per-token rate limit (TASK-157). A personal API token may carry its own
- * requests-per-minute budget, enforced in `JwtAuthGuard` once the token has
- * authenticated (the global throttler runs earlier and only knows the raw
- * credential). In-memory and per-process — like the login backoff — so a
- * multi-node deployment allows the budget per node; the map is bounded so a
- * churn of tokens can never grow it without limit (the B23 lesson).
+ * Per-token rate limit (TASK-157, extended by TASK-166.10). A personal API
+ * token may carry its own requests-per-minute budget, enforced in
+ * `JwtAuthGuard` once the token has authenticated (the global throttler runs
+ * earlier and only knows the raw credential). In-memory and per-process —
+ * like the login backoff — so a multi-node deployment allows the budget per
+ * node; the shared bucket map is bounded so a churn of tokens can never grow
+ * it without limit (the B23 lesson).
  */
 
-/** Sliding window length. */
+/** Fixed window length. */
 const WINDOW_MS = 60_000;
-/** Hard cap on tracked tokens. */
-const MAX_ENTRIES = 10_000;
-
-const buckets = new Map<string, { count: number; resetAt: number }>();
 
 /**
- * Count one request against `tokenId`'s window and answer whether it is
- * still within `limitPerMinute`. A request over the limit is not counted
- * further (the caller answers 429).
+ * Count one request against `tokenId`'s window and return the whole budget,
+ * so the guard can answer with `RateLimit-*` headers and a real
+ * `Retry-After` instead of a generic 429.
+ */
+export function consumeTokenRateLimit(
+  tokenId: string,
+  limitPerMinute: number,
+  now: number = Date.now(),
+): RateLimitDecision {
+  return consumeRateLimit("token", tokenId, limitPerMinute, WINDOW_MS, now);
+}
+
+/**
+ * Legacy boolean seam (TASK-157 callers/tests): true while the token is
+ * inside its budget. New code should use {@link consumeTokenRateLimit}.
  */
 export function consumeTokenRate(
   tokenId: string,
   limitPerMinute: number,
+  now: number = Date.now(),
 ): boolean {
-  const now = Date.now();
-  let bucket = buckets.get(tokenId);
-  if (!bucket || bucket.resetAt <= now) {
-    bucket = { count: 0, resetAt: now + WINDOW_MS };
-    buckets.set(tokenId, bucket);
-    if (buckets.size > MAX_ENTRIES) {
-      for (const [key, value] of buckets) {
-        if (value.resetAt <= now) buckets.delete(key);
-      }
-      if (buckets.size > MAX_ENTRIES) {
-        const oldest = buckets.keys().next().value;
-        if (oldest !== undefined && oldest !== tokenId) buckets.delete(oldest);
-      }
-    }
-  }
-  bucket.count += 1;
-  return bucket.count <= limitPerMinute;
+  return consumeTokenRateLimit(tokenId, limitPerMinute, now).allowed;
 }
 
-/** Test hook: drop every counter. */
+/** Test hook: drop every token counter (other scopes stay untouched). */
 export function resetTokenRates(): void {
-  buckets.clear();
+  resetRateLimits("token");
 }

@@ -207,6 +207,58 @@ same way: per IP on the anonymous routes, per user on the signed-in ones.
 The public share API has its own per-token budget (see
 [REST endpoints](./rest/)). A rejection answers `429`.
 
+### Agent buckets and headers
+
+Personal API tokens get two additional buckets on top of the global principal
+window. Browser sessions keep exactly the legacy per-user/IP behaviour.
+
+- **Per-agent-session** — `AGENT_SESSION_RATE_LIMIT` requests per minute
+  (default: the live global limit, at least 60) per `agentSessionId`. It
+  applies when the request carries `X-Agent-Session`, a session id in the path
+  or `?session=` on an SSE stream.
+- **Per-board** — `BOARD_RATE_LIMIT` requests per minute (default: twice the
+  live global limit, at least 600) per board, shared by every PAT working on
+  that board.
+- A token's own `rateLimitPerMinute` remains the tightest per-token budget.
+
+A response carries the budget that counted the request:
+`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` (Unix
+seconds), `X-RateLimit-Scope` (`token`, `session` or `board`), the
+IETF-style `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset` (`Reset`
+is seconds until reset) and, on `429`, `Retry-After`. When several buckets
+exist, the headers name the tightest one, so a client that respects them will
+not be rejected by the global window first.
+
+A rejection uses the shared error envelope:
+
+```json
+{
+  "code": "rate_limited",
+  "retryable": true,
+  "retryAfter": 42,
+  "limit": 60,
+  "scope": "session",
+  "requestId": "…"
+}
+```
+
+Structured request logs carry `requestId`, method/path/status/duration,
+`actorType`/`actorId`, `boardId`, `apiTokenId`, `agentSessionId`, `runId`
+(when available), `approvalId` and the classified operation
+(`approval_created`, `approval_decided`, `agent_paused`, `agent_resumed`,
+`run_applied`, `run_reverted`). Query strings and public share tokens are
+stripped before logging; bodies, headers, comments, card content, token values
+and secrets are never logged. The same fields feed the existing
+`GET /admin/traffic` snapshot under `telemetry` (requests by actor, writes,
+errors, rate-limit hits by scope, operation counters and a bounded
+latency histogram) — there is no separate admin screen.
+
+Background jobs keep the same attribution: the `media`, `transcode` and
+`exports` payloads carry an optional `attribution` object with `actorType`,
+`actorId`, `boardId`, `apiTokenId`, `agentSessionId` and `runId` when the work
+came from a request. The object contains opaque ids only — never an email,
+file name, comment or card text.
+
 ### Login backoff
 
 On top of the IP window, `POST /auth/login` backs off per account. Failures

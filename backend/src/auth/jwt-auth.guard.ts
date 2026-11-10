@@ -5,11 +5,16 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
-import { ThrottlerException } from "@nestjs/throttler";
+import type { Response } from "express";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
 import { assertTokenNotPaused } from "@/auth/agent-pause";
 import { PAT_FORBIDDEN_MESSAGE } from "@/auth/auth-principal";
-import { consumeTokenRate } from "@/common/token-rate-limit";
+import {
+  applyRateLimitHeaders,
+  rateLimitException,
+  type RateLimitDecision,
+} from "@/common/rate-limit";
+import { consumeTokenRateLimit } from "@/common/token-rate-limit";
 import { ApiTokenService, type TokenScope } from "./api-token.service";
 import type { AuthPrincipal } from "./auth-principal";
 import { assertImpersonationAllows } from "./impersonation-policy";
@@ -49,6 +54,8 @@ interface GuardedRequest {
   headers: Record<string, string | undefined>;
   user?: unknown;
   auth?: AuthPrincipal;
+  /** TASK-166.10: budget consumed by this request, read by the request log. */
+  rateLimit?: RateLimitDecision;
 }
 
 /**
@@ -106,12 +113,20 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     const { user, tokenId, tokenName, identity, scope } =
       await this.apiTokens.authenticate(raw);
     // Per-token budget first, so an abusive token is counted even when the
-    // request is then refused on scope grounds (TASK-157).
-    if (
-      scope.rateLimitPerMinute !== null &&
-      !consumeTokenRate(tokenId, scope.rateLimitPerMinute)
-    ) {
-      throw new ThrottlerException("Too many requests for this API token");
+    // request is then refused on scope grounds (TASK-157). TASK-166.10: the
+    // same count now carries the headers and a precise Retry-After, so a
+    // well-behaved agent can pace itself instead of guessing.
+    if (scope.rateLimitPerMinute !== null) {
+      const decision = consumeTokenRateLimit(tokenId, scope.rateLimitPerMinute);
+      request.rateLimit = decision;
+      const response = context.switchToHttp().getResponse<Response>();
+      applyRateLimitHeaders(response, decision);
+      if (!decision.allowed) {
+        throw rateLimitException(
+          decision,
+          "Too many requests for this API token",
+        );
+      }
     }
     // TASK-166.3: human control-plane routes are session-only. Run before
     // membership/role/read-only checks so every PAT gets `pat_forbidden`.

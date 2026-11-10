@@ -20,6 +20,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
+  requestJobAttribution,
 } from "@/auth/request-attribution";
 import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -274,9 +275,17 @@ export class AttachmentsService {
       committed = true;
 
       if (created.activityId === null) {
-        if (transcodeStatus === "pending")
-          this.transcode.enqueue(created.row.id);
-        if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
+        const jobSource = requestJobAttribution(
+          attribution,
+          card.column.boardId,
+          user.id,
+        );
+        if (transcodeStatus === "pending") {
+          this.transcode.enqueue(created.row.id, jobSource);
+        }
+        if (derivativeStatus === "pending") {
+          this.media.enqueue(created.row.id, jobSource);
+        }
         await touchAgentSessionAfterWrite(
           this.prisma,
           attribution.agentSessionId,
@@ -284,8 +293,17 @@ export class AttachmentsService {
         return toAttachmentDto(created.row);
       }
 
-      if (transcodeStatus === "pending") this.transcode.enqueue(created.row.id);
-      if (derivativeStatus === "pending") this.media.enqueue(created.row.id);
+      const jobSource = requestJobAttribution(
+        attribution,
+        card.column.boardId,
+        user.id,
+      );
+      if (transcodeStatus === "pending") {
+        this.transcode.enqueue(created.row.id, jobSource);
+      }
+      if (derivativeStatus === "pending") {
+        this.media.enqueue(created.row.id, jobSource);
+      }
       this.publish(
         card.column.boardId,
         cardId,

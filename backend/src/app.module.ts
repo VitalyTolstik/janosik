@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerStorageService } from "@nestjs/throttler";
 import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
 import Redis from "ioredis";
+import { AgentRateLimitInterceptor } from "@/common/agent-rate-limit.interceptor";
 import { ApiExceptionFilter } from "@/common/api-exception.filter";
 import { RedisThrottlerStorage } from "@/common/redis-throttler-storage";
 import { principalTracker } from "@/common/throttle-tracker";
@@ -108,6 +109,9 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
     { provide: APP_GUARD, useClass: PasswordResetThrottlerGuard },
     { provide: APP_GUARD, useClass: MaintenanceGuard },
     { provide: APP_INTERCEPTOR, useClass: PerUserRateLimitInterceptor },
+    // TASK-166.10: per-session and per-board agent budgets. Runs after the
+    // guards so the resolved session/board attribution is available.
+    { provide: APP_INTERCEPTOR, useClass: AgentRateLimitInterceptor },
     // TASK-166.4: one envelope for every REST error. Registered after the
     // modules so `TrafficService` is injectable.
     { provide: APP_FILTER, useClass: ApiExceptionFilter },

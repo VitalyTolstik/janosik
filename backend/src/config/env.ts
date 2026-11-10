@@ -158,6 +158,19 @@ export const env = cleanEnv(process.env, {
     default: 300,
     example: "300",
   }),
+  // TASK-166.10 agent buckets. 0 = derive from the live global limit: the
+  // session budget follows `THROTTLE_LIMIT` (min 60), the board budget is
+  // twice it (min 600). Set positive values to pin them independently.
+  AGENT_SESSION_RATE_LIMIT: num({
+    desc: "Per-agent-session request budget per minute; 0 = derive from THROTTLE_LIMIT",
+    default: 0,
+    example: "300",
+  }),
+  BOARD_RATE_LIMIT: num({
+    desc: "Per-board agent request budget per minute; 0 = 2x THROTTLE_LIMIT (min 600)",
+    default: 0,
+    example: "600",
+  }),
   // Reverse-proxy hops in front of the API (TASK-91). 0 (default) trusts no
   // proxy, so `req.ip` is the socket address. Behind one nginx set it to the
   // exact hop count: the throttler, the admin IP allowlist and the session

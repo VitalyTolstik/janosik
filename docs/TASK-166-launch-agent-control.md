@@ -1339,6 +1339,26 @@ batch/DTO is `validation_failed` (400); an oversized body is
 The bucket is keyed by principal: user, token, or IP for anonymous requests.
 Both the per-token limit and the global limit apply.
 
+**Implementation (166.10).** The global per-principal `@nestjs/throttler`
+window is unchanged. On top of it, PAT traffic gets a per-session bucket
+(`AGENT_SESSION_RATE_LIMIT`, default = live global limit, min 60) and a
+per-board bucket (`BOARD_RATE_LIMIT`, default = 2× live global limit, min
+600). Browser sessions do not get the new buckets. The token's explicit
+`rateLimitPerMinute` remains the tightest token budget. `X-RateLimit-*` names
+the tightest bucket that counted the request (with `X-RateLimit-Scope`), and
+the same budget appears in the `429` envelope (`rate_limited`, `retryable`,
+`retryAfter`, `limit`, `scope`, `requestId`). `X-RateLimit-Reset` is Unix
+seconds; the IETF-style `RateLimit-Reset` is seconds until reset.
+
+The request log is one JSON line per finished API response with
+`requestId`, method/path/status/duration, `actorType`/`actorId`, `boardId`,
+`apiTokenId`, `agentSessionId`, `runId` (when available), `approvalId` and the
+classified operation. Query strings and public share tokens are redacted;
+tokens, bodies, headers, comments and card content are never logged. The same
+entry feeds the existing `GET /admin/traffic` `telemetry` block (no new admin
+screen). Media, transcode and export job payloads carry the optional
+`attribution` subset (ids only).
+
 ### 8.5. MCP
 
 `describeError` and tool results must show:

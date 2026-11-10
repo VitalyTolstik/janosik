@@ -55,4 +55,70 @@ describe("TrafficService", () => {
     const traffic = new TrafficService();
     expect(traffic.snapshot().limit).toBe(throttleLimit());
   });
+
+  it("breaks completed requests down by actor, writes and rate-limit scope", () => {
+    const traffic = new TrafficService();
+    const base = 2_100_000_000_000;
+    traffic.recordCompleted({
+      at: base,
+      status: 200,
+      durationMs: 10,
+      actorType: "agent",
+      write: true,
+      operation: "run_applied",
+    });
+    traffic.recordCompleted({
+      at: base + 1_000,
+      status: 200,
+      durationMs: 30,
+      actorType: "human",
+      write: false,
+    });
+    traffic.recordCompleted({
+      at: base + 2_000,
+      status: 429,
+      durationMs: 50,
+      actorType: "agent",
+      write: false,
+      rateLimit: {
+        scope: "token",
+        limit: 2,
+        remaining: 0,
+        resetAt: base + 60_000,
+      },
+    });
+    traffic.recordCompleted({
+      at: base + 3_000,
+      status: 503,
+      durationMs: 70,
+      actorType: "human",
+      write: false,
+    });
+
+    const snapshot = traffic.snapshot(base + 4_000);
+    expect(snapshot.telemetry).toMatchObject({
+      requests: { human: 2, agent: 2, admin: 0, anonymous: 0 },
+      writes: 1,
+      errors: 1,
+      rateLimited: { total: 1, token: 1, session: 0, board: 0, ip: 0 },
+      operations: { runsApplied: 1 },
+      latencyMs: { count: 4, p50: 50, p95: 70, max: 70 },
+    });
+  });
+
+  it("ages completed-request counters out of the 60s window", () => {
+    const traffic = new TrafficService();
+    const base = 2_200_000_000_000;
+    traffic.recordCompleted({
+      at: base,
+      status: 200,
+      durationMs: 5,
+      actorType: "agent",
+      write: true,
+    });
+    const later = traffic.snapshot(base + 61_000);
+    expect(later.telemetry?.requests.agent).toBe(0);
+    expect(later.telemetry?.writes).toBe(0);
+    expect(later.telemetry?.latencyMs.count).toBe(0);
+  });
 });

@@ -6,7 +6,6 @@ import {
   type ArgumentsHost,
   type ExceptionFilter,
 } from "@nestjs/common";
-import { ThrottlerException } from "@nestjs/throttler";
 import type { Response } from "express";
 import { translateException } from "./api-error";
 import { currentRequestId } from "./request-context";
@@ -33,9 +32,6 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (host.getType() !== "http") {
       throw exception;
     }
-    if (exception instanceof ThrottlerException) {
-      this.traffic?.recordThrottled();
-    }
 
     const response = host.switchToHttp().getResponse<Response>();
     // A stream (SSE/blob) may already be committed; rewriting it would throw
@@ -44,6 +40,10 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
     const requestId = currentRequestId() ?? "";
     const { status, body } = translateException(exception, requestId);
+    // TASK-166.10: the legacy gauge now sees every 429, including the new
+    // per-token/session/board buckets (they are HttpExceptions, not
+    // ThrottlerExceptions).
+    if (status === 429) this.traffic?.recordThrottled();
     if (status >= 500) {
       const detail =
         exception instanceof Error ? exception.stack : String(exception);
