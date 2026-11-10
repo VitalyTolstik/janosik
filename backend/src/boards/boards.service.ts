@@ -150,7 +150,7 @@ export class BoardsService {
     const result = await this.boardWrite.run(boardId, async (tx) => {
       const current = await tx.board.findFirst({
         where: { id: boardId, deletedAt: null },
-        select: { agentPolicyVersion: true },
+        select: { agentPolicyVersion: true, agentPolicy: true },
       });
       if (current === null) throw new NotFoundException("Board not found");
       if (current.agentPolicyVersion !== dto.version) {
@@ -178,6 +178,12 @@ export class BoardsService {
         throw this.policyConflict(latest?.agentPolicyVersion ?? dto.version);
       }
       const nextVersion = dto.version + 1;
+      const beforeChecked =
+        current.agentPolicy === null
+          ? null
+          : validateBoardAgentPolicy(current.agentPolicy);
+      const beforePolicy =
+        beforeChecked?.ok === true ? beforeChecked.policy : null;
       await tx.activity.create({
         data: {
           boardId,
@@ -200,7 +206,11 @@ export class BoardsService {
           },
         },
       });
-      return nextVersion;
+      return {
+        nextVersion,
+        beforeVersion: current.agentPolicyVersion,
+        beforePolicy,
+      };
     });
 
     await this.securityAudit.record({
@@ -211,13 +221,22 @@ export class BoardsService {
       targetType: "board",
       targetId: boardId,
       details: {
-        version: result,
+        version: result.nextVersion,
         reset: policy === null,
         destructive: policy?.destructive ?? "approval",
         requireApprovalFor: policy?.requireApprovalFor ?? null,
         maxCommandsPerRun: policy?.maxCommandsPerRun ?? null,
         maxCardsPerRun: policy?.maxCardsPerRun ?? null,
         approvalTtlMinutes: policy?.approvalTtlMinutes ?? null,
+        before: {
+          version: result.beforeVersion,
+          policy:
+            (result.beforePolicy as unknown as Prisma.InputJsonValue) ?? null,
+        },
+        after: {
+          version: result.nextVersion,
+          policy: (policy as unknown as Prisma.InputJsonValue) ?? null,
+        },
       },
     });
 

@@ -113,6 +113,66 @@ jobs:
       - name: Bundle budget (size-limit)
         run: npm run size -w ui
 
+  # TASK-166.12: an independent security/contract lane. It is deliberately
+  # not part of `verify`/`browser-e2e`: the new backend suite uses its own
+  # database name and the browser half uses dedicated ports, so it can run
+  # beside the other lanes without sharing state.
+  security-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: janosik
+          POSTGRES_PASSWORD: janosik
+          POSTGRES_DB: janosik_test_16612
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U janosik -d janosik_test_16612"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate (backend)
+        run: npm run prisma:generate -w backend
+
+      - name: Security contract suite (backend)
+        run: npm run test:security -w backend
+        env:
+          DATABASE_URL: postgresql://janosik:janosik@localhost:5434/janosik_test_16612
+          JWT_SECRET: 00000000000000000000000000000000000000000000000000000000000000ff
+
+      - name: Install Chrome
+        run: npx playwright install --with-deps chrome
+
+      - name: Security browser lane
+        env:
+          E2E_PORT: 4420
+          E2E_MAIL_PORT: 4920
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-security
+        run: npm run test:security -w e2e
+
+      - name: Upload security browser report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-security-report
+          path: |
+            e2e/playwright-report-security/
+            e2e/test-results/
+          if-no-files-found: ignore
+
   browser-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30

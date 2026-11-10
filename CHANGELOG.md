@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.12 contract/security suite: new backend
+  `agent-control-security` and `agent-control-approval-security` suites pin the
+  remaining actor/board-scope boundaries (read-only transports, cross-board
+  and deleted/archived boards, pause precedence, untrusted card content,
+  stable error envelopes), approval exactness/expiry, canonical `planHash`
+  tampering, preview-conflict enforcement with all-or-nothing apply, and
+  parallel `ifMatch`/approval races. A dedicated `security-contract` CI lane
+  uses database `janosik_test_16612` and browser ports 4420/4920; a small
+  Playwright `e2e/tests/security` lane covers VIEWER rollback denial and
+  `run.reverted` refresh. Board policy audit now records the previous policy
+  and version (`before`) next to `after`.
 - TASK-166.8 plan preview and atomic apply: `POST /boards/:id/plans` is a
   pure dry-run over the same command validator, scope/destructive
   classification and WIP/workflow/version guards as `/commands/batch`. It
