@@ -350,6 +350,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     expect(await service.sweepCommands()).toBe(9);
@@ -392,6 +393,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     expect(await service.sweepRuns()).toBe(1);
@@ -438,6 +440,7 @@ describe("MaintenanceService", () => {
       storageMock,
       opsMock,
       accountDeletionMock,
+      attentionMock,
     );
 
     expect(await service.sweepRuns()).toBe(2);
