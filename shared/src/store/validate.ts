@@ -11,6 +11,7 @@ import {
   LABEL_COLORS,
   LIMITS,
   MAX_CARD_ACTIVITY,
+  validateBoardAgentPolicy,
 } from "../types/kanban";
 
 /**
@@ -1153,11 +1154,16 @@ export type BoardsValidationResult =
  * that are not dates, collections over `LIMITS`, duplicate ids, a column
  * listing a card that does not exist, a card sitting in two places.
  */
-export function validateImportedBoards(input: unknown): BoardsValidationResult {
+export function validateImportedBoards(
+  input: unknown,
+  options: { maxBoards?: number | null } = {},
+): BoardsValidationResult {
   try {
     if (!Array.isArray(input)) fail("boards", "must be an array");
-    if (input.length > LIMITS.boardsCount) {
-      fail("boards", `must hold at most ${LIMITS.boardsCount} boards`);
+    const maxBoards =
+      options.maxBoards === undefined ? LIMITS.boardsCount : options.maxBoards;
+    if (maxBoards !== null && input.length > maxBoards) {
+      fail("boards", `must hold at most ${maxBoards} boards`);
     }
     const boardIds = new Set<string>();
     input.forEach((board, index) => {
@@ -1253,6 +1259,13 @@ function checkImportedBoard(value: unknown, field: string): string {
   if (board.workflow !== undefined && board.workflow !== null) {
     const checked = validateWorkflowShape(board.workflow, `${field}.workflow`);
     if (!checked.ok) fail(checked.field, checked.message);
+  }
+  // TASK-166: an export from schema version 3 may carry the board agent
+  // policy. It is strict — a policy may only lower the global limits, and an
+  // unknown approval key must not be silently ignored on import.
+  if (board.agentPolicy !== undefined && board.agentPolicy !== null) {
+    const checked = validateBoardAgentPolicy(board.agentPolicy);
+    if (!checked.ok) fail(`${field}.agentPolicy`, checked.message);
   }
   return id;
 }

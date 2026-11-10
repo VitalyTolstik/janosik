@@ -28,10 +28,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
-import { MAX_IMPORT_BYTES } from "@janosik/shared";
+import { MAX_BOARD_EXPORT_BYTES, MAX_IMPORT_BYTES } from "@janosik/shared";
+import { isApiEnabled } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@janosik/shared";
 import { downloadTextFile } from "@/utils/download";
+import { estimateBoardExportBytes } from "@/utils/export-size";
 import { createBackup, listBackups } from "@/utils/backup";
 
 /**
@@ -48,6 +50,10 @@ export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const { boards, board, importBoards } = useBoard();
+  // TASK-166 D21: Janosik does not create backups. Server mode shows only
+  // export/import; the local "save a copy" / automatic-backup browser is a
+  // localStorage-only safety net and must not imply server backups.
+  const serverMode = isApiEnabled();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [backupCount, setBackupCount] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -78,7 +84,22 @@ export function DataMenu() {
 
   const handleExport = () => {
     try {
-      downloadTextFile("janosik-boards.json", serializeExport(boards));
+      // Preflight first: a multi-hundred-MB board must not be stringified
+      // just to discover it is over the cap. The estimate is rough, so it
+      // only hard-stops gross oversize; the exact check below decides the
+      // 25 MB boundary (avoid false positives near the limit).
+      if (estimateBoardExportBytes(boards) > MAX_BOARD_EXPORT_BYTES * 4) {
+        toast.error(t("data.exportTooLarge"));
+        return;
+      }
+      const raw = serializeExport(boards);
+      // TASK-166.6: the combined file must be importable again. The server
+      // import cap is 25 MB; never hand the user a file it would reject.
+      if (new TextEncoder().encode(raw).length > MAX_BOARD_EXPORT_BYTES) {
+        toast.error(t("data.exportTooLarge"));
+        return;
+      }
+      downloadTextFile("janosik-boards.json", raw);
       toast.success(t("data.exportSuccess"));
     } catch {
       toast.error(t("data.exportFailed"));
@@ -94,7 +115,12 @@ export function DataMenu() {
     }
     try {
       const text = await file.text();
-      const boards = parseExport(text);
+      // TASK-166: the 10-board guard is local/offline only. In server mode
+      // the operator cap (or no cap) is enforced by the API, so do not clip
+      // the file in the browser.
+      const boards = parseExport(text, {
+        maxBoards: serverMode ? null : undefined,
+      });
       // Server mode: the boards land in the database, then the list is
       // re-hydrated; a refusal is reported by the provider and resolves
       // `false`, so this handler does not add a success toast on top.
@@ -121,7 +147,7 @@ export function DataMenu() {
       <DropdownMenu
         onOpenChange={(open) => {
           setMenuOpen(open);
-          if (open) void refreshBackups();
+          if (open && !serverMode) void refreshBackups();
         }}
       >
         <Tooltip>
@@ -150,10 +176,14 @@ export function DataMenu() {
             <Upload className="h-4 w-4" />
             {t("data.import")}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleBackupNow}>
-            <HardDriveDownload className="h-4 w-4" />
-            {t("data.backupNow")}
-          </DropdownMenuItem>
+          {!serverMode ? (
+            <>
+              <DropdownMenuItem onClick={handleBackupNow}>
+                <HardDriveDownload className="h-4 w-4" />
+                {t("data.backupNow")}
+              </DropdownMenuItem>
+            </>
+          ) : null}
           <DropdownMenuItem
             data-testid="data-archive"
             onClick={() => setArchiveOpen(true)}
@@ -170,22 +200,24 @@ export function DataMenu() {
             <Workflow className="h-4 w-4" />
             {t("workflow.rules")}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="data-backups"
-            onClick={() => setBackupsOpen(true)}
-          >
-            <HardDrive className="h-4 w-4" />
-            {backupCount !== null && backupCount > 0
-              ? `${t("data.backupTitle")} · ${backupCount}`
-              : t("data.backupTitle")}
-            {menuOpen && backupCount === null ? (
-              <Skeleton
-                width={18}
-                height={10}
-                data-testid="data-backup-count-skeleton"
-              />
-            ) : null}
-          </DropdownMenuItem>
+          {!serverMode ? (
+            <DropdownMenuItem
+              data-testid="data-backups"
+              onClick={() => setBackupsOpen(true)}
+            >
+              <HardDrive className="h-4 w-4" />
+              {backupCount !== null && backupCount > 0
+                ? `${t("data.backupTitle")} · ${backupCount}`
+                : t("data.backupTitle")}
+              {menuOpen && backupCount === null ? (
+                <Skeleton
+                  width={18}
+                  height={10}
+                  data-testid="data-backup-count-skeleton"
+                />
+              ) : null}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <input
@@ -201,7 +233,9 @@ export function DataMenu() {
         }}
       />
       <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
-      <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
+      {!serverMode ? (
+        <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
+      ) : null}
       <WorkflowRulesDialog open={rulesOpen} onOpenChange={setRulesOpen} />
     </>
   );

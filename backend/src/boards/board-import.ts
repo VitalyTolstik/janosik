@@ -33,6 +33,11 @@ export async function persistBoard(
     data: {
       title: board.title,
       columnStyle: board.columnStyle ?? null,
+      // TASK-166: a v3 export carries the board policy; v1/v2 boards keep
+      // `NULL` (the safe defaults) and pause state is never imported.
+      agentPolicy: board.agentPolicy
+        ? (board.agentPolicy as unknown as Prisma.InputJsonValue)
+        : undefined,
       archivedAt: board.archivedAt ? new Date(board.archivedAt) : null,
       createdAt: new Date(board.createdAt),
       updatedAt: new Date(board.updatedAt),

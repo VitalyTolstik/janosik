@@ -233,9 +233,17 @@ to every account equally, each with its own counter. The `/admin`, `/auth` and
 ### Soft-deleted data and retention
 
 The retention window is the number of days before the purge may remove
-soft-deleted rows (1 to 3650, default 30). The page shows how many cards,
-comments, attachments and columns are currently eligible, and the backup
-location when `BACKUP_DIR` is configured.
+soft-deleted rows (1 to 3650, default 30). The page offers the 30/90/365
+presets and shows how many cards, comments, attachments and columns are
+currently eligible. The same window trims the command log, activity feed and
+terminal agent sessions; `AdminAuditLog` and `SecurityAuditLog` keep the longer
+`AUDIT_RETENTION_DAYS` window (365 by default).
+
+The backup line is deliberately honest: `BACKUP_DIR` is only a location you
+configured, not a backup Janosik creates. The API reports
+`{mode, automatic: false, lastBackupAt: null, verified: false}` and the UI says
+that Janosik neither creates, schedules nor verifies backups. Use `pg_dump`
+and back up the uploads volume yourself.
 
 `Purge now` permanently deletes already-deleted cards, comments, attachments
 and columns older than the window. Live data is never touched. The action is
@@ -259,6 +267,9 @@ are:
 | `sweep-reminders` | stale due-reminder dedupe rows |
 | `sweep-activity` | membership/comment feed rows past the retention window |
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |
+| `sweep-security-audit` | `SecurityAuditLog` rows older than `AUDIT_RETENTION_DAYS` (deletion lifecycle and `board.cleanup_failed` markers are kept) |
+| `sweep-accounts` | accounts whose seven-day self-service deletion window elapsed (still disabled) |
+| `sweep-orphan-boards` | retries soft-deletion of boards left behind by an account erase (pending invites do not count) |
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
 
 When Redis is configured the sweep runs on a durable schedule; without Redis it

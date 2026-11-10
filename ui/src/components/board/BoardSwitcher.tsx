@@ -28,6 +28,7 @@ import {
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/Toast";
+import { api, isApiEnabled } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
 import type { Board } from "@janosik/shared";
@@ -136,6 +137,30 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   const [highlighted, setHighlighted] = useState(0);
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // TASK-166: server mode has no 10-board product limit. `undefined` while
+  // the runtime config loads; `null` = unlimited; a number is an operator cap.
+  const serverMode = isApiEnabled();
+  const [serverBoardLimit, setServerBoardLimit] = useState<
+    number | null | undefined
+  >(undefined);
+
+  useEffect(() => {
+    if (!serverMode) return;
+    let alive = true;
+    void api
+      .authConfig()
+      .then((config) => {
+        if (alive) setServerBoardLimit(config.limits.boards);
+      })
+      .catch(() => {
+        // The server still enforces its cap; do not block creation on a
+        // failed public-config read.
+        if (alive) setServerBoardLimit(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [serverMode]);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const createRef = useRef<HTMLInputElement | null>(null);
@@ -208,8 +233,12 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   };
 
   const createBoard = async (title: string) => {
-    if (boards.length >= LIMITS.boardsCount) {
-      toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));
+    // TASK-166 D19: 10 is only the local/offline localStorage guard. In
+    // server mode the operator cap (or no limit at all) is authoritative; the
+    // server checks it atomically too.
+    const limit = serverMode ? serverBoardLimit : LIMITS.boardsCount;
+    if (typeof limit === "number" && boards.length >= limit) {
+      toast.error(t("limits.maxBoards", { limit }));
       return;
     }
     // Server mode creates the board over REST — the id arrives when the

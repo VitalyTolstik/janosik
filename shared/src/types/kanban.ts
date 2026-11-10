@@ -365,12 +365,36 @@ export const LIMITS = {
   cardsPerColumn: 200,
   /** WIP limit per column (1…max). */
   wipLimitMax: 99,
-  /** Boards in the workspace (localStorage quota guard). */
+  /**
+   * Boards in the local/offline workspace — a localStorage quota guard, not
+   * a product tier. Server mode uses `MAX_BOARDS_PER_USER` (0 = unlimited).
+   */
   boardsCount: 10,
 } as const;
 
-/** A board import larger than this (bytes) is rejected outright. */
-export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+/**
+ * A board import larger than this (bytes) is rejected outright. TASK-166:
+ * 25 MB, matched by `MAX_BOARD_EXPORT_BYTES`, so a board that can be exported
+ * can always be imported back.
+ */
+export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
+
+/** A single board export larger than this (bytes) is an explicit 413. */
+export const MAX_BOARD_EXPORT_BYTES = MAX_IMPORT_BYTES;
+
+/**
+ * TASK-166.6: a personal/account data bundle is bounded too. The bundle is
+ * built sequentially and checked as it grows; the same ceiling applies to the
+ * inline and queued export paths.
+ */
+export const MAX_EXPORT_BUNDLE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * The body of one `/commands`, `/commands/batch`, `/plans` or `/plans/apply`
+ * request (TASK-166). Deliberately separate from the import envelope: a
+ * command must not inherit the 25 MB import cap.
+ */
+export const MAX_COMMAND_BODY_BYTES = 10 * 1024 * 1024;
 
 /**
  * One command payload larger than this (bytes) is rejected (TASK-30.2).
@@ -552,6 +576,171 @@ export interface Column {
   createdAt: number;
 }
 
+/**
+ * TASK-166 board policy keys (ADR §6.3). The list is fixed: unknown keys make
+ * a policy invalid instead of silently granting/removing an approval gate.
+ */
+export const BOARD_AGENT_POLICY_ACTIONS = [
+  "move_to_done",
+  "delete_card",
+  "delete_column",
+  "delete_label",
+  "delete_checklist",
+  "delete_checklist_item",
+  "archive_column_cards",
+  "delete_board",
+  "member.invite",
+  "member.update",
+  "member.remove",
+  "share.create",
+  "share.update",
+  "share.revoke",
+  "share.delete",
+  "attachment.delete",
+  "workflow.update",
+] as const;
+
+export type BoardAgentPolicyAction =
+  (typeof BOARD_AGENT_POLICY_ACTIONS)[number];
+
+/** `Board.agentPolicy` (TASK-166): the board's destructive/done policy. */
+export interface BoardAgentPolicy {
+  schemaVersion: 1;
+  destructive: "approval" | "deny";
+  requireApprovalFor: BoardAgentPolicyAction[];
+  /** The MVP supports board ADMINs only (ADR D14). */
+  approverRoles: ["ADMIN"];
+  maxCommandsPerRun: number;
+  maxCardsPerRun: number;
+  approvalTtlMinutes: number;
+}
+
+/** `NULL`/absent policy means exactly these safe defaults. */
+export const DEFAULT_BOARD_AGENT_POLICY: BoardAgentPolicy = {
+  schemaVersion: 1,
+  destructive: "approval",
+  requireApprovalFor: [
+    "member.invite",
+    "member.update",
+    "member.remove",
+    "share.create",
+    "share.update",
+    "share.revoke",
+    "share.delete",
+    "attachment.delete",
+    "delete_board",
+    "workflow.update",
+  ],
+  approverRoles: ["ADMIN"],
+  maxCommandsPerRun: 100,
+  maxCardsPerRun: 50,
+  approvalTtlMinutes: 60,
+};
+
+/** Result of checking one untrusted board policy. */
+export type BoardAgentPolicyValidation =
+  { ok: true; policy: BoardAgentPolicy } | { ok: false; message: string };
+
+/**
+ * Validate and canonicalize a stored/imported board policy. Validation is
+ * strict on purpose: a policy may only lower the global run limits, and an
+ * unknown key must not be ignored.
+ */
+export function validateBoardAgentPolicy(
+  value: unknown,
+): BoardAgentPolicyValidation {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false, message: "must be an object" };
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.schemaVersion !== 1) {
+    return { ok: false, message: "schemaVersion must be 1" };
+  }
+  if (raw.destructive !== "approval" && raw.destructive !== "deny") {
+    return {
+      ok: false,
+      message: 'destructive must be "approval" or "deny"',
+    };
+  }
+  if (!Array.isArray(raw.requireApprovalFor)) {
+    return { ok: false, message: "requireApprovalFor must be an array" };
+  }
+  const seen = new Set<string>();
+  const requireApprovalFor: BoardAgentPolicyAction[] = [];
+  for (const entry of raw.requireApprovalFor) {
+    if (
+      typeof entry !== "string" ||
+      !(BOARD_AGENT_POLICY_ACTIONS as readonly string[]).includes(entry)
+    ) {
+      return {
+        ok: false,
+        message: `requireApprovalFor contains an unknown action: ${String(entry)}`,
+      };
+    }
+    if (seen.has(entry)) {
+      return {
+        ok: false,
+        message: `requireApprovalFor repeats ${entry}`,
+      };
+    }
+    seen.add(entry);
+    requireApprovalFor.push(entry as BoardAgentPolicyAction);
+  }
+  if (
+    !Array.isArray(raw.approverRoles) ||
+    raw.approverRoles.length !== 1 ||
+    raw.approverRoles[0] !== "ADMIN"
+  ) {
+    return { ok: false, message: 'approverRoles must be ["ADMIN"]' };
+  }
+  const maxCommandsPerRun = readPolicyInt(raw.maxCommandsPerRun, 1, 100);
+  if (maxCommandsPerRun === null) {
+    return { ok: false, message: "maxCommandsPerRun must be 1…100" };
+  }
+  const maxCardsPerRun = readPolicyInt(raw.maxCardsPerRun, 1, 50);
+  if (maxCardsPerRun === null) {
+    return { ok: false, message: "maxCardsPerRun must be 1…50" };
+  }
+  const approvalTtlMinutes = readPolicyInt(raw.approvalTtlMinutes, 5, 1_440);
+  if (approvalTtlMinutes === null) {
+    return { ok: false, message: "approvalTtlMinutes must be 5…1440" };
+  }
+  return {
+    ok: true,
+    policy: {
+      schemaVersion: 1,
+      destructive: raw.destructive,
+      requireApprovalFor,
+      approverRoles: ["ADMIN"],
+      maxCommandsPerRun,
+      maxCardsPerRun,
+      approvalTtlMinutes,
+    },
+  };
+}
+
+/** Lenient read for a DB JSONB value: invalid data means "no policy". */
+export function readBoardAgentPolicy(
+  value: unknown,
+): BoardAgentPolicy | undefined {
+  if (value === null || value === undefined) return undefined;
+  const checked = validateBoardAgentPolicy(value);
+  return checked.ok ? checked.policy : undefined;
+}
+
+function readPolicyInt(
+  value: unknown,
+  min: number,
+  max: number,
+): number | null {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= min &&
+    value <= max
+    ? value
+    : null;
+}
+
 export interface Board {
   id: string;
   title: string;
@@ -582,6 +771,12 @@ export interface Board {
    * unrestricted mode. Absent on healthy boards.
    */
   workflowInvalid?: true;
+  /**
+   * TASK-166 board agent policy. Absent means `DEFAULT_BOARD_AGENT_POLICY`
+   * (safe defaults); exported from schema version 3 onwards. Pause state is
+   * operational and never travels in an export.
+   */
+  agentPolicy?: BoardAgentPolicy;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
 }

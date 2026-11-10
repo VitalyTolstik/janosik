@@ -3,19 +3,29 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
   Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
-import type { CreateUserTokenResponse, UserTokenDto } from "@janosik/shared";
+import { createReadStream } from "node:fs";
+import type {
+  CreateUserTokenResponse,
+  DeleteAccountResponse,
+  RequestAccountDeletionCodeResponse,
+  UserDataExportDto,
+  UserTokenDto,
+} from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import { ApiTokenService } from "@/auth/api-token.service";
 import { SessionOnlyGuard } from "@/auth/auth-principal";
@@ -27,7 +37,11 @@ import {
 } from "@/attachments/storage.service";
 import type { UploadedBlob } from "@/attachments/attachments.service";
 import { tempUploadStorage } from "@/attachments/upload-storage";
+import { pickLocale } from "@/mailer/mail.types";
+import { AccountDataService } from "./account-data.service";
 import { CreateUserTokenDto } from "./dto/create-user-token.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { RequestAccountDeletionCodeDto } from "./dto/request-account-deletion-code.dto";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UsersService } from "./users.service";
 
@@ -46,6 +60,7 @@ export class UsersController {
     private readonly users: UsersService,
     private readonly apiTokens: ApiTokenService,
     private readonly storage: StorageService,
+    private readonly accountData: AccountDataService,
   ) {}
 
   @UseGuards(SessionOnlyGuard)
@@ -91,6 +106,81 @@ export class UsersController {
     res.setHeader("Content-Type", mime);
     res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     await this.storage.send(this.storage.avatarPath(storedName), res);
+  }
+
+  /**
+   * TASK-166 self-service export (ADR §12.5). Session-only: a board-scoped
+   * PAT must not download an account bundle. The response is the queued
+   * `DataExport` row; a small account may already be `ready`.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
+  @Post("me/export")
+  @HttpCode(HttpStatus.ACCEPTED)
+  requestExport(@CurrentUser() user: AuthUser): Promise<UserDataExportDto> {
+    return this.accountData.requestExport(user.id, user.email);
+  }
+
+  @UseGuards(SessionOnlyGuard)
+  @Get("me/export/:id")
+  exportStatus(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+  ): Promise<UserDataExportDto> {
+    return this.accountData.exportStatus(user.id, id);
+  }
+
+  @UseGuards(SessionOnlyGuard)
+  @Get("me/export/:id/download")
+  async downloadExport(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { absPath, filename } = await this.accountData.exportDownload(
+      user.id,
+      id,
+    );
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename.replace(/["\\]/g, "")}"`,
+    );
+    return new StreamableFile(createReadStream(absPath));
+  }
+
+  /**
+   * TASK-166 D22: an OAuth-only account cannot prove ownership with a
+   * password, so it requests a one-time email code first.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @Post("me/delete/request-code")
+  @HttpCode(HttpStatus.OK)
+  requestDeletionCode(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RequestAccountDeletionCodeDto,
+    @Headers("accept-language") acceptLanguage: string | undefined,
+  ): Promise<RequestAccountDeletionCodeResponse> {
+    return this.accountData.requestDeletionCode(
+      user.id,
+      dto.oauthProof,
+      pickLocale(acceptLanguage),
+    );
+  }
+
+  /**
+   * TASK-166 self-service account deletion: disable immediately, hard-delete
+   * after the seven-day grace window via the maintenance sweep.
+   */
+  @UseGuards(SessionOnlyGuard)
+  @Delete("me")
+  @HttpCode(HttpStatus.ACCEPTED)
+  deleteAccount(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: DeleteAccountDto,
+  ): Promise<DeleteAccountResponse> {
+    return this.accountData.deleteAccount(user.id, dto);
   }
 
   /**

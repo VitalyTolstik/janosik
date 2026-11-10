@@ -352,6 +352,23 @@ export function OpsPage() {
             <span className="text-[11px] text-muted-foreground">
               {t("admin.ops.retentionDaysHint")}
             </span>
+            <div className="flex flex-wrap gap-1.5">
+              {[30, 90, 365].map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  size="sm"
+                  variant={
+                    retentionDays === String(preset) ? "default" : "outline"
+                  }
+                  data-testid={`admin-ops-retention-preset-${preset}`}
+                  disabled={!isOwner}
+                  onClick={() => setRetentionDays(String(preset))}
+                >
+                  {t("admin.ops.retentionPreset", { days: preset })}
+                </Button>
+              ))}
+            </div>
           </label>
         </div>
         <div className="mt-2 flex justify-end">
@@ -376,11 +393,14 @@ export function OpsPage() {
           })}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {retention?.backups.configured
-            ? t("admin.ops.backups.configured", {
+          {retention?.backups.mode === "external"
+            ? t("admin.ops.backups.external", {
                 location: retention.backups.location ?? "",
               })
             : t("admin.ops.backups.none")}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("admin.ops.backups.notAutomatic")}
         </p>
         <div className="mt-3 flex justify-end">
           <Button

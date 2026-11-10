@@ -10,6 +10,7 @@ import { env } from "@/config/env";
 import type { OAuthProviderDto, OAuthProviderId } from "@janosik/shared";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import type { AuthResult } from "@/auth/auth.types";
 import { AuthService } from "@/auth/auth.service";
 import {
@@ -40,6 +41,7 @@ export class OAuthService {
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
     private readonly settings: OAuthSettingsService,
+    private readonly securityAudit: SecurityAuditService,
   ) {}
 
   /** Login buttons for the sign-in screen — only configured providers. */
@@ -240,7 +242,7 @@ export class OAuthService {
       this.logger.log(
         `OAuth login (${provider}) linked into account ${user.id}`,
       );
-      return this.authService.startSession(user);
+      return this.authService.startSession(user, "oauth");
     }
     try {
       const created = await this.prisma.user.create({
@@ -254,7 +256,7 @@ export class OAuthService {
       this.logger.log(
         `OAuth login (${provider}) created account ${created.id}`,
       );
-      return this.authService.startSession(created);
+      return this.authService.startSession(created, "oauth");
     } catch (error) {
       // Two first logins racing for the same address.
       if (
@@ -264,7 +266,7 @@ export class OAuthService {
         const user = await this.prisma.user.findUniqueOrThrow({
           where: { email: profile.email },
         });
-        return this.authService.startSession(user);
+        return this.authService.startSession(user, "oauth");
       }
       throw error;
     }
@@ -283,6 +285,12 @@ export class OAuthService {
    */
   private async claimUnverifiedAccount(userId: string): Promise<User> {
     const now = new Date();
+    const tokenIds = (
+      await this.prisma.apiToken.findMany({
+        where: { userId, revokedAt: null },
+        select: { id: true },
+      })
+    ).map((row) => row.id);
     const [, , , , user] = await this.prisma.$transaction([
       this.prisma.refreshToken.updateMany({
         where: { userId, revokedAt: null },
@@ -302,6 +310,18 @@ export class OAuthService {
     this.logger.warn(
       `OAuth claimed unverified account ${userId}: password cleared, sessions and API tokens revoked`,
     );
+    await this.securityAudit.record({
+      userId,
+      actorId: userId,
+      action: "token.revoked",
+      targetType: "user",
+      targetId: userId,
+      details: {
+        reason: "oauth_account_claimed",
+        scope: "all",
+        tokenIds,
+      },
+    });
     return user;
   }
 }

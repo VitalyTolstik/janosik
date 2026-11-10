@@ -2,6 +2,13 @@ import { Injectable, Logger } from "@nestjs/common";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
+import {
+  AccountDeletionService,
+  ACCOUNT_DELETE_GRACE_DAYS,
+  ACCOUNT_DELETE_SCHEDULED_ACTION,
+  ACCOUNT_DELETE_CANCELLED_ACTION,
+  BOARD_CLEANUP_FAILED_ACTION,
+} from "@/users/account-deletion.service";
 import { OpsSettingsService } from "./ops-settings.service";
 
 /**
@@ -23,6 +30,9 @@ export const MAINTENANCE_JOBS = [
   "sweep-reminders",
   "sweep-activity",
   "sweep-audit",
+  "sweep-accounts",
+  "sweep-orphan-boards",
+  "sweep-security-audit",
   "sweep-orphan-blobs",
 ] as const;
 
@@ -55,6 +65,7 @@ export class MaintenanceService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly ops: OpsSettingsService,
+    private readonly accountDeletion: AccountDeletionService,
   ) {}
 
   /** Runs one named sweep, or all of them. */
@@ -93,6 +104,12 @@ export class MaintenanceService {
         return this.sweepActivity();
       case "sweep-audit":
         return this.sweepAudit();
+      case "sweep-security-audit":
+        return this.sweepSecurityAudit();
+      case "sweep-accounts":
+        return this.sweepAccounts();
+      case "sweep-orphan-boards":
+        return this.accountDeletion.reapOrphanBoards();
       case "sweep-orphan-blobs":
         return this.sweepOrphanBlobs();
       default:
@@ -674,6 +691,72 @@ export class MaintenanceService {
           })
         ).count,
     );
+  }
+
+  /**
+   * TASK-166.6: the security trail uses the long audit window
+   * (`AUDIT_RETENTION_DAYS`, default 365), not the soft-delete retention.
+   * `SecurityAuditLog` is accountability, like `AdminAuditLog`; ADR §12.2
+   * explicitly excludes it from the 30/90/365 product setting.
+   */
+  async sweepSecurityAudit(): Promise<number> {
+    const cutoff = new Date(Date.now() - env.AUDIT_RETENTION_DAYS * 86_400_000);
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.securityAuditLog.findMany({
+          where: {
+            createdAt: { lt: cutoff },
+            // Lifecycle markers are the only record of a pending/cancelled
+            // self-service deletion; keep them regardless of audit retention.
+            action: {
+              notIn: [
+                ACCOUNT_DELETE_SCHEDULED_ACTION,
+                ACCOUNT_DELETE_CANCELLED_ACTION,
+                BOARD_CLEANUP_FAILED_ACTION,
+              ],
+            },
+          },
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.securityAuditLog.deleteMany({
+            where: { id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+  }
+
+  /**
+   * TASK-166 §12.5: hard-delete accounts whose seven-day self-service grace
+   * window elapsed. A panel re-enable clears `disabledAt`, so the service
+   * skips it. Each deletion writes `account.deleted`.
+   */
+  async sweepAccounts(): Promise<number> {
+    const cutoff = new Date(
+      Date.now() - ACCOUNT_DELETE_GRACE_DAYS * 86_400_000,
+    );
+    const userIds = await this.accountDeletion.usersDueForDeletion(cutoff);
+    let removed = 0;
+    for (const userId of userIds) {
+      try {
+        const deleted = await this.accountDeletion.deleteAccount(userId, {
+          actorId: userId,
+          actorType: "human",
+        });
+        if (deleted) removed += 1;
+      } catch (error) {
+        // One broken account must not abort the whole sweep; it is retried
+        // on the next run and the failure is visible in the log.
+        this.logger.error(
+          `Account deletion sweep failed for ${userId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    return removed;
   }
 
   /**

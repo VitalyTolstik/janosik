@@ -10,6 +10,8 @@ data; take the backup first.
 ## Backup
 
 Back up both the database and the uploads volume. Neither step changes state.
+Janosik does not create, schedule or verify these backups — run them from cron
+or your backup system and test a restore occasionally.
 
 1. Dump the database to a dated file in the current directory.
 

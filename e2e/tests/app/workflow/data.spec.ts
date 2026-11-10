@@ -30,7 +30,7 @@ test("export and import keep the workflow and remap its columns", async ({
   });
 
   const exported = await data.exportBoard(board.id);
-  expect(exported.schemaVersion).toBe(2);
+  expect(exported.schemaVersion).toBe(3);
   expect(exported.boards[0].workflow).toMatchObject({
     enabled: true,
     initialColumnId: backlog,

@@ -23,14 +23,14 @@ const prismaMock = {
     update: jest.fn(),
   },
   refreshToken: { updateMany: jest.fn() },
-  apiToken: { updateMany: jest.fn() },
+  apiToken: { findMany: jest.fn(), updateMany: jest.fn() },
   emailVerificationCode: { deleteMany: jest.fn() },
   emailChangeCode: { deleteMany: jest.fn() },
   $transaction: jest.fn(),
 } as unknown as PrismaService & {
   user: Record<"create" | "findFirst" | "findUnique" | "update", jest.Mock>;
   refreshToken: Record<"updateMany", jest.Mock>;
-  apiToken: Record<"updateMany", jest.Mock>;
+  apiToken: Record<"findMany" | "updateMany", jest.Mock>;
   emailVerificationCode: Record<"deleteMany", jest.Mock>;
   emailChangeCode: Record<"deleteMany", jest.Mock>;
   $transaction: jest.Mock;
@@ -79,8 +79,11 @@ describe("OAuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new OAuthService(prismaMock, authMock, settingsMock);
+    service = new OAuthService(prismaMock, authMock, settingsMock, {
+      record: jest.fn(),
+    } as never);
     settingsMock.credentials.mockResolvedValue(CREDENTIALS);
+    prismaMock.apiToken.findMany.mockResolvedValue([]);
     // Array-form transactions: every element is already a (mocked) promise.
     prismaMock.$transaction.mockImplementation((ops: unknown[]) =>
       Promise.all(ops),
@@ -226,6 +229,7 @@ describe("OAuthService", () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(authMock.startSession).toHaveBeenCalledWith(
         expect.objectContaining({ id: "user-1" }),
+        "oauth",
       );
     });
 
@@ -243,6 +247,7 @@ describe("OAuthService", () => {
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(authMock.startSession).toHaveBeenCalledWith(
         expect.objectContaining({ id: "user-1", passwordHash: "$argon2id$x" }),
+        "oauth",
       );
     });
 

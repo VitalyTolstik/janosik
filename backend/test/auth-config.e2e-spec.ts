@@ -50,6 +50,7 @@ describe("Auth config (e2e)", () => {
     expect(res.body).toEqual({
       allowRegistration: true,
       allowPublicShares: true,
+      limits: { boards: null, importBytes: 25 * 1024 * 1024 },
     });
   });
 

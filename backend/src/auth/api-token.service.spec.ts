@@ -83,7 +83,9 @@ describe("ApiTokenService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new ApiTokenService(prismaMock);
+    service = new ApiTokenService(prismaMock, {
+      record: jest.fn(),
+    } as never);
   });
 
   describe("generate / hashToken", () => {
@@ -121,6 +123,7 @@ describe("ApiTokenService", () => {
         avatarPath: null,
         emailVerifiedAt: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
+        hasPassword: true,
       });
       expect(prismaMock.apiToken.update).toHaveBeenCalledWith({
         where: { id: "token-1" },

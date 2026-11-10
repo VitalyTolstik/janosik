@@ -86,6 +86,7 @@ describe("UsersService", () => {
         avatarPath: null,
         emailVerifiedAt: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
+        hasPassword: true,
       });
     });
 

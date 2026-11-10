@@ -136,9 +136,13 @@ The data menu in the header manages your data.
 
 ![The data menu: export, import, a manual copy, the card archive and automatic backups.](/screens/data-menu.png)
 
-- `Export JSON` downloads all your boards as `janosik-boards.json`.
+- `Export JSON` downloads all your boards as `janosik-boards.json`. A file
+  above 25 MB is refused with advice to use `pg_dump` (the same limit applies
+  to a single server board export), so an export can always be imported back.
 - `Import JSON` reads a Janosik export and adds the imported boards to your
-  account.
+  account. Server mode imposes no 10-board product limit; an operator may set
+  `MAX_BOARDS_PER_USER` in the environment, and an import above that cap is
+  rejected without creating anything.
 - `Save a copy now` writes a backup copy straight away.
 - `Automatic backups` opens the list of copies the app kept on its own while
   you worked. From there you can restore a copy or delete it. Restoring takes
@@ -150,7 +154,25 @@ The data menu in the header manages your data.
 
 `Save a copy now` and `Automatic backups` belong to the local mode (the no-API build the tests use). In
 the shipped server mode your boards live in the database and are not mirrored
-into the browser.
+into the browser. **Janosik does not create, schedule or verify server
+backups.** Running `pg_dump` and copying the uploads volume is an operator
+task (see the runbooks).
+
+### Your data and account
+
+The account panel has a **Data & privacy** section:
+
+- `Prepare export` queues a personal JSON bundle (profile, comments, activity,
+  attachment metadata and full envelopes of boards where you are an ADMIN or
+  MEMBER; boards you can only view are not copied). `Download` appears when
+  the bundle is ready and stays valid for seven days. One export can be pending
+  at a time; the bundle is capped at 50 MB.
+- `Delete account` disables the account immediately, revokes sessions and API
+  keys and schedules permanent erasure after seven days. A password account
+  confirms with its current password; an OAuth-only account requests a
+  one-time email code and supplies the current OAuth-issued access token as
+  proof. A new request always restarts the seven-day window. Once it passes the
+  data cannot be recovered.
 
 ### The data-safety banner
 

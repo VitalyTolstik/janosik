@@ -10,6 +10,7 @@ import {
   Post,
   Query,
   Res,
+  StreamableFile,
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
@@ -17,7 +18,7 @@ import { Role } from "@prisma/client";
 import type {
   BoardAggregate,
   BoardCardSearchResult,
-  BoardEnvelope,
+  BoardImportPreviewDto,
   BoardMemberDto,
   BoardSummary,
 } from "@janosik/shared";
@@ -78,8 +79,12 @@ export class BoardsController {
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @Body() body: unknown,
-  ): Promise<BoardAggregate[]> {
+    @Query("dryRun") dryRun?: string,
+  ): Promise<BoardAggregate[] | BoardImportPreviewDto> {
     assertAccountWidePreset(principal, "board.import");
+    if (dryRun === "1" || dryRun === "true") {
+      return this.boards.previewImport(user.id, body);
+    }
     return this.boards.importBoards(user.id, body);
   }
 
@@ -111,8 +116,17 @@ export class BoardsController {
   @AgentAction("board.delete")
   @Delete(":id")
   @HttpCode(HttpStatus.OK)
-  async remove(@Param("id") id: string): Promise<{ status: "ok" }> {
-    await this.boards.deleteBoard(id);
+  async remove(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+  ): Promise<{ status: "ok" }> {
+    await this.boards.deleteBoard(
+      id,
+      user.id,
+      requestAttribution(principal, session?.id),
+    );
     return { status: "ok" };
   }
 
@@ -197,7 +211,14 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @Get(":id/export")
-  export(@Param("id") id: string): Promise<BoardEnvelope> {
-    return this.boards.exportBoard(id);
+  async export(
+    @Param("id") id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const serialized = await this.boards.exportBoardSerialized(id);
+    // TASK-166.6: stream the exact validated string; do not parse it back
+    // into an object only for Nest to serialize it a second time.
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    return new StreamableFile(Buffer.from(serialized, "utf8"));
   }
 }

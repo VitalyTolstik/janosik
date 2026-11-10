@@ -476,6 +476,9 @@ export class CommandsService {
       throw new PayloadTooLargeException({
         message: `Command is too large (${bytes} bytes, max ${cap})`,
         field: "action",
+        code: "payload_too_large",
+        limit: cap,
+        retryable: false,
       });
     }
     const validation = validateBoardAction(dto.action);

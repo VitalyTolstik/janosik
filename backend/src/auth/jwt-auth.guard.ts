@@ -51,7 +51,11 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
       if (await super.canActivate(context)) {
         // The strategy has verified this token; only read a claim from it.
         const impersonatedBy = impersonatorOf(raw);
-        request.auth = { via: "jwt", impersonatedBy };
+        request.auth = {
+          via: "jwt",
+          impersonatedBy,
+          authMethod: authMethodOf(raw),
+        };
         // TASK-147 (B3): an impersonation token is a full user token, so the
         // read-only rule is enforced here — every user-contour route,
         // `MembershipGuard` included, authenticates through this guard.
@@ -120,13 +124,22 @@ function bearerToken(header: string | undefined): string | undefined {
 
 /** The `imp` claim of an already-verified access token, else `null`. */
 function impersonatorOf(token: string | undefined): string | null {
+  const claims = claimsOf(token);
+  return typeof claims?.imp === "string" ? claims.imp : null;
+}
+
+/** TASK-166: the OAuth marker of an already-verified access token. */
+function authMethodOf(token: string | undefined): "password" | "oauth" {
+  return claimsOf(token)?.authMethod === "oauth" ? "oauth" : "password";
+}
+
+function claimsOf(token: string | undefined): Record<string, unknown> | null {
   const payload = token?.split(".")[1];
   if (payload === undefined) return null;
   try {
-    const claims = JSON.parse(
+    return JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8"),
-    ) as { imp?: unknown };
-    return typeof claims.imp === "string" ? claims.imp : null;
+    ) as Record<string, unknown>;
   } catch {
     return null;
   }

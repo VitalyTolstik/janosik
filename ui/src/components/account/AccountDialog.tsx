@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ChevronDown,
+  Database,
   KeyRound,
   LogOut,
   Palette,
@@ -31,11 +32,13 @@ import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { userLabel } from "@/utils/avatar";
 import { ApiTokensSection } from "./ApiTokensSection";
+import { DataPrivacySection } from "./DataPrivacySection";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 import { SecuritySection } from "./SecuritySection";
 
-type AccountSection = "profile" | "security" | "tokens" | "preferences";
+type AccountSection =
+  "profile" | "security" | "tokens" | "preferences" | "data";
 
 const SECTIONS: {
   id: AccountSection;
@@ -50,6 +53,7 @@ const SECTIONS: {
     labelKey: "account.sections.preferences",
     icon: Palette,
   },
+  { id: "data", labelKey: "account.sections.data", icon: Database },
 ];
 
 /**
@@ -180,6 +184,7 @@ export function AccountDialog() {
             {section === "security" ? <SecuritySection /> : null}
             {section === "tokens" ? <ApiTokensSection /> : null}
             {section === "preferences" ? <PreferencesSection /> : null}
+            {section === "data" ? <DataPrivacySection /> : null}
           </div>
         </div>
       </DialogContent>

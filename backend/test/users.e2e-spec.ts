@@ -104,6 +104,7 @@ describe("Users API (e2e)", () => {
         avatarPath: null,
         createdAt: expect.any(Number),
         emailVerifiedAt: expect.any(Number),
+        hasPassword: true,
       });
 
       const me = await server()
@@ -112,6 +113,8 @@ describe("Users API (e2e)", () => {
         .expect(200);
       expect(me.body).toEqual({
         ...user,
+        authMethod: "password",
+        deletionMethod: "password",
         impersonatedBy: null,
         token: null,
         session: null,
@@ -143,6 +146,7 @@ describe("Users API (e2e)", () => {
         avatarPath: null,
         createdAt: expect.any(Number),
         emailVerifiedAt: expect.any(Number),
+        hasPassword: true,
       });
     });
 

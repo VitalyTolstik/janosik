@@ -595,6 +595,16 @@ export interface AttachmentDto {
  */
 export type BoardEnvelope = BoardExportFile;
 
+/** TASK-166: `POST /boards/import?dryRun=1` preview — writes nothing. */
+export interface BoardImportPreviewDto {
+  boards: number;
+  cards: number;
+  columns: number;
+  labels: number;
+  /** True when the operator cap would accept this envelope right now. */
+  withinLimit: boolean;
+}
+
 /** Public user projection returned by the auth endpoints (§7.4, TASK-24). */
 export interface AuthUserDto {
   id: string;
@@ -631,6 +641,21 @@ export interface AuthUserDto {
    * support session before adopting it.
    */
   impersonatedBy?: string | null;
+  /**
+   * TASK-166: whether this account has a local password. `false` means an
+   * OAuth-only account; the account panel uses it to choose the deletion
+   * proof instead of guessing from the login method.
+   */
+  hasPassword?: boolean;
+  /**
+   * `GET /auth/me` only: which proof `DELETE /users/me` expects.
+   */
+  deletionMethod?: "password" | "email_code";
+  /**
+   * `GET /auth/me` only (TASK-166): how the browser session authenticated.
+   * Kept for diagnostics; deletion uses `hasPassword`/`deletionMethod`.
+   */
+  authMethod?: "password" | "oauth";
 }
 
 /**
@@ -689,6 +714,64 @@ export interface AuthConfigResponse {
   allowRegistration: boolean;
   /** False when public read-only board links are disabled. */
   allowPublicShares: boolean;
+  /**
+   * TASK-166 runtime limits. `boards: null` means unlimited (the default in
+   * server mode); a positive number is an operator safety cap. `importBytes`
+   * is the board-import envelope cap.
+   */
+  limits: {
+    boards: number | null;
+    importBytes: number;
+  };
+}
+
+/**
+ * TASK-166 self-service data export (`POST /users/me/export`). The bundle is
+ * built by the existing `DataExport` queue and downloaded through a TTL link.
+ */
+export interface UserDataExportDto {
+  id: string;
+  status: "pending" | "ready" | "failed";
+  /** Unix ms. */
+  createdAt: number;
+  /** Unix ms; the artifact is deleted at this point. */
+  expiresAt: number;
+  sizeBytes: number | null;
+  error: string | null;
+}
+
+/** `POST /users/me/delete/request-code` — OAuth-only accounts. */
+export interface RequestAccountDeletionCodeRequest {
+  /**
+   * An access token issued by OAuth login no more than 10 minutes ago. The
+   * server checks the signature, `sub`, `iat` and the `authMethod` claim.
+   */
+  oauthProof?: string;
+}
+
+/** `POST /users/me/delete/request-code` response. */
+export interface RequestAccountDeletionCodeResponse {
+  expiresAt: number;
+  queued: boolean;
+}
+
+/**
+ * `DELETE /users/me` — session-only. A password account sends its current
+ * password; an OAuth-only account sends `oauthProof` plus the `emailCode`.
+ */
+export interface DeleteAccountRequest {
+  password?: string;
+  oauthProof?: string;
+  emailCode?: string;
+  /** Must equal the account email (case-insensitive) — a typed confirmation. */
+  confirmEmail: string;
+}
+
+/** `DELETE /users/me` response: the account is disabled now, purged later. */
+export interface DeleteAccountResponse {
+  status: "scheduled";
+  /** Unix ms — seven days after the request. */
+  deleteAfter: number;
 }
 
 /** Body of `PATCH /users/me` (TASK-36.1): only changed fields are sent. */

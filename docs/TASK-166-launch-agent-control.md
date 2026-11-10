@@ -111,7 +111,7 @@ remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
 | D3 | Default for destructive actions | **Deny by default means direct execution is forbidden:** a destructive agent request without approval receives `approval_required`; the standard path is a human approving the exact plan. `trustedCi` is the explicit exception for trusted CI. A hard block (`destructive: "deny"`) is an opt-in board policy for everyone, including `trustedCi`. | This is the main human-control launch blocker. Approval-by-default does not depend on the MEMBER/ADMIN role; hard deny is a separate, stricter mode. | Do not treat the board ADMIN role as permission for destructive actions without approval/`trustedCi`. Do not mix `deny` (hard block) and `approval` (standard path) in one default. `trustedCi` does not override `destructive: "deny"` or board pause. |
 | D4 | What is a run? | One `AgentRun` = one board-scoped batch/plan/single destructive PAT command + one `agentSessionId?`. Cross-board runs are forbidden. | One batch is already one transaction and one lock; a run is the natural unit of audit/rollback. | Do not combine commands from different boards in one run. Do not make a run an unbounded time window. |
 | D5 | Pause semantics | New writes → `403 agent_paused`; in-flight transactions finish; SSE closes on the next keep-alive; resume restores writes; board-level pause and "stop all" are reversible; kill = revoke. | A transaction must not be cut in the middle and leave a half-applied batch. Irreversible kill already exists as revoke. | Do not implement pause by revoking a token. Do not let an agent call pause/resume. Do not clear claims on pause. |
-| D6 | Retention | One `OpsSettings.retentionDays`: default 30, presets 30/90/365, custom 1–3650. It covers Command, CommandPreimage, Activity, AgentRun, AgentSession, terminal ApprovalRequest, and soft-deleted rows. `AdminAuditLog` keeps its 365 days. | One understandable window; 30 days is enough for beta, 365 for investigations. A separate SIEM/audit tier is outside TASK-166. | Do not delete `pending` approvals by retention. Do not promise "forever" audit. |
+| D6 | Retention | One `OpsSettings.retentionDays`: default 30, presets 30/90/365, custom 1–3650. It covers Command, CommandPreimage, Activity, AgentRun, AgentSession, terminal ApprovalRequest, and soft-deleted rows. `AdminAuditLog` and `SecurityAuditLog` keep their own longer 365-day window (TASK-166.6). | One understandable window; 30 days is enough for beta, 365 for investigations. A separate SIEM/audit tier is outside TASK-166. | Do not delete `pending` approvals by retention. Do not promise "forever" audit. |
 | D7 | Attachments | Local disk as today (`UPLOAD_DIR`), with no presigned URL or object storage. | Self-host does not need S3; TASK-166 is not about the storage backend. | Do not add S3/object storage/presigned upload to TASK-166. |
 | D8 | Agent undo | An agent does not get browser undo. Compensation is ordinary non-destructive commands; run rollback is a session-only human API. Browser JWT keeps normal undo: `RESTORE_*` is allowed for the role that could perform the original command (ADMIN/MEMBER), regardless of token scope. | Browser undo is the human's local history; the MEMBER "delete → undo" scenario must not break. Run rollback is controlled, checked, and audited. | Do not give PAT access to `RESTORE_*` or to apply run revert. `RESTORE_BOARD` remains an aggregate-level/local snapshot; `/commands` does not accept it. |
 
@@ -1764,7 +1764,14 @@ Applying a cancelled approval → `approval_cancelled`.
   AgentSession, terminal ApprovalRequest, and soft-deleted rows.
 - `pending`/`approved` approvals are not deleted by age, only by `expiresAt`
   (then swept).
-- `AdminAuditLog` keeps its existing 365 days and is unchanged.
+- `AdminAuditLog` **and** `SecurityAuditLog` keep their own long window
+  (`AUDIT_RETENTION_DAYS`, default 365). The 30/90/365 product setting does
+  not erase the security trail; a `account.delete_scheduled` marker is kept
+  even after the account is erased and its latest value is the only one that
+  decides the seven-day window. A panel re-enable writes
+  `account.delete_cancelled` instead of deleting audit rows; both lifecycle
+  action names are excluded from `sweep-security-audit`, as is
+  `board.cleanup_failed` (the durable orphan-board retry marker).
 - Run revert after retention is impossible; this is documented honestly.
 
 ### 12.3. Import/export and body limits
@@ -1786,10 +1793,31 @@ Applying a cancelled approval → `approval_cancelled`.
   import — 25 MB, command/plan — 10 MB, everything else — the normal JSON
   limit. Exceeding it → `413 payload_too_large`; an export over 25 MB gets
   the same code with advice to use `pg_dump`, with no silent truncation.
-- `POST /boards/import?dryRun=1` — preview: boards/cards/conflicts, writes
-  nothing. Import is not a run.
+- `POST /boards/import?dryRun=1` — preview: boards/cards/columns/labels and
+  whether the operator cap accepts the envelope; writes nothing. Import is not
+  a run.
 - Import applies policy from v3 after validation; paused state is not
   transferred.
+- A board export is serialized once and streamed; an import body is consumed
+  as already parsed JSON (no stringify→parse round trip). A preflight
+  `pg_column_size` estimate rejects an obviously oversized board before the
+  aggregate is loaded; the exact 25 MB check still runs on the serialized
+  string. Residual risk: the aggregate is still materialized in memory before
+  the exact check (documented in the ADR/CHANGELOG).
+- The account data bundle has its own `MAX_EXPORT_BUNDLE_BYTES = 50 MB`
+  ceiling, is assembled sequentially and one build at a time per process, and
+  replaces the previous ready artifact (at most one ready + one pending file
+  per account), rejects a second pending export with
+  `409 export_in_progress`, and excludes full envelopes of boards where the
+  user is only a VIEWER. Attachments are not embedded. Boards rejected by the
+  per-board preflight or failing to load are listed in `warnings`
+  (`{boardId, reason}`), never silently dropped. Bundle builds are serialized
+  per process (one at a time); multi-node deployments may build one bundle per
+  node. Exceeding the combined 50 MB budget is always `413`, never a partial
+  bundle.
+- An inline bundle over 50 MB is `413`; a queued bundle over the limit settles
+  as `failed` and is not retried by BullMQ (the async status is the contract,
+  not a synchronous 413).
 - Attachments are not part of export (as today); this is documented.
 
 ### 12.4. Backup
@@ -1821,30 +1849,49 @@ Applying a cancelled approval → `approval_cancelled`.
 
 - `POST /users/me/export` is session-only and queues a `DataExport` job;
   response `202 {id, status}`. `GET /users/me/export/:id` gives status;
-  `GET /users/me/export/:id/download` gives a TTL link (7 days).
+  `GET /users/me/export/:id/download` gives a TTL link (7 days). Only one
+  export may be pending per account (`409 export_in_progress`), and the
+  endpoint is throttled.
 - Bundle: profile, token metadata (without hash/plaintext), memberships,
   authored comments/activity/commands, attachment metadata, and board
-  envelopes for boards the user can access. Blob files are not embedded; they
-  are available through the existing attachment routes.
+  envelopes for boards where the user is ADMIN or MEMBER. Boards seen only as
+  a VIEWER are excluded; blob files are not embedded but stay available through
+  the attachment routes. Assembly is sequential and bounded by
+  `MAX_EXPORT_BUNDLE_BYTES = 50 MB`; an oversized bundle is `413`, never
+  truncated.
+- `GET /auth/me` exposes `hasPassword` and `deletionMethod`
+  (`password`/`email_code`); the UI chooses the proof from those, never from
+  the login method (an OAuth login into a password account still uses the
+  password).
 - `POST /users/me/delete/request-code` is session-only and applies only to an
   OAuth-only account (`passwordHash = null`): body `{oauthProof}`; it sends a
-  6-digit `emailCode` to the account email, TTL 10 minutes, one-time.
+  6-digit `emailCode` to the account email, TTL 10 minutes, one-time. The code
+  hash is namespaced with the user id and purpose.
 - `oauthProof` is an access token issued by OAuth login
   (`/auth/oauth/:provider/callback`) no more than 10 minutes ago. The server
   checks the signature, `sub`, `iat`, and the `authMethod: "oauth"` claim; a
-  normal password JWT and a PAT do not replace it.
+  normal password JWT and a PAT do not replace it. The client refreshes the
+  session right before sending the proof.
 - `DELETE /users/me` is session-only; body
   `{password?, oauthProof?, emailCode?, confirmEmail}`. For an account with
   `passwordHash != null`, the current password is required. For OAuth-only
   (`passwordHash = null`), `oauthProof` and `emailCode` from
   `POST /users/me/delete/request-code` are required; no password is needed.
   Immediately disable + revoke tokens + cancel sessions, then hard delete
-  after 7 days (maintenance), repeating admin delete semantics. Hard delete
-  additionally removes `AgentSession`, the user's `ApprovalRequest` as
-  requester, and their `IdempotencyRecord`; `SecurityAuditLog` keeps opaque
-  ids without email. Response `{status: "scheduled", deleteAfter}`.
+  after the latest schedule's 7 days (maintenance), repeating admin delete
+  semantics. Hard delete additionally removes `AgentSession`, the user's
+  `ApprovalRequest` as requester, their `IdempotencyRecord`, the avatar blob,
+  live shares they created, and boards left without any **accepted** member
+  (pending invitations do not keep a board alive; an adminless board with
+  remaining accepted members is left to the operator). A failed empty-board
+  cleanup writes `board.cleanup_failed`; `sweep-orphan-boards` retries it and
+  records `board.cleanup_recovered`. `SecurityAuditLog`
+  keeps opaque ids without email. A panel re-enable writes
+  `account.delete_cancelled` and schedule markers are never deleted.
+  Response `{status: "scheduled", deleteAfter}`.
 - `SecurityAuditLog`: `account.exported`, `account.delete_scheduled`,
-  `account.deleted`; board delete — `board.deleted`.
+  `account.delete_cancelled`, `account.deleted`; board delete —
+  `board.deleted`.
 
 ### 12.6. Attachments and limits
 

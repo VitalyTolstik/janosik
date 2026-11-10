@@ -21,13 +21,18 @@ import type {
   CreateShareRequest,
   CreateUserTokenRequest,
   CreateUserTokenResponse,
+  DeleteAccountRequest,
+  DeleteAccountResponse,
   InviteMemberRequest,
+  RequestAccountDeletionCodeRequest,
+  RequestAccountDeletionCodeResponse,
   UpdateMemberRequest,
   UpdateProfileRequest,
   UpdateShareRequest,
+  UserDataExportDto,
   UserTokenDto,
 } from "@janosik/shared";
-import { DEFAULT_COMMENT_KIND } from "@janosik/shared";
+import { DEFAULT_COMMENT_KIND, MAX_IMPORT_BYTES } from "@janosik/shared";
 import { createId } from "@/utils/id";
 
 /**
@@ -347,10 +352,65 @@ export class ApiClient {
       return {
         allowRegistration: body?.allowRegistration !== false,
         allowPublicShares: body?.allowPublicShares !== false,
+        limits: {
+          boards:
+            typeof body?.limits?.boards === "number" && body.limits.boards > 0
+              ? body.limits.boards
+              : null,
+          importBytes:
+            typeof body?.limits?.importBytes === "number" &&
+            body.limits.importBytes > 0
+              ? body.limits.importBytes
+              : MAX_IMPORT_BYTES,
+        },
       };
     } catch {
-      return { allowRegistration: true, allowPublicShares: true };
+      return {
+        allowRegistration: true,
+        allowPublicShares: true,
+        limits: { boards: null, importBytes: MAX_IMPORT_BYTES },
+      };
     }
+  }
+
+  /** TASK-166: self-service data export (session-only). */
+  requestAccountExport(): Promise<UserDataExportDto> {
+    return this.request<UserDataExportDto>("/users/me/export", {
+      method: "POST",
+      body: {},
+    });
+  }
+
+  accountExportStatus(exportId: string): Promise<UserDataExportDto> {
+    return this.request<UserDataExportDto>(
+      `/users/me/export/${encodeURIComponent(exportId)}`,
+    );
+  }
+
+  /** Download a ready export as a blob (session-only, TTL link). */
+  async downloadAccountExport(exportId: string): Promise<Blob> {
+    const response = await this.requestRaw(
+      `/users/me/export/${encodeURIComponent(exportId)}/download`,
+    );
+    return response.blob();
+  }
+
+  /** TASK-166: OAuth-only accounts request a one-time email code first. */
+  requestAccountDeletionCode(
+    body: RequestAccountDeletionCodeRequest,
+  ): Promise<RequestAccountDeletionCodeResponse> {
+    return this.request<RequestAccountDeletionCodeResponse>(
+      "/users/me/delete/request-code",
+      { method: "POST", body },
+    );
+  }
+
+  /** TASK-166: disable and schedule the account erasure. */
+  deleteAccount(body: DeleteAccountRequest): Promise<DeleteAccountResponse> {
+    return this.request<DeleteAccountResponse>("/users/me", {
+      method: "DELETE",
+      body,
+    });
   }
 
   /** `PATCH /users/me` — display name / avatar color (TASK-36.1). */
@@ -539,10 +599,6 @@ export class ApiClient {
       method: "POST",
       body: envelope,
     });
-  }
-
-  exportBoard(boardId: string): Promise<BoardEnvelope> {
-    return this.request<BoardEnvelope>(`/boards/${boardId}/export`);
   }
 
   // ------------------------------------------- public shares (TASK-58)

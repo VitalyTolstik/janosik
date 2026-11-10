@@ -87,6 +87,10 @@ describe("Auth API (e2e)", () => {
       createdAt: expect.any(Number),
       // SMTP is unconfigured in the test env — registrations auto-verify.
       emailVerifiedAt: expect.any(Number),
+      // TASK-166: how the session authenticated (password login).
+      authMethod: "password",
+      hasPassword: true,
+      deletionMethod: "password",
       // U-8: an ordinary session is not an impersonation.
       impersonatedBy: null,
       // TASK-166 identity surface: a browser session has no PAT.

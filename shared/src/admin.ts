@@ -1472,7 +1472,18 @@ export interface AdminRetentionDto {
     attachments: number;
     columns: number;
   };
-  backups: { configured: boolean; location: string | null };
+  /**
+   * TASK-166 honest backup status: Janosik never creates or verifies backups.
+   * `mode: "external"` means an operator pointed `BACKUP_DIR` at a directory
+   * they manage; `unconfigured` means there is no location at all.
+   */
+  backups: {
+    mode: "external" | "unconfigured";
+    location: string | null;
+    automatic: false;
+    lastBackupAt: null;
+    verified: false;
+  };
 }
 
 // --- TASK-64: observability ------------------------------------------------

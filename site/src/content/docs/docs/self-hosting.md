@@ -161,8 +161,8 @@ sudo systemctl reload caddy
 without extra tuning because the API sends `X-Accel-Buffering: no`, but turning
 buffering off explicitly is harmless and makes the intent clear. Raise
 `client_max_body_size`: nginx refuses bodies over 1 MB by default, which would
-break attachments (up to 25 MB), board imports (5 MB) and large commands
-(2 MB) with a `413`.
+break attachments (up to 25 MB), board imports (25 MB), command/plan bodies
+(10 MB) and large commands (2 MB) with a `413`.
 
 ```nginx
 server {
@@ -290,6 +290,7 @@ compose stack fills the ones it needs from `.env`.
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
 | `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
+| `MAX_BOARDS_PER_USER` | `0` | Server-mode board cap per account. `0` = unlimited (the product default); a positive value is an operator safety cap. Local/offline mode keeps its own 10-board localStorage guard. |
 | `AUDIT_RETENTION_DAYS` | `365` | Delete master audit-log rows older than this many days (accountability keeps a longer window). |
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` under `POSTGRES_MAX_CONNECTIONS`. |
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id. `0` disables it. |

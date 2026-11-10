@@ -15,12 +15,16 @@ Every route is served under the global prefix `/api/v1`. A route named
 `POST /api/v1/auth/login`.
 
 Requests and responses use JSON. Request bodies are limited to 256 KB by
-default. Board import (`POST /boards/import`), board commands
-(`POST /boards/:id/commands`), command batches (`POST /boards/:id/commands/batch`)
-and administrative command routes accept up to `MAX_IMPORT_BYTES` (5 MB).
+default. Board import (`POST /boards/import`) accepts up to
+`MAX_IMPORT_BYTES` (25 MB), while board commands
+(`POST /boards/:id/commands`, `/commands/batch`, `/plans`, `/plans/apply`) and
+administrative command routes accept up to `MAX_COMMAND_BODY_BYTES` (10 MB).
 This allows large import envelopes and `RESTORE_*` snapshots to reach
-validation. Individual actions are also limited to `MAX_COMMAND_BYTES` (2 MB)
-by the command service. If a body exceeds its limit, the server returns `413`.
+validation without giving commands the import budget. Individual actions are
+also limited to `MAX_COMMAND_BYTES` (2 MB) by the command service. A board
+export above 25 MB (`MAX_BOARD_EXPORT_BYTES`) returns the same `413` with a
+`pg_dump` hint instead of being truncated. If a body exceeds its limit, the
+server returns `413` with `code: "payload_too_large"`.
 
 File uploads use `multipart/form-data` with a single `file` part.
 

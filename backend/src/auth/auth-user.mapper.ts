@@ -27,5 +27,8 @@ export function toAuthUser(user: User): AuthUser {
     // TASK-53: null → the address is not confirmed yet, the UI shows the
     // verification gate instead of the boards.
     emailVerifiedAt: user.emailVerifiedAt?.getTime() ?? null,
+    // TASK-166.6: session-independent account capability. The deletion flow
+    // must follow this, not the login method.
+    hasPassword: user.passwordHash !== null,
   };
 }
