@@ -277,6 +277,19 @@ export default function App() {
     document.getElementById("__janosik_preflight")?.remove();
   }, []);
 
+  // Input modality (TASK-31): on touch, a tap focuses an icon-only header
+  // button and its tooltip stays open over the neighbouring controls — the
+  // bubble then intercepts the next tap. CSS hides tooltips while the last
+  // pointer was touch; a mouse pointer flips the marker back.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      document.documentElement.dataset.input =
+        event.pointerType === "mouse" ? "mouse" : "touch";
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
+
   return (
     <ThemeProvider>
       <BoardBackgroundProvider>

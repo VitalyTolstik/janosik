@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-31 mobile UX: the calendar and table now have a real touch layer.
+  A long press lifts a calendar chip (month, week and the unscheduled panel)
+  and a table row; dropping reschedules the chip with its time-of-day kept,
+  and dropping a row on another row moves the card into that row's column
+  under the same workflow/WIP checks as the desktop menus. A slow tap stays a
+  tap; once the finger starts moving, holding near an edge auto-scrolls the
+  container under it (the grid, the table, or a virtualized table) so days and
+  rows outside the first viewport stay reachable, and calendar day-panel rows
+  and table rows have an explicit "Card actions" button (the long-press now
+  belongs to the drag; month chips open the day panel for it, mouse right-click
+  is unchanged). Taps, scrolling, double-tap column rename and touch card
+  creation keep working.
+  At 390 px the board header becomes a two-row bar, the filter bar and every
+  board dialog fit the viewport, the calendar opens with its unscheduled rail
+  collapsed, and the table shows its working columns instead of clipping them.
+  Tooltips are suppressed after touch input so a tap focuses the next control
+  rather than a bubble over it.
 - TASK-166.0 launch policy/ADR: frozen agent identity and session
   attribution, scope presets with explicit legacy-token grandfathering,
   approval/plan-hash lifecycle, run boundaries and rollback, pause/kill

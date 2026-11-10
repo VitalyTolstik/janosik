@@ -1083,6 +1083,7 @@
   "view.table.empty": "No cards to show",
   "view.table.labels": "Labels",
   "view.table.moveHint": "Change the column",
+  "view.table.sortBlocksReorder": "Reset the sort to reorder cards within a column.",
   "view.table.priority": "Priority",
   "view.table.rename": "Rename card",
   "view.table.title": "Title",

@@ -1101,6 +1101,7 @@
   "view.table.empty": "Нет карточек для отображения",
   "view.table.labels": "Метки",
   "view.table.moveHint": "Сменить колонку",
+  "view.table.sortBlocksReorder": "Сбросьте сортировку, чтобы менять порядок карточек в колонке.",
   "view.table.priority": "Приоритет",
   "view.table.rename": "Переименовать карточку",
   "view.table.title": "Название",

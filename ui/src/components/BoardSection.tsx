@@ -219,11 +219,11 @@ export function BoardSection() {
           />
         </div>
       ) : null}
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <ViewSwitcher value={view} onChange={setView} />
         {/* Board-view display controls: column style, glass + card density. */}
         {view === "board" ? (
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {readOnly ? null : (
               <ColumnStyleMenu
                 value={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
