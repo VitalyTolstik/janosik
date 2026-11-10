@@ -14,7 +14,6 @@ import { ApprovalsService } from "@/approvals/approvals.service";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { pauseGateFor } from "@/auth/agent-pause";
-import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
