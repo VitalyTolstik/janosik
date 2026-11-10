@@ -563,6 +563,68 @@ describe("Agent runs and rollback (e2e)", () => {
     ).toBe("applied");
   });
 
+  it("revalidates conflicts under the board lock before applying inverses", async () => {
+    const columnId = await createColumn("TOCTOU");
+    const cardId = await createCard(columnId, "Before run");
+    const created = await batch(
+      [
+        {
+          action: { type: "UPDATE_CARD", cardId, title: "Run title" },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+
+    let acquired!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    let release!: () => void;
+    const lockReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Hold the same board advisory lock the command writer takes, so the
+    // revert passes its pre-flight analysis and blocks just before apply.
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+      acquired();
+      await lockReleased;
+    });
+    await lockAcquired;
+
+    const pending = revert(runId).then((response) => response);
+    try {
+      // The request is now waiting on the board lock; change the card
+      // directly (bypassing the command transport and its queue).
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await prisma.card.update({
+        where: { id: cardId },
+        data: { title: "Concurrent title", version: { increment: 1 } },
+      });
+    } finally {
+      release();
+    }
+    await holder;
+
+    const refused = await pending;
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("run_conflict");
+    expect(refused.body.details.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          touch: `card:${cardId}`,
+          reason: "version_changed",
+        }),
+      ]),
+    );
+    expect((await aggregate()).cards[cardId]?.title).toBe("Concurrent title");
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+  });
+
   it("stores nested pre-images for a destructive column delete and restores it", async () => {
     const columnId = await createColumn("Column to delete");
     const cardId = await createCard(columnId, "Nested card");

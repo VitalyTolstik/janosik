@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import type { AgentRun } from "@prisma/client";
+import type { AgentRun, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type {
   AgentRunDto,
@@ -267,6 +267,39 @@ export class RunsService {
       action: action as unknown as Record<string, unknown>,
     }));
 
+    // TOCTOU guard: the pre-flight analysis ran outside the board lock. This
+    // runs again inside the revert transaction, after the advisory lock and
+    // before any inverse command, so a write that landed in between is
+    // refused instead of being overwritten.
+    const revalidate = async (tx: Prisma.TransactionClient): Promise<void> => {
+      const current = await tx.agentRun.findFirst({
+        where: { id: runId, boardId },
+        select: { status: true },
+      });
+      if (current === null) throw this.conflict("Run no longer exists");
+      if (current.status !== "applied") {
+        throw this.conflict(`Run is already ${current.status}`);
+      }
+      const currentCommands = await this.commandEntries(boardId, runId, tx);
+      const currentPreimages = await this.rawPreimages(boardId, runId, tx);
+      const guarded = await this.analyze(
+        boardId,
+        run,
+        currentCommands,
+        currentPreimages,
+        tx,
+      );
+      if (guarded.conflicts.length > 0) {
+        throw this.conflict(
+          "Run cannot be reverted without conflicts",
+          guarded.conflicts,
+        );
+      }
+      if (guarded.inverses.length !== analysis.inverses.length) {
+        throw this.conflict("Run changed while the revert was being prepared");
+      }
+    };
+
     let applied;
     try {
       applied = await this.commands.applyBatch(
@@ -276,6 +309,7 @@ export class RunsService {
         {
           actorType: "human",
           actorRole: Role.ADMIN,
+          guard: revalidate,
           run: {
             kind: "revert",
             clientRunId: commandId,
@@ -369,12 +403,14 @@ export class RunsService {
   private async commandEntries(
     boardId: string,
     runId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<CommandDeltaEntry[]> {
     const delta = await this.commands.deltaSince(
       boardId,
       0,
       COMMAND_DELTA_MAX,
       { runId },
+      client,
     );
     return delta.entries;
   }
@@ -382,8 +418,9 @@ export class RunsService {
   private async rawPreimages(
     boardId: string,
     runId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<Map<string, PreimageData>> {
-    const rows = await this.prisma.commandPreimage.findMany({
+    const rows = await client.commandPreimage.findMany({
       where: { boardId, runId },
       select: { commandId: true, data: true },
     });
@@ -423,6 +460,7 @@ export class RunsService {
     run: AgentRun,
     commands: CommandDeltaEntry[],
     preimages: Map<string, PreimageData>,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<RunAnalysis> {
     if (commands.length === 0) {
       throw this.expired();
@@ -469,9 +507,11 @@ export class RunsService {
       inverses.push(data.inverse);
     }
 
-    const currentByTouch = await this.currentStates(boardId, [
-      ...lastByTouch.keys(),
-    ]);
+    const currentByTouch = await this.currentStates(
+      boardId,
+      [...lastByTouch.keys()],
+      client,
+    );
     for (const [touch, expected] of lastByTouch) {
       const current = currentByTouch.get(touch) ?? null;
       const expectedVersion = expected.postVersion ?? 0;
@@ -512,6 +552,7 @@ export class RunsService {
   private async currentStates(
     boardId: string,
     touches: string[],
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<Map<string, CurrentState>> {
     const idsFor = (prefix: string) =>
       touches
@@ -534,37 +575,39 @@ export class RunsService {
       await Promise.all([
         idsFor("board").length === 0
           ? Promise.resolve([])
-          : this.prisma.board.findMany({
-              where: { id: { in: idsFor("board") }, deletedAt: null },
+          : client.board.findMany({
+              // A soft-deleted board is still a row; its `deletedAt` is part
+              // of the conflict comparison, not "entity missing".
+              where: { id: { in: idsFor("board") } },
               select: { id: true, version: true, deletedAt: true },
             }),
         idsFor("column").length === 0
           ? Promise.resolve([])
-          : this.prisma.column.findMany({
+          : client.column.findMany({
               where: { id: { in: idsFor("column") } },
               select: { id: true, version: true, deletedAt: true },
             }),
         idsFor("card").length === 0
           ? Promise.resolve([])
-          : this.prisma.card.findMany({
+          : client.card.findMany({
               where: { id: { in: idsFor("card") } },
               select: { id: true, version: true, deletedAt: true },
             }),
         idsFor("label").length === 0
           ? Promise.resolve([])
-          : this.prisma.label.findMany({
+          : client.label.findMany({
               where: { id: { in: idsFor("label") } },
               select: { id: true, version: true, deletedAt: true },
             }),
         idsFor("checklist").length === 0
           ? Promise.resolve([])
-          : this.prisma.checklist.findMany({
+          : client.checklist.findMany({
               where: { id: { in: idsFor("checklist") } },
               select: { id: true, version: true, deletedAt: true },
             }),
         idsFor("checklistItem").length === 0
           ? Promise.resolve([])
-          : this.prisma.checklistItem.findMany({
+          : client.checklistItem.findMany({
               where: { id: { in: idsFor("checklistItem") } },
               select: { id: true, version: true, deletedAt: true },
             }),

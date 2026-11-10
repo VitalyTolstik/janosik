@@ -49,6 +49,11 @@ function makePrisma(): PrismaService {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     command: sweepable(0),
+    commandPreimage: sweepable(0),
+    agentRun: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     idempotencyRecord: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -250,6 +255,124 @@ describe("MaintenanceService", () => {
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
   });
 
+  it("deletes stale pre-images before their commands (ADR §6.14)", async () => {
+    const prisma = makePrisma();
+    const order: string[] = [];
+    (prisma.commandPreimage.findMany as jest.Mock).mockResolvedValue([
+      { commandId: "cmd-1" },
+    ]);
+    (prisma.commandPreimage.deleteMany as jest.Mock).mockImplementation(
+      async () => {
+        order.push("preimage");
+        return { count: 2 };
+      },
+    );
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
+    (prisma.command.deleteMany as jest.Mock).mockImplementation(async () => {
+      order.push("command");
+      return { count: 7 };
+    });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
+
+    expect(await service.sweepCommands()).toBe(9);
+    expect(order).toEqual(["preimage", "command"]);
+    expect(prisma.commandPreimage.deleteMany).toHaveBeenCalledWith({
+      where: { commandId: { in: ["cmd-1"] } },
+    });
+    const preimageCall = (prisma.commandPreimage.findMany as jest.Mock).mock
+      .calls[0][0] as { where: { createdAt: { lt: Date } } };
+    expect(preimageCall.where.createdAt.lt).toBeInstanceOf(Date);
+  });
+
+  it("sweeps stale empty runs but keeps runs with commands (ADR §6.14)", async () => {
+    const prisma = makePrisma();
+    const old = new Date(Date.now() - 90 * 86_400_000);
+    (prisma.agentRun.findMany as jest.Mock)
+      .mockResolvedValueOnce([
+        {
+          id: "run-old",
+          kind: "batch",
+          status: "applied",
+          revertsRunId: null,
+          createdAt: old,
+        },
+        {
+          id: "run-live",
+          kind: "batch",
+          status: "applied",
+          revertsRunId: null,
+          createdAt: old,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([
+      { runId: "run-live" },
+    ]);
+    (prisma.agentRun.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
+
+    expect(await service.sweepRuns()).toBe(1);
+    expect(prisma.agentRun.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["run-old"] } },
+    });
+  });
+
+  it("deletes a reverted original together with its revert child", async () => {
+    const prisma = makePrisma();
+    const old = new Date(Date.now() - 90 * 86_400_000);
+    (prisma.agentRun.findMany as jest.Mock)
+      .mockResolvedValueOnce([
+        {
+          id: "run-orig",
+          kind: "batch",
+          status: "reverted",
+          revertsRunId: null,
+          createdAt: old,
+        },
+        {
+          id: "run-revert",
+          kind: "revert",
+          status: "applied",
+          revertsRunId: "run-orig",
+          createdAt: old,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "run-revert",
+          kind: "revert",
+          status: "applied",
+          revertsRunId: "run-orig",
+          createdAt: old,
+        },
+      ])
+      .mockResolvedValueOnce([{ id: "run-orig" }])
+      .mockResolvedValueOnce([]);
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.agentRun.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+    );
+
+    expect(await service.sweepRuns()).toBe(2);
+    expect(prisma.agentRun.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["run-orig", "run-revert"] } },
+    });
+  });
+
   it("purges stale boards with their rows, feed, log, shares and blobs (TASK-148)", async () => {
     const prisma = makePrisma();
     (prisma.board.findMany as jest.Mock).mockResolvedValue([{ id: "b1" }]);
@@ -275,6 +398,12 @@ describe("MaintenanceService", () => {
       { id: "act-1" },
     ]);
     (prisma.activity.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (prisma.commandPreimage.findMany as jest.Mock).mockResolvedValue([
+      { commandId: "pre-1" },
+    ]);
+    (prisma.commandPreimage.deleteMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
     (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
     (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
     const service = new MaintenanceService(
@@ -287,6 +416,19 @@ describe("MaintenanceService", () => {
     const removed = await service.purgeSoftDeleted();
 
     expect(removed).toBe(1);
+    // ADR §6.14 order: preimages → commands → runs.
+    expect(prisma.commandPreimage.deleteMany).toHaveBeenCalledWith({
+      where: { commandId: { in: ["pre-1"] } },
+    });
+    expect(prisma.agentRun.deleteMany).toHaveBeenCalledWith({
+      where: { boardId: { in: ["b1"] } },
+    });
+    expect(
+      (prisma.commandPreimage.deleteMany as jest.Mock).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      (prisma.command.deleteMany as jest.Mock).mock.invocationCallOrder[0]!,
+    );
     // The feed and log go in pages by row id before the final transaction
     // (TASK-156), not as one boardId batch inside it.
     expect(prisma.command.deleteMany).toHaveBeenCalledWith({

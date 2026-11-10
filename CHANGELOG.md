@@ -181,6 +181,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `RevertPreviewDto`, run fields on command DTOs and `RunSseEvent`. MCP exposes
   only `janosik_list_runs`, `janosik_get_run` and
   `janosik_preview_run_revert` — no apply tool (D17); the tool count is now 82.
+- TASK-166.7 hardening: run revert revalidates the version/deletedAt conflict
+  set again inside the board advisory-lock transaction, after the pre-flight
+  check and before any inverse command, closing the TOCTOU window. Retention
+  now follows ADR §6.14: `sweep-commands` deletes stale `CommandPreimage` rows
+  before their commands, the new `sweep-runs` job removes only empty runs
+  older than the window (a `reverted` original goes together with its
+  `kind:"revert"` child), and board/account purge paths delete preimages →
+  commands → runs in that order.
 - Admin console redesign: the 26 flat master-panel links are grouped into
   eight hubs (Overview, Users, Boards, Moderation, Audit & activity,
   Communications, Access & security, Settings). Every capability survives as a

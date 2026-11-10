@@ -172,6 +172,13 @@ export interface ApplyOptions {
   run?: RunContext;
   /** TASK-166.7 idempotency key from a single-command body. */
   clientRunId?: string;
+  /**
+   * TASK-166.7: revalidation hook that runs inside the board transaction,
+   * after the advisory lock and before any command is applied. The run-revert
+   * path uses it to close the TOCTOU gap between its pre-flight conflict
+   * check and the inverse writes.
+   */
+  guard?: (tx: Prisma.TransactionClient) => Promise<void>;
   /** TASK-166.7 internal post-apply hook, inside the board transaction. */
   afterRun?: (
     tx: Prisma.TransactionClient,
@@ -337,6 +344,11 @@ export class CommandsService {
         });
         if (!board) {
           throw new NotFoundException("Board not found");
+        }
+        // TASK-166.7: the revert guard re-reads the conflict state now that
+        // the board lock is held, before any inverse command can be written.
+        if (options.guard !== undefined) {
+          await options.guard(tx);
         }
 
         let approval: ApprovalRequest | null = null;
@@ -870,9 +882,10 @@ export class CommandsService {
       apiTokenId?: string;
       agentSessionId?: string;
     } = {},
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<CommandDelta> {
     if (since > 0) {
-      const baseline = await this.prisma.command.findFirst({
+      const baseline = await client.command.findFirst({
         where: { boardId, seq: BigInt(since) },
         select: { seq: true },
       });
@@ -880,7 +893,7 @@ export class CommandsService {
         return { entries: [], resync: true };
       }
     }
-    const rows = await this.prisma.command.findMany({
+    const rows = await client.command.findMany({
       where: {
         boardId,
         ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
