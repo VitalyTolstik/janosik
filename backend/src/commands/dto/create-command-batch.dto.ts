@@ -3,6 +3,9 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsOptional,
+  IsString,
+  Matches,
   ValidateNested,
 } from "class-validator";
 import { COMMAND_BATCH_MAX } from "@janosik/shared";
@@ -21,4 +24,13 @@ export class CreateCommandBatchDto {
   @ValidateNested({ each: true })
   @Type(() => CreateCommandDto)
   commands!: CreateCommandDto[];
+
+  /**
+   * TASK-166.7: idempotency key for the PAT `AgentRun` created by this batch
+   * (ADR §11.2). 8–64 `[A-Za-z0-9_-]`; ignored for browser batches.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{8,64}$/)
+  clientRunId?: string;
 }

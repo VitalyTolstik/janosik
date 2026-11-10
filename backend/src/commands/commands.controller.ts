@@ -138,9 +138,21 @@ export class CommandsController {
       actorRole: membership.role,
       attribution: requestAttribution(principal, session?.id),
       principal,
+      // TASK-166.7: a PAT batch always creates one board-scoped run. A browser
+      // batch stays outside the run log (D16) and keeps its local undo.
+      ...(principal?.via === "pat"
+        ? {
+            run: {
+              kind: "batch" as const,
+              ...(dto.clientRunId !== undefined
+                ? { clientRunId: dto.clientRunId }
+                : {}),
+            },
+          }
+        : {}),
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    return { results };
+    return { runId: results.runId, results: results.results };
   }
 
   /**

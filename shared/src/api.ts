@@ -23,6 +23,12 @@ export interface CommandRequest {
   /** Expected board version; a mismatch is answered with `ConflictError`. */
   ifMatch?: number;
   /**
+   * TASK-166.7: optional idempotency key for the `AgentRun` created for a
+   * single destructive PAT command. Ignored for non-destructive commands and
+   * browser sessions (D16).
+   */
+  clientRunId?: string;
+  /**
    * Per-entity optimistic-concurrency preconditions (TASK-29), keyed by the
    * touch key (`card:<id>`, `column:<id>`, …) with the entity `version` the
    * client last saw. Used for undo of text edits: if another writer has
@@ -43,6 +49,8 @@ export interface CommandResponse {
   seq: number;
   /** Version counters of the entities the command touched. */
   versions: EntityVersions;
+  /** TASK-166.7: the agent run this command belongs to, when one was created. */
+  runId?: string | null;
 }
 
 /**
@@ -61,14 +69,22 @@ export const COMMAND_BATCH_MAX = 100;
  */
 export interface CommandBatchRequest {
   commands: CommandRequest[];
+  /**
+   * TASK-166.7: idempotency key for the `AgentRun` created for a PAT batch.
+   * A repeat with the same key and the same `commandId` set returns the
+   * existing run; another plan on the same key is `409 run_conflict`.
+   */
+  clientRunId?: string;
 }
 
 /**
  * `200` body of `POST /boards/:id/commands/batch` — one `CommandResponse`
  * per request command, in the same order. A command that was already applied
- * (a retried `commandId`) returns its stored result.
+ * (a retried `commandId`) returns its stored result. `runId` is the PAT run
+ * created for this batch, or `null` for a human batch / an ordinary replay.
  */
 export interface CommandBatchResponse {
+  runId?: string | null;
   results: CommandResponse[];
 }
 
@@ -396,6 +412,19 @@ export interface ApprovalSseEvent {
   at: number;
 }
 
+/**
+ * TASK-166.7: a run-level lifecycle event on the board stream. A successful
+ * human rollback emits `run.reverted` after its transaction commits; the
+ * original run is `runId`, the new audit run is `revertRunId`.
+ */
+export interface RunSseEvent {
+  type: "run";
+  op: "reverted";
+  runId: string;
+  revertRunId: string;
+  at: number;
+}
+
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 /**
  * The server could not replay the full gap since `?since=` (the delta hit
@@ -414,7 +443,8 @@ export type BoardSseEvent =
   | KeepAliveSseEvent
   | ResyncSseEvent
   | AgentSseEvent
-  | ApprovalSseEvent;
+  | ApprovalSseEvent
+  | RunSseEvent;
 
 /**
  * Board membership roles (§7.0) — mirrors the backend Prisma `Role` enum.
@@ -1169,4 +1199,99 @@ export interface ApprovalListQuery {
   kind?: ApprovalKind;
   cardId?: string;
   limit?: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * TASK-166.7 — run grouping & rollback
+ * ------------------------------------------------------------------ */
+
+export const AGENT_RUN_KINDS = ["batch", "plan", "single", "revert"] as const;
+export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number];
+
+export const AGENT_RUN_STATUSES = ["applied", "reverted", "failed"] as const;
+export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
+
+/**
+ * One `AgentRun` — the unit of audit and rollback (§6.6, TASK-166.7). A run
+ * belongs to exactly one board; `clientRunId` is the optional idempotency key
+ * scoped to that board. `firstSeq`/`lastSeq` are the `Command.seq` range.
+ */
+export interface AgentRunDto {
+  id: string;
+  boardId: string;
+  apiTokenId: string | null;
+  agentSessionId: string | null;
+  actorId: string;
+  kind: AgentRunKind;
+  status: AgentRunStatus;
+  clientRunId: string | null;
+  planHash: string | null;
+  approvalId: string | null;
+  commandCount: number;
+  firstSeq: number | null;
+  lastSeq: number | null;
+  revertsRunId: string | null;
+  createdAt: number;
+  appliedAt: number;
+  revertedAt: number | null;
+}
+
+/** `GET /boards/:id/runs` returns summaries: no commands or preimages. */
+export type RunSummaryDto = AgentRunDto;
+
+/**
+ * `GET /boards/:id/runs/:runId`. `preimages` are present for a board ADMIN
+ * browser session only; an API token (even its owner is a board ADMIN) gets
+ * the run, its commands and attribution without the before-state snapshots
+ * (§7.2/§11.3).
+ */
+export interface RunDetailDto {
+  run: AgentRunDto;
+  commands: CommandDeltaEntry[];
+  preimages: Record<string, unknown>;
+}
+
+/**
+ * One reason a run cannot be reverted as it stands. `expectedVersion` is the
+ * `postVersion` recorded when the run applied; `currentVersion` is what the
+ * entity has now.
+ */
+export interface RevertConflictDto {
+  touch: string;
+  expectedVersion: number;
+  currentVersion: number;
+  reason: string;
+}
+
+/** Body of `POST /boards/:id/runs/:runId/revert` and `…/revert/preview`. */
+export interface RevertRunRequest {
+  /** Preview only; the server writes nothing. Defaults to `false`. */
+  dryRun?: boolean;
+  /** Idempotency key for a real revert (required when `dryRun` is false). */
+  commandId?: string;
+}
+
+/**
+ * `POST …/runs/:runId/revert` with `{ dryRun: true }`. `diff` is present for
+ * a board ADMIN browser session only; an observer gets conflicts without
+ * snapshots.
+ */
+export interface RevertPreviewDto {
+  dryRun: true;
+  run: RunSummaryDto;
+  conflicts: RevertConflictDto[];
+  canRevert: boolean;
+  diff?: Record<string, unknown>;
+}
+
+/** `GET /boards/:id/runs` filters. */
+export interface RunListQuery {
+  status?: AgentRunStatus;
+  kind?: AgentRunKind;
+  apiTokenId?: string;
+  agentSessionId?: string;
+  clientRunId?: string;
+  limit?: number;
+  /** Run id to page after (older rows). */
+  cursor?: string;
 }

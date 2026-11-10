@@ -190,6 +190,12 @@ export class EventsController {
           send(event as unknown as object);
           return;
         }
+        // TASK-166.5/166.7: approval and run lifecycle frames are control
+        // plane, not commands — no seq, no log; pass them straight through.
+        if (event.type === "approval" || event.type === "run") {
+          send(event as unknown as object);
+          return;
+        }
         if (event.type !== "command") return;
         sequencer.offer(event as InternalCommandEvent);
       });

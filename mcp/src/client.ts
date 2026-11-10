@@ -14,6 +14,7 @@
 
 import type {
   ActivityFeedPage,
+  AgentRunDto,
   AgentSessionDto,
   AgentSessionHeartbeatRequest,
   ApprovalDecisionRequest,
@@ -41,6 +42,9 @@ import type {
   CreateShareRequest,
   EndAgentSessionRequest,
   InviteMemberRequest,
+  RevertPreviewDto,
+  RunDetailDto,
+  RunListQuery,
   UpdateMemberRequest,
   UpdateShareRequest,
 } from "@janosik/shared";
@@ -810,6 +814,37 @@ export class JanosikClient {
     return this.request(
       apiPath`/boards/${boardId}/approvals/${approvalId}/decision`,
       { method: "POST", body },
+    );
+  }
+
+  // --- Runs (TASK-166.7) -------------------------------------------------
+
+  listRuns(boardId: string, query: RunListQuery = {}): Promise<AgentRunDto[]> {
+    return this.request(apiPath`/boards/${boardId}/runs`, {
+      query: {
+        status: query.status,
+        kind: query.kind,
+        apiTokenId: query.apiTokenId,
+        agentSessionId: query.agentSessionId,
+        clientRunId: query.clientRunId,
+        limit: query.limit,
+        cursor: query.cursor,
+      },
+    });
+  }
+
+  getRun(boardId: string, runId: string): Promise<RunDetailDto> {
+    return this.request(apiPath`/boards/${boardId}/runs/${runId}`);
+  }
+
+  /**
+   * Dry-run only: applying a rollback is human-only on the server (D17), so
+   * the MCP client deliberately exposes no revert method.
+   */
+  previewRunRevert(boardId: string, runId: string): Promise<RevertPreviewDto> {
+    return this.request(
+      apiPath`/boards/${boardId}/runs/${runId}/revert/preview`,
+      { method: "POST", body: {} },
     );
   }
 
