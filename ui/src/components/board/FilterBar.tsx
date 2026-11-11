@@ -365,12 +365,19 @@ export function FilterBar({
             {facetCount > 0 && (
               <span
                 data-testid="filter-facet-count"
-                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-semibold text-primary"
+                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary-foreground px-1 text-[11px] font-semibold text-secondary"
               >
                 {facetCount}
               </span>
             )}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5",
+                facetCount > 0
+                  ? "text-secondary-foreground"
+                  : "text-muted-foreground",
+              )}
+            />
           </Button>
         </PopoverTrigger>
         <PopoverContent

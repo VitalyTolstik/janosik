@@ -181,11 +181,13 @@ task (see the runbooks).
 
 The account panel has a **Data & privacy** section:
 
-- `Prepare export` queues a personal JSON bundle (profile, comments, activity,
+- `Prepare a copy` queues a personal JSON bundle (profile, comments, activity,
   attachment metadata and full envelopes of boards where you are an ADMIN or
   MEMBER; boards you can only view are not copied). `Download` appears when
   the bundle is ready and stays valid for seven days. One export can be pending
-  at a time; the bundle is capped at 50 MB.
+  at a time; the bundle is capped at 50 MB. This file is for your records and
+  cannot restore your account. To transfer boards, use `Export JSON` and
+  `Import JSON` in the data menu described above. Attachment files are not included.
 - `Delete account` disables the account immediately, revokes sessions and API
   keys and schedules permanent erasure after seven days. A password account
   confirms with its current password; an OAuth-only account requests a
