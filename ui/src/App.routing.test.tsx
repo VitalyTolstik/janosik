@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import App from "@/App";
@@ -52,6 +53,21 @@ describe("BrowserRouter routing", () => {
     expect(
       await screen.findByText("Page not found", {}, { timeout: 5000 }),
     ).toBeDefined();
+  });
+
+  it("opens a selectable board list from the agents breadcrumb", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-1", "Alpha")},${boardJson("b-2", "Beta")}]`,
+    );
+    visit("/agents");
+
+    await userEvent.click(await screen.findByRole("link", { name: "Boards" }));
+    expect(window.location.pathname).toBe("/boards");
+    expect(await screen.findByRole("link", { name: "Alpha" })).toBeVisible();
+    await userEvent.click(screen.getByRole("link", { name: "Beta" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/board/b-2"));
+    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
   });
 
   it("resets the board filter when switching boards (B-8)", async () => {

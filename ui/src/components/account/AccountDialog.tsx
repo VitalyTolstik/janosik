@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ChevronDown,
+  Bot,
   Database,
   KeyRound,
   LogOut,
@@ -66,7 +67,7 @@ const SECTIONS: {
  * Rendered without a server session (local mode, tests) the trigger simply
  * disappears — same guard the sign-out button used before it.
  */
-export function AccountDialog() {
+export function AccountDialog({ onOpenAgents }: { onOpenAgents?: () => void }) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
@@ -168,6 +169,20 @@ export function AccountDialog() {
                 <span className="min-w-0 truncate">{t(labelKey)}</span>
               </button>
             ))}
+            {onOpenAgents ? (
+              <button
+                type="button"
+                data-testid="account-open-agents"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenAgents();
+                }}
+                className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground sm:w-full"
+              >
+                <Bot className="h-4 w-4 shrink-0" aria-hidden />
+                {t("agents.open")}
+              </button>
+            ) : null}
             <button
               type="button"
               data-testid="account-logout"

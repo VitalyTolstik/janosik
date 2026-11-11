@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Bot } from "lucide-react";
 
 import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   Tooltip,
   TooltipContent,
@@ -20,7 +20,11 @@ import { useBoardAccess, useBoardState } from "@/store/BoardContext";
  * dry-run conflict preview (applying a revert stays ADMIN-only). The badge is
  * refreshed by `approval` SSE frames, so a request appears without a reload.
  */
-export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
+export function AgentControlButton({
+  onOpen,
+}: {
+  onOpen: (trigger: HTMLButtonElement) => void;
+}) {
   const { t } = useI18n();
   const { board } = useBoardState();
   const { role } = useBoardAccess();
@@ -55,9 +59,7 @@ export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
   }
 
   const admin = role === "ADMIN";
-  const label = admin
-    ? t("agentControl.button")
-    : t("agentControl.runs.button");
+  const label = t("agents.open");
 
   return (
     <Tooltip>
@@ -67,10 +69,10 @@ export function AgentControlButton({ onOpen }: { onOpen: () => void }) {
           size="icon"
           aria-label={label}
           data-testid={admin ? "agent-control-trigger" : "agent-runs-trigger"}
-          onClick={onOpen}
+          onClick={(event) => onOpen(event.currentTarget)}
           className="relative"
         >
-          <Bot className="h-5 w-5" aria-hidden />
+          <LazyAnimatedIcon name="bot" size={20} aria-hidden />
           {admin && pending > 0 ? (
             <span
               data-testid="agent-control-pending-count"

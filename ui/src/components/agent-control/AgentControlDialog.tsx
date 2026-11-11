@@ -37,11 +37,15 @@ export function AgentControlDialog({
   open,
   onOpenChange,
   initialTab = "approvals",
+  onOpenAllAgents,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Members land on the read-only runs view; ADMINs start at approvals. */
   initialTab?: AgentControlTab;
+  onOpenAllAgents?: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const { t } = useI18n();
   const { role } = useBoardAccess();
@@ -89,6 +93,7 @@ export function AgentControlDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="agent-control-dialog"
+        onCloseAutoFocus={onCloseAutoFocus}
         className="flex h-[min(46rem,calc(100dvh-2rem))] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
       >
         <DialogHeader className="shrink-0 space-y-1 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-4 py-3 pr-12">
@@ -101,11 +106,11 @@ export function AgentControlDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
           <div
             role="group"
             aria-label={t("agentControl.title")}
-            className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1"
+            className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-card/80 p-1"
           >
             {tabs
               .filter((entry) => !entry.adminOnly || role === "ADMIN")
@@ -117,7 +122,7 @@ export function AgentControlDialog({
                   aria-pressed={tab === id}
                   onClick={() => setTab(id)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                     tab === id
                       ? "bg-primary/15 text-primary"
                       : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -128,6 +133,16 @@ export function AgentControlDialog({
                 </button>
               ))}
           </div>
+          {onOpenAllAgents ? (
+            <button
+              type="button"
+              onClick={onOpenAllAgents}
+              className="text-xs font-medium text-primary hover:underline sm:ml-auto"
+              data-testid="agent-control-all-agents"
+            >
+              {t("agentControl.allAgents")}
+            </button>
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">

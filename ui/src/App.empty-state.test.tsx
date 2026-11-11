@@ -36,13 +36,23 @@ describe("App empty state (NoBoardRoute)", () => {
       await screen.findByText("All boards are archived."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Restore a board from the switcher in the header, or create a new one.",
-      ),
+      screen.getByText("Restore an archived board, or create a new one."),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId("empty-create-board"));
 
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/board\//));
+  });
+
+  it("can restore an archived board from the empty state", async () => {
+    render(<App />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Archived" }),
+    );
+    expect(await screen.findByText("Old board")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Restore board" }),
+    );
+    await waitFor(() => expect(window.location.pathname).toBe("/board/b-arch"));
   });
 });
