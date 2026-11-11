@@ -14,7 +14,9 @@ interface WorkflowEditorProps {
   masterMode?: boolean;
   role?: BoardRole;
   saving?: boolean;
-  onSave: (workflow: BoardWorkflow | undefined) => void | Promise<void>;
+  onSave: (
+    workflow: BoardWorkflow | undefined,
+  ) => void | boolean | Promise<void | boolean>;
   onCancel?: () => void;
   /** Lets a dialog guard outside-click/Escape while the draft is dirty. */
   onDirtyChange?: (dirty: boolean) => void;
