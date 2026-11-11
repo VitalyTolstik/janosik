@@ -1706,7 +1706,7 @@ TASK-36 и TASK-37.)*
 | 107 | TASK-176 `admin-connections` | `docs/TASK-176-admin-connections.md` → отдельные `feat/TASK-176.x-*` | §7.26: исправить подтверждённые баги и пробелы мастер-панели (bulk между страницами, честные счётчики/выборки, прямые ссылки, URL-состояние, адресуемые фильтры, per-row действия) и добавить **author-only редактирование своих комментариев** в обычном продукте | **Запланировано:** 12 подзадач; первая волна — 176.1 bulk-контракт, 176.2 редактирование комментариев, 176.3 честные счётчики; админский редактор карточки и атрибуция мастера — отдельные решения (176.8–176.10), раздел агентов — осознанно вне scope (176.11). См. §7.26 |
 | 108 | TASK-177 `human-last-mile` | `docs/TASK-177-human-last-mile.md` → отдельные `feat/TASK-177.x-*` | §7.27: закрыть **все 18** разрывов project-gaps + **9 новых** находок UI-roast — share edit, self-leave, потеря черновика, честные счётчики, task spec/claim, admin shares, notification opt-out + inbox, per-board export, «permanent» copy, detached attachments, search cap, mentions, поиск комментариев/файлов, approval truth на `/agents`, a11y, first-run, safe-area и bulk actions | **Запланировано:** 20 подзадач, все G-01…G-18 и U-01…U-09 в scope; первая волна — 177.3 draft+counts, 177.15 a11y, 177.17 delete safety; затем 177.1/177.5/177.8/177.16/177.18; 177.2/177.6/177.13/177.14; 177.10/177.11/177.12; 177.4/177.7/177.9/177.19/177.20 — с зафиксированным решением, но не вне задачи. См. §7.27 |
 | 109 | TASK-178 `board-settings-rail` ✅ | `docs/TASK-178-board-settings-rail.md` → `feat/board-settings-rail-redesign` | Редизайн «Настройки доски» по направлению **01 «Рельс доски»**: один surface, рельс колонок, список правил, инспектор 316 px, матрица как вкладка, компактные global/start-done, responsive/a11y, мастер-панель без диалогового shell | **Выполнено:** PR #242, merge `360938b`; все 5 фаз, unit/browser/mobile-тесты, EN/RU user-guide, CHANGELOG. Модель `BoardWorkflow` не менялась. См. spec и `design/board-settings-redesign/REPORT.md` |
-| 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, один pending count, permissions/mobile/a11y | **Запланировано:** 9 подзадач; P1 — вход/шапка, `/agents` shell, Attention/approvals, sessions, единый count/permissions; P2 — runs, policy, design/mobile/a11y, cleanup/docs. См. spec и `design/agent-surfaces-prototype/index.html` |
+| 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, read-only aggregation API | **Запланировано:** 11 подзадач; P1 — вход/шапка, `/agents` shell, Attention/approvals, sessions, count/permissions, read-only aggregation; P2 — runs, settings shell/policy, design/mobile/a11y, cleanup/docs. 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell. См. spec и `design/agent-surfaces-prototype/index.html` |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4984,9 +4984,10 @@ axe-core light/dark; для 177.13 — comment/attachment hits и deep-link.
 
 ### 7.28. Agent surfaces: глобальный inbox, board console, policy (TASK-179)
 
-> **Статус:** запланировано; baseline `main` = `737bf08` (166.17 и 178 уже в main).
+> **Статус:** запланировано; code baseline `737bf08`, spec/report commit `762f4da` (166.17 и 178 уже в main).
 > **Полный spec:** [`docs/TASK-179-agent-surfaces-redesign.md`](docs/TASK-179-agent-surfaces-redesign.md).
-> **Дизайн:** [`design/agents-surface-redesign/REPORT.md`](design/agents-surface-redesign/REPORT.md) + [`design/agent-control-redesign/REPORT.md`](design/agent-control-redesign/REPORT.md); интерактивный эталон — [`design/agent-surfaces-prototype/index.html`](design/agent-surfaces-prototype/index.html).
+> **Дизайн:** [`design/agents-surface-redesign/REPORT.md`](design/agents-surface-redesign/REPORT.md) + [`design/agent-control-redesign/REPORT.md`](design/agent-control-redesign/REPORT.md); интерактивный **нормативный** эталон — [`design/agent-surfaces-prototype/index.html`](design/agent-surfaces-prototype/index.html).
+> **Normative decision:** прототип главнее отчётов; board-модалка остаётся Inbox/Live/Runs, Policy — только в Board Settings. Первый отчёт с «удалить модалку и перенести approvals/pause в Board Settings» не принят.
 
 **Зачем.** Сейчас два одинаковых Bot-icon ведут в разные места, при переходе на
 `/agents` пропадают board-scoped контролы, pending approvals показываются как
@@ -4998,34 +4999,47 @@ axe-core light/dark; для 177.13 — comment/attachment hits и deep-link.
 
 1. **`/agents`** — глобальная страница-инбокс: Attention (pending approvals +
    stale sessions), Sessions (board-first), Runs; board scope, поиск, deep
-   links; один pending count и `99+`.
+   links; scope-correct count и `99+`.
 2. **Board-scoped Agent Control** — одна модалка в shell Board Settings:
    вертикальный rail **Inbox / Live / Runs**; Policy здесь больше нет.
-3. **Board Settings → Agents & automation** — destructive mode, лимиты, TTL,
-   approver roles, reset, dirty/CAS.
+3. **Board Settings → Agents & automation** — destructive mode,
+   `requireApprovalFor`, лимиты, TTL, approver roles, reset, dirty/CAS;
+   верхний rail `Workflow | Agents & automation`.
 4. **Один board Bot-icon** и один глобальный вход `Agents`; duplicate удалить.
-5. **MEMBER/VIEWER** не видят approvals; Runs read-only; никаких 403+Retry.
+   `/agents/:tokenId` сохраняется как deep link.
+5. **MEMBER/VIEWER** не видят approvals; Live и Runs read-only; никаких
+   403+Retry.
+6. **Stop token/all** — только owner в Account → API keys; board ADMIN может
+   board pause и session pause/resume/end.
+7. **Read-only `/agents` aggregation** (§179.10) — глобальные approvals/runs/
+   sessions, cursor/total, display names, per-board RBAC.
+8. **TASK-177.14** поглощён 179.2/179.3; **TASK-177.6** остаётся владельцем
+   bell/attention inbox.
 
 **Подзадачи.**
 
 | ID | Что делаем | Приоритет |
 | --- | --- | --- |
-| 179.1 | Один board Bot-icon, один глобальный `Agents`, route-aware шапка, badge sync | P1 |
-| 179.2 | `/agents` shell: Attention/Sessions/Runs, board scope, поиск, URL state, partial error, mobile | P1 |
-| 179.3 | Attention/approvals: все статусы, approve/reject/cancel, hash/risk/TTL, expired, permissions | P1 |
-| 179.4 | Sessions/Live: board/token grouping, heartbeat, pause/resume/end, stop token/all, claims | P1/P2 |
-| 179.5 | Runs: фильтры, detail, diff/preimages, preview/revert, conflicts, read-only | P1/P2 |
-| 179.6 | Policy в Board Settings → Agents & automation: save/reset/CAS/dirty | P2 |
-| 179.7 | Один pending count, `99+`, permissions, убрать 403-ловушку | P1 |
-| 179.8 | Custom combobox, badges, modal shell, mobile/a11y/contrast/focus | P1/P2 |
-| 179.9 | Cleanup, EN/RU docs, unit/browser/mobile tests, CHANGELOG | P2 |
+| 179.1 | Один board Bot-icon, один глобальный `Agents`, route-aware шапка, `/agents/:tokenId`, focus | P1 |
+| 179.2 | `/agents` shell: Attention/Sessions/Runs, board scope, поиск, URL state, refresh/updated, empty CTA, partial error, mobile | P1 |
+| 179.3 | Attention/approvals: Needs/Decided/All, все статусы, approve/reject/cancel, hash/risk/TTL, human summary, expired; TASK-177.14 absorbed | P1 |
+| 179.4 | Sessions/Live: board/token grouping, lifecycle vs heartbeat, pause/resume/end, board pause, claims; **без stop token/all** | P1/P2 |
+| 179.5 | Runs: named filters, total/load more, detail/retry, diff/preimages (ADMIN), preview/revert, conflicts, read-only | P1/P2 |
+| 179.6 | BoardSettingsShell: верхний rail `Workflow / Agents & automation`, dirty/scroll/mobile | P2 |
+| 179.7 | Policy в Board Settings: destructive/triggers/limits/TTL, dirty/CAS/reload/reset; убрать Policy tab из модалки | P2 |
+| 179.8 | Scope-correct `usePendingApprovals`, `99+`, permissions, member no-403, mixed-role | P1 |
+| 179.9 | Custom combobox, badges, typography (RU body stack), 1024/390, a11y/focus/lazy fallback | P1/P2 |
+| 179.10 | Read-only `/agents` aggregation API: overview/approvals/runs, cursor/total, names, per-board RBAC | P1 |
+| 179.11 | URL/testid migration, cleanup, EN/RU docs, CHANGELOG, unit/browser/mobile tests, visual acceptance | P2 |
 
-**DoD.** Все 9 подзадач закрыты; `/agents` и Agent Control используют одни
+**DoD.** Все 11 подзадач закрыты; `/agents` и Agent Control используют одни
 hooks/components для approvals/runs; Policy существует только в Board
-Settings; один count везде; MEMBER/VIEWER не делают запрещённых запросов;
-1440/1024/390 совпадают с прототипом; focus/keys/a11y; тесты не ослаблены;
-EN/RU docs и CHANGELOG. **Зависимости:** TASK-166.17 и TASK-178 уже в main;
-новых backend-фич нет, только переиспользование существующих API.
+Settings; count scope-correct (board icon ≠ All boards sum, не «одно число
+везде»); MEMBER/VIEWER не делают запрещённых запросов; 179.10 даёт cursor/
+total/names; 1440/1024/390 совпадают с **tracked** прототипом; focus/keys/
+a11y; тесты не ослаблены; EN/RU docs и CHANGELOG. **Зависимости:** TASK-166.17
+и TASK-178 уже в main; 179.10 — единственная новая backend-фича (read-only),
+остальное — переиспользование существующих API.
 
 ---
 

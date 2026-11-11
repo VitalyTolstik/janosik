@@ -1,266 +1,380 @@
 # TASK-179 — Agent surfaces redesign
 
 **Status:** planned  
-**Priority:** P1 (IA, permissions, one entry, approvals truth), P2 (polish, mobile, docs)  
-**Baseline:** `main` = `737bf08`; TASK-166.17 merged (`fb3a530`), TASK-178 merged (`360938b`).  
-**Design sources (approved):**
+**Priority:** P1 (IA, one entry, approvals truth, permissions), P2 (runs, policy, mobile, docs)  
+**Code baseline:** `main` = `737bf08` (166.17 and 178 merged).  
+**Spec/report commit:** `762f4da` (current `main` at the time of this revision).  
+**Design sources:**
 
-- `design/agents-surface-redesign/REPORT.md` — `/agents` page + header audit and target IA.
-- `design/agent-control-redesign/REPORT.md` — board-scoped Agent control audit and target IA.
-- `design/agent-surfaces-prototype/index.html` — interactive target prototype (desktop/tablet/mobile, before/after, 44-control table); local design artifact, not part of the production bundle.
-- `design/board-settings-redesign/REPORT.md` and the merged Board Settings shell — visual reference for a native Janosik modal.
+- `design/agent-surfaces-prototype/index.html` — **normative target UX** (interactive; local design artifact, tracked with this task).
+- `design/agents-surface-redesign/REPORT.md` — `/agents` + header audit, evidence.
+- `design/agent-control-redesign/REPORT.md` — Agent Control modal audit, evidence.
+- `design/board-settings-redesign/REPORT.md` — Board Settings visual reference.
 
-This is a UI/UX refactor on top of the existing agent-control backend. Do not add new agent capabilities, change approval semantics, or create a second source of truth for sessions/approvals/runs.
+## 0. Normative decision (read before §3)
 
----
+The prototype is the target UX. Where an audit report conflicts with the
+prototype, the prototype wins; the reports remain evidence, not an alternative
+IA.
+
+- **Board-scoped Agent Control remains a modal:** Inbox / Live / Runs.
+- **Approvals and pause do not move into Board Settings.**
+- **Policy lives only in Board Settings → Agents & automation.**
+- **`/agents` is the global cross-board inbox**, not a board view tab and not
+  a master-panel section.
+- The first report's “delete the modal and move approvals/pause into Board
+  Settings” proposal is **not adopted**.
+- TASK-177.14 (approval truth / empty CTA) is absorbed by 179.3/179.2.
+  TASK-177.6 remains the owner of the bell/attention inbox; TASK-179 must not
+  create a second bell or a fake approval count in it.
 
 ## 1. Goal
 
-Turn the current agent surfaces into three clear layers:
+Three clear layers:
 
-1. **`/agents`** — a global cross-board inbox: what needs a human, what is running now, what happened.
-2. **Board-scoped Agent control** — one compact modal like Board Settings, with only operational work: **Inbox / Live / Runs**.
-3. **Board Settings → Agents & automation** — configuration: destructive gate, limits, TTL, approver roles.
-
-One entry, one pending count, one set of permissions. No duplicate Bot icons, no disappearing header controls, no “0 waiting” while a board has a pending approval, no MEMBER 403 trap.
+1. **`/agents`** — global cross-board inbox: Attention, Sessions, Runs; board
+   scope, search, deep links, one pending count.
+2. **Board-scoped Agent Control** — one modal like Board Settings, only
+   operational work: Inbox / Live / Runs.
+3. **Board Settings → Agents & automation** — configuration: destructive gate,
+   approval triggers, limits, TTL, approver roles.
 
 ## 2. Non-goals
 
-- No new approval/pause/run semantics; reuse the shipped endpoints and DTOs.
-- No new board workflow, plan/apply or token features.
-- No fifth `Agents` tab in Board/Calendar/Table/Watch.
-- No master-panel agent section; `/admin` remains separate.
-- No full account/API-key redesign; only links needed by the empty state.
-- No backend schema/migration unless a missing read-only aggregation endpoint is proven necessary.
+- No new approval/pause/run/token semantics.
+- No fifth board view tab; no master-panel agent section.
+- No full account/API-key redesign; only a link to Account → API keys.
+- No new writes in the `/agents` aggregation endpoint (§179.10); read-only.
+- No second bell; TASK-177.6 owns attention inbox.
 
 ## 3. Target IA
 
-### 3.1 Header and entry points
+### 3.1 Header matrix (exact)
 
-- **Board header:** exactly **one** agent icon (`Agents`) for board `ADMIN`; it opens the board-scoped Agent Control modal. `MEMBER`/`VIEWER` see a read-only runs entry (same modal, runs only) as today, or the single icon with read-only content.
-- **Global header/account:** exactly **one** `Agents` entry to `/agents`. Do not render a second identical Bot icon next to it.
-- **Route-aware header:** on `/agents`, do not render board-scoped controls that would disappear. Either use the global header or show a clear board context with a back link; the board title/members/share/settings must not silently unmount as a side effect.
-- **Counts:** the pending-approval badge is the same number in the global header, board icon, `/agents` rail and bell; `99+` when over 99.
-- Icon: use the app's animated icon system if a suitable `bot`/`agents` icon exists; otherwise use one consistent Lucide-style icon across both entries. No mixed icon families.
+| Route | Header | Agent entry | Notes |
+| --- | --- | --- | --- |
+| `/board/:id` | Board header (title, members, share, gear) | **Exactly one Bot `Agents`** → board modal | No second Bot; no global Agents link in this header |
+| `/agents` | Global header with breadcrumb `Boards / Agents` | **Exactly one Bot `Agents`** → `/agents` | No BoardTitle/Members/Share/BoardSwitcher/Settings/Presence; no Undo/Redo |
+| `/agents/:tokenId` | Same global header | one Bot → `/agents` | Keep as canonical token/session deep link; do not delete |
+| `/` (boards list) | Global header | one `Agents` entry in Account/global menu | No board controls |
+
+- On a board route, `/agents` is reachable from the Agent Control rail
+  **“All agents across boards”** and from Account.
+- `/agents/:tokenId` is preserved (token → sessions). Do not remove it in
+  cleanup; if it must change, add a documented redirect and testid alias.
+- Lazy modal chunk must show a skeleton/spinner, not a dead click.
+- Focus returns to the actual trigger after close/navigation.
 
 ### 3.2 `/agents` page
 
-- Global page, not a board view tab and not a modal.
-- Left rail: **Attention**, **Sessions**, **Runs**.
-- Top bar: board scope combobox (`All boards` or one board), search, pending count.
-- URL state: `?section=attention|sessions|runs`, `?board=<id>`, optional `?run=`/`?approval=`. Deep links must open the same view.
-- Default section: **Attention**.
-- Attention contains pending approvals and stale/no-heartbeat sessions, sorted by urgency/expiry.
+- Global page; left rail **Attention / Sessions / Runs**.
+- Top bar: board scope combobox (`All boards` or one board), search, pending
+  count, `Updated Ns ago` + Refresh, `Manage tokens` link.
+- URL contract:
+  - `?section=attention|sessions|runs`
+  - `?board=<id>`
+  - `?session=<id>`, `?agent=<tokenId>`, `?approval=<id>`, `?run=<id>`
+  - `?approval` and `?run` require `?board` (or a documented lookup endpoint).
+- Default: Attention. Attention = pending approvals (ADMIN) + stale sessions
+  (no heartbeat); MEMBER/VIEWER see only stale sessions.
 - Sessions: board-first grouping, token grouping inside a board, master-detail.
 - Runs: filters + master-detail; read-only for MEMBER/VIEWER.
-- Empty/loading/partial-error/error states are explicit; a board request failure must not erase already loaded sessions.
-- Mobile 390: stacked list/detail, one scroll, no horizontal overflow.
+- Empty state: `Create API key` → Account → API keys, `Read docs`.
+- Filtered-empty: `Clear filters`.
+- Unknown `?board=`: clear message + recovery, not an empty trigger.
+- Partial board failure: keep loaded sessions and show a warning with Retry
+  (166.17 behavior; keep as regression guard).
+- `<title>Agents — Janosik`; mobile 390: stacked list/detail, one scroll.
 
-### 3.3 Board-scoped Agent control modal
+### 3.3 Board-scoped Agent Control modal
 
-- One modal, Board Settings shell: header, vertical rail **Inbox / Live / Runs**, single scroll body, sticky footer where actions need it.
-- **Inbox:** approvals for this board (all statuses), detail, approve/reject, cancel request.
-- **Live:** board pause/resume, session pause/resume/end, stop token/all, reason, claims/in-flight.
-- **Runs:** board-scoped run history, detail, preview and revert.
-- **Policy is removed from this modal.**
-- ADMIN-only controls; MEMBER/VIEWER get read-only Runs (and no Inbox at all).
+- One modal, Board Settings shell: header, vertical rail **Inbox / Live /
+  Runs**, single scroll body, sticky footer where actions need it.
+- **Inbox:** approvals for this board; all statuses; detail; approve/reject/
+  cancel. ADMIN only.
+- **Live:** board pause/resume, session pause/resume/end, claims/in-flight.
+  ADMIN only. **No Stop token / Stop all here** — those are owner actions in
+  Account → API keys; show a `Manage tokens` link.
+- **Runs:** board-scoped runs, detail, preview, revert. Runs preview is
+  available to members; apply revert is ADMIN.
+- **Policy is not here.** Link “Open policy in Board Settings”.
+- MEMBER/VIEWER: no Inbox; **Live and Runs are read-only**; initial tab Live.
 - Mobile: full-screen, rail tabs 44 px, close 44 px, one scroll, focus return.
+- 1024: modal/sheet must not cover the board header with an invisible overlay;
+  test the actual header height.
 
 ### 3.4 Board Settings → Agents & automation
 
-- New section/tab inside the merged Board Settings shell (same dialog, not a separate modal).
-- Fields:
-  - destructive mode: `approval` / `deny`;
-  - max commands per run (1–100);
-  - max cards per run (1–50);
-  - approval TTL (5–1440 minutes);
-  - approver roles (fixed `ADMIN` in this release, displayed read-only if not editable);
-  - reset to defaults.
-- Dirty footer, Save/Cancel, inline error, CAS conflict banner with **Reload**, reset confirm, permission state.
-- Reuse `PolicyPanel` logic instead of duplicating policy state.
+- Add a top-level Board Settings rail/tabs: **Workflow | Agents & automation**.
+- Workflow keeps its current Columns/Matrix rail and body.
+- Agents & automation:
+  - destructive mode `approval | deny`;
+  - `requireApprovalFor` triggers: non-destructive editable, destructive
+    disabled with “covered by destructive mode”;
+  - max commands 1–100, max cards 1–50, TTL 5–1440;
+  - approver roles fixed `ADMIN` (read-only display);
+  - `Using safe defaults` state; reset disabled on defaults.
+- Dirty state is lifted to the Board Settings dialog and covers both
+  Workflow and Policy; close/discard guard; Save/Cancel; inline error;
+  CAS conflict + **Reload** keeps the draft.
+- Gear is ADMIN-only; no member read-only Board Settings.
+- Link from Agent Control closes the modal and opens Board Settings on the
+  Agents & automation section.
+
+### 3.5 Counts and scope
+
+- One `usePendingApprovals` hook/selector, scope-correct values:
+  - board icon: pending approvals for the current board (ADMIN only; hidden
+    for MEMBER/VIEWER);
+  - `/agents?board=X`: same as board icon;
+  - `/agents` All boards: sum over boards where the user is ADMIN;
+  - global header on `/agents`: same as current scope.
+- `99+` on every surface; latest-100 sentinel is allowed only if the
+  aggregation endpoint cannot return an exact total, with an explicit
+  `99+` label.
+- Bell: TASK-177.6 owns attention items; until then the bell stays
+  invitations-only and must not show a fake approval count.
+
+### 3.6 Roles
+
+- **ADMIN:** Inbox/Live/Runs; approvals, board pause, session pause/resume/end,
+  runs apply, policy.
+- **MEMBER/VIEWER:** no Inbox; Live and Runs read-only; Attention only stale
+  sessions; no approvals API calls. Initial tab Live.
+- Per-board `boardRole`; mixed roles (ADMIN on A, MEMBER on B) must work.
+- Preimages/diff: ADMIN JWT only; MEMBER/VIEWER see timeline/attribution/
+  conflicts and a read-only notice.
+- Token owner: token pause/stop-all in Account; not board ADMIN.
 
 ## 4. Subtasks
 
 ### 179.1 — Entry points and route-aware header (P1)
 
-**Problem:** two identical Bot icons; one opens `/agents`, one opens the modal; navigating to `/agents` unmounts board title/members/share/settings/agent/settings controls.
+- One board Bot → modal; no second Bot; one global Agents entry.
+- Global header variant for `/agents` and `/agents/:tokenId`; no board
+  controls on global; no Undo/Redo for VIEWER.
+- Preserve `/agents/:tokenId`; focus/lazy fallback.
+- Files: `Header.tsx`, `AgentControlButton.tsx`, `App.tsx`, `routes.ts`,
+  `components/agents/*`, locales.
 
-**Implement:**
-- Consolidate the board entry into one `AgentControlButton` with a single icon/aria-label/tooltip.
-- Add one global `Agents` entry (global header right cluster or account menu) to `/agents`; remove the second Bot icon.
-- Make the app header route-aware: on `/agents`, render a stable global header; do not mount board-scoped controls that disappear. If a board context is shown, keep a clear back path.
-- Preserve the board gear (Board Settings) as a separate control.
-- Focus returns to the actual trigger after closing the modal / navigating back.
-- Badge sync: board icon, global entry, `/agents`, bell.
+### 179.2 — `/agents` shell (P1)
 
-**Files:** `ui/src/components/Header.tsx`, `ui/src/components/agent-control/AgentControlButton.tsx`, `ui/src/App.tsx`, `ui/src/routes.ts`, `ui/src/components/agents/*`, `ui/src/components/NotificationsBell.tsx`, locales.
+- Rail, board scope, search, updated/refresh, manage tokens, `<title>`,
+  empty/filtered-empty/unknown-board/offline/partial-error.
+- URL contract from §3.2.
+- Files: `AgentsPage.tsx`, `use-agent-sessions.ts`, `agent-model.ts`, new
+  shell components, `api/client.ts`.
 
-**Acceptance:** one agent icon in the board header; one global Agents entry; no header controls disappear on `/agents`; 1440/1024/390; keyboard/focus; no duplicate labels.
+### 179.3 — Attention / approvals (P1)
 
-### 179.2 — `/agents` page shell and navigation (P1)
-
-**Implement:**
-- Page shell with left rail Attention/Sessions/Runs and top board scope + search.
-- URL state for section/board and deep links.
-- Attention/Sessions/Runs counts; one pending source.
-- Loading skeleton, empty state, partial-error banner, error/retry.
-- Board scope combobox: custom accessible listbox, not native `<select>`; opaque popup, z-index, keyboard, mobile 44 px rows.
-- Mobile stacked layout; no horizontal overflow.
-
-**Files:** `ui/src/components/agents/AgentsPage.tsx`, `use-agent-sessions.ts`, `agent-model.ts`, new shell/components, `ui/src/api/client.ts`, locales.
-
-**Acceptance:** `/agents?section=attention&board=<id>` restores the view; Attention default; all sections/scope/search work; partial error keeps loaded sessions; 390 fits.
-
-### 179.3 — Attention / approvals inbox (P1)
-
-**Implement:**
-- Attention list: pending approvals + stale sessions.
-- Approval card shows agent, board, action/risk, TTL, card/session/run links.
-- Detail: exact commands, plan hash, impact/diff, decision history, status.
-- Actions: Approve, Reject (reason), Cancel request (requester/ADMIN), disabled after expiry/consumed.
-- Status matrix: pending, approved, rejected, expired, cancelled, consumed.
-- MEMBER/VIEWER: no approval tab/actions; no 403 + Retry trap.
-- Refresh via SSE/poll; expired rows update without reload.
-
-**Files:** `ApprovalsPanel` split into list/detail/shared; `AgentControlDialog`, new `/agents` Attention components, shared DTOs if a field is missing.
-
-**Acceptance:** approve/reject/cancel change state and counts; expired Approve disabled; no MEMBER API call that 403s; deep links work.
+- Attention list (approvals for ADMIN + stale sessions), filters
+  `Needs / Decided / All`, counts.
+- Approval card/detail: exact commands, plan hash + copy, human summary/
+  targets, status, TTL/countdown, card/session/run links, decision record.
+- No fabricated before/after diff: use commands + summary unless API adds
+  snapshots.
+- Approve (hash confirmation), Reject (required reason in UI; API optional),
+  Cancel request (client method missing; add it), expired/consumed disabled.
+- Status copy for pending/approved/rejected/expired/cancelled/consumed.
+- No orphan detail after action; Retry on detail error.
+- Files: `ApprovalsPanel`, new shared approval components, `api/client.ts`
+  (`cancelApproval`), locales, tests.
 
 ### 179.4 — Sessions / Live (P1/P2)
 
-**Implement:**
-- Sessions grouped board-first then token; filters by board/agent/status.
-- Detail: live/stale/paused/ended, last heartbeat, current card/run, expiry.
-- Actions: pause session, resume, end, stop token, stop all, board pause/resume; reason input and confirmations.
-- Claims/in-flight explanation; no silent claim release on pause.
-- Permissions: board ADMIN only; read-only for others.
-- Reuse existing agent-session endpoints; no new lifecycle semantics.
-
-**Acceptance:** pause/resume/end/stop update UI and server; stale/live status is truthful; member cannot see admin actions; mobile and keyboard.
+- Sessions grouped board-first/token; named filters; master-detail.
+- Detail: lifecycle `active/waiting_approval/paused/ended` + separate
+  `No heartbeat · N min`; never show Active+Stale as two statuses.
+- Actions: board pause/resume (confirm + reason, single banner); session
+  pause/resume/end (reason, confirm, busy/error); end releases claims; pause
+  does not.
+- Remove Stop token/Stop all from board Live; `Manage tokens` link to Account.
+- Claims/in-flight explanation; no release-claim action.
+- Files: `PausePanel`/`LivePanel`, session hooks, shared rows, locales.
 
 ### 179.5 — Runs and rollback (P1/P2)
 
-**Implement:**
-- Run list filters (status/kind/token/session/board/time), cursor, total.
-- Run detail: command timeline, attribution, plan/approval hash, diff/preimages.
-- Preview revert; apply revert with danger confirm; conflicts/expired/read-only states.
-- MEMBER/VIEWER: preview only; ADMIN applies.
-- `run.reverted` refresh; deep links from `/agents` and approval.
-- Reuse `RunsPanel` logic; extract shared components instead of duplicating.
+- Filters: status/kind/token/session/board/time; named token/session
+  comboboxes; Clear filters.
+- List/detail: total + load more, retry detail, applied/reverted/failed
+  badges right-aligned, conflicts/expired.
+- Preview revert for members; apply revert ADMIN with danger confirm and
+  impact/conflicts; `run.reverted` refresh.
+- Preimages/diff ADMIN only; member read-only notice.
+- Deep links from `/agents` and approvals.
+- Files: `RunsPanel` extraction, shared run list/detail, API client.
 
-**Acceptance:** filters/detail/preview/revert work; conflicts block the whole revert; permissions enforced; no dead-end error without Retry.
+### 179.6 — Board Settings shell (P2)
 
-### 179.6 — Policy in Board Settings (P2)
+- Extract `BoardSettingsShell` with top-level `Workflow | Agents &
+  automation` rail; Workflow keeps Columns/Matrix; sticky header/footer,
+  single scroll, mobile.
+- Lift dirty state to the dialog; close/discard guard for both sections.
+- Files: `BoardSettingsDialog.tsx`, new shell, `WorkflowSettings.tsx`.
 
-**Implement:**
-- New `Agents & automation` section in Board Settings, reusing `PolicyPanel`.
-- Fields and bounds from TASK-166.15: destructive `approval|deny`, max commands 1–100, max cards 1–50, TTL 5–1440, approver roles `ADMIN`, reset.
-- Dirty guard, Save/Cancel, inline error, CAS conflict + Reload, reset confirm.
-- Remove Policy tab from Agent Control; keep a link “Open policy in Board Settings”.
-- Permissions: board ADMIN only.
+### 179.7 — Policy in Board Settings (P2)
 
-**Acceptance:** save/refetch/CAS/reset work; unsaved changes guarded; no dead checkboxes; policy shown in one place only.
+- `AgentsAutomation` with all policy fields and `requireApprovalFor`;
+  destructive triggers disabled, non-destructive editable.
+- Baseline/dirty, Save/Cancel, inline validation, CAS conflict + Reload
+  (keep draft), reset disabled on defaults.
+- Remove Policy tab from Agent Control; add link.
+- Files: `PolicyPanel`/`usePolicyDraft`, `AgentsAutomation`, DTO/save tests.
 
-### 179.7 — One count and permissions (P1)
+### 179.8 — Counts and permissions (P1)
 
-**Implement:**
-- One pending-approval selector/hook; use it in header, board icon, `/agents`, bell.
-- Badge `99+`; no 50-row cap on the displayed count.
-- MEMBER/VIEWER never see Approvals; Runs read-only; hide/disable admin actions.
-- Fix the `readOnly` unreachable branch and remove the 403+Retry trap.
-- Tests must mock the real forbidden response, not a successful response.
+- `usePendingApprovals(scope)`; board/global/All-boards counts; `99+`.
+- MEMBER/VIEWER no approvals calls; Live/Runs read-only; per-board role;
+  mixed-role tests.
+- Replace member test that mocks a successful approvals response with
+  “listApprovals is not called”; remove 403+Retry trap.
+- Bell remains invitations until TASK-177.6.
+- Files: hooks, `AgentControlButton`, `AgentsPage`, tests.
 
-**Acceptance:** all counts agree; role matrix passes; no 403 in normal member flow.
+### 179.9 — Design system, mobile, a11y (P1/P2)
 
-### 179.8 — Design system, mobile, accessibility (P1/P2)
+- Custom combobox/listbox everywhere; no native `<select>`; opaque popover,
+  z-index, keyboard, 44 px mobile rows.
+- Status badges: one component, dot + label, vertical centering; Applied/
+  Reverted/Failed/Pending/Expired/Cancelled.
+- Typography: Space Grotesk only for Latin display; Russian headings use the
+  body stack (the display face lacks Cyrillic); sizes 11–18 px.
+- Modal shell, vertical rail, full-screen 390, 1024 sheet without header
+  overlay, close 44, one scroll, safe-area.
+- tablist arrows/Home/End, focus trap/return, reduced motion, contrast AA,
+  lazy chunk fallback.
+- Visual comparison with tracked prototype at 1440/1024/390.
 
-**Implement:**
-- Custom combobox/listbox everywhere; no native `<select>`.
-- Status badge component with dot + label, vertically aligned; consistent Applied/Reverted/Failed/Pending/Expired/Cancelled.
-- Modal shell like Board Settings; vertical rail; sticky footer; single scroll; full-screen mobile.
-- Typography/spacing/radii/colors from app tokens; Space Grotesk display/body stack; no AI-slop.
-- `tablist` with Arrow/Home/End, focus trap/return, Escape, reduced motion, contrast AA, touch targets ≥44 px, safe-area.
-- Visual comparison with `design/agent-surfaces-prototype/index.html` at 1440/1024/390.
+### 179.10 — Read-only `/agents` aggregation API (P1)
 
-**Acceptance:** no console errors, no horizontal overflow, focus visible, all controls reachable, badges aligned.
+- Add read-only `GET /agents/overview` (or split `approvals`/`runs`) with
+  per-board RBAC, `boardId`, `section`, `q`, `status`, `kind`, `tokenId`,
+  `sessionId`, `from`, `to`, `cursor`, `limit`.
+- Response: `items`, `nextCursor`, `total`, scope counts, `refreshedAt`,
+  display names for board/token/session/actor.
+- Approvals: ADMIN only, cursor/total; runs/sessions: member boards only;
+  no writes, no approval details beyond existing board endpoint.
+- If a field is missing in DTOs, add additive fields; do not change existing
+  board endpoints.
+- Update OpenAPI, MCP? No new MCP tool.
+- Tests: cross-board isolation, ADMIN/MEMBER/VIEWER, pagination/cursor,
+  names, archived boards, no write side effects.
 
-### 179.9 — Cleanup, docs, tests (P2)
+### 179.11 — Cleanup, migration, docs, tests (P2)
 
-- Remove old duplicate entry/component/route code; update imports and tests.
-- Update EN/RU user guides: `/agents`, board Agent Control, Board Settings → Agents & automation, permissions.
-- Add docs for the single pending count and the new IA.
-- CHANGELOG entry; ROADMAP status; no stale references.
-- Tests:
-  - unit: count hook, permissions, status badges, combobox, tabs, policy dirty/CAS;
-  - browser: admin/member/viewer, approvals all statuses, pause/live, runs/preview/revert, policy, mobile 390, focus;
-  - backend only if a DTO/endpoint changes (prefer reuse).
-- Visual acceptance: screenshots at 1440/1024/390 vs prototype; document deviations.
+- URL/testid migration table: keep `?token/?status/?time/?q`,
+  `/agents/:tokenId`; add `?session/?agent/?approval/?run`; testid aliases
+  for `agent-control-trigger`, `agent-runs-trigger`, `agent-control-dialog`,
+  `agent-approvals-tab`, `agent-policy-tab`, `agent-run-*`.
+- Remove old duplicate entry/route code; do not delete working deep links.
+- EN/RU docs: `/agents`, modal Inbox/Live/Runs, Board Settings → Agents &
+  automation, permissions, URL/deep links.
+- CHANGELOG; ROADMAP status.
+- Test matrix (see §7); visual acceptance with tracked prototype.
+- No weakened tests; per-PR tests, not all at the end.
 
-## 5. Control contract (summary)
+## 5. Control contract (expanded)
 
-| Control | Target behavior | Permission | Key state/test |
+| Control | Target | Permission | Key state/test |
 | --- | --- | --- | --- |
-| Board scope combobox | All boards / one board; URL `?board=`; custom listbox | all authenticated | keyboard, 390, partial error |
-| Search | filters agents/cards/sessions/runs | all | empty, no results |
-| Attention item | opens approval/session detail | ADMIN for approval; member sees only own safe items | pending/expired |
-| Approve | approves exact plan/hash | board ADMIN | success, expired, CAS/conflict |
-| Reject | requires reason | board ADMIN | reason, history |
-| Cancel request | requester/ADMIN | requester/ADMIN | pending only |
-| Session pause/resume | pauses/resumes agent writes | board ADMIN | agent_paused, claims |
-| End session | ends session/releases claims | board ADMIN | confirm, SSE |
-| Stop token/all | stops writes | board ADMIN | confirm, scope |
-| Board pause | pauses all board agents | board ADMIN | confirm, in-flight |
-| Run filters | status/kind/token/session/time | all read | cursor/total |
-| Preview revert | conflict/diff preview | all members | conflicts, expired |
-| Apply revert | all-or-nothing | board ADMIN | danger confirm, SSE |
-| Policy fields | destructive/limits/TTL | board ADMIN | dirty/CAS/reset |
-| Agents entry | one board icon / one global link | role-aware | no duplicate |
-| Pending badge | single count, `99+` | all | sync with bell/rail |
+| Board scope combobox | All boards / one board; `?board=` | all | custom listbox, 390, unknown board |
+| Search | agents/cards/sessions/runs | all | empty, clear |
+| Refresh + Updated | manual refresh + freshness | all | stale, partial error |
+| Manage tokens | link Account → API keys | all | empty CTA |
+| Attention approval | review/approve/reject/cancel | ADMIN | statuses, hash, TTL |
+| Attention stale session | open/end/resume | depending role | heartbeat, no 403 |
+| Approve | hash confirm + one-use | ADMIN | expired/consumed/CAS |
+| Reject | required UI reason | ADMIN | reason/history |
+| Cancel request | requester/ADMIN | requester/ADMIN | confirm, client method |
+| Session pause/resume | reason + confirm | ADMIN | agent_paused, claims |
+| Session end | confirm; releases claims | ADMIN/owner | busy/error |
+| Board pause/resume | confirm + reason, one banner | ADMIN | in-flight |
+| Stop token/all | **not here**; link Account | owner | no board-admin action |
+| Run filters | named token/session, status/kind/time | all read | clear, total |
+| Preview revert | conflict/diff preview | members | expired/conflict |
+| Apply revert | danger confirm | ADMIN | all-or-nothing, SSE |
+| Policy | destructive/triggers/limits/TTL | ADMIN | dirty/CAS/reload/reset |
+| Agents entry | one board icon + one global link | role-aware | no duplicate |
+| Pending badge | scope-correct count, `99+` | role-aware | sync/board/All |
 
-## 6. Permissions
+## 6. Permissions (corrected)
 
-| Capability | ADMIN | MEMBER | VIEWER |
-| --- | --- | --- | --- |
-| `/agents` Attention/approvals | yes | no approval actions | no |
-| Approve/Reject/Cancel | yes | no | no |
-| Sessions pause/resume/end | yes | no | no |
-| Board pause/stop | yes | no | no |
-| Runs list/detail | yes | yes | yes |
-| Preview revert | yes | yes | yes |
-| Apply revert | yes | no | no |
-| Policy save/reset | yes | no | no |
-| API-key creation link | yes | yes | yes |
+| Capability | ADMIN | MEMBER | VIEWER | PAT |
+| --- | --- | --- | --- | --- |
+| Approvals list/detail | yes | no (403 server) | no | own |
+| Approve/Reject | yes | no | no | no |
+| Cancel approval | yes | no | no | requester |
+| Session list/detail | yes | yes | yes | observer+ |
+| Session pause/resume | yes | no | no | no |
+| Session end | yes | no | no | owner |
+| Board pause/resume | yes | no | no | no |
+| Stop token/all | owner | owner | owner | no |
+| Runs list/detail/preview | yes | yes | yes | yes |
+| Preimages/diff | yes | no | no | no |
+| Apply revert | yes | no | no | no |
+| Policy get/update | yes | no | no | no |
+| API-key creation | yes | yes | yes | no |
 
-## 7. Files and architecture
+## 7. Test matrix
 
-- `ui/src/components/agents/*` — `/agents` page, session model/hooks, Attention/Sessions/Runs.
-- `ui/src/components/agent-control/*` — modal, Inbox, Live, Runs; extract shared list/detail.
-- `ui/src/components/Header.tsx`, `App.tsx`, routes — one entry, route-aware header.
-- `ui/src/components/board/BoardSettingsDialog.tsx` + new `AgentsAutomation` section — policy.
-- `ui/src/components/ui/*` — custom combobox, badge, modal shell primitives if needed.
-- `ui/src/api/client.ts`, `shared/src/api.ts` — only additive DTOs if a field is missing.
-- `site/src/content/docs/{docs,ru}/...` — user guide.
-- Tests alongside components + e2e/browser.
+- **Unit:** pending count per scope; role gates (no approvals call for
+  member); combobox; tablist; badges; policy dirty/CAS/triggers; URL parser;
+  status copy.
+- **Browser ADMIN:** all approval statuses, approve/reject/cancel, expiry,
+  sessions pause/resume/end, board pause, runs preview/revert, policy
+  save/reset/CAS, 99+, partial error, deep links/back-forward, 390 focus.
+- **Browser MEMBER/VIEWER:** no Inbox, no approval network call, Live/Runs
+  read-only, no 403+Retry, mixed-role per board, 390.
+- **API 179.10:** cross-board isolation, cursor/total, names, archived,
+  member/viewer scopes, no writes.
+- **Visual:** 1440/1024/390 vs tracked prototype; focus rings; reduced
+  motion; no horizontal overflow.
+- **Migration:** old URLs/testids; `/agents/:tokenId`; `?approval/?run`
+  require `?board`; testid aliases.
+- **Regression:** 166.17 partial-error retention; 178 Board Settings
+  workflow; existing approval/pause/run/policy e2e.
 
-Do not duplicate run/approval/pause logic. Extract hooks/components and reuse between `/agents` and the board modal.
+## 8. Recommended PR split
 
-## 8. Rollout and risks
+1. **Decision/docs** — this spec + committed prototype/evidence.
+2. **179.10 + 179.8 truth/primitives** — aggregation API, count hook,
+   role gates, badge/combobox/status primitives, testid aliases.
+3. **179.1 + 179.6** — route-aware header, one entry, Board Settings shell
+   (separate owners due Header/BoardSettings overlap).
+4. **179.2 + 179.3** — `/agents` shell + Attention/approvals.
+5. **179.4** — Sessions/Live.
+6. **179.5** — Runs/rollback.
+7. **179.7 + 179.9 + 179.11** — Policy, visual/mobile/a11y, cleanup/docs/tests.
 
-- No DB migration.
-- Keep old URLs working: `/agents?section=...`, `?board=...`; add redirects if the old modal had deep links.
-- Policy move changes discoverability: add a clear link in Agent Control and docs.
-- Header restructuring is the riskiest part; test board context, mobile, and role variants.
-- Modal focus/scroll on mobile; test 390 with a real browser.
-- Do not remove tests; update them to the new IA and add regression coverage for every defect in the two reports.
-- Visual acceptance: compare with the prototype, not only with the old screenshots.
+179.4 and 179.5 can run in parallel after shared session/run primitives.
+179.7 can run parallel with 179.4/179.5 if the BoardSettings shell owner is
+fixed.
 
-## 9. Definition of done
+## 9. Rollout and risks
 
-- One board Agents icon and one global Agents entry; no duplicate Bot icon.
-- `/agents` Attention/Sessions/Runs with board scope, search, URL state, one count, 99+.
-- Board Agent Control: Inbox/Live/Runs; Policy only in Board Settings.
-- MEMBER/VIEWER never see approval actions and never get 403+Retry.
-- All approval/session/run/policy buttons behave as specified; no dead ends.
-- 1440/1024/390 visually match the prototype; keyboard/focus/a11y pass; no horizontal overflow.
-- EN/RU docs, CHANGELOG, ROADMAP; unit/browser/mobile tests green; no weakened expectations.
-- No app behavior regressions outside the agent surfaces.
+- No DB migration; 179.10 adds read-only endpoints only.
+- Keep old URLs/testids; add aliases for one release.
+- Header restructuring is the riskiest; test board/global/mobile/roles.
+- Policy move: dirty state across two sections; CAS reload must keep draft.
+- Bell is not changed here; TASK-177.6 owns attention inbox.
+- Prototype/evidence are tracked with this task so visual DoD is reproducible.
+- No new agent capabilities; no permission widening.
+
+## 10. Definition of done
+
+- One board Bot + one global Agents entry; no duplicate icon; no disappearing
+  header controls.
+- `/agents` Attention/Sessions/Runs with board scope, search, URL state,
+  refresh, empty CTA, one scope-correct count, `99+`.
+- Board modal Inbox/Live/Runs; no Policy; member/viewer read-only.
+- Board Settings has Workflow | Agents & automation; policy fields,
+  triggers, dirty/CAS/reload/reset.
+- Approvals all statuses; cancel; reject reason; expired disabled; no orphan
+  detail; no fabricated diff.
+- Sessions/runs actions and permissions match §6; stop token/all only in
+  Account.
+- 179.10 read-only aggregation with cursor/total/names and per-board RBAC.
+- 1440/1024/390 match tracked prototype; a11y/focus/mobile; no horizontal
+  overflow; no console errors.
+- EN/RU docs, CHANGELOG, ROADMAP, testid/URL migration; unit/browser/mobile
+  tests green; no weakened expectations.
