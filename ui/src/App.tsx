@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect } from "react";
 import {
   BrowserRouter,
+  Link,
   Navigate,
   Route,
   Routes,
@@ -10,6 +11,7 @@ import { Archive, Loader2, Plus } from "lucide-react";
 
 import { BoardSection } from "@/components/BoardSection";
 import { BoardShellSkeleton } from "@/components/board/BoardSkeleton";
+import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { NotFoundPage } from "@/components/errors/NotFoundPage";
 import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
@@ -74,7 +76,7 @@ const PublicBoardPage = lazy(() =>
  * `/` and unknown URLs: the empty-state screen (Trello's boards home).
  * Shown when there are no active boards — nothing yet, or every board
  * archived. Never a dead end: the primary CTA creates a board, and
- * archived boards stay restorable from the header switcher.
+ * archived boards stay restorable from this screen.
  */
 export function NoBoardRoute() {
   const { t } = useI18n();
@@ -117,6 +119,43 @@ export function NoBoardRoute() {
           <Plus className="h-4 w-4" aria-hidden />
           {t("board.switcher.new")}
         </button>
+        {allArchived ? <BoardSwitcher archivedEntry /> : null}
+      </div>
+    </main>
+  );
+}
+
+/** A selectable list for global navigation, independent of the home redirect. */
+function BoardsRoute() {
+  const { boards, pendingBoardCount } = useBoard();
+  const { t } = useI18n();
+  const activeBoards = boards.filter((board) => !board.archivedAt);
+
+  if (activeBoards.length === 0 && pendingBoardCount === 0) {
+    return <NoBoardRoute />;
+  }
+
+  return (
+    <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-4xl space-y-4">
+        <h1 className="text-xl font-semibold">{t("search.boards")}</h1>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {activeBoards.map((board) => (
+            <li key={board.id}>
+              <Link
+                to={routes.board(board.id)}
+                className="flex min-h-20 items-center rounded-lg border bg-card px-4 py-3 font-medium transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {board.title}
+              </Link>
+            </li>
+          ))}
+        </ul>
+        {pendingBoardCount > 0 ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t("board.switcher.loading")}
+          </p>
+        ) : null}
       </div>
     </main>
   );
@@ -201,6 +240,7 @@ function BoardShell() {
       <BoardNotices />
       <Routes>
         <Route path={routes.home} element={<NoBoardRoute />} />
+        <Route path={routes.boards} element={<BoardsRoute />} />
         <Route path={routes.boardPattern} element={<BoardRoute />} />
         <Route path={routes.agents} element={<AgentsPage />} />
         <Route path={routes.agentPattern} element={<AgentDetailPage />} />

@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Bell,
+  Bot,
   Clock,
   ExternalLink,
   Keyboard,
@@ -29,6 +30,7 @@ export type AnimatedIconName =
   | "arrow-left"
   | "arrow-right"
   | "bell"
+  | "bot"
   | "clock"
   | "external-link"
   | "keyboard"
@@ -90,6 +92,14 @@ const ICONS: Record<AnimatedIconName, IconEntry> = {
     Lazy: lazy(() =>
       import("@/components/ui/bell-icon").then((m) => ({
         default: m.BellIcon,
+      })),
+    ),
+  },
+  bot: {
+    Fallback: Bot,
+    Lazy: lazy(() =>
+      import("@/components/ui/bot-icon").then((m) => ({
+        default: m.BotIcon,
       })),
     ),
   },

@@ -30,8 +30,10 @@ test("lists a live session, filters it and opens the detail", async ({
   });
   try {
     await board.open(page);
-    await page.getByTestId("agents-trigger").click();
+    await page.getByTestId("agent-control-trigger").click();
+    await page.getByTestId("agent-control-all-agents").click();
     await expect(page.getByTestId("agents-page")).toBeVisible();
+    await expect(page.getByTestId("agents-trigger")).toBeFocused();
 
     const row = page.getByTestId("agent-row").filter({ hasText: "QA agent" });
     await expect(row).toBeVisible();

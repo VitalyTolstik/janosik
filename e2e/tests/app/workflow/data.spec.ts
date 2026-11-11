@@ -89,6 +89,10 @@ test("archive and restore keep the workflow", async ({ page, board }) => {
   await row.hover();
   await row.getByRole("button", { name: "Archive board" }).click();
   await row.getByRole("button", { name: "Yes, archive" }).click();
+  await expect(
+    page.getByRole("heading", { name: "All boards are archived." }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Archived", exact: true }).click();
   await expect(page.getByTestId("archived-section")).toContainText(board.title);
 
   const archived = page
@@ -97,11 +101,7 @@ test("archive and restore keep the workflow", async ({ page, board }) => {
     .filter({ hasText: board.title })
     .last();
   await archived.getByRole("button", { name: "Restore board" }).click();
-  await page
-    .getByRole("option")
-    .filter({ hasText: board.title })
-    .first()
-    .click();
+  await expect(page).toHaveURL(new RegExp(`/board/${board.id}$`));
   await expect(page.getByRole("heading", { name: board.title })).toBeVisible();
 
   const dialog = await openBoardSettings(page);

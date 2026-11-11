@@ -77,7 +77,11 @@ function boardInitial(title: string): string {
   return trimmed ? trimmed[0].toUpperCase() : "•";
 }
 
-export function BoardSwitcher() {
+export function BoardSwitcher({
+  archivedEntry = false,
+}: {
+  archivedEntry?: boolean;
+}) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
@@ -85,12 +89,18 @@ export function BoardSwitcher() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("board.switcher.aria")}
+          variant={archivedEntry ? "outline" : "ghost"}
+          size={archivedEntry ? "sm" : "icon"}
+          aria-label={t(
+            archivedEntry ? "board.switcher.archived" : "board.switcher.aria",
+          )}
           aria-expanded={open}
-          className="h-8 w-6 shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground"
+          className={cn(
+            "shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground",
+            archivedEntry ? "gap-2" : "h-8 w-6",
+          )}
         >
+          {archivedEntry ? t("board.switcher.archived") : null}
           <ChevronDown size={16} className={open ? "rotate-180" : ""} />
         </Button>
       </PopoverTrigger>
