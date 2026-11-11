@@ -5,6 +5,7 @@ import {
   allowTransition,
   openBoardSettings,
   saveWorkflow,
+  showWorkflowMatrix,
 } from "@/helpers/workflow.js";
 import { columnSection, cardTitle } from "@/helpers/history.js";
 
@@ -30,10 +31,6 @@ test("configure transitions, save them and keep them after reload", async ({
     "tagName",
     "BUTTON",
   );
-  await expect(dialog.getByTestId("workflow-preview-card")).toHaveJSProperty(
-    "tagName",
-    "BUTTON",
-  );
   await expect(dialog.getByTestId("workflow-enabled")).toHaveAttribute(
     "aria-checked",
     "false",
@@ -41,8 +38,13 @@ test("configure transitions, save them and keep them after reload", async ({
   await dialog.getByTestId("workflow-enabled").click();
   await expect(dialog.getByTestId("workflow-error")).toBeVisible();
 
+  await showWorkflowMatrix(page);
   await dialog.getByTestId(`workflow-cell-${backlog}-${doing}`).click();
   await dialog.getByTestId(`workflow-cell-${doing}-${done}`).click();
+  await expect(dialog.getByTestId("workflow-preview-card")).toHaveJSProperty(
+    "tagName",
+    "BUTTON",
+  );
   // The second click selects the edge added by the first one.
   await dialog.getByTestId("workflow-condition-requireChecklistsDone").click();
   await dialog.getByTestId("workflow-reverse").click();
@@ -54,6 +56,7 @@ test("configure transitions, save them and keep them after reload", async ({
     "aria-checked",
     "true",
   );
+  await showWorkflowMatrix(page);
   await expect(
     reopened.getByTestId(`workflow-cell-${backlog}-${doing}`),
   ).toHaveAttribute("aria-pressed", "true");
@@ -125,7 +128,7 @@ test("a legacy board without a workflow allows any drag", async ({
   await expect(dialog.getByTestId("workflow-dirty")).toHaveText(
     "All changes saved",
   );
-  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await dialog.getByTestId("workflow-close").click();
 
   const source = await cardTitle(page, "Legacy task").boundingBox();
   const target = await columnSection(page, "Done")

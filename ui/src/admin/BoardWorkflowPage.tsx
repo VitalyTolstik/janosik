@@ -102,7 +102,7 @@ export function BoardWorkflowPage() {
         </Panel>
       ) : null}
 
-      <Panel className="p-3">
+      <Panel className="overflow-hidden p-0">
         <WorkflowEditor
           key={`${board.id}-${board.updatedAt}`}
           columns={board.columns}

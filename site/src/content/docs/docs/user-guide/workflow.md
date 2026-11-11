@@ -14,25 +14,29 @@ that change goes through the command log and `AdminAuditLog`.
 
 ## Open the editor
 
-A board admin clicks the gear in the header (`Board settings`) and opens the
-`Workflow` section. Everyone can read the rules read-only from a card's
-right-click menu under `Workflow rules`, or from the header's `Data & backups`
-menu — the latter works on a board with no cards too.
+A board admin clicks the gear in the header (`Board settings`). The dialog
+opens on the `By column` view with the busiest source column selected in the
+rail. Everyone can read the rules read-only from a card's right-click menu
+under `Workflow rules`, or from the header's `Data & backups` menu — the latter
+works on a board with no cards too.
 
 ## Turn control on
 
-The `Control transitions between columns` switch enables enforcement. While
-it is off the matrix is kept for later but every move is allowed.
+The `Control enabled` switch in the dialog header enables enforcement. While
+it is off the rules are kept for later but every move is allowed.
 
 An enabled workflow needs at least two columns and at least one active
 transition. The editor refuses to save otherwise, and the API rejects the same
-shape, so an enabled board can never be frozen by an all-disabled matrix.
+shape, so an enabled board can never be frozen by an all-disabled rule list.
 
-## The transition matrix
+## Rules by column
 
-Rows are the source column and columns are the destination. Click a cell to
-allow a transition, then configure it in the inspector:
+The board's columns form a horizontal rail. Each item shows the column's
+accent, its card count and how many rules point at it. Selecting a column lists
+one row per other column, in board order:
 
+- **Forward / back** — whether the destination is later or earlier than the
+  source.
 - **Roles** — `ADMIN`, `MEMBER`, or both. Viewers never move cards. An empty
   role list is not allowed.
 - **Conditions** — all selected conditions must hold:
@@ -40,27 +44,44 @@ allow a transition, then configure it in the inspector:
   - a due date is set;
   - the description is not blank;
   - every checklist item is done (a card without checklists passes).
+- **Allowed / not allowed** — a missing rule offers `Allow`; a disabled rule
+  stays in the list (dashed) but does not let cards through.
+
+Selecting a row opens the inspector on the right (or below on a tablet):
+
 - **Reverse transition** — creates a mirror edge with the same roles and
   conditions. Without it, undoing that move is refused.
-- **Active** — temporarily disables one edge without deleting it.
+- **Transition is active** — temporarily disables one edge without deleting it.
+- **Check a card** — evaluates the selected rule against one real card and
+  shows the reason when the move is blocked.
 
 Drag-to-reorder and keyboard sorting inside the same column are always
 allowed: the diagonal is not a transition.
 
-`Use template` fills a chain of adjacent forward and reverse edges; edit it
-afterwards. A column with no incoming or outgoing edges is marked as outside
+`Use template` and `Reset rules…` live in the compact `…` menu in the dialog
+header. The template fills a chain of adjacent forward and reverse edges; edit
+it afterwards. A column with no incoming or outgoing edges is marked as outside
 the process in the editor.
+
+## The full matrix
+
+The `Matrix` tab shows the complete source × destination grid for auditing
+coverage. Click a cell to allow or open a transition; a check means allowed, a
+dash means disabled, a dot means no rule, and an amber marker means the rule
+has conditions. The inspector stays available beside the matrix on desktop.
 
 ## Global transitions
 
-A global transition (`Any → column`) applies only when there is no specific
-edge for the pair. A specific edge always wins, so a role-restricted global
-"escalation" rule cannot bypass a stricter pair. The editor keeps global
-transitions in their own list.
+A global transition (`From any column → column`) applies only when there is no
+specific edge for the pair. A specific edge always wins, so a role-restricted
+global "escalation" rule cannot bypass a stricter pair. Global transitions live
+in one compact strip under the column list.
 
 ## Start and done semantics
 
-- **Initial column** is the semantic start. The MCP server uses it for
+The start and done controls live in one compact row under the global strip:
+
+- **Start column** is the semantic start. The MCP server uses it for
   `janosik_list_ready_cards` and `janosik_wait_for_work`, and as the default
   restore column, instead of assuming the first column.
 - **Done columns** are the semantic finish. MCP's Definition-of-Done gate
@@ -68,6 +89,23 @@ transitions in their own list.
   An empty list falls back to the last column for compatibility.
 
 Neither setting restricts card creation in this version.
+
+## Keyboard and mobile
+
+- In the rail, `Tab` enters once; `←`/`→`, `Home` and `End` move between
+  columns.
+- In the rule list, `↑`/`↓` move between rows, `Space` toggles an existing rule,
+  and `Enter` opens it in the inspector.
+- In the matrix, the whole grid is one `Tab` stop; arrows move a focused cell,
+  `Home`/`End` jump inside a row, and `Space`/`Enter` activate it.
+- On a phone the dialog is full-screen, the rail scrolls horizontally with snap,
+  and the inspector becomes an accordion under the list. The footer respects
+  the safe area; saving, errors and the dirty state stay announced through
+  `aria-live`.
+
+`Esc` or the close button closes a clean dialog immediately. With unsaved
+changes it asks for confirmation, and focus returns to the gear afterwards.
+`prefers-reduced-motion` disables the rail and inspector transitions.
 
 ## What a blocked move looks like
 
