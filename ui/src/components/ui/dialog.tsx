@@ -33,41 +33,50 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     /** Extra classes for the built-in close button (e.g. a larger hit area). */
     closeClassName?: string;
+    /** Render the close button in the caller's own header instead. */
+    hideClose?: boolean;
   }
->(({ className, children, closeClassName, ...props }, ref) => {
-  const { t } = useI18n();
-  return (
-    <DialogPortal>
-      <DialogOverlay />
-      <DialogPrimitive.Content
-        ref={ref}
-        className={cn(
-          // Centered via inset-0 + margin auto, NOT transform: a transform
-          // turns the dialog into the containing block for position:fixed
-          // descendants, which silently misplaces library UI that anchors
-          // to viewport coordinates (e.g. mdxeditor's link preview anchor).
-          // max-h keeps tall content on screen — dialogs that grow (e.g. card
-          // details with many checklists) scroll their body instead of pushing
-          // the footer out of the viewport.
-          "fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg flex-col gap-4 border bg-popover p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-xl",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        <DialogPrimitive.Close
+>(
+  (
+    { className, children, closeClassName, hideClose = false, ...props },
+    ref,
+  ) => {
+    const { t } = useI18n();
+    return (
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          ref={ref}
           className={cn(
-            "absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none data-[state=open]:bg-hover",
-            closeClassName,
+            // Centered via inset-0 + margin auto, NOT transform: a transform
+            // turns the dialog into the containing block for position:fixed
+            // descendants, which silently misplaces library UI that anchors
+            // to viewport coordinates (e.g. mdxeditor's link preview anchor).
+            // max-h keeps tall content on screen — dialogs that grow (e.g. card
+            // details with many checklists) scroll their body instead of pushing
+            // the footer out of the viewport.
+            "fixed inset-0 z-50 m-auto flex h-fit max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg flex-col gap-4 border bg-popover p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-xl",
+            className,
           )}
+          {...props}
         >
-          <X className="h-4 w-4" />
-          <span className="sr-only">{t("common.close")}</span>
-        </DialogPrimitive.Close>
-      </DialogPrimitive.Content>
-    </DialogPortal>
-  );
-});
+          {children}
+          {hideClose ? null : (
+            <DialogPrimitive.Close
+              className={cn(
+                "absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none data-[state=open]:bg-hover",
+                closeClassName,
+              )}
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">{t("common.close")}</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  },
+);
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({

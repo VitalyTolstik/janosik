@@ -78,12 +78,29 @@ export async function openBoardSettings(page: Page): Promise<Locator> {
   return dialog;
 }
 
+/**
+ * The matrix is a secondary tab. Existing matrix assertions keep their
+ * `workflow-cell-*` ids but must open the tab first; this helper is
+ * idempotent so repeated calls do not toggle the view.
+ */
+export async function showWorkflowMatrix(
+  page: Page,
+  prefix = "workflow",
+): Promise<void> {
+  const tab = page.getByTestId(`${prefix}-tab-matrix`);
+  if ((await tab.getAttribute("aria-selected")) !== "true") {
+    await tab.click();
+  }
+  await expect(page.getByTestId(`${prefix}-matrix-grid`)).toBeVisible();
+}
+
 /** Toggle one matrix cell until it is allowed, then return its button. */
 export async function allowTransition(
   page: Page,
   fromColumnId: string,
   toColumnId: string,
 ): Promise<Locator> {
+  await showWorkflowMatrix(page);
   const cell = page.getByTestId(`workflow-cell-${fromColumnId}-${toColumnId}`);
   if ((await cell.getAttribute("aria-pressed")) !== "true") {
     await cell.click();

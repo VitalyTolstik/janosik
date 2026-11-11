@@ -28,6 +28,7 @@ test("a master edits the workflow on behalf of the owner and the change is audit
   );
 
   await page.getByTestId("admin-workflow-enabled").click();
+  await page.getByTestId("admin-workflow-tab-matrix").click();
   await page.getByTestId(`admin-workflow-cell-${backlog}-${doing}`).click();
   await page.getByTestId("admin-workflow-initial").click();
   await page.getByTestId(`admin-workflow-initial-option-${backlog}`).click();
@@ -74,6 +75,7 @@ test("an OPERATOR saves the workflow through the same audited path", async ({
   const editor = page.getByTestId("admin-workflow-editor");
   await expect(editor).toBeVisible();
   await page.getByTestId("admin-workflow-enabled").click();
+  await page.getByTestId("admin-workflow-tab-matrix").click();
   await page.getByTestId(`admin-workflow-cell-${backlog}-${doing}`).click();
   await page.getByTestId("admin-workflow-save").click();
   await expectToast(page, "Workflow saved");

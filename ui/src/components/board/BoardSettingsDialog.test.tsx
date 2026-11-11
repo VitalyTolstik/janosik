@@ -49,18 +49,19 @@ function openDialog() {
       <BoardSettingsDialog open onOpenChange={onOpenChange} />
     </I18nProvider>,
   );
-  // Make the draft dirty so the save button is enabled.
+  // Make the draft dirty and valid: enable control, then allow Backlog → Doing.
   fireEvent.click(screen.getByTestId("workflow-enabled"));
-  fireEvent.click(screen.getByTestId("workflow-template"));
+  fireEvent.click(screen.getByTestId("workflow-allow-doing"));
   return { onOpenChange };
 }
 
 describe("BoardSettingsDialog workflow save", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
-  it("keeps the dialog open and shows no success when the server refuses", async () => {
+  it("keeps the dialog open and shows the inline save error when the server refuses", async () => {
     mocks.setBoardWorkflow.mockResolvedValueOnce(false);
     const { onOpenChange } = openDialog();
 
@@ -70,6 +71,7 @@ describe("BoardSettingsDialog workflow save", () => {
     await waitFor(() =>
       expect(screen.getByTestId("workflow-save")).not.toBeDisabled(),
     );
+    expect(screen.getByTestId("workflow-save-error")).toBeVisible();
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(mocks.success).not.toHaveBeenCalled();
   });
@@ -83,6 +85,7 @@ describe("BoardSettingsDialog workflow save", () => {
     await waitFor(() =>
       expect(screen.getByTestId("workflow-save")).not.toBeDisabled(),
     );
+    expect(screen.getByTestId("workflow-save-error")).toBeVisible();
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(mocks.success).not.toHaveBeenCalled();
   });
@@ -95,5 +98,29 @@ describe("BoardSettingsDialog workflow save", () => {
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(mocks.success).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks before closing a dirty draft", () => {
+    const { onOpenChange } = openDialog();
+
+    fireEvent.click(screen.getByTestId("workflow-close"));
+
+    expect(screen.getByText("Discard workflow changes?")).toBeVisible();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("closes a clean draft without a confirmation", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <I18nProvider>
+        <BoardSettingsDialog open onOpenChange={onOpenChange} />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("workflow-close"));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

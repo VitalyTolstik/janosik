@@ -55,12 +55,14 @@ export function BoardWorkflowPage() {
       toast.success(t("admin.workflow.saved"));
       const next = await adminApi.getBoardContent(boardId);
       setBoard(next);
+      return true;
     } catch (error) {
       toast.error(
         error instanceof ApiError
           ? error.messageText
           : t("admin.common.actionFailed"),
       );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -102,7 +104,7 @@ export function BoardWorkflowPage() {
         </Panel>
       ) : null}
 
-      <Panel className="p-3">
+      <Panel className="overflow-hidden p-0">
         <WorkflowEditor
           key={`${board.id}-${board.updatedAt}`}
           columns={board.columns}
@@ -114,7 +116,7 @@ export function BoardWorkflowPage() {
           role="ADMIN"
           saving={saving}
           testIdPrefix="admin-workflow"
-          onSave={(workflow) => void save(workflow)}
+          onSave={save}
           onCancel={() => load()}
         />
       </Panel>

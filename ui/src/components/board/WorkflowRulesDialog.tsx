@@ -91,20 +91,20 @@ export function WorkflowRulesDialog({
 
             <div className="grid gap-2 rounded-lg border border-border/60 p-3 text-xs sm:grid-cols-2">
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   {t("workflow.initialColumn")}
                 </p>
-                <p className="mt-0.5 font-medium">
+                <p className="mt-0.5 text-xs font-medium">
                   {workflow.initialColumnId
                     ? titleOf(workflow.initialColumnId)
                     : t("workflow.initialFallback")}
                 </p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   {t("workflow.doneColumns")}
                 </p>
-                <p className="mt-0.5 font-medium">
+                <p className="mt-0.5 text-xs font-medium">
                   {workflow.doneColumnIds.length > 0
                     ? workflow.doneColumnIds.map(titleOf).join(", ")
                     : t("workflow.doneFallback")}
@@ -113,7 +113,7 @@ export function WorkflowRulesDialog({
             </div>
 
             <div>
-              <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <p className="mb-1.5 text-[11px] text-muted-foreground">
                 {t("workflow.transitions")}
               </p>
               {transitions.length === 0 ? (
@@ -166,7 +166,7 @@ function TransitionRow({
       }
       data-testid={`workflow-rule-${transition.id}`}
     >
-      <p className="font-medium">
+      <p className="text-xs font-medium">
         {from} <span className="text-muted-foreground">→</span> {to}
       </p>
       <p className="mt-0.5 text-[11px] text-muted-foreground">

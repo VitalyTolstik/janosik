@@ -8,13 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Board settings workflow redesign («Рельс доски»): the dialog is now one
+  surface with a dialog header, a horizontal column rail (accent, card count,
+  rule count), a per-column rule list with Allow/switch states, a 316 px
+  context inspector (roles, conditions, reverse edge, live card check), one
+  compact global-transition strip and one start/done row. The full matrix stays
+  as a secondary tab, with roving-tabindex keyboard navigation and conditional
+  cell markers. Template and reset moved into the header's `…` menu. The
+  master-panel editor reuses the same body embedded, while the dialog keeps the
+  dirty-close confirmation, inline save errors, foreign-change reload and
+  full-screen mobile layout with a snap rail and inspector accordion. Unit,
+  browser and mobile coverage plus EN/RU user-guide docs updated.
 - TASK-166.16 launch documentation: English and Russian administrator and
   agent-developer scenarios, launch checklist and unreleased upgrade notes.
   The operations runbook now covers a consistent PostgreSQL and uploads
   backup, an isolated restore drill and rollback with the matching image,
   Compose and backup pair. The drill remains an operator action, not an
   automatically verified backup.
-
 - TASK-166.11 agent DX contract: a public OpenAPI 3.1 document at
   `site/public/openapi.yaml` covers the complete agent-control surface
   (sessions, pause/resume, approvals, plans, runs, policy, token/account) and

@@ -99,11 +99,12 @@ colors, drag state, focus rings and text keep their own meaning.
 ### Board workflow
 
 A board admin can restrict moves between columns. Open the gear in the header
-(`Board settings`) → `Workflow`, enable control and pick transitions in the
-matrix. Each transition has roles and optional card-field conditions. A
-forbidden target is shown disabled with the reason in the drag overlay, card
-menu, card dialog and table; a rejected drop leaves the card in place. See
-[Board workflow](/docs/user-guide/workflow/).
+(`Board settings`): the columns form a rail, and selecting one lists its rules
+with the inspector beside them. The `Matrix` tab keeps the full coverage grid.
+Each transition has roles and optional card-field conditions. A forbidden
+target is shown disabled with the reason in the drag overlay, card menu, card
+dialog and table; a rejected drop leaves the card in place. Keyboard and mobile
+behaviour are covered in [Board workflow](/docs/user-guide/workflow/).
 
 ## Cards on the board
 

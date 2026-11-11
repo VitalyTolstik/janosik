@@ -2,15 +2,9 @@ import { useState } from "react";
 import type { BoardWorkflow } from "@janosik/shared";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
-import { WorkflowEditor } from "@/components/board/WorkflowEditor";
+import { WorkflowSettings } from "@/components/board/workflow/WorkflowSettings";
 import { useToast } from "@/components/Toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n";
 import {
   useBoardAccess,
@@ -24,14 +18,11 @@ interface BoardSettingsDialogProps {
 }
 
 /**
- * «Настройки доски → Рабочий процесс» (board ADMIN only). The dialog owns no
- * board data until it is open: the header's gear is a plain button, and this
- * component — which subscribes to the board — mounts only while the dialog
- * is shown, so typing in a card never re-renders the header through it.
- *
- * Opening the dialog mounts a fresh `WorkflowEditor`; closing unmounts the
- * Radix content and therefore the draft, which is the project's standard
- * "reset by remount" rule.
+ * «Настройки доски» (board ADMIN only). The dialog is one surface: the
+ * workflow settings own the title, rail, body and footer, while this
+ * component owns the Radix shell, the save transport and the dirty-close
+ * confirmation. It subscribes to board data only while open, so typing in a
+ * card never re-renders the header through it.
  */
 export function BoardSettingsDialog({
   open,
@@ -47,15 +38,36 @@ export function BoardSettingsDialog({
   const [confirmClose, setConfirmClose] = useState(false);
   if (!board) return null;
 
+  // Radix restores focus to a DialogTrigger; this dialog is opened by the
+  // header's gear button, which is a sibling, so return focus explicitly after
+  // every close path (save, X, Escape, discard). The dialog may be unmounted
+  // by the parent immediately, so schedule the focus after that commit.
+  const closeDialog = () => {
+    onOpenChange(false);
+    const focusTrigger = () => {
+      document
+        .querySelector<HTMLElement>('[data-testid="board-settings-trigger"]')
+        ?.focus();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(focusTrigger);
+    } else {
+      focusTrigger();
+    }
+  };
+
   const requestOpenChange = (next: boolean) => {
     if (!next && dirty) {
       setConfirmClose(true);
       return;
     }
-    onOpenChange(next);
+    if (next) onOpenChange(true);
+    else closeDialog();
   };
 
-  const save = async (workflow: BoardWorkflow | undefined) => {
+  const save = async (
+    workflow: BoardWorkflow | undefined,
+  ): Promise<boolean> => {
     setSaving(true);
     try {
       const outcome = await setBoardWorkflow(workflow);
@@ -63,11 +75,12 @@ export function BoardSettingsDialog({
       // change back and showed the reason. Keep the dialog and its draft open
       // so the admin can fix the config instead of losing it. A transport
       // rejection means the same: no success until the server acknowledged.
-      if (outcome === false) return;
+      if (outcome === false) return false;
       toast.success(t("workflow.savedToast"));
-      onOpenChange(false);
+      closeDialog();
+      return true;
     } catch {
-      return;
+      return false;
     } finally {
       setSaving(false);
     }
@@ -76,14 +89,11 @@ export function BoardSettingsDialog({
   return (
     <Dialog open={open} onOpenChange={requestOpenChange}>
       <DialogContent
-        className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-5xl overflow-y-auto"
+        hideClose
+        className="max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1040px] gap-0 overflow-hidden p-0 max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0!"
         data-testid="board-settings-dialog"
       >
-        <DialogHeader>
-          <DialogTitle>{t("board.settings.title")}</DialogTitle>
-          <DialogDescription>{t("board.settings.subtitle")}</DialogDescription>
-        </DialogHeader>
-        <WorkflowEditor
+        <WorkflowSettings
           columns={board.columns}
           cards={board.cards}
           workflow={board.workflow}
@@ -92,8 +102,9 @@ export function BoardSettingsDialog({
           role={role}
           saving={saving}
           onSave={save}
-          onCancel={() => onOpenChange(false)}
           onDirtyChange={setDirty}
+          testIdPrefix="workflow"
+          variant="dialog"
         />
       </DialogContent>
 
@@ -106,7 +117,7 @@ export function BoardSettingsDialog({
         destructive
         onConfirm={() => {
           setConfirmClose(false);
-          onOpenChange(false);
+          closeDialog();
         }}
       />
     </Dialog>

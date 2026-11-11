@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkflowEditor } from "@/components/board/WorkflowEditor";
 import { I18nProvider } from "@/i18n";
@@ -47,15 +47,24 @@ function setup(
   };
 }
 
+/** The matrix is a secondary tab now; every cell test opens it first. */
+function openMatrix() {
+  fireEvent.click(screen.getByTestId("workflow-tab-matrix"));
+}
+
 describe("WorkflowEditor", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it("shows the saved matrix and saves an edited transition", () => {
     const { onSave } = setup();
+    openMatrix();
     expect(screen.getByTestId("workflow-cell-backlog-doing")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
 
-    fireEvent.click(screen.getByTestId("workflow-cell-backlog-done"));
     fireEvent.click(screen.getByTestId("workflow-cell-backlog-done"));
     // Selecting the new edge opens the inspector; add the checklist condition.
     fireEvent.click(
@@ -118,6 +127,7 @@ describe("WorkflowEditor", () => {
       ...workflow,
       transitions: [{ ...workflow.transitions[0], enabled: false }],
     });
+    openMatrix();
     const cell = screen.getByTestId("workflow-cell-backlog-doing");
     expect(cell).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(cell);
@@ -148,6 +158,11 @@ describe("WorkflowEditor", () => {
 
   it("fills the template with forward and reverse adjacent transitions", () => {
     const { onSave } = setup(undefined);
+    fireEvent.pointerDown(screen.getByTestId("workflow-more"), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse",
+    });
     fireEvent.click(screen.getByTestId("workflow-template"));
     fireEvent.click(screen.getByTestId("workflow-save"));
     const saved = onSave.mock.calls[0][0] as BoardWorkflow;
@@ -163,6 +178,7 @@ describe("WorkflowEditor", () => {
 
   it("keeps the reverse checkbox in sync with the mirror edge", () => {
     setup();
+    openMatrix();
     fireEvent.click(screen.getByTestId("workflow-cell-backlog-doing"));
     expect(screen.getByTestId("workflow-reverse")).toHaveAttribute(
       "aria-checked",
@@ -192,6 +208,7 @@ describe("WorkflowEditor", () => {
         />
       </I18nProvider>,
     );
+    openMatrix();
     expect(screen.getByTestId("workflow-save")).toBeDisabled();
     expect(screen.getByTestId("workflow-cell-backlog-done")).toBeDisabled();
   });

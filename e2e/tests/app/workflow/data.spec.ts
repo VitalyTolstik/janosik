@@ -1,6 +1,6 @@
 import { test, expect } from "@/fixtures/data.js";
 import { chooseImportFile, expectToast } from "@/helpers/data.js";
-import { openBoardSettings } from "@/helpers/workflow.js";
+import { openBoardSettings, showWorkflowMatrix } from "@/helpers/workflow.js";
 import { appUrl } from "@/helpers/urls.js";
 
 function workflow(backlog: string, doing: string, done: string) {
@@ -66,6 +66,7 @@ test("export and import keep the workflow and remap its columns", async ({
     page.getByRole("button", { name: "Switch board" }),
   ).toBeVisible();
   const dialog = await openBoardSettings(page);
+  await showWorkflowMatrix(page);
   await expect(
     dialog.getByTestId(
       `workflow-cell-${importedBacklog.id}-${importedDoing.id}`,
@@ -108,6 +109,7 @@ test("archive and restore keep the workflow", async ({ page, board }) => {
     "aria-checked",
     "true",
   );
+  await showWorkflowMatrix(page);
   await expect(
     dialog.getByTestId(`workflow-cell-${backlog}-${doing}`),
   ).toHaveAttribute("aria-pressed", "true");
