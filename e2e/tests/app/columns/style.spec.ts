@@ -266,8 +266,10 @@ test("renders all nine accent shapes in light and dark", async ({
 
     await page.getByTestId("board-display-menu").click();
     for (const style of styles) {
-      await page.getByTestId("column-style-menu").click();
-      await page.getByTestId(`column-style-menu-${style}`).click();
+      // Open and select with the keyboard: moving the pointer across the
+      // gap between the nested menus can close the submenu before the click.
+      await page.getByTestId("column-style-menu").press("ArrowRight");
+      await page.getByTestId(`column-style-menu-${style}`).press("Enter");
       await expect(columnSection(page, "Todo")).toHaveAttribute(
         "data-column-accent-style",
         style,

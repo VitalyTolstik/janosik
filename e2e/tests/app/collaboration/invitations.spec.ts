@@ -126,13 +126,13 @@ test("declining an invitation leaves the board out of my boards", async ({
   await expect(
     partnerBrowser.page.getByTestId("notifications-badge"),
   ).toHaveCount(0);
-  await partnerBrowser.page
-    .getByRole("button", { name: "Switch board" })
-    .click();
+  await partnerBrowser.page.goto(new URL("boards", appUrl).href);
   await expect(
-    partnerBrowser.page.getByRole("option").filter({ hasText: board.title }),
+    partnerBrowser.page.getByRole("heading", { name: "No board yet." }),
+  ).toBeVisible();
+  await expect(
+    partnerBrowser.page.getByRole("link", { name: board.title, exact: true }),
   ).toHaveCount(0);
-  await partnerBrowser.page.keyboard.press("Escape");
 
   await partnerBrowser.page.goto(new URL(`board/${board.id}`, appUrl).href);
   await expect(
