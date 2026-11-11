@@ -9,7 +9,8 @@
 #   # → open PUBLIC_ORIGIN, create the first account, then close registration
 #
 # Upgrade:  docker compose pull && docker compose up -d   (migrations run on boot)
-# Backup:   docker compose exec postgres pg_dump -U janosik janosik > backup.sql
+# Backup and restore (database + uploads):
+# https://github.com/VitalyTolstik/janosik/blob/main/site/src/content/docs/docs/runbooks.md
 
 services:
   app:

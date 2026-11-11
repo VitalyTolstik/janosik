@@ -88,8 +88,6 @@ database connections must be stopped.
    failed restore, repeat this procedure with the fresh pre-restore database
    **and** uploads pair and its matching image/configuration.
 
-<a id="restore-drill"></a>
-
 ## Restore drill
 
 Use a separate host or isolated Compose project with its own database, Redis,
@@ -104,8 +102,6 @@ Verify readiness, sign-in, representative board/card data and several
 attachments/avatars against known samples; confirm no production writes or
 notifications occurred. Investigate failures, correct the backup process and
 repeat the drill. Protect and remove the isolated copy under your data policy.
-
-<a id="upgrade-rollback"></a>
 
 ## Upgrade rollback
 

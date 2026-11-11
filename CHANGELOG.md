@@ -15,7 +15,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Compose and backup pair. The drill remains an operator action, not an
   automatically verified backup.
 
-
 - TASK-166.11 agent DX contract: a public OpenAPI 3.1 document at
   `site/public/openapi.yaml` covers the complete agent-control surface
   (sessions, pause/resume, approvals, plans, runs, policy, token/account) and

@@ -43,7 +43,8 @@ See [board controls](/docs/user-guide/boards/#agent-approvals-runs-and-policy),
    use it for attribution. Read the current board before making changes.
 3. Preview a multi-command plan with `janosik_plan_changes`; inspect warnings
    and conflicts. Apply the exact returned commands and hash with
-   `janosik_apply_plan`. A PAT plan creates a run; limits apply per plan.
+   `janosik_apply_plan`. Applying a PAT plan creates a run; preview is a dry run
+   and writes nothing. Limits apply per plan.
 4. On `approval_required`, retain the returned approval ID and exact plan.
    Wait for a board ADMIN; after approval repeat the same operation with
    `approvalId`. Approval is one-use and can expire. Do not alter command IDs
