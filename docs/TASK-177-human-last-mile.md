@@ -185,3 +185,123 @@ These must be recorded in the implementation PR. If the owner does not choose ot
 | Small UX | Pending invite edit, revoke confirm, active count, touch actions, export toast |
 | Attachments | Detached file can be restored/downloaded |
 | Search | Board hits survive the cap; `20 of N`/Show all |
+
+## 9. UI roast additional findings (also in TASK-177)
+
+Source: `design/ui-roast/REVIEW.md` (live 1440/1024/390 + axe-core). These are **new** findings beyond G-01…G-18. They are added to TASK-177 so nothing is forgotten; they do not replace the first wave.
+
+### 9.1 New findings
+
+| ID | Finding | Class | Sev | Subtask |
+| --- | --- | --- | --- | --- |
+| U-01 | `@mention` is plain text: no picker, no notification, no recipient | BASIC MISSING | P1 | 177.12 |
+| U-02 | Global/board search does not find comments or attachment filenames | BASIC MISSING | P2 | 177.13 |
+| U-03 | `/agents` shows `0 waiting approval` while a board has Pending 1; empty agents has no CTA | INCONSISTENT / BURIED | P2 | 177.14 |
+| U-04 | Card a11y: unnamed checklist toggle/progressbar, focus lost after close, contrast, no h1/duplicate main/li outside list | BROKEN / A11Y | P2 | 177.15 |
+| U-05 | First-run creates “New board” without asking a name; no template; rename affordance invisible | INCONSISTENT | P2 | 177.16 |
+| U-06 | Comment delete: confirm has no text preview, no undo, touch target 22×22 | POLISH / SAFETY | P2 | 177.17 |
+| U-07 | Mobile safe-area is not set; card label is clipped/covered by hover actions | POLISH / MOBILE | P3 | 177.18 |
+| U-08 | No multi-select/bulk actions for cards | BASIC MISSING | P3 | 177.19 |
+| U-09 | No watchers/follow, saved views, or assignment/due notifications | PRODUCT DECISION | P3 | 177.20 |
+
+### 9.2 Additional subtasks
+
+#### 177.12 — Mentions and mention notifications (U-01) · P1/P2, L
+
+- Parse `@` in comments; add an autocomplete user-picker from board members (keyboard, no free-text ambiguity).
+- Store mentions explicitly or resolve at write time; create an attention notification for each mentioned member (respect `notifyAttention`).
+- Bell/inbox row with actor, card, board, excerpt, deep link; read/read-all via 177.6.
+- Do not notify the author; dedupe repeated mentions; deleted comments/boards must not resurrect notifications.
+- Product decision: if mentions are out of product scope, remove the `@` affordance/copy instead of leaving plain text. The owner has chosen to implement them.
+- Tests: parser, picker, permission (mentioned user must be a board member), notification/email, opt-out, deep link, deleted target.
+- Files: comments controller/service, shared DTO/attention type, comments UI, NotificationsBell, locales.
+
+#### 177.13 — Search comments and attachments (U-02) · P2, S/M
+
+- Extend global and board search with comment text and attachment file names. The backend `searchCards` already has a comment path; expose it to the UI and keep title/description/label/checklist hits.
+- Results need a type badge (`Comment`, `Attachment`, `Card`, `Board`) and a deep link to the card/comment/attachment.
+- Show `20 of N`/Show all per 177.10; do not hide board hits.
+- Tests: comment-only match, attachment filename match, permission filtering, deleted rows, result grouping/cap.
+- Files: `ui/src/utils/filter.ts`, `GlobalSearch.tsx`, board search, `ui/src/api/client.ts`, backend search if a DTO field is missing.
+
+#### 177.14 — Agent approval truth and empty CTA (U-03) · P2, S
+
+- `/agents` must count pending approvals, not only session status; link each pending item to the board approval dialog or a global approval inbox (177.6).
+- Keep the board badge and `/agents` count consistent; refresh via SSE/poll.
+- Empty `/agents` gets a `Create API key` CTA to Account → API keys and a short “start an agent” path.
+- Tests: one pending approval → `/agents` shows 1 and deep-links; approve/expire updates both; empty CTA visible.
+- Files: `ui/src/admin/AgentsPage.tsx` (or current agents page), API client, board control store, locales.
+
+#### 177.15 — Accessibility pass (U-04) · P2, S/M
+
+- Checklist item toggle gets an accessible name (item text); progressbar gets `aria-label`/`aria-valuetext`.
+- Return focus to the card/trigger after dialog close; keep the focus trap.
+- Fix contrast tokens: `Block type`, empty placeholder, active tab, label chip, activity tab (target AA; use axe pairs).
+- Semantics: one `h1` for the page/board, one `main` per page (dialog should not introduce a second `main`), insert-zone `li` inside a list.
+- Add axe-core checks to the card/board suite; do not weaken existing a11y expectations.
+- Tests: axe on card/board light+dark; keyboard open→Escape→focus returns; checklist toggle name.
+- Files: `CardChecklists.tsx`, `CardDialog.tsx`, `BoardTitle.tsx`, theme tokens, a11y tests.
+
+#### 177.16 — First-run and board metadata (U-05) · P2, S/M
+
+- Empty-state `New board` asks for a name (reuse the switcher input) instead of creating “New board”.
+- Add a first-run template/example (columns + one sample card/checklist) or a clear “start empty” choice.
+- Make rename discoverable: pencil/menu next to the title, not only click-on-heading.
+- Tests: first board named by user; template path; rename via visible control; keyboard.
+- Files: `App.tsx`, `BoardSwitcher.tsx`, `BoardTitle.tsx`, empty states, locales.
+
+#### 177.17 — Comment delete safety (U-06) · P2, S
+
+- Confirm dialog shows the comment excerpt/author, not a generic “Delete this comment?”.
+- Add undo (toast action) where feasible; if undo is not possible, say “cannot be undone” honestly and keep the excerpt.
+- Touch target ≥44 px; `no-hover` visibility is already 177.8, this subtask covers the dialog/undo.
+- Tests: confirm shows excerpt; cancel keeps comment; undo restores; touch target.
+- Files: `CardComments.tsx`, `ConfirmDialog`, locales, tests.
+
+#### 177.18 — Mobile safe-area and card metadata (U-07) · P3, S
+
+- Add `viewport-fit=cover` and `env(safe-area-inset-*)` padding for header/dialogs/sticky footers; check standalone iOS.
+- Fix card label clipping: reserve space for hover actions or move actions so the label is readable; test 390 and 1440.
+- Tests: viewport meta snapshot; Playwright 390 no overflow; label visible under hover/touch.
+- Files: `ui/index.html`, shell/dialog CSS, `CardItem.tsx`.
+
+#### 177.19 — Bulk card actions (U-08) · P3, M — product decision
+
+- Multi-select cards in board/table; bulk move, archive, delete, label/assignee where supported.
+- Reuse command batch/plan; confirmation for destructive; preserve undo/rollback semantics.
+- Product decision: if the target is Trello-class, this can be a later wave; it remains in TASK-177, not forgotten.
+- Tests: select across columns, bulk move/archive/delete, partial failure, keyboard.
+- Files: board selection state, command batch/plan client, bulk action bar, locales.
+
+#### 177.20 — Watchers, saved views, assignment/due notifications (U-09) · P3, L — product decision
+
+- Card/board follow or watch; saved filter views; assignment/due notifications (respect preferences).
+- Reuse attention infrastructure; deep links; read/read-all via 177.6.
+- Product decision: scope can be split into follow-up waves, but the item stays in TASK-177.
+- Tests: follow/unfollow, notification on change, saved view restore, opt-out.
+- Files: follow model/API or attention subscription, board filter state, NotificationsBell.
+
+### 9.3 Already covered / duplicates
+
+| UI-roast finding | Already covered by |
+| --- | --- |
+| Edit own comment | TASK-176.2 |
+| Comment draft loss | 177.3 (G-04) |
+| Touch delete visibility | 177.8 (G-12) |
+| Attention inbox / `notifyAttention` | 177.6 (G-16) |
+| Self-leave | 177.2 (G-02) |
+| Share edit / revoke confirm / per-board export | 177.1, 177.7, 177.8 (G-01/G-08/G-14) |
+| Switcher archived count / Comments badge | 177.8 (G-11), 177.3 (G-05) |
+| Global search cap/grouping | 177.10 (G-17) |
+| Account sessions list/revoke | TASK-174.2 (`launch-gaps-human-control.md`) |
+| Global approval entry | 177.6/177.14 |
+
+## 10. Updated order
+
+1. 177.3 (P1 data loss), 177.15 (a11y), 177.17 (delete safety).
+2. 177.1 + 177.5 + 177.8 + 177.16 + 177.18.
+3. 177.2, 177.6, 177.13, 177.14.
+4. 177.10, 177.11, 177.12.
+5. 177.4, 177.7, 177.9, 177.19, 177.20 after decisions.
+
+All items remain in TASK-177; this order is about risk and dependencies, not scope cuts.
