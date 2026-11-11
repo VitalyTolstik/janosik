@@ -98,6 +98,34 @@ describe("BoardSwitcher", () => {
     expect(screen.getAllByRole("option", { selected: true })).toHaveLength(1);
   });
 
+  it("counts active cards without archived cards", async () => {
+    const board = JSON.parse(boardJson("b-1", "Alpha"));
+    board.columns[0].cardIds = ["active"];
+    board.cards = {
+      active: {
+        id: "active",
+        title: "Active",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      archived: {
+        id: "archived",
+        title: "Archived",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+        archivedAt: 2,
+      },
+    };
+    localStorage.setItem("janosik-boards", JSON.stringify([board]));
+    renderSwitcher();
+    await openSwitcher();
+    expect(screen.getByRole("option", { name: /Alpha/ })).toHaveTextContent(
+      "Alpha1",
+    );
+  });
+
   it("filters boards by search query", async () => {
     renderSwitcher();
     await openSwitcher();

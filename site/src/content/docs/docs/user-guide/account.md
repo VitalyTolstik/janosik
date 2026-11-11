@@ -166,8 +166,13 @@ The data menu in the header manages your data.
 - `Automatic backups` opens the list of copies the app kept on its own while
   you worked. From there you can restore a copy or delete it. Restoring takes
   a safety copy of the current state first.
-- `Card archive` opens the active board's archived cards, where you can
-  restore or delete them.
+- `Card archive` opens the active board's archived cards. Search and select
+  cards across pages to restore them to a column or delete them. Select all
+  applies to all search results; the restore destination must allow every
+  selected card and have enough capacity. Deletion asks for confirmation.
+  Selected cards disappear from the archive immediately while the operation
+  runs in the background. Keep Janosik open until it finishes; if it stops,
+  cards that were not processed appear again.
 
 ![The card archive: archived cards of the active board, with restore and delete.](/screens/archive.png)
 
