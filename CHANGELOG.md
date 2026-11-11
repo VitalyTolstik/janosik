@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-166.16 launch documentation: English and Russian administrator and
+  agent-developer scenarios, launch checklist and unreleased upgrade notes.
+  The operations runbook now covers a consistent PostgreSQL and uploads
+  backup, an isolated restore drill and rollback with the matching image,
+  Compose and backup pair. The drill remains an operator action, not an
+  automatically verified backup.
+
+
 - TASK-166.11 agent DX contract: a public OpenAPI 3.1 document at
   `site/public/openapi.yaml` covers the complete agent-control surface
   (sessions, pause/resume, approvals, plans, runs, policy, token/account) and

@@ -365,34 +365,15 @@ limitation remains: **presence** (the list of people on a board) is stored per
 node until shared Redis storage is implemented, so the roster can differ
 between nodes. For a single team, one node is usually sufficient.
 
-### Backup
+### Backup, restore and rollback
 
-```bash
-# database
-docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > backup-$(date +%F).sql
-
-# uploaded files (attachments, avatars) from the volume
-docker run --rm \
-  --volumes-from "$(docker compose ps -aq app):ro" \
-  -v "$PWD:/out" \
-  alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data/uploads .
-```
-
-This uses the app container's uploads volume even when the installer chose a
-unique project name. Store a secure copy of `.env` with the backups.
-
-### Restore
-
-Take a fresh backup first. Stop the app while restoring and choose the files
-to restore. The uploads command deletes the current contents.
-
-```bash
-docker compose stop app
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U janosik janosik < backup-2026-10-26.sql
-docker run --rm --volumes-from "$(docker compose ps -aq app)" -v "$PWD:/out" alpine \
-  sh -c "find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads-2026-10-26.tar.gz -C /data/uploads"
-docker compose start app
-```
+Janosik does not create or verify server backups. A board export omits uploads.
+For a consistent `pg_dump` and uploads pair, an isolated restore drill, and
+rollback with the matching image and configuration, follow the
+[operations runbook](../site/src/content/docs/docs/runbooks.md). The
+[agent launch guide](../site/src/content/docs/docs/agent-launch.md) includes
+the administrator and developer scenarios, checklist and upgrade notes
+([Russian](../site/src/content/docs/ru/docs/agent-launch.md)).
 
 ### Stop / uninstall
 

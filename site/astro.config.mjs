@@ -71,6 +71,7 @@ export default defineConfig({
             { slug: "docs/getting-started" },
             { slug: "docs/self-hosting" },
             { slug: "docs/runbooks" },
+            { slug: "docs/agent-launch" },
           ],
         },
         {
