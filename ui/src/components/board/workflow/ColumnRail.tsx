@@ -69,8 +69,8 @@ export function ColumnRail({
 
   return (
     <div
-      role="tablist"
-      aria-label={t("workflow.rail.label")}
+      role={columns.length === 0 ? undefined : "tablist"}
+      aria-label={columns.length === 0 ? undefined : t("workflow.rail.label")}
       data-testid={`${testIdPrefix}-rail`}
       className="flex shrink-0 snap-x items-stretch gap-0 overflow-x-auto border-b border-border/80 px-3 [scrollbar-width:none] max-md:px-1.5 [&::-webkit-scrollbar]:hidden"
     >
@@ -89,6 +89,7 @@ export function ColumnRail({
         return (
           <div
             key={column.id}
+            role="presentation"
             className="flex min-w-0 shrink-0 snap-start items-center md:flex-1 md:basis-auto"
           >
             <button
