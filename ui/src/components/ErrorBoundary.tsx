@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Download, RotateCcw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/BrandMark";
 import type { BoardState } from "@janosik/shared";
 import { serializeExport } from "@janosik/shared";
 import { downloadTextFile, timestampedFilename } from "@/utils/download";
@@ -185,25 +186,8 @@ function ErrorFallback({
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
       <div className="w-full max-w-sm space-y-5 rounded-2xl border border-border/70 bg-card p-7 text-center shadow-xl">
-        <div className="relative mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary text-primary-foreground shadow-sm">
-          <svg
-            width="28"
-            height="28"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M14.086 18.412A2 2 0 0112.67 19H5v-7.672a2 2 0 01.586-1.414L11.75 3.75a6 6 0 118.49 8.49z"
-              fill="currentColor"
-            />
-            <path
-              d="M16 8 2 22"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-            />
-          </svg>
+        <div aria-hidden className="group mx-auto w-fit">
+          <BrandMark size="large" />
         </div>
         {confirmingReset ? (
           <>

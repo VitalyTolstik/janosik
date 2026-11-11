@@ -61,6 +61,9 @@ describe("ErrorBoundary", () => {
     renderCrashed();
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     expect(screen.getByTestId("error-reset")).toBeInTheDocument();
+    expect(
+      document.querySelector(".group .janosik-feather"),
+    ).toBeInTheDocument();
   });
 
   it("asks for confirmation instead of erasing straight away", () => {

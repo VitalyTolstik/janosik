@@ -435,7 +435,11 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                   ) : (
                     <>
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {Object.keys(b.cards).length}
+                        {
+                          Object.values(b.cards).filter(
+                            (card) => card.archivedAt === undefined,
+                          ).length
+                        }
                       </span>
                       {/* Touch has no hover: the checkmark yields its slot to
                         the row's action (always visible there). A board I do

@@ -108,11 +108,19 @@ const BACKUP_THROTTLE_MS = 60_000;
 
 type CardPatch = Pick<UpdateCardAction, "title" | "description">;
 
+interface ArchiveBatch {
+  boardId: string;
+  cardIds: string[];
+  done: number;
+  total: number;
+}
+
 /**
  * Everything that changes when the data changes. Read it through
  * `useBoardState()` (or `useBoard()`): consumers re-render on every edit.
  */
 interface BoardStateValue {
+  archiveBatch: ArchiveBatch | null;
   /** The board selected by the URL (falls back to the first one). */
   board: Board | undefined;
   /** Every board in storage (export/import target). */
@@ -168,7 +176,8 @@ interface BoardAccessValue {
  * and its members are safe `useCallback`/`useMemo` dependencies.
  */
 interface BoardActionsValue {
-  dispatch: (action: BoardAction) => void;
+  dispatch: (action: BoardAction) => void | Promise<boolean>;
+  startArchiveBatch: (boardId: string, actions: BoardAction[]) => boolean;
   /**
    * The caller's role on a board, when the server said so — `ADMIN` for
    * every board in local mode. Drives the ADMIN-only switcher actions
@@ -1560,6 +1569,60 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // The archive dialog may close while work is being sent. Keep the queue
+  // with the board provider, hide its planned cards until the outcome is
+  // known, and stop on the first failure so untouched cards reappear.
+  const [archiveBatch, setArchiveBatch] = useState<ArchiveBatch | null>(null);
+  const archiveBatchRunning = useRef(false);
+  const startArchiveBatch = useCallback(
+    (boardId: string, batch: BoardAction[]): boolean => {
+      if (archiveBatchRunning.current || batch.length === 0) return false;
+      const cardIds = batch.map(
+        (action) => (action as { cardId?: string }).cardId,
+      );
+      if (cardIds.some((id) => id === undefined)) return false;
+      archiveBatchRunning.current = true;
+      setArchiveBatch({
+        boardId,
+        cardIds: cardIds as string[],
+        done: 0,
+        total: batch.length,
+      });
+      toast.info(t("archive.backgroundStarted"));
+      void (async () => {
+        let done = 0;
+        let failed = false;
+        try {
+          for (const action of batch) {
+            if (!aliveRef.current || (await dispatch(action)) === false) {
+              failed = true;
+              break;
+            }
+            done++;
+            if (aliveRef.current)
+              setArchiveBatch((current) =>
+                current ? { ...current, done } : current,
+              );
+          }
+        } catch {
+          failed = true;
+        } finally {
+          archiveBatchRunning.current = false;
+          if (aliveRef.current) {
+            setArchiveBatch(null);
+            if (failed)
+              toast.error(
+                t("archive.backgroundFailed", { count: batch.length - done }),
+              );
+            else toast.success(t("archive.backgroundDone", { count: done }));
+          }
+        }
+      })();
+      return true;
+    },
+    [dispatch, t, toast],
+  );
+
   const importBoards = useCallback(
     (boards: BoardState): void | Promise<boolean> => {
       if (serverMode) {
@@ -1709,6 +1772,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<BoardActionsValue>(
     () => ({
       dispatch,
+      startArchiveBatch,
       roleOf,
       // `dispatch` is a stable callback that reads refs when *called*; here
       // it is only stored in closures, never invoked during render.
@@ -1727,6 +1791,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }),
     [
       dispatch,
+      startArchiveBatch,
       roleOf,
       getActiveBoard,
       addBoard,
@@ -1745,12 +1810,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const stateValue = useMemo<BoardStateValue>(
     () => ({
       board,
+      archiveBatch,
       boards: state,
       pendingBoardCount,
       dataIssue,
       syncStatus,
     }),
-    [board, state, pendingBoardCount, dataIssue, syncStatus],
+    [board, state, pendingBoardCount, dataIssue, syncStatus, archiveBatch],
   );
 
   const identity = useMemo<BoardIdentityValue>(
@@ -2256,6 +2322,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
   const noop = (): void => undefined;
   return {
     dispatch: noop,
+    startArchiveBatch: () => false,
     roleOf: () => "VIEWER",
     addColumn: noop,
     renameBoard: noop,
@@ -2353,6 +2420,7 @@ export function ShareBoardProvider({
   const stateValue = useMemo<BoardStateValue>(
     () => ({
       board,
+      archiveBatch: null,
       boards: [board],
       pendingBoardCount: 0,
       dataIssue: null,
