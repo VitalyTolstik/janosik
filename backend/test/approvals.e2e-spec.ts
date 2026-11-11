@@ -13,6 +13,7 @@ import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { DEFAULT_BOARD_AGENT_POLICY } from "@/auth/token-scope";
 import { wipeAll } from "./support/wipe";
+import { ShareService } from "@/share/share.service";
 
 const OWNER_EMAIL = "approvals@example.com";
 const PASSWORD = "correct horse battery";
@@ -709,6 +710,189 @@ describe("Approvals (e2e)", () => {
       .send({ mode: "live" })
       .expect(409);
     expect(again.body.code).toBe("approval_consumed");
+  });
+
+  it("releases a lifecycle approval on a proven validation rollback but never after commit", async () => {
+    const b = await createBoard("Lifecycle rollback");
+    const agent = (await createToken("lifecycle-rollback", session, "admin"))
+      .token;
+    const authorize = async (body: Record<string, unknown>) => {
+      const pending = await server()
+        .post(`/api/v1/boards/${b}/shares`)
+        .set(auth(agent))
+        .send(body)
+        .expect(409);
+      await server()
+        .post(
+          `/api/v1/boards/${b}/approvals/${pending.body.approvalId}/decision`,
+        )
+        .set(auth(session))
+        .send({ decision: "approve", planHash: pending.body.planHash })
+        .expect(200);
+      return pending.body.approvalId as string;
+    };
+    const invalid = { mode: "live", expiresAt: "2000-01-01T00:00:00.000Z" };
+    const invalidApproval = await authorize(invalid);
+    for (let i = 0; i < 2; i++) {
+      await server()
+        .post(`/api/v1/boards/${b}/shares`)
+        .set(auth(agent))
+        .set("X-Approval-Id", invalidApproval)
+        .send(invalid)
+        .expect(400);
+      expect(
+        (
+          await prisma.approvalRequest.findUniqueOrThrow({
+            where: { id: invalidApproval },
+          })
+        ).status,
+      ).toBe("approved");
+    }
+    expect(await prisma.boardShare.count({ where: { boardId: b } })).toBe(0);
+    const valid = { mode: "live", title: "commit failure simulation" };
+    const validApproval = await authorize(valid);
+    const service = app.get(ShareService);
+    const original = service.create.bind(service);
+    const spy = jest
+      .spyOn(service, "create")
+      .mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw new Error("post-commit failure");
+      });
+    await server()
+      .post(`/api/v1/boards/${b}/shares`)
+      .set(auth(agent))
+      .set("X-Approval-Id", validApproval)
+      .send(valid)
+      .expect(500);
+    spy.mockRestore();
+    expect(
+      (
+        await prisma.approvalRequest.findUniqueOrThrow({
+          where: { id: validApproval },
+        })
+      ).status,
+    ).toBe("consumed");
+    await server()
+      .post(`/api/v1/boards/${b}/shares`)
+      .set(auth(agent))
+      .set("X-Approval-Id", validApproval)
+      .send(valid)
+      .expect(409);
+    expect(await prisma.boardShare.count({ where: { boardId: b } })).toBe(1);
+  });
+
+  it("keeps a failed member conflict approved and consumes a concurrent share only once", async () => {
+    const b = await createBoard("Lifecycle conflict");
+    const agent = (await createToken("lifecycle-conflict", session, "admin"))
+      .token;
+    const memberPath = `/api/v1/boards/${b}/members/${ownerId}`;
+    const denied = await server()
+      .patch(memberPath)
+      .set(auth(agent))
+      .send({ role: "MEMBER" })
+      .expect(409);
+    await server()
+      .post(`/api/v1/boards/${b}/approvals/${denied.body.approvalId}/decision`)
+      .set(auth(session))
+      .send({ decision: "approve", planHash: denied.body.planHash })
+      .expect(200);
+    await server()
+      .patch(memberPath)
+      .set(auth(agent))
+      .set("X-Approval-Id", denied.body.approvalId)
+      .send({ role: "MEMBER" })
+      .expect(409);
+    expect(
+      (
+        await prisma.approvalRequest.findUniqueOrThrow({
+          where: { id: denied.body.approvalId },
+        })
+      ).status,
+    ).toBe("approved");
+
+    const sharePath = `/api/v1/boards/${b}/shares`;
+    const pending = await server()
+      .post(sharePath)
+      .set(auth(agent))
+      .send({ mode: "live" })
+      .expect(409);
+    await server()
+      .post(`/api/v1/boards/${b}/approvals/${pending.body.approvalId}/decision`)
+      .set(auth(session))
+      .send({ decision: "approve", planHash: pending.body.planHash })
+      .expect(200);
+    const send = () =>
+      server()
+        .post(sharePath)
+        .set(auth(agent))
+        .set("X-Approval-Id", pending.body.approvalId)
+        .send({ mode: "live" });
+    const responses = await Promise.all([send(), send()]);
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(await prisma.boardShare.count({ where: { boardId: b } })).toBe(1);
+  });
+
+  it("releases a lifecycle approval when a queued write is paused", async () => {
+    const b = await createBoard("Lifecycle pause");
+    const agent = (await createToken("lifecycle-pause", session, "admin"))
+      .token;
+    const url = `/api/v1/boards/${b}/shares`;
+    const pending = await server()
+      .post(url)
+      .set(auth(agent))
+      .send({ mode: "live" })
+      .expect(409);
+    await server()
+      .post(`/api/v1/boards/${b}/approvals/${pending.body.approvalId}/decision`)
+      .set(auth(session))
+      .send({ decision: "approve", planHash: pending.body.planHash })
+      .expect(200);
+    const shares = app.get(ShareService);
+    const original = shares.create.bind(shares);
+    let entered!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let proceed!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
+    const spy = jest
+      .spyOn(shares, "create")
+      .mockImplementationOnce(async (...args) => {
+        entered();
+        await gate;
+        return original(...args);
+      });
+    const request = server()
+      .post(url)
+      .set(auth(agent))
+      .set("X-Approval-Id", pending.body.approvalId)
+      .send({ mode: "live" })
+      .then((res) => res);
+    try {
+      await reached;
+      await server()
+        .post(`/api/v1/boards/${b}/agents/pause`)
+        .set(auth(session))
+        .send({})
+        .expect(200);
+    } finally {
+      proceed();
+    }
+    const response = await request;
+    spy.mockRestore();
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe("agent_paused");
+    expect(
+      (
+        await prisma.approvalRequest.findUniqueOrThrow({
+          where: { id: pending.body.approvalId },
+        })
+      ).status,
+    ).toBe("approved");
+    expect(await prisma.boardShare.count({ where: { boardId: b } })).toBe(0);
   });
 
   it("is PAT-only for creation and session-only for decisions", async () => {

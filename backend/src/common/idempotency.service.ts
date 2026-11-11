@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isGuaranteedRollback } from "./rollback-certainty";
 import { createReadStream } from "node:fs";
 import {
   BadRequestException,
@@ -54,13 +55,11 @@ interface RunOptions<T> {
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 /**
- * An in-progress row only needs to outlive the request that wrote it; if a
- * process dies mid-write, the key must become usable again without waiting
- * the full 24 h. The slowest write path is bounded by a 15 s board-write
- * transaction and clients cap requests at 30 s, so 5 min leaves a wide margin.
- * Completed records get the ADR's full 24 h TTL.
+ * An in-progress operation may have committed before the process died. Keep
+ * its key reserved for the same 24-hour window as a completed operation;
+ * only a proven rollback may release it sooner.
  */
-const IN_PROGRESS_TTL_MS = 5 * 60 * 1000;
+const IN_PROGRESS_TTL_MS = IDEMPOTENCY_TTL_HOURS * 60 * 60 * 1000;
 
 /** Validate/trim an `Idempotency-Key` header. Empty means "not supplied". */
 export function normalizeIdempotencyKey(
@@ -235,11 +234,13 @@ export class IdempotencyService {
     try {
       result = await run();
     } catch (error) {
-      // `run` itself threw, so nothing committed under this key: release it
-      // and let an honest retry execute again.
-      await this.prisma.idempotencyRecord
-        .delete({ where: { id: record.id } })
-        .catch(() => undefined);
+      // A failure after commit is indistinguishable from a failed response.
+      // Only reopen when the operation explicitly proved it rolled back.
+      if (isGuaranteedRollback(error)) {
+        await this.prisma.idempotencyRecord
+          .delete({ where: { id: record.id } })
+          .catch(() => undefined);
+      }
       throw error;
     }
 

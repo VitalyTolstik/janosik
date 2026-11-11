@@ -1005,7 +1005,9 @@ describe("TableView interactivity (TASK-14.1)", () => {
     expect(full?.className).toContain("h-[92px]");
 
     // Radix DropdownMenu opens on pointerdown, not click.
-    fireEvent.pointerDown(screen.getByTestId("density-menu"), { button: 0 });
+    fireEvent.pointerDown(screen.getByTestId("board-display-menu"), {
+      button: 0,
+    });
     fireEvent.click(screen.getByTestId("density-toggle"));
 
     await waitFor(() => {

@@ -291,6 +291,17 @@ describe("ShareService (unit)", () => {
       expiresAt: future,
     });
     expect(share.expiresAt).toBeGreaterThan(Date.now());
+    const relative = await service.create("b1", "u1", {
+      mode: "live",
+      expiresInHours: 1,
+    });
+    expect(relative.expiresAt).toBeGreaterThan(Date.now() + 3_500_000);
+    const both = await service.create("b1", "u1", {
+      mode: "live",
+      expiresAt: future,
+      expiresInHours: 2,
+    });
+    expect(both.expiresAt).toBeGreaterThan(Date.now() + 7_100_000);
   });
 
   it("gates on revoke and expiry with a bare 404", async () => {

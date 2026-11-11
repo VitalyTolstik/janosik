@@ -1484,6 +1484,57 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /cards/{cardId}/board-context:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [Comments]
+      operationId: getCardBoardContext
+      summary: Resolve the board for an accessible card
+      description: Resolves the card's board after verifying board membership and token scope.
+      responses:
+        "200":
+          description: The card's board.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoardContext" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /comments/{commentId}/board-context:
+    parameters:
+      - $ref: "#/components/parameters/CommentId"
+    get:
+      tags: [Comments]
+      operationId: getCommentBoardContext
+      summary: Resolve the board for an accessible comment
+      description: Resolves the comment's board after verifying board membership and token scope.
+      responses:
+        "200":
+          description: The comment's board.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoardContext" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /attachments/{attachmentId}/board-context:
+    parameters:
+      - $ref: "#/components/parameters/AttachmentId"
+    get:
+      tags: [Attachments]
+      operationId: getAttachmentBoardContext
+      summary: Resolve the board for an accessible attachment
+      description: Resolves the attachment's board after verifying board membership and token scope.
+      responses:
+        "200":
+          description: The attachment's board.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoardContext" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /cards/{cardId}/comments:
     parameters:
       - $ref: "#/components/parameters/CardId"
@@ -3147,6 +3198,11 @@ components:
           type: integer
         createdBy:
           type: string
+    BoardContext:
+      type: object
+      required: [boardId]
+      properties:
+        boardId: { type: string }
     CreateShareRequest:
       type: object
       required: [mode]
@@ -3166,7 +3222,12 @@ components:
         expiresAt:
           type: [string, "null"]
           format: date-time
-          description: Must be in the future.
+          description: Must be in the future when expiresInHours is absent.
+        expiresInHours:
+          type: integer
+          minimum: 1
+          maximum: 87600
+          description: Relative expiry calculated on creation; takes precedence over expiresAt.
     UpdateShareRequest:
       type: object
       properties:

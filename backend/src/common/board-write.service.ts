@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
@@ -9,6 +10,8 @@ import {
   type AgentPauseGate,
 } from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { rollbackOnThrow } from "./rollback-certainty";
+import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 
 /**
  * How many times a transaction that lost a race is replayed from scratch.
@@ -163,15 +166,31 @@ export class BoardWriteService {
             // TASK-166.3: the second pause read happens under the lock. A
             // pause committed before this point refuses the write; a pause
             // committed after it lets the in-flight transaction finish.
-            if (pause !== undefined) {
-              await assertAgentCanWriteInTransaction(
-                tx,
-                boardId,
-                pause.principal,
-                pause.sessionId,
-              );
-            }
-            return fn(tx);
+            return rollbackOnThrow(async () => {
+              if (pause !== undefined) {
+                await assertAgentCanWriteInTransaction(
+                  tx,
+                  boardId,
+                  pause.principal,
+                  pause.sessionId,
+                );
+                if (pause.lifecycle) {
+                  const board = await tx.board.findFirst({
+                    where: { id: boardId, deletedAt: null },
+                    select: { agentPolicy: true },
+                  });
+                  if (board === null)
+                    throw new NotFoundException("Board not found");
+                  assertAgentRule(
+                    pause.principal,
+                    board.agentPolicy,
+                    LIFECYCLE_ACTIONS[pause.lifecycle.action],
+                    { approvalApplied: pause.lifecycle.approvalApplied },
+                  );
+                }
+              }
+              return fn(tx);
+            });
           },
           { maxWait: BOARD_WRITE_MAX_WAIT_MS, timeout: BOARD_WRITE_TIMEOUT_MS },
         );

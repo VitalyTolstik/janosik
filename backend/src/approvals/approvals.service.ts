@@ -11,6 +11,7 @@ import type {
   ApprovalPlan,
   ApprovalRequestDto,
   ApprovalStatus,
+  Board,
 } from "@janosik/shared";
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import type { PreparedCommand } from "@/commands/command-validation";
@@ -26,6 +27,8 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { countPlanCardCreates } from "./plan-card-count";
+import { isGuaranteedRollback } from "@/common/rollback-certainty";
 import type {
   CreateApprovalDto,
   ApprovalDecisionDto,
@@ -84,7 +87,13 @@ export class ApprovalsService {
     if (aggregate === null) throw this.boardNotFound();
 
     const plan = normalizeApprovalPlan(dto.plan, boardId);
-    await this.assertPlanLimitsForUser(plan, policy, userId, boardId);
+    await this.assertPlanLimitsForUser(
+      plan,
+      policy,
+      userId,
+      boardId,
+      aggregate,
+    );
     const requirement = classifyPlan(
       plan,
       aggregate,
@@ -371,7 +380,6 @@ export class ApprovalsService {
 
     // A board policy may cap the plan even when the caller reaches this path
     // automatically (without an explicit `POST /approvals`).
-    await this.assertPlanLimitsForUser(plan, policy, params.userId, boardId);
     await this.expireOverdue(boardId);
 
     const existing = await this.findByIdempotentPlan(
@@ -388,6 +396,7 @@ export class ApprovalsService {
         throw this.approvalRequired(existing);
       }
     }
+    await this.assertPlanLimitsForUser(plan, policy, params.userId, boardId);
     const row = await this.createRow({
       boardId,
       userId: params.userId,
@@ -690,6 +699,20 @@ export class ApprovalsService {
       },
       data: { status: "approved", consumedAt: null },
     });
+  }
+
+  /** Never reopen a claim after an ambiguous commit or post-commit failure. */
+  async performOperation<T>(
+    row: ApprovalRequest | null,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (row !== null && isGuaranteedRollback(error))
+        await this.releaseOperation(row);
+      throw error;
+    }
   }
 
   /** Lazily mark overdue rows expired and publish one activity per row. */
@@ -1013,9 +1036,13 @@ export class ApprovalsService {
     policy: BoardAgentPolicy,
     userId: string,
     boardId: string,
+    board?: Board,
   ): Promise<void> {
     try {
-      this.assertPlanLimits(plan, policy);
+      const aggregate =
+        board ?? (await loadBoardAggregate(this.prisma, boardId));
+      if (aggregate === null) throw this.boardNotFound();
+      this.assertPlanLimits(plan, policy, aggregate);
     } catch (error) {
       await this.attention.notifyLimitExceeded(userId, error, {
         boardId,
@@ -1027,12 +1054,15 @@ export class ApprovalsService {
 
   /**
    * Enforce the board's run limits on every plan path, including the
-   * automatic 409 seam. `DUPLICATE_CARD` and `DUPLICATE_COLUMN` also create
-   * cards; the latter may create a whole copied column, so it is counted as
-   * at least one card here and the apply transaction still enforces the
-   * per-column hard cap.
+   * automatic 409 seam. Count creations against the evolving aggregate so a
+   * copied column contributes each card it actually creates. The apply
+   * transaction repeats this check against the board and policy under lock.
    */
-  assertPlanLimits(plan: ApprovalPlan, policy: BoardAgentPolicy): void {
+  assertPlanLimits(
+    plan: ApprovalPlan,
+    policy: BoardAgentPolicy,
+    board: Board,
+  ): void {
     const commands = plan.commands;
     if (commands !== undefined) {
       const maxCommands = Math.min(100, policy.maxCommandsPerRun);
@@ -1045,11 +1075,7 @@ export class ApprovalsService {
           retryable: false,
         });
       }
-      const creates = commands.filter((command) =>
-        ["ADD_CARD", "DUPLICATE_CARD", "DUPLICATE_COLUMN"].includes(
-          command.action.type,
-        ),
-      ).length;
+      const creates = countPlanCardCreates(plan, board);
       const maxCards = Math.min(50, policy.maxCardsPerRun);
       if (creates > maxCards) {
         throw new ConflictException({

@@ -75,6 +75,15 @@ approval answers `409 approval_required` and applies nothing; the board policy
 `destructive: "deny"` is a hard `403 destructive_denied` that even `trustedCi`
 cannot bypass. See [Token scopes and the destructive gate](./rest/#token-scopes-and-the-destructive-gate).
 
+Observers, including legacy read-only keys, may start, heartbeat and end their
+own agent sessions and request a run-revert preview. These control operations
+do not grant permission to change board content or apply a revert.
+
+Share creation accepts either an absolute `expiresAt` or `expiresInHours`.
+When both are supplied, the relative duration takes precedence. Both expiry
+intent and the other share options are part of the idempotency and approval
+fingerprints; changing them requires a new key or approval.
+
 ### Session-only routes
 
 A personal API token acts as its owner for board work, but it cannot manage
@@ -181,7 +190,7 @@ it. `statusCode` is kept as a compatibility mirror.
 | `409` | `approval_not_pending` / `approval_rejected` / `approval_cancelled` / `approval_consumed` | the request cannot be applied in that state |
 | `409` | `run_conflict` / `run_expired` | the run is already reverted/being reverted, or its pre-images were swept |
 | `409` | `idempotency_conflict` | the same `Idempotency-Key` was used with another body |
-| `409` | `idempotency_in_progress` | the first request with that key is still running; retry |
+| `409` | `idempotency_in_progress` | the first request is running or its outcome is uncertain |
 | `413` | `payload_too_large` | body/file over the route limit; see `limit` |
 | `416` | `range_not_satisfiable` | an unsatisfiable `Range` on an attachment |
 | `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
@@ -237,8 +246,10 @@ does not create a second board. A different body with that key is
 `409 idempotency_conflict`; a concurrent retry while the first request is still
 running is `409 idempotency_in_progress` (`retryable: true`). Command-log writes
 use `CommandRequest.commandId` for the same purpose; a duplicate `commandId`
-with another payload is also `409 idempotency_conflict`. A failed request
-releases its key, so an honest retry may execute it again.
+with another payload is also `409 idempotency_conflict`. A failure known to
+have rolled back releases its key. If the outcome is uncertain, the reservation
+remains for up to 24 hours and retries return `idempotency_in_progress`; check
+whether the operation took effect before using a new key.
 
 ## Rate limits
 
@@ -552,7 +563,7 @@ which are [session-only](#session-only-routes): an API key can neither list
 nor create nor revoke keys.
 
 A personal API token can be scoped when created: `boardId` limits
-it to one board, `readOnly: true` refuses every write (`403 pat_read_only`),
+it to one board, `readOnly: true` refuses content writes (`403 pat_read_only`),
 and `rateLimitPerMinute` gives it its own request budget (over the budget
 answers `429`).
 
@@ -591,7 +602,7 @@ aggressively. If the user has no avatar, the server returns `404`.
 | `name`               | string         | required | at most 50 characters                                                          |
 | `expiresAt`          | string or null | optional | ISO-8601; must be in the future; omitted means 90 days; `null` means no expiry |
 | `boardId`            | string or null | optional | scope to one board the owner is a member of; `null`/omitted means every board  |
-| `readOnly`           | boolean        | optional | when true every write answers `403 pat_read_only`; omitted means read/write    |
+| `readOnly`           | boolean        | optional | when true content writes answer `403 pat_read_only`; observer control operations remain available |
 | `rateLimitPerMinute` | integer or null | optional | 1 to 100000; `null`/omitted means no per-token limit                          |
 | `scopePreset`        | string         | optional | `observer`, `worker`, `reviewer` or `admin`; omitted means `worker`; the API enforces it and an invalid value is refused |
 | `trustedCi`          | boolean        | optional | enables destructive actions without approval, unless the board policy is `destructive: "deny"`; omitted means `false` |

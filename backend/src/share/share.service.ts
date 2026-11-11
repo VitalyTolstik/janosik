@@ -5,6 +5,7 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { Prisma, Role } from "@prisma/client";
 import type { BoardShare } from "@prisma/client";
@@ -25,7 +26,16 @@ import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
 } from "@/auth/request-attribution";
+import type { AuthPrincipal } from "@/auth/auth-principal";
+import { pauseGateFor } from "@/auth/agent-pause";
+import type { AgentPauseGate } from "@/auth/agent-pause";
+import { BoardWriteService } from "@/common/board-write.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import {
+  beforeWrite,
+  markGuaranteedRollback,
+  rollbackOnThrow,
+} from "@/common/rollback-certainty";
 import { env } from "@/config/env";
 import { BoardsService } from "@/boards/boards.service";
 import { CommentsService } from "@/comments/comments.service";
@@ -66,6 +76,7 @@ export class ShareService {
     private readonly comments: CommentsService,
     private readonly attachments: AttachmentsService,
     private readonly flags: FeatureFlagsService,
+    @Optional() private readonly boardWrite?: BoardWriteService,
   ) {}
 
   /**
@@ -86,16 +97,21 @@ export class ShareService {
     dto: CreateShareDto,
     actorType: "user" | "admin" = "user",
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<BoardShareDto> {
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
       select: { id: true },
     });
     if (!board) {
-      throw new NotFoundException("Board not found");
+      throw beforeWrite(new NotFoundException("Board not found"));
     }
     const mode: BoardShareMode = dto.mode;
-    const expiresAt = this.parseExpiry(dto.expiresAt);
+    const expiresAt =
+      dto.expiresInHours === undefined
+        ? this.parseExpiry(dto.expiresAt)
+        : new Date(Date.now() + dto.expiresInHours * 3_600_000);
     const includeComments =
       dto.includeComments ??
       (mode === "live"
@@ -116,26 +132,35 @@ export class ShareService {
     };
 
     if (mode === "snapshot") {
-      const { payload, version } = await this.captureSnapshot(boardId);
+      const { payload, version } = await rollbackOnThrow(() =>
+        this.captureSnapshot(boardId),
+      );
       data.snapshot = payload as unknown as Prisma.InputJsonValue;
       data.snapshotVersion = version;
     }
 
-    const row = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${boardId}`}, 0))`;
-      await this.assertShareCapacity(tx, boardId, mode);
-      const created = await tx.boardShare.create({ data });
-      await this.auditShare(
-        tx,
-        created,
-        boardId,
-        createdBy,
-        actorType,
-        "created",
-        attribution,
-      );
-      return created;
-    });
+    const row = await this.lifecycleTransaction(
+      boardId,
+      principal,
+      attribution,
+      async (tx) =>
+        rollbackOnThrow(async () => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${boardId}`}, 0))`;
+          await this.assertShareCapacity(tx, boardId, mode);
+          const created = await tx.boardShare.create({ data });
+          await this.auditShare(
+            tx,
+            created,
+            boardId,
+            createdBy,
+            actorType,
+            "created",
+            attribution,
+          );
+          return created;
+        }),
+      { action: "share.create", approvalApplied },
+    );
     return this.toDto(row);
   }
 
@@ -203,7 +228,11 @@ export class ShareService {
   }
 
   /** Re-freeze a snapshot share with the board's current content. */
-  async refreshSnapshot(shareId: string): Promise<BoardShareDto> {
+  async refreshSnapshot(
+    shareId: string,
+    principal?: AuthPrincipal,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+  ): Promise<BoardShareDto> {
     const row = await this.requireShare(shareId);
     if (row.mode !== "snapshot") {
       throw new BadRequestException("Only a snapshot share can be refreshed");
@@ -211,18 +240,30 @@ export class ShareService {
     const { payload, version } = await this.captureSnapshot(
       this.boardIdOf(row),
     );
-    const updated = await this.prisma.boardShare.update({
-      where: { id: shareId },
-      data: {
-        snapshot: payload as unknown as Prisma.InputJsonValue,
-        snapshotVersion: version,
-      },
-    });
+    const updated = await this.lifecycleTransaction(
+      row.boardId,
+      principal,
+      attribution,
+      (tx) =>
+        tx.boardShare.update({
+          where: { id: shareId },
+          data: {
+            snapshot: payload as unknown as Prisma.InputJsonValue,
+            snapshotVersion: version,
+          },
+        }),
+    );
     return this.toDto(updated);
   }
 
   /** Update flags/TTL/title (owner's dialog). */
-  async update(shareId: string, dto: UpdateShareDto): Promise<BoardShareDto> {
+  async update(
+    shareId: string,
+    dto: UpdateShareDto,
+    principal?: AuthPrincipal,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    approvalApplied = false,
+  ): Promise<BoardShareDto> {
     const row = await this.requireShare(shareId);
     const data: Prisma.BoardShareUpdateInput = {};
     if (dto.title !== undefined) {
@@ -237,27 +278,34 @@ export class ShareService {
     if (dto.expiresAt !== undefined) {
       data.expiresAt = this.parseExpiry(dto.expiresAt);
     }
-    const updated = await this.prisma.$transaction(async (tx) => {
-      if (row.boardId) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${row.boardId}`}, 0))`;
-        const current = await tx.boardShare.findUniqueOrThrow({
-          where: { id: row.id },
-        });
-        if (
-          dto.expiresAt !== undefined &&
-          !current.revokedAt &&
-          current.expiresAt &&
-          current.expiresAt <= new Date()
-        ) {
-          await this.assertShareCapacity(
-            tx,
-            row.boardId,
-            current.mode as BoardShareMode,
-          );
-        }
-      }
-      return tx.boardShare.update({ where: { id: row.id }, data });
-    });
+    const updated = await this.lifecycleTransaction(
+      row.boardId,
+      principal,
+      attribution,
+      async (tx) =>
+        rollbackOnThrow(async () => {
+          if (row.boardId) {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${row.boardId}`}, 0))`;
+            const current = await tx.boardShare.findUniqueOrThrow({
+              where: { id: row.id },
+            });
+            if (
+              dto.expiresAt !== undefined &&
+              !current.revokedAt &&
+              current.expiresAt &&
+              current.expiresAt <= new Date()
+            ) {
+              await this.assertShareCapacity(
+                tx,
+                row.boardId,
+                current.mode as BoardShareMode,
+              );
+            }
+          }
+          return tx.boardShare.update({ where: { id: row.id }, data });
+        }),
+      { action: "share.update", approvalApplied },
+    );
     return this.toDto(updated);
   }
 
@@ -266,28 +314,37 @@ export class ShareService {
     shareId: string,
     actorId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<BoardShareDto> {
     const row = await this.requireShare(shareId);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const changed = await tx.boardShare.updateMany({
-        where: { id: row.id, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      const current = await tx.boardShare.findUniqueOrThrow({
-        where: { id: row.id },
-      });
-      if (changed.count && row.boardId)
-        await this.auditShare(
-          tx,
-          current,
-          row.boardId,
-          actorId,
-          "user",
-          "revoked",
-          attribution,
-        );
-      return current;
-    });
+    const updated = await this.lifecycleTransaction(
+      row.boardId,
+      principal,
+      attribution,
+      async (tx) =>
+        rollbackOnThrow(async () => {
+          const changed = await tx.boardShare.updateMany({
+            where: { id: row.id, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          const current = await tx.boardShare.findUniqueOrThrow({
+            where: { id: row.id },
+          });
+          if (changed.count && row.boardId)
+            await this.auditShare(
+              tx,
+              current,
+              row.boardId,
+              actorId,
+              "user",
+              "revoked",
+              attribution,
+            );
+          return current;
+        }),
+      { action: "share.revoke", approvalApplied },
+    );
     return this.toDto(updated);
   }
 
@@ -296,25 +353,60 @@ export class ShareService {
     shareId: string,
     actorId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<void> {
     const row = await this.requireShareOnBoard(shareId, boardId);
-    if (!row.revokedAt)
-      throw new BadRequestException("Only revoked shares can be deleted");
-    await this.prisma.$transaction(async (tx) => {
-      const deleted = await tx.boardShare.deleteMany({
-        where: { id: shareId, boardId, revokedAt: { not: null } },
-      });
-      if (!deleted.count) throw new NotFoundException("Share not found");
-      await this.auditShare(
-        tx,
-        row,
-        boardId,
-        actorId,
-        "user",
-        "deleted",
-        attribution,
+    if (!row.revokedAt) {
+      const error = new BadRequestException(
+        "Only revoked shares can be deleted",
       );
-    });
+      markGuaranteedRollback(error);
+      throw error;
+    }
+    await this.lifecycleTransaction(
+      boardId,
+      principal,
+      attribution,
+      async (tx) =>
+        rollbackOnThrow(async () => {
+          const deleted = await tx.boardShare.deleteMany({
+            where: { id: shareId, boardId, revokedAt: { not: null } },
+          });
+          if (!deleted.count) throw new NotFoundException("Share not found");
+          await this.auditShare(
+            tx,
+            row,
+            boardId,
+            actorId,
+            "user",
+            "deleted",
+            attribution,
+          );
+        }),
+      { action: "share.delete", approvalApplied },
+    );
+  }
+
+  private lifecycleTransaction<T>(
+    boardId: string | null,
+    principal: AuthPrincipal | undefined,
+    attribution: RequestAttribution,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+    lifecycle?: AgentPauseGate["lifecycle"],
+  ): Promise<T> {
+    if (principal?.via === "pat") {
+      if (!boardId || !this.boardWrite)
+        throw new Error(
+          "Board write service is required for PAT lifecycle operations",
+        );
+      return this.boardWrite.run(
+        boardId,
+        work,
+        pauseGateFor(principal, attribution.agentSessionId, lifecycle),
+      );
+    }
+    return this.prisma.$transaction(work);
   }
 
   /** The share row a board-owner operation targets, or 404. */
@@ -323,7 +415,7 @@ export class ShareService {
       where: { id: shareId },
     });
     if (!row) {
-      throw new NotFoundException("Share not found");
+      throw beforeWrite(new NotFoundException("Share not found"));
     }
     return row;
   }
@@ -335,7 +427,9 @@ export class ShareService {
   ): Promise<ShareRow> {
     const row = await this.requireShare(shareId);
     if (row.boardId !== boardId) {
-      throw new ForbiddenException("Share does not belong to this board");
+      throw beforeWrite(
+        new ForbiddenException("Share does not belong to this board"),
+      );
     }
     return row;
   }
@@ -660,10 +754,16 @@ export class ShareService {
     if (raw === undefined || raw === null || raw === "") return null;
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException("expiresAt must be a valid ISO date");
+      const error = new BadRequestException(
+        "expiresAt must be a valid ISO date",
+      );
+      markGuaranteedRollback(error);
+      throw error;
     }
     if (parsed.getTime() <= Date.now()) {
-      throw new BadRequestException("expiresAt must be in the future");
+      const error = new BadRequestException("expiresAt must be in the future");
+      markGuaranteedRollback(error);
+      throw error;
     }
     return parsed;
   }

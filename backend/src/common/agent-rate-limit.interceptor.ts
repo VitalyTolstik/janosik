@@ -20,6 +20,7 @@ import { agentSessionRateLimit, boardRateLimit } from "@/config/rate-limit";
 interface LimitedRequest extends Request, RateLimitedRequest {
   auth?: AuthPrincipal;
   agentSession?: AgentSessionContext;
+  rateLimitSessionId?: string;
   boardMembership?: { boardId?: string };
 }
 
@@ -99,20 +100,13 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
   }
 }
 
-/** `X-Agent-Session` (resolved by the guards), a path session, or SSE query. */
+/** Only sessions whose ownership was checked by a guard may spend this budget. */
 export function agentSessionIdOf(request: LimitedRequest): string | undefined {
-  const resolved = request.agentSession?.id ?? request.auth?.agentSessionId;
+  const resolved =
+    request.agentSession?.id ??
+    request.auth?.agentSessionId ??
+    request.rateLimitSessionId;
   if (resolved !== undefined && resolved !== "") return resolved;
-  const path = pathOf(request);
-  if (/\/agent-sessions\/[^/]+(?:\/|$)/.test(path)) {
-    const sessionId = request.params?.sessionId;
-    if (typeof sessionId === "string" && sessionId !== "") return sessionId;
-  }
-  const query = request.originalUrl?.split("?")[1];
-  if (path.endsWith("/events") && query !== undefined) {
-    const session = new URLSearchParams(query).get("session");
-    if (session !== null && session !== "") return session;
-  }
   return undefined;
 }
 

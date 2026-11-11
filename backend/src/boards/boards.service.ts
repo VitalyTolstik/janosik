@@ -8,6 +8,7 @@ import {
 import { Role, Prisma } from "@prisma/client";
 import type {
   BoardAgentPolicy,
+  Board,
   BoardAgentPolicyStateDto,
   BoardAggregate,
   BoardCardSearchResult,
@@ -29,7 +30,10 @@ import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
 } from "@/auth/request-attribution";
-import { pauseGateFor } from "@/auth/agent-pause";
+import {
+  assertAgentTokenCanWriteInTransaction,
+  pauseGateFor,
+} from "@/auth/agent-pause";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
@@ -38,6 +42,12 @@ import {
 } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
+import {
+  beforeWrite,
+  isGuaranteedRollback,
+  markGuaranteedRollback,
+  rollbackOnThrow,
+} from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
@@ -331,30 +341,33 @@ export class BoardsService {
   async createBoard(
     userId: string,
     dto: CreateBoardDto,
+    principal?: AuthPrincipal,
   ): Promise<BoardAggregate> {
     const title = dto.title.trim();
     if (title.length === 0) {
-      throw new BadRequestException("title must not be blank");
+      throw beforeWrite(new BadRequestException("title must not be blank"));
     }
     const board = await this.prisma
       .$transaction(
-        async (tx) => {
-          // TASK-166 D19: the count and the insert share one transaction and
-          // one per-account advisory lock, so two parallel creates cannot both
-          // slip past an operator cap.
-          await lockBoardQuota(tx, userId);
-          await assertBoardQuota(tx, userId, 1);
-          const created = await tx.board.create({ data: { title } });
-          await tx.boardMember.create({
-            data: {
-              boardId: created.id,
-              userId,
-              role: Role.ADMIN,
-              acceptedAt: new Date(),
-            },
-          });
-          return created;
-        },
+        async (tx) =>
+          rollbackOnThrow(async () => {
+            // TASK-166 D19: the count and the insert share one transaction and
+            // one per-account advisory lock, so two parallel creates cannot both
+            // slip past an operator cap.
+            await lockBoardQuota(tx, userId);
+            await assertAgentTokenCanWriteInTransaction(tx, principal);
+            await assertBoardQuota(tx, userId, 1);
+            const created = await tx.board.create({ data: { title } });
+            await tx.boardMember.create({
+              data: {
+                boardId: created.id,
+                userId,
+                role: Role.ADMIN,
+                acceptedAt: new Date(),
+              },
+            });
+            return created;
+          }),
         { timeout: 15_000, maxWait: 10_000 },
       )
       .catch(async (error: unknown) => {
@@ -476,6 +489,7 @@ export class BoardsService {
     actorId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<void> {
     const board = await this.prisma.board.findUnique({
       where: { id: boardId },
@@ -490,7 +504,7 @@ export class BoardsService {
       },
     });
     if (!board) {
-      throw new NotFoundException("Board not found");
+      throw beforeWrite(new NotFoundException("Board not found"));
     }
     const ownerId = board.members[0]?.userId ?? actorId;
     await this.boardWrite.run(
@@ -571,7 +585,10 @@ export class BoardsService {
           },
         });
       },
-      pauseGateFor(principal, attribution.agentSessionId),
+      pauseGateFor(principal, attribution.agentSessionId, {
+        action: "board.delete",
+        approvalApplied,
+      }),
     );
   }
 
@@ -637,6 +654,7 @@ export class BoardsService {
     dto: InviteMemberDto,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<BoardMemberDto> {
     const email = dto.email.trim().toLowerCase();
     const expiresAt = this.resolveExpiresAt(dto.role, dto.expiresAt, null);
@@ -724,14 +742,20 @@ export class BoardsService {
           });
           return created;
         },
-        pauseGateFor(principal, attribution.agentSessionId),
+        pauseGateFor(principal, attribution.agentSessionId, {
+          action: "member.invite",
+          approvalApplied,
+        }),
       )
       .catch((error: unknown) => {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === "P2002"
         ) {
-          throw new ConflictException("User is already a board member");
+          const conflict = new ConflictException(
+            "User is already a board member",
+          );
+          throw isGuaranteedRollback(error) ? beforeWrite(conflict) : conflict;
         }
         throw error;
       });
@@ -753,13 +777,14 @@ export class BoardsService {
     dto: UpdateMemberDto,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<BoardMemberDto> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
       include: { user: true },
     });
     if (!member) {
-      throw new NotFoundException("Board member not found");
+      throw beforeWrite(new NotFoundException("Board member not found"));
     }
 
     const role = dto.role ?? member.role;
@@ -831,7 +856,10 @@ export class BoardsService {
         }
         return row;
       },
-      pauseGateFor(principal, attribution.agentSessionId),
+      pauseGateFor(principal, attribution.agentSessionId, {
+        action: "member.update",
+        approvalApplied,
+      }),
     );
     // A real role/expiry change rewrites the directory every open member
     // list shows; a no-op PATCH stays silent (mirrors the activity write).
@@ -853,13 +881,14 @@ export class BoardsService {
     targetUserId: string,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
+    approvalApplied = false,
   ): Promise<void> {
     const member = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: targetUserId } },
       include: { user: true },
     });
     if (!member) {
-      throw new NotFoundException("Board member not found");
+      throw beforeWrite(new NotFoundException("Board member not found"));
     }
     // Pending invitations are not members — deleting the row cancels the
     // invitation and never trips the last-ADMIN guard. The guard runs inside
@@ -891,7 +920,10 @@ export class BoardsService {
           },
         });
       },
-      pauseGateFor(principal, attribution.agentSessionId),
+      pauseGateFor(principal, attribution.agentSessionId, {
+        action: "member.remove",
+        approvalApplied,
+      }),
     );
     // An accepted member has an open SSE stream: tell it the membership is
     // gone so it stops following the board (the endpoint closes that
@@ -1003,25 +1035,39 @@ export class BoardsService {
   }
 
   /** Import a board envelope, atomically (TASK-149, B16). */
-  async importBoards(userId: string, body: unknown): Promise<BoardAggregate[]> {
+  async importBoards(
+    userId: string,
+    body: unknown,
+    principal?: AuthPrincipal,
+  ): Promise<BoardAggregate[]> {
     // The server cap is enforced inside the transaction (below), so this
     // parse only checks structure; `null` disables the local 10-board guard.
-    const boards = this.parseEnvelope(body);
+    let boards: Board[];
+    try {
+      boards = this.parseEnvelope(body);
+    } catch (error) {
+      markGuaranteedRollback(error);
+      throw error;
+    }
     if (boards.length === 0) {
-      throw new BadRequestException("The envelope contains no boards");
+      throw beforeWrite(
+        new BadRequestException("The envelope contains no boards"),
+      );
     }
     let createdIds: string[];
     try {
       createdIds = await this.prisma.$transaction(
-        async (tx) => {
-          await lockBoardQuota(tx, userId);
-          await assertBoardQuota(tx, userId, boards.length);
-          const ids: string[] = [];
-          for (const board of boards) {
-            ids.push(await persistBoard(tx, board, userId));
-          }
-          return ids;
-        },
+        async (tx) =>
+          rollbackOnThrow(async () => {
+            await lockBoardQuota(tx, userId);
+            await assertAgentTokenCanWriteInTransaction(tx, principal);
+            await assertBoardQuota(tx, userId, boards.length);
+            const ids: string[] = [];
+            for (const board of boards) {
+              ids.push(await persistBoard(tx, board, userId));
+            }
+            return ids;
+          }),
         { timeout: IMPORT_TIMEOUT_MS, maxWait: 10_000 },
       );
     } catch (error) {
@@ -1079,7 +1125,9 @@ export class BoardsService {
     }
     const parsed = new Date(requested);
     if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException("expiresAt must be a valid ISO date");
+      throw beforeWrite(
+        new BadRequestException("expiresAt must be a valid ISO date"),
+      );
     }
     return parsed;
   }

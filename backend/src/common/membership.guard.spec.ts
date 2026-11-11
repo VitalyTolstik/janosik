@@ -5,11 +5,15 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { Role, type BoardMember } from "@prisma/client";
-import { MembershipGuard } from "./membership.guard";
+import {
+  isReadOnlyControlOperation,
+  MembershipGuard,
+} from "./membership.guard";
 
 interface PrismaMock {
   board: { findFirst: jest.Mock };
   boardMember: { findUnique: jest.Mock; deleteMany: jest.Mock };
+  agentSession: { findFirst: jest.Mock };
 }
 
 function membership(overrides: Partial<BoardMember> = {}): BoardMember {
@@ -77,6 +81,7 @@ describe("MembershipGuard", () => {
         findUnique: jest.fn().mockResolvedValue(member),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      agentSession: { findFirst: jest.fn().mockResolvedValue(null) },
     };
   }
 
@@ -85,6 +90,58 @@ describe("MembershipGuard", () => {
     await expect(
       build(undefined, prisma).canActivate(context({ id: "board-1" })),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("only allows the explicit read-only control POST routes", () => {
+    for (const path of [
+      "/api/v1/boards/b/runs/r/revert/preview",
+      "/api/v1/boards/b/agent-sessions",
+      "/api/v1/boards/b/agent-sessions/s/heartbeat",
+      "/api/v1/boards/b/agent-sessions/s/end",
+    ])
+      expect(isReadOnlyControlOperation("POST", path)).toBe(true);
+    for (const path of [
+      "/api/v1/boards/b/runs/r/revert",
+      "/api/v1/boards/b/commands",
+      "/api/v1/boards/b/agent-sessions/s/pause",
+      "/api/v1/boards/b/agent-sessions/s/end/extra",
+    ])
+      expect(isReadOnlyControlOperation("POST", path)).toBe(false);
+    expect(
+      isReadOnlyControlOperation("DELETE", "/api/v1/boards/b/agent-sessions"),
+    ).toBe(false);
+  });
+
+  it("only records an owned lifecycle session for rate limiting", async () => {
+    const prisma = prismaWith(
+      { id: "board-1", agentPolicy: null, agentsPausedAt: null },
+      membership(),
+    );
+    const request = {
+      method: "POST",
+      originalUrl: "/api/v1/boards/board-1/agent-sessions/session-1/heartbeat",
+      auth: { via: "pat", apiTokenId: "token-1" },
+    };
+    const ctx = context({ id: "board-1", sessionId: "session-1" }, request);
+    await build(undefined, prisma).canActivate(ctx);
+    expect(prisma.agentSession.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "session-1",
+        boardId: "board-1",
+        userId: "user-1",
+        apiTokenId: "token-1",
+      },
+      select: { id: true },
+    });
+    expect(ctx.switchToHttp().getRequest()).not.toHaveProperty(
+      "rateLimitSessionId",
+    );
+    prisma.agentSession.findFirst.mockResolvedValue({ id: "session-1" });
+    await build(undefined, prisma).canActivate(ctx);
+    expect(ctx.switchToHttp().getRequest()).toHaveProperty(
+      "rateLimitSessionId",
+      "session-1",
+    );
   });
 
   it("answers 403 for a non-member", async () => {

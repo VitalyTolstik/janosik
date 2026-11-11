@@ -57,6 +57,7 @@ export function useAgentSessions(): AgentSessionsState {
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const generation = useRef(0);
   const inFlight = useRef(false);
+  const failedBoards = useRef(new Set<string>());
 
   const load = useCallback(
     async (kind: "initial" | "refresh"): Promise<void> => {
@@ -83,15 +84,18 @@ export function useAgentSessions(): AgentSessionsState {
         const merged: AgentSessionDto[] = [];
         let failures = 0;
         let firstFailureStatus: number | null = null;
-        for (const result of results) {
+        const failed = new Set<string>();
+        for (const [index, result] of results.entries()) {
           if (result.status === "fulfilled") {
             merged.push(...result.value);
           } else {
             failures += 1;
+            failed.add(nextSummaries[index].id);
             const status = statusOf(result.reason);
             if (firstFailureStatus === null) firstFailureStatus = status;
           }
         }
+        failedBoards.current = failed;
         // One board failing (a membership that just expired, a deleted
         // board) must not blank a healthy list; only a total failure is an
         // error the user has to see.
@@ -103,10 +107,13 @@ export function useAgentSessions(): AgentSessionsState {
         setSummaries(nextSummaries);
         setTokens(nextTokens);
         setMe(nextMe);
-        setSessions(merged);
-        setError(false);
-        setErrorStatus(null);
-        setLastLoadedAt(Date.now());
+        setSessions((current) => [
+          ...merged,
+          ...(current ?? []).filter((row) => failed.has(row.boardId)),
+        ]);
+        setError(failures > 0);
+        setErrorStatus(firstFailureStatus);
+        if (failures === 0) setLastLoadedAt(Date.now());
       } catch (error) {
         if (request !== generation.current) return;
         setError(true);
@@ -161,12 +168,16 @@ export function useAgentSessions(): AgentSessionsState {
         });
         if (nextTokens !== null) setTokens(nextTokens);
         setLastLoadedAt(Date.now());
-        setError(false);
-        setErrorStatus(null);
+        failedBoards.current.delete(boardId);
+        if (failedBoards.current.size === 0) {
+          setError(false);
+          setErrorStatus(null);
+        }
       } catch (error) {
         // A background refresh is best effort: keep the rows but mark them
         // stale so the manual Retry and the poll have a visible reason.
         setError(true);
+        failedBoards.current.add(boardId);
         setErrorStatus(statusOf(error));
       }
     },

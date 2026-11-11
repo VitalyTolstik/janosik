@@ -190,6 +190,35 @@ describe("Observability and agent rate limits (e2e)", () => {
     await heartbeat(second).expect(200);
   });
 
+  it("does not charge an owner's session for a foreign token's lifecycle requests", async () => {
+    setAgentSessionRateLimit(2);
+    const owner = await createToken("session-budget-owner");
+    const foreign = await createToken("session-budget-foreign");
+    const owned = await startSession(owner);
+    const sibling = await startSession(owner);
+    const lifecycle = (
+      token: string,
+      sessionId: string,
+      operation: "heartbeat" | "end",
+    ) =>
+      server()
+        .post(
+          `/api/v1/boards/${boardId}/agent-sessions/${sessionId}/${operation}`,
+        )
+        .set(auth(token))
+        .send({});
+    for (const operation of ["heartbeat", "end"] as const) {
+      const refused = await lifecycle(foreign, owned, operation).expect(403);
+      expect(refused.body.code).toBe("agent_session_invalid");
+    }
+    await lifecycle(owner, owned, "heartbeat").expect(200);
+    await lifecycle(owner, owned, "heartbeat").expect(200);
+    const limited = await lifecycle(owner, owned, "heartbeat").expect(429);
+    expect(limited.body.scope).toBe("session");
+    expect(limited.headers["x-ratelimit-scope"]).toBe("session");
+    await lifecycle(owner, sibling, "heartbeat").expect(200);
+  });
+
   it("logs attributed requests and redacts public share tokens", async () => {
     logs.clear();
     const pat = await createToken("log-attribution");

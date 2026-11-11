@@ -16,6 +16,44 @@ describe("approval plan hashing and validation", () => {
     action: { type: "DELETE_CARD", cardId: "card-1" },
   };
 
+  it("includes absolute and relative expiry in lifecycle approval intent", () => {
+    const hash = (body: Record<string, unknown>) =>
+      approvalPlanHash(planFromOperation(boardId, "share.create", {}, body));
+    expect(hash({ mode: "live" })).not.toBe(
+      hash({ mode: "live", expiresAt: "2030-01-01T00:00:00Z" }),
+    );
+    expect(hash({ mode: "live", expiresInHours: 1 })).not.toBe(
+      hash({ mode: "live", expiresInHours: 2 }),
+    );
+    expect(
+      hash({
+        mode: "live",
+        expiresInHours: 1,
+        expiresAt: "2030-01-01T00:00:00Z",
+      }),
+    ).toBe(
+      hash({
+        mode: "live",
+        expiresInHours: 1,
+        expiresAt: "2030-01-02T00:00:00Z",
+      }),
+    );
+    const body = {
+      mode: "live",
+      expiresInHours: 1,
+      expiresAt: "2030-01-01T00:00:00Z",
+    };
+    const explicit = normalizeApprovalPlan(
+      {
+        schemaVersion: 1,
+        boardId,
+        operations: [{ op: "share.create", target: { boardId }, body }],
+      },
+      boardId,
+    );
+    expect(approvalPlanHash(explicit)).toBe(hash(body));
+  });
+
   it("sorts object keys recursively and omits nothing from arrays", () => {
     expect(
       canonicalJson({ b: 1, a: { d: [3, { z: 1, y: 2 }], c: true } }),

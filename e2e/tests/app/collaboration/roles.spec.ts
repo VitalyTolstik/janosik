@@ -57,9 +57,11 @@ test("a demoted member's board becomes read-only live", async ({
   await expect(
     partnerBrowser.page.getByTestId("column-style-trigger"),
   ).toHaveCount(0);
+  await partnerBrowser.page.getByTestId("board-display-menu").click();
   await expect(
     partnerBrowser.page.getByTestId("column-style-menu"),
   ).toHaveCount(0);
+  await partnerBrowser.page.keyboard.press("Escape");
   await expect(
     partnerBrowser.page.locator('section[data-column-accent="brand"]'),
   ).toBeVisible();

@@ -6,6 +6,7 @@ import {
   IdempotencyService,
   normalizeIdempotencyKey,
 } from "./idempotency.service";
+import { beforeWrite } from "./rollback-certainty";
 
 function duplicateKeyError(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError("duplicate", {
@@ -158,13 +159,28 @@ describe("IdempotencyService (TASK-166.4)", () => {
       service.run({
         ...base,
         run: async () => {
-          throw new Error("write failed");
+          throw beforeWrite(new Error("write failed"));
         },
       }),
     ).rejects.toThrow("write failed");
     expect(prisma.idempotencyRecord.delete).toHaveBeenCalledWith({
       where: { id: "rec-1" },
     });
+  });
+
+  it("retains the key when the outcome may have committed", async () => {
+    const prisma = makePrisma();
+    prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });
+    const service = new IdempotencyService(prisma as unknown as PrismaService);
+    await expect(
+      service.run({
+        ...base,
+        run: async () => {
+          throw new Error("uncertain result");
+        },
+      }),
+    ).rejects.toThrow("uncertain result");
+    expect(prisma.idempotencyRecord.delete).not.toHaveBeenCalled();
   });
 });
 

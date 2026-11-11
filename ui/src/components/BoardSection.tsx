@@ -12,11 +12,9 @@ import {
 import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
-import { BoardDensityMenu } from "@/components/board/BoardDensityMenu";
-import { ColumnStyleMenu } from "@/components/board/ColumnStyleMenu";
+import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
-import { ColumnGlassMenu } from "@/components/board/ColumnGlassMenu";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -223,16 +221,13 @@ export function BoardSection() {
         <ViewSwitcher value={view} onChange={setView} />
         {/* Board-view display controls: column style, glass + card density. */}
         {view === "board" ? (
-          <div className="flex shrink-0 items-center gap-1">
-            {readOnly ? null : (
-              <ColumnStyleMenu
-                value={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
-                onChange={setBoardColumnStyle}
-              />
-            )}
-            <BoardDensityMenu density={density} onChange={setDensity} />
-            <ColumnGlassMenu />
-          </div>
+          <BoardDisplayMenu
+            density={density}
+            onDensityChange={setDensity}
+            columnStyle={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
+            onColumnStyleChange={setBoardColumnStyle}
+            readOnly={readOnly}
+          />
         ) : null}
       </div>
       {view === "board" ? (

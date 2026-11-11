@@ -46,6 +46,7 @@ export interface GuardedRequest {
   boardMembership?: unknown;
   auth?: AuthPrincipal;
   agentSession?: AgentSessionContext;
+  rateLimitSessionId?: string;
 }
 
 /**
@@ -204,6 +205,28 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       }
     }
 
+    // Lifecycle routes intentionally accept closed sessions and do their own
+    // ownership checks. Resolve ownership separately for rate limiting, so a
+    // foreign ID cannot consume the owner's budget before the service runs.
+    if (
+      method === "POST" &&
+      /\/agent-sessions\/[^/]+\/(?:heartbeat|end)\/?$/.test(path) &&
+      request.auth?.via === "pat" &&
+      request.auth.apiTokenId &&
+      request.params?.sessionId
+    ) {
+      const owned = await this.prisma.agentSession.findFirst({
+        where: {
+          id: request.params.sessionId,
+          boardId,
+          userId: user.id,
+          apiTokenId: request.auth.apiTokenId,
+        },
+        select: { id: true },
+      });
+      if (owned) request.rateLimitSessionId = owned.id;
+    }
+
     if (pauseChecked) {
       assertAgentNotPaused({
         sessionPausedAt: request.agentSession?.pausedAt ?? null,
@@ -213,7 +236,7 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
     // The legacy read-only refusal is deferred here for board-scoped writes,
     // after pause, so an observer/read-only PAT sees `agent_paused` while a
     // board is paused. Non-board routes already enforced it in `JwtAuthGuard`.
-    if (write) {
+    if (write && !isReadOnlyControlOperation(method, path)) {
       assertPatScopeAllows(method, request.auth?.tokenScope);
     }
 
@@ -263,6 +286,20 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
  */
 const SESSION_HEADER_EXEMPT =
   /\/agent-sessions(?:\/[^/]+\/(?:heartbeat|end|pause|resume))?\/?$|\/agents\/(?:pause|resume)\/?$/;
+
+/** Narrow observer operations; pause/resume and all content writes stay denied. */
+export function isReadOnlyControlOperation(
+  method: string,
+  path: string,
+): boolean {
+  if (method !== "POST") return false;
+  return (
+    /^\/api\/v1\/boards\/[^/]+\/runs\/[^/]+\/revert\/preview\/?$/.test(path) ||
+    /^\/api\/v1\/boards\/[^/]+\/agent-sessions(?:\/[^/]+\/(?:heartbeat|end))?\/?$/.test(
+      path,
+    )
+  );
+}
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;

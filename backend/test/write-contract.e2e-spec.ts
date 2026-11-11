@@ -450,28 +450,57 @@ describe("Reliable write contract (e2e)", () => {
   it("replays create_share and refuses a different share body", async () => {
     const boardId = await createBoard("Share idempotency board");
     const key = `share-${randomUUID()}`;
-    const send = (mode: "live" | "snapshot", minutes = 60) =>
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    const send = (body: Record<string, unknown>) =>
       server()
         .post(`/api/v1/boards/${boardId}/shares`)
         .set(auth(adminToken))
         .set("Idempotency-Key", key)
-        .send({
-          mode,
-          expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
-        });
+        .send(body);
 
-    const first = await send("live", 60).expect(201);
-    // A retry a moment later derives a different `expiresAt`; the share
-    // intent is unchanged, so it must replay rather than conflict.
-    const replay = await send("live", 61).expect(201);
+    const first = await send({ mode: "live", expiresAt }).expect(201);
+    const replay = await send({ mode: "live", expiresAt }).expect(201);
     expect(replay.body.id).toBe(first.body.id);
 
-    const conflict = await send("snapshot").expect(409);
+    const conflict = await send({ mode: "live" }).expect(409);
     expect(conflict.body).toMatchObject({
       code: "idempotency_conflict",
       retryable: false,
       key,
     });
+    await send({ mode: "live", expiresInHours: 1 }).expect(409);
+    await send({
+      mode: "live",
+      expiresAt: new Date(Date.now() + 7_200_000).toISOString(),
+    }).expect(409);
+    await send({ mode: "snapshot", expiresAt }).expect(409);
+
+    const relativeKey = `share-relative-${randomUUID()}`;
+    const relative = () =>
+      server()
+        .post(`/api/v1/boards/${boardId}/shares`)
+        .set(auth(adminToken))
+        .set("Idempotency-Key", relativeKey);
+    const relativeFirst = await relative()
+      .send({ mode: "live", expiresInHours: 1, expiresAt })
+      .expect(201);
+    const relativeReplay = await relative()
+      .send({
+        mode: "live",
+        expiresInHours: 1,
+        expiresAt: new Date(Date.now() + 7_200_000).toISOString(),
+      })
+      .expect(201);
+    expect(relativeReplay.body.id).toBe(relativeFirst.body.id);
+    await relative().send({ mode: "live", expiresInHours: 2 }).expect(409);
+    const unlimitedKey = `share-unlimited-${randomUUID()}`;
+    const unlimited = () =>
+      server()
+        .post(`/api/v1/boards/${boardId}/shares`)
+        .set(auth(adminToken))
+        .set("Idempotency-Key", unlimitedKey);
+    await unlimited().send({ mode: "live" }).expect(201);
+    await unlimited().send({ mode: "live", expiresAt }).expect(409);
   });
 
   it("replays duplicate_card and refuses a different copy", async () => {

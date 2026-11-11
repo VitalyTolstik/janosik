@@ -130,6 +130,29 @@ beforeEach(() => {
 });
 
 describe("AgentsPage", () => {
+  it("warns and retains the last known sessions when one board fails", async () => {
+    renderPage();
+    expect(await screen.findByText("Docs agent")).toBeInTheDocument();
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-2"
+        ? Promise.reject({ status: 503 })
+        : Promise.resolve([session()]),
+    );
+    await userEvent.click(screen.getByTestId("agents-refresh"));
+    expect(await screen.findByTestId("agents-error")).toHaveTextContent(
+      "may be out of date",
+    );
+    expect(screen.getByText("Docs agent")).toBeInTheDocument();
+    expect(screen.getByText("QA agent")).toBeInTheDocument();
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(boardId === "board-1" ? [session()] : []),
+    );
+    await userEvent.click(screen.getByTestId("agents-retry"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("agents-error")).toBeNull(),
+    );
+    expect(screen.queryByText("Docs agent")).toBeNull();
+  });
   it("groups sessions by agent and shows the board, status and heartbeat", async () => {
     renderPage();
 

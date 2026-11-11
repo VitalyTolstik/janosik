@@ -24,6 +24,7 @@ test("a column accent and the board shape appear in the other context", async ({
     { timeout: 5000 },
   );
 
+  await page.getByTestId("board-display-menu").click();
   await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-band").click();
   await page.keyboard.press("Escape");

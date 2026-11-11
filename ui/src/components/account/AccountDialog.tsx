@@ -165,7 +165,7 @@ export function AccountDialog() {
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="whitespace-nowrap">{t(labelKey)}</span>
+                <span className="min-w-0 truncate">{t(labelKey)}</span>
               </button>
             ))}
             <button

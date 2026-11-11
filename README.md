@@ -384,7 +384,8 @@ In the app: **Account → API keys → create** (starts with `jnk_`). Give each
 agent its **own user account and key**, so the activity feed shows who did what
 and revoking one key stops one agent. A key can be scoped when you create it:
 restrict it to a single board, make it **read-only** (writes answer `403
-pat_read_only`) and give it its own requests-per-minute budget (over budget
+pat_read_only`), while session start/heartbeat/end and revert preview remain
+available to observers, and give it its own requests-per-minute budget (over budget
 answers `429`) — a board-scoped, read-only key is the least-privilege choice for
 an agent.
 

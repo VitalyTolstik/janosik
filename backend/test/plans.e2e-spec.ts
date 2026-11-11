@@ -15,6 +15,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { DEFAULT_BOARD_AGENT_POLICY } from "@/auth/token-scope";
+import { ApprovalsService } from "@/approvals/approvals.service";
 import { stripAttribution } from "./support/attribution";
 import { wipeAll } from "./support/wipe";
 
@@ -540,6 +541,208 @@ describe("Plans and apply (e2e)", () => {
       });
     }
   });
+
+  it("counts copies using the evolving plan state and enforces the limit on apply", async () => {
+    const b = await createBoard("Copy card limits");
+    const col = await createColumn("Source", b);
+    await createCard(col, "One", b);
+    await createCard(col, "Two", b);
+    await prisma.board.update({
+      where: { id: b },
+      data: {
+        agentPolicy: {
+          ...DEFAULT_BOARD_AGENT_POLICY,
+          maxCardsPerRun: 2,
+        } as never,
+      },
+    });
+    const copy = planCommand({
+      type: "DUPLICATE_COLUMN",
+      columnId: col,
+      newColumnId: randomUUID(),
+      newCardIds: [randomUUID(), randomUUID()],
+    });
+    const good = (await preview([copy], workerToken, b).expect(200))
+      .body as PlanPreviewDto;
+    expect(good.cardCreates).toBe(2);
+    const mixed = [
+      planCommand({
+        type: "ADD_CARD",
+        columnId: col,
+        newCardId: randomUUID(),
+        title: "third",
+      }),
+      planCommand({
+        type: "DUPLICATE_COLUMN",
+        columnId: col,
+        newColumnId: randomUUID(),
+        newCardIds: [randomUUID(), randomUUID(), randomUUID()],
+      }),
+    ];
+    const denied = await preview(mixed, workerToken, b).expect(409);
+    expect(denied.body).toMatchObject({
+      code: "limit_exceeded",
+      current: 4,
+      limit: 2,
+    });
+    const emptyColumn = await createColumn("Empty", b);
+    const empty = (
+      await preview(
+        [
+          planCommand({
+            type: "DUPLICATE_COLUMN",
+            columnId: emptyColumn,
+            newColumnId: randomUUID(),
+            newCardIds: [],
+          }),
+        ],
+        workerToken,
+        b,
+      ).expect(200)
+    ).body as PlanPreviewDto;
+    expect(empty.cardCreates).toBe(0);
+    const twoCopies = await preview(
+      [
+        copy,
+        planCommand({
+          type: "DUPLICATE_COLUMN",
+          columnId: col,
+          newColumnId: randomUUID(),
+          newCardIds: [randomUUID(), randomUUID()],
+        }),
+      ],
+      workerToken,
+      b,
+    ).expect(409);
+    expect(twoCopies.body).toMatchObject({
+      code: "limit_exceeded",
+      current: 4,
+      limit: 2,
+    });
+    const before = await prisma.command.count({ where: { boardId: b } });
+    await applyPlan([copy], good.planHash, { board: b }).expect(200);
+    expect(await prisma.command.count({ where: { boardId: b } })).toBe(
+      before + 1,
+    );
+    await prisma.board.update({
+      where: { id: b },
+      data: {
+        agentPolicy: {
+          ...DEFAULT_BOARD_AGENT_POLICY,
+          maxCardsPerRun: 1,
+        } as never,
+      },
+    });
+    // Replay is idempotent even when the current policy is tighter.
+    await applyPlan([copy], good.planHash, { board: b }).expect(200);
+    expect(await prisma.command.count({ where: { boardId: b } })).toBe(
+      before + 1,
+    );
+  });
+
+  it("recounts a copied column after it changes between preview and apply", async () => {
+    const b = await createBoard("Changed copy source");
+    const col = await createColumn("Source", b);
+    await createCard(col, "One", b);
+    await createCard(col, "Two", b);
+    await prisma.board.update({
+      where: { id: b },
+      data: {
+        agentPolicy: {
+          ...DEFAULT_BOARD_AGENT_POLICY,
+          maxCardsPerRun: 2,
+        } as never,
+      },
+    });
+    const command = planCommand({
+      type: "DUPLICATE_COLUMN",
+      columnId: col,
+      newColumnId: randomUUID(),
+      newCardIds: [randomUUID(), randomUUID(), randomUUID()],
+    });
+    const planned = (await preview([command], workerToken, b).expect(200))
+      .body as PlanPreviewDto;
+    expect(planned.cardCreates).toBe(0);
+    await createCard(col, "Three", b);
+    const before = await prisma.command.count({ where: { boardId: b } });
+    const denied = await applyPlan([command], planned.planHash, {
+      board: b,
+    }).expect(409);
+    expect(denied.body).toMatchObject({
+      code: "limit_exceeded",
+      current: 3,
+      limit: 2,
+    });
+    expect(await prisma.command.count({ where: { boardId: b } })).toBe(before);
+    expect(await prisma.agentRun.count({ where: { boardId: b } })).toBe(0);
+  });
+
+  it.each(["maxCommandsPerRun", "maxCardsPerRun"] as const)(
+    "rechecks %s under the board lock after an administrator changes it",
+    async (field) => {
+      const b = await createBoard(`Limit race ${field}`);
+      const col = await createColumn("Race", b);
+      let entered!: () => void;
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let proceed!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        proceed = resolve;
+      });
+      const approvals = app.get(ApprovalsService);
+      const original = approvals.assertPlanLimitsForUser.bind(approvals);
+      const spy = jest
+        .spyOn(approvals, "assertPlanLimitsForUser")
+        .mockImplementationOnce(async (...args) => {
+          await original(...args);
+          entered();
+          await gate;
+        });
+      const commands = [1, 2].map((n) => ({
+        commandId: randomUUID(),
+        action: {
+          boardId: b,
+          at: Date.now(),
+          type: "ADD_CARD",
+          columnId: col,
+          newCardId: randomUUID(),
+          title: `Race ${n}`,
+        },
+      }));
+      const before = await prisma.command.count({ where: { boardId: b } });
+      const pending = server()
+        .post(`/api/v1/boards/${b}/commands/batch`)
+        .set(auth(trustedToken))
+        .send({ commands })
+        .then((res) => res);
+      try {
+        await reached;
+        const policy = await server()
+          .get(`/api/v1/boards/${b}/agent-policy`)
+          .set(auth(ownerSession))
+          .expect(200);
+        await server()
+          .patch(`/api/v1/boards/${b}/agent-policy`)
+          .set(auth(ownerSession))
+          .send({
+            version: policy.body.version,
+            policy: { ...policy.body.effective, [field]: 1 },
+          })
+          .expect(200);
+      } finally {
+        proceed();
+      }
+      const denied = await pending;
+      spy.mockRestore();
+      expect(denied.status).toBe(409);
+      expect(denied.body.code).toBe("limit_exceeded");
+      expect(await prisma.command.count({ where: { boardId: b } })).toBe(
+        before,
+      );
+      expect(await prisma.agentRun.count({ where: { boardId: b } })).toBe(0);
+    },
+  );
 
   it("creates an approval for a destructive plan and consumes it once", async () => {
     const columnId = await createColumn("Approval");
