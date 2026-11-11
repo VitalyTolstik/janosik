@@ -43,6 +43,7 @@ import {
 import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { markGuaranteedRollback } from "@/common/rollback-certainty";
 import { activeMembershipWhere } from "@/common/membership";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import {
@@ -178,6 +179,8 @@ export interface ApplyOptions {
    * transport for every caller, not only one carrying an approval.
    */
   allowMissingAt?: boolean;
+  /** Apply the board run limits to human plan/apply as well as PAT writes. */
+  enforcePlanLimits?: boolean;
   /**
    * TASK-166.7: revalidation hook that runs inside the board transaction,
    * after the advisory lock and before any command is applied. The run-revert
@@ -256,13 +259,19 @@ export class CommandsService {
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
     const prepared = dtos.map((dto) => {
-      const entry = this.prepareCommand(boardId, dto, {
-        ...(options.allowOversize === true ? { allowOversize: true } : {}),
-        ...(options.approvalId !== undefined
-          ? { approvalId: options.approvalId }
-          : {}),
-        ...(options.allowMissingAt === true ? { allowMissingAt: true } : {}),
-      });
+      let entry: PreparedCommand;
+      try {
+        entry = this.prepareCommand(boardId, dto, {
+          ...(options.allowOversize === true ? { allowOversize: true } : {}),
+          ...(options.approvalId !== undefined
+            ? { approvalId: options.approvalId }
+            : {}),
+          ...(options.allowMissingAt === true ? { allowMissingAt: true } : {}),
+        });
+      } catch (error) {
+        markGuaranteedRollback(error);
+        throw error;
+      }
       // TASK-166 (D23): the claim holder is the authenticated actor. A
       // client cannot claim on behalf of another user; token/session fields
       // are written by `command-writers` from the attribution, never from
@@ -289,40 +298,55 @@ export class CommandsService {
     const plan = planFromPreparedCommands(boardId, prepared);
     let requirement: PlanRequirement | null = null;
     if (options.principal?.via === "pat") {
-      const boardRow = await this.prisma.board.findFirst({
-        where: { id: boardId, deletedAt: null },
-        select: { agentPolicy: true },
-      });
-      if (boardRow === null) throw new NotFoundException("Board not found");
-      const aggregate = await loadBoardAggregate(this.prisma, boardId);
-      if (aggregate === null) throw new NotFoundException("Board not found");
-      const policy = readBoardAgentPolicy(boardRow.agentPolicy);
-      requirement = classifyPlan(
-        plan,
-        aggregate,
-        policy,
-        options.principal.tokenIdentity?.trustedCi === true,
-      );
-      // Enforce the run limits even when an approval is supplied: an approval
-      // authorizes the action, not an oversized plan.
-      await this.approvals.assertPlanLimitsForUser(
-        plan,
-        policy,
-        actorId,
-        boardId,
-      );
-      if (approvalId === undefined) {
-        await this.approvals.ensureCommandApproval({
-          boardId,
-          userId: actorId,
-          role: actorRole,
-          principal: options.principal,
-          agentSessionId: attribution.agentSessionId,
-          plan,
-          requirement,
-          policy,
-          prepared,
+      try {
+        const boardRow = await this.prisma.board.findFirst({
+          where: { id: boardId, deletedAt: null },
+          select: { agentPolicy: true },
         });
+        if (boardRow === null) throw new NotFoundException("Board not found");
+        const aggregate = await loadBoardAggregate(this.prisma, boardId);
+        if (aggregate === null) throw new NotFoundException("Board not found");
+        const policy = readBoardAgentPolicy(boardRow.agentPolicy);
+        requirement = classifyPlan(
+          plan,
+          aggregate,
+          policy,
+          options.principal.tokenIdentity?.trustedCi === true,
+        );
+        // Enforce the run limits even when an approval is supplied: an approval
+        // authorizes the action, not an oversized plan.
+        const existing = await this.prisma.command.findMany({
+          where: {
+            id: { in: prepared.map((entry) => entry.dto.commandId) },
+            boardId,
+          },
+          select: { id: true },
+        });
+        if (existing.length !== prepared.length) {
+          await this.approvals.assertPlanLimitsForUser(
+            plan,
+            policy,
+            actorId,
+            boardId,
+            aggregate,
+          );
+        }
+        if (approvalId === undefined) {
+          await this.approvals.ensureCommandApproval({
+            boardId,
+            userId: actorId,
+            role: actorRole,
+            principal: options.principal,
+            agentSessionId: attribution.agentSessionId,
+            plan,
+            requirement,
+            policy,
+            prepared,
+          });
+        }
+      } catch (error) {
+        markGuaranteedRollback(error);
+        throw error;
       }
     }
 
@@ -426,6 +450,19 @@ export class CommandsService {
         const fresh = prepared.filter(
           (entry) => !existingById.has(entry.dto.commandId),
         );
+        if (
+          fresh.length > 0 &&
+          (options.principal?.via === "pat" || options.enforcePlanLimits)
+        ) {
+          const aggregate = await loadBoardAggregate(tx, boardId);
+          if (aggregate === null)
+            throw new NotFoundException("Board not found");
+          this.approvals.assertPlanLimits(
+            plan,
+            readBoardAgentPolicy(board.agentPolicy),
+            aggregate,
+          );
+        }
         let applyAttribution = attribution;
         let runId: string | null = null;
 

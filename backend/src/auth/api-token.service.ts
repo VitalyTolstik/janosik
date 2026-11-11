@@ -257,15 +257,7 @@ export class ApiTokenService {
     tokenId: string,
     dto: UpdateUserTokenRequest,
   ): Promise<UserTokenDto> {
-    const token = await this.requireOwnedToken(userId, tokenId);
-    if (token.revokedAt !== null) {
-      throw new ConflictException({
-        message: "Revoked tokens cannot be edited",
-        code: "token_revoked",
-      });
-    }
-
-    let name = token.name;
+    let name: string | undefined;
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
       if (trimmed === "") {
@@ -277,40 +269,52 @@ export class ApiTokenService {
       name = trimmed;
     }
 
-    const readOnly = dto.readOnly ?? token.readOnly;
-    const scopePreset =
-      dto.scopePreset !== undefined
-        ? readScopePreset(dto.scopePreset)
-        : readScopePreset(token.scopePreset);
-    const trustedCi = dto.trustedCi ?? token.trustedCi;
-    if (trustedCi && (readOnly || scopePreset === "observer")) {
-      throw new BadRequestException({
-        message:
-          "trustedCi cannot be enabled for an Observer or read-only token",
-        field: "trustedCi",
+    const boardId =
+      dto.boardId === undefined
+        ? undefined
+        : await this.resolveBoardScope(userId, dto.boardId);
+    const rateLimitPerMinute =
+      dto.rateLimitPerMinute === undefined
+        ? undefined
+        : this.resolveRateLimit(dto.rateLimitPerMinute);
+
+    const { token, updated } = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "ApiToken" WHERE id = ${tokenId} AND "userId" = ${userId} FOR UPDATE`;
+      const token = await tx.apiToken.findFirst({
+        where: { id: tokenId, userId },
       });
-    }
-
-    let boardId = token.boardId;
-    if (dto.boardId !== undefined) {
-      boardId = await this.resolveBoardScope(userId, dto.boardId);
-    }
-
-    let rateLimitPerMinute = token.rateLimitPerMinute;
-    if (dto.rateLimitPerMinute !== undefined) {
-      rateLimitPerMinute = this.resolveRateLimit(dto.rateLimitPerMinute);
-    }
-
-    const updated = await this.prisma.apiToken.update({
-      where: { id: tokenId },
-      data: {
-        name,
-        boardId,
-        readOnly,
-        scopePreset,
-        trustedCi,
-        rateLimitPerMinute,
-      },
+      if (!token) throw new NotFoundException("API token not found");
+      if (token.revokedAt !== null) {
+        throw new ConflictException({
+          message: "Revoked tokens cannot be edited",
+          code: "token_revoked",
+        });
+      }
+      const readOnly = dto.readOnly ?? token.readOnly;
+      const scopePreset =
+        dto.scopePreset !== undefined
+          ? readScopePreset(dto.scopePreset)
+          : readScopePreset(token.scopePreset);
+      const trustedCi = dto.trustedCi ?? token.trustedCi;
+      if (trustedCi && (readOnly || scopePreset === "observer")) {
+        throw new BadRequestException({
+          message:
+            "trustedCi cannot be enabled for an Observer or read-only token",
+          field: "trustedCi",
+        });
+      }
+      const updated = await tx.apiToken.update({
+        where: { id: tokenId },
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(boardId !== undefined ? { boardId } : {}),
+          ...(dto.readOnly !== undefined ? { readOnly } : {}),
+          ...(dto.scopePreset !== undefined ? { scopePreset } : {}),
+          ...(dto.trustedCi !== undefined ? { trustedCi } : {}),
+          ...(rateLimitPerMinute !== undefined ? { rateLimitPerMinute } : {}),
+        },
+      });
+      return { token, updated };
     });
     await this.securityAudit.record({
       userId,

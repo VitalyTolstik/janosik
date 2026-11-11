@@ -125,6 +125,7 @@ export function registerShareTools(
           ...(includeAttachments !== undefined ? { includeAttachments } : {}),
           ...(expiresInHours !== undefined
             ? {
+                expiresInHours,
                 expiresAt: new Date(
                   Date.now() + expiresInHours * 3_600_000,
                 ).toISOString(),

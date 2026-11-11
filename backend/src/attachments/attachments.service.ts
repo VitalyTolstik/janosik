@@ -17,6 +17,7 @@ import { pauseGateFor } from "@/auth/agent-pause";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
@@ -91,10 +92,12 @@ export class AttachmentsService {
     // multer streamed the body to a `.tmp-*` file (TASK-155). Every exit path
     // removes it; a successful upload renamed it into the blob tree already.
     if (!file || typeof file.path !== "string" || file.path.length === 0) {
-      throw new BadRequestException({
-        message: "File is required",
-        field: "file",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: "File is required",
+          field: "file",
+        }),
+      );
     }
     try {
       return await this.persist(
@@ -121,63 +124,81 @@ export class AttachmentsService {
     principal?: AuthPrincipal,
   ): Promise<AttachmentDto> {
     if (file.size <= 0) {
-      throw new BadRequestException({
-        message: "File is required",
-        field: "file",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: "File is required",
+          field: "file",
+        }),
+      );
     }
     if (file.size > LIMITS.attachmentSize) {
-      throw new BadRequestException({
-        message: `File must be at most ${LIMITS.attachmentSize} bytes`,
-        field: "file",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: `File must be at most ${LIMITS.attachmentSize} bytes`,
+          field: "file",
+        }),
+      );
     }
     if (!ATTACHMENT_MIME_ALLOWLIST.test(file.mimetype)) {
-      throw new BadRequestException({
-        message: "File type is not allowed",
-        field: "file",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: "File type is not allowed",
+          field: "file",
+        }),
+      );
     }
     // The declared multipart type is a hint, never the truth (TASK-76):
     // detect the real family from the first bytes and store *that* — a
     // limited prefix, never the whole file (TASK-155). A client that
     // declares an image/video/archive but uploads unrecognizable bytes (HTML
     // dressed as a PNG) is refused.
-    const sniffed = sniffMime(await readFilePrefix(file.path));
+    const sniffed = sniffMime(
+      await rollbackOnThrow(() => readFilePrefix(file.path)),
+    );
     let mimeType: string;
     if (sniffed !== null) {
       if (!ATTACHMENT_MIME_ALLOWLIST.test(sniffed)) {
-        throw new BadRequestException({
-          message: "File type is not allowed",
-          field: "file",
-        });
+        throw beforeWrite(
+          new BadRequestException({
+            message: "File type is not allowed",
+            field: "file",
+          }),
+        );
       }
       mimeType = sniffed;
     } else if (SIGNATURE_REQUIRED_MIME.test(file.mimetype)) {
-      throw new BadRequestException({
-        message: "File contents do not match the declared type",
-        field: "file",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: "File contents do not match the declared type",
+          field: "file",
+        }),
+      );
     } else {
       mimeType = file.mimetype;
     }
 
-    const card = await this.prisma.card.findFirst({
-      where: { id: cardId, deletedAt: null },
-      select: { id: true, column: { select: { boardId: true } } },
-    });
-    if (!card) throw new NotFoundException();
+    const card = await rollbackOnThrow(() =>
+      this.prisma.card.findFirst({
+        where: { id: cardId, deletedAt: null },
+        select: { id: true, column: { select: { boardId: true } } },
+      }),
+    );
+    if (!card) throw beforeWrite(new NotFoundException());
 
     // Fast-fail before writing the blob; the authoritative check runs inside
     // the board lock below (TASK-100/108).
-    const live = await this.prisma.attachment.count({
-      where: { cardId, deletedAt: null },
-    });
+    const live = await rollbackOnThrow(() =>
+      this.prisma.attachment.count({
+        where: { cardId, deletedAt: null },
+      }),
+    );
     if (live >= LIMITS.attachmentsPerCard) {
-      throw new BadRequestException({
-        message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
-        field: "file",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
+          field: "file",
+        }),
+      );
     }
 
     const fileName = this.storage.sanitizeFileName(file.originalname);
@@ -422,42 +443,57 @@ export class AttachmentsService {
       });
     }
 
-    const removed = await this.boardWrite.run(
-      row.boardId,
-      async (tx) => {
-        const current = await tx.attachment.findUnique({
-          where: { id: attachmentId },
-          select: { descriptionDetached: true },
-        });
-        const updated = await tx.attachment.updateMany({
-          where: { id: attachmentId, deletedAt: null },
-          data: { deletedAt: new Date() },
-        });
-        if (updated.count === 0) return null;
-        // TASK-108: inline media never incremented the counter, so they must
-        // not decrement it either — that drift went negative over time.
-        if (!row.isInline && !current?.descriptionDetached) {
-          await tx.card.update({
-            where: { id: row.cardId },
-            data: { attachmentCount: { decrement: 1 } },
+    const removed = await this.approvals.performOperation(approval, () =>
+      this.boardWrite.run(
+        row.boardId,
+        async (tx) => {
+          const current = await tx.attachment.findUnique({
+            where: { id: attachmentId },
+            select: { descriptionDetached: true },
           });
-        }
-        const activity = await tx.activity.create({
-          data: {
-            boardId: row.boardId,
-            cardId: row.cardId,
-            type: "attachment_deleted",
-            actorId: user.id,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: { attachmentId, fileName: row.fileName },
-          },
-        });
-        return activity.id;
-      },
-      pauseGateFor(principal, attribution.agentSessionId),
+          const updated = await tx.attachment.updateMany({
+            where: { id: attachmentId, deletedAt: null },
+            data: { deletedAt: new Date() },
+          });
+          if (updated.count === 0) {
+            if (approval !== null)
+              throw new NotFoundException("Attachment was already removed");
+            return null;
+          }
+          // TASK-108: inline media never incremented the counter, so they must
+          // not decrement it either — that drift went negative over time.
+          if (!row.isInline && !current?.descriptionDetached) {
+            await tx.card.update({
+              where: { id: row.cardId },
+              data: { attachmentCount: { decrement: 1 } },
+            });
+          }
+          const activity = await tx.activity.create({
+            data: {
+              boardId: row.boardId,
+              cardId: row.cardId,
+              type: "attachment_deleted",
+              actorId: user.id,
+              actorType: attribution.actorType,
+              apiTokenId: attribution.apiTokenId,
+              agentSessionId: attribution.agentSessionId,
+              agentName: attribution.agentName,
+              details: { attachmentId, fileName: row.fileName },
+            },
+          });
+          return activity.id;
+        },
+        pauseGateFor(
+          principal,
+          attribution.agentSessionId,
+          !ownUpload
+            ? {
+                action: "attachment.delete",
+                approvalApplied: approval !== null,
+              }
+            : undefined,
+        ),
+      ),
     );
     if (!removed) return;
     if (approval !== null) {

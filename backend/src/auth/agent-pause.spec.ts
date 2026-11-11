@@ -144,6 +144,10 @@ describe("in-transaction write gate", () => {
       stopAllPausedAt: null,
       revokedAt: null,
       expiresAt: null,
+      readOnly: false,
+      boardId: null,
+      scopePreset: "worker",
+      trustedCi: false,
       user: { disabledAt: null },
       ...overrides,
     };
@@ -166,6 +170,7 @@ describe("in-transaction write gate", () => {
     session: unknown = null,
   ): Prisma.TransactionClient {
     return {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       apiToken: { findUnique: jest.fn().mockResolvedValue(token) },
       board: { findUnique: jest.fn().mockResolvedValue(board) },
       agentSession: { findUnique: jest.fn().mockResolvedValue(session) },

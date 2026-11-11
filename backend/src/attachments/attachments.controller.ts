@@ -23,6 +23,8 @@ import { LIMITS } from "@janosik/shared";
 
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
+import { CurrentMembership } from "@/common/current-membership.decorator";
+import type { BoardMember } from "@prisma/client";
 import {
   hashUploadRequest,
   idempotencyActorKey,
@@ -55,6 +57,13 @@ export class AttachmentsController {
     private readonly media: MediaService,
     private readonly idempotency: IdempotencyService,
   ) {}
+
+  @Get("attachments/:attachmentId/board-context")
+  boardContext(@CurrentMembership() membership: BoardMember): {
+    boardId: string;
+  } {
+    return { boardId: membership.boardId };
+  }
 
   /** Upload one file (multipart field `file`); ≤ `LIMITS.attachmentSize`.
    *  `?inline=1` marks the blob as body-embedded media (pasted into the

@@ -448,6 +448,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Hardened agent writes against concurrent token revocation, permission and
+  policy changes, and pause; retained idempotency reservations for uncertain
+  outcomes and preserved agent-session results when some boards fail to load.
+- Combined board appearance, card density, transparency and blur controls
+  into one three-line menu.
+- TASK-166.17 hardens agent sessions and lifecycle operations: MCP resolves
+  comment and attachment board context before attributing writes; card-create
+  caps count actual column copies and are rechecked under the board lock;
+  lifecycle approvals are released only on a proven rollback; session start
+  serializes with token revocation and pause. Regression coverage includes a
+  live MCP client and deterministic PostgreSQL race tests.
+- Agent session rate limiting no longer charges an owner's session for a
+  foreign token's heartbeat or end request. Read-only tokens can use session
+  lifecycle controls and preview run reverts without gaining write access.
+- Share creation idempotency and approval intent include the expiry. MCP
+  sends a stable relative duration plus an absolute fallback for older servers.
 - Admin tables keep the last successful page while a search or pagination
   request is in flight instead of clearing the header and rows.
 - Card comments/history/attachments and the watch feed no longer show a false

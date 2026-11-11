@@ -231,7 +231,27 @@ export class JanosikClient {
       ...extra,
     };
     if (approvalId !== undefined) headers["X-Approval-Id"] = approvalId;
-    const boardId = boardIdOfPath(path);
+    let boardId = boardIdOfPath(path);
+    // Card/comment/attachment IDs do not encode their board. Resolve it via
+    // the server's access guard whenever sessions exist; never guess from a
+    // different open board or silently drop a session on lookup failure.
+    if (boardId === null && method !== "GET" && this.agentSessions.size > 0) {
+      const match =
+        /^\/(cards|comments|attachments)\/([^/]+)(?:\/comments|\/attachments)?$/.exec(
+          path,
+        );
+      if (match) {
+        const context = await this.request<{ boardId: string }>(
+          `/${match[1]}/${match[2]}/board-context`,
+        );
+        if (typeof context.boardId !== "string" || context.boardId === "") {
+          throw new Error(
+            "The server did not resolve the resource's board context",
+          );
+        }
+        boardId = context.boardId;
+      }
+    }
     const agentSessionId =
       boardId === null ? undefined : this.agentSessions.get(boardId);
     if (agentSessionId !== undefined) {

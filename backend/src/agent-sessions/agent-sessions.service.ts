@@ -12,6 +12,7 @@ import {
   type BoardAgentPauseDto,
 } from "@janosik/shared";
 import type { AuthPrincipal } from "@/auth/auth-principal";
+import { assertAgentCanWriteInTransaction } from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -70,42 +71,47 @@ export class AgentSessionsService {
     dto: CreateAgentSessionDto,
   ): Promise<AgentSessionDto> {
     const token = this.requirePat(principal, "start");
-    const board = await this.prisma.board.findFirst({
-      where: { id: boardId, deletedAt: null },
-      select: { id: true, agentsPausedAt: true },
-    });
-    if (!board) throw new NotFoundException("Board not found");
-
-    const session = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.agentSession.create({
-        data: {
-          userId,
-          apiTokenId: token.apiTokenId,
-          boardId,
-          name: clean(dto.name),
-          clientName: clean(dto.clientName),
-          model: clean(dto.model),
-        },
-      });
-      await tx.activity.create({
-        data: {
-          boardId,
-          type: "agent_session_started",
-          actorId: userId,
-          actorType: "agent",
-          apiTokenId: token.apiTokenId,
-          agentSessionId: row.id,
-          agentName: token.apiTokenName ?? null,
-          details: {
-            sessionId: row.id,
-            name: row.name,
-            clientName: row.clientName,
-            model: row.model,
+    const { session, board } = await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        // Revocation and token pause take a row lock on this token. Wait for
+        // them before rechecking, in the common board → token lock order.
+        const board = await tx.board.findFirst({
+          where: { id: boardId, deletedAt: null },
+          select: { id: true, agentsPausedAt: true },
+        });
+        if (!board) throw new NotFoundException("Board not found");
+        await assertAgentCanWriteInTransaction(tx, boardId, principal, null);
+        const row = await tx.agentSession.create({
+          data: {
+            userId,
+            apiTokenId: token.apiTokenId,
+            boardId,
+            name: clean(dto.name),
+            clientName: clean(dto.clientName),
+            model: clean(dto.model),
           },
-        },
-      });
-      return row;
-    });
+        });
+        await tx.activity.create({
+          data: {
+            boardId,
+            type: "agent_session_started",
+            actorId: userId,
+            actorType: "agent",
+            apiTokenId: token.apiTokenId,
+            agentSessionId: row.id,
+            agentName: token.apiTokenName ?? null,
+            details: {
+              sessionId: row.id,
+              name: row.name,
+              clientName: row.clientName,
+              model: row.model,
+            },
+          },
+        });
+        return { session: row, board };
+      },
+    );
 
     this.realtime.publish(boardId, {
       type: "agent",

@@ -112,35 +112,47 @@ export function ColumnStyleMenu({
               {t("column.styleMenuHint")}
             </div>
           </div>
-          <DropdownMenuRadioGroup
-            value={value}
-            onValueChange={(next) => onChange(next as ColumnAccentStyle)}
-            className="space-y-0.5"
-          >
-            {COLUMN_ACCENT_STYLES.map((style) => (
-              <DropdownMenuRadioItem
-                key={style}
-                value={style}
-                data-testid={`column-style-menu-${style}`}
-                // Keep the menu open for live comparison across shapes.
-                onSelect={(event) => event.preventDefault()}
-                className="items-start gap-2 py-1.5 pl-2 pr-7"
-              >
-                <StyleGlyph style={style} />
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium">
-                    {t(COLUMN_STYLE_KEYS[style])}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-                    {t(COLUMN_STYLE_HINT_KEYS[style])}
-                  </span>
-                </span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
+          <ColumnStyleOptions value={value} onChange={onChange} />
         </DropdownMenuContent>
       </DropdownMenu>
       <TooltipContent>{t("column.styleMenu")}</TooltipContent>
     </Tooltip>
+  );
+}
+
+export function ColumnStyleOptions({
+  value,
+  onChange,
+}: {
+  value: ColumnAccentStyle;
+  onChange: (style: ColumnAccentStyle) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <DropdownMenuRadioGroup
+      value={value}
+      onValueChange={(next) => onChange(next as ColumnAccentStyle)}
+      className="space-y-0.5"
+    >
+      {COLUMN_ACCENT_STYLES.map((style) => (
+        <DropdownMenuRadioItem
+          key={style}
+          value={style}
+          data-testid={`column-style-menu-${style}`}
+          onSelect={(event) => event.preventDefault()}
+          className="items-start gap-2 py-1.5 pl-2 pr-7"
+        >
+          <StyleGlyph style={style} />
+          <span className="min-w-0">
+            <span className="block text-xs font-medium">
+              {t(COLUMN_STYLE_KEYS[style])}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+              {t(COLUMN_STYLE_HINT_KEYS[style])}
+            </span>
+          </span>
+        </DropdownMenuRadioItem>
+      ))}
+    </DropdownMenuRadioGroup>
   );
 }

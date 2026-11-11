@@ -965,15 +965,21 @@ describe("Agent pause and kill (e2e)", () => {
   });
 
   it("checks pause, revoke and end again under the board lock", async () => {
-    // A writer that already passed the second read and holds the lock must
-    // finish even if the pause commits inside its body.
+    // A writer that already passed the second read finishes before a
+    // concurrent token pause can commit.
+    let pendingPause: Promise<unknown> | undefined;
     const committed = await boardWrite.run(
       boardId,
       async (tx) => {
-        await prisma.apiToken.update({
-          where: { id: tokenAId },
-          data: { individualPausedAt: new Date(), individualPausedBy: ownerId },
-        });
+        pendingPause = prisma.apiToken
+          .update({
+            where: { id: tokenAId },
+            data: {
+              individualPausedAt: new Date(),
+              individualPausedBy: ownerId,
+            },
+          })
+          .then((token) => token);
         await tx.activity.create({
           data: {
             boardId,
@@ -988,6 +994,8 @@ describe("Agent pause and kill (e2e)", () => {
       { principal: { via: "pat", apiTokenId: tokenAId } },
     );
     expect(committed).toBe("committed");
+    expect(pendingPause).toBeDefined();
+    await pendingPause;
     expect(
       await prisma.activity.count({
         where: { boardId, type: "agents_paused" },

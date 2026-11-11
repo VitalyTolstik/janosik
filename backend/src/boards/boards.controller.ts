@@ -97,7 +97,7 @@ export class BoardsController {
       actorKey: idempotencyActorKey(user.id, principal),
       requestHash: hashIdempotentRequest({ title: dto.title }),
       run: async () => {
-        const board = await this.boards.createBoard(user.id, dto);
+        const board = await this.boards.createBoard(user.id, dto, principal);
         return { body: board, status: 201, resourceId: board.id };
       },
     });
@@ -124,7 +124,7 @@ export class BoardsController {
       actorKey: idempotencyActorKey(user.id, principal),
       requestHash: hashIdempotentRequest(body),
       run: async () => {
-        const boards = await this.boards.importBoards(user.id, body);
+        const boards = await this.boards.importBoards(user.id, body, principal);
         return {
           body: boards,
           status: 201,
@@ -206,11 +206,14 @@ export class BoardsController {
       body: {},
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    await this.boards.deleteBoard(
-      id,
-      user.id,
-      requestAttribution(principal, session?.id),
-      principal,
+    await this.approvals.performOperation(approval, () =>
+      this.boards.deleteBoard(
+        id,
+        user.id,
+        requestAttribution(principal, session?.id),
+        principal,
+        approval !== null,
+      ),
     );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
@@ -259,12 +262,15 @@ export class BoardsController {
       body: plainRecord(dto),
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    const result = await this.boards.inviteMember(
-      id,
-      user.id,
-      dto,
-      requestAttribution(principal, session?.id),
-      principal,
+    const result = await this.approvals.performOperation(approval, () =>
+      this.boards.inviteMember(
+        id,
+        user.id,
+        dto,
+        requestAttribution(principal, session?.id),
+        principal,
+        approval !== null,
+      ),
     );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
@@ -299,13 +305,16 @@ export class BoardsController {
       body: plainRecord(dto),
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    const result = await this.boards.updateMember(
-      id,
-      user.id,
-      userId,
-      dto,
-      requestAttribution(principal, session?.id),
-      principal,
+    const result = await this.approvals.performOperation(approval, () =>
+      this.boards.updateMember(
+        id,
+        user.id,
+        userId,
+        dto,
+        requestAttribution(principal, session?.id),
+        principal,
+        approval !== null,
+      ),
     );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
@@ -340,12 +349,15 @@ export class BoardsController {
       body: {},
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    await this.boards.removeMember(
-      id,
-      user.id,
-      userId,
-      requestAttribution(principal, session?.id),
-      principal,
+    await this.approvals.performOperation(approval, () =>
+      this.boards.removeMember(
+        id,
+        user.id,
+        userId,
+        requestAttribution(principal, session?.id),
+        principal,
+        approval !== null,
+      ),
     );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {

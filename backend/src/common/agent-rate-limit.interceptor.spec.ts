@@ -12,6 +12,7 @@ import {
 import { resetRateLimits } from "./rate-limit";
 import {
   AgentRateLimitInterceptor,
+  agentSessionIdOf,
   boardIdOf,
 } from "./agent-rate-limit.interceptor";
 
@@ -124,7 +125,19 @@ describe("AgentRateLimitInterceptor (TASK-166.10)", () => {
     ).resolves.toEqual({ ok: true });
   });
 
-  it("reads a session from the header, path or SSE query", () => {
+  it("uses only verified sessions, never untrusted path or query IDs", () => {
+    expect(
+      agentSessionIdOf({
+        originalUrl: "/api/v1/boards/b1/agent-sessions/s1/heartbeat",
+        params: { sessionId: "s1" },
+      } as never),
+    ).toBeUndefined();
+    expect(
+      agentSessionIdOf({
+        originalUrl: "/api/v1/boards/b1/events?session=s1",
+      } as never),
+    ).toBeUndefined();
+    expect(agentSessionIdOf({ rateLimitSessionId: "s1" } as never)).toBe("s1");
     expect(boardIdOf({ originalUrl: "/api/v1/boards/b1/cards" } as never)).toBe(
       "b1",
     );

@@ -2,6 +2,7 @@ import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { ApiTokenIdentityDto } from "@janosik/shared";
 import type { AuthPrincipal } from "./auth-principal";
+import type { LifecycleAction } from "./token-scope";
 
 /** The level that currently blocks an agent (ADR §9.1). */
 export type AgentPauseScope = "board" | "token" | "session";
@@ -139,36 +140,15 @@ export async function assertAgentCanWriteInTransaction(
   sessionId: string | null | undefined,
 ): Promise<void> {
   if (principal?.via !== "pat" || principal.apiTokenId === undefined) return;
-  const [token, board] = await Promise.all([
-    tx.apiToken.findUnique({
-      where: { id: principal.apiTokenId },
-      select: {
-        individualPausedAt: true,
-        stopAllPausedAt: true,
-        revokedAt: true,
-        expiresAt: true,
-        user: { select: { disabledAt: true } },
-      },
-    }),
-    tx.board.findUnique({
-      where: { id: boardId },
-      select: { agentsPausedAt: true },
-    }),
-  ]);
-
-  // Kill/expiry wins over pause: the token is no longer a valid principal.
-  if (token === null) throw new UnauthorizedException("Invalid API token");
-  if (
-    token.revokedAt != null ||
-    token.user?.disabledAt != null ||
-    (token.expiresAt != null && token.expiresAt.getTime() <= Date.now())
-  ) {
-    throw new UnauthorizedException("API token is no longer active");
-  }
+  const token = await assertAgentTokenCanWriteInTransaction(tx, principal);
+  const board = await tx.board.findUnique({
+    where: { id: boardId },
+    select: { agentsPausedAt: true },
+  });
 
   const pause = resolveAgentPause({
-    tokenIndividualPausedAt: token.individualPausedAt,
-    tokenStopAllPausedAt: token.stopAllPausedAt,
+    tokenIndividualPausedAt: token?.individualPausedAt,
+    tokenStopAllPausedAt: token?.stopAllPausedAt,
     boardPausedAt: board?.agentsPausedAt ?? null,
   });
   if (pause !== null) throw agentPausedError(pause);
@@ -213,17 +193,76 @@ export async function assertAgentCanWriteInTransaction(
   }
 }
 
+/** Lock the token before the final check, serializing writes with revoke/pause. */
+export async function assertAgentTokenCanWriteInTransaction(
+  tx: Prisma.TransactionClient,
+  principal: AuthPrincipal | undefined,
+) {
+  if (principal?.via !== "pat" || principal.apiTokenId === undefined)
+    return null;
+  await tx.$queryRaw`SELECT id FROM "ApiToken" WHERE id = ${principal.apiTokenId} FOR UPDATE`;
+  const token = await tx.apiToken.findUnique({
+    where: { id: principal.apiTokenId },
+    select: {
+      individualPausedAt: true,
+      stopAllPausedAt: true,
+      revokedAt: true,
+      expiresAt: true,
+      readOnly: true,
+      boardId: true,
+      scopePreset: true,
+      trustedCi: true,
+      user: { select: { disabledAt: true } },
+    },
+  });
+
+  // Kill/expiry wins over pause: the token is no longer a valid principal.
+  if (token === null) throw new UnauthorizedException("Invalid API token");
+  if (
+    token.revokedAt != null ||
+    token.user?.disabledAt != null ||
+    (token.expiresAt != null && token.expiresAt.getTime() <= Date.now())
+  ) {
+    throw new UnauthorizedException("API token is no longer active");
+  }
+
+  const pause = resolveAgentPause({
+    tokenIndividualPausedAt: token.individualPausedAt,
+    tokenStopAllPausedAt: token.stopAllPausedAt,
+  });
+  if (pause !== null) throw agentPausedError(pause);
+  // A scope edit that committed while this write was queued invalidates the
+  // authenticated snapshot; force a retry with freshly resolved permissions.
+  if (
+    (principal.tokenIdentity !== undefined &&
+      (token.scopePreset !== principal.tokenIdentity.scopePreset ||
+        token.trustedCi !== principal.tokenIdentity.trustedCi)) ||
+    (principal.tokenScope !== undefined &&
+      (token.readOnly !== principal.tokenScope.readOnly ||
+        token.boardId !== principal.tokenScope.boardId))
+  ) {
+    throw new ForbiddenException({
+      message: "API token permissions changed; retry with the current scope",
+      code: "scope_denied",
+      reason: "token_scope_changed",
+    });
+  }
+  return token;
+}
+
 /** The optional third argument of `BoardWriteService.run`. */
 export interface AgentPauseGate {
   principal: AuthPrincipal;
   sessionId?: string | null;
+  lifecycle?: { action: LifecycleAction; approvalApplied: boolean };
 }
 
 /** Build the gate only for a PAT; human writes need no second pause read. */
 export function pauseGateFor(
   principal: AuthPrincipal | undefined,
   sessionId: string | null | undefined,
+  lifecycle?: AgentPauseGate["lifecycle"],
 ): AgentPauseGate | undefined {
   if (principal?.via !== "pat") return undefined;
-  return { principal, sessionId };
+  return { principal, sessionId, ...(lifecycle ? { lifecycle } : {}) };
 }

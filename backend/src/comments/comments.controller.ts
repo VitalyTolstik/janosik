@@ -20,6 +20,8 @@ import { requestAttribution } from "@/auth/request-attribution";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { BoardRoles } from "@/common/board-roles.decorator";
 import { CardAccessGuard } from "@/common/card-access.guard";
+import { CurrentMembership } from "@/common/current-membership.decorator";
+import type { BoardMember } from "@prisma/client";
 import {
   hashIdempotentRequest,
   idempotencyActorKey,
@@ -40,6 +42,14 @@ export class CommentsController {
     private readonly comments: CommentsService,
     private readonly idempotency: IdempotencyService,
   ) {}
+
+  @UseGuards(CardAccessGuard)
+  @Get(["cards/:cardId/board-context", "comments/:commentId/board-context"])
+  boardContext(@CurrentMembership() membership: BoardMember): {
+    boardId: string;
+  } {
+    return { boardId: membership.boardId };
+  }
 
   @UseGuards(CardAccessGuard)
   @BoardRoles(Role.ADMIN, Role.MEMBER)

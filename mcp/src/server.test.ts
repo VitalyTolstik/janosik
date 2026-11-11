@@ -762,6 +762,16 @@ describe("janosik MCP server", () => {
     expect(shareCalls.map((call) => call.headers?.["Idempotency-Key"])).toEqual(
       ["share-key-1", "share-key-1"],
     );
+    expect(shareCalls.map((call) => call.body)).toEqual([
+      expect.objectContaining({
+        expiresInHours: 24,
+        expiresAt: expect.any(String),
+      }),
+      expect.objectContaining({
+        expiresInHours: 25,
+        expiresAt: expect.any(String),
+      }),
+    ]);
     await client.close();
   });
 

@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { AddressInfo } from "node:net";
@@ -16,6 +21,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { AgentSessionsService } from "@/agent-sessions/agent-sessions.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "agent-sessions@example.com";
@@ -213,6 +219,165 @@ describe("Agent sessions and attribution (e2e)", () => {
       .expect(201)
       .then((res) => res.body as AgentSessionDto);
   }
+
+  it.each(["revoke", "pause", "board-pause"] as const)(
+    "rechecks a token when %s wins after authentication",
+    async (action) => {
+      const name = `start-race-${action}`;
+      const pat = await createToken(name);
+      const list = await server()
+        .get("/api/v1/users/me/tokens")
+        .set(auth(session))
+        .expect(200);
+      const tokenId = (list.body as UserTokenDto[]).find(
+        (item) => item.name === name,
+      )!.id;
+      const service = app.get(AgentSessionsService);
+      const original = service.start.bind(service);
+      let reached!: () => void;
+      const atStart = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      let resume!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const spy = jest
+        .spyOn(service, "start")
+        .mockImplementationOnce(async (...args) => {
+          reached();
+          await gate;
+          return original(...args);
+        });
+      const pending = server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions`)
+        .set(auth(pat))
+        .send({ name })
+        .then((res) => res);
+      try {
+        await atStart;
+        if (action === "revoke")
+          await server()
+            .delete(`/api/v1/users/me/tokens/${tokenId}`)
+            .set(auth(session))
+            .expect(200);
+        else if (action === "pause")
+          await server()
+            .post(`/api/v1/users/me/tokens/${tokenId}/pause`)
+            .set(auth(session))
+            .send({})
+            .expect(200);
+        else
+          await server()
+            .post(`/api/v1/boards/${boardId}/agents/pause`)
+            .set(auth(session))
+            .send({})
+            .expect(200);
+      } finally {
+        resume();
+      }
+      const response = await pending;
+      spy.mockRestore();
+      expect(response.status).toBe(action === "revoke" ? 401 : 403);
+      if (action !== "revoke") expect(response.body.code).toBe("agent_paused");
+      expect(
+        await prisma.agentSession.count({
+          where: { apiTokenId: tokenId, endedAt: null },
+        }),
+      ).toBe(0);
+      if (action === "board-pause")
+        await server()
+          .post(`/api/v1/boards/${boardId}/agents/resume`)
+          .set(auth(session))
+          .send({})
+          .expect(200);
+    },
+  );
+
+  it("cancels a session when start commits before revocation", async () => {
+    const name = "start-before-revoke";
+    const pat = await createToken(name);
+    const created = await start(pat, { name });
+    const tokens = await server()
+      .get("/api/v1/users/me/tokens")
+      .set(auth(session))
+      .expect(200);
+    const tokenId = (tokens.body as UserTokenDto[]).find(
+      (item) => item.name === name,
+    )!.id;
+    await server()
+      .delete(`/api/v1/users/me/tokens/${tokenId}`)
+      .set(auth(session))
+      .expect(200);
+    const row = await prisma.agentSession.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(row.status).toBe("cancelled");
+    expect(row.endedAt).not.toBeNull();
+  });
+
+  it("enforces session pause through a real MCP client on comments and attachments", async () => {
+    const sharePat = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(session))
+      .send({
+        name: "mcp-share-test",
+        scopePreset: "admin",
+        trustedCi: true,
+        expiresAt: null,
+      })
+      .expect(201);
+    const otherCard = randomUUID();
+    const otherColumn = randomUUID();
+    for (const action of [
+      { type: "ADD_COLUMN", newColumnId: otherColumn, title: "MCP" },
+      {
+        type: "ADD_CARD",
+        columnId: otherColumn,
+        newCardId: otherCard,
+        title: "MCP",
+      },
+    ])
+      await server()
+        .post(`/api/v1/boards/${otherBoardId}/commands`)
+        .set(auth(session))
+        .send({
+          commandId: randomUUID(),
+          action: { boardId: otherBoardId, at: Date.now(), ...action },
+        })
+        .expect(200);
+    const dir = await mkdtemp(path.join(tmpdir(), "janosik-mcp-test-"));
+    const file = path.join(dir, "test.txt");
+    await writeFile(file, "MCP attachment");
+    try {
+      await promisify(execFile)(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          path.resolve(process.cwd(), "../mcp/test/live-session.mjs"),
+        ],
+        {
+          cwd: path.resolve(process.cwd(), "../mcp"),
+          env: {
+            ...process.env,
+            LIVE_URL: baseUrl.replace(/\/api\/v1$/, ""),
+            LIVE_PAT: tokenA,
+            LIVE_SHARE_PAT: sharePat.body.token as string,
+            LIVE_HUMAN: session,
+            LIVE_BOARD: boardId,
+            LIVE_CARD: cardId,
+            LIVE_OTHER_BOARD: otherBoardId,
+            LIVE_OTHER_CARD: otherCard,
+            LIVE_FILE: file,
+          },
+          timeout: 30_000,
+        },
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 45_000);
 
   it("exposes the token identity on whoami and the token list", async () => {
     const me = await server()

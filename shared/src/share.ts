@@ -83,6 +83,8 @@ export interface CreateShareRequest {
   includeAttachments?: boolean;
   /** ISO-8601 expiry; omitted/`null` = no expiry. */
   expiresAt?: string | null;
+  /** Relative expiry in hours; when supplied, takes precedence over expiresAt. */
+  expiresInHours?: number;
 }
 
 /** Body of `PATCH /shares/:id` (owner/admin). */

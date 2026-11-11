@@ -16,6 +16,7 @@ import {
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
 import {
   type RequestAttribution,
@@ -68,17 +69,21 @@ export class CommentsService {
   ): Promise<CommentDto> {
     const text = dto.text.trim();
     if (text.length === 0) {
-      throw new BadRequestException({
-        message: "text must not be blank",
-        field: "text",
-      });
+      throw beforeWrite(
+        new BadRequestException({
+          message: "text must not be blank",
+          field: "text",
+        }),
+      );
     }
-    const card = await this.prisma.card.findFirst({
-      where: { id: cardId, deletedAt: null },
-      select: { column: { select: { boardId: true } } },
-    });
+    const card = await rollbackOnThrow(() =>
+      this.prisma.card.findFirst({
+        where: { id: cardId, deletedAt: null },
+        select: { column: { select: { boardId: true } } },
+      }),
+    );
     if (!card) {
-      throw new NotFoundException("Card not found");
+      throw beforeWrite(new NotFoundException("Card not found"));
     }
     const boardId = card.column.boardId;
 
@@ -86,7 +91,9 @@ export class CommentsService {
     // retried POST finds the first row instead of appending a duplicate.
     const id = dto.commandId;
     if (id !== undefined) {
-      const existing = await this.prisma.comment.findUnique({ where: { id } });
+      const existing = await rollbackOnThrow(() =>
+        this.prisma.comment.findUnique({ where: { id } }),
+      );
       if (existing) {
         // TASK-153: the replay must belong to the caller. Without the author
         // check any member could probe another author's key and be handed
@@ -98,12 +105,14 @@ export class CommentsService {
           (existing.apiTokenId !== null &&
             existing.apiTokenId !== attribution.apiTokenId)
         ) {
-          throw new ConflictException({
-            message: "commandId already used",
-            code: "idempotency_conflict",
-            key: id,
-            field: "commandId",
-          });
+          throw beforeWrite(
+            new ConflictException({
+              message: "commandId already used",
+              code: "idempotency_conflict",
+              key: id,
+              field: "commandId",
+            }),
+          );
         }
         return toCommentDto(existing);
       }

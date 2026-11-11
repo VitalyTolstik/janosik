@@ -128,6 +128,7 @@ remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
 | D15 | **A session is board-scoped and optional for ordinary writes.** It is passed in the `X-Agent-Session` header; batch/plan/approval/destructive runs use it when present. A legacy PAT can work without a session. | Compatibility with current REST/MCP clients; a session adds attribution and per-session pause but is not the only kill switch. | A session must not write to another board. Do not treat a missing session as a bypass of token/board pause. |
 | D16 | **A run is created only for PAT:** batch, plan/apply, and a single destructive `BoardAction` command. Non-command REST actions and an ordinary single non-destructive command have `runId = null`. | Do not grow the log; human browser undo is unchanged. | Cross-board runs are forbidden. A human batch through the API does not create `AgentRun`; its undo remains a UI mechanism. |
 | D17 | **Run revert is human-only** (board ADMIN, browser JWT). An agent may get a dry-run/preview but cannot apply revert. | Reverting destructive actions is dangerous; a human sees conflicts and confirms. | `POST .../revert` with a PAT is forbidden. MCP exposes only `janosik_preview_run_revert`. |
+
 | D18 | **Errors are an additive contract.** Current `{conflict, currentVersion, workflow}` and `field` are preserved; add `code`, `retryable`, `requestId`; `currentVersion` on state conflicts. | Do not break current clients and docs; new agents get a machine-readable branch. | Do not rename `conflict` categories or `pat_read_only`/`pat_forbidden`/`board_write_timeout`. |
 | D19 | **The 10-board limit is removed in server mode.** `MAX_BOARDS_PER_USER` (env) defaults to `0` = no limit; an operator may set a positive cap. Local/offline mode keeps 10 as a localStorage guard. | Pricing promises unlimited; 10 is a technical offline guard, not the product. | Do not clip import at 10 boards. An import above the cap is rejected atomically with `limit_exceeded`. |
 | D20 | **Import/export:** `EXPORT_SCHEMA_VERSION = 3` (adds `Board.agentPolicy`); `MAX_IMPORT_BYTES = MAX_BOARD_EXPORT_BYTES = 25 MB`; command/plan body has a separate `MAX_COMMAND_BODY_BYTES = 10 MB`; an export above the limit is an explicit error, not truncation. | "Import ≥ export" without streaming or object storage; commands must not inherit the import limit. | No silent truncate. Old v1/v2 imports work; old clients reject v3. |
@@ -136,6 +137,15 @@ remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
 | D23 | **Claim attribution.** `Card.claimedBy` (user id) remains; add `claimedByTokenId` and `claimedBySessionId`. The server fills them from the principal; a client cannot forge them. | Two PATs on one account must be distinguishable; legacy UI keeps working. | Do not trust token/session ids from the `CLAIM_CARD` payload. Claim conflict compares session, then token, then legacy user id. |
 | D24 | **SSE attribution and pause.** Command/Activity frames carry `apiTokenId`, `agentSessionId`, `runId`, `agentName`; add `approval` and `agent` events. PAT-SSE closes on pause. | Watch and humans must see who acts; pause must stop the stream. | Do not lose `actorType` in SSE. Human SSE does not close on pause. |
 | D25 | **REST idempotency.** `Idempotency-Key` (8–128 `[A-Za-z0-9_-]`) for create board/import/share/upload; `add_comment` uses the existing body `commandId`; `duplicate_card` and other commands use `commandId`. A repeat with the same key and body returns the stored response; a different body gets `idempotency_conflict`. | Agent retries must not create duplicates. | The key lives for 24 hours. An `in_progress` repeat gets `idempotency_in_progress` with `retryable: true`. |
+
+**TASK-166.17 clarification:** legacy `readOnly` PATs and observer presets can
+start, heartbeat and end their own agent session and request a revert preview;
+these narrow control routes do not authorize content writes. MCP resolves
+card, comment and attachment board context before attaching a board session.
+Share expiry is part of the approved and idempotent intent: `expiresInHours`
+takes precedence over the absolute compatibility fallback. Lifecycle approval
+claims are reopened only after a failure known to precede commit; ambiguous
+outcomes remain consumed and must not be applied again.
 
 ---
 
@@ -760,6 +770,9 @@ TTL is 24 hours. A repeat with the same `scope + actorKey + key` and the same
 `requestHash` returns the stored status/body; a different body gets
 `409 idempotency_conflict`; while the first record is `in_progress`, the
 repeat gets `409 idempotency_in_progress` (`retryable: true`).
+Failures known to have rolled back release the reservation; when the outcome
+is uncertain, the reservation remains until its 24-hour expiry to avoid a
+duplicate write. Check whether the operation took effect before using a new key.
 
 ### 6.12. DTOs, headers, and SSE
 
@@ -1313,7 +1326,7 @@ Every API error (new and changed in 166.4) returns:
 | `run_expired` | 409 | false | pre-images/run removed by retention | `runId`, `retentionDays` |
 | `limit_exceeded` | 409 | false | WIP/collection/board/run limit | `conflict: "wip"` for WIP, `limit`, `current` |
 | `idempotency_conflict` | 409 | false | same key, different body | `key` |
-| `idempotency_in_progress` | 409 | true | first record is still running | `key`, `retryAfter` |
+| `idempotency_in_progress` | 409 | true | first record is still running or its outcome is uncertain | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
 | `rate_limited` | 429 | true | global/per-token/per-agent limit | `retryAfter`, `limit` |
 | `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |

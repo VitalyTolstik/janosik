@@ -1,10 +1,13 @@
 import {
   IsBoolean,
   IsIn,
+  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
+  Min,
   ValidateIf,
 } from "class-validator";
 import { SHARE_LIMITS } from "@janosik/shared";
@@ -32,6 +35,13 @@ export class CreateShareDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsISO8601()
   expiresAt?: string | null;
+
+  /** Relative expiry, computed on the server when the share is created. */
+  @ValidateIf((_, value) => value !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(24 * 365 * 10)
+  expiresInHours?: number;
 }
 
 /** Body of `PATCH /shares/:id` (owner/admin, TASK-58). */

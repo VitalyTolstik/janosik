@@ -29,6 +29,7 @@ import {
   normalizeIdempotencyKey,
 } from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
+import { rollbackOnThrow } from "@/common/rollback-certainty";
 import { CreateShareDto, UpdateShareDto } from "./dto/share.dto";
 import { ShareService } from "./share.service";
 
@@ -66,23 +67,29 @@ export class BoardSharesController {
     @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardShareDto> {
     const create = async (): Promise<BoardShareDto> => {
-      const approval = await this.approvals.authorizeOperation({
-        boardId: id,
-        userId: user.id,
-        role: membership.role,
-        principal,
-        agentSessionId: session?.id ?? null,
-        op: "share.create",
-        target: { boardId: id },
-        body: plainRecord(dto),
-        ...(approvalId !== undefined ? { approvalId } : {}),
-      });
-      const result = await this.shares.create(
-        id,
-        user.id,
-        dto,
-        "user",
-        requestAttribution(principal, session?.id),
+      const approval = await rollbackOnThrow(() =>
+        this.approvals.authorizeOperation({
+          boardId: id,
+          userId: user.id,
+          role: membership.role,
+          principal,
+          agentSessionId: session?.id ?? null,
+          op: "share.create",
+          target: { boardId: id },
+          body: plainRecord(dto),
+          ...(approvalId !== undefined ? { approvalId } : {}),
+        }),
+      );
+      const result = await this.approvals.performOperation(approval, () =>
+        this.shares.create(
+          id,
+          user.id,
+          dto,
+          "user",
+          requestAttribution(principal, session?.id),
+          principal,
+          approval !== null,
+        ),
       );
       if (approval !== null) {
         await this.approvals.consumeOperation(approval, user.id, principal, {
@@ -98,16 +105,15 @@ export class BoardSharesController {
       scope: "create_share",
       key,
       actorKey: idempotencyActorKey(user.id, principal),
-      // `expiresAt` is derived by the caller (the MCP tool uses
-      // `Date.now() + expiresInHours`), so it must not change the fingerprint:
-      // a retry of the same share intent replays the first link even a moment
-      // later. The other fields are the actual intent.
       requestHash: hashIdempotentRequest({
         boardId: id,
         mode: dto.mode,
         title: dto.title,
         includeComments: dto.includeComments,
         includeAttachments: dto.includeAttachments,
+        expiresAt:
+          dto.expiresInHours === undefined ? (dto.expiresAt ?? null) : null,
+        expiresInHours: dto.expiresInHours ?? null,
       }),
       run: async () => {
         const share = await create();
@@ -121,10 +127,18 @@ export class BoardSharesController {
   refresh(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<BoardShareDto> {
     return this.shares
       .requireShareOnBoard(shareId, id)
-      .then(() => this.shares.refreshSnapshot(shareId));
+      .then(() =>
+        this.shares.refreshSnapshot(
+          shareId,
+          principal,
+          requestAttribution(principal, session?.id),
+        ),
+      );
   }
 
   @Patch(":shareId")
@@ -150,7 +164,15 @@ export class BoardSharesController {
       body: plainRecord(dto),
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    const result = await this.shares.update(shareId, dto);
+    const result = await this.approvals.performOperation(approval, () =>
+      this.shares.update(
+        shareId,
+        dto,
+        principal,
+        requestAttribution(principal, session?.id),
+        approval !== null,
+      ),
+    );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
         operation: "share.update",
@@ -182,10 +204,14 @@ export class BoardSharesController {
       body: {},
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    const result = await this.shares.revoke(
-      shareId,
-      user.id,
-      requestAttribution(principal, session?.id),
+    const result = await this.approvals.performOperation(approval, () =>
+      this.shares.revoke(
+        shareId,
+        user.id,
+        requestAttribution(principal, session?.id),
+        principal,
+        approval !== null,
+      ),
     );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
@@ -219,11 +245,15 @@ export class BoardSharesController {
       body: {},
       ...(approvalId !== undefined ? { approvalId } : {}),
     });
-    await this.shares.deleteRevoked(
-      id,
-      shareId,
-      user.id,
-      requestAttribution(principal, session?.id),
+    await this.approvals.performOperation(approval, () =>
+      this.shares.deleteRevoked(
+        id,
+        shareId,
+        user.id,
+        requestAttribution(principal, session?.id),
+        principal,
+        approval !== null,
+      ),
     );
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {

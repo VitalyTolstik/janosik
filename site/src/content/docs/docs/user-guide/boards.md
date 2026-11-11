@@ -79,7 +79,8 @@ blocked with a short message.
 
 ### Column appearance
 
-In the board view, open the column appearance menu next to the view switcher.
+In the board view, open the three-line **Board appearance** menu next to the
+view switcher. It also contains card density and column style settings.
 `Transparency` makes columns translucent over the board background, and `Blur`
 frosts what shows through. Both apply live and are remembered.
 
@@ -90,7 +91,7 @@ the six gradient presets from the card-cover palette, or choose `No accent`
 to clear it. The accent is board content: it survives reloads, is visible to
 every participant, and can be undone.
 
-The board-wide shape is chosen from the brush menu next to the view switcher:
+The board-wide shape is chosen from **Column style** in that menu:
 top rail, left rail, wash, title, glow, glass, header band, dot or signature.
 The shape applies to every accent on the board and is stored on the board, so
 all participants see the same style. The accent is decoration only — WIP

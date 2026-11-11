@@ -16,6 +16,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function fakePrisma() {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]),
   } as unknown as Prisma.TransactionClient;
   const prisma = {
     $transaction: jest.fn(

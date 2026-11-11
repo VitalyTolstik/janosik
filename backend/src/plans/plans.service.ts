@@ -46,6 +46,7 @@ import { CommandsService } from "@/commands/commands.service";
 import type { CreateCommandDto } from "@/commands/dto/create-command.dto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { boardsEqual, diffBoards } from "./plan-diff";
+import { countPlanCardCreates } from "@/approvals/plan-card-count";
 import type { ApplyPlanDto, CreatePlanDto } from "./dto/create-plan.dto";
 
 /** A plan cannot exceed the transport's own sanity bound. */
@@ -60,15 +61,6 @@ function planLimits(policy: BoardAgentPolicy): {
     commands: Math.min(100, policy.maxCommandsPerRun),
     cards: Math.min(50, policy.maxCardsPerRun),
   };
-}
-
-/** Count commands that create a card (`DUPLICATE_COLUMN` copies a column). */
-function countCardCreates(plan: ApprovalPlan): number {
-  return (plan.commands ?? []).filter((command) =>
-    ["ADD_CARD", "DUPLICATE_CARD", "DUPLICATE_COLUMN"].includes(
-      String(command.action.type),
-    ),
-  ).length;
 }
 
 /**
@@ -171,7 +163,7 @@ export class PlansService {
     // A dry run must not write an attention event either: the pure limit
     // check is enough to answer `409 limit_exceeded`. Applying the plan (and
     // creating an approval) uses the notifying variant.
-    this.approvals.assertPlanLimits(build.plan, context.policy);
+    this.approvals.assertPlanLimits(build.plan, context.policy, context.board);
     const requirement = classifyPlan(
       build.plan,
       context.board,
@@ -206,7 +198,7 @@ export class PlansService {
       planHash: approvalPlanHash(build.plan),
       plan: build.plan,
       commandCount: build.prepared.length,
-      cardCreates: countCardCreates(build.plan),
+      cardCreates: countPlanCardCreates(build.plan, context.board),
       limits: planLimits(context.policy),
       requirement: {
         kind: requirement.kind,
@@ -242,7 +234,6 @@ export class PlansService {
   }): Promise<PlanApplyResponse> {
     const { boardId, actorId, role, principal, agentSessionId } = params;
     this.assertTransportSize(params.dto.commands.length);
-    const context = await this.loadContext(boardId);
     const build = this.buildPlan(boardId, actorId, params.dto.commands);
     const planHash = approvalPlanHash(build.plan);
     const supplied = params.dto.planHash.toLowerCase();
@@ -259,15 +250,6 @@ export class PlansService {
         retryable: false,
       });
     }
-    // The approval path enforces the caps too, but a browser apply and a
-    // plan that would be refused by policy must answer here first.
-    await this.approvals.assertPlanLimitsForUser(
-      build.plan,
-      context.policy,
-      actorId,
-      boardId,
-    );
-
     const run =
       principal?.via === "pat"
         ? {
@@ -289,6 +271,7 @@ export class PlansService {
         attribution: requestAttribution(principal, agentSessionId),
         principal,
         allowMissingAt: true,
+        enforcePlanLimits: true,
         ...(run !== undefined ? { run } : {}),
         ...(params.approvalId !== undefined
           ? { approvalId: params.approvalId }

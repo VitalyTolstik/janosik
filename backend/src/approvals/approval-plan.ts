@@ -187,7 +187,7 @@ export function normalizePlanOperation(
   return {
     op: raw.op as ApprovalOperationName,
     target: raw.target,
-    body: raw.body,
+    body: normalizeOperationBody(raw.op, raw.body),
   };
 }
 
@@ -274,16 +274,30 @@ export function planFromOperation(
   target: Record<string, unknown>,
   body: Record<string, unknown>,
 ): ApprovalPlan {
-  // `expiresAt` is derived from `expiresInHours` by the MCP tool at call time,
-  // so it is transport context, not intent: a retry a moment later must match
-  // the same plan, and the share endpoint's own idempotency hash excludes it.
-  const normalizedBody = { ...body };
-  delete normalizedBody.expiresAt;
   return {
     schemaVersion: 1,
     boardId,
-    operations: [{ op, target: { ...target, boardId }, body: normalizedBody }],
+    operations: [
+      {
+        op,
+        target: { ...target, boardId },
+        body: normalizeOperationBody(op, body),
+      },
+    ],
   };
+}
+
+function normalizeOperationBody(
+  op: string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalizedBody = { ...body };
+  // The absolute deadline is a fallback for older servers. With relative
+  // expiry, only the duration determines the operation's intent.
+  if (op === "share.create" && normalizedBody.expiresInHours !== undefined) {
+    delete normalizedBody.expiresAt;
+  }
+  return normalizedBody;
 }
 
 /** Requirement classification for a plan against the current board. */

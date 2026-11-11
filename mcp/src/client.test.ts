@@ -29,6 +29,58 @@ function json(body: unknown, status = 200): Response {
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("session attribution for resource routes", () => {
+  it("resolves each resource's board without borrowing another board's session", async () => {
+    const { calls } = stubFetch(({ url, init }) => {
+      if (url.endsWith("/agent-sessions"))
+        return json({ id: url.includes("/b1/") ? "s1" : "s2" }, 201);
+      if (url.endsWith("/board-context"))
+        return json({ boardId: url.includes("/c2/") ? "b2" : "b1" });
+      return json(
+        { id: "created", status: "ok" },
+        init.method === "POST" ? 201 : 200,
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await client.startSession("b1");
+    await client.startSession("b2");
+    await client.addComment("c2", "hello");
+    await client.deleteComment("comment1");
+    await client.uploadAttachment(
+      "c2",
+      "a.txt",
+      "text/plain",
+      Buffer.from("a"),
+    );
+    await client.deleteAttachment("attachment1");
+    const writes = calls.filter(
+      (call) =>
+        /\/(cards|comments|attachments)\//.test(call.url) &&
+        call.init.method !== "GET",
+    );
+    expect(
+      writes.map(
+        (call) =>
+          (call.init.headers as Record<string, string>)["X-Agent-Session"],
+      ),
+    ).toEqual(["s2", "s1", "s2", "s1"]);
+  });
+
+  it("does not write if board context cannot be resolved while a session is active", async () => {
+    const { calls } = stubFetch(({ url }) =>
+      url.endsWith("/agent-sessions")
+        ? json({ id: "s1" }, 201)
+        : json({ message: "not found" }, 404),
+    );
+    const client = new JanosikClient("http://api.test", "t");
+    await client.startSession("b1");
+    await expect(client.deleteComment("unknown")).rejects.toBeInstanceOf(
+      ApiError,
+    );
+    expect(calls.some((call) => call.init.method === "DELETE")).toBe(false);
+  });
+});
+
 describe("JanosikClient.command", () => {
   it("posts a stamped action with auth and an idempotency key", async () => {
     const { calls } = stubFetch(() =>

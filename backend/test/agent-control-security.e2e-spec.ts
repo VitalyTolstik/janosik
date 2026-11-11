@@ -352,6 +352,79 @@ describe("Agent control contract/security (e2e)", () => {
       .expect(200);
   });
 
+  it("allows observer and read-only control operations without granting writes", async () => {
+    const boardId = await createBoard("Observer control");
+    const columnId = await createColumn(boardId);
+    const cardId = await createCard(boardId, columnId);
+    const batch = await server()
+      .post(`/api/v1/boards/${boardId}/commands/batch`)
+      .set(auth(workerToken))
+      .send({
+        commands: [
+          {
+            commandId: randomUUID(),
+            action: {
+              boardId,
+              at: Date.now(),
+              type: "UPDATE_CARD",
+              cardId,
+              title: "updated",
+            },
+          },
+          {
+            commandId: randomUUID(),
+            action: {
+              boardId,
+              at: Date.now(),
+              type: "UPDATE_CARD",
+              cardId,
+              description: "updated",
+            },
+          },
+        ],
+      })
+      .expect(200);
+    const runId = batch.body.runId as string;
+    expect(runId).toBeTruthy();
+    for (const token of [readOnlyToken, observerToken]) {
+      const session = await server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions`)
+        .set(auth(token))
+        .send({ name: "observer" })
+        .expect(201);
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/agent-sessions/${session.body.id}/heartbeat`,
+        )
+        .set(auth(token))
+        .send({})
+        .expect(200);
+      const preview = await server()
+        .post(`/api/v1/boards/${boardId}/runs/${runId}/revert/preview`)
+        .set(auth(token))
+        .send({})
+        .expect(200);
+      expect(preview.body).not.toHaveProperty("preimages");
+      await server()
+        .post(`/api/v1/boards/${boardId}/runs/${runId}/revert`)
+        .set(auth(token))
+        .send({ commandId: randomUUID() })
+        .expect(403);
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/agent-sessions/${session.body.id}/pause`,
+        )
+        .set(auth(token))
+        .send({})
+        .expect(403);
+      await server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions/${session.body.id}/end`)
+        .set(auth(token))
+        .send({})
+        .expect(200);
+    }
+  });
+
   it("puts a reviewer between worker and admin: plan yes, admin no, delete needs approval", async () => {
     const boardId = await createBoard("Reviewer boundary");
     const columnId = await createColumn(boardId);

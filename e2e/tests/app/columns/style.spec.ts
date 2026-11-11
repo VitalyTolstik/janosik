@@ -26,6 +26,38 @@ function columnOrder(page: Page): Promise<(string | null)[]> {
     );
 }
 
+test("keeps board display preferences in the combined menu after reload", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.open(page);
+  await page.getByTestId("board-display-menu").click();
+
+  const toggles = ["density-toggle", "glass-opacity", "glass-blur"];
+  const expected: Record<string, string> = {};
+  for (const id of toggles) {
+    const item = page.getByTestId(id);
+    const initial = await item.getAttribute("aria-checked");
+    expected[id] = initial === "true" ? "false" : "true";
+    await item.click();
+    await expect(item).toHaveAttribute("aria-checked", expected[id]);
+  }
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-density",
+    expected["density-toggle"] === "true" ? "compact" : "full",
+  );
+
+  await page.reload();
+  await page.getByTestId("board-display-menu").click();
+  for (const id of toggles) {
+    await expect(page.getByTestId(id)).toHaveAttribute(
+      "aria-checked",
+      expected[id],
+    );
+  }
+});
+
 test("sets a color on one column only, survives reload and resets", async ({
   page,
   board,
@@ -154,6 +186,7 @@ test("applies the board shape only to accented columns", async ({
   await expect(plain).toHaveAttribute("data-column-accent", "none");
   await expect(plain).toHaveAttribute("data-column-accent-style", "none");
 
+  await page.getByTestId("board-display-menu").click();
   await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-band").click();
   await expect(accented).toHaveAttribute("data-column-accent-style", "band");
@@ -231,8 +264,9 @@ test("renders all nine accent shapes in light and dark", async ({
       "brand",
     );
 
-    await page.getByTestId("column-style-menu").click();
+    await page.getByTestId("board-display-menu").click();
     for (const style of styles) {
+      await page.getByTestId("column-style-menu").click();
       await page.getByTestId(`column-style-menu-${style}`).click();
       await expect(columnSection(page, "Todo")).toHaveAttribute(
         "data-column-accent-style",
@@ -346,11 +380,12 @@ test("applies all nine board-wide shapes and persists the choice", async ({
     "dot",
     "signature",
   ];
-  await page.getByTestId("column-style-menu").click();
+  await page.getByTestId("board-display-menu").click();
   // The open dropdown marks the board inert/aria-hidden, so address the
   // column by its DOM attribute instead of the header's role.
   const accentColumn = page.locator('section[data-column-accent="ocean"]');
   for (const style of styles) {
+    await page.getByTestId("column-style-menu").click();
     await page.getByTestId(`column-style-menu-${style}`).click();
     await expect(accentColumn).toHaveAttribute(
       "data-column-accent-style",
@@ -358,6 +393,7 @@ test("applies all nine board-wide shapes and persists the choice", async ({
     );
   }
   // Leave a non-default shape and prove the board (not this browser) keeps it.
+  await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-glow").click();
   await page.keyboard.press("Escape");
   await expect(columnSection(page, "Todo")).toHaveAttribute(
@@ -395,6 +431,7 @@ test("undo and redo the color and the board shape", async ({ page, board }) => {
     "red",
   );
 
+  await page.getByTestId("board-display-menu").click();
   await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-band").click();
   await page.keyboard.press("Escape");

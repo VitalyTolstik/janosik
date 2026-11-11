@@ -395,9 +395,14 @@ or share management needs `ADMIN`. Revoke the key in the account panel to cut
 an agent off.
 
 A key can be scoped when you create it in **Account → API keys**: `boardId`
-restricts it to one board, `readOnly` refuses every write (`403
+restricts it to one board, `readOnly` refuses content writes (`403
 pat_read_only`), and `rateLimitPerMinute` gives it its own request budget (over
 the budget answers `429`). If an agent only needs to read data, use a read-only key restricted to one board.
+
+With an active session, MCP resolves the board of a comment or attachment on
+the server before writing, and sends only that board's session. Upgrade the
+server and MCP together: an older server without board-context endpoints
+cannot safely resolve these writes and MCP refuses them until upgraded.
 
 Card text and comments are written by other people and agents, so treat what
 an agent reads from a board as untrusted. Give each agent its own user account
