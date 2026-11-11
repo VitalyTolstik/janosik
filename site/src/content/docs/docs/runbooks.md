@@ -9,79 +9,110 @@ data; take the backup first.
 
 ## Backup
 
-Back up both the database and the uploads volume. Neither step changes state.
-Janosik does not create, schedule or verify these backups — run them from cron
-or your backup system and test a restore occasionally.
+Janosik does not create, schedule or verify server backups. Board and account
+exports do not include uploaded blobs and are not a disaster-recovery backup.
+This procedure uses the bundled Compose PostgreSQL and `/data/uploads`; for an
+external database or storage, adapt it to that provider. Run from the Compose
+directory on a Linux host. Use a maintenance window: stop **all** app replicas,
+workers and external writers so the database and files describe the same point.
+Record the image tag, Compose file and configuration alongside the pair.
+Drain or record pending jobs before stopping writers. This procedure does not
+back up Redis queues; restoring a database against a different queue state can
+lose or replay pending work. Plan queue recovery for the installation; do not
+blindly connect restored data to a live production Redis.
 
-1. Dump the database to a dated file in the current directory.
+1. Stop writers, then dump the database and archive uploads. Replace the
+   filenames with a unique backup identifier and keep the pair together.
+   The database credentials come from the running PostgreSQL container.
 
    ```bash
-   docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > backup-$(date +%F).sql
+   docker compose stop app
+   docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > backup.sql
+   docker run --rm --volumes-from "$(docker compose ps -aq app):ro" -v "$PWD:/out" \
+     alpine tar czf /out/uploads.tar.gz -C /data/uploads .
    ```
 
-   Rollback: none. This step only reads.
+   Check the exit status of **each** command; discard a partial dump/archive
+   on failure and do not treat it as a backup. If any step fails, resolve it
+   before resuming writers. This example assumes one app container; for multiple
+   replicas, identify and archive the shared uploads storage explicitly.
 
-2. Archive the uploads volume (attachments and avatars).
-
-   ```bash
-   docker run --rm \
-     --volumes-from "$(docker compose ps -aq app):ro" \
-     -v "$PWD:/out" \
-     alpine tar czf /out/uploads-$(date +%F).tar.gz -C /data/uploads .
-   ```
-
-   This uses the app container's uploads volume even when the installer chose
-   a unique project name. Rollback: none. This step only reads.
-
-3. Copy both files and `.env` off the host to a secure location. The `.env`
-   file contains the installation's secrets.
+2. Resume the application with `docker compose start app`, check
+   `/api/v1/health/ready`, and store both files off-host with a protected copy
+   of `.env` and the matching Compose file. Encrypt and restrict access: the
+   dump, uploads and configuration contain sensitive data. Record the time,
+   version, filenames and command results. A successful archive is not a
+   verified restore.
 
 ## Restore
 
-**Risky.** A restore overwrites live data. Take a fresh backup in step 1 so you
-can undo the whole runbook.
+**Risky:** this replaces the target database and all target uploads. The
+following uses PostgreSQL 16 in the bundled stack and the database superuser
+created by its image. Never point it at production for a drill. For production,
+first take a fresh **pair** using Backup above; keep it and the current image,
+Compose file and configuration for rollback. Recreating the database removes
+objects absent from the dump as well as existing data. All writers and other
+database connections must be stopped.
 
-1. Take a fresh backup of the current database before touching anything.
-
-   ```bash
-   docker compose exec -T postgres pg_dump --clean --if-exists -U janosik janosik > pre-restore-$(date +%F).sql
-   ```
-
-   Rollback: none. This step only reads.
-
-2. Stop the app so it stops writing during the restore.
+1. Choose the matching `backup.sql` and `uploads.tar.gz` from the same
+   backup. Check the archive is readable with `tar tzf uploads.tar.gz > /dev/null`.
+   Use the application image and Compose version recorded with that backup.
+   Review Redis queue state before starting workers; reconcile pending work
+   according to your recovery plan.
+2. Stop every app replica and worker. For the bundled single-app stack:
 
    ```bash
    docker compose stop app
    ```
 
-   Rollback: `docker compose start app`.
-
-3. **Risky.** Restore the database. This overwrites the current data.
+3. **Risky:** recreate the configured database, then load the dump. A failure
+   leaves the database incomplete; keep the app stopped and investigate or
+   restore the pre-restore pair.
 
    ```bash
-   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U janosik janosik < backup-2026-10-26.sql
+   docker compose exec -T postgres sh -c 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+   docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < backup.sql
    ```
 
-   Rollback: load the dump from step 1.
-
-4. **Risky.** Restore the uploads volume. The command deletes the current
-   contents first.
+4. **Risky:** replace uploads only after confirming the target volume and
+   archive. This deletes the current contents.
 
    ```bash
    docker run --rm --volumes-from "$(docker compose ps -aq app)" -v "$PWD:/out" alpine \
-     sh -c "find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads-2026-10-26.tar.gz -C /data/uploads"
+     sh -c 'find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads.tar.gz -C /data/uploads'
    ```
 
-   Rollback: restore the uploads archive you took before this runbook.
+   If extraction fails, keep the app stopped and restore the pre-restore pair.
+5. Start the matching app version: `docker compose up -d app`. Check readiness,
+   logs, sign-in, representative boards and attachment downloads. To undo a
+   failed restore, repeat this procedure with the fresh pre-restore database
+   **and** uploads pair and its matching image/configuration.
 
-5. Start the app again.
+## Restore drill
 
-   ```bash
-   docker compose start app
-   ```
+Use a separate host or isolated Compose project with its own database, Redis,
+uploads volume, ports and configuration. Block access to production services
+and outbound email/OAuth or other integrations; a copied database can contain
+live credentials and scheduled work. Never reuse production volumes or point
+the drill at production PostgreSQL. Provision the recorded image and Compose
+version, then run Restore against the isolated stack using a copied backup pair.
 
-   Rollback: none needed. The stack is back to its normal state.
+Record the backup timestamp, image version, operator, duration and result.
+Verify readiness, sign-in, representative board/card data and several
+attachments/avatars against known samples; confirm no production writes or
+notifications occurred. Investigate failures, correct the backup process and
+repeat the drill. Protect and remove the isolated copy under your data policy.
+
+## Upgrade rollback
+
+Before upgrading, capture the consistent backup pair, previous image tag,
+Compose file and configuration. If the upgrade fails, stop all writers. Prisma
+migrations run forward on startup; simply switching back to the old image may
+not be compatible with the migrated database. Restore the **pre-upgrade
+database and uploads together** using Restore and the previous image/Compose
+configuration, then verify readiness, board data and files before reopening
+traffic. Writes made after the backup are lost: communicate the recovery point
+and keep the failed deployment's data separately if needed for investigation.
 
 ## Upgrade
 
@@ -132,10 +163,7 @@ no manual migration step.
    npm run db:indexes --workspace backend
    ```
 
-   Rollback: set `JANOSIK_TAG` back to the previous tag and run
-   `docker compose up -d`. Migrations are forward-only, so if a migration
-   cannot be reversed, restore the database backup you took before upgrading
-   (see [Restore](#restore)).
+   Rollback: follow [Upgrade rollback](#upgrade-rollback) with the pre-upgrade database and uploads pair and previous image/Compose.
 
 ## Monitoring
 

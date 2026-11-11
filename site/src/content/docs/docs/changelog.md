@@ -13,6 +13,17 @@ published to `ghcr.io/vitalytolstik/janosik` from CI on a version tag. To run a
 specific release, set `JANOSIK_TAG` in `.env` (see
 [Self-hosting](/docs/self-hosting/)).
 
+## Unreleased
+
+- Agent control adds scoped keys, sessions, human approvals, pause, plans and
+  run inspection/rollback. Follow the [launch guide](/docs/agent-launch/).
+- New keys default to worker without Trusted CI; legacy non-read-only keys
+  retain admin and Trusted CI and should be reviewed. Sensitive account operations and human-control
+  actions are session-only.
+- Export schema v3 includes board policy; old clients reject v3. Board exports omit
+  uploads and agent-control history. See the [runbook](/docs/runbooks/) for
+  backup, restore drill and rollback.
+
 ## 0.2.0 - 2026-11-08
 
 ### Added

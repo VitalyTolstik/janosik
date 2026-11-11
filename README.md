@@ -265,18 +265,15 @@ docker compose exec app node /app/backend/scripts/admin-cli.cjs list
 # then sign in at PUBLIC_ORIGIN/app/admin
 ```
 
-Upgrade and back up:
-
-```bash
-docker compose pull && docker compose up -d          # new image, schema migrated on boot
-docker compose exec postgres pg_dump -U janosik janosik > backup.sql
-# restore: docker compose exec -T postgres psql -U janosik janosik < backup.sql
-```
+Before an upgrade, take a consistent database and uploads backup and test
+restoration. See the [operations runbook](./site/src/content/docs/docs/runbooks.md)
+for the full procedure and rollback; migrations run when the app starts.
 
 For an installer-created instance, check the release notes and change
 `JANOSIK_TAG` in `janosik/.env` to the desired release before pulling. When a
 release changes the Compose file, update it from that same release as well.
-Back up the database, uploads, and `.env` before upgrading.
+Back up the database, uploads, and `.env` before upgrading. Janosik does not
+schedule or verify server backups.
 
 Environment variables (see `.env.example` for the full annotated list):
 
@@ -300,6 +297,12 @@ Environment variables (see `.env.example` for the full annotated list):
 To build the image from a checkout instead of pulling, uncomment `build: .`
 in `docker-compose.yml`. For a TLS-terminating proxy in front, keep
 `PUBLIC_ORIGIN=https://…`, set `COOKIE_SECURE=true` and `TRUST_PROXY=1`.
+
+**Agent launch** — [administrator and agent developer scenarios, launch checklist
+and upgrade notes](./site/src/content/docs/docs/agent-launch.md)
+([на русском](./site/src/content/docs/ru/docs/agent-launch.md)).
+The [runbook](./site/src/content/docs/docs/runbooks.md) covers backup, isolated
+restore drills and upgrade rollback.
 
 **Full guide** — TLS setup (Caddy/nginx/Traefik), backups & restore, the
 environment reference and troubleshooting: **[docs/SELF-HOSTING.md](./docs/SELF-HOSTING.md)**.
