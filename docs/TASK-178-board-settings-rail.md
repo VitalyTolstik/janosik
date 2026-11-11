@@ -1,8 +1,8 @@
 # TASK-178 — Board settings workflow rail (`Рельс доски`)
 
-**Status:** in progress  
-**Branch:** `feat/board-settings-rail-redesign`  
-**Base:** `main` = `a858c75` (needs a rebase before PR)  
+**Status:** done  
+**Branch:** `feat/board-settings-rail-redesign` (merged in PR #242, `360938b`)  
+**Base:** `main` = `360938b`  
 **Design source:** [`design/board-settings-redesign/REPORT.md`](../design/board-settings-redesign/REPORT.md), direction **01 «Рельс доски»**  
 **Prototype:** `design/board-settings-redesign/index.html` and `screenshots/` are local artifacts (not tracked); the markdown report is tracked.
 
