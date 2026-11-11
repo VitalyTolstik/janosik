@@ -1685,7 +1685,7 @@ TASK-36 и TASK-37.)*
 | 105 | TASK-174 `human-control-phase2` | `feat/TASK-174.x-*` | §7.25: post-1.0 P1/P2 из human-control — comment moderation, share privacy, 2FA/sessions, token rotation, invite email, limits/a11y, service accounts, legal/SIEM/messaging/templates | **Отложено:** после 1.0.0; 5 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
 | 106 | TASK-175 `scale-phase2` | `feat/TASK-175.x-*` | §7.25: post-1.0 масштабирование — глобальный потолок команд и шардинг, multi-node/Redis fan-out, presence после TASK-145 | **Отложено:** после 1.0.0; 3 потока; не блокирует self-host-запуск. См. §7.25 |
 | 107 | TASK-176 `admin-connections` | `docs/TASK-176-admin-connections.md` → отдельные `feat/TASK-176.x-*` | §7.26: исправить подтверждённые баги и пробелы мастер-панели (bulk между страницами, честные счётчики/выборки, прямые ссылки, URL-состояние, адресуемые фильтры, per-row действия) и добавить **author-only редактирование своих комментариев** в обычном продукте | **Запланировано:** 12 подзадач; первая волна — 176.1 bulk-контракт, 176.2 редактирование комментариев, 176.3 честные счётчики; админский редактор карточки и атрибуция мастера — отдельные решения (176.8–176.10), раздел агентов — осознанно вне scope (176.11). См. §7.26 |
-| 108 | TASK-177 `human-last-mile` | `docs/TASK-177-human-last-mile.md` → отдельные `feat/TASK-177.x-*` | §7.27: закрыть **все 18** подтверждённых разрывов обычного UI — share edit, self-leave, потеря черновика комментария, честные activity-счётчики, task spec/claim, admin shares, notification opt-out + inbox, per-board export, «permanent» copy, detached attachments, search cap и мелкие UX-пропуски | **Запланировано:** 11 подзадач, все 18 находок в scope; первая волна — 177.1 share edit, 177.3 draft+counts, 177.5 admin shares, 177.8 small UX; 177.2 self-leave отдельным PR; 177.11 после 176.2; 177.4/177.7/177.9 — с зафиксированным продуктовым решением, но не вне задачи. См. §7.27 |
+| 108 | TASK-177 `human-last-mile` | `docs/TASK-177-human-last-mile.md` → отдельные `feat/TASK-177.x-*` | §7.27: закрыть **все 18** разрывов project-gaps + **9 новых** находок UI-roast — share edit, self-leave, потеря черновика, честные счётчики, task spec/claim, admin shares, notification opt-out + inbox, per-board export, «permanent» copy, detached attachments, search cap, mentions, поиск комментариев/файлов, approval truth на `/agents`, a11y, first-run, safe-area и bulk actions | **Запланировано:** 20 подзадач, все G-01…G-18 и U-01…U-09 в scope; первая волна — 177.3 draft+counts, 177.15 a11y, 177.17 delete safety; затем 177.1/177.5/177.8/177.16/177.18; 177.2/177.6/177.13/177.14; 177.10/177.11/177.12; 177.4/177.7/177.9/177.19/177.20 — с зафиксированным решением, но не вне задачи. См. §7.27 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -4845,8 +4845,8 @@ list DTO; 176.2 — `Comment`/`comments` и `shared/src/api.ts`; 176.8 — то�
 
 > **Статус:** запланировано, отдельно от TASK-166/176.
 > **Полный spec:** [`docs/TASK-177-human-last-mile.md`](docs/TASK-177-human-last-mile.md).
-> **Источник:** [`design/project-gaps-review/REVIEW.md`](design/project-gaps-review/REVIEW.md); база `main` = `a858c75`, проверка статическая, без интерактивного E2E.
-> **Связь:** TASK-176 закрывает bulk, admin-счётчики, admin-ссылки и author-only редактирование комментариев; TASK-177 не дублирует его, а закрывает **обычный пользовательский UI** и несколько admin-поверхностей. **Все 18 находок G-01…G-18 входят в TASK-177; продуктовые решения — предпосылки, а не исключения.**
+> **Источники:** [`design/project-gaps-review/REVIEW.md`](design/project-gaps-review/REVIEW.md) (18 находок, статическая проверка) + [`design/ui-roast/REVIEW.md`](design/ui-roast/REVIEW.md) (живой UI 1440/1024/390 + axe-core, 9 новых находок U-01…U-09). База `main` = `a858c75`.
+> **Связь:** TASK-176 закрывает bulk, admin-счётчики, admin-ссылки и author-only редактирование комментариев; TASK-177 не дублирует его, а закрывает **обычный пользовательский UI** и несколько admin-поверхностей. **Все 18 G-01…G-18 и 9 U-01…U-09 входят в TASK-177; продуктовые решения — предпосылки, а не исключения.**
 
 **Зачем.** Проверка нашла **18 новых подтверждённых разрывов**: 0 P0, 1 P1, 6 P2, 11 P3.
 Главный паттерн — **API/MCP-first, UI last mile**: сервер уже умеет share edit,
@@ -4879,6 +4879,25 @@ task spec, pending invite, per-board export и `notifyAttention`, но
 | G-17 | Global search обрезает 20 до группировки; board-hits исчезают | UX dead end | P3 | S | normal UI | 177.10 |
 | G-18 | Тост «Board exported» при экспорте всех досок | docs/copy mismatch | P3 | S | normal UI | 177.8 |
 
+**Дополнительные находки UI-roast (тоже в TASK-177).**
+
+| ID | Находка | Класс | Sev | Surface | Куда |
+| --- | --- | --- | --- | --- | --- |
+| U-01 | `@mention` — просто текст: нет picker, уведомления и получателя | BASIC MISSING | P1 | comments / notifications | 177.12 |
+| U-02 | Поиск не находит комментарии и имена вложений | BASIC MISSING | P2 | global/board search | 177.13 |
+| U-03 | `/agents` показывает `0 waiting approval` при Pending 1; пустой экран без CTA | INCONSISTENT / BURIED | P2 | agents | 177.14 |
+| U-04 | A11y карточки: чекбокс/progressbar без имён, фокус не возвращается, контраст, h1/main/li | BROKEN / A11Y | P2 | card / shell | 177.15 |
+| U-05 | Первый борд создаётся как «New board» без имени; нет шаблона; rename невидим | INCONSISTENT | P2 | onboarding | 177.16 |
+| U-06 | Удаление комментария: confirm без текста, нет undo, touch-target 22×22 | POLISH / SAFETY | P2 | comments | 177.17 |
+| U-07 | Нет safe-area; лейбл карточки обрезается/уходит под hover-кнопки | POLISH / MOBILE | P3 | mobile / board card | 177.18 |
+| U-08 | Нет multi-select и bulk-действий с карточками | BASIC MISSING | P3 | board | 177.19 |
+| U-09 | Нет watchers/follow, saved views и assignment/due-уведомлений | PRODUCT DECISION | P3 | collaboration | 177.20 |
+
+Дубли UI-roast не переоткрываются: edit comment — 176.2; draft — 177.3;
+touch delete — 177.8; attention inbox — 177.6; self-leave — 177.2; share edit/
+revoke/export — 177.1/177.7/177.8; счётчики — 177.3/177.8; search cap — 177.10;
+account sessions — TASK-174.2; global approval entry — 177.6/177.14.
+
 **Подзадачи TASK-177.**
 
 | ID | Что делаем | Приоритет | Зависимость |
@@ -4894,12 +4913,22 @@ task spec, pending invite, per-board export и `notifyAttention`, но
 | 177.9 | **Detached attachments**: `Restore to description` или минимум Download/copy URL для файла из «Removed from descriptions»; решение зафиксировать в PR | P3, M | G-13 |
 | 177.10 | **Global search grouping**: группировать Cards/Boards до cap или добавить `Show all`/`20 of N`; board-hit не должен исчезать | P3, S | G-17 |
 | 177.11 | **Comment kind**: author-only edit `kind` в существующем PATCH (после 176.2) + фильтр-чипы `All/Note/Status/Question/Blocker/Evidence/Handoff`; attention dedup и `edited` marker | P3, S | G-06, 176.2 |
+| 177.12 | **Mentions**: `@`-picker по участникам доски, явные mentions, attention-уведомление получателю (с opt-out), deep-link; без автора/дублей; удалённые target не воскрешают уведомление | P1/P2, L | U-01, 177.6 |
+| 177.13 | **Search comments/attachments**: подключить существующий backend comment search + filename; type badge, deep-link к комментарию/файлу, `20 of N`/Show all | P2, S/M | U-02, 177.10 |
+| 177.14 | **Agent approval truth + empty CTA**: `/agents` считает pending approvals и ведёт в board dialog/global inbox; пустой экран ведёт к созданию API key | P2, S | U-03, 177.6 |
+| 177.15 | **A11y pass**: имена checklist toggle/progressbar, возврат фокуса, контраст AA, один h1/main, `li` в списке; axe в тестах | P2, S/M | U-04 |
+| 177.16 | **First-run**: спрашивать имя доски, шаблон/пример колонок, заметный rename; убрать «New board» по умолчанию | P2, S/M | U-05 |
+| 177.17 | **Comment delete safety**: confirm с цитатой/автором, undo где возможно, touch-target ≥44; не терять текст | P2, S | U-06, 177.8 |
+| 177.18 | **Mobile safe-area + card metadata**: `viewport-fit=cover`, `env(safe-area-inset-*)`, лейбл не под hover-кнопками, 390/1440 | P3, S | U-07 |
+| 177.19 | **Bulk card actions**: multi-select, move/archive/delete, batch/plan, partial failure, keyboard; продуктовая граница Trello/Linear | P3, M | U-08, решение |
+| 177.20 | **Watchers/saved views/assignment-due notifications**: follow card/board, saved filters, attention on assign/due; opt-out и deep-link | P3, L | U-09, решение |
 
-**Порядок.** 177.3 — P1 data-loss, отдельный маленький PR. 177.1 + 177.5 +
-177.8 — первая UI-волна. 177.2 — отдельный backend+UI PR. 177.10 + 177.11 —
-после первой волны (177.11 после 176.2). 177.6 — тумблер + inbox в рамках
-177, без ожидания 173.6. 177.4/177.7/177.9 — с зафиксированным решением из
-§4 spec; они не выпадают из задачи, если решение принимается дольше.
+**Порядок.** 177.3 (P1 data-loss), 177.15 (a11y), 177.17 (delete safety) —
+первый маленький набор. 177.1 + 177.5 + 177.8 + 177.16 + 177.18 — вторая
+UI-волна. 177.2, 177.6, 177.13, 177.14 — отдельными PR. 177.10 + 177.11 +
+177.12 — после первой волны (177.11 после 176.2). 177.4/177.7/177.9/177.19/
+177.20 — с зафиксированным решением из §4 spec; они не выпадают из задачи,
+если решение принимается дольше.
 
 **Продуктовые решения, которые фиксируем в рамках 177.** Если владелец не
 выберет иначе, использовать recommended default из spec §4; это не исключает
@@ -4914,12 +4943,16 @@ task spec, pending invite, per-board export и `notifyAttention`, но
 7. **Attention inbox (G-16):** сделать тумблер и базовый bell/inbox read/read-all сейчас; 173.6 остаётся для расширенного контура.
 8. **Comment moderation:** author-only edit/kind; удаление чужих комментариев board ADMIN — отдельное решение, в 177 не добавляем молча.
 9. **User restore (G-15):** **Recently deleted** на retention, как в п. 2.
+10. **Mentions (U-01):** делать `@`-picker, явные mentions и attention-уведомления; если решим не делать — убрать `@` из копирайта, а не оставлять текстом.
+11. **Bulk actions (U-08):** нужны ли multi-select/move/delete; для Trello-класса можно поздней волной, но пункт остаётся в 177.
+12. **Watchers/saved views/assignment-due (U-09):** объём follow/saved views и уведомлений; можно разбить на волны, но не выбрасывать из 177.
 
 **DoD.** Для каждой подзадачи: EN/RU copy, unit/component + backend/e2e где
 есть поведение, `CHANGELOG.md`, никаких ослабленных тестов, keyboard/touch
-проверка, 390 px для UI, audit/activity для новых записей. Не смешивать с
-TASK-176 и board-settings redesign; 177.3 не должен ломать 176.2, а 177.4 —
-не начинать до ответа по атрибуции.
+проверка, 390 px для UI, audit/activity для новых записей; для 177.15 —
+axe-core light/dark; для 177.13 — comment/attachment hits и deep-link.
+Не смешивать с TASK-176 и board-settings redesign; 177.3 не должен ломать
+176.2, а 177.4 — не начинать до ответа по атрибуции.
 
 ---
 
