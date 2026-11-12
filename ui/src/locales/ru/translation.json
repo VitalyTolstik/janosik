@@ -1683,6 +1683,8 @@
   "agents.title": "Агенты",
   "agents.subtitle": "Живые сессии агентов, heartbeat и ручное управление на ваших досках.",
   "agents.open": "Агенты",
+  "agents.pending.stale": "Счётчик ожидающих мог устареть",
+  "agents.pending.unknown": "Счётчик ожидающих недоступен",
   "agents.breadcrumb": "Навигация агентов",
   "agents.back": "К списку агентов",
   "agents.refresh": "Обновить",
