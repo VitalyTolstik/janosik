@@ -1,32 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BoardSummary } from "@janosik/shared";
+import type { ApprovalRequestDto, BoardSummary } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
+import { effectiveApprovalStatus } from "@/utils/approval";
 
 const POLL_MS = 30_000;
 
-/** In-flight requests are shared by the header and the page; no stale cache. */
-const countInFlight = new Map<string, Promise<number>>();
+export interface ApprovalRow extends ApprovalRequestDto {
+  boardTitle: string;
+}
 
-async function fetchPendingCount(boardId: string): Promise<number> {
-  const running = countInFlight.get(boardId);
+/** In-flight requests are shared by the header and the page; no stale cache. */
+const rowsInFlight = new Map<string, Promise<ApprovalRequestDto[]>>();
+
+async function fetchApprovals(boardId: string): Promise<ApprovalRequestDto[]> {
+  const running = rowsInFlight.get(boardId);
   if (running !== undefined) return running;
   const request = api
-    .listApprovals(boardId, { status: "pending", limit: 100 })
+    .listApprovals(boardId, { limit: 100 })
     .then((rows) => {
-      countInFlight.delete(boardId);
-      return rows.length;
+      rowsInFlight.delete(boardId);
+      return rows;
     })
     .catch((error: unknown) => {
-      countInFlight.delete(boardId);
+      rowsInFlight.delete(boardId);
       throw error;
     });
-  countInFlight.set(boardId, request);
+  rowsInFlight.set(boardId, request);
   return request;
 }
 
 export interface PendingApprovalsState {
-  /** Board id → pending approvals on that board. Failed boards are absent. */
+  /** All approvals from boards where the caller is ADMIN. */
+  rows: readonly ApprovalRow[];
+  /** Board id → effective pending approvals on that board. */
   counts: Readonly<Record<string, number>>;
   loading: boolean;
   /** At least one board could not be counted; never render that as zero. */
@@ -35,27 +42,32 @@ export interface PendingApprovalsState {
 }
 
 /**
- * Scope-correct pending approval counts (TASK-179.8 primitive).
+ * Cross-board approvals and scope-correct pending counts (TASK-179.3/179.8).
  *
  * The API is board-scoped, so this fans out over boards where the caller is
- * ADMIN. Board lists and individual counts are cached briefly and in-flight
- * requests are shared, so the header and the page can both use the hook
- * without doubling the requests.
+ * ADMIN. In-flight requests are shared, so the header and the page can both
+ * use the hook without doubling the calls. Effective expiry is computed for
+ * counts; the detail UI recomputes it against its own ticking clock.
+ *
+ * Reads intentionally use the existing board approval endpoints, which keep
+ * the lazy `ApprovalsService.expireOverdue` path. The UI never writes just to
+ * render; 179.10's aggregation endpoint will make the read path fully
+ * side-effect free.
  */
 export function usePendingApprovals(
   boards?: readonly BoardSummary[],
   enabled = true,
 ): PendingApprovalsState {
-  const adminIds = useMemo(
+  const adminBoards = useMemo(
     () =>
-      (boards ?? [])
-        .filter(
-          (board) => board.role === "ADMIN" && board.archivedAt === undefined,
-        )
-        .map((board) => board.id)
-        .sort(),
+      boards === undefined
+        ? undefined
+        : boards.filter(
+            (board) => board.role === "ADMIN" && board.archivedAt === undefined,
+          ),
     [boards],
   );
+  const [rows, setRows] = useState<ApprovalRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -63,6 +75,7 @@ export function usePendingApprovals(
 
   const load = useCallback(async (): Promise<void> => {
     if (!enabled || !isApiEnabled()) {
+      setRows([]);
       setCounts({});
       setLoading(false);
       setError(false);
@@ -70,17 +83,13 @@ export function usePendingApprovals(
     }
     const request = ++generation.current;
     setLoading(true);
-    let ids: string[];
+    let scope: readonly BoardSummary[];
     try {
-      ids =
-        boards === undefined
-          ? (await api.listBoards())
-              .filter(
-                (board) =>
-                  board.role === "ADMIN" && board.archivedAt === undefined,
-              )
-              .map((board) => board.id)
-          : adminIds;
+      scope =
+        adminBoards ??
+        (await api.listBoards()).filter(
+          (board) => board.role === "ADMIN" && board.archivedAt === undefined,
+        );
     } catch {
       if (request === generation.current) {
         setLoading(false);
@@ -88,8 +97,9 @@ export function usePendingApprovals(
       }
       return;
     }
-    if (ids.length === 0) {
+    if (scope.length === 0) {
       if (request === generation.current) {
+        setRows([]);
         setCounts({});
         setLoading(false);
         setError(false);
@@ -98,35 +108,53 @@ export function usePendingApprovals(
     }
     // Keep the fan-out bounded: a user with dozens of boards must not open
     // dozens of approval requests at once.
-    const results: ({ id: string; count: number } | null)[] = new Array(
-      ids.length,
-    );
+    const results: ({
+      board: BoardSummary;
+      rows: ApprovalRequestDto[];
+    } | null)[] = new Array(scope.length);
     let index = 0;
     async function worker(): Promise<void> {
-      while (index < ids.length) {
+      while (index < scope.length) {
         const current = index++;
-        const id = ids[current];
+        const board = scope[current];
         try {
-          results[current] = { id, count: await fetchPendingCount(id) };
+          results[current] = {
+            board,
+            rows: await fetchApprovals(board.id),
+          };
         } catch {
           results[current] = null;
         }
       }
     }
     await Promise.all(
-      Array.from({ length: Math.min(3, ids.length) }, () => worker()),
+      Array.from({ length: Math.min(3, scope.length) }, () => worker()),
     );
     if (request !== generation.current) return;
-    const next: Record<string, number> = {};
+    const nextRows: ApprovalRow[] = [];
+    const nextCounts: Record<string, number> = {};
     let failed = false;
+    const now = Date.now();
     for (const result of results) {
-      if (result === null) failed = true;
-      else next[result.id] = result.count;
+      if (result === null) {
+        failed = true;
+        continue;
+      }
+      const boardRows = result.rows.map((row) => ({
+        ...row,
+        boardTitle: result.board.title,
+      }));
+      nextRows.push(...boardRows);
+      nextCounts[result.board.id] = boardRows.filter(
+        (row) =>
+          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+      ).length;
     }
-    setCounts(next);
+    setRows(nextRows);
+    setCounts(nextCounts);
     setLoading(false);
     setError(failed);
-  }, [adminIds, boards, enabled]);
+  }, [adminBoards, enabled]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the first answer lands in the async load, not synchronously
@@ -153,6 +181,7 @@ export function usePendingApprovals(
   }, [load]);
 
   return {
+    rows,
     counts,
     loading,
     error,

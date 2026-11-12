@@ -1,89 +1,44 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  ClipboardList,
-  Loader2,
-  RefreshCw,
-  ShieldAlert,
-  X,
-} from "lucide-react";
-import type {
-  ApprovalKind,
-  ApprovalRequestDto,
-  ApprovalRisk,
-  ApprovalStatus,
-} from "@janosik/shared";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, ClipboardList, RefreshCw } from "lucide-react";
+import type { ApprovalRequestDto, BoardRole } from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
+import {
+  ApprovalCancelButton,
+  ApprovalDecisionForm,
+  ApprovalDetailError,
+  ApprovalHash,
+  ApprovalLinks,
+  ApprovalMetaRow as MetaRow,
+  ApprovalPlanBlock,
+  ApprovalRiskBadge,
+  ApprovalStatusBadge,
+} from "@/components/approvals/approval-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useI18n } from "@/i18n";
-import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
-import type { BoardRole } from "@janosik/shared";
+import { APPROVAL_KIND_KEYS, effectiveApprovalStatus } from "@/utils/approval";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
 
 /**
- * The approval queue of one board (TASK-166.14).
+ * The approval queue of one board (TASK-166.14, TASK-179.3).
  *
  * A request is created by an agent token and authorizes one exact plan hash.
  * This panel is the human side: it shows the queue and the full plan, then
- * sends approve/reject with the hash the server requires. It never applies a
- * plan — the agent repeats the same command with `X-Approval-Id`.
+ * sends approve/reject/cancel with the hash the server requires. It never
+ * applies a plan — the agent repeats the same command with `X-Approval-Id`.
  *
  * The component is mounted only while the dialog is open, so drafts reset by
  * remount (AGENT.md). SSE approval frames bump `revision`; list and detail
  * refetch in place without reloading the page.
  */
 
-type ApprovalFilter = "pending" | "all";
+type ApprovalFilter = "needs" | "decided" | "all";
 type Decision = "approve" | "reject";
 type Translate = ReturnType<typeof useI18n>["t"];
-
-const STATUS_KEYS: Record<ApprovalStatus, MessageKey> = {
-  pending: "agentControl.status.pending",
-  approved: "agentControl.status.approved",
-  rejected: "agentControl.status.rejected",
-  expired: "agentControl.status.expired",
-  cancelled: "agentControl.status.cancelled",
-  consumed: "agentControl.status.consumed",
-};
-
-const RISK_KEYS: Record<ApprovalRisk, MessageKey> = {
-  low: "agentControl.risk.low",
-  medium: "agentControl.risk.medium",
-  high: "agentControl.risk.high",
-};
-
-const KIND_KEYS: Record<ApprovalKind, MessageKey> = {
-  destructive: "agentControl.kind.destructive",
-  done: "agentControl.kind.done",
-  custom: "agentControl.kind.custom",
-};
-
-const STATUS_CLASS: Record<ApprovalStatus, string> = {
-  pending: "border-warning/40 bg-warning/10 text-warning",
-  approved: "border-success/40 bg-success/10 text-success",
-  rejected: "border-danger/40 bg-danger/10 text-danger",
-  expired: "border-border bg-muted text-muted-foreground",
-  cancelled: "border-border bg-muted text-muted-foreground",
-  consumed: "border-primary/40 bg-primary/10 text-primary",
-};
-
-const RISK_CLASS: Record<ApprovalRisk, string> = {
-  low: "border-border bg-muted text-muted-foreground",
-  medium: "border-warning/40 bg-warning/10 text-warning",
-  high: "border-danger/40 bg-danger/10 text-danger",
-};
-
-function statusLabel(t: Translate, status: ApprovalStatus): string {
-  return t(STATUS_KEYS[status]);
-}
 
 function errorCodeOf(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
@@ -117,14 +72,6 @@ function decisionError(error: unknown, t: Translate): string {
   return t("agentControl.error.generic");
 }
 
-function planSummary(detail: ApprovalRequestDto): string {
-  const commands = detail.plan?.commands?.length ?? 0;
-  const operations = detail.plan?.operations?.length ?? 0;
-  return commands + operations === 0
-    ? detail.actionType
-    : `${detail.actionType} · ${commands + operations}`;
-}
-
 function useNow(intervalMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -132,261 +79,6 @@ function useNow(intervalMs = 30_000): number {
     return () => window.clearInterval(timer);
   }, [intervalMs]);
   return now;
-}
-
-function StatusBadge({
-  status,
-  testId = "approval-status",
-}: {
-  status: ApprovalStatus;
-  testId?: string;
-}) {
-  const { t } = useI18n();
-  return (
-    <span
-      data-testid={testId}
-      data-status={status}
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        STATUS_CLASS[status],
-      )}
-    >
-      {statusLabel(t, status)}
-    </span>
-  );
-}
-
-function RiskBadge({
-  risk,
-  testId = "approval-risk",
-}: {
-  risk: ApprovalRisk;
-  testId?: string;
-}) {
-  const { t } = useI18n();
-  return (
-    <span
-      data-testid={testId}
-      data-risk={risk}
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        RISK_CLASS[risk],
-      )}
-    >
-      <ShieldAlert className="h-3 w-3" aria-hidden />
-      {t(RISK_KEYS[risk])}
-    </span>
-  );
-}
-
-function MetaRow({
-  label,
-  children,
-  testId,
-}: {
-  label: string;
-  children: React.ReactNode;
-  testId?: string;
-}) {
-  return (
-    <div className="min-w-0 space-y-0.5" data-testid={testId}>
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </dt>
-      <dd className="break-words text-xs">{children}</dd>
-    </div>
-  );
-}
-
-function DecisionForm({
-  busy,
-  onDecide,
-}: {
-  busy: boolean;
-  onDecide: (decision: Decision, comment: string) => Promise<boolean>;
-}) {
-  const { t } = useI18n();
-  const [mode, setMode] = useState<Decision | null>(null);
-  const [comment, setComment] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (mode === null || submitting || busy) return;
-    setSubmitting(true);
-    try {
-      const ok = await onDecide(mode, comment.trim());
-      if (ok) {
-        setMode(null);
-        setComment("");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (mode === null) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          data-testid="approval-approve"
-          onClick={() => setMode("approve")}
-          disabled={busy}
-          className="bg-success text-white hover:bg-success/90"
-        >
-          <Check className="h-4 w-4" aria-hidden />
-          {t("agentControl.approvals.approve")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="approval-reject"
-          onClick={() => setMode("reject")}
-          disabled={busy}
-          className="border-danger/40 text-danger hover:bg-danger/10 hover:text-danger"
-        >
-          <X className="h-4 w-4" aria-hidden />
-          {t("agentControl.approvals.reject")}
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <form noValidate onSubmit={submit} className="space-y-2">
-      <p
-        className={cn(
-          "text-xs",
-          mode === "approve" ? "text-success" : "text-danger",
-        )}
-        role="status"
-        data-testid="approval-decision-hint"
-      >
-        {mode === "approve"
-          ? t("agentControl.approvals.approveHint")
-          : t("agentControl.approvals.rejectHint")}
-      </p>
-      <div className="space-y-1">
-        <label
-          htmlFor="approval-comment"
-          className="text-xs font-medium text-muted-foreground"
-        >
-          {t("agentControl.approvals.commentLabel")}
-        </label>
-        <Textarea
-          id="approval-comment"
-          data-testid="approval-comment"
-          value={comment}
-          onChange={(event) => setComment(event.target.value)}
-          rows={2}
-          maxLength={2000}
-          placeholder={t("agentControl.approvals.commentPlaceholder")}
-          autoFocus
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="submit"
-          size="sm"
-          data-testid="approval-confirm"
-          disabled={submitting}
-          className={cn(
-            mode === "approve"
-              ? "bg-success text-white hover:bg-success/90"
-              : "bg-danger text-white hover:bg-danger/90",
-          )}
-        >
-          {submitting ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : mode === "approve" ? (
-            <Check className="h-4 w-4" aria-hidden />
-          ) : (
-            <X className="h-4 w-4" aria-hidden />
-          )}
-          {mode === "approve"
-            ? t("agentControl.approvals.confirmApprove")
-            : t("agentControl.approvals.confirmReject")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setMode(null);
-            setComment("");
-          }}
-          disabled={submitting}
-        >
-          {t("common.cancel")}
-        </Button>
-        <span className="text-[11px] text-muted-foreground">
-          {t("agentControl.approvals.hashHint")}
-        </span>
-      </div>
-    </form>
-  );
-}
-
-function PlanBlock({ detail }: { detail: ApprovalRequestDto }) {
-  const { t } = useI18n();
-  const commands = detail.plan?.commands ?? [];
-  const operations = detail.plan?.operations ?? [];
-  return (
-    <section className="space-y-2" data-testid="approval-plan">
-      <h4 className="text-xs font-semibold">
-        {t("agentControl.approvals.plan")}
-      </h4>
-      {commands.length === 0 && operations.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {t("agentControl.approvals.noPlan")}
-        </p>
-      ) : null}
-      {commands.length > 0 ? (
-        <ol className="space-y-1.5">
-          {commands.map((command, index) => (
-            <li
-              key={command.commandId}
-              data-testid="approval-plan-command"
-              className="rounded-md border bg-muted/30 p-2"
-            >
-              <p className="flex items-center gap-1.5 text-[11px] font-medium">
-                <span className="rounded bg-background px-1 text-[10px] text-muted-foreground">
-                  {index + 1}
-                </span>
-                {String(command.action.type)}
-              </p>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
-                {JSON.stringify(command.action, null, 2)}
-              </pre>
-            </li>
-          ))}
-        </ol>
-      ) : null}
-      {operations.length > 0 ? (
-        <ol className="space-y-1.5">
-          {operations.map((operation, index) => (
-            <li
-              key={`${operation.op}-${index}`}
-              data-testid="approval-plan-operation"
-              className="rounded-md border bg-muted/30 p-2"
-            >
-              <p className="text-[11px] font-medium">{operation.op}</p>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
-                {JSON.stringify(
-                  { target: operation.target, body: operation.body },
-                  null,
-                  2,
-                )}
-              </pre>
-            </li>
-          ))}
-        </ol>
-      ) : null}
-    </section>
-  );
 }
 
 function QueueSkeleton() {
@@ -419,7 +111,7 @@ export function ApprovalsPanel({
   const toast = useToast();
   const { board } = useBoardState();
   const live = useBoardLive();
-  const [filter, setFilter] = useState<ApprovalFilter>("pending");
+  const [filter, setFilter] = useState<ApprovalFilter>("needs");
   const [rows, setRows] = useState<ApprovalRequestDto[] | null>(null);
   const [listError, setListError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -439,9 +131,10 @@ export function ApprovalsPanel({
   useEffect(() => {
     if (boardId === undefined || !isApiEnabled()) return;
     let alive = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- start the request with a clean error state
     setListError(false);
     void api
-      .listApprovals(boardId, filter === "pending" ? { status: "pending" } : {})
+      .listApprovals(boardId, { limit: 100 })
       .then((next) => {
         if (!alive) return;
         setRows(next);
@@ -458,10 +151,11 @@ export function ApprovalsPanel({
     return () => {
       alive = false;
     };
-  }, [boardId, filter, revision]);
+  }, [boardId, revision]);
 
   useEffect(() => {
     if (boardId === undefined || selectedId === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing selection is the effect's purpose
       setDetail(null);
       setDetailError(false);
       return;
@@ -483,16 +177,35 @@ export function ApprovalsPanel({
   }, [boardId, selectedId, revision]);
 
   const queue = useMemo(() => rows ?? [], [rows]);
+  const counts = useMemo(() => {
+    let needs = 0;
+    for (const row of queue) {
+      if (
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending"
+      ) {
+        needs += 1;
+      }
+    }
+    return { needs, decided: queue.length - needs, all: queue.length };
+  }, [now, queue]);
+  const filtered = useMemo(
+    () =>
+      queue.filter((row) => {
+        const pending =
+          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
+        if (filter === "needs") return pending;
+        if (filter === "decided") return !pending;
+        return true;
+      }),
+    [filter, now, queue],
+  );
   const loadingList = rows === null && !listError;
-  const effectiveStatus: ApprovalStatus | undefined =
-    detail !== null && detail.status === "pending" && detail.expiresAt <= now
-      ? "expired"
-      : detail?.status;
-  const canDecide =
-    admin &&
-    detail !== null &&
-    detail.status === "pending" &&
-    detail.expiresAt > now;
+  const effectiveStatus =
+    detail === null
+      ? undefined
+      : effectiveApprovalStatus(detail.status, detail.expiresAt, now);
+  const canDecide = admin && detail !== null && effectiveStatus === "pending";
+  const canCancel = admin && detail !== null && effectiveStatus === "pending";
 
   const decide = async (
     decision: Decision,
@@ -507,9 +220,7 @@ export function ApprovalsPanel({
         ...(comment === "" ? {} : { comment }),
       });
       setDetail(updated);
-      // The pending filter would drop the row and close the detail the human
-      // just decided; switch to All so the decision and its audit stay on
-      // screen while the queue refreshes.
+      // Keep the decided request visible instead of orphaning the detail.
       setFilter("all");
       setRevision((value) => value + 1);
       toast.success(
@@ -522,6 +233,29 @@ export function ApprovalsPanel({
     } catch (error) {
       toast.error(decisionError(error, t));
       setRevision((value) => value + 1);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancel = async (): Promise<boolean> => {
+    if (boardId === undefined || detail === null) return false;
+    setBusy(true);
+    try {
+      const updated = await api.cancelApproval(boardId, detail.id);
+      setDetail(updated);
+      setFilter("all");
+      setRevision((value) => value + 1);
+      toast.success(t("agentControl.approvals.cancelledToast"));
+      onChanged?.();
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError && error.offline
+          ? t("agentControl.error.offline")
+          : t("agentControl.approvals.cancelError"),
+      );
       return false;
     } finally {
       setBusy(false);
@@ -546,10 +280,11 @@ export function ApprovalsPanel({
         >
           {(
             [
-              ["pending", "agentControl.approvals.filterPending"],
-              ["all", "agentControl.approvals.filterAll"],
+              ["needs", "agentControl.approvals.filterNeeds", "needs"],
+              ["decided", "agentControl.approvals.filterDecided", "decided"],
+              ["all", "agentControl.approvals.filterAll", "all"],
             ] as const
-          ).map(([value, key]) => (
+          ).map(([value, key, countKey]) => (
             <button
               key={value}
               type="button"
@@ -564,9 +299,9 @@ export function ApprovalsPanel({
               )}
             >
               {t(key)}
-              {value === "pending" && rows !== null ? (
+              {rows !== null ? (
                 <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
-                  {rows.length}
+                  {counts[countKey]}
                 </span>
               ) : null}
             </button>
@@ -586,7 +321,6 @@ export function ApprovalsPanel({
           ) : null}
           {listError ? (
             <div className="flex flex-col items-center gap-2 p-6 text-center text-xs text-muted-foreground">
-              <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
               <p>{t("agentControl.approvals.loadError")}</p>
               <Button
                 type="button"
@@ -599,26 +333,33 @@ export function ApprovalsPanel({
               </Button>
             </div>
           ) : null}
-          {!loadingList && !listError && queue.length === 0 ? (
+          {!loadingList && !listError && filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-6 text-center text-xs text-muted-foreground">
               <CheckCircle2 className="h-6 w-6 text-success/70" aria-hidden />
               <p>
-                {filter === "pending"
+                {filter === "needs"
                   ? t("agentControl.approvals.emptyPending")
-                  : t("agentControl.approvals.emptyAll")}
+                  : filter === "decided"
+                    ? t("agentControl.approvals.emptyDecided")
+                    : t("agentControl.approvals.emptyAll")}
               </p>
             </div>
           ) : null}
-          {queue.length > 0 ? (
+          {filtered.length > 0 ? (
             <ul data-testid="approval-queue" className="divide-y">
-              {queue.map((row) => {
+              {filtered.map((row) => {
                 const card = cardFor(row.cardId);
+                const effective = effectiveApprovalStatus(
+                  row.status,
+                  row.expiresAt,
+                  now,
+                );
                 return (
                   <li key={row.id}>
                     <button
                       type="button"
                       data-testid={`approval-row-${row.id}`}
-                      data-status={row.status}
+                      data-status={effective}
                       aria-current={selectedId === row.id}
                       onClick={() => setSelectedId(row.id)}
                       className={cn(
@@ -632,15 +373,18 @@ export function ApprovalsPanel({
                         <span className="min-w-0 truncate text-xs font-medium">
                           {row.summary}
                         </span>
-                        <StatusBadge
-                          status={row.status}
+                        <ApprovalStatusBadge
+                          status={effective}
                           testId="approval-row-status"
                         />
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <RiskBadge risk={row.risk} testId="approval-row-risk" />
+                        <ApprovalRiskBadge
+                          risk={row.risk}
+                          testId="approval-row-risk"
+                        />
                         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          {t(KIND_KEYS[row.kind])}
+                          {t(APPROVAL_KIND_KEYS[row.kind])}
                         </span>
                       </span>
                       <span className="truncate text-[10px] text-muted-foreground">
@@ -648,7 +392,7 @@ export function ApprovalsPanel({
                           ? `#${card.title}`
                           : t("agentControl.approvals.boardOnly")}
                         {" · "}
-                        {formatRelative(row.createdAt, lang)}
+                        {formatRelative(row.createdAt, lang, now)}
                       </span>
                     </button>
                   </li>
@@ -663,19 +407,7 @@ export function ApprovalsPanel({
           data-testid="approval-detail"
         >
           {detailError ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
-              <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
-              <p>{t("agentControl.approvals.detailError")}</p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setRevision((value) => value + 1)}
-              >
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                {t("agentControl.retry")}
-              </Button>
-            </div>
+            <ApprovalDetailError onRetry={() => setRevision((v) => v + 1)} />
           ) : null}
 
           {!detailError && selectedId !== null && detail === null ? (
@@ -693,12 +425,12 @@ export function ApprovalsPanel({
                   <div className="min-w-0 space-y-1">
                     <h3 className="text-sm font-semibold">{detail.summary}</h3>
                     <p className="text-[11px] text-muted-foreground">
-                      {t(KIND_KEYS[detail.kind])} · {planSummary(detail)}
+                      {t(APPROVAL_KIND_KEYS[detail.kind])} · {detail.actionType}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <RiskBadge risk={detail.risk} />
-                    <StatusBadge status={effectiveStatus} />
+                    <ApprovalRiskBadge risk={detail.risk} />
+                    <ApprovalStatusBadge status={effectiveStatus} />
                   </div>
                 </div>
                 {!admin ? (
@@ -780,14 +512,9 @@ export function ApprovalsPanel({
                     {formatDate(detail.consumedAt, lang)}
                   </MetaRow>
                 ) : null}
-                {detail.runId !== null ? (
-                  <MetaRow label={t("agentControl.approvals.run")}>
-                    <code className="font-mono text-[10px]">
-                      {detail.runId}
-                    </code>
-                  </MetaRow>
-                ) : null}
               </dl>
+
+              <ApprovalLinks approval={detail} />
 
               {detail.decisionComment !== null ? (
                 <div className="space-y-1" data-testid="approval-comment-view">
@@ -800,23 +527,28 @@ export function ApprovalsPanel({
                 </div>
               ) : null}
 
-              <PlanBlock detail={detail} />
-
-              <div className="space-y-1">
-                <h4 className="text-xs font-semibold">
-                  {t("agentControl.approvals.planHash")}
-                </h4>
-                <code
-                  data-testid="approval-plan-hash"
-                  className="block break-all rounded-md border bg-muted/30 p-2 font-mono text-[10px] text-muted-foreground"
-                >
-                  {detail.planHash}
-                </code>
-              </div>
+              <ApprovalPlanBlock approval={detail} />
+              <ApprovalHash hash={detail.planHash} />
 
               {canDecide ? (
-                <div className="border-t pt-3">
-                  <DecisionForm key={detail.id} busy={busy} onDecide={decide} />
+                <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                  <ApprovalDecisionForm
+                    key={detail.id}
+                    busy={busy}
+                    planHash={detail.planHash}
+                    impactTitle={
+                      detail.kind === "destructive"
+                        ? t("agents.approvals.destructiveTitle")
+                        : undefined
+                    }
+                    impactText={detail.summary}
+                    onDecide={decide}
+                  />
+                  <ApprovalCancelButton
+                    busy={busy}
+                    onCancel={cancel}
+                    disabled={!canCancel}
+                  />
                 </div>
               ) : null}
             </div>
@@ -825,7 +557,7 @@ export function ApprovalsPanel({
           {!detailError &&
           selectedId === null &&
           !loadingList &&
-          queue.length === 0 ? (
+          filtered.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
               <ClipboardList className="h-6 w-6 opacity-60" aria-hidden />
               <p>{t("agentControl.approvals.selectHint")}</p>

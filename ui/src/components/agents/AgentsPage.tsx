@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import type { BoardSummary } from "@janosik/shared";
 
-import { isApiEnabled } from "@/api/client";
+import { api, isApiEnabled } from "@/api/client";
 import {
   AgentLastSeen,
   AgentLiveDot,
@@ -44,6 +44,12 @@ import {
 import { useAgentSessions } from "./use-agent-sessions";
 import { usePendingApprovals } from "./use-pending-approvals";
 import { useAgentRuns } from "./use-agent-runs";
+import {
+  AttentionApprovalDetail,
+  AttentionApprovalList,
+  type AttentionApprovalFilter,
+  type AttentionApprovalRow,
+} from "./AttentionApprovals";
 import { BoardScopeSelect } from "./BoardScopeSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +75,7 @@ export function AgentsPage() {
     : "attention";
   const [now, setNow] = useState(() => Date.now());
   const [offline, setOffline] = useState(() => !navigator.onLine);
+  const [approvalIntent, setApprovalIntent] = useState<"reject" | null>(null);
 
   useEffect(() => {
     const previous = document.title;
@@ -128,6 +135,37 @@ export function AgentsPage() {
     });
   };
 
+  const openApproval = useCallback(
+    (row: AttentionApprovalRow, mode: "reject" | null = null) => {
+      setApprovalIntent(mode);
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "attention");
+          next.set("board", row.boardId);
+          next.set("approval", row.id);
+          next.delete("session");
+          next.delete("run");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+
+  const closeApproval = useCallback(() => {
+    setApprovalIntent(null);
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("approval");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+
   const onSectionKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const current = SECTIONS.indexOf(section);
     const next =
@@ -169,14 +207,93 @@ export function AgentsPage() {
     );
   }, [setParams]);
 
-  const hasFilters =
-    filter.board !== "all" ||
-    filter.token !== "all" ||
-    filter.status !== "all" ||
-    filter.time !== "any" ||
-    filter.query.trim() !== "";
   const pending = usePendingApprovals(state.boards, !state.isAgentToken);
   const runs = useAgentRuns(state.boards, section === "runs");
+  const [approvalFilter, setApprovalFilter] =
+    useState<AttentionApprovalFilter>("needs");
+  const approvalAgentNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const token of state.tokens) names.set(token.id, token.name);
+    for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
+    return names;
+  }, [state.rows, state.tokens]);
+  const approvalBoardIds = useMemo(
+    () => [...new Set(pending.rows.map((row) => row.boardId))],
+    [pending.rows],
+  );
+  const [loadedApprovalCards, setLoadedApprovalCards] = useState<
+    Map<string, string>
+  >(() => new Map());
+  useEffect(() => {
+    if (approvalBoardIds.length === 0) return;
+    let alive = true;
+    void Promise.allSettled(
+      approvalBoardIds.map((boardId) => api.getBoard(boardId)),
+    ).then((results) => {
+      if (!alive) return;
+      const titles = new Map<string, string>();
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        for (const card of Object.values(result.value.cards)) {
+          titles.set(card.id, card.title);
+        }
+      }
+      setLoadedApprovalCards(titles);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [approvalBoardIds]);
+  const approvalCardTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const row of state.rows) {
+      if (row.currentCardId !== null && row.cardTitle !== null) {
+        titles.set(row.currentCardId, row.cardTitle);
+      }
+    }
+    for (const [cardId, title] of loadedApprovalCards) {
+      if (!titles.has(cardId)) titles.set(cardId, title);
+    }
+    return titles;
+  }, [loadedApprovalCards, state.rows]);
+  const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
+    const query = filter.query.trim().toLowerCase();
+    return pending.rows
+      .filter((row) => {
+        if (filter.board !== "all" && row.boardId !== filter.board)
+          return false;
+        if (filter.token !== "all" && row.requestedByTokenId !== filter.token) {
+          return false;
+        }
+        if (query === "") return true;
+        return [
+          row.summary,
+          row.actionType,
+          row.planHash,
+          row.boardTitle,
+          row.requestedByTokenId,
+          row.cardId,
+          row.agentSessionId,
+        ]
+          .filter((value): value is string => typeof value === "string")
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      })
+      .map((row) => ({
+        ...row,
+        agentName: approvalAgentNames.get(row.requestedByTokenId),
+        cardTitle:
+          row.cardId === null ? undefined : approvalCardTitles.get(row.cardId),
+      }));
+  }, [
+    approvalAgentNames,
+    approvalCardTitles,
+    filter.board,
+    filter.query,
+    filter.token,
+    pending.rows,
+  ]);
   const pendingAll = state.boards
     .filter((board) => board.role === "ADMIN")
     .reduce((total, board) => total + (pending.counts[board.id] ?? 0), 0);
@@ -200,6 +317,16 @@ export function AgentsPage() {
         "ADMIN";
 
   const selectedSession = params.get("session");
+  const selectedApprovalId = params.get("approval");
+  const approvalBoardId = params.get("board");
+  const selectedApprovalBase =
+    selectedApprovalId === null
+      ? undefined
+      : pending.rows.find((row) => row.id === selectedApprovalId);
+  const approvalBoardTitle =
+    selectedApprovalBase?.boardTitle ??
+    state.boards.find((board) => board.id === approvalBoardId)?.title ??
+    "";
   const filtered = useMemo(
     () =>
       state.rows.filter(
@@ -521,7 +648,7 @@ export function AgentsPage() {
                 <div className="relative min-w-40 flex-1 basis-full md:max-w-[340px] md:basis-0">
                   <Search
                     aria-hidden
-                    className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                    className="pointer-events-none absolute top-1/2 left-2 h-[13px] w-[13px] -translate-y-1/2 text-muted-foreground"
                   />
                   <Input
                     type="search"
@@ -531,7 +658,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 pl-8 text-xs md:h-7 md:min-h-7"
+                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground/78 focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -542,7 +669,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.token")}
                   testId="agents-filter-token"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-xs md:h-7 md:min-h-7"
+                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
                 />
                 <SelectField
                   value={filter.status}
@@ -553,7 +680,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.status")}
                   testId="agents-filter-status"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-xs md:h-7 md:min-h-7"
+                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
                 />
                 <BoardScopeSelect
                   value={filter.board}
@@ -569,16 +696,6 @@ export function AgentsPage() {
                   counts={pending.counts}
                   totalCount={pendingAll}
                 />
-                {hasFilters ? (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    data-testid="agents-clear-filters-inline"
-                    className="min-h-11 shrink-0 text-[10.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground md:min-h-7"
-                  >
-                    {t("agents.clearFilters")}
-                  </button>
-                ) : null}
               </>
             ) : (
               <>
@@ -612,31 +729,62 @@ export function AgentsPage() {
           {(state.error || offline) && (
             <div
               className={cn(
-                "mb-3 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs",
+                "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                 state.rows.length === 0
                   ? "border-danger/40 bg-danger/10 text-danger"
-                  : "border-warning/40 bg-warning/10 text-warning",
+                  : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
               )}
               data-testid="agents-error"
               role="alert"
             >
-              <span>
-                {offline
-                  ? t("agents.shell.offline")
-                  : state.rows.length === 0
-                    ? t("agents.error.title")
-                    : t("agents.shell.partialError")}
+              <AlertTriangle
+                className={cn(
+                  "mt-px h-3.5 w-3.5 shrink-0",
+                  state.rows.length === 0 ? "text-danger" : "text-warning",
+                )}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
+                {offline ? (
+                  t("agents.shell.offline")
+                ) : state.rows.length === 0 ? (
+                  t("agents.error.title")
+                ) : (
+                  <>
+                    <strong className="font-[650]">
+                      {t("agents.shell.partialErrorTitle")}
+                    </strong>{" "}
+                    {t("agents.shell.partialError")}
+                  </>
+                )}
               </span>
               <button
                 type="button"
                 onClick={state.reload}
-                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium"
+                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
                 data-testid="agents-retry"
               >
+                <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.retry")}
               </button>
             </div>
           )}
+          {section === "attention" && pending.error ? (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+              data-testid="agents-approvals-error"
+              role="alert"
+            >
+              <span>{t("agentControl.approvals.loadError")}</span>
+              <button
+                type="button"
+                onClick={pending.reload}
+                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium"
+              >
+                {t("agents.retry")}
+              </button>
+            </div>
+          ) : null}
           <div
             className="min-h-0 flex-1 md:overflow-y-auto"
             aria-busy={state.refreshing}
@@ -787,15 +935,28 @@ export function AgentsPage() {
                   <>
                     {!isAttentionAdmin ? (
                       <MemberAttentionBanner />
-                    ) : !filteredActive && !state.error ? (
-                      pendingForScope > 0 ? (
-                        <PendingBanner count={pendingForScope} />
-                      ) : (
-                        <AllClear
-                          onViewSessions={() => setSection("sessions")}
+                    ) : (
+                      <>
+                        {scopedApprovalRows.length === 0 &&
+                        !filteredActive &&
+                        !state.error &&
+                        !pending.error &&
+                        !pending.loading ? (
+                          <AllClear
+                            onViewSessions={() => setSection("sessions")}
+                          />
+                        ) : null}
+                        <AttentionApprovalList
+                          rows={scopedApprovalRows}
+                          filter={approvalFilter}
+                          onFilterChange={setApprovalFilter}
+                          selectedId={selectedApprovalId}
+                          onSelect={openApproval}
+                          onReject={(row) => openApproval(row, "reject")}
+                          now={now}
                         />
-                      )
-                    ) : null}
+                      </>
+                    )}
                     {groups.length === 0 ? (
                       filteredActive ? (
                         <FilteredEmpty onClear={clearFilters} />
@@ -850,31 +1011,64 @@ export function AgentsPage() {
         </div>
       </section>
       <aside
-        className="hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]"
+        className={cn(
+          "hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
+          section === "attention" &&
+            selectedApprovalId !== null &&
+            approvalBoardId !== null &&
+            "max-[1060px]:fixed max-[1060px]:inset-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-full max-[1060px]:border-l-0 max-[1060px]:bg-background",
+        )}
         aria-label={t("agents.shell.details")}
       >
-        <header className="border-b border-border px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            {t("agents.shell.detailEyebrow")}
-          </p>
-          <h2 className="mt-0.5 text-[13px] font-semibold">
-            {t("agents.shell.noSelection")}
-          </h2>
-        </header>
-        <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
-          <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
-            <KeyRound className="h-[18px] w-[18px]" aria-hidden />
-          </span>
-          <p className="text-[13px] font-semibold text-foreground">
-            {t("agents.shell.noSessionsToInspect")}
-          </p>
-          <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
-            {t("agents.shell.noSessionsBody")}
-          </p>
-          <Button size="sm" onClick={openTokens} className="mt-1">
-            {t("agents.shell.createKey")}
-          </Button>
-        </div>
+        {section === "attention" &&
+        selectedApprovalId !== null &&
+        approvalBoardId !== null ? (
+          <AttentionApprovalDetail
+            boardId={approvalBoardId}
+            approvalId={selectedApprovalId}
+            boardTitle={approvalBoardTitle}
+            fallbackAgentName={
+              selectedApprovalBase === undefined
+                ? undefined
+                : approvalAgentNames.get(
+                    selectedApprovalBase.requestedByTokenId,
+                  )
+            }
+            fallbackCardTitle={
+              selectedApprovalBase?.cardId == null
+                ? undefined
+                : approvalCardTitles.get(selectedApprovalBase.cardId)
+            }
+            initialMode={approvalIntent}
+            onChanged={pending.reload}
+            onBack={closeApproval}
+          />
+        ) : (
+          <>
+            <header className="border-b border-border px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {t("agents.shell.detailEyebrow")}
+              </p>
+              <h2 className="mt-0.5 text-[13px] font-semibold">
+                {t("agents.shell.noSelection")}
+              </h2>
+            </header>
+            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+                <KeyRound className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <p className="text-[13px] font-semibold text-foreground">
+                {t("agents.shell.noSessionsToInspect")}
+              </p>
+              <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
+                {t("agents.shell.noSessionsBody")}
+              </p>
+              <Button size="sm" onClick={openTokens} className="mt-1">
+                {t("agents.shell.createKey")}
+              </Button>
+            </div>
+          </>
+        )}
       </aside>
     </main>
   );
@@ -955,28 +1149,6 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
         {t("agents.shell.viewSessions")}
         <ChevronRight className="h-3 w-3" aria-hidden />
       </Button>
-    </div>
-  );
-}
-
-function PendingBanner({ count }: { count: number }) {
-  const { t } = useI18n();
-  return (
-    <div
-      className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5"
-      data-testid="agents-attention-pending"
-    >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-warning/30 bg-warning/10 text-warning">
-        <Inbox className="h-[18px] w-[18px]" aria-hidden />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11.5px] font-semibold">
-          {t("agents.shell.pendingTitle", { count })}
-        </p>
-        <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
-          {t("agents.shell.pendingBody")}
-        </p>
-      </div>
     </div>
   );
 }

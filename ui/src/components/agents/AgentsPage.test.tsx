@@ -16,6 +16,11 @@ const hoisted = vi.hoisted(() => ({
   resumeAgentSession: vi.fn(),
   endAgentSession: vi.fn(),
   listApprovals: vi.fn(),
+  getApproval: vi.fn(),
+  decideApproval: vi.fn(),
+  cancelApproval: vi.fn(),
+  getBoard: vi.fn(),
+  listMembers: vi.fn(),
   listRuns: vi.fn(),
 }));
 
@@ -30,6 +35,11 @@ vi.mock("@/api/client", () => ({
     resumeAgentSession: hoisted.resumeAgentSession,
     endAgentSession: hoisted.endAgentSession,
     listApprovals: hoisted.listApprovals,
+    getApproval: hoisted.getApproval,
+    decideApproval: hoisted.decideApproval,
+    cancelApproval: hoisted.cancelApproval,
+    getBoard: hoisted.getBoard,
+    listMembers: hoisted.listMembers,
     listRuns: hoisted.listRuns,
   },
 }));
@@ -86,6 +96,44 @@ function session(overrides: Partial<AgentSessionDto> = {}): AgentSessionDto {
   };
 }
 
+function approval(
+  overrides: Partial<import("@janosik/shared").ApprovalRequestDto> = {},
+): import("@janosik/shared").ApprovalRequestDto {
+  return {
+    id: "approval-1",
+    boardId: "board-1",
+    cardId: "card-1",
+    requestedBy: "user-1",
+    requestedByTokenId: "token-1",
+    agentSessionId: "session-1",
+    kind: "destructive",
+    actionType: "DELETE_CARD",
+    summary: "Delete card “Card claim visibility”",
+    risk: "medium",
+    planHash:
+      "da83a7614519e38b98dfa916c737f3a7e8a40c74328962e486487fdd511a0eb1",
+    status: "pending",
+    expiresAt: Date.now() + 30 * 60_000,
+    decidedBy: null,
+    decidedAt: null,
+    decisionComment: null,
+    runId: null,
+    consumedAt: null,
+    createdAt: Date.now() - 5 * 60_000,
+    plan: {
+      schemaVersion: 1,
+      boardId: "board-1",
+      commands: [
+        {
+          commandId: "command-1",
+          action: { type: "DELETE_CARD", cardId: "card-1" },
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 function renderPage(path = "/agents") {
   return render(
     <I18nProvider>
@@ -107,6 +155,39 @@ beforeEach(() => {
   ]);
   hoisted.me.mockResolvedValue({ id: "user-1", token: null });
   hoisted.listApprovals.mockResolvedValue([]);
+  hoisted.getApproval.mockResolvedValue(approval());
+  hoisted.decideApproval.mockResolvedValue(approval({ status: "rejected" }));
+  hoisted.cancelApproval.mockResolvedValue(approval({ status: "cancelled" }));
+  hoisted.getBoard.mockResolvedValue({
+    id: "board-1",
+    title: "Launch",
+    columns: [],
+    cards: {
+      "card-1": {
+        id: "card-1",
+        title: "Card claim visibility",
+        description: "",
+        labelIds: [],
+        checklists: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    labels: [],
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  hoisted.listMembers.mockResolvedValue([
+    {
+      userId: "user-1",
+      displayName: "UX Agent Audit",
+      email: "ux@example.com",
+      role: "ADMIN",
+      expiresAt: null,
+      avatarColor: null,
+      avatarPath: null,
+    },
+  ]);
   hoisted.listRuns.mockResolvedValue([]);
   hoisted.listAgentSessions.mockImplementation((boardId: string) =>
     Promise.resolve(
@@ -192,17 +273,120 @@ describe("AgentsPage", () => {
 
   it("shows pending approvals in the rail and board scope", async () => {
     hoisted.listApprovals.mockImplementation((boardId: string) =>
-      Promise.resolve(boardId === "board-1" ? [{}] : []),
+      Promise.resolve(boardId === "board-1" ? [approval()] : []),
     );
     renderPage("/agents?section=attention");
 
     expect(
       await screen.findByTestId("agents-count-attention"),
     ).toHaveTextContent("1");
+    expect(
+      await screen.findByTestId("agents-approval-approval-1"),
+    ).toHaveTextContent("Delete card");
     await userEvent.click(screen.getByTestId("agents-filter-board"));
     expect(
       screen.getByTestId("agents-filter-board-option-board-1"),
     ).toHaveTextContent("1");
+  });
+
+  it("opens an approval plan and requires a rejection reason", async () => {
+    const row = approval();
+    hoisted.listApprovals.mockResolvedValue([row]);
+    hoisted.getApproval.mockResolvedValue(row);
+    renderPage("/agents?section=attention&board=board-1&approval=approval-1");
+
+    expect(await screen.findByTestId("agents-approval-detail")).toBeVisible();
+    expect(await screen.findByTestId("approval-plan-hash")).toHaveTextContent(
+      row.planHash.slice(0, 44),
+    );
+    await userEvent.click(screen.getByTestId("approval-reject"));
+    expect(screen.getByTestId("approval-confirm")).toBeDisabled();
+    await userEvent.type(screen.getByTestId("approval-comment"), "Not now");
+    expect(screen.getByTestId("approval-confirm")).toBeEnabled();
+    await userEvent.click(screen.getByTestId("approval-confirm"));
+    await waitFor(() =>
+      expect(hoisted.decideApproval).toHaveBeenCalledWith(
+        "board-1",
+        "approval-1",
+        {
+          decision: "reject",
+          planHash: row.planHash,
+          comment: "Not now",
+        },
+      ),
+    );
+  });
+
+  it("filters approvals by needs, decided and all with true counts", async () => {
+    hoisted.listApprovals.mockResolvedValue([
+      approval(),
+      approval({
+        id: "approval-2",
+        status: "rejected",
+        summary: "Rejected request",
+        decisionComment: "No",
+      }),
+    ]);
+    renderPage("/agents?section=attention");
+
+    const list = await screen.findByTestId("agents-approval-list");
+    expect(list).toHaveTextContent("Delete card");
+    expect(list).not.toHaveTextContent("Rejected request");
+    expect(
+      screen.getByTestId("agents-approvals-filter-needs"),
+    ).toHaveTextContent("1");
+    await userEvent.click(
+      screen.getByTestId("agents-approvals-filter-decided"),
+    );
+    expect(await screen.findByTestId("agents-approval-list")).toHaveTextContent(
+      "Rejected request",
+    );
+    expect(
+      screen.getByTestId("agents-approvals-filter-decided"),
+    ).toHaveTextContent("1");
+  });
+
+  it("quick-rejects an approval with a required reason", async () => {
+    const row = approval();
+    hoisted.listApprovals.mockResolvedValue([row]);
+    renderPage("/agents?section=attention");
+
+    await userEvent.click(
+      await screen.findByTestId("agents-approval-reject-approval-1"),
+    );
+    expect(
+      await screen.findByTestId("agents-approval-detail"),
+    ).toHaveTextContent("Reason for rejection");
+    expect(screen.getByTestId("approval-confirm")).toBeDisabled();
+    await userEvent.type(
+      screen.getByTestId("approval-comment"),
+      "Not this card",
+    );
+    await userEvent.click(screen.getByTestId("approval-confirm"));
+    await waitFor(() =>
+      expect(hoisted.decideApproval).toHaveBeenCalledWith(
+        "board-1",
+        "approval-1",
+        {
+          decision: "reject",
+          planHash: row.planHash,
+          comment: "Not this card",
+        },
+      ),
+    );
+  });
+
+  it("shows an expired approval without decision controls", async () => {
+    const expired = approval({ expiresAt: Date.now() - 1_000 });
+    hoisted.listApprovals.mockResolvedValue([expired]);
+    hoisted.getApproval.mockResolvedValue(expired);
+    renderPage("/agents?section=attention&board=board-1&approval=approval-1");
+
+    expect(
+      await screen.findByTestId("agents-approval-detail"),
+    ).toHaveTextContent("Expired");
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
+    expect(screen.queryByTestId("approval-reject")).toBeNull();
   });
 
   it("groups sessions by agent and shows the board, status and heartbeat", async () => {
@@ -266,9 +450,9 @@ describe("AgentsPage", () => {
   });
   it("defaults to Attention, switches sections, and preserves board scope", async () => {
     renderPage("/agents?board=board-1");
-    expect(
-      await screen.findByTestId("agents-attention-clear"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-attention-clear")).toBeInTheDocument(),
+    );
     expect(screen.getByTestId("agents-section-attention")).toHaveAttribute(
       "aria-current",
       "page",
