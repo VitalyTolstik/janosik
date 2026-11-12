@@ -79,6 +79,8 @@ tags:
     description: Card discussion and typed evidence/handoff comments.
   - name: Account
     description: Identity, personal API tokens, profile, export and deletion.
+  - name: Announcements
+    description: Per-user in-app announcement banners and their dismissals.
 paths:
   /boards:
     get:
@@ -2189,6 +2191,71 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /announcements/active:
+    get:
+      tags: [Announcements]
+      operationId: listActiveAnnouncements
+      summary: List announcements addressed to the caller
+      description: |
+        Signed-in user only. Returns the in-app banners this account has not
+        dismissed at the announcement's current version. `version` must be
+        sent back when dismissing; an edit increments it and shows the banner
+        again.
+      parameters:
+        - name: locale
+          in: query
+          required: false
+          description: Interface language; falls back to the profile and Accept-Language.
+          schema:
+            type: string
+            enum: [en, ru]
+      responses:
+        "200":
+          description: Announcements addressed to the caller, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnnouncementDto"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /announcements/{id}/dismiss:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Announcements]
+      operationId: dismissAnnouncement
+      summary: Dismiss one announcement version for the caller
+      description: |
+        Stores the dismissal server-side per user, so it survives a new device,
+        browser or session and never leaks to another account in the same
+        browser. The body must carry the version the banner showed; a stale
+        version answers `409 version_conflict` with `currentVersion`. An
+        unknown, inactive, out-of-window or unaddressed announcement answers
+        `404`, so the route never reveals announcements the caller cannot see.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementDismissRequest"
+      responses:
+        "200":
+          description: The version recorded as dismissed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnouncementDismissResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 components:
   securitySchemes:
@@ -5074,3 +5141,63 @@ components:
           const: scheduled
         deleteAfter:
           type: integer
+    AnnouncementDto:
+      type: object
+      description: One active in-app announcement as the signed-in user sees it.
+      required:
+        [
+          id,
+          title,
+          body,
+          level,
+          contentLocale,
+          requestedLocale,
+          isFallback,
+          version,
+        ]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        level:
+          type: string
+          enum: [info, warning, danger]
+        contentLocale:
+          type: [string, "null"]
+          enum: [en, ru, null]
+          description: Language of the returned text; null for a legacy row.
+        requestedLocale:
+          type: string
+          enum: [en, ru]
+        isFallback:
+          type: boolean
+          description: True when the UI must show the "available only in …" notice.
+        version:
+          type: integer
+          minimum: 1
+          description: |
+            Current announcement version. Send it back to
+            `POST /announcements/{id}/dismiss`; a later edit
+            increments it and shows the banner again.
+    AnnouncementDismissRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The `AnnouncementDto.version` the banner showed.
+    AnnouncementDismissResponse:
+      type: object
+      required: [dismissed, version]
+      properties:
+        dismissed:
+          type: boolean
+          const: true
+        version:
+          type: integer
+          minimum: 1
+          description: The version recorded as dismissed for the caller.
