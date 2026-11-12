@@ -33,7 +33,6 @@ describe("Email change API (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let mailer: MailerService;
-  let enabledSpy: jest.SpyInstance;
   let accessToken: string;
   let callerRefresh: string;
   let userId: string;
@@ -57,10 +56,6 @@ describe("Email change API (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
-    // Registration and email change require a configured transport; the
-    // test environment clears SMTP_*, so opt in while send() still lands in
-    // the outbox where the codes are read from.
-    enabledSpy = jest.spyOn(mailer, "enabled", "get").mockReturnValue(true);
 
     await prisma.emailChangeCode.deleteMany();
     await prisma.refreshToken.deleteMany();
@@ -80,7 +75,6 @@ describe("Email change API (e2e)", () => {
   });
 
   afterAll(async () => {
-    enabledSpy.mockRestore();
     await app.close();
   });
 

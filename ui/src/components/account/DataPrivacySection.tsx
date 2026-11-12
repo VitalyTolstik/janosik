@@ -92,11 +92,13 @@ export function DataPrivacySection() {
   useEffect(() => {
     if (exportRow?.status !== "pending") return;
     let alive = true;
+    const exportId = exportRow.id;
     const timer = setInterval(() => {
       void api
-        .accountExportStatus(exportRow.id)
+        .accountExportStatus(exportId)
         .then((row) => {
-          if (alive) setExportRow(row);
+          // A stale poll must not replace a newer export started meanwhile.
+          if (alive && row.id === exportId) setExportRow(row);
         })
         .catch(() => undefined);
     }, 3000);

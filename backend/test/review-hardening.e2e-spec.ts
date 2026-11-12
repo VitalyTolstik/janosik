@@ -7,7 +7,6 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { MailerService } from "@/mailer/mailer.service";
 import { sseTiming } from "@/realtime/sse-timing";
 
 const PASSWORD = "correct horse battery";
@@ -39,7 +38,6 @@ interface Frame {
 describe("Review hardening (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let enabledSpy: jest.SpyInstance;
   let baseUrl: string;
   let ownerToken: string;
   let ownerId: string;
@@ -195,9 +193,6 @@ describe("Review hardening (e2e)", () => {
     const address = app.getHttpServer().address() as AddressInfo;
     baseUrl = `http://127.0.0.1:${address.port}/api/v1`;
     prisma = app.get(PrismaService);
-    enabledSpy = jest
-      .spyOn(app.get(MailerService), "enabled", "get")
-      .mockReturnValue(true);
     await wipe(prisma);
 
     const owner = await register("hardening-owner@example.com");
@@ -221,7 +216,6 @@ describe("Review hardening (e2e)", () => {
 
   afterAll(async () => {
     sseTiming.keepAliveMs = 25_000;
-    enabledSpy.mockRestore();
     await wipe(prisma);
     await app.close();
   });
@@ -369,11 +363,9 @@ describe("Review hardening (e2e)", () => {
     });
 
     it("hides invitations from an unverified account and refuses the accept", async () => {
+      process.env.E2E_AUTO_VERIFY = "0";
       const squatter = await register("hardening-unverified@example.com");
-      await prisma.user.update({
-        where: { id: squatter.id },
-        data: { emailVerifiedAt: null },
-      });
+      process.env.E2E_AUTO_VERIFY = "1";
       await server()
         .post(`/api/v1/boards/${boardId}/members`)
         .set(auth(ownerToken))

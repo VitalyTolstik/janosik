@@ -397,6 +397,7 @@ export class ApiClient {
   async retryPendingLogout(): Promise<void> {
     await withInteractiveAuthLock(async () => {
       if (!hasPendingLogout()) return;
+      // Never let a 401 retry a refresh while this lock is already held.
       await this.request("/auth/logout", {
         method: "POST",
         body: {},
