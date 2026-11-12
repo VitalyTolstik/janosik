@@ -1025,6 +1025,14 @@ describe("Agents overview aggregation (e2e)", () => {
       limit: 100,
     });
     expect(expired.total).toBe(3);
+    expect(expired.items).toHaveLength(3);
+    expect(new Set(expired.items.map((row) => row.id))).toEqual(
+      new Set([
+        approvals.overduePending.id,
+        approvals.overdueApproved.id,
+        approvals.expiredStored.id,
+      ]),
+    );
     const overdue = expired.items.find(
       (row) => row.id === approvals.overduePending.id,
     );
@@ -1045,6 +1053,26 @@ describe("Agents overview aggregation (e2e)", () => {
       status: "expired",
       storedStatus: "expired",
     });
+
+    for (const status of [
+      "approved",
+      "rejected",
+      "expired",
+      "cancelled",
+      "consumed",
+      "decided",
+    ] as const) {
+      const page = await approvalsPage(owner.accessToken, {
+        status,
+        limit: 100,
+      });
+      expect(page.items.length).toBe(page.total);
+      if (status !== "decided") {
+        expect(page.items.every((row) => row.status === status)).toBe(true);
+      } else {
+        expect(page.items.every((row) => row.status !== "pending")).toBe(true);
+      }
+    }
 
     const all = await approvalsPage(owner.accessToken, {
       status: "all",
@@ -1191,6 +1219,20 @@ describe("Agents overview aggregation (e2e)", () => {
     }).expect(403);
     expect(wrongBoard.body.code).toBe("scope_denied");
 
+    const cursorBoard = (await createBoard("Cursor Admin Board")).id;
+    await member(cursorBoard, owner.id, Role.ADMIN);
+    try {
+      const wrongScope = await overview(owner.accessToken, {
+        section: "approvals",
+        boardId: cursorBoard,
+        cursor: pending.nextCursor,
+      }).expect(400);
+      expect(wrongScope.body.code).toBe("invalid_cursor");
+    } finally {
+      await prisma.boardMember.deleteMany({ where: { boardId: cursorBoard } });
+      await prisma.board.delete({ where: { id: cursorBoard } });
+    }
+
     const sessionCursor = await sessionsPage(owner.accessToken, { limit: 2 });
     const wrongSection = await overview(owner.accessToken, {
       section: "runs",
@@ -1237,6 +1279,13 @@ describe("Agents overview aggregation (e2e)", () => {
       approvals.cyrillic.id,
     ]);
     expect(cyrillic.total).toBe(1);
+
+    const multiPageSearch = await allPages<AgentsOverviewApprovalsResponse>(
+      owner.accessToken,
+      { section: "approvals", status: "all", q: "Alpha Board", limit: 3 },
+    );
+    expect(multiPageSearch).toHaveLength(16);
+    expect(new Set(multiPageSearch.map((row) => row.id)).size).toBe(16);
 
     const ownToken = await approvalsPage(owner.accessToken, {
       status: "all",

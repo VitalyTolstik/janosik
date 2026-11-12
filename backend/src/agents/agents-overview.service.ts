@@ -160,7 +160,9 @@ export class AgentsOverviewService {
         sessionId: query.sessionId,
         from: query.from,
         to: query.to,
-        scope: memberships.map((row) => `${row.board.id}:${row.role}`).sort(),
+        scope: (selected === null ? memberships : [selected])
+          .map((row) => `${row.board.id}:${row.role}`)
+          .sort(),
       }),
     };
 
@@ -413,10 +415,18 @@ export class AgentsOverviewService {
       cursor?.g === "approval_decided"
         ? approvalDecidedAfter(cursor)
         : undefined;
+    // `all` and `decided` use the complement of effective pending; an explicit
+    // status (approved/rejected/expired/cancelled/consumed) must apply the same
+    // effective predicate that produced `total`, otherwise the items would
+    // contain every decided row.
+    const decidedFilter =
+      status === "all" || status === "decided"
+        ? { NOT: { status: "pending", expiresAt: { gt: context.now } } }
+        : filter;
     const decidedWhere: Prisma.ApprovalRequestWhereInput = {
       AND: [
         pageBase,
-        { NOT: { status: "pending", expiresAt: { gt: context.now } } },
+        ...(decidedFilter ? [decidedFilter] : []),
         ...(decidedAfter ? [decidedAfter] : []),
       ],
     };
@@ -683,6 +693,7 @@ export class AgentsOverviewService {
         where: { boardId: { in: context.adminBoardIds } },
         distinct: ["requestedByTokenId"],
         select: { requestedByTokenId: true },
+        orderBy: { requestedByTokenId: "asc" },
         take: FACET_LIMIT + 1,
       }),
       this.prisma.approvalRequest.findMany({
@@ -692,6 +703,7 @@ export class AgentsOverviewService {
         },
         distinct: ["agentSessionId"],
         select: { agentSessionId: true },
+        orderBy: { agentSessionId: "asc" },
         take: FACET_LIMIT + 1,
       }),
     ]);
@@ -884,6 +896,7 @@ export class AgentsOverviewService {
         where: { boardId: { in: context.boardIds } },
         distinct: ["apiTokenId"],
         select: { apiTokenId: true },
+        orderBy: { apiTokenId: "asc" },
         take: FACET_LIMIT + 1,
       }),
       this.prisma.agentSession.findMany({
@@ -1053,6 +1066,7 @@ export class AgentsOverviewService {
         },
         distinct: ["apiTokenId"],
         select: { apiTokenId: true },
+        orderBy: { apiTokenId: "asc" },
         take: FACET_LIMIT + 1,
       }),
       this.prisma.agentRun.findMany({
@@ -1062,6 +1076,7 @@ export class AgentsOverviewService {
         },
         distinct: ["agentSessionId"],
         select: { agentSessionId: true },
+        orderBy: { agentSessionId: "asc" },
         take: FACET_LIMIT + 1,
       }),
     ]);
@@ -1114,13 +1129,16 @@ export class AgentsOverviewService {
           }),
     ]);
     const ownNames = new Map(ownTokens.map((row) => [row.id, row.name]));
+    const sessionById = new Map(sessions.map((row) => [row.id, row]));
     return {
       tokens: tokenIds.map((id) => ({
         id,
         name: ownNames.get(id) ?? null,
         own: ownNames.has(id),
       })),
-      sessions: sessions.flatMap((row) => {
+      sessions: sessionIds.flatMap((id) => {
+        const row = sessionById.get(id);
+        if (row === undefined) return [];
         const boardTitle = boards.get(row.boardId);
         if (boardTitle === undefined) return [];
         return [
