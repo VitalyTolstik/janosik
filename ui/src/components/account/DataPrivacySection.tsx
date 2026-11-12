@@ -77,8 +77,12 @@ export function DataPrivacySection() {
     : password.length > 0;
   const canDelete = emailMatches && proofReady && !deleting;
 
-  /** A fresh access token is the OAuth proof; refresh before every proof use. */
-  const freshAccessToken = async (): Promise<string | undefined> => {
+  /**
+   * Reuse the OAuth proof carried by the session (rotation preserves its
+   * original `authTime`); older than ten minutes the server asks the user to
+   * re-authenticate with the provider.
+   */
+  const oauthProofToken = async (): Promise<string | undefined> => {
     try {
       await api.refreshSession();
     } catch {
@@ -175,7 +179,7 @@ export function DataPrivacySection() {
     setError(null);
     try {
       await api.requestAccountDeletionCode({
-        oauthProof: await freshAccessToken(),
+        oauthProof: await oauthProofToken(),
       });
       setCodeSent(true);
       toast.success(t("account.data.codeSent"));
@@ -196,7 +200,7 @@ export function DataPrivacySection() {
         confirmEmail: confirmEmail.trim(),
         ...(emailCodeFlow
           ? {
-              oauthProof: await freshAccessToken(),
+              oauthProof: await oauthProofToken(),
               emailCode: emailCode.trim(),
             }
           : { password }),

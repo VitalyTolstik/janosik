@@ -9,7 +9,11 @@ import { MailerService } from "@/mailer/mailer.service";
  * Suites that exercise the "no mail" behaviour override the instance getter
  * (see `registration-verification.e2e-spec.ts`).
  */
-jest.spyOn(MailerService.prototype, "enabled", "get").mockReturnValue(true);
+if (process.env.NODE_ENV === "test") {
+  jest
+    .spyOn(MailerService.prototype, "enabled", "get")
+    .mockReturnValue(true);
+}
 
 /**
  * Most suites create board members through `POST /auth/register` and are
@@ -17,4 +21,6 @@ jest.spyOn(MailerService.prototype, "enabled", "get").mockReturnValue(true);
  * invitation can be accepted; the verification suite clears the flag to
  * exercise the real unverified path.
  */
-process.env.E2E_AUTO_VERIFY = "1";
+if (process.env.NODE_ENV === "test") {
+  process.env.E2E_AUTO_VERIFY = "1";
+}
