@@ -448,6 +448,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Admin bulk actions now apply to every selected row across pages: the counter,
+  confirmation and request use the same saved ids, filter changes clear the
+  selection, and a selection above the backend cap of 500 is blocked with a
+  clear message. Partial failures keep exactly the refused ids selected
+  (TASK-176.1).
 - Hardened agent writes against concurrent token revocation, permission and
   policy changes, and pause; retained idempotency reservations for uncertain
   outcomes and preserved agent-session results when some boards fail to load.

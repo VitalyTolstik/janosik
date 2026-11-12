@@ -46,12 +46,19 @@ the board `ADMIN`. If no user matches the owner email, the server returns `404`.
 
 ### Bulk actions
 
-With rows selected, a bar appears with `Delete selected`, `Restore selected`
-and `Clear`. Bulk deletion requires confirmation and does not support ordinary
-undo. Soft-deleted records can be restored until they are permanently purged.
-Deleting a column takes its cards down with it (they are soft-deleted,
-never left pointing at a deleted column), and restoring the column brings them
-back.
+With rows selected, a bar appears with `N selected (M on this page)`, `Delete
+selected`, `Restore selected` and `Clear`. The selection survives pagination:
+rows picked on page 1 stay selected when page 2 is opened, and the action
+applies to every saved id — the counter, the confirmation and the request all
+use the same set. Changing search, status, period or page size clears the
+selection, because those controls change the rows underneath it. One bulk
+request is limited to 500 ids; the panel refuses a larger selection with a
+message instead of truncating it. Bulk deletion requires confirmation and does
+not support ordinary undo. If the server refuses some ids, exactly those rows
+stay selected for a retry. Soft-deleted records can be restored until they are
+permanently purged. Deleting a column takes its cards down with it (they are
+soft-deleted, never left pointing at a deleted column), and restoring the
+column brings them back.
 
 ### Workflow
 
