@@ -1823,8 +1823,11 @@ paths:
       operationId: changePassword
       summary: Change the account password
       description: |
-        Browser session only (`403 pat_forbidden` for a PAT). Every other
-        session and every personal API token of the account is revoked.
+        Browser session only (`403 pat_forbidden` for a PAT). A password
+        account sends `currentPassword`; an OAuth-only account sends a fresh
+        OAuth-issued access token as `oauthProof` and may omit
+        `currentPassword`. Every other session and every personal API token
+        of the account is revoked.
       requestBody:
         required: true
         content:
@@ -5079,11 +5082,16 @@ components:
           enum: [en, ru, null]
     ChangePasswordRequest:
       type: object
-      required: [currentPassword, newPassword]
+      required: [newPassword]
       properties:
         currentPassword:
           type: string
           maxLength: 100
+          description: Required for an account that already has a password.
+        oauthProof:
+          type: string
+          maxLength: 4096
+          description: Fresh OAuth-issued access token; required for an OAuth-only account.
         newPassword:
           type: string
           minLength: 8
