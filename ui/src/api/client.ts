@@ -648,6 +648,17 @@ export class ApiClient {
     );
   }
 
+  /** `POST /boards/:id/approvals/:approvalId/cancel` — requester or ADMIN. */
+  cancelApproval(
+    boardId: string,
+    approvalId: string,
+  ): Promise<ApprovalRequestDto> {
+    return this.request<ApprovalRequestDto>(
+      `/boards/${boardId}/approvals/${encodeURIComponent(approvalId)}/cancel`,
+      { method: "POST", body: {} },
+    );
+  }
+
   // ------------------------------------------------- runs + policy (166.15)
 
   /** `GET /boards/:id/runs` — summaries without commands/pre-images. */

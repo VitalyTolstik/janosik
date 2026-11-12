@@ -201,7 +201,7 @@ describe("agent control (TASK-166.14)", () => {
     ).toHaveTextContent("Ship it");
   });
 
-  it("rejects with the plan hash and without an empty comment", async () => {
+  it("requires a reason and sends the plan hash when rejecting", async () => {
     const row = approval();
     vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
@@ -213,12 +213,18 @@ describe("agent control (TASK-166.14)", () => {
     await screen.findByTestId("approval-queue");
     await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
     await userEvent.click(await screen.findByTestId("approval-reject"));
+    expect(screen.getByTestId("approval-confirm")).toBeDisabled();
+    await userEvent.type(
+      screen.getByTestId("approval-comment"),
+      "Not this card",
+    );
     await userEvent.click(screen.getByTestId("approval-confirm"));
 
     await waitFor(() =>
       expect(decide).toHaveBeenCalledWith("board-1", row.id, {
         decision: "reject",
         planHash: row.planHash,
+        comment: "Not this card",
       }),
     );
     expect(await screen.findByText("Approval rejected")).toBeInTheDocument();
@@ -230,6 +236,7 @@ describe("agent control (TASK-166.14)", () => {
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
 
     renderDialog();
+    await userEvent.click(await screen.findByTestId("approval-filter-all"));
     await screen.findByTestId("approval-queue");
     await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
 

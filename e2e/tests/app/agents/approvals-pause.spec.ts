@@ -141,6 +141,37 @@ test("an agent request appears live, is approved with a reason and consumed afte
   expect(body.cards[cardId]).toBeUndefined();
 });
 
+test("the global agents inbox lists and approves a board request", async ({
+  board,
+  page,
+  playwright,
+  testIp,
+}) => {
+  const todo = await board.column("Todo");
+  const cardId = await board.card(todo, "Approve from the global inbox");
+  const pat = await createAgentToken(board, playwright, testIp);
+  const ref = await requestCardDelete(pat, board.id, cardId);
+
+  await board.open(page);
+  await page.goto(new URL("agents", appUrl).href);
+  await expect(page.getByTestId("agents-page")).toBeVisible();
+  const row = page.getByTestId(`agents-approval-${ref.approvalId}`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.click();
+
+  await expect(page.getByTestId("agents-approval-detail")).toBeVisible();
+  await expect(page.getByTestId("approval-plan-hash")).toHaveText(ref.planHash);
+  await expect(page.getByTestId("approval-plan-command")).toContainText(
+    "DELETE_CARD",
+  );
+  await page.getByTestId("approval-approve").click();
+  await page.getByTestId("approval-confirm").click();
+  await expect(page.getByTestId("approval-status")).toHaveAttribute(
+    "data-status",
+    "approved",
+  );
+});
+
 test("rejecting a request keeps the card and records the reason", async ({
   board,
   page,

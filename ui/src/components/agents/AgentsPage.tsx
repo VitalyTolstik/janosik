@@ -44,6 +44,12 @@ import {
 import { useAgentSessions } from "./use-agent-sessions";
 import { usePendingApprovals } from "./use-pending-approvals";
 import { useAgentRuns } from "./use-agent-runs";
+import {
+  AttentionApprovalDetail,
+  AttentionApprovalList,
+  type AttentionApprovalFilter,
+  type AttentionApprovalRow,
+} from "./AttentionApprovals";
 import { BoardScopeSelect } from "./BoardScopeSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,6 +134,35 @@ export function AgentsPage() {
     });
   };
 
+  const openApproval = useCallback(
+    (row: AttentionApprovalRow) => {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "attention");
+          next.set("board", row.boardId);
+          next.set("approval", row.id);
+          next.delete("session");
+          next.delete("run");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+
+  const closeApproval = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("approval");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+
   const onSectionKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const current = SECTIONS.indexOf(section);
     const next =
@@ -177,6 +212,31 @@ export function AgentsPage() {
     filter.query.trim() !== "";
   const pending = usePendingApprovals(state.boards, !state.isAgentToken);
   const runs = useAgentRuns(state.boards, section === "runs");
+  const [approvalFilter, setApprovalFilter] =
+    useState<AttentionApprovalFilter>("needs");
+  const scopedApprovalRows = useMemo(() => {
+    const query = filter.query.trim().toLowerCase();
+    return pending.rows.filter((row) => {
+      if (filter.board !== "all" && row.boardId !== filter.board) return false;
+      if (filter.token !== "all" && row.requestedByTokenId !== filter.token) {
+        return false;
+      }
+      if (query === "") return true;
+      return [
+        row.summary,
+        row.actionType,
+        row.planHash,
+        row.boardTitle,
+        row.requestedByTokenId,
+        row.cardId,
+        row.agentSessionId,
+      ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [filter.board, filter.query, filter.token, pending.rows]);
   const pendingAll = state.boards
     .filter((board) => board.role === "ADMIN")
     .reduce((total, board) => total + (pending.counts[board.id] ?? 0), 0);
@@ -200,6 +260,16 @@ export function AgentsPage() {
         "ADMIN";
 
   const selectedSession = params.get("session");
+  const selectedApprovalId = params.get("approval");
+  const approvalBoardId = params.get("board");
+  const selectedApprovalRow =
+    selectedApprovalId === null
+      ? undefined
+      : pending.rows.find((row) => row.id === selectedApprovalId);
+  const approvalBoardTitle =
+    selectedApprovalRow?.boardTitle ??
+    state.boards.find((board) => board.id === approvalBoardId)?.title ??
+    "";
   const filtered = useMemo(
     () =>
       state.rows.filter(
@@ -637,6 +707,22 @@ export function AgentsPage() {
               </button>
             </div>
           )}
+          {section === "attention" && pending.error ? (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+              data-testid="agents-approvals-error"
+              role="alert"
+            >
+              <span>{t("agentControl.approvals.loadError")}</span>
+              <button
+                type="button"
+                onClick={pending.reload}
+                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium"
+              >
+                {t("agents.retry")}
+              </button>
+            </div>
+          ) : null}
           <div
             className="min-h-0 flex-1 md:overflow-y-auto"
             aria-busy={state.refreshing}
@@ -787,15 +873,27 @@ export function AgentsPage() {
                   <>
                     {!isAttentionAdmin ? (
                       <MemberAttentionBanner />
-                    ) : !filteredActive && !state.error ? (
-                      pendingForScope > 0 ? (
-                        <PendingBanner count={pendingForScope} />
-                      ) : (
-                        <AllClear
-                          onViewSessions={() => setSection("sessions")}
+                    ) : (
+                      <>
+                        {scopedApprovalRows.length === 0 &&
+                        !filteredActive &&
+                        !state.error &&
+                        !pending.error &&
+                        !pending.loading ? (
+                          <AllClear
+                            onViewSessions={() => setSection("sessions")}
+                          />
+                        ) : null}
+                        <AttentionApprovalList
+                          rows={scopedApprovalRows}
+                          filter={approvalFilter}
+                          onFilterChange={setApprovalFilter}
+                          selectedId={selectedApprovalId}
+                          onSelect={openApproval}
+                          now={now}
                         />
-                      )
-                    ) : null}
+                      </>
+                    )}
                     {groups.length === 0 ? (
                       filteredActive ? (
                         <FilteredEmpty onClear={clearFilters} />
@@ -850,31 +948,51 @@ export function AgentsPage() {
         </div>
       </section>
       <aside
-        className="hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]"
+        className={cn(
+          "hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
+          section === "attention" &&
+            selectedApprovalId !== null &&
+            approvalBoardId !== null &&
+            "max-[1060px]:fixed max-[1060px]:inset-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-full max-[1060px]:border-l-0 max-[1060px]:bg-background",
+        )}
         aria-label={t("agents.shell.details")}
       >
-        <header className="border-b border-border px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            {t("agents.shell.detailEyebrow")}
-          </p>
-          <h2 className="mt-0.5 text-[13px] font-semibold">
-            {t("agents.shell.noSelection")}
-          </h2>
-        </header>
-        <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
-          <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
-            <KeyRound className="h-[18px] w-[18px]" aria-hidden />
-          </span>
-          <p className="text-[13px] font-semibold text-foreground">
-            {t("agents.shell.noSessionsToInspect")}
-          </p>
-          <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
-            {t("agents.shell.noSessionsBody")}
-          </p>
-          <Button size="sm" onClick={openTokens} className="mt-1">
-            {t("agents.shell.createKey")}
-          </Button>
-        </div>
+        {section === "attention" &&
+        selectedApprovalId !== null &&
+        approvalBoardId !== null ? (
+          <AttentionApprovalDetail
+            boardId={approvalBoardId}
+            approvalId={selectedApprovalId}
+            boardTitle={approvalBoardTitle}
+            onChanged={pending.reload}
+            onBack={closeApproval}
+          />
+        ) : (
+          <>
+            <header className="border-b border-border px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {t("agents.shell.detailEyebrow")}
+              </p>
+              <h2 className="mt-0.5 text-[13px] font-semibold">
+                {t("agents.shell.noSelection")}
+              </h2>
+            </header>
+            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+                <KeyRound className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <p className="text-[13px] font-semibold text-foreground">
+                {t("agents.shell.noSessionsToInspect")}
+              </p>
+              <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
+                {t("agents.shell.noSessionsBody")}
+              </p>
+              <Button size="sm" onClick={openTokens} className="mt-1">
+                {t("agents.shell.createKey")}
+              </Button>
+            </div>
+          </>
+        )}
       </aside>
     </main>
   );
@@ -955,28 +1073,6 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
         {t("agents.shell.viewSessions")}
         <ChevronRight className="h-3 w-3" aria-hidden />
       </Button>
-    </div>
-  );
-}
-
-function PendingBanner({ count }: { count: number }) {
-  const { t } = useI18n();
-  return (
-    <div
-      className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5"
-      data-testid="agents-attention-pending"
-    >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-warning/30 bg-warning/10 text-warning">
-        <Inbox className="h-[18px] w-[18px]" aria-hidden />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11.5px] font-semibold">
-          {t("agents.shell.pendingTitle", { count })}
-        </p>
-        <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
-          {t("agents.shell.pendingBody")}
-        </p>
-      </div>
     </div>
   );
 }
