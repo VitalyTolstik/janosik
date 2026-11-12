@@ -77,7 +77,10 @@ test("wide screens fit the transition matrix next to its inspector", async ({
   const dialog = await openBoardSettings(page);
   await showWorkflowMatrix(page);
   const box = await dialog.boundingBox();
-  expect(box?.width ?? 0).toBeGreaterThan(1300);
+  // The Board Settings shell follows the 1040 px prototype; the matrix and
+  // inspector must fit inside it without an inner horizontal scrollbar.
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(1038);
+  expect(box?.width ?? 0).toBeLessThanOrEqual(1040);
   await expect(dialog.getByTestId("workflow-inspector")).toBeVisible();
   expect(
     await dialog.getByTestId("workflow-matrix-grid").evaluate((grid) => {

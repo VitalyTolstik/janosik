@@ -51,6 +51,7 @@ export function TransitionMatrix({
 
   useEffect(() => {
     if (selected?.fromColumnId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the roving focus on the selected rule
       setFocusCell({
         row: selected.fromColumnId,
         col: selected.toColumnId,
@@ -139,7 +140,7 @@ export function TransitionMatrix({
           aria-label={t("workflow.matrix")}
           aria-rowcount={columns.length + 1}
           aria-colcount={columns.length + 1}
-          className="w-full min-w-[520px] table-fixed border-separate border-spacing-0 text-[11px]"
+          className="w-full min-w-[360px] table-fixed border-separate border-spacing-0 text-[11px]"
           data-testid={`${testIdPrefix}-matrix-grid`}
         >
           <thead>
