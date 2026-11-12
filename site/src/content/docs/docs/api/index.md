@@ -709,6 +709,17 @@ dependency states (`up` or `down`).
 | Method | Path                    | Auth | Returns             |
 | ------ | ----------------------- | ---- | ------------------- |
 | `GET`  | `/announcements/active` | user | `AnnouncementDto[]` |
+| `POST` | `/announcements/{id}/dismiss` | user | `AnnouncementDismissResponse` |
 
 Returns the in-app announcements addressed to the signed-in user. A
-signed-out visitor gets nothing.
+signed-out visitor gets nothing. Each item carries its current `version`.
+
+`POST /announcements/{id}/dismiss` closes one announcement for the signed-in
+user. The body is `{ "version": <AnnouncementDto.version> }`. Read state is
+stored server-side per user, so it survives a new device, browser or session
+and does not leak to another account in the same browser. A stale version
+answers `409` with `currentVersion` (the announcement was edited); refetch
+`/announcements/active` and dismiss the new version. An unknown, inactive,
+out-of-window or unaddressed announcement answers `404`, so the route never
+reveals announcements the caller cannot see. Editing an announcement bumps
+its version, which shows it again to users who dismissed the previous one.

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, adminContext, password } from "@/fixtures/admin.js";
 import { login } from "@/fixtures/auth.js";
+import { signOutThroughUi } from "@/helpers/account.js";
 import {
   adminPath,
   createUserViaAdmin,
@@ -247,5 +248,72 @@ test("E5: edits leave the other language intact and retract hides both", async (
     );
   } finally {
     await userSide.context.close();
+  }
+});
+
+test("E6: dismissal is server-side, per user and survives a new context", async ({
+  browser,
+  admin,
+  targetUser,
+  testIp,
+}) => {
+  const second = await createUserViaAdmin(admin, {
+    email: `ann-dismiss-${randomUUID()}@e2e.example`,
+    verified: true,
+    password,
+  });
+  const title = uniqueToken("ann-dismiss");
+  const announcement = await createAnnouncement(admin, {
+    sourceLocale: "en",
+    fallbackPolicy: "require_all",
+    translations: {
+      en: { title, body: "Dismiss me once." },
+      ru: { title: `RU ${title}`, body: "Скрыть один раз." },
+    },
+    audience: "segment",
+    segment: `${targetUser.email},${second.email}`,
+    active: true,
+  });
+
+  const first = await adminContext(browser, testIp);
+  try {
+    await login(first.page, targetUser);
+    await expect(first.page.getByTestId("announcement-banner")).toContainText(
+      title,
+    );
+    const dismissed = first.page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/announcements/${announcement.id}/dismiss`),
+    );
+    await first.page
+      .getByTestId(`announcement-dismiss-${announcement.id}`)
+      .click();
+    await dismissed;
+    await expect(first.page.getByTestId("announcement-banner")).toHaveCount(0);
+
+    // Same context: sign out, sign back in — the server still remembers.
+    await signOutThroughUi(first.page);
+    await login(first.page, targetUser);
+    await expect(first.page.getByTestId("announcement-banner")).toHaveCount(0);
+
+    // The second account in the same browser still sees its own banner.
+    await signOutThroughUi(first.page);
+    await login(first.page, { email: second.email, password });
+    await expect(first.page.getByTestId("announcement-banner")).toContainText(
+      title,
+    );
+  } finally {
+    await first.context.close();
+  }
+
+  // A brand-new browser context has no local state to inherit — the server
+  // still hides the dismissed announcement for the first account.
+  const fresh = await adminContext(browser, testIp);
+  try {
+    await login(fresh.page, targetUser);
+    await expect(fresh.page.getByTestId("announcement-banner")).toHaveCount(0);
+  } finally {
+    await fresh.context.close();
   }
 });

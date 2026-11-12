@@ -2,6 +2,7 @@ import type {
   ActivityFeedPage,
   AgentSessionDto,
   AgentStopAllPauseDto,
+  AnnouncementDismissResponse,
   AnnouncementDto,
   ApprovalDecisionRequest,
   ApprovalListQuery,
@@ -406,6 +407,21 @@ export class ApiClient {
   activeAnnouncements(locale?: "en" | "ru"): Promise<AnnouncementDto[]> {
     const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
     return this.request<AnnouncementDto[]>(`/announcements/active${query}`);
+  }
+
+  /**
+   * `POST /announcements/:id/dismiss` — remember this version as closed for
+   * the signed-in user. The server owns the state, so it survives a new
+   * device and never leaks to another account in the same browser.
+   */
+  dismissAnnouncement(
+    id: string,
+    version: number,
+  ): Promise<AnnouncementDismissResponse> {
+    return this.request<AnnouncementDismissResponse>(
+      `/announcements/${encodeURIComponent(id)}/dismiss`,
+      { method: "POST", body: { version } },
+    );
   }
 
   /**
