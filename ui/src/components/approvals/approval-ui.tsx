@@ -271,7 +271,7 @@ export function ApprovalLinks({
   const base = `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=attention`;
   const sessionHref =
     approval.agentSessionId === null
-      ? null
+      ? `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&token=${encodeURIComponent(approval.requestedByTokenId)}`
       : `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&session=${encodeURIComponent(approval.agentSessionId)}`;
   const runHref =
     approval.runId === null
@@ -305,16 +305,14 @@ export function ApprovalLinks({
           <Folder className="h-2.5 w-2.5" aria-hidden />
           {t("agents.approvals.openBoard")}
         </Link>
-        {sessionHref !== null ? (
-          <Link
-            to={sessionHref}
-            className={RELATED_CLASS}
-            data-testid="approval-session-link"
-          >
-            <Activity className="h-2.5 w-2.5" aria-hidden />
-            {t("agentControl.approvals.openSession")}
-          </Link>
-        ) : null}
+        <Link
+          to={sessionHref}
+          className={RELATED_CLASS}
+          data-testid="approval-session-link"
+        >
+          <Activity className="h-2.5 w-2.5" aria-hidden />
+          {t("agentControl.approvals.openSession")}
+        </Link>
         {runHref !== null ? (
           <Link
             to={runHref}
@@ -365,6 +363,7 @@ export function ApprovalLinks({
         <DialogContent
           className="sm:max-w-sm"
           data-testid="approval-token-dialog"
+          hideClose
         >
           <DialogHeader>
             <DialogTitle>
@@ -398,11 +397,16 @@ export function ApprovalLinks({
 export function ApprovalDecisionForm({
   busy,
   planHash,
+  impactTitle,
+  impactText,
   initialMode = null,
   onDecide,
 }: {
   busy: boolean;
   planHash: string;
+  /** Human impact shown in the approve confirmation, mock-style. */
+  impactTitle?: string;
+  impactText?: string;
   /** Quick-reject opens straight into the reason form. */
   initialMode?: "reject" | null;
   onDecide: (
@@ -512,7 +516,7 @@ export function ApprovalDecisionForm({
           {t("agents.approvals.footerAfter")}
         </span>
       </p>
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="flex items-center gap-1.5">
         <Button
           type="button"
           size="sm"
@@ -520,7 +524,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-reject"
           onClick={() => setMode("reject")}
           disabled={busy}
-          className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
+          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11px] font-[650]"
         >
           {t("agentControl.approvals.reject")}
         </Button>
@@ -530,7 +534,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-approve"
           onClick={() => setApproveOpen(true)}
           disabled={busy}
-          className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
+          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11px] font-[650]"
         >
           {t("agents.approvals.confirmApprove")}
         </Button>
@@ -538,29 +542,48 @@ export function ApprovalDecisionForm({
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent
-          className="sm:max-w-sm"
+          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0"
           data-testid="approval-approve-dialog"
+          hideClose
         >
-          <DialogHeader>
-            <DialogTitle>{t("agents.approvals.approveTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("agents.approvals.approveDescription")}
-            </DialogDescription>
+          <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-warning">
+              <ShieldCheck className="h-[15px] w-[15px]" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
+                {t("agents.approvals.approveTitle")}
+              </DialogTitle>
+              <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+                {t("agents.approvals.approveDescription")}
+              </DialogDescription>
+            </div>
           </DialogHeader>
-          <div className="flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
-            <code
-              title={planHash}
-              className="min-w-0 flex-1 overflow-hidden font-mono text-[9.5px] whitespace-nowrap text-ellipsis text-muted-foreground"
-            >
-              {planHash.slice(0, 34)}…
-            </code>
+          <div className="px-4 pb-0.5">
+            <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] text-foreground">
+              <b className="block font-[650]">
+                {impactTitle ?? t("agents.approvals.approveImpactTitle")}
+              </b>
+              <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
+                {impactText ?? t("agents.approvals.approveImpactBody")}
+              </p>
+            </div>
+            <div className="mt-2.5 flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
+              <code
+                title={planHash}
+                className="min-w-0 flex-1 overflow-hidden font-mono text-[9.5px] whitespace-nowrap text-ellipsis text-muted-foreground"
+              >
+                {planHash.slice(0, 34)}…
+              </code>
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="px-4 pt-3 pb-3.5">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               onClick={() => setApproveOpen(false)}
               disabled={submitting}
+              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground"
             >
               {t("common.cancel")}
             </Button>
@@ -569,12 +592,11 @@ export function ApprovalDecisionForm({
               data-testid="approval-confirm"
               onClick={() => void submitApprove()}
               disabled={submitting || busy}
+              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
             >
               {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Check className="h-4 w-4" aria-hidden />
-              )}
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : null}
               {t("agents.approvals.confirmApprove")}
             </Button>
           </DialogFooter>

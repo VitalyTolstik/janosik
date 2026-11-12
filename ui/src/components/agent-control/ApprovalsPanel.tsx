@@ -536,6 +536,12 @@ export function ApprovalsPanel({
                     key={detail.id}
                     busy={busy}
                     planHash={detail.planHash}
+                    impactTitle={
+                      detail.kind === "destructive"
+                        ? t("agents.approvals.destructiveTitle")
+                        : undefined
+                    }
+                    impactText={detail.summary}
                     onDecide={decide}
                   />
                   <ApprovalCancelButton

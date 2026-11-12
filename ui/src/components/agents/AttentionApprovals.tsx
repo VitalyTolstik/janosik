@@ -33,12 +33,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
-import { formatDate, useI18n } from "@/i18n";
+import { formatDate, useI18n, type MessageKey } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
-  APPROVAL_KIND_KEYS,
-  APPROVAL_RISK_KEYS,
   APPROVAL_STATUS_KEYS,
   effectiveApprovalStatus,
 } from "@/utils/approval";
@@ -56,8 +54,55 @@ export interface AttentionApprovalRow extends ApprovalRequestDto {
 
 type ApprovalStatus = keyof typeof APPROVAL_STATUS_KEYS;
 
+const ACTION_LABEL_KEYS: Record<string, string> = {
+  ADD_CARD: "agents.approvals.action.addCard",
+  UPDATE_CARD: "agents.approvals.action.updateCard",
+  DELETE_CARD: "agents.approvals.action.deleteCard",
+  MOVE_CARD: "agents.approvals.action.moveCard",
+  DUPLICATE_CARD: "agents.approvals.action.duplicateCard",
+  ARCHIVE_CARD: "agents.approvals.action.archiveCard",
+  RESTORE_CARD: "agents.approvals.action.restoreCard",
+  ADD_COLUMN: "agents.approvals.action.addColumn",
+  RENAME_COLUMN: "agents.approvals.action.renameColumn",
+  DELETE_COLUMN: "agents.approvals.action.deleteColumn",
+  MOVE_COLUMN: "agents.approvals.action.moveColumn",
+  ADD_LABEL: "agents.approvals.action.addLabel",
+  RENAME_LABEL: "agents.approvals.action.renameLabel",
+  DELETE_LABEL: "agents.approvals.action.deleteLabel",
+  batch: "agents.approvals.action.batch",
+  revert: "agents.approvals.action.revert",
+};
+
+const RISK_SHORT_KEYS: Record<ApprovalRequestDto["risk"], string> = {
+  low: "agents.approvals.risk.low",
+  medium: "agents.approvals.risk.medium",
+  high: "agents.approvals.risk.high",
+};
+
 function minutesLeft(expiresAt: number, now: number): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 60_000));
+}
+
+function actionLabel(actionType: string, t: Translate): string {
+  const key = ACTION_LABEL_KEYS[actionType];
+  if (key !== undefined) return t(key as MessageKey);
+  const words = actionType.toLowerCase().replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function formatHistoryTime(ts: number, lang: string, t: Translate): string {
+  const date = new Date(ts);
+  const now = new Date();
+  const startOfDay = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const time = new Intl.DateTimeFormat(lang === "ru" ? "ru-RU" : "en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+  if (days === 0) return t("agents.approvals.todayAt", { time });
+  if (days === 1) return t("agents.approvals.yesterdayAt", { time });
+  return formatDate(ts, lang);
 }
 
 function lengthOfPlan(approval: ApprovalRequestDto): number {
@@ -323,6 +368,16 @@ export function AttentionApprovalList({
                     count: minutesLeft(row.expiresAt, now),
                   })
                 : formatDate(row.decidedAt ?? row.expiresAt, lang);
+            const cardKindKey =
+              row.kind === "destructive"
+                ? row.cardTitle !== undefined
+                  ? "destructiveCard"
+                  : "destructive"
+                : row.kind;
+            const cardKindSentence = t(
+              `agents.approvals.cardKind.${cardKindKey}` as MessageKey,
+              { card: row.cardTitle ?? "" },
+            );
             return (
               <li key={row.id}>
                 <article
@@ -363,8 +418,12 @@ export function AttentionApprovalList({
                       {t("agents.approvals.asksPrefix")}{" "}
                       <code className="font-mono text-[10.5px]">
                         {row.actionType}
-                      </code>
-                      . {t(APPROVAL_KIND_KEYS[row.kind])}.
+                      </code>{" "}
+                      {t("agents.approvals.asksOn")}{" "}
+                      <b className="font-semibold text-foreground">
+                        {row.boardTitle}
+                      </b>
+                      . {cardKindSentence}
                     </span>
                   </button>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -498,6 +557,8 @@ export function AttentionApprovalDetail({
   const boardCard =
     detail?.cardId != null ? board?.cards[detail.cardId] : undefined;
   const cardTitle = boardCard?.title ?? fallbackCardTitle ?? null;
+  const destructiveCard =
+    detail?.actionType === "DELETE_CARD" && cardTitle !== null;
   const requestedBy =
     memberName(detail?.requestedBy ?? null) ?? detail?.requestedBy ?? "";
   const decidedBy =
@@ -653,10 +714,16 @@ export function AttentionApprovalDetail({
               >
                 <p className="flex items-center gap-1.5 text-[11px] font-[650] text-foreground">
                   <AlertTriangle className="h-3 w-3 text-danger" aria-hidden />
-                  {t("agents.approvals.destructiveTitle")}
+                  {destructiveCard
+                    ? t("agents.approvals.destructiveCardTitle")
+                    : t("agents.approvals.destructiveTitle")}
                 </p>
                 <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
-                  {t("agents.approvals.destructiveBody")}
+                  {destructiveCard
+                    ? t("agents.approvals.destructiveCardBody", {
+                        card: cardTitle,
+                      })
+                    : t("agents.approvals.destructiveBody")}
                 </p>
               </div>
             ) : null}
@@ -677,7 +744,7 @@ export function AttentionApprovalDetail({
                     agentName
                   )}
                 </RequestMeta>
-                <RequestMeta label={t("agentControl.approvals.session")}>
+                <RequestMeta label={t("agents.approvals.sessionLabel")}>
                   {detail.agentSessionId === null ? (
                     t("agentControl.approvals.noSession")
                   ) : session?.name !== undefined ? (
@@ -701,18 +768,10 @@ export function AttentionApprovalDetail({
                     </Link>
                   )}
                 </RequestMeta>
-                <RequestMeta
-                  label={
-                    effectiveStatus === "pending"
-                      ? t("agents.approvals.expiresLabel")
-                      : t("agents.approvals.requested")
-                  }
-                >
-                  {effectiveStatus === "pending"
-                    ? t("agents.approvals.inMinutes", {
-                        count: minutesLeft(detail.expiresAt, now),
-                      })
-                    : formatDate(detail.createdAt, lang)}
+                <RequestMeta label={t("agents.approvals.expiresLabel")}>
+                  {t("agents.approvals.inMinutes", {
+                    count: minutesLeft(detail.expiresAt, now),
+                  })}
                 </RequestMeta>
               </div>
             </DetailSection>
@@ -754,7 +813,7 @@ export function AttentionApprovalDetail({
                   </span>
                   <b
                     className={cn(
-                      "mt-0.5 block font-mono text-[11px] leading-[1.4] font-semibold break-all",
+                      "mt-0.5 block text-[11px] leading-[1.4] font-semibold break-words",
                       detail.risk === "high" || detail.kind === "destructive"
                         ? "text-danger"
                         : detail.risk === "medium"
@@ -762,7 +821,7 @@ export function AttentionApprovalDetail({
                           : "text-foreground",
                     )}
                   >
-                    {detail.actionType}
+                    {actionLabel(detail.actionType, t)}
                   </b>
                 </div>
               </div>
@@ -813,8 +872,8 @@ export function AttentionApprovalDetail({
                     name: requestedBy,
                   })}
                   detail={t("agents.approvals.historyMeta", {
-                    time: formatDate(detail.createdAt, lang),
-                    risk: t(APPROVAL_RISK_KEYS[detail.risk]),
+                    time: formatHistoryTime(detail.createdAt, lang, t),
+                    risk: t(RISK_SHORT_KEYS[detail.risk] as MessageKey),
                     ttl: ttlMinutes,
                   })}
                 />
@@ -845,7 +904,11 @@ export function AttentionApprovalDetail({
                           })
                         : t(APPROVAL_STATUS_KEYS[effectiveStatus])
                     }
-                    detail={`${detail.decidedAt === null ? formatDate(detail.expiresAt, lang) : formatDate(detail.decidedAt, lang)}${
+                    detail={`${formatHistoryTime(
+                      detail.decidedAt ?? detail.expiresAt,
+                      lang,
+                      t,
+                    )}${
                       detail.decisionComment !== null
                         ? ` · “${detail.decisionComment}”`
                         : ""
@@ -856,7 +919,7 @@ export function AttentionApprovalDetail({
                   <HistoryItem
                     tone="primary"
                     title={t("agents.approvals.historyApplied")}
-                    detail={formatDate(detail.consumedAt, lang)}
+                    detail={formatHistoryTime(detail.consumedAt, lang, t)}
                   />
                 ) : null}
               </div>
@@ -900,6 +963,18 @@ export function AttentionApprovalDetail({
               key={`${detail.id}-${initialMode ?? "idle"}`}
               busy={busy}
               planHash={detail.planHash}
+              impactTitle={
+                destructiveCard
+                  ? t("agents.approvals.destructiveCardTitle")
+                  : undefined
+              }
+              impactText={
+                destructiveCard
+                  ? t("agents.approvals.destructiveCardBody", {
+                      card: cardTitle ?? "",
+                    })
+                  : detail.summary
+              }
               initialMode={initialMode}
               onDecide={decide}
             />

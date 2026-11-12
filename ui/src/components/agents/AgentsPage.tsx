@@ -207,12 +207,6 @@ export function AgentsPage() {
     );
   }, [setParams]);
 
-  const hasFilters =
-    filter.board !== "all" ||
-    filter.token !== "all" ||
-    filter.status !== "all" ||
-    filter.time !== "any" ||
-    filter.query.trim() !== "";
   const pending = usePendingApprovals(state.boards, !state.isAgentToken);
   const runs = useAgentRuns(state.boards, section === "runs");
   const [approvalFilter, setApprovalFilter] =
@@ -654,7 +648,7 @@ export function AgentsPage() {
                 <div className="relative min-w-40 flex-1 basis-full md:max-w-[340px] md:basis-0">
                   <Search
                     aria-hidden
-                    className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+                    className="pointer-events-none absolute top-1/2 left-2 h-[13px] w-[13px] -translate-y-1/2 text-muted-foreground"
                   />
                   <Input
                     type="search"
@@ -664,7 +658,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 pl-8 text-xs md:h-7 md:min-h-7"
+                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground/78 focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -702,16 +696,6 @@ export function AgentsPage() {
                   counts={pending.counts}
                   totalCount={pendingAll}
                 />
-                {hasFilters ? (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    data-testid="agents-clear-filters-inline"
-                    className="min-h-11 shrink-0 text-[10.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground md:min-h-7"
-                  >
-                    {t("agents.clearFilters")}
-                  </button>
-                ) : null}
               </>
             ) : (
               <>
