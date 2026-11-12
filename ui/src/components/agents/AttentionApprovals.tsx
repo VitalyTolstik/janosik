@@ -497,6 +497,7 @@ export function AttentionApprovalDetail({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the detail while the new request runs
     setError(false);
     setDetail(null);
+    setHashCopied(false);
     void api
       .getApproval(boardId, approvalId)
       .then((next) => {
@@ -572,18 +573,22 @@ export function AttentionApprovalDetail({
       ? statusHint(effectiveStatus, detail.expiresAt, now, t)
       : null;
 
-  const copyHash = () => {
+  const copyHash = async () => {
     if (detail === null) return;
-    const clipboard = navigator.clipboard;
-    if (clipboard === undefined) return;
-    void clipboard.writeText(detail.planHash).then(
-      () => {
-        setHashCopied(true);
-        toast.success(t("agents.approvals.copiedToast"));
-        window.setTimeout(() => setHashCopied(false), 1500);
-      },
-      () => undefined,
-    );
+    try {
+      await navigator.clipboard.writeText(detail.planHash);
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = detail.planHash;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+    setHashCopied(true);
+    toast.success(t("agents.approvals.copiedToast"));
   };
 
   const decide = async (
@@ -609,27 +614,6 @@ export function AttentionApprovalDetail({
     } catch (submitError) {
       toast.error(decisionError(submitError, t));
       setRevision((value) => value + 1);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cancel = async (): Promise<boolean> => {
-    if (detail === null) return false;
-    setBusy(true);
-    try {
-      const updated = await api.cancelApproval(boardId, detail.id);
-      setDetail(updated);
-      onChanged();
-      toast.success(t("agentControl.approvals.cancelledToast"));
-      return true;
-    } catch (submitError) {
-      toast.error(
-        submitError instanceof ApiError && submitError.offline
-          ? t("agentControl.error.offline")
-          : t("agentControl.approvals.cancelError"),
-      );
       return false;
     } finally {
       setBusy(false);
@@ -845,7 +829,7 @@ export function AttentionApprovalDetail({
                   variant="ghost"
                   size="icon"
                   className="h-[22px] w-[22px] shrink-0"
-                  onClick={copyHash}
+                  onClick={() => void copyHash()}
                   aria-label={t("agentControl.approvals.copyHash")}
                   data-testid="approval-copy-hash"
                 >
@@ -929,11 +913,7 @@ export function AttentionApprovalDetail({
               title={t("agents.approvals.related")}
               icon={<Link2 aria-hidden />}
             >
-              <ApprovalLinks
-                approval={detail}
-                onCancelRequest={canDecide ? cancel : undefined}
-                cancelBusy={busy}
-              />
+              <ApprovalLinks approval={detail} />
             </DetailSection>
 
             <details

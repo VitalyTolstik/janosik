@@ -257,15 +257,7 @@ function shorten(value: string, max = 12): string {
 }
 
 /** Deep links always carry the board id; the token opens an info dialog. */
-export function ApprovalLinks({
-  approval,
-  onCancelRequest,
-  cancelBusy = false,
-}: {
-  approval: ApprovalRequestDto;
-  onCancelRequest?: () => Promise<boolean>;
-  cancelBusy?: boolean;
-}) {
+export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
   const { t } = useI18n();
   const toast = useToast();
   const base = `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=attention`;
@@ -347,13 +339,6 @@ export function ApprovalLinks({
           )}
           {t("agents.approvals.copyLink")}
         </button>
-        {onCancelRequest !== undefined ? (
-          <ApprovalCancelButton
-            busy={cancelBusy}
-            onCancel={onCancelRequest}
-            className={cn(RELATED_CLASS, "hover:bg-transparent")}
-          />
-        ) : null}
       </div>
       <span className="sr-only" aria-live="polite">
         {copied ? t("agentControl.approvals.copied") : ""}
