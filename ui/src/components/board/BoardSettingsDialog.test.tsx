@@ -304,6 +304,19 @@ describe("BoardSettingsDialog shell", () => {
     );
   });
 
+  it("shows the combined dirty state in the workflow footer", () => {
+    renderDialog();
+    makePolicyDirty();
+    fireEvent.click(screen.getByTestId("board-settings-workflow"));
+
+    expect(screen.getByTestId("workflow-dirty")).toHaveTextContent(
+      "Unsaved changes",
+    );
+    expect(
+      screen.getByText("Unsaved changes are in Agents & automation"),
+    ).toBeVisible();
+  });
+
   it("shows the pending approvals badge on the agents rail", () => {
     mocks.pendingCount = 3;
     renderDialog();

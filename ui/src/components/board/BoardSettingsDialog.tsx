@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bot, GitBranch } from "lucide-react";
+import { GitBranch, Shield } from "lucide-react";
 import type { BoardSummary, BoardWorkflow } from "@janosik/shared";
 
 import { WorkflowSettings } from "@/components/board/workflow/WorkflowSettings";
@@ -80,7 +80,7 @@ export function BoardSettingsDialog({
     {
       id: "agents",
       label: t("board.settings.shell.agents"),
-      icon: Bot,
+      icon: Shield,
       badge:
         role === "ADMIN" && !pending.error && pendingCount > 0
           ? pendingCount > 99
@@ -162,6 +162,8 @@ export function BoardSettingsDialog({
             canEdit={role === "ADMIN"}
             role={role}
             saving={saving}
+            shellDirty={dirty}
+            shellSaving={saving}
             onSave={save}
             onDirtyChange={setWorkflowDirty}
             testIdPrefix="workflow"

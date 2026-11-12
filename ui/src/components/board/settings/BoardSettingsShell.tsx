@@ -169,7 +169,7 @@ export function BoardSettingsShell({
           </span>
           <button
             type="button"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:absolute max-sm:right-2 max-sm:top-2 max-sm:z-[3] max-sm:h-11 max-sm:w-11 max-sm:bg-popover"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:absolute max-md:right-2 max-md:top-2 max-md:z-[3] max-md:h-11 max-md:w-11 max-md:bg-popover"
             aria-label={t("common.close")}
             data-testid={closeTestId}
             onClick={() => requestOpenChange(false)}
@@ -222,7 +222,7 @@ export function BoardSettingsShell({
                     <Icon className="h-3.5 w-3.5" aria-hidden />
                     {entry.label}
                     {entry.badge ? (
-                      <span className="ml-auto inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-warning px-1 text-[10px] font-[650] leading-none text-white">
+                      <span className="ml-auto inline-flex h-[17px] min-w-[17px] shrink-0 items-center justify-center rounded-full bg-warning px-1 text-[10.5px] font-extrabold leading-none tabular-nums text-[#1b1305] shadow-[0_0_0_1px_color-mix(in_oklab,var(--warning)_20%,transparent)]">
                         {entry.badge}
                       </span>
                     ) : null}

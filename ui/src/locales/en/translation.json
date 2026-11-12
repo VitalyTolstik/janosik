@@ -1325,6 +1325,7 @@
   "board.settings.shell.saved": "All changes saved",
   "board.settings.shell.unsaved": "Unsaved changes",
   "board.settings.shell.saving": "Saving…",
+  "board.settings.shell.unsavedInAgents": "Unsaved changes are in Agents & automation",
   "board.settings.shell.noteTitle": "One settings surface",
   "board.settings.shell.hint": "Workflow and agent guardrails share the same shell. Members and access stay in the board dialog; API keys live in Account.",
   "board.settings.title": "Board settings",
