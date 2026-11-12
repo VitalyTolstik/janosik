@@ -210,6 +210,22 @@ export function apiBaseUrl(): string {
 
 /** Web Locks name: one refresh at a time per browser profile. */
 export const REFRESH_LOCK = "janosik:auth-refresh";
+const PENDING_LOGOUT = "janosik:pending-logout";
+function setPendingLogout(value: boolean): void {
+  try {
+    if (value) localStorage.setItem(PENDING_LOGOUT, "1");
+    else localStorage.removeItem(PENDING_LOGOUT);
+  } catch {
+    /* storage unavailable */
+  }
+}
+export function hasPendingLogout(): boolean {
+  try {
+    return localStorage.getItem(PENDING_LOGOUT) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Run `task` under a cross-tab lock when the browser has the Web Locks API.
@@ -229,6 +245,20 @@ async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   if (locks === undefined) return task();
   return locks.request(REFRESH_LOCK, task);
+}
+
+let fallbackAuthQueue: Promise<void> = Promise.resolve();
+async function withInteractiveAuthLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (locks === undefined) {
+    const result = fallbackAuthQueue.then(task, task);
+    fallbackAuthQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+  return locks.request("janosik:auth-interactive", task);
 }
 
 export class ApiClient {
@@ -284,26 +314,32 @@ export class ApiClient {
     password: string,
     displayName?: string,
   ): Promise<AuthResponseDto> {
-    const response = await this.request<AuthResponseDto>("/auth/register", {
-      method: "POST",
-      body: { email, password, displayName },
-      auth: false,
+    return withInteractiveAuthLock(async () => {
+      const response = await this.request<AuthResponseDto>("/auth/register", {
+        method: "POST",
+        body: { email, password, displayName },
+        auth: false,
+      });
+      this.accessToken = response.accessToken;
+      this.sessionEpoch += 1;
+      setPendingLogout(false);
+      return response;
     });
-    this.accessToken = response.accessToken;
-    this.sessionEpoch += 1;
-    return response;
   }
 
   /** `POST /auth/login` — starts the session; the refresh cookie is set. */
   async login(email: string, password: string): Promise<AuthResponseDto> {
-    const response = await this.request<AuthResponseDto>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-      auth: false,
+    return withInteractiveAuthLock(async () => {
+      const response = await this.request<AuthResponseDto>("/auth/login", {
+        method: "POST",
+        body: { email, password },
+        auth: false,
+      });
+      this.accessToken = response.accessToken;
+      this.sessionEpoch += 1;
+      setPendingLogout(false);
+      return response;
     });
-    this.accessToken = response.accessToken;
-    this.sessionEpoch += 1;
-    return response;
   }
 
   async requestPasswordReset(email: string): Promise<void> {
@@ -328,15 +364,33 @@ export class ApiClient {
 
   /** `POST /auth/logout` — revokes the refresh session server-side. */
   async logout(): Promise<void> {
+    setPendingLogout(true);
+    const epoch = this.sessionEpoch;
     try {
-      await this.request<{ status: "ok" }>("/auth/logout", {
+      await withInteractiveAuthLock(async () => {
+        await this.request<{ status: "ok" }>("/auth/logout", {
+          method: "POST",
+          body: {},
+          auth: false,
+        });
+        setPendingLogout(false);
+        if (epoch === this.sessionEpoch) this.clearAccessToken();
+      });
+    } finally {
+      if (epoch === this.sessionEpoch) this.clearAccessToken();
+    }
+  }
+
+  async retryPendingLogout(): Promise<void> {
+    await withInteractiveAuthLock(async () => {
+      if (!hasPendingLogout()) return;
+      await this.request("/auth/logout", {
         method: "POST",
         body: {},
         auth: false,
       });
-    } finally {
-      this.clearAccessToken();
-    }
+      setPendingLogout(false);
+    });
   }
 
   /**
@@ -377,6 +431,16 @@ export class ApiClient {
   /** Full-page navigation target that starts the OAuth round trip. */
   oauthStartUrl(provider: string): string {
     return `${apiBaseUrl()}/auth/oauth/${provider}/start`;
+  }
+
+  startOAuthLink(
+    provider: string,
+    password: string,
+  ): Promise<{ redirectUrl: string }> {
+    return this.request(`/auth/oauth/${encodeURIComponent(provider)}/link`, {
+      method: "POST",
+      body: { password },
+    });
   }
 
   /**
@@ -426,6 +490,10 @@ export class ApiClient {
     return this.request<UserDataExportDto>(
       `/users/me/export/${encodeURIComponent(exportId)}`,
     );
+  }
+
+  latestAccountExport(): Promise<UserDataExportDto | null> {
+    return this.request<UserDataExportDto | null>("/users/me/export/latest");
   }
 
   /** Download a ready export as a blob (session-only, TTL link). */
@@ -527,16 +595,26 @@ export class ApiClient {
    * login), so the stored access token is replaced here.
    */
   async confirmEmailChange(code: string): Promise<AuthResponseDto> {
-    const response = await this.request<AuthResponseDto>(
-      "/auth/email/change/confirm",
-      {
-        method: "POST",
-        body: { code },
-      },
-    );
-    this.accessToken = response.accessToken;
-    this.sessionEpoch += 1;
-    return response;
+    return withInteractiveAuthLock(async () => {
+      const epoch = this.sessionEpoch;
+      const response = await this.request<AuthResponseDto>(
+        "/auth/email/change/confirm",
+        {
+          method: "POST",
+          body: { code },
+        },
+      );
+      if (epoch !== this.sessionEpoch)
+        throw new ApiError(
+          0,
+          null,
+          "Session changed during email confirmation",
+          true,
+        );
+      this.accessToken = response.accessToken;
+      this.sessionEpoch += 1;
+      return response;
+    });
   }
 
   /** `GET /users/me/tokens` — personal API tokens (TASK-36.1). */
@@ -1205,7 +1283,7 @@ export class ApiClient {
       return fetch(`${base}${path}`, { headers, credentials: "include" });
     };
     try {
-      const response = await send();
+      let response = await send();
       if (response.status === 401 && this.accessToken !== null) {
         if (this.impersonating) {
           this.onAuthLost?.();
@@ -1213,9 +1291,10 @@ export class ApiClient {
         }
         const restored = await this.refreshSession();
         if (restored !== null || this.accessToken !== null) {
-          return send();
+          response = await send();
+        } else {
+          this.onAuthLost?.();
         }
-        this.onAuthLost?.();
       }
       if (!response.ok) throw new ApiError(response.status, null);
       return response;
@@ -1236,6 +1315,7 @@ export class ApiClient {
       if (
         error instanceof ApiError &&
         error.status === 401 &&
+        error.code !== "current_password_invalid" &&
         init.auth !== false
       ) {
         // TASK-85: a dead view-as token must not be refreshed against the

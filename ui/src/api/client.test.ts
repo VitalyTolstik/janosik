@@ -32,6 +32,59 @@ function headerOf(init: RequestInit | undefined, name: string): string | null {
 }
 
 describe("ApiClient", () => {
+  it("refreshes an expired session before confirming an email change", async () => {
+    const calls: string[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input, init) => {
+        const path = pathOf(input);
+        calls.push(path);
+        if (path.endsWith("/auth/login"))
+          return json({ accessToken: "stale", user });
+        if (path.endsWith("/auth/refresh"))
+          return json({ accessToken: "fresh", user });
+        return headerOf(init, "Authorization") === "Bearer fresh"
+          ? json({ accessToken: "changed", user })
+          : json({ message: "Unauthorized" }, 401);
+      },
+    });
+    await client.login("admin@example.com", "password123");
+    await client.confirmEmailChange("123456");
+    expect(calls.filter((path) => path.endsWith("/auth/refresh"))).toHaveLength(
+      1,
+    );
+    expect(
+      calls.filter((path) => path.endsWith("/auth/email/change/confirm")),
+    ).toHaveLength(2);
+    expect(client.getAccessToken()).toBe("changed");
+  });
+  it("does not refresh and replay a wrong password", async () => {
+    let attempts = 0;
+    let refreshes = 0;
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        const path = pathOf(input);
+        if (path.endsWith("/auth/login"))
+          return json({ accessToken: "access", user });
+        if (path.endsWith("/auth/refresh")) {
+          refreshes += 1;
+          return json({ accessToken: "fresh", user });
+        }
+        attempts += 1;
+        return json(
+          { code: "current_password_invalid", message: "Wrong password" },
+          401,
+        );
+      },
+    });
+    await client.login("admin@example.com", "password123");
+    await expect(
+      client.changePassword("wrong", "newpassword"),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(attempts).toBe(1);
+    expect(refreshes).toBe(0);
+  });
   it("logs in, keeps the token in memory and attaches it to later calls", async () => {
     const calls: Array<{ path: string; auth: string | null }> = [];
     const client = new ApiClient({

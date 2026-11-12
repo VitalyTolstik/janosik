@@ -124,6 +124,14 @@ export class UsersController {
   }
 
   @UseGuards(SessionOnlyGuard)
+  @Get("me/export/latest")
+  latestExport(
+    @CurrentUser() user: AuthUser,
+  ): Promise<UserDataExportDto | null> {
+    return this.accountData.latestExport(user.id);
+  }
+
+  @UseGuards(SessionOnlyGuard)
   @Get("me/export/:id")
   exportStatus(
     @CurrentUser() user: AuthUser,

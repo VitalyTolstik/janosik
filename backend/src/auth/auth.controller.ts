@@ -220,10 +220,8 @@ export class AuthController {
   }
 
   /**
-   * Email change (TASK-51), step 2 — code in, address swapped, every refresh
-   * session revoked and a fresh token pair handed back (same contract as
-   * login). The old caller cookie is revoked too; the route lives under
-   * `/auth` so the new cookie is scoped where refresh expects it.
+   * Email change: the caller's refresh cookie proves its session and stays
+   * unchanged; other sessions are revoked and a new access token is returned.
    */
   @UseGuards(JwtAuthGuard, SessionOnlyGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -233,14 +231,15 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Body() dto: ConfirmEmailChangeDto,
     @Headers("accept-language") acceptLanguage: string | undefined,
-    @Res({ passthrough: true }) res: Response,
+    @RefreshToken() refreshToken: string | undefined,
   ): Promise<AuthResponse> {
     const result = await this.auth.confirmEmailChange(
       user.id,
       dto,
       pickLocale(acceptLanguage),
+      refreshToken,
     );
-    return this.withRefreshCookie(res, result);
+    return result;
   }
 
   /**

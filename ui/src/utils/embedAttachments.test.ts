@@ -149,6 +149,23 @@ describe("attachmentImagePreviewHandler", () => {
     expect(svg).not.toContain("⚠");
     vi.unstubAllGlobals();
   });
+
+  it("retries a temporary failure instead of caching the placeholder", async () => {
+    vi.mocked(api.fetchAttachment)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(new Blob(["bits"], { type: "image/png" }));
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, { createObjectURL: () => "blob:retry" }),
+    );
+    const src = "/api/v1/attachments/att-retry/content";
+    expect(await attachmentImagePreviewHandler(src)).toMatch(
+      /^data:image\/svg/,
+    );
+    expect(await attachmentImagePreviewHandler(src)).toBe("blob:retry");
+    expect(api.fetchAttachment).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("fullscreen viewer (lightbox)", () => {

@@ -53,6 +53,15 @@ model User {
   emailChanges    EmailChangeCode[]
   verifications   EmailVerificationCode[]
   passwordReset   PasswordResetToken?
+  oauthIdentities OAuthIdentity[]
+}
+
+model OAuthIdentity {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider String
+  @@unique([userId, provider])
 }
 
 model PasswordResetToken {
