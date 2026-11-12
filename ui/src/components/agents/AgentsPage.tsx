@@ -729,15 +729,22 @@ export function AgentsPage() {
           {(state.error || offline) && (
             <div
               className={cn(
-                "mb-2.5 flex flex-wrap items-center gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
+                "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                 state.rows.length === 0
                   ? "border-danger/40 bg-danger/10 text-danger"
-                  : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-warning",
+                  : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
               )}
               data-testid="agents-error"
               role="alert"
             >
-              <span>
+              <AlertTriangle
+                className={cn(
+                  "mt-px h-3.5 w-3.5 shrink-0",
+                  state.rows.length === 0 ? "text-danger" : "text-warning",
+                )}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
                 {offline ? (
                   t("agents.shell.offline")
                 ) : state.rows.length === 0 ? (
@@ -754,9 +761,10 @@ export function AgentsPage() {
               <button
                 type="button"
                 onClick={state.reload}
-                className="ml-auto min-h-11 rounded-md border border-current/40 px-2.5 text-[11px] font-[650] md:h-7 md:min-h-7"
+                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
                 data-testid="agents-retry"
               >
+                <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.retry")}
               </button>
             </div>
