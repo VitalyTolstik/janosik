@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentSessionDto,
@@ -120,27 +121,31 @@ let onOpenChange: (open: boolean) => void;
 function renderDialog() {
   onOpenChange = vi.fn();
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <BoardLiveProvider live={live}>
-          <AgentControlDialog open onOpenChange={onOpenChange} />
-        </BoardLiveProvider>
-      </ToastProvider>
-    </I18nProvider>,
+    <MemoryRouter>
+      <I18nProvider>
+        <ToastProvider>
+          <BoardLiveProvider live={live}>
+            <AgentControlDialog open onOpenChange={onOpenChange} />
+          </BoardLiveProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </MemoryRouter>,
   );
 }
 
 function renderButton() {
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <TooltipProvider>
-          <BoardLiveProvider live={live}>
-            <AgentControlButton onOpen={vi.fn()} />
-          </BoardLiveProvider>
-        </TooltipProvider>
-      </ToastProvider>
-    </I18nProvider>,
+    <MemoryRouter>
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <BoardLiveProvider live={live}>
+              <AgentControlButton onOpen={vi.fn()} />
+            </BoardLiveProvider>
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -157,7 +162,7 @@ describe("agent control (TASK-166.14)", () => {
     vi.restoreAllMocks();
   });
 
-  it("loads the queue and approves the exact plan hash with a comment", async () => {
+  it("loads the queue and approves the exact plan hash", async () => {
     const row = approval();
     const decided = approval({
       status: "approved",
@@ -185,20 +190,18 @@ describe("agent control (TASK-166.14)", () => {
     );
 
     await userEvent.click(screen.getByTestId("approval-approve"));
-    await userEvent.type(screen.getByTestId("approval-comment"), "Ship it");
+    expect(
+      await screen.findByTestId("approval-approve-dialog"),
+    ).toHaveTextContent("Approve this exact plan?");
     await userEvent.click(screen.getByTestId("approval-confirm"));
 
     await waitFor(() =>
       expect(decide).toHaveBeenCalledWith("board-1", row.id, {
         decision: "approve",
         planHash: row.planHash,
-        comment: "Ship it",
       }),
     );
     expect(await screen.findByText("Approval granted")).toBeInTheDocument();
-    expect(
-      await screen.findByTestId("approval-comment-view"),
-    ).toHaveTextContent("Ship it");
   });
 
   it("requires a reason and sends the plan hash when rejecting", async () => {

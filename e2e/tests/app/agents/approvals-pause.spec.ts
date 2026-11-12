@@ -116,14 +116,11 @@ test("an agent request appears live, is approved with a reason and consumed afte
   await expect(page.getByTestId("approval-risk")).toContainText("Medium risk");
 
   await page.getByTestId("approval-approve").click();
-  await page.getByTestId("approval-comment").fill("Looks safe");
+  await expect(page.getByTestId("approval-approve-dialog")).toBeVisible();
   await page.getByTestId("approval-confirm").click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
     "data-status",
     "approved",
-  );
-  await expect(page.getByTestId("approval-comment-view")).toContainText(
-    "Looks safe",
   );
 
   // The agent applies the same plan with the approval id; the open dialog
@@ -160,11 +157,18 @@ test("the global agents inbox lists and approves a board request", async ({
   await row.click();
 
   await expect(page.getByTestId("agents-approval-detail")).toBeVisible();
-  await expect(page.getByTestId("approval-plan-hash")).toHaveText(ref.planHash);
-  await expect(page.getByTestId("approval-plan-command")).toContainText(
-    "DELETE_CARD",
+  await expect(page.getByTestId("approval-plan-hash")).toContainText(
+    ref.planHash.slice(0, 44),
   );
+  await page
+    .getByTestId("agents-approval-technical")
+    .locator("summary")
+    .click();
+  await expect(
+    page.getByTestId("agents-approval-technical").locator("pre"),
+  ).toContainText("DELETE_CARD");
   await page.getByTestId("approval-approve").click();
+  await expect(page.getByTestId("approval-approve-dialog")).toBeVisible();
   await page.getByTestId("approval-confirm").click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
     "data-status",

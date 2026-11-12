@@ -535,6 +535,7 @@ export function ApprovalsPanel({
                   <ApprovalDecisionForm
                     key={detail.id}
                     busy={busy}
+                    planHash={detail.planHash}
                     onDecide={decide}
                   />
                   <ApprovalCancelButton

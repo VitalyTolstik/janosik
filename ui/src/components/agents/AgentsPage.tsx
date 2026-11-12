@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import type { BoardSummary } from "@janosik/shared";
 
-import { isApiEnabled } from "@/api/client";
+import { api, isApiEnabled } from "@/api/client";
 import {
   AgentLastSeen,
   AgentLiveDot,
@@ -75,6 +75,7 @@ export function AgentsPage() {
     : "attention";
   const [now, setNow] = useState(() => Date.now());
   const [offline, setOffline] = useState(() => !navigator.onLine);
+  const [approvalIntent, setApprovalIntent] = useState<"reject" | null>(null);
 
   useEffect(() => {
     const previous = document.title;
@@ -135,7 +136,8 @@ export function AgentsPage() {
   };
 
   const openApproval = useCallback(
-    (row: AttentionApprovalRow) => {
+    (row: AttentionApprovalRow, mode: "reject" | null = null) => {
+      setApprovalIntent(mode);
       setParams(
         (current) => {
           const next = new URLSearchParams(current);
@@ -153,6 +155,7 @@ export function AgentsPage() {
   );
 
   const closeApproval = useCallback(() => {
+    setApprovalIntent(null);
     setParams(
       (current) => {
         const next = new URLSearchParams(current);
@@ -214,29 +217,89 @@ export function AgentsPage() {
   const runs = useAgentRuns(state.boards, section === "runs");
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
-  const scopedApprovalRows = useMemo(() => {
-    const query = filter.query.trim().toLowerCase();
-    return pending.rows.filter((row) => {
-      if (filter.board !== "all" && row.boardId !== filter.board) return false;
-      if (filter.token !== "all" && row.requestedByTokenId !== filter.token) {
-        return false;
+  const approvalAgentNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const token of state.tokens) names.set(token.id, token.name);
+    for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
+    return names;
+  }, [state.rows, state.tokens]);
+  const approvalBoardIds = useMemo(
+    () => [...new Set(pending.rows.map((row) => row.boardId))],
+    [pending.rows],
+  );
+  const [loadedApprovalCards, setLoadedApprovalCards] = useState<
+    Map<string, string>
+  >(() => new Map());
+  useEffect(() => {
+    if (approvalBoardIds.length === 0) return;
+    let alive = true;
+    void Promise.allSettled(
+      approvalBoardIds.map((boardId) => api.getBoard(boardId)),
+    ).then((results) => {
+      if (!alive) return;
+      const titles = new Map<string, string>();
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        for (const card of Object.values(result.value.cards)) {
+          titles.set(card.id, card.title);
+        }
       }
-      if (query === "") return true;
-      return [
-        row.summary,
-        row.actionType,
-        row.planHash,
-        row.boardTitle,
-        row.requestedByTokenId,
-        row.cardId,
-        row.agentSessionId,
-      ]
-        .filter((value): value is string => typeof value === "string")
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
+      setLoadedApprovalCards(titles);
     });
-  }, [filter.board, filter.query, filter.token, pending.rows]);
+    return () => {
+      alive = false;
+    };
+  }, [approvalBoardIds]);
+  const approvalCardTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const row of state.rows) {
+      if (row.currentCardId !== null && row.cardTitle !== null) {
+        titles.set(row.currentCardId, row.cardTitle);
+      }
+    }
+    for (const [cardId, title] of loadedApprovalCards) {
+      if (!titles.has(cardId)) titles.set(cardId, title);
+    }
+    return titles;
+  }, [loadedApprovalCards, state.rows]);
+  const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
+    const query = filter.query.trim().toLowerCase();
+    return pending.rows
+      .filter((row) => {
+        if (filter.board !== "all" && row.boardId !== filter.board)
+          return false;
+        if (filter.token !== "all" && row.requestedByTokenId !== filter.token) {
+          return false;
+        }
+        if (query === "") return true;
+        return [
+          row.summary,
+          row.actionType,
+          row.planHash,
+          row.boardTitle,
+          row.requestedByTokenId,
+          row.cardId,
+          row.agentSessionId,
+        ]
+          .filter((value): value is string => typeof value === "string")
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      })
+      .map((row) => ({
+        ...row,
+        agentName: approvalAgentNames.get(row.requestedByTokenId),
+        cardTitle:
+          row.cardId === null ? undefined : approvalCardTitles.get(row.cardId),
+      }));
+  }, [
+    approvalAgentNames,
+    approvalCardTitles,
+    filter.board,
+    filter.query,
+    filter.token,
+    pending.rows,
+  ]);
   const pendingAll = state.boards
     .filter((board) => board.role === "ADMIN")
     .reduce((total, board) => total + (pending.counts[board.id] ?? 0), 0);
@@ -262,12 +325,12 @@ export function AgentsPage() {
   const selectedSession = params.get("session");
   const selectedApprovalId = params.get("approval");
   const approvalBoardId = params.get("board");
-  const selectedApprovalRow =
+  const selectedApprovalBase =
     selectedApprovalId === null
       ? undefined
       : pending.rows.find((row) => row.id === selectedApprovalId);
   const approvalBoardTitle =
-    selectedApprovalRow?.boardTitle ??
+    selectedApprovalBase?.boardTitle ??
     state.boards.find((board) => board.id === approvalBoardId)?.title ??
     "";
   const filtered = useMemo(
@@ -890,7 +953,7 @@ export function AgentsPage() {
                           onFilterChange={setApprovalFilter}
                           selectedId={selectedApprovalId}
                           onSelect={openApproval}
-                          onChanged={pending.reload}
+                          onReject={(row) => openApproval(row, "reject")}
                           now={now}
                         />
                       </>
@@ -965,6 +1028,19 @@ export function AgentsPage() {
             boardId={approvalBoardId}
             approvalId={selectedApprovalId}
             boardTitle={approvalBoardTitle}
+            fallbackAgentName={
+              selectedApprovalBase === undefined
+                ? undefined
+                : approvalAgentNames.get(
+                    selectedApprovalBase.requestedByTokenId,
+                  )
+            }
+            fallbackCardTitle={
+              selectedApprovalBase?.cardId == null
+                ? undefined
+                : approvalCardTitles.get(selectedApprovalBase.cardId)
+            }
+            initialMode={approvalIntent}
             onChanged={pending.reload}
             onBack={closeApproval}
           />

@@ -1,13 +1,18 @@
 import { useState, type FormEvent } from "react";
 import {
+  Activity,
   AlertTriangle,
   Check,
+  CircleSlash,
   Copy,
-  ExternalLink,
+  Folder,
+  History,
+  KeyRound,
+  Link2,
   Loader2,
-  ShieldAlert,
-  X,
+  ShieldCheck,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import type {
   ApprovalRequestDto,
   ApprovalRisk,
@@ -16,11 +21,23 @@ import type {
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import { APPROVAL_RISK_KEYS, APPROVAL_STATUS_KEYS } from "@/utils/approval";
+
+const RELATED_CLASS =
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[10px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground";
 
 const STATUS_CLASS: Record<ApprovalStatus, string> = {
   pending: "border-warning/40 bg-warning/10 text-warning",
@@ -79,11 +96,10 @@ export function ApprovalRiskBadge({
       data-testid={testId}
       data-risk={risk}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        "inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10.5px] font-semibold whitespace-nowrap",
         RISK_CLASS[risk],
       )}
     >
-      <ShieldAlert className="h-3 w-3" aria-hidden />
       {t(APPROVAL_RISK_KEYS[risk])}
     </span>
   );
@@ -175,6 +191,7 @@ export function ApprovalHash({
   hint?: string;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
@@ -183,6 +200,7 @@ export function ApprovalHash({
     void clipboard.writeText(hash).then(
       () => {
         setCopied(true);
+        toast.success(t("agents.approvals.copiedToast"));
         window.setTimeout(() => setCopied(false), 1500);
       },
       () => undefined,
@@ -234,23 +252,33 @@ export function ApprovalHash({
   );
 }
 
-/** Card/session/run deep links always carry the board id. */
-export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
+function shorten(value: string, max = 12): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
+/** Deep links always carry the board id; the token opens an info dialog. */
+export function ApprovalLinks({
+  approval,
+  onCancelRequest,
+  cancelBusy = false,
+}: {
+  approval: ApprovalRequestDto;
+  onCancelRequest?: () => Promise<boolean>;
+  cancelBusy?: boolean;
+}) {
   const { t } = useI18n();
-  const base = `${routes.agents}?board=${encodeURIComponent(approval.boardId)}`;
-  const cardHref =
-    approval.cardId === null
-      ? null
-      : `${routes.board(approval.boardId)}?card=${encodeURIComponent(approval.cardId)}`;
+  const toast = useToast();
+  const base = `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=attention`;
   const sessionHref =
     approval.agentSessionId === null
       ? null
-      : `${base}&session=${encodeURIComponent(approval.agentSessionId)}`;
+      : `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&session=${encodeURIComponent(approval.agentSessionId)}`;
   const runHref =
     approval.runId === null
       ? null
-      : `${base}&run=${encodeURIComponent(approval.runId)}`;
+      : `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=runs&run=${encodeURIComponent(approval.runId)}`;
   const [copied, setCopied] = useState(false);
+  const [tokenOpen, setTokenOpen] = useState(false);
 
   const copyLink = () => {
     const clipboard = navigator.clipboard;
@@ -259,6 +287,7 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
     void clipboard.writeText(url).then(
       () => {
         setCopied(true);
+        toast.success(t("agents.approvals.copiedToast"));
         window.setTimeout(() => setCopied(false), 1500);
       },
       () => undefined,
@@ -266,227 +295,292 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
   };
 
   return (
-    <div className="flex flex-wrap gap-2 text-[11px]">
-      <a
-        href={routes.board(approval.boardId)}
-        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
-        data-testid="approval-board-link"
-      >
-        <ExternalLink className="h-3 w-3" aria-hidden />
-        {t("agents.approvals.openBoard")}
-      </a>
-      {cardHref ? (
-        <a
-          href={cardHref}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
-          data-testid="approval-card-link"
+    <>
+      <div className="flex flex-wrap gap-1.5" data-testid="approval-links">
+        <Link
+          to={routes.board(approval.boardId)}
+          className={RELATED_CLASS}
+          data-testid="approval-board-link"
         >
-          <ExternalLink className="h-3 w-3" aria-hidden />
-          {t("agentControl.approvals.openCard")}
-        </a>
-      ) : null}
-      {sessionHref ? (
-        <a
-          href={sessionHref}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
-          data-testid="approval-session-link"
+          <Folder className="h-2.5 w-2.5" aria-hidden />
+          {t("agents.approvals.openBoard")}
+        </Link>
+        {sessionHref !== null ? (
+          <Link
+            to={sessionHref}
+            className={RELATED_CLASS}
+            data-testid="approval-session-link"
+          >
+            <Activity className="h-2.5 w-2.5" aria-hidden />
+            {t("agentControl.approvals.openSession")}
+          </Link>
+        ) : null}
+        {runHref !== null ? (
+          <Link
+            to={runHref}
+            className={RELATED_CLASS}
+            data-testid="approval-run-link"
+          >
+            <History className="h-2.5 w-2.5" aria-hidden />
+            {t("agentControl.approvals.openRun")}
+          </Link>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setTokenOpen(true)}
+          className={RELATED_CLASS}
+          data-testid="approval-token-link"
         >
-          <ExternalLink className="h-3 w-3" aria-hidden />
-          {t("agentControl.approvals.openSession")}
-        </a>
-      ) : null}
-      {runHref ? (
-        <a
-          href={runHref}
-          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
-          data-testid="approval-run-link"
+          <KeyRound className="h-2.5 w-2.5" aria-hidden />
+          {t("agents.approvals.tokenLabel", {
+            token: shorten(approval.requestedByTokenId),
+          })}
+        </button>
+        <button
+          type="button"
+          onClick={copyLink}
+          className={RELATED_CLASS}
+          data-testid="approval-copy-link"
         >
-          <ExternalLink className="h-3 w-3" aria-hidden />
-          {t("agentControl.approvals.openRun")}
-        </a>
-      ) : null}
-      <button
-        type="button"
-        onClick={copyLink}
-        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
-        data-testid="approval-copy-link"
-      >
-        {copied ? (
-          <Check className="h-3 w-3 text-success" aria-hidden />
-        ) : (
-          <Copy className="h-3 w-3" aria-hidden />
-        )}
-        {t("agents.approvals.copyLink")}
-      </button>
+          {copied ? (
+            <Check className="h-2.5 w-2.5 text-success" aria-hidden />
+          ) : (
+            <Link2 className="h-2.5 w-2.5" aria-hidden />
+          )}
+          {t("agents.approvals.copyLink")}
+        </button>
+        {onCancelRequest !== undefined ? (
+          <ApprovalCancelButton
+            busy={cancelBusy}
+            onCancel={onCancelRequest}
+            className={cn(RELATED_CLASS, "hover:bg-transparent")}
+          />
+        ) : null}
+      </div>
       <span className="sr-only" aria-live="polite">
         {copied ? t("agentControl.approvals.copied") : ""}
       </span>
-    </div>
+
+      <Dialog open={tokenOpen} onOpenChange={setTokenOpen}>
+        <DialogContent
+          className="sm:max-w-sm"
+          data-testid="approval-token-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {t("agents.approvals.tokenInfoTitle", {
+                token: shorten(approval.requestedByTokenId),
+              })}
+            </DialogTitle>
+            <DialogDescription>
+              {t("agents.approvals.tokenInfoDescription")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-[11px] leading-[1.5] text-muted-foreground">
+            <code className="block rounded-md border border-border bg-muted/30 p-2 font-mono text-[10px] break-all">
+              {approval.requestedByTokenId}
+            </code>
+            <p className="rounded-md border border-danger/30 bg-danger/5 p-2.5">
+              {t("agents.approvals.tokenInfoBody")}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setTokenOpen(false)}>
+              {t("common.close")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 export function ApprovalDecisionForm({
   busy,
+  planHash,
+  initialMode = null,
   onDecide,
 }: {
   busy: boolean;
+  planHash: string;
+  /** Quick-reject opens straight into the reason form. */
+  initialMode?: "reject" | null;
   onDecide: (
     decision: "approve" | "reject",
     comment: string,
   ) => Promise<boolean>;
 }) {
   const { t } = useI18n();
-  const [mode, setMode] = useState<"approve" | "reject" | null>(null);
+  const [mode, setMode] = useState<"reject" | null>(initialMode);
+  const [approveOpen, setApproveOpen] = useState(false);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [touched, setTouched] = useState(false);
-  const reasonRequired = mode === "reject" && comment.trim() === "";
+  const reasonRequired = comment.trim() === "";
 
-  const submit = async (event: FormEvent) => {
+  const resetReject = () => {
+    setMode(null);
+    setComment("");
+  };
+
+  const submitReject = async (event: FormEvent) => {
     event.preventDefault();
-    if (mode === null || submitting || busy) return;
-    if (reasonRequired) {
-      setTouched(true);
-      return;
-    }
+    if (submitting || busy || reasonRequired) return;
     setSubmitting(true);
     try {
-      const ok = await onDecide(mode, comment.trim());
-      if (ok) {
-        setMode(null);
-        setComment("");
-        setTouched(false);
-      }
+      const ok = await onDecide("reject", comment.trim());
+      if (ok) resetReject();
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (mode === null) {
-    return (
-      <div className="grid w-full grid-cols-2 gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          data-testid="approval-reject"
-          onClick={() => setMode("reject")}
-          disabled={busy}
-          className="w-full"
-        >
-          {t("agentControl.approvals.reject")}
-        </Button>
-        <Button
-          type="button"
-          data-testid="approval-approve"
-          onClick={() => setMode("approve")}
-          disabled={busy}
-          className="w-full"
-        >
-          {t("agentControl.approvals.confirmApprove")}
-        </Button>
-      </div>
-    );
-  }
+  const submitApprove = async () => {
+    if (submitting || busy) return;
+    setSubmitting(true);
+    try {
+      const ok = await onDecide("approve", "");
+      if (ok) setApproveOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-  return (
-    <form noValidate onSubmit={submit} className="space-y-2">
-      <p
-        className={cn(
-          "text-xs",
-          mode === "approve" ? "text-success" : "text-danger",
-        )}
-        role="status"
-        data-testid="approval-decision-hint"
-      >
-        {mode === "approve"
-          ? t("agentControl.approvals.approveHint")
-          : t("agentControl.approvals.rejectHint")}
-      </p>
-      <div className="space-y-1">
+  if (mode === "reject") {
+    return (
+      <form noValidate onSubmit={submitReject} className="space-y-1.5">
         <label
           htmlFor="approval-comment"
-          className="text-xs font-medium text-muted-foreground"
+          className="block text-[10.5px] font-semibold text-foreground"
         >
-          {mode === "reject"
-            ? t("agentControl.approvals.rejectReasonLabel")
-            : t("agentControl.approvals.commentLabel")}
+          {t("agents.approvals.rejectReason")}{" "}
+          <span className="font-normal text-muted-foreground">
+            {t("agents.approvals.required")}
+          </span>
         </label>
         <Textarea
           id="approval-comment"
           data-testid="approval-comment"
           value={comment}
-          onChange={(event) => {
-            setComment(event.target.value);
-            if (touched) setTouched(false);
-          }}
-          onBlur={() => {
-            if (mode === "reject") setTouched(true);
-          }}
+          onChange={(event) => setComment(event.target.value)}
           rows={2}
           maxLength={2000}
-          placeholder={
-            mode === "reject"
-              ? t("agentControl.approvals.rejectReasonPlaceholder")
-              : t("agentControl.approvals.commentPlaceholder")
-          }
-          aria-invalid={touched && reasonRequired}
-          aria-describedby={
-            touched && reasonRequired ? "approval-comment-required" : undefined
-          }
+          placeholder={t("agentControl.approvals.rejectReasonPlaceholder")}
+          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px]"
           autoFocus
         />
-        {touched && reasonRequired ? (
-          <p
-            id="approval-comment-required"
-            role="alert"
-            className="text-[11px] text-danger"
-            data-testid="approval-reject-reason-required"
+        <div className="flex items-center justify-end gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={resetReject}
+            disabled={submitting}
+            className="h-7 min-h-0 px-2 text-[11px] text-muted-foreground"
           >
-            {t("agentControl.approvals.rejectReasonRequired")}
-          </p>
-        ) : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="submit"
+            size="sm"
+            variant="destructive"
+            data-testid="approval-confirm"
+            disabled={submitting || busy || reasonRequired}
+            className="h-7 min-h-0 px-2.5 text-[11px] font-[650]"
+          >
+            {submitting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
+            {t("agents.approvals.rejectConfirm")}
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <>
+      <p className="mb-2 flex items-start gap-1.5 text-[10.5px] leading-[1.45] text-muted-foreground">
+        <ShieldCheck
+          className="mt-px h-[11px] w-[11px] shrink-0 text-success"
+          aria-hidden
+        />
+        <span>
+          {t("agents.approvals.footerBefore")}{" "}
+          <b className="font-semibold text-foreground">
+            {t("agents.approvals.footerHash")}
+          </b>
+          {t("agents.approvals.footerAfter")}
+        </span>
+      </p>
+      <div className="flex items-center justify-end gap-1.5">
         <Button
-          type="submit"
+          type="button"
           size="sm"
-          data-testid="approval-confirm"
-          disabled={submitting || busy || reasonRequired}
-          className={cn(
-            mode === "approve"
-              ? "bg-success text-white hover:bg-success/90"
-              : "bg-danger text-white hover:bg-danger/90",
-          )}
+          variant="outline"
+          data-testid="approval-reject"
+          onClick={() => setMode("reject")}
+          disabled={busy}
+          className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
         >
-          {submitting ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : mode === "approve" ? (
-            <Check className="h-4 w-4" aria-hidden />
-          ) : (
-            <X className="h-4 w-4" aria-hidden />
-          )}
-          {mode === "approve"
-            ? t("agentControl.approvals.confirmApprove")
-            : t("agentControl.approvals.confirmReject")}
+          {t("agentControl.approvals.reject")}
         </Button>
         <Button
           type="button"
           size="sm"
-          variant="ghost"
-          onClick={() => {
-            setMode(null);
-            setComment("");
-            setTouched(false);
-          }}
-          disabled={submitting}
+          data-testid="approval-approve"
+          onClick={() => setApproveOpen(true)}
+          disabled={busy}
+          className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
         >
-          {t("common.cancel")}
+          {t("agents.approvals.confirmApprove")}
         </Button>
-        <span className="text-[11px] text-muted-foreground">
-          {t("agentControl.approvals.hashHint")}
-        </span>
       </div>
-    </form>
+
+      <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
+        <DialogContent
+          className="sm:max-w-sm"
+          data-testid="approval-approve-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>{t("agents.approvals.approveTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("agents.approvals.approveDescription")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
+            <code
+              title={planHash}
+              className="min-w-0 flex-1 overflow-hidden font-mono text-[9.5px] whitespace-nowrap text-ellipsis text-muted-foreground"
+            >
+              {planHash.slice(0, 34)}…
+            </code>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setApproveOpen(false)}
+              disabled={submitting}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              data-testid="approval-confirm"
+              onClick={() => void submitApprove()}
+              disabled={submitting || busy}
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Check className="h-4 w-4" aria-hidden />
+              )}
+              {t("agents.approvals.confirmApprove")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -494,10 +588,12 @@ export function ApprovalCancelButton({
   busy,
   onCancel,
   disabled = false,
+  className,
 }: {
   busy: boolean;
   onCancel: () => Promise<boolean>;
   disabled?: boolean;
+  className?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -510,8 +606,9 @@ export function ApprovalCancelButton({
         data-testid="approval-cancel"
         disabled={busy || disabled}
         onClick={() => setOpen(true)}
-        className="text-muted-foreground hover:text-foreground"
+        className={cn("text-muted-foreground hover:text-foreground", className)}
       >
+        <CircleSlash className="h-2.5 w-2.5" aria-hidden />
         {t("agentControl.approvals.cancelRequest")}
       </Button>
       <ConfirmDialog

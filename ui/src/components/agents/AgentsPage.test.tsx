@@ -19,6 +19,8 @@ const hoisted = vi.hoisted(() => ({
   getApproval: vi.fn(),
   decideApproval: vi.fn(),
   cancelApproval: vi.fn(),
+  getBoard: vi.fn(),
+  listMembers: vi.fn(),
   listRuns: vi.fn(),
 }));
 
@@ -36,6 +38,8 @@ vi.mock("@/api/client", () => ({
     getApproval: hoisted.getApproval,
     decideApproval: hoisted.decideApproval,
     cancelApproval: hoisted.cancelApproval,
+    getBoard: hoisted.getBoard,
+    listMembers: hoisted.listMembers,
     listRuns: hoisted.listRuns,
   },
 }));
@@ -154,6 +158,36 @@ beforeEach(() => {
   hoisted.getApproval.mockResolvedValue(approval());
   hoisted.decideApproval.mockResolvedValue(approval({ status: "rejected" }));
   hoisted.cancelApproval.mockResolvedValue(approval({ status: "cancelled" }));
+  hoisted.getBoard.mockResolvedValue({
+    id: "board-1",
+    title: "Launch",
+    columns: [],
+    cards: {
+      "card-1": {
+        id: "card-1",
+        title: "Card claim visibility",
+        description: "",
+        labelIds: [],
+        checklists: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    labels: [],
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  hoisted.listMembers.mockResolvedValue([
+    {
+      userId: "user-1",
+      displayName: "UX Agent Audit",
+      email: "ux@example.com",
+      role: "ADMIN",
+      expiresAt: null,
+      avatarColor: null,
+      avatarPath: null,
+    },
+  ]);
   hoisted.listRuns.mockResolvedValue([]);
   hoisted.listAgentSessions.mockImplementation((boardId: string) =>
     Promise.resolve(
@@ -263,7 +297,7 @@ describe("AgentsPage", () => {
 
     expect(await screen.findByTestId("agents-approval-detail")).toBeVisible();
     expect(await screen.findByTestId("approval-plan-hash")).toHaveTextContent(
-      row.planHash,
+      row.planHash.slice(0, 44),
     );
     await userEvent.click(screen.getByTestId("approval-reject"));
     expect(screen.getByTestId("approval-confirm")).toBeDisabled();
@@ -321,14 +355,14 @@ describe("AgentsPage", () => {
       await screen.findByTestId("agents-approval-reject-approval-1"),
     );
     expect(
-      screen.getByTestId("agents-approval-quick-reject-dialog"),
-    ).toHaveTextContent("Reason for rejection (required)");
-    expect(screen.getByTestId("agents-approval-reject-confirm")).toBeDisabled();
+      await screen.findByTestId("agents-approval-detail"),
+    ).toHaveTextContent("Reason for rejection");
+    expect(screen.getByTestId("approval-confirm")).toBeDisabled();
     await userEvent.type(
-      screen.getByTestId("agents-approval-reject-reason"),
+      screen.getByTestId("approval-comment"),
       "Not this card",
     );
-    await userEvent.click(screen.getByTestId("agents-approval-reject-confirm"));
+    await userEvent.click(screen.getByTestId("approval-confirm"));
     await waitFor(() =>
       expect(hoisted.decideApproval).toHaveBeenCalledWith(
         "board-1",
