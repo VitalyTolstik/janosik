@@ -39,9 +39,9 @@ design/agent-surfaces-prototype/
 - **Device switch**: Desktop 1440, Tablet 1024, Mobile 390. The nominal frame is fitted into the available gallery column; at a 1440 px browser viewport the desktop frame is slightly narrower, at 1920 px it renders at a true 1440 px. Mobile fits at 390.
 - **Before / After**: Before shows the selected audit screenshots as evidence with captions; After shows the live proposed surface. Applies to the first three surfaces.
 - **Theme**: dark default, light toggle. Tokens come from `brand/src/tokens.css`; light values are mirrored.
-- **Role**: ADMIN / MEMBER preview. In MEMBER mode approvals disappear and read-only states appear; there is no 403 + Retry trap.
-- **Demo state**: Default / Loading / Empty / Partial error for `/agents`; Default / Loading / Empty / Error for Agent control; Default / CAS conflict for Board Settings.
-- **99+**: stress-tests the single pending count in the header, bell, rail, board icon and Agent control header.
+- **Roles**: per-board roles, not one global role. The default **Mixed** preset is ADMIN on Agent Ops Demo and MEMBER on Website Relaunch; **Admin** and **Member** presets set both boards. Scope and role changes keep counts, selected detail and the board scene in sync.
+- **Demo state**: Default / Loading / Empty / Partial error for `/agents`; Default / Loading / Empty / Error for Agent control; Default / CAS conflict for Board Settings. Partial error is per board and never turns the pending count into a false zero.
+- **99+**: stress-tests the single pending count in the header, rail, board icon, Agent control header and Board Settings rail. The bell is invitations-only and has no approval badge.
 - **Custom comboboxes**: the board scope, agent/status filters, run filters, prototype state and approver field use one portaled ARIA combobox/listbox — no native `<select>` popups. Keyboard: arrows, Home/End, Enter, Escape, Tab, first-letter typeahead; click-outside closes; focus returns on select/Escape. Rows are 36 px on desktop and 44 px on mobile.
 - **Notes**: opens the annotation drawer and numbered pins. Each section has three "defect → change" notes.
 - **Reset**: restores all demo state (theme is preserved).
@@ -53,22 +53,22 @@ design/agent-surfaces-prototype/
 - Board scope combobox (All boards, Agent Ops Demo, Website Relaunch), search, agent/status comboboxes, Clear filters. The scope note and board counts live inside the opaque listbox, not underneath it.
 - Attention inbox with a pending approval and stale-session cards.
 - Review plan → right detail panel; approve/reject with a required rejection reason.
-- Approve changes the request status, decision history and **all pending counts** at once. Pending count starts at 1; 99+ is a display stress test.
+- Approve changes the request status, decision history and **all pending counts** at once. The default scope has two pending approvals on Agent Ops Demo; Website Relaunch has a pending approval that is hidden while the user is MEMBER there. 99+ is a display stress test.
 - Sessions are grouped by board by default; a "Group by Agent (token)" toggle demonstrates token grouping.
 - Session detail has pause/resume/end. Pause asks for a reason; End releases claims.
 - Runs has status/kind/time/agent/session comboboxes, run selection, timeline, command diff, technical preimages, preview, and revert with a danger confirm. Status badges use one shared mark+label component, right-aligned in a stable column across Applied / Reverted / Failed. The conflict run is disabled with an explicit reason.
 - Empty sessions show **Create API key** + Read docs. The Runs demo state has loading/empty/error states.
-- Deep links and a route-aware global header are indicated in the preview URL and the scope/breadcrumb. Board controls intentionally do not live in the global header.
+- Deep links and a route-aware global header are indicated in the preview URL and the scope/breadcrumb. `?board=` is present for run and approval links, and copied run links always include it. Board controls intentionally do not live in the global header.
 
 ### Agent control modal
 
 - Open from the single **Agents** button in the board mock; close with X, Escape or the scrim.
 - Focus returns to the trigger; the modal has a focus trap and a role=tablist rail with arrow/Home/End keys.
-- **Inbox** (ADMIN): Needs / Decided / All with true counts; all six approval statuses; impact, diff, plan hash, TTL, risk, card/token/session links, decision history; sticky footer. Approve asks for confirmation of the exact hash; Reject requires a reason; Cancel request has its own confirm.
-- **Live**: board pause/resume with a reason and one banner; session pause/resume/end; stop-token and stop-all flows; claims/in-flight semantics; no repeated "board paused" text in every row.
+- **Inbox** (ADMIN): Needs / Decided / All with true counts; all six approval statuses; exact commands, human summary, known targets, plan hash, TTL, risk, card/token/session links, decision history; sticky footer. There is no fabricated before/after diff or comment/attachment impact count. Approve asks for confirmation of the exact hash; Reject requires a reason; Cancel request has its own confirm.
+- **Live**: board pause/resume with a reason and one banner; session pause/resume/end; claims/in-flight semantics; no repeated "board paused" text in every row. **No Stop token / Stop all**: the only token path is `Manage tokens` → Account → API keys. `Token settings` appears only for the current user's own token; other tokens are read-only and show “Other member's token”.
 - **Runs**: named token/session filters instead of UUID text; run detail with timeline, attribution, diffs, preview and rollback; danger confirmation; conflict/expired/reverted/failed states.
 - **MEMBER/VIEWER**: no Inbox tab, no approval request, no 403. Live and Runs are read-only and explain who can act.
-- Mobile: the modal is full-screen inside the 390 preview, with a 44 px close, 44 px rail tabs, one pane (list → detail with Back) and a sticky footer.
+- Mobile: the modal is full-screen inside the 390 preview, with a 44 px close, 44 px rail tabs, one pane (list → detail with Back) and a sticky footer. All primary actions are at least 44 px: refresh, pause/resume, end session, approve/reject, hash copy, related links and destructive confirm.
 - A rejection draft is protected on close; a dirty rejection triggers a discard confirmation.
 
 ### Board Settings → Agents & automation
@@ -80,20 +80,20 @@ design/agent-surfaces-prototype/
 - Close/Escape/overlay on a dirty draft opens a discard confirmation.
 - **Demo state → CAS conflict** shows the conflict banner with **Reload policy**; reload keeps the draft, updates the version and clears the banner.
 - Reset to defaults is disabled when the policy is already default.
-- MEMBER sees a clear admin-only read-only state, not a failing form.
+- The gear is ADMIN-only. MEMBER has no Board Settings state and no read-only settings form; the scene shows a short admin-only callout instead.
 
 ## Baseline (current `main`)
 
-- Current `main`: **`fdd8010`** — “docs: mark TASK-178 board settings rail as done”.
+- Current `main` at prototype sync: **`4a79e12`** — “fix(agents): show the mock All clear state (TASK-179.3 follow-up)”.
 - Merge commit **`fb3a530`** — TASK-166.17 “Harden agent control and consolidate board display”.
 - The two audit reports used the feature baseline **`c6688f3`** over **`360938b`**. Evidence screenshots in this gallery come from that audit build.
 
 What 166.17 changed relative to the reports:
 
 1. **Board display controls were consolidated into `BoardDisplayMenu`** (column style, density, glass). The Board/Calendar/Table/Watch `ViewSwitcher` remains. The board mock now includes the display-menu affordance; the agent IA is unaffected.
-2. **`/agents` retains previously loaded sessions when one board request fails** (`use-agent-sessions.ts`, `AgentsPage.test.tsx`). A partial failure now shows the warning “The session list may be out of date” with Retry while keeping rows. This prototype’s **Partial error** state reflects that current behaviour; it does not present the old blank/zero-row state as a live bug.
+2. **`/agents` retains previously loaded sessions when one board request fails** (`use-agent-sessions.ts`, `AgentsPage.test.tsx`). A partial failure shows a per-board stale marker and a warning with Retry while keeping rows. The prototype’s **Partial error** state marks Website Relaunch unavailable, keeps Agent Ops Demo fresh, shows `—` for unknown pending counts and never presents a false zero. One global timestamp never claims both boards are fresh.
 3. Backend/MCP hardening (session attribution, limits, approvals, pause, idempotency, rate limits) does not change the visual IA. All API behaviour in this gallery is synthetic.
-4. **The two Bot icons and the disappearing board controls were not changed by 166.17.** Current `Header.tsx` still renders both `agents-trigger` and `AgentControlButton`; the board-settings redesign (TASK-178) is merged and used as the native modal reference. Those findings remain valid at `fdd8010`.
+4. **The two Bot icons and the disappearing board controls were not changed by 166.17.** Current `Header.tsx` still renders both `agents-trigger` and `AgentControlButton`; the board-settings redesign (TASK-178) is merged and used as the native modal reference. Those findings remain valid at `4a79e12`.
 5. The target IA is unchanged: one global `/agents` inbox, one board-scoped Agent control, policy only in Board Settings, one Bot entry, one pending count.
 
 ## Fonts
@@ -118,7 +118,7 @@ What 166.17 changed relative to the reports:
 - Visible `:focus-visible` rings.
 - Focus trap in the Agent control and Board Settings modals and in confirmation dialogs; Escape closes the topmost layer.
 - Agent control close/Escape returns focus to the single Agents trigger; Board Settings close/Escape returns focus to the gear. Dirty close paths confirm first.
-- Touch targets: 44 px close and rail tabs at the mobile breakpoint; 44 px sticky footer actions in the control modal.
+- Touch targets: at the mobile breakpoint every primary action is at least 44 px — close, rail tabs, refresh, filters, board scope, pause/resume, end session, approve/reject, hash copy, related links, dialog confirm and sticky footer actions.
 - Status is always text + colour, not colour alone. Toasts and partial errors use live/alert roles.
 - Reduced motion is respected; the skeleton shimmer is removed.
 
@@ -129,15 +129,15 @@ What 166.17 changed relative to the reports:
 - The board behind Agent control / Board Settings is a static board mock. The new **Board display** button opens an explanatory toast rather than a fully interactive column-style/density/glass menu.
 - All data, tokens, plan hashes, sessions, runs and policy values are synthetic. No network requests are made. Account/API-key, docs, notification, member and share actions are explanatory toasts.
 - State is not persisted across reloads. “Copy” uses the Clipboard API with a legacy fallback.
-- Approval TTLs are static demo values; expiry is represented by the Expired state, not a running countdown that mutates in place.
+- Approval TTLs count down from the demo start time. The effective status is computed from `status + expiresAt`; when a pending TTL passes, Approve is disabled and the row reads Expired without mutating the stored status.
 - The **Demo state → CAS conflict** switch is a simulation for reviewing the banner and Reload flow. It does not require a dirty draft; in the product CAS is reached while saving a draft.
-- The evidence screenshots are captures from `c6688f3`, not regenerated on `fdd8010`. Captions call out where 166.17 changes current behaviour (partial-error retention); header and Agent-control captures remain representative of current `main`.
+- The evidence screenshots are captures from `c6688f3`, not regenerated on `4a79e12`. Captions call out where 166.17 changes current behaviour (partial-error retention); header and Agent-control captures remain representative of current `main`. The validation screenshots in `screenshots/` were regenerated from the synced prototype.
 - The gallery is validated at 1440, 1024 and 390 CSS px in Chromium. 320 px, Safari/Firefox, screen-reader output, real touch devices and safe-area insets were not separately tested.
 - The prototype does not implement real CAS, approval or rollback transport; it demonstrates the interaction model and the state transitions. The backend/MCP hardening in 166.17 is not modelled beyond the partial-error display.
 
 ## Validation
 
-Validated with Playwright in Chromium on 11 November 2026. Captures are in `screenshots/`:
+Validated with Playwright in Chromium on 13 November 2026. Captures are in `screenshots/`:
 
 | File | What it validates |
 |---|---|
@@ -157,35 +157,41 @@ Validated with Playwright in Chromium on 11 November 2026. Captures are in `scre
 | `14-evidence-board.png` | Evidence board, baseline banner and defect ledger |
 | `15-controls-table.png` | Collapsible 44-control table |
 | `16-before-agents.png` | Before/After mode with audited screenshots |
-| `17-member-agents.png` | MEMBER `/agents`: no approvals, read-only session detail |
-| `18-member-control.png` | MEMBER Agent control: Live/Runs only, no Inbox |
+| `17-member-agents.png` | MEMBER scope on Website Relaunch: no approvals, read-only session detail |
+| `18-member-control.png` | MEMBER Agent control: Live/Runs only, no Inbox, no gear |
 | `19-light-theme.png` | Light theme |
-| `20-partial-error.png` | Current-main partial error: warning + retained rows |
+| `20-partial-error.png` | Per-board partial error: Website unavailable, Agent Ops fresh, retained rows |
 | `21-annotations.png` | Numbered pins and review notes |
 | `22-runs-badges-desktop.png` | Runs status badges right-aligned: Applied / Reverted / Failed |
 | `23-runs-badges-tablet.png` | Run row alignment at 1024 |
 | `24-runs-badges-mobile.png` | Run row alignment at 390 |
-| `25-settings-member.png` | Board Settings read-only state for MEMBER |
+| `25-member-no-settings.png` | MEMBER board: gear absent, admin-only callout, no read-only settings form |
 | `26-empty-sessions.png` | Empty sessions with Create API key CTA |
-| `27-badge-99plus.png` | Single pending count, 99+ stress state |
+| `27-badge-99plus.png` | Single pending count, 99+ stress state (no bell badge) |
 | `28-agent-control-statuses.png` | Pending / Rejected / Expired / Applied status badges in Inbox |
+| `29-scoped-counts.png` | ADMIN on both boards: Website scope 1, All 3, Agent Ops 2 |
+| `30-partial-unknown.png` | Partial error: All and Website show `—`, Agent Ops keeps its known count |
+| `31-token-ownership.png` | Live: own token has Token settings, other member's token is read-only |
 
 Checks performed:
 
 - All five sections and all three device modes switch without errors.
-- Dark and light themes; ADMIN and MEMBER previews; Before/After.
+- Dark and light themes; Mixed (ADMIN A + MEMBER B), Admin-on-both and Member-on-both presets; Before/After.
 - **No native `<select>` remains.** Every dropdown is the custom ARIA combobox/listbox; all triggers have `aria-expanded`/`aria-controls`, options expose `role="option"` + `aria-selected`, and the active option is tracked with `aria-activedescendant`.
 - Comboboxes open by mouse and by Arrow/Enter/Space; arrows/Home/End move, Enter/Space select, Escape closes and returns focus, Tab closes, click-outside closes, and first-letter typeahead works. Rows are 36 px desktop / 44 px mobile.
 - Listboxes have an opaque surface at z-index 260 and are portaled to the page but bounded to the active device frame, so no text bleeds through and nothing is clipped at 1024/390.
 - No console errors and no horizontal page overflow at 390, 1024 or 1440.
 - Runs status badges use the same mark + label component; measured mark and label centers are 0 px off the badge center at 1440, 1024 and 390. Applied / Reverted / Failed align in a stable right column; Pending / Approved / Rejected / Expired / Cancelled / Applied were exercised in the approval flows.
-- Approval approve/reject/cancel changes the status and all pending counts (header, bell, rail, board badge, modal header, Board Settings rail).
-- MEMBER hides the approval card and the Agent control Inbox tab; no 403/Retry state.
-- Session pause/resume/end, board pause/resume, stop-token and stop-all confirmations work.
+- Approval approve/reject/cancel changes the status and all pending counts (header, rail, board badge, modal header, Board Settings rail). The bell never shows an approval badge.
+- Scope counts are correct: ADMIN A + MEMBER B shows Agent Ops 2, Website hidden, All 2; Admin-on-both shows Agent Ops 2, Website 1, All 3. A partial error shows `—` for unknown scopes, not 0.
+- Pending approvals are sorted by `expiresAt ASC, id ASC`; the two default pending rows render earliest first.
+- MEMBER hides the approval card, the Agent control Inbox tab and the Board Settings gear; there is no 403/Retry trap and no read-only settings form.
+- Session pause/resume/end and board pause/resume work. Board Live has no Stop token/Stop all; `Manage tokens` links to Account, and `Token settings` is shown only for the current user's own token.
 - Run conflict blocks rollback; applied run rollback uses a danger confirm and updates to Reverted.
 - Board Settings dirty/Save/Discard/Reset and CAS conflict/Reload preserve or discard the draft as labelled.
-- Loading, empty and partial-error states switch; the current-main partial error keeps last-loaded rows.
+- Loading, empty and partial-error states switch; partial error keeps last-loaded rows, marks the unavailable board and leaves the healthy board's freshness intact.
 - The empty sessions state exposes Create API key + Read docs.
-- The 99+ badge appears in every surface when stress-tested.
+- The 99+ badge appears in every count surface when stress-tested; the bell stays invitations-only.
 - Escape/close in Agent control and Board Settings returns focus to the trigger; tablists support arrows/Home/End and the modal traps focus.
-- All 25 evidence images and both self-hosted fonts load; no external requests.
+- At 390, every visible primary button in the app shell, Agent control modal and Board Settings modal measures at least 44 px; the same check passes for the dialog footer. The 1024 sheet starts below the 48 px board header instead of covering it.
+- All 44 evidence images and both self-hosted fonts load; no external requests. The validation screenshots were regenerated on the synced prototype.

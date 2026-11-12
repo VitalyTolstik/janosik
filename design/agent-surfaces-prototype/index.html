@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent surfaces redesign — Janosik design study</title>
 <meta name="description" content="Interactive design study for the Janosik /agents page, board-scoped Agent control modal and Board Settings → Agents & automation.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%232563eb'/%3E%3Cpath d='M12 8V4H8' stroke='white' fill='none' stroke-width='2'/%3E%3Crect x='4' y='8' width='16' height='12' rx='2' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
 <style>
 /* -------------------------------------------------------------------------
    Fonts — self-hosted Space Grotesk (Fontsource, latin subset) so the file
@@ -799,22 +800,10 @@ svg{display:block}
 .detail-section-head .spacer{margin-left:auto}
 .detail-lead{font-size:11.5px;line-height:1.55;color:var(--foreground);margin:0}
 .detail-lead .muted{color:var(--muted-foreground)}
-.impact-block{border-left:2px solid var(--danger);background:color-mix(in oklab,var(--danger) 6%,transparent);padding:7px 9px;border-radius:0 5px 5px 0;margin-top:8px}
-.impact-block b{display:block;font-size:11px;color:var(--foreground);font-weight:650;margin-bottom:2px}
-.impact-block p{margin:0;font-size:10.5px;line-height:1.5;color:var(--muted-foreground)}
-.impact-block p strong{color:var(--foreground);font-weight:600}
 .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
 .meta-grid .meta-label{display:block;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:color-mix(in oklab,var(--muted-foreground) 78%,transparent);margin-bottom:2px}
 .meta-grid .meta-value{display:block;font-size:11px;line-height:1.4;font-weight:500;color:var(--foreground);overflow-wrap:anywhere}
 .meta-grid .meta-value .mono{font-size:10px;color:var(--muted-foreground)}
-.diff-row{display:grid;grid-template-columns:1fr 20px 1fr;align-items:center;gap:5px;margin-top:7px}
-.diff-box{border:1px solid var(--border);border-radius:6px;padding:7px 8px;background:color-mix(in oklab,var(--background) 35%,transparent);min-width:0}
-.diff-box span{display:block;font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-foreground)}
-.diff-box b{display:block;font-size:11px;font-weight:600;margin-top:1px;line-height:1.4;overflow-wrap:anywhere}
-.diff-box.to{border-color:color-mix(in oklab,var(--danger) 28%,var(--border));background:color-mix(in oklab,var(--danger) 4%,transparent)}
-.diff-box.to b{color:color-mix(in oklab,var(--danger) 78%,var(--foreground))}
-.diff-arrow{display:grid;place-items:center;color:var(--muted-foreground)}
-.diff-arrow .icon{width:12px;height:12px}
 .hash-row{display:flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:5px;padding:4px 6px;background:color-mix(in oklab,var(--background) 28%,transparent);min-width:0}
 .hash-row code{font-family:var(--font-mono);font-size:9.5px;color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .hash-row .icon-btn-sm{width:22px;height:22px;flex:none}
@@ -917,7 +906,7 @@ svg{display:block}
   display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:11px;overflow:hidden;
   box-shadow:var(--shadow-lg);container-type:inline-size;container-name:ac;
 }
-.device-frame[data-device="tablet"] .ac-modal{top:14px;height:calc(100% - 28px);width:calc(100% - 20px)}
+.device-frame[data-device="tablet"] .ac-modal{top:56px;height:calc(100% - 70px);width:calc(100% - 20px)}
 .ac-head{
   flex:none;display:flex;align-items:flex-start;gap:11px;padding:14px 14px 12px 16px;border-bottom:1px solid var(--border);
   background:linear-gradient(180deg,color-mix(in oklab,var(--primary) 5%,var(--surface)),var(--surface));
@@ -1079,7 +1068,7 @@ svg{display:block}
   display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:11px;overflow:hidden;box-shadow:var(--shadow-lg);
   container-type:inline-size;container-name:bs;
 }
-.device-frame[data-device="tablet"] .bs-modal{top:14px;height:calc(100% - 28px);width:calc(100% - 20px)}
+.device-frame[data-device="tablet"] .bs-modal{top:56px;height:calc(100% - 70px);width:calc(100% - 20px)}
 .bs-head{flex:none;display:flex;align-items:center;gap:12px;padding:14px 14px 12px 16px;border-bottom:1px solid var(--border)}
 .bs-head-title{min-width:0;flex:1}
 .bs-head-title .eyebrow{font-size:9.5px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-foreground);margin:0 0 2px}
@@ -1614,8 +1603,7 @@ svg{display:block}
 .app-shell .meta,.app-shell .mono-meta,.app-shell .chip,.app-shell .status-pill,.app-shell .count-badge,.app-shell .rail-section-head,
 .app-shell .approval-eyebrow .eyebrow,.app-shell .approval-hash,.app-shell .heartbeat,.app-shell .run-meta,
 .app-shell .run-side time,.app-shell .session-agent span,.app-shell .session-cell span,.app-shell .detail-head .eyebrow,
-.app-shell .meta-grid .meta-label,.app-shell .meta-grid .meta-value .mono,.app-shell .impact-block p,
-.app-shell .diff-box span,.app-shell .hash-row code,.app-shell .related-link,.app-shell .history-item,
+.app-shell .meta-grid .meta-label,.app-shell .meta-grid .meta-value .mono,.app-shell .hash-row code,.app-shell .related-link,.app-shell .history-item,
 .app-shell .timeline-body b,.app-shell .timeline-body span,.app-shell .command-head,.app-shell .command-diff span,
 .app-shell .command-diff b,.app-shell .rollback-card p,.app-shell .technical summary,.app-shell .technical pre,
 .app-shell .run-day-label,.app-shell .load-more,.app-shell .board-group-head .meta,.app-shell .live-session-sub,
@@ -1633,7 +1621,7 @@ svg{display:block}
 .ac-modal .ac-head-chip,.ac-modal .ac-row-sub,.ac-modal .ac-row-meta,.ac-modal .ac-list-head,
 .ac-modal .ac-list-label,.ac-modal .ac-rail-label,.ac-modal .ac-rail-note,.ac-modal .ac-rail-link,.ac-modal .ac-rail-footer p,
 .ac-modal .ac-foot .ac-foot-note,.ac-modal .ac-detail-sub .chip,.ac-modal .meta-grid .meta-label,.ac-modal .meta-grid .meta-value,
-.ac-modal .meta-grid .meta-value .mono,.ac-modal .impact-block p,.ac-modal .command-head,.ac-modal .command-diff span,
+.ac-modal .meta-grid .meta-value .mono,.ac-modal .command-head,.ac-modal .command-diff span,
 .ac-modal .command-diff b,.ac-modal .technical summary,.ac-modal .technical pre,.ac-modal .timeline-body span,
 .ac-modal .history-item,.ac-modal .rollback-card p,.ac-modal .live-session-sub,.ac-modal .live-session-card span,
 .ac-modal .session-token,.ac-modal .session-group-head .meta,.ac-modal .live-status-main p,.ac-modal .readonly-note,
@@ -1646,12 +1634,12 @@ svg{display:block}
 .app-shell .chip,.ac-modal .chip,.bs-modal .chip{height:21px}
 .app-shell .count-badge,.ac-modal .count-badge{font-size:11px;min-width:18px;height:18px}
 .app-shell .ac-rail-label,.app-shell .ac-list-head,.app-shell .ac-list-label,.app-shell .rail-section-head,
-.app-shell .detail-head .eyebrow,.app-shell .meta-grid .meta-label,.app-shell .diff-box span{letter-spacing:.04em}
+.app-shell .detail-head .eyebrow,.app-shell .meta-grid .meta-label{letter-spacing:.04em}
 .ac-modal .ac-rail-tab{font-size:12px}
 .ac-modal .ac-row-title{font-size:11.5px}
 .ac-modal .ac-run-row b{font-size:11px}
 .ac-modal .ac-head-link,.ac-modal .rail-count,.ac-modal .ac-rail-note strong,.ac-modal .ac-rail-footer b,
-.ac-modal .ac-row-meta .ttl,.ac-modal .diff-box span,.ac-modal .hash-row code,.ac-modal .related-link,
+.ac-modal .ac-row-meta .ttl,.ac-modal .hash-row code,.ac-modal .related-link,
 .bs-modal .count-badge,.bs-modal .bs-rail-note b,.bs-modal .strip-link,.bs-modal .show-keys,.bs-modal .covered-label{font-size:11px}
 .app-shell .detail-section-head h3{font-size:11.5px}
 .app-shell .session-table-head,.app-shell .session-table-head span,.app-shell .freshness,.app-shell .rail-count,
@@ -1672,6 +1660,59 @@ svg{display:block}
 .control-table .permission{font-size:11px}
 .ledger-item b{font-size:11px}
 .ledger-item .sev{font-size:11px;height:18px}
+
+/* Scope/freshness and token-ownership states. */
+.freshness{max-width:380px;overflow:hidden}
+.freshness>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.rail-count.is-unknown{background:transparent;color:var(--muted-foreground);border:1px dashed var(--border)}
+.related-link.is-static{cursor:default;color:var(--muted-foreground)}
+.token-owner{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted-foreground);white-space:nowrap}
+.token-owner .icon{width:11px;height:11px}
+
+/* Mobile hit areas: every primary action is >=44 px, not only tabs/close. */
+@container app (max-width:760px){
+  .rail-tab{min-height:44px}
+  .agents-toolbar .input-wrap .input,
+  .agents-toolbar .cselect-trigger,
+  .agents-toolbar .filter-chip{min-height:44px;height:44px}
+  .page-head-actions .btn{min-height:44px;height:44px}
+  .approval-actions .btn{min-height:44px;height:44px}
+  .detail-actions .btn{min-height:44px;height:auto;padding-top:10px;padding-bottom:10px}
+  .view-all{min-height:44px;display:inline-flex;align-items:center}
+  .stale-card{min-height:44px}
+  .board-picker.cselect-trigger{height:44px;min-height:44px}
+  .global-header .agents-trigger{height:44px;min-height:44px}
+  .header-btn[data-action="bell"],
+  .header-btn[data-action="focus-search"]{width:44px;height:44px}
+  .detail-back{width:44px;height:44px}
+  .hash-row .icon-btn-sm{width:44px;height:44px}
+  .related-link{min-height:44px;height:auto;padding-top:8px;padding-bottom:8px}
+}
+@container ac (max-width:760px){
+  .ac-toolbar .icon-btn-sm{width:44px;height:44px}
+  .ac-toolbar .seg .chip{height:44px;min-height:44px}
+  .live-session-actions .btn{height:44px;min-height:44px;font-size:11px;padding:0 10px}
+  .live-session-actions .icon-btn-sm{width:44px;height:44px}
+  .session-group-head .group-actions .btn{min-height:44px;height:44px}
+  .ac-runs-filters .select,.ac-runs-filters .cselect-trigger{height:44px;min-height:44px;max-width:none}
+  .ac-runs-filters .btn{min-height:44px;height:44px}
+  .ac-row{min-height:44px}
+  .related-link{min-height:44px;height:auto;padding-top:8px;padding-bottom:8px}
+}
+@container bs (max-width:680px){
+  .bs-rail-tab{min-height:44px}
+  .radio-card{min-height:44px}
+  .check-row{min-height:44px}
+  .bs-content-head .btn{min-height:44px;height:44px}
+  .status-strip .strip-link{min-height:44px;display:inline-flex;align-items:center}
+  .number-field{min-height:44px}
+  .number-field input{min-height:44px}
+  .bs-modal .cselect-trigger.full{height:44px;min-height:44px}
+  .show-keys{min-height:44px;display:inline-flex;align-items:center}
+}
+@media (max-width:720px){
+  .dialog-foot .btn{min-height:44px;height:44px}
+}
 </style>
 </head>
 <body>
@@ -1824,9 +1865,10 @@ svg{display:block}
               <button type="button" data-action="device" data-device="mobile" aria-label="Mobile 390" aria-pressed="false" title="Mobile · 390"><svg class="icon"><use href="#i-phone"/></svg><span class="device-label">Mobile 390</span></button>
             </div>
             <div class="toolbar-divider" aria-hidden="true"></div>
-            <div class="seg" role="group" aria-label="Preview role">
-              <button type="button" data-action="role" data-role="ADMIN" aria-label="Preview as ADMIN" aria-pressed="true" title="Preview as board admin"><svg class="icon"><use href="#i-shield"/></svg><span>Admin</span></button>
-              <button type="button" data-action="role" data-role="MEMBER" aria-label="Preview as MEMBER" aria-pressed="false" title="Preview as board member"><svg class="icon"><use href="#i-users"/></svg><span>Member</span></button>
+            <div class="seg" role="group" aria-label="Preview roles">
+              <button type="button" data-action="role-preset" data-preset="mixed" aria-label="Preview mixed roles: ADMIN on Agent Ops Demo, MEMBER on Website Relaunch" aria-pressed="true" title="ADMIN on Agent Ops Demo + MEMBER on Website Relaunch"><svg class="icon"><use href="#i-users"/></svg><span>Mixed</span></button>
+              <button type="button" data-action="role-preset" data-preset="admin" aria-label="Preview ADMIN on both boards" aria-pressed="false" title="ADMIN on both boards"><svg class="icon"><use href="#i-shield"/></svg><span>Admin</span></button>
+              <button type="button" data-action="role-preset" data-preset="member" aria-label="Preview MEMBER on both boards" aria-pressed="false" title="MEMBER on both boards"><svg class="icon"><use href="#i-lock"/></svg><span>Member</span></button>
             </div>
             <button type="button" class="demo-state cselect-trigger" id="demo-state" data-action="combo-open" data-combo-key="demoState" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Prototype state">
               <span class="cselect-value" id="demo-state-label">Default</span><svg class="icon"><use href="#i-chevron-down"/></svg>
@@ -1849,7 +1891,7 @@ svg{display:block}
 
       <section class="change-strip" id="change-strip" aria-label="Top changes in this section"></section>
       <footer class="gallery-footer">
-        <span>Janosik design artifact · <span class="mono">design/agent-surfaces-prototype/index.html</span> · main <span class="mono">fdd8010</span> · evidence <span class="mono">c6688f3</span></span>
+        <span>Janosik design artifact · <span class="mono">design/agent-surfaces-prototype/index.html</span> · main <span class="mono">4a79e12</span> · evidence <span class="mono">c6688f3</span></span>
         <span>All data is synthetic. Approval, pause, rollback and policy actions are local-only.</span>
       </footer>
     </main>
@@ -1890,11 +1932,10 @@ const APPROVALS = [
     summary: 'Delete card “Card claim visibility”', action: 'DELETE_CARD',
     agent: 'Claude Code — audit', tokenName: 'Claude Code — audit', tokenId: 'cmwc7a7y…pz4qe6',
     session: 'Refactor approval flow', sessionId: 's1', card: 'Card claim visibility',
+    targetType: 'card', target: 'Card claim visibility',
     requestedBy: 'UX Agent Audit', requestedAt: 'Today, 5:14 PM', expiresMin: 52, ttlMin: 60,
     planCount: 1, hash: 'da83a7614519e38b98dfa916c737f3a7e8a40c74328962e486407fdd511a0eb1',
-    impactTitle: 'This removes 1 card',
-    impact: '“Card claim visibility” and its 3 comments, 2 attachments and history will be deleted. The only recovery is a run rollback.',
-    diffFrom: 'Card claim visibility', diffTo: 'Removed · card and history',
+    commands: [{ action: 'DELETE_CARD', target: 'Card claim visibility' }],
     decidedBy: null, decidedAt: null, comment: null, runId: null,
     planJson: '{\n  "type": "DELETE_CARD",\n  "cardId": "0a5ab61f-762d-40ec-a1a1-c713d725e5da"\n}',
   },
@@ -1903,11 +1944,10 @@ const APPROVALS = [
     summary: 'Move “Pricing page copy” to Done', action: 'MOVE_CARD',
     agent: 'Release bot', tokenName: 'Release bot', tokenId: 'cmwc7a91…k2m8f1',
     session: 'Release checklist', sessionId: 's4', card: 'Pricing page copy',
+    targetType: 'card', target: 'Pricing page copy',
     requestedBy: 'Release bot', requestedAt: 'Today, 4:02 PM', expiresMin: 14, ttlMin: 60,
     planCount: 1, hash: '8f4e0a31d20c7b16db4874c6a2f5348f7a9521c0bd67e1f24a6b9c67f2dd0143',
-    impactTitle: 'This moves 1 card',
-    impact: '“Pricing page copy” moves from In progress to Done. The card keeps its owner, checklist and attachments.',
-    diffFrom: 'In progress', diffTo: 'Done · card moved',
+    commands: [{ action: 'MOVE_CARD', target: 'Pricing page copy', detail: 'to Done' }],
     decidedBy: 'Audit Admin', decidedAt: 'Today, 4:06 PM', comment: 'Copy reviewed in the launch doc.', runId: null,
     planJson: '{\n  "type": "MOVE_CARD",\n  "columnId": "done"\n}',
   },
@@ -1916,11 +1956,10 @@ const APPROVALS = [
     summary: 'Archive column “Old onboarding”', action: 'ARCHIVE_COLUMN',
     agent: 'Docs agent', tokenName: 'Docs agent', tokenId: 'cmwc7aab…x7c1a9',
     session: 'API reference sweep', sessionId: 's3', card: null,
+    targetType: 'column', target: 'Old onboarding',
     requestedBy: 'Docs agent', requestedAt: 'Today, 1:18 PM', expiresMin: 0, ttlMin: 60,
     planCount: 1, hash: 'c37b1d8f54e9a27016bc7a4c1be8906435d2fe8f1c04d89a3e6b5c6d0a12b4c7',
-    impactTitle: 'This archives 1 column',
-    impact: '14 cards would leave the active board and become read-only.',
-    diffFrom: 'Old onboarding · 14 cards', diffTo: 'Archived',
+    commands: [{ action: 'ARCHIVE_COLUMN', target: 'Old onboarding' }],
     decidedBy: 'Audit Admin', decidedAt: 'Today, 1:24 PM', comment: 'Two cards still need a home. Archive only after the migration.', runId: null,
     planJson: '{\n  "type": "ARCHIVE_COLUMN",\n  "columnId": "old-onboarding"\n}',
   },
@@ -1929,11 +1968,10 @@ const APPROVALS = [
     summary: 'Delete label “temporary”', action: 'DELETE_LABEL',
     agent: 'Claude Code — audit', tokenName: 'Claude Code — audit', tokenId: 'cmwc7a7y…pz4qe6',
     session: 'Landing page rewrite', sessionId: 's2', card: null,
+    targetType: 'label', target: 'temporary',
     requestedBy: 'Claude Code — audit', requestedAt: 'Yesterday, 5:40 PM', expiresMin: 0, ttlMin: 60,
     planCount: 1, hash: 'f2a1c903b7e64d851ab8c87f13960d0e65a7b23c14ff8e9d7c0a63b4b1523e2d',
-    impactTitle: 'This removes 1 label',
-    impact: 'The label would be detached from 4 cards. No cards are deleted.',
-    diffFrom: 'Label temporary', diffTo: 'Removed from 4 cards',
+    commands: [{ action: 'DELETE_LABEL', target: 'temporary' }],
     decidedBy: null, decidedAt: 'Expired yesterday, 6:40 PM', comment: null, runId: null,
     planJson: '{\n  "type": "DELETE_LABEL",\n  "labelId": "temporary"\n}',
   },
@@ -1942,11 +1980,10 @@ const APPROVALS = [
     summary: 'Move “Brand tokens” to Review', action: 'MOVE_CARD',
     agent: 'Release bot', tokenName: 'Release bot', tokenId: 'cmwc7a91…k2m8f1',
     session: 'Release checklist', sessionId: 's4', card: 'Brand tokens',
+    targetType: 'card', target: 'Brand tokens',
     requestedBy: 'Release bot', requestedAt: 'Yesterday, 2:11 PM', expiresMin: 0, ttlMin: 60,
     planCount: 1, hash: '46b0e7f1a15d4d64e7b8c1d33e96d2b56f4773b29a6c88c67f1d50d34f3e9f12',
-    impactTitle: 'This moves 1 card',
-    impact: '“Brand tokens” would move from Backlog to Review.',
-    diffFrom: 'Backlog', diffTo: 'Review',
+    commands: [{ action: 'MOVE_CARD', target: 'Brand tokens', detail: 'to Review' }],
     decidedBy: 'Release bot', decidedAt: 'Yesterday, 2:18 PM', comment: 'Request cancelled by the agent.', runId: null,
     planJson: '{\n  "type": "MOVE_CARD",\n  "columnId": "review"\n}',
   },
@@ -1955,15 +1992,45 @@ const APPROVALS = [
     summary: 'Delete card “Old onboarding draft”', action: 'DELETE_CARD',
     agent: 'Release bot', tokenName: 'Release bot', tokenId: 'cmwc7a91…k2m8f1',
     session: 'Release checklist', sessionId: 's4', card: 'Old onboarding draft',
+    targetType: 'card', target: 'Old onboarding draft',
     requestedBy: 'Release bot', requestedAt: 'Today, 11:02 AM', expiresMin: 0, ttlMin: 60,
     planCount: 1, hash: '1c0e3bd53f6a2948d3a1f2cf2c6f0e8a7b97d1c14a4e8e9d3a9f6c0d2b7e5170',
-    impactTitle: 'This removed 1 card',
-    impact: '“Old onboarding draft” was deleted by this approval. The run below is the only recovery path.',
-    diffFrom: 'Old onboarding draft', diffTo: 'Deleted · applied by agent',
+    commands: [{ action: 'DELETE_CARD', target: 'Old onboarding draft' }],
     decidedBy: 'Audit Admin', decidedAt: 'Today, 11:09 AM', comment: 'Approved after the launch notes were copied.', runId: 'run-124',
     planJson: '{\n  "type": "DELETE_CARD",\n  "cardId": "old-onboarding-draft"\n}',
   },
+  {
+    id: 'ap-7', boardId: 'website', status: 'pending', risk: 'Low', kind: 'Move',
+    summary: 'Move “Pricing page copy” to Review', action: 'MOVE_CARD',
+    agent: 'Release bot', tokenName: 'Release bot', tokenId: 'cmwc7a91…k2m8f1',
+    session: 'Release checklist', sessionId: 's4', card: 'Pricing page copy',
+    targetType: 'card', target: 'Pricing page copy',
+    requestedBy: 'Release bot', requestedAt: 'Today, 5:20 PM', expiresMin: 11, ttlMin: 60,
+    planCount: 1, hash: '7d2a4c6e8f0b1d3a5c7e9f1b3d5a7c9e1f3b5d7a9c1e3f5b7d9a1c3e5f7b9d0a',
+    commands: [{ action: 'MOVE_CARD', target: 'Pricing page copy', detail: 'to Review' }],
+    decidedBy: null, decidedAt: null, comment: null, runId: null,
+    planJson: '{\n  "type": "MOVE_CARD",\n  "columnId": "review"\n}',
+  },
+  {
+    id: 'ap-8', boardId: 'agent-ops', status: 'pending', risk: 'Medium', kind: 'Move',
+    summary: 'Move “Landing page rewrite” to Review', action: 'MOVE_CARD',
+    agent: 'Claude Code — audit', tokenName: 'Claude Code — audit', tokenId: 'cmwc7a7y…pz4qe6',
+    session: 'Landing page rewrite', sessionId: 's2', card: 'Landing page rewrite',
+    targetType: 'card', target: 'Landing page rewrite',
+    requestedBy: 'Claude Code — audit', requestedAt: 'Today, 5:26 PM', expiresMin: 7, ttlMin: 60,
+    planCount: 1, hash: '4b6d8f0a2c4e6f8b0d2f4a6c8e0b2d4f6a8c0e2f4a6b8d0f2a4c6e8b0d2f4a6c',
+    commands: [{ action: 'MOVE_CARD', target: 'Landing page rewrite', detail: 'to Review' }],
+    decidedBy: null, decidedAt: null, comment: null, runId: null,
+    planJson: '{\n  "type": "MOVE_CARD",\n  "columnId": "review"\n}',
+  },
 ];
+
+function seedApprovals() {
+  return clone(APPROVALS).map((a) => ({
+    ...a,
+    expiresAt: a.status === 'pending' ? Date.now() + a.expiresMin * 60000 : null,
+  }));
+}
 
 const SESSIONS = [
   {
@@ -2123,7 +2190,7 @@ const SECTION_META = {
   evidence: {
     kicker: 'STUDY 04 · EVIDENCE',
     title: 'Before / evidence',
-    description: 'Selected captures from both audits, with the defects they prove. Captures are from c6688f3 (pre-166.17); the live proposal follows current main fdd8010. These screenshots are evidence, not the new UI.',
+    description: 'Selected captures from both audits, with the defects they prove. Captures are from c6688f3 (pre-166.17); the live proposal follows current main 4a79e12. These screenshots are evidence, not the new UI.',
     path: 'design/agent-surfaces-prototype/evidence',
     side: '44 captured files · 20 control defects',
   },
@@ -2139,7 +2206,7 @@ const SECTION_META = {
 const CHANGE_STRIP = {
   agents: [
     { n: 1, id: 'B1 · B3', title: 'One Agents entry, route-aware header', text: 'The duplicate Bot is gone; board controls do not disappear when the global page opens.' },
-    { n: 2, id: 'B4 · B16', title: 'Attention comes from approval records', text: 'The same pending count drives the header, rail, board icon and bell — not session.status.' },
+    { n: 2, id: 'B4 · B16', title: 'Attention comes from approval records', text: 'The same scope-correct pending count drives the header, rail and board icon — not session.status. The bell stays invitations-only.' },
     { n: 3, id: 'B5', title: 'Heartbeat is separated from status', text: '“Active · no heartbeat 6m” is one row. Stale no longer replaces Active.' },
   ],
   control: [
@@ -2167,7 +2234,7 @@ const CHANGE_STRIP = {
 const NOTES = {
   agents: [
     { n: 1, id: 'B1 · B3', title: 'One Agents entry, route-aware header', text: 'The global header keeps a breadcrumb and a single Bot. Board title, Members, Share and Settings stay where they belong.', pin: 'header' },
-    { n: 2, id: 'B4 · B16', title: 'The inbox counts approvals, not session status', text: 'Attention is the default section. Pending comes from approval records and is the same number in the header, rail, board icon and bell.', pin: 'attention' },
+    { n: 2, id: 'B4 · B16', title: 'The inbox counts approvals, not session status', text: 'Attention is the default section. Pending comes from approval records and follows the selected board scope in the header, rail and board icon. The bell remains invitations-only.', pin: 'attention' },
     { n: 3, id: 'B5', title: 'Stale is a heartbeat, not a status', text: 'Sessions keep Active / Waiting / Paused and show “No heartbeat · 6m” in a separate column. The contradiction is gone.', pin: 'sessions' },
   ],
   control: [
@@ -2226,7 +2293,7 @@ const DEFECT_LEDGER = [
   { sev: 'P2', id: 'B-08', title: 'Board pause without confirmation; Resume drops reason', where: 'Agent control · Live', fixed: true },
   { sev: 'P2', id: 'B-10', title: 'Runs filters require raw UUIDs; detail error has no Retry', where: 'Agent control · Runs', fixed: true },
   { sev: 'P2', id: 'B-11', title: 'Revert confirm uses a blue primary button', where: 'Agent control · Runs', fixed: true },
-  { sev: 'P2', id: 'B-16', title: 'Bell knows nothing about approvals', where: 'Header · bell', fixed: true },
+  { sev: 'P2', id: 'B-16', title: 'Bell mixed approvals into invitations before TASK-177.6', where: 'Header · bell', fixed: true },
 ];
 
 const CONTROL_GROUPS = [
@@ -2236,7 +2303,7 @@ const CONTROL_GROUPS = [
       ['1', 'Agents Bot link', 'Leads to /agents; removes 5 board controls; duplicates the second Bot', 'Single AgentsButton in the global right cluster; breadcrumb keeps context', 'Global route shows only global controls; board controls stay on the board', 'All', 'e2e: click → route, header variant, no removed controls'],
       ['2', 'Agent control Bot', 'Opens modal; member 403; focus → BODY; second identical glyph', 'One board entry; opens the compact Inbox / Live / Runs modal', 'ADMIN full; MEMBER read-only Live + Runs; no 403', 'ADMIN / MEMBER', 'e2e: role matrix, focus return, no duplicate Bot'],
       ['3', 'Board settings gear', 'Workflow only', 'Same gear; rail Workflow | Agents & automation with pending badge', 'Settings shell, dirty close, policy CAS', 'ADMIN', 'component: tabs, dirty guard, CAS'],
-      ['4', 'Notifications bell', 'Invitations only', 'Same pending count as Agents; deep link to attention', 'One count; no second source of truth', 'All', 'e2e: pending appears in bell and inbox'],
+      ['4', 'Notifications bell', 'Invitations only', 'Invitations only until TASK-177.6; no approval count', 'Approval attention stays in Agents; no second source of truth', 'All', 'e2e: bell has no approval badge'],
       ['5', 'Board title / Members / Share', 'Unmount on /agents', 'Do not disappear: the global header simply is not a board header', 'Breadcrumb names the scope; no accidental hybrid', 'All', 'header route matrix'],
       ['6', 'Undo / Redo', 'Visible on /agents, including VIEWER', 'Hidden on global routes', 'No mutating affordances outside a board', 'Not VIEWER', 'component role matrix'],
       ['7', 'Switch board', 'Contextless chevron on /agents', 'Scope selector in the page header; URL ?board=', 'All boards or one board; unknown scope recovers', 'All', 'browser: scope + fallback'],
@@ -2246,13 +2313,13 @@ const CONTROL_GROUPS = [
   {
     id: 'agents', title: '/agents page', note: 'Attention is the default; sessions are board-first; runs are history.',
     rows: [
-      ['9', 'Refresh', 'Reloads with no timestamp', 'Updated 12s ago + Refresh; spinner and aria-live', 'Freshness is visible; list is not blocked', 'All', 'component'],
+      ['9', 'Refresh', 'Reloads with no timestamp', 'Per-board freshness + Refresh; spinner and aria-live', 'One timestamp never claims all boards are fresh after a partial error', 'All', 'component: A ok, B unavailable'],
       ['10', '4 KPI cards', 'Mixed units; waiting is false', 'Removed; counts live in rail, tabs and filter chips', 'Counts are clickable and truthful', 'All', 'unit: count semantics'],
       ['11', 'Board filter', 'Client-side; unknown value renders blank', 'Scope chip + URL ?board=; All boards fallback', 'Filter affects Attention, Sessions and Runs', 'All', 'component'],
       ['12', 'Agent filter', 'Mislabeled token filter', 'Agent (API token) with stable name/owner', 'Filter by token, not a fake agent entity', 'All', 'component'],
       ['13', 'Status filter', 'Mixes live, stale and lifecycle', 'Status and Heartbeat are separate filters', 'No contradictory badges', 'All', 'component'],
       ['14', 'Search', 'Placeholder promises card/model', 'Searches agent, session, card and plan hash', 'Debounced local filter in demo', 'All', 'browser'],
-      ['15', 'Error Retry', '166.17 keeps last loaded rows on a partial board failure; warning says data may be out of date', 'Keep rows + explicit partial warning; full error only when there is no data', 'Retry preserves filters; never blank a healthy list', 'All', 'component: one board 503 → rows stay'],
+      ['15', 'Error Retry', '166.17 keeps last loaded rows on a partial board failure; warning says data may be out of date', 'Per-board stale/error marker + Retry; pending count becomes unknown, never a false zero', 'Keep rows + explicit partial warning; full error only when there is no data', 'All', 'component: one board 503 → rows stay, count —'],
       ['16', 'Agent row', 'Token aggregate; status hidden by STALE', 'Board-first session rows; heartbeat separate', 'Row opens the session detail; board chips are links', 'All', 'unit / component'],
       ['17', 'Empty state', 'No CTA', 'Create API key + Read docs; filtered empty keeps Clear filters', 'First run has a path', 'All', 'browser'],
       ['18', 'Detail', 'Back only; duplicated stats', 'Breadcrumb, session actions, Open board, no false stats', 'Linkable detail; focus moves sensibly', 'All', 'e2e'],
@@ -2266,14 +2333,14 @@ const CONTROL_GROUPS = [
       ['21', 'Tabs', 'role=group + aria-pressed; arrows dead', 'Vertical tablist + tabpanel; arrows/Home/End; 44px on touch', 'One pane on mobile with Back', 'All', 'a11y tablist'],
       ['22', 'Inbox tab', 'Visible to MEMBER → 403', 'Admin-only; MEMBER lands on Live with read-only note', 'No request, no Retry trap', 'ADMIN', 'e2e role matrix'],
       ['23', 'Pending filter', 'rows.length in every filter', 'Needs / Decided / All with true counts', 'Counts do not change with the filter', 'ADMIN', 'component'],
-      ['24', 'Approval row', 'Raw summary, 10px meta', 'Human sentence, agent, card, risk, TTL; selected rail', 'Expires-first sort', 'ADMIN', 'browser'],
-      ['25', 'Plan block', 'Raw JSON dominates', 'Impact and diff first; JSON under Technical details', 'Hash copy; integrity note', 'ADMIN', 'component'],
+      ['24', 'Approval row', 'Raw summary, 10px meta', 'Human sentence, agent, target, risk, TTL; selected rail', 'Pending sorted by expiresAt ASC, then id', 'ADMIN', 'browser: two TTLs sorted'],
+      ['25', 'Plan block', 'Raw JSON dominates', 'Exact commands + human summary + known targets; JSON under Technical details', 'Hash copy; no fabricated diff or impact counts', 'ADMIN', 'component'],
       ['26', 'Approve', 'Inline form; no impact recap', 'Sticky decision bar + exact-hash confirm', 'Disabled for expired/decided', 'ADMIN', 'e2e'],
       ['27', 'Reject', 'Comment optional', 'Reason required; written to decision history', 'Empty reason blocked', 'ADMIN', 'e2e'],
       ['28', 'Expiry', 'Stale button; orphan detail possible', 'TTL countdown; expiry disables actions; row/detail stay linked', 'Refresh request hint', 'ADMIN', 'e2e: expiry'],
       ['29', 'Cancel request', 'API only', 'Overflow action with confirm', 'Moves to Cancelled; keeps history', 'ADMIN', 'e2e'],
-      ['30', 'Board pause', 'No confirm; Resume ignores reason', 'Confirm + reason; one banner; Resume has no dead field', 'Claims stay; in-flight finishes', 'ADMIN', 'e2e'],
-      ['31', 'Session actions', 'Pause inline, no End', 'Pause/Resume/End in Live; End releases claims', 'Confirm, reason, busy states', 'ADMIN', 'e2e'],
+      ['30', 'Board pause', 'No confirm; Resume ignores reason', 'Confirm + reason; one banner; Resume has no dead field', 'Claims stay; in-flight finishes; no Stop all/Stop token', 'ADMIN', 'e2e: no token stop in Live'],
+      ['31', 'Session actions', 'Pause inline, no End', 'Pause/Resume/End in Live; End releases claims; Token settings only for own token', 'Confirm, reason, busy states; others read-only', 'ADMIN', 'e2e: token ownership'],
       ['32', 'Runs filters', 'Free-text UUIDs; no clear', 'Named token/session selects; Clear all', 'Status/kind/time preserved', 'All', 'component'],
       ['33', 'Revert confirm', 'Blue primary; no impact', 'Danger confirm with command count and conflicts', 'Disabled with a reason when blocked', 'ADMIN', 'e2e'],
       ['34', 'Policy tab', '17 checkboxes inside the daily modal', 'Removed; one link to Board Settings → Agents & automation', 'No daily decision mixed with config', 'ADMIN', 'browser'],
@@ -2282,7 +2349,7 @@ const CONTROL_GROUPS = [
   {
     id: 'settings', title: 'Board Settings → Agents & automation', note: 'Configuration has its own home, dirty state and recovery.',
     rows: [
-      ['35', 'Workflow / Agents rail', 'Absent', 'Vertical rail with Workflow and Agents & automation; pending badge', 'One settings surface', 'ADMIN', 'component'],
+      ['35', 'Workflow / Agents rail', 'Absent', 'Vertical rail with Workflow and Agents & automation; pending badge; gear ADMIN-only', 'One settings surface; no member read-only form', 'ADMIN', 'component: gear absent for MEMBER'],
       ['36', 'Destructive mode', 'Select + dead checkboxes', 'Radio cards; covered triggers disabled with “covered”', 'Choice changes the rule', 'ADMIN', 'component'],
       ['37', 'Approval limits', 'Duplicate effective cards', 'One set of steppers + global hard-limit helper', 'Inline validation, prefix units', 'ADMIN', 'component'],
       ['38', 'Approver roles', 'Fixed text', 'Explicit fixed field with a clear hint', 'No dead dropdown', 'ADMIN', 'browser'],
@@ -2296,15 +2363,23 @@ const CONTROL_GROUPS = [
   },
 ];
 
+const ROLE_PRESETS = {
+  mixed: { 'agent-ops': 'ADMIN', website: 'MEMBER' },
+  admin: { 'agent-ops': 'ADMIN', website: 'ADMIN' },
+  member: { 'agent-ops': 'MEMBER', website: 'MEMBER' },
+};
+
 const initialState = () => ({
   section: 'agents',
   device: 'desktop',
   compare: 'after',
-  role: 'ADMIN',
+  rolePreset: 'mixed',
+  roles: { ...ROLE_PRESETS.mixed },
+  sceneBoard: 'agent-ops',
   theme: document.documentElement.getAttribute('data-theme') || 'dark',
   stress: false,
   notesOpen: false,
-  lastLoaded: '12s ago',
+  freshness: { 'agent-ops': '12s ago', website: '8s ago' },
   refreshing: false,
   demoState: 'default',
 
@@ -2326,7 +2401,7 @@ const initialState = () => ({
   rejecting: false,
   rejectReason: '',
 
-  approvals: clone(APPROVALS),
+  approvals: seedApprovals(),
   sessions: clone(SESSIONS),
   runs: clone(RUNS),
 
@@ -2335,7 +2410,7 @@ const initialState = () => ({
   acInboxFilter: 'needs',
   acSearch: '',
   acDetailOpen: false,
-  acSelectedApprovalId: 'ap-1',
+  acSelectedApprovalId: 'ap-8',
   acRunStatus: 'all',
   acRunKind: 'all',
   acRunToken: 'all',
@@ -2367,22 +2442,123 @@ const initialState = () => ({
 });
 
 let state = initialState();
+const announcedExpired = new Set();
 
 /* -------------------------------------------------------------------------
    Derived state + tiny helpers
    ------------------------------------------------------------------------- */
-const isAdmin = () => state.role === 'ADMIN';
+const SELF_TOKEN = 'Claude Code — audit';
 const board = (id) => BOARDS.find((b) => b.id === id);
 const boardName = (id) => board(id)?.name || 'Unknown board';
+const isAdminOn = (id) => state.roles?.[id] === 'ADMIN';
+const hasAnyAdmin = () => BOARDS.some((b) => isAdminOn(b.id));
+const scopeIsAdmin = () => (state.boardFilter === 'all' ? hasAnyAdmin() : isAdminOn(state.boardFilter));
+const isOwnToken = (name) => name === SELF_TOKEN;
 const approval = (id) => state.approvals.find((a) => a.id === id);
 const session = (id) => state.sessions.find((s) => s.id === id);
 const run = (id) => state.runs.find((r) => r.id === id);
 const isDemoEmpty = () => state.demoState === 'empty' && (state.section === 'agents' || state.section === 'control');
-const pendingOn = (id) => isDemoEmpty() ? 0 : state.approvals.filter((a) => a.status === 'pending' && (!id || id === 'all' || a.boardId === id)).length;
 const badgeText = (n) => (state.stress || n > 99 ? '99+' : String(n));
-const pendingCount = (id) => (isAdmin() ? pendingOn(id) : 0);
 const scopeLabel = () => (state.boardFilter === 'all' ? 'All boards' : boardName(state.boardFilter));
 const currentBoard = () => (state.boardFilter === 'all' ? BOARDS[0] : board(state.boardFilter));
+
+function boardDataState(id) {
+  if (state.demoState === 'loading') return 'loading';
+  if (state.demoState === 'empty') return 'empty';
+  if (state.demoState === 'error') {
+    if (state.section === 'agents') return id === 'website' ? 'error' : 'ok';
+    if (state.section === 'control') return id === state.sceneBoard ? 'error' : 'ok';
+  }
+  return 'ok';
+}
+
+function boardFreshness(id) {
+  const status = boardDataState(id);
+  if (status === 'error') return { state: 'error', text: 'Unavailable · showing last loaded data' };
+  if (status === 'loading') return { state: 'loading', text: 'Loading…' };
+  return { state: 'ok', text: `Updated ${state.freshness[id] || 'just now'}` };
+}
+
+function freshnessSummary() {
+  if (state.boardFilter !== 'all') {
+    const fresh = boardFreshness(state.boardFilter);
+    return fresh.state === 'ok' ? `Updated ${state.freshness[state.boardFilter] || 'just now'}` : fresh.text;
+  }
+  return BOARDS.map((b) => {
+    const fresh = boardFreshness(b.id);
+    return `${b.short} ${fresh.state === 'ok' ? (state.freshness[b.id] || 'just now') : fresh.state === 'error' ? 'unavailable' : 'loading'}`;
+  }).join(' · ');
+}
+
+function freshnessTone() {
+  if (state.boardFilter === 'all') {
+    if (BOARDS.some((b) => boardDataState(b.id) === 'error')) return 'warn';
+    if (BOARDS.some((b) => boardDataState(b.id) === 'loading')) return 'warn';
+    return 'ok';
+  }
+  return boardDataState(state.boardFilter) === 'ok' ? 'ok' : 'warn';
+}
+
+function approvalStatus(a) {
+  if (!a) return null;
+  if (a.status === 'pending' && a.expiresAt && Date.now() >= a.expiresAt) return 'expired';
+  return a.status;
+}
+function remainingMin(a) {
+  if (a.status !== 'pending' || !a.expiresAt) return 0;
+  return Math.max(0, Math.ceil((a.expiresAt - Date.now()) / 60000));
+}
+function expiryLabel(a) {
+  const min = remainingMin(a);
+  return min > 0 ? `in ${min} min` : 'now';
+}
+function sortApprovals(list) {
+  return [...list].sort((a, b) => {
+    const ap = approvalStatus(a) === 'pending';
+    const bp = approvalStatus(b) === 'pending';
+    if (ap !== bp) return ap ? -1 : 1;
+    if (ap) return (a.expiresAt || 0) - (b.expiresAt || 0) || a.id.localeCompare(b.id);
+    return 0;
+  });
+}
+function rawPendingOn(id) {
+  return state.approvals.filter((a) => approvalStatus(a) === 'pending' && (!id || id === 'all' || a.boardId === id)).length;
+}
+function pendingKnownOn(id) {
+  if (!isAdminOn(id)) return null;
+  const data = boardDataState(id);
+  if (data === 'loading' || data === 'error') return null;
+  if (data === 'empty') return 0;
+  return rawPendingOn(id);
+}
+function pendingAll() {
+  const adminBoards = BOARDS.filter((b) => isAdminOn(b.id));
+  if (!adminBoards.length) return null;
+  let total = 0;
+  for (const b of adminBoards) {
+    const count = pendingKnownOn(b.id);
+    if (count === null) return null;
+    total += count;
+  }
+  return total;
+}
+function scopePending() {
+  return state.boardFilter === 'all' ? pendingAll() : pendingKnownOn(state.boardFilter);
+}
+function pendingBadge(n, { quietUnknown = false } = {}) {
+  if (n === null) {
+    return quietUnknown
+      ? '<span class="count-badge is-quiet" title="Pending approvals unavailable" aria-label="Pending approvals unavailable">—</span>'
+      : '';
+  }
+  if (n <= 0) return '';
+  return `<span class="count-badge" aria-label="${n} pending approval${n === 1 ? '' : 's'}">${badgeText(n)}</span>`;
+}
+function railPending(n) {
+  if (n === null) return '<span class="rail-count is-unknown" title="Pending approvals unavailable">—</span>';
+  if (n <= 0) return '';
+  return `<span class="rail-count is-amber">${badgeText(n)}</span>`;
+}
 
 const statusLabel = (s) => ({ pending: 'Pending', approved: 'Approved', rejected: 'Rejected', expired: 'Expired', cancelled: 'Cancelled', consumed: 'Applied' }[s] || s);
 const statusTone = (s) => ({ pending: 'warn', approved: 'ok', rejected: 'bad', expired: 'muted', cancelled: 'muted', consumed: 'primary' }[s] || 'muted');
@@ -2396,22 +2572,19 @@ const humanTime = () => 'just now';
 const statusPill = (label, tone = 'muted') =>
   `<span class="status-pill ${tone}"><span class="status-mark" aria-hidden="true"></span><span class="status-label">${esc(label)}</span></span>`;
 const chip = (label, tone = '', cls = '') => `<span class="chip ${tone} ${cls}">${label}</span>`;
-const countBadge = (n, quiet = false) => {
-  if (!isAdmin() && !quiet) return '';
-  const text = badgeText(n);
-  return `<span class="count-badge ${quiet ? 'is-quiet' : ''}" aria-label="${n} pending approval${n === 1 ? '' : 's'}">${text}</span>`;
-};
 const avatar = (who) => `<span class="avatar" title="${esc(PEOPLE[who].name)}">${PEOPLE[who].initials}</span>`;
 
 function filteredApprovals({ boardId = state.boardFilter, search = state.search, includeDecided = true } = {}) {
   if (isDemoEmpty()) return [];
   const q = search.trim().toLowerCase();
-  return state.approvals.filter((a) => {
-    if (!includeDecided && a.status !== 'pending') return false;
+  return sortApprovals(state.approvals.filter((a) => {
+    if (!isAdminOn(a.boardId)) return false;
+    if (boardDataState(a.boardId) === 'error') return false;
+    if (!includeDecided && approvalStatus(a) !== 'pending') return false;
     if (boardId !== 'all' && a.boardId !== boardId) return false;
     if (!q) return true;
-    return [a.summary, a.agent, a.card, a.hash, a.session, boardName(a.boardId)].join(' ').toLowerCase().includes(q);
-  });
+    return [a.summary, a.agent, a.card, a.target, a.hash, a.session, boardName(a.boardId)].join(' ').toLowerCase().includes(q);
+  }));
 }
 
 function filteredSessions({ boardId = state.boardFilter, search = state.search, agentFilter = state.agentFilter, statusFilter = state.statusFilter } = {}) {
@@ -2442,6 +2615,20 @@ function filteredRuns({ boardId = state.boardFilter, search = state.search, stat
     if (!q) return true;
     return [r.summary, r.actor, r.token, r.session, boardName(r.boardId)].join(' ').toLowerCase().includes(q);
   });
+}
+
+function selectDefaultForScope() {
+  if (scopeIsAdmin()) {
+    const nextApproval = filteredApprovals({ includeDecided: false })[0];
+    if (nextApproval) {
+      state.selectedType = 'approval';
+      state.selectedId = nextApproval.id;
+      return;
+    }
+  }
+  const nextSession = filteredSessions()[0];
+  state.selectedType = 'session';
+  state.selectedId = nextSession?.id || '';
 }
 
 function allAgents() {
@@ -2478,11 +2665,15 @@ function getComboData(key) {
       value: state.boardFilter,
       currentLabel: scopeLabel(),
       options: [
-        { value: 'all', label: 'All boards', dot: 'is-all', meta: isAdmin() && pendingOn() ? badgeText(pendingOn()) : '' },
-        ...BOARDS.map((b) => ({
-          value: b.id, label: b.name, dot: b.color || 'default',
-          meta: isAdmin() && pendingOn(b.id) ? badgeText(pendingOn(b.id)) : '',
-        })),
+        { value: 'all', label: 'All boards', dot: 'is-all', meta: (() => { if (!hasAnyAdmin()) return ''; const n = pendingAll(); return n === null ? '—' : n > 0 ? badgeText(n) : ''; })() },
+        ...BOARDS.map((b) => {
+          if (!isAdminOn(b.id)) return { value: b.id, label: b.name, dot: b.color || 'default', meta: '' };
+          const n = pendingKnownOn(b.id);
+          return {
+            value: b.id, label: b.name, dot: b.color || 'default',
+            meta: n === null ? '—' : n > 0 ? badgeText(n) : '',
+          };
+        }),
       ],
       note: 'The scope filters Attention, Sessions and Runs. It is URL state in the product: ?board=. The global Agents header keeps the Agents context, not the board controls.',
     };
@@ -2584,10 +2775,7 @@ function applyComboValue(key, value) {
   if (key === 'board') {
     state.boardFilter = value;
     state.sheetOpen = false;
-    if (state.agentTab === 'attention') {
-      state.selectedType = isAdmin() ? 'approval' : 'session';
-      state.selectedId = isAdmin() ? 'ap-1' : 's1';
-    }
+    if (state.agentTab === 'attention') selectDefaultForScope();
     return;
   }
   if (key === 'agentFilter') { state.agentFilter = value; return; }
@@ -2879,12 +3067,44 @@ function renderStage() {
   }
 }
 
+function stagePath() {
+  if (state.section === 'agents') {
+    const params = new URLSearchParams();
+    params.set('section', state.agentTab);
+    if (state.boardFilter !== 'all') params.set('board', state.boardFilter);
+    if (state.selectedType === 'approval' && scopeIsAdmin() && state.selectedId) {
+      params.set('approval', state.selectedId);
+      if (state.boardFilter === 'all') {
+        const selected = approval(state.selectedId);
+        if (selected) params.set('board', selected.boardId);
+      }
+    }
+    if (state.selectedType === 'run' && state.selectedId) {
+      params.set('run', state.selectedId);
+      if (state.boardFilter === 'all') {
+        const selected = run(state.selectedId);
+        if (selected) params.set('board', selected.boardId);
+      }
+    }
+    return `janosik.app/agents?${params.toString()}`;
+  }
+  if (state.section === 'control') {
+    const params = new URLSearchParams();
+    params.set('agent', state.acTab);
+    if (state.acTab === 'inbox' && isAdminOn(state.sceneBoard)) params.set('approval', state.acSelectedApprovalId);
+    return `janosik.app/board/${state.sceneBoard}?${params.toString()}`;
+  }
+  if (state.section === 'settings') return `janosik.app/board/${state.sceneBoard}?settings=agents`;
+  return SECTION_META[state.section].path;
+}
+
 function syncChrome() {
   const meta = SECTION_META[state.section];
+  const path = stagePath();
   document.getElementById('section-kicker').textContent = meta.kicker;
   document.getElementById('section-title').textContent = meta.title;
   document.getElementById('section-description').textContent = meta.description;
-  document.getElementById('stage-path').innerHTML = `${icon(state.section === 'evidence' ? 'file-diff' : state.section === 'controls' ? 'list-checks' : state.section === 'settings' ? 'settings' : state.section === 'control' ? 'bot' : 'bot')}<span>${esc(meta.path)}</span>`;
+  document.getElementById('stage-path').innerHTML = `${icon(state.section === 'evidence' ? 'file-diff' : state.section === 'controls' ? 'list-checks' : state.section === 'settings' ? 'settings' : state.section === 'control' ? 'bot' : 'bot')}<span>${esc(path)}</span>`;
   const frame = document.getElementById('device-frame');
   const widths = { desktop: 1440, tablet: 1024, mobile: 390 };
   const heights = { desktop: '1440 × 900', tablet: '1024 × 768', mobile: '390 × 844' };
@@ -2898,12 +3118,17 @@ function syncChrome() {
   if (state.compare === 'before' && ['agents', 'control', 'settings'].includes(state.section)) {
     url.innerHTML = `${icon('lock')}<span>evidence · audited build c6688f3 · ${state.device}</span>`;
   } else {
-    url.innerHTML = `${icon('lock')}<span>${esc(meta.path)}</span>`;
+    url.innerHTML = `${icon('lock')}<span>${esc(path)}</span>`;
   }
   const live = document.getElementById('stage-live');
   const isBefore = state.compare === 'before' && ['agents', 'control', 'settings'].includes(state.section);
+  const side = state.section === 'agents'
+    ? `Global view · ${scopeLabel()}`
+    : state.section === 'control' || state.section === 'settings'
+      ? `Board scope · ${boardName(state.sceneBoard)}`
+      : meta.side;
   live.classList.toggle('is-evidence', isBefore);
-  live.innerHTML = `<i aria-hidden="true"></i><span>${isBefore ? 'Screenshot evidence' : meta.side}</span>`;
+  live.innerHTML = `<i aria-hidden="true"></i><span>${isBefore ? 'Screenshot evidence' : esc(side)}</span>`;
 
   const compareButtons = document.querySelectorAll('[data-action="compare"]');
   const compareDisabled = !['agents', 'control', 'settings'].includes(state.section);
@@ -2917,10 +3142,10 @@ function syncChrome() {
   document.querySelectorAll('[data-action="device"]').forEach((btn) => {
     btn.setAttribute('aria-pressed', String(btn.dataset.device === state.device));
   });
-  document.querySelectorAll('[data-action="role"]').forEach((btn) => {
-    btn.setAttribute('aria-pressed', String(btn.dataset.role === state.role));
+  document.querySelectorAll('[data-action="role-preset"]').forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.preset === state.rolePreset));
   });
-  const roleGroup = document.querySelector('.stage-tools .seg[aria-label="Preview role"]');
+  const roleGroup = document.querySelector('.stage-tools .seg[aria-label="Preview roles"]');
   if (roleGroup) roleGroup.style.display = ['evidence', 'controls'].includes(state.section) ? 'none' : '';
   document.querySelectorAll('[data-action="section"]').forEach((btn) => {
     if (btn.dataset.section === state.section) btn.setAttribute('aria-current', 'page');
@@ -2961,11 +3186,12 @@ function syncChrome() {
   if (isBefore) {
     metaHtml = `<span class="meta-chip is-amber"><span class="status-dot warn"></span>Evidence</span><span class="meta-chip">Source report</span><span class="meta-chip">Not proposed UI</span>`;
   } else if (state.section === 'evidence') {
-    metaHtml = `<span class="meta-chip">44 captures</span><span class="meta-chip">Baseline fdd8010</span><span class="meta-chip">Lightbox enabled</span>`;
+    metaHtml = `<span class="meta-chip">44 captures</span><span class="meta-chip">Baseline 4a79e12</span><span class="meta-chip">Lightbox enabled</span>`;
   } else if (state.section === 'controls') {
     metaHtml = `<span class="meta-chip">${CONTROL_GROUPS.reduce((n, g) => n + g.rows.length, 0)} controls</span><span class="meta-chip">4 groups</span><span class="meta-chip">Collapsible</span>`;
   } else {
-    metaHtml = `<span class="meta-chip is-live"><span class="status-dot ok"></span>Live HTML</span><span class="meta-chip">Approved IA</span><span class="meta-chip">${isAdmin() ? 'ADMIN' : 'MEMBER'} preview</span>`;
+    const roleLabel = state.rolePreset === 'mixed' ? 'ADMIN A · MEMBER B' : state.rolePreset === 'admin' ? 'ADMIN on both' : 'MEMBER on both';
+    metaHtml = `<span class="meta-chip is-live"><span class="status-dot ok"></span>Live HTML</span><span class="meta-chip">Approved IA</span><span class="meta-chip">${roleLabel}</span>`;
   }
   document.getElementById('section-meta').innerHTML = metaHtml;
 
@@ -3103,7 +3329,7 @@ function renderBeforeMode() {
               <figcaption>${esc(f.caption)}</figcaption>
             </figure>`).join('')}
         </div>
-        <p class="before-footnote">${icon('info')}Captured from the audited build at c6688f3 (pre-166.17). Current main fdd8010 keeps the same two-Bot header and agent-control IA; 166.17 changed board display controls and partial-error retention. See README → Baseline. The After view is live HTML, not a screenshot.</p>
+        <p class="before-footnote">${icon('info')}Captured from the audited build at c6688f3 (pre-166.17). Current main 4a79e12 keeps the same two-Bot header and agent-control IA; 166.17 changed board display controls and partial-error retention. See README → Baseline. The After view is live HTML, not a screenshot.</p>
       </div>
     </div>`;
 }
@@ -3120,7 +3346,7 @@ function renderEvidence() {
   return `
     <div class="evidence-layout" style="padding:12px">
       <div>
-        <div class="banner info" style="margin-bottom:10px">${icon('info')}<span><strong>Baseline:</strong> captures are from the audit build c6688f3. Current main is fdd8010 (166.17 merged). Header and Agent control are unchanged by 166.17; board display controls and partial-error retention did change. The target IA is unchanged.</span></div>
+        <div class="banner info" style="margin-bottom:10px">${icon('info')}<span><strong>Baseline:</strong> captures are from the audit build c6688f3. Current main is 4a79e12 (166.17 merged). Header and Agent control are unchanged by 166.17; board display controls and partial-error retention did change. The target IA is unchanged.</span></div>
         <div class="evidence-toolbar" role="group" aria-label="Evidence categories">
           ${categories.map(([id, label]) => `<button type="button" class="evidence-filter ${state.evidenceFilter === id ? 'is-active' : ''}" data-action="evidence-filter" data-filter="${id}">${label}</button>`).join('')}
           <span class="spacer"></span>
@@ -3201,9 +3427,15 @@ function renderControls() {
    /agents surface
    ------------------------------------------------------------------------- */
 function globalHeader() {
-  const pending = pendingCount('all');
-  const showBadge = isAdmin() && pending > 0;
-  const scoped = state.boardFilter !== 'all';
+  const pending = scopePending();
+  const canSeePending = scopeIsAdmin();
+  const unknown = canSeePending && pending === null;
+  const showBadge = canSeePending && pending !== null && pending > 0;
+  const pendingLabel = unknown
+    ? ', pending approvals unavailable'
+    : showBadge
+      ? ', ' + pending + ' approval' + (pending === 1 ? '' : 's') + ' waiting'
+      : '';
   return `
     <header class="app-header global-header">
       <span class="app-brand"><span class="brand-tile" aria-hidden="true">${icon('feather')}</span><span class="app-wordmark">Janosik</span></span>
@@ -3215,11 +3447,11 @@ function globalHeader() {
       <span class="global-route-note" title="Global route: board controls stay on the board. This is the intentional Agents header.">${icon('info')}Global view</span>
       <div class="header-actions">
         <button type="button" class="header-btn" data-action="focus-search" aria-label="Search agents" title="Search agents">${icon('search')}</button>
-        <button type="button" class="header-btn" data-action="bell" aria-label="Notifications${showBadge ? ', ' + pending + ' approvals waiting' : ''}" title="Notifications share the same pending count">
-          ${icon('bell')}${showBadge ? `<span class="count-badge">${badgeText(pending)}</span>` : ''}
+        <button type="button" class="header-btn" data-action="bell" aria-label="Notifications, invitations only" title="Invitations only — approval attention lives in Agents">
+          ${icon('bell')}
         </button>
-        <button type="button" class="agents-trigger" data-action="agents-home" aria-label="Agents${showBadge ? ', ' + pending + ' approval' + (pending === 1 ? '' : 's') + ' waiting' : ''}" title="Agents — global inbox">
-          ${icon('bot')}<span>Agents</span>${showBadge ? `<span class="count-badge">${badgeText(pending)}</span>` : ''}
+        <button type="button" class="agents-trigger" data-action="agents-home" aria-label="Agents${pendingLabel}" title="Agents — global inbox">
+          ${icon('bot')}<span>Agents</span>${showBadge ? `<span class="count-badge">${badgeText(pending)}</span>` : ''}${unknown ? '<span class="count-badge is-quiet" title="Pending approvals unavailable" aria-label="Pending approvals unavailable">—</span>' : ''}
         </button>
         ${avatar('admin')}
       </div>
@@ -3234,7 +3466,7 @@ function pageHead(title, description, extra = '') {
         <p>${esc(description)}</p>
       </div>
       <div class="page-head-actions">
-        <span class="freshness"><span class="status-dot ok"></span><span aria-live="polite">Updated ${esc(state.lastLoaded)}</span></span>
+        <span class="freshness" title="Per-board freshness"><span class="status-dot ${freshnessTone()}"></span><span aria-live="polite">${esc(freshnessSummary())}</span></span>
         <button type="button" class="btn btn-outline btn-sm" data-action="refresh">${icon('refresh', state.refreshing ? 'spin' : '')}${state.refreshing ? 'Refreshing' : 'Refresh'}</button>
         ${extra}
       </div>
@@ -3264,11 +3496,11 @@ function attentionApprovalCard(a) {
         <span class="sep">·</span>
         <span class="meta">${esc(boardName(a.boardId))}</span>
         <span class="sep">·</span>
-        <span class="meta">${a.expiresMin} min left</span>
+        <span class="meta">expires ${esc(expiryLabel(a))}</span>
         ${chip(esc(a.risk) + ' risk', a.risk === 'High' ? 'bad' : a.risk === 'Medium' ? 'warn' : '')}
       </div>
       <p class="approval-title">${esc(a.summary)}</p>
-      <p class="approval-sentence"><b>${esc(a.agent)}</b> asks to run <span class="mono">${esc(a.action)}</span>. ${esc(a.impactTitle)} — ${esc(a.impact.split('.')[0])}.</p>
+      <p class="approval-sentence"><b>${esc(a.agent)}</b> asks to run <span class="mono">${esc(a.action)}</span> on ${esc(a.targetType)} <b>${esc(a.target)}</b>.</p>
       <div class="approval-actions">
         <button type="button" class="btn btn-primary btn-sm" data-action="select-approval" data-id="${a.id}">Review plan</button>
         <button type="button" class="btn btn-outline btn-sm" data-action="quick-reject" data-id="${a.id}">Reject</button>
@@ -3324,10 +3556,11 @@ function renderAttention() {
   const stale = sessions.filter((s) => s.stale);
   const live = sessions.filter((s) => !s.stale && s.status !== 'ended');
   const filtersActive = state.search.trim() || state.agentFilter !== 'all' || state.statusFilter !== 'all';
+  const canSeeApprovals = scopeIsAdmin();
   let content = '';
 
-  if (!isAdmin()) {
-    content += `<div class="banner info member-note">${icon('info')}<span><strong>Approvals are handled by board admins.</strong> You can follow every session and run. Nothing here will return a 403.</span></div>`;
+  if (!canSeeApprovals) {
+    content += `<div class="banner info member-note">${icon('info')}<span><strong>Approvals are handled by board admins ${state.boardFilter === 'all' ? 'on boards where you are an admin' : 'on this board'}.</strong> You can follow every session and run. Nothing here will return a 403.</span></div>`;
   }
 
   if (state.demoState === 'empty') {
@@ -3335,14 +3568,14 @@ function renderAttention() {
     return pageHead('Attention', 'What needs a human. What runs now.') + agentsToolbar() + content;
   }
 
-  if (isAdmin()) {
+  if (canSeeApprovals) {
     if (approvals.length) {
       content += `
         <div class="attention-intro"><span class="status-dot warn"></span><h2>${approvals.length === 1 ? 'One decision is waiting' : approvals.length + ' decisions are waiting'}</h2><span class="meta">Sorted by expiry. A decision authorizes one exact plan hash.</span></div>
         <div class="stack" style="gap:8px">${approvals.map(attentionApprovalCard).join('')}</div>`;
     } else if (filtersActive) {
       content += filteredEmpty('No approvals match these filters', 'The queue is empty for this scope and search.');
-    } else {
+    } else if (!partialError) {
       content += allClear();
     }
   }
@@ -3366,7 +3599,11 @@ function renderAttention() {
 }
 
 function partialErrorBanner() {
-  return `<div class="banner warn" style="margin:0 0 10px" role="alert">${icon('alert')}<span><strong>Some boards are unavailable.</strong> Showing the last loaded sessions; they may be out of date.</span><span class="banner-actions"><button type="button" class="btn btn-outline btn-sm" data-action="retry-demo">${icon('refresh')}Retry</button></span></div>`;
+  const unavailable = BOARDS.filter((b) => boardDataState(b.id) === 'error').map((b) => b.name);
+  const fresh = BOARDS.filter((b) => boardDataState(b.id) === 'ok').map((b) => `${b.short} ${state.freshness[b.id] || 'just now'}`);
+  const names = unavailable.length ? unavailable.join(', ') : 'Some boards';
+  const retained = fresh.length ? ` Last loaded: ${fresh.join(' · ')}.` : '';
+  return `<div class="banner warn" style="margin:0 0 10px" role="alert">${icon('alert')}<span><strong>${esc(names)} unavailable.</strong> Showing the last loaded sessions; they may be out of date.${esc(retained)}</span><span class="banner-actions"><button type="button" class="btn btn-outline btn-sm" data-action="retry-demo">${icon('refresh')}Retry</button></span></div>`;
 }
 
 function allClear() {
@@ -3415,8 +3652,10 @@ function renderSessions() {
     const boardIds = [...new Set(list.map((s) => s.boardId))];
     groups = boardIds.map((id) => {
       const rows = list.filter((s) => s.boardId === id);
+      const fresh = boardFreshness(id);
+      const pending = pendingKnownOn(id);
       return `<div class="board-group">
-        <div class="board-group-head"><span class="board-dot ${board(id)?.color || ''}"></span><b>${esc(boardName(id))}</b>${isAdmin() && pendingOn(id) ? `<span class="chip warn">${badgeText(pendingOn(id))} approval${pendingOn(id) === 1 ? '' : 's'}</span>` : ''}<span class="meta">${rows.length} session${rows.length === 1 ? '' : 's'} · ${rows.filter((s) => s.stale).length} no heartbeat</span></div>
+        <div class="board-group-head"><span class="board-dot ${board(id)?.color || ''}"></span><b>${esc(boardName(id))}</b>${pending !== null && pending > 0 ? `<span class="chip warn">${badgeText(pending)} approval${pending === 1 ? '' : 's'}</span>` : ''}${fresh.state === 'error' ? `<span class="chip warn">Unavailable · last loaded</span>` : ''}<span class="meta">${rows.length} session${rows.length === 1 ? '' : 's'} · ${rows.filter((s) => s.stale).length} no heartbeat · ${esc(fresh.text)}</span></div>
         ${sessionTableHeader()}
         <div class="session-table">${rows.map((s) => sessionRow(s)).join('')}</div>
       </div>`;
@@ -3440,7 +3679,7 @@ function renderRuns() {
   </div>`;
 
   if (state.demoState === 'loading') return header + toolbar + loadingBlocks('runs');
-  if (state.demoState === 'error') return header + toolbar + errorBlock('Could not load run history', 'The runs aggregate failed. Retry keeps the current filters and does not leave a blank area.');
+  const partialError = state.demoState === 'error';
   if (state.demoState === 'empty' || (!list.length && !state.search.trim() && state.runStatus === 'all' && state.runKind === 'all' && state.runToken === 'all' && state.runSession === 'all' && (state.runTime || 'all') === 'all')) {
     return header + toolbar + `<div class="empty-state"><span class="empty-icon">${icon('history')}</span><h3>${state.demoState === 'empty' ? 'No runs yet' : 'No run history for this scope'}</h3><p>Runs appear when an agent applies commands. A dry-run preview and rollback become available only for applied runs without conflicts.</p><div class="empty-actions"><button type="button" class="btn btn-outline btn-sm" data-action="clear-run-filters">Clear filters</button><button type="button" class="btn btn-ghost btn-sm" data-action="read-docs">How rollback works</button></div></div>`;
   }
@@ -3454,13 +3693,13 @@ function renderRuns() {
       return `<button type="button" class="run-row ${selected ? 'is-selected' : ''}" data-action="select-run" data-id="${r.id}" aria-label="${esc(r.summary + ', ' + runLabel(r.status))}">
         <span class="run-main">
           <span class="run-title"><b>${esc(r.summary)}</b></span>
-          <span class="run-meta"><span>${esc(r.actor)}</span><span class="sep"></span><span>${esc(boardName(r.boardId))}</span><span class="sep"></span><span>${r.commands} command${r.commands === 1 ? '' : 's'}</span><span class="sep"></span><span>${esc(r.kind)}</span>${r.conflicts.length ? `<span class="chip warn">${r.conflicts.length} conflict</span>` : ''}</span>
+          <span class="run-meta"><span>${esc(r.actor)}</span><span class="sep"></span><span>${esc(boardName(r.boardId))}</span><span class="sep"></span><span>${r.commands} command${r.commands === 1 ? '' : 's'}</span><span class="sep"></span><span>${esc(r.kind)}</span>${boardDataState(r.boardId) === 'error' ? '<span class="chip warn">Board unavailable</span>' : ''}${r.conflicts.length ? `<span class="chip warn">${r.conflicts.length} conflict</span>` : ''}</span>
         </span>
         <span class="run-side">${statusPill(runLabel(r.status), runTone(r.status), true)}<span class="run-side-meta"><time>${esc(r.time)}</time><span class="chip">${esc(r.id)}</span></span></span>
       </button>`;
     }).join('')}`).join('');
 
-  return header + toolbar + `<div class="runs-list">${body}</div><div class="load-more"><span>${list.length} of ${state.runs.length} runs · history is append-only</span><button type="button" class="btn btn-ghost btn-sm" data-action="runs-load-more">Load more</button></div>`;
+  return header + toolbar + (partialError ? partialErrorBanner() : '') + `<div class="runs-list">${body}</div><div class="load-more"><span>${list.length} of ${state.runs.length} runs · history is append-only</span><button type="button" class="btn btn-ghost btn-sm" data-action="runs-load-more">Load more</button></div>`;
 }
 
 function loadingBlocks(kind) {
@@ -3477,28 +3716,32 @@ function errorBlock(title, body) {
 }
 
 function renderAgentsRail() {
-  const attentionCount = isAdmin() ? pendingOn(state.boardFilter === 'all' ? undefined : state.boardFilter) : 0;
+  const attentionCount = scopeIsAdmin() ? scopePending() : null;
   const sessionCount = filteredSessions({ search: '', agentFilter: 'all', statusFilter: 'all' }).length;
   const runCount = filteredRuns({ search: '', status: 'all', kind: 'all', token: 'all', sessionName: 'all', time: 'all' }).length;
-  const tab = (id, name, iconName, count, amber = false) => `
+  const tab = (id, name, iconName, count, amber = false) => {
+    const text = count === null ? '' : count === '—' ? '—' : badgeText(count);
+    const show = count !== null && count !== 0 && count !== '';
+    return `
     <button type="button" class="rail-tab" role="tab" id="agents-tab-${id}" aria-selected="${state.agentTab === id}" aria-controls="agents-main" tabindex="${state.agentTab === id ? '0' : '-1'}" data-action="agents-tab" data-tab="${id}">
-      ${icon(iconName)}<span>${name}</span>${count !== null && count > 0 ? `<span class="rail-count ${amber ? 'is-amber' : ''}">${amber ? badgeText(count) : count}</span>` : ''}
+      ${icon(iconName)}<span>${name}</span>${show ? `<span class="rail-count ${amber ? 'is-amber' : ''}">${text}</span>` : ''}
     </button>`;
+  };
   return `
     <nav class="agents-rail" aria-label="Agents sections">
       <div class="rail-head"><h2>Agents</h2><p>What needs a human. What runs now.</p></div>
       <div class="rail-tabs" role="tablist" aria-label="Agents sections" aria-orientation="vertical" data-tablist="agents">
-        ${tab('attention', 'Attention', 'inbox', isAdmin() ? attentionCount : null, true)}
+        ${tab('attention', 'Attention', 'inbox', scopeIsAdmin() ? (attentionCount === null ? '—' : attentionCount) : null, true)}
         ${tab('sessions', 'Sessions', 'activity', sessionCount)}
         ${tab('runs', 'Runs', 'history', runCount)}
       </div>
       <div class="rail-section">
-        <div class="rail-section-head"><span>Boards</span><span>${isAdmin() ? 'pending' : 'scope'}</span></div>
-        <button type="button" class="rail-board ${state.boardFilter === 'all' ? 'is-active' : ''}" data-action="board-select" data-board="all">
-          <span class="board-dot is-all"></span><span class="board-name">All boards</span>${isAdmin() && pendingOn() ? `<span class="rail-count is-amber">${badgeText(pendingOn())}</span>` : ''}
+        <div class="rail-section-head"><span>Boards</span><span>${hasAnyAdmin() ? 'pending' : 'scope'}</span></div>
+        <button type="button" class="rail-board ${state.boardFilter === 'all' ? 'is-active' : ''}" data-action="board-select" data-board="all" title="${esc(freshnessSummary())}">
+          <span class="board-dot is-all"></span><span class="board-name">All boards</span>${hasAnyAdmin() ? railPending(pendingAll()) : ''}
         </button>
-        ${BOARDS.map((b) => `<button type="button" class="rail-board ${state.boardFilter === b.id ? 'is-active' : ''}" data-action="board-select" data-board="${b.id}">
-          <span class="board-dot ${b.color}"></span><span class="board-name">${esc(b.name)}</span>${isAdmin() && pendingOn(b.id) ? `<span class="rail-count is-amber">${badgeText(pendingOn(b.id))}</span>` : ''}
+        ${BOARDS.map((b) => `<button type="button" class="rail-board ${state.boardFilter === b.id ? 'is-active' : ''}" data-action="board-select" data-board="${b.id}" title="${esc(boardFreshness(b.id).text)}">
+          <span class="board-dot ${b.color}"></span><span class="board-name">${esc(b.name)}</span>${isAdminOn(b.id) ? railPending(pendingKnownOn(b.id)) : ''}
         </button>`).join('')}
       </div>
       <div class="rail-foot">
@@ -3515,13 +3758,13 @@ function renderAgentsDetail() {
       <div class="detail-empty"><span class="empty-icon">${icon('key')}</span><h3>No sessions to inspect</h3><p>Create an API key and connect an agent. The session detail appears here.</p><div class="empty-actions"><button type="button" class="btn btn-primary btn-sm" data-action="create-key">Create API key</button></div></div>
     </aside>`;
   }
-  if (!isAdmin() && state.selectedType === 'approval') {
+  if (state.selectedType === 'approval' && !scopeIsAdmin()) {
     state.selectedType = 'session';
     state.selectedId = filteredSessions()[0]?.id || state.selectedId;
   }
   let type = state.selectedType;
   let item = null;
-  if (type === 'approval' && isAdmin()) item = currentApprovalForUi();
+  if (type === 'approval' && scopeIsAdmin()) item = currentApprovalForUi();
   if (type === 'session') {
     const list = filteredSessions();
     item = list.find((s) => s.id === state.selectedId) || list[0] || null;
@@ -3533,7 +3776,7 @@ function renderAgentsDetail() {
     if (item) state.selectedId = item.id;
   }
   if (!item) {
-    if (type === 'approval' && !isAdmin()) {
+    if (type === 'approval' && !scopeIsAdmin()) {
       type = 'session';
       return renderAgentsDetail();
     }
@@ -3604,8 +3847,8 @@ function renderAgents() {
    Shared detail bodies
    ------------------------------------------------------------------------- */
 function approvalStatusHint(a) {
-  switch (a.status) {
-    case 'pending': return { tone: 'warn', icon: 'clock', text: `Waiting for a board admin. The request expires in ${a.expiresMin} min.` };
+  switch (approvalStatus(a)) {
+    case 'pending': return { tone: 'warn', icon: 'clock', text: `Waiting for a board admin. The request expires ${expiryLabel(a)}.` };
     case 'approved': return { tone: 'ok', icon: 'check', text: 'Approved. Waiting for the agent to apply this exact plan hash.' };
     case 'rejected': return { tone: 'bad', icon: 'x', text: 'Rejected. The reason below is written to the board history.' };
     case 'expired': return { tone: 'warn', icon: 'clock', text: 'Expired before a decision. Ask the agent to request it again.' };
@@ -3616,15 +3859,12 @@ function approvalStatusHint(a) {
 }
 
 function approvalDetailBody(a) {
+  const st = approvalStatus(a);
   const hint = approvalStatusHint(a);
   const sy = runForApproval(a);
   return `
     <div class="banner ${hint.tone === 'ok' ? 'info' : hint.tone === 'bad' ? 'bad' : hint.tone === 'warn' ? 'warn' : ''}" style="margin-bottom:10px">${icon(hint.icon)}<span>${esc(hint.text)}</span></div>
-    <p class="detail-lead"><b>${esc(a.agent)}</b> asks to run <span class="mono">${esc(a.action)}</span> on <b>${esc(boardName(a.boardId))}</b>. Approving authorizes only the plan below — the agent still applies it.</p>
-    <div class="impact-block">
-      <b>${icon('alert')} ${esc(a.impactTitle)}</b>
-      <p>${esc(a.impact)}</p>
-    </div>
+    <p class="detail-lead"><b>${esc(a.agent)}</b> asks to run <span class="mono">${esc(a.action)}</span> on <b>${esc(boardName(a.boardId))}</b>. Approving authorizes only the commands below — the agent still applies them.</p>
     <div class="detail-section" style="margin-top:10px">
       <div class="detail-section-head"><h3>Request</h3></div>
       <div class="meta-grid">
@@ -3632,17 +3872,20 @@ function approvalDetailBody(a) {
         <div><span class="meta-label">Requested by</span><span class="meta-value">${esc(a.requestedBy)}</span></div>
         <div><span class="meta-label">Agent</span><span class="meta-value">${esc(a.agent)}</span></div>
         <div><span class="meta-label">Session</span><span class="meta-value">${esc(a.session)}</span></div>
-        <div><span class="meta-label">Card</span><span class="meta-value">${esc(a.card || 'Board-level request')}</span></div>
-        <div><span class="meta-label">${a.status === 'pending' ? 'Expires' : 'Requested'}</span><span class="meta-value">${a.status === 'pending' ? `in ${a.expiresMin} min` : esc(a.requestedAt)}</span></div>
+        <div><span class="meta-label">Target</span><span class="meta-value">${esc(a.targetType)} · ${esc(a.target)}</span></div>
+        <div><span class="meta-label">${st === 'pending' ? 'Expires' : 'Requested'}</span><span class="meta-value">${st === 'pending' ? esc(expiryLabel(a)) : esc(a.requestedAt)}</span></div>
       </div>
     </div>
     <div class="detail-section">
-      <div class="detail-section-head">${icon('file-diff')}<h3>What will change</h3><span class="spacer"></span><span class="chip">${a.planCount} command${a.planCount === 1 ? '' : 's'}</span></div>
-      <div class="diff-row">
-        <div class="diff-box"><span>before</span><b>${esc(a.diffFrom)}</b></div>
-        <div class="diff-arrow">${icon('arrow-right')}</div>
-        <div class="diff-box to"><span>after</span><b>${esc(a.diffTo)}</b></div>
+      <div class="detail-section-head">${icon('terminal')}<h3>Plan</h3><span class="spacer"></span><span class="chip">${a.commands.length} command${a.commands.length === 1 ? '' : 's'}</span></div>
+      <p class="detail-lead" style="margin-bottom:6px">${esc(a.summary)}</p>
+      <div class="command-list">
+        ${a.commands.map((c) => `
+          <div class="command-row">
+            <div class="command-head">${chip(esc(c.action))}<span>${esc(c.target)}</span>${c.detail ? `<span class="meta">${esc(c.detail)}</span>` : ''}</div>
+          </div>`).join('')}
       </div>
+      <p class="meta" style="margin:6px 0 0">Exact commands and known targets from the plan.</p>
     </div>
     <div class="detail-section">
       <div class="detail-section-head">${icon('shield')}<h3>Integrity</h3><span class="spacer"></span><span class="chip">exact hash</span></div>
@@ -3653,10 +3896,10 @@ function approvalDetailBody(a) {
       <div class="detail-section-head">${icon('history')}<h3>Decision history</h3></div>
       <div class="history-list">
         <div class="history-item"><span class="status-dot ok" style="margin-top:4px"></span><span><b>Requested by ${esc(a.requestedBy)}</b><span>${esc(a.requestedAt)} · risk ${esc(a.risk)} · TTL ${a.ttlMin} min</span></span></div>
-        ${a.status === 'pending'
-          ? `<div class="history-item"><span class="status-dot warn" style="margin-top:4px"></span><span><b>Waiting for a board admin</b><span>Expires in ${a.expiresMin} min. A decision is one-time.</span></span></div>`
-          : `<div class="history-item"><span class="status-dot ${a.status === 'rejected' ? 'bad' : a.status === 'expired' ? 'warn' : 'ok'}" style="margin-top:4px"></span><span><b>${esc(statusLabel(a.status))} by ${esc(a.decidedBy || 'agent')}</b><span>${esc(a.decidedAt || '')}${a.comment ? ' · “' + esc(a.comment) + '”' : ''}</span></span></div>`}
-        ${sy ? `<div class="history-item"><span class="status-dot ok" style="margin-top:4px"></span><span><b>Applied in ${esc(sy.id)}</b><span>${esc(sy.summary)} · approval consumed once</span></span></div>` : ''}
+        ${st === 'pending'
+          ? `<div class="history-item"><span class="status-dot warn" style="margin-top:4px"></span><span><b>Waiting for a board admin</b><span>Expires ${esc(expiryLabel(a))}. A decision is one-time.</span></span></div>`
+          : `<div class="history-item"><span class="status-dot ${st === 'rejected' ? 'bad' : st === 'expired' ? 'warn' : 'ok'}" style="margin-top:4px"></span><span><b>${esc(statusLabel(st))} by ${esc(a.decidedBy || 'agent')}</b><span>${esc(a.decidedAt || '')}${a.comment ? ' · “' + esc(a.comment) + '”' : ''}</span></span></div>`}
+        ${sy ? `<div class="history-item"><span class="status-dot ok" style="margin-top:4px"></span><span><b>Applied in ${esc(sy.id)}</b><span>${esc(sy.summary)} · approval consumed once. Rollback is conditional on preview, conflicts and retention.</span></span></div>` : ''}
       </div>
     </div>
     <div class="detail-section">
@@ -3664,7 +3907,9 @@ function approvalDetailBody(a) {
       <div class="related-links">
         <button type="button" class="related-link" data-action="open-board" data-board="${a.boardId}">${icon('folder')}Open board</button>
         <button type="button" class="related-link" data-action="select-session" data-id="${a.sessionId}">${icon('activity')}Agent session</button>
-        <button type="button" class="related-link" data-action="token-info" data-token="${esc(a.tokenName)}">${icon('key')}Token: ${esc(a.tokenName)}</button>
+        ${isOwnToken(a.tokenName)
+          ? `<button type="button" class="related-link" data-action="token-info" data-token="${esc(a.tokenName)}">${icon('key')}Token: ${esc(a.tokenName)}</button>`
+          : `<span class="related-link is-static">${icon('key')}Token: ${esc(a.tokenName)} (other member)</span>`}
         <button type="button" class="related-link" data-action="copy" data-copy="https://janosik.app/agents?board=${a.boardId}&section=attention&approval=${a.id}">${icon('link')}Copy link</button>
       </div>
     </div>
@@ -3706,7 +3951,8 @@ function sessionDetailBody(s) {
 
 function runDetailBody(r) {
   const hasConflict = r.conflicts.length > 0;
-  const canRevert = r.status === 'applied' && !hasConflict && isAdmin();
+  const boardAdmin = isAdminOn(r.boardId);
+  const canRevert = r.status === 'applied' && !hasConflict && boardAdmin;
   const timeline = [
     ['Created', r.createdAt],
     ...(r.appliedAt ? [['Applied', r.appliedAt]] : []),
@@ -3740,10 +3986,12 @@ function runDetailBody(r) {
         ${r.commandsList.map((c) => `
           <div class="command-row">
             <div class="command-head">${chip(esc(c.action))}<span>${esc(c.title)}</span></div>
-            <div class="command-diff"><div><span>before</span><b>${esc(c.from)}</b></div><div><span>after</span><b>${esc(c.to)}</b></div></div>
+            ${boardAdmin ? `<div class="command-diff"><div><span>before</span><b>${esc(c.from)}</b></div><div><span>after</span><b>${esc(c.to)}</b></div></div>` : ''}
           </div>`).join('')}
       </div>
-      <details class="technical"><summary>${icon('chevron-right')}Technical details · pre-images</summary><pre>${esc(JSON.stringify(r.commandsList, null, 2))}</pre></details>
+      ${boardAdmin
+        ? `<details class="technical"><summary>${icon('chevron-right')}Technical details · pre-images</summary><pre>${esc(JSON.stringify(r.commandsList, null, 2))}</pre></details>`
+        : `<div class="readonly-note">${icon('lock')}Pre-images and command diffs are admin-only. The timeline, attribution and conflicts stay visible.</div>`}
     </div>
     <div class="detail-section">
       <div class="detail-section-head">${icon('rotate')}<h3>Rollback</h3></div>
@@ -3753,17 +4001,17 @@ function runDetailBody(r) {
           <p>${hasConflict ? `<span class="conflict">${esc(r.conflicts[0].entity)} · ${esc(r.conflicts[0].detail)}</span>` : `Re-applies ${r.commands} pre-image${r.commands === 1 ? '' : 's'} atomically. No conflicts found. A separate audit run records the revert.`}</p>
           <div class="rollback-actions">
             <button type="button" class="btn btn-outline btn-sm" data-action="run-preview">${icon('eye')}Preview again</button>
-            ${isAdmin()
+            ${boardAdmin
               ? `<button type="button" class="btn btn-danger-outline btn-sm" data-action="run-revert" data-id="${r.id}" ${canRevert ? '' : 'disabled title="Resolve the conflict before rolling back"'}>${icon('rotate')}${hasConflict ? 'Revert blocked' : 'Revert run'}</button>`
               : `<span class="meta">A board admin can apply the rollback.</span>`}
           </div>
         </div>` : r.status === 'reverted' ? `<p class="meta" style="margin:0">${icon('check')} This run was already reverted; there is no empty rollback card.</p>` : r.status === 'failed' ? `<p class="meta" style="margin:0">${icon('circle-slash')} Failed atomically. No pre-images to apply.</p>` : ''}
-      ${isAdmin() && r.status === 'applied' ? `<div class="hash-row" style="margin-top:8px" title="${esc(r.hash)}"><code>plan ${esc(r.hash.slice(0, 34))}…</code><button type="button" class="icon-btn-sm" data-action="copy" data-copy="${esc(r.hash)}" aria-label="Copy run hash">${icon('copy')}</button></div>` : ''}
+      ${boardAdmin && r.status === 'applied' ? `<div class="hash-row" style="margin-top:8px" title="${esc(r.hash)}"><code>plan ${esc(r.hash.slice(0, 34))}…</code><button type="button" class="icon-btn-sm" data-action="copy" data-copy="${esc(r.hash)}" aria-label="Copy run hash">${icon('copy')}</button></div>` : ''}
     </div>
     <div class="related-links" style="margin-top:10px">
       <button type="button" class="related-link" data-action="open-board" data-board="${r.boardId}">${icon('folder')}Open board</button>
       <button type="button" class="related-link" data-action="select-session" data-id="${esc(r.session === 'Refactor approval flow' ? 's1' : r.session === 'API reference sweep' ? 's3' : 's4')}">${icon('activity')}Session</button>
-      <button type="button" class="related-link" data-action="copy" data-copy="https://janosik.app/agents?section=runs&run=${r.id}">${icon('link')}Copy run link</button>
+      <button type="button" class="related-link" data-action="copy" data-copy="https://janosik.app/agents?board=${r.boardId}&section=runs&run=${r.id}">${icon('link')}Copy run link</button>
     </div>`;
 }
 
@@ -3784,13 +4032,14 @@ function rejectForm(target = 'agents') {
 }
 
 function approvalFooter(a, target) {
-  if (!isAdmin()) {
+  const st = approvalStatus(a);
+  if (!isAdminOn(a.boardId)) {
     return `<div class="detail-foot"><p class="foot-helper">${icon('lock')}Approvals are decided by a board admin. You can read this request, but cannot act on it.</p></div>`;
   }
-  if (a.status === 'pending' && state.rejecting) {
+  if (st === 'pending' && state.rejecting) {
     return `<div class="detail-foot">${rejectForm(target)}</div>`;
   }
-  if (a.status === 'pending') {
+  if (st === 'pending') {
     const next = filteredApprovals({ includeDecided: false }).length > 1;
     return `<div class="detail-foot">
       <p class="foot-helper">${icon('shield')}Approving authorizes <b>only this plan hash</b>. The agent still applies it.</p>
@@ -3806,7 +4055,7 @@ function approvalFooter(a, target) {
   return `<div class="detail-foot">
     <p class="foot-helper">${icon(hint.tone === 'bad' ? 'x' : hint.tone === 'warn' ? 'clock' : 'check')}${esc(hint.text)}</p>
     <div class="detail-actions">
-      ${next && a.status === 'approved' ? `<button type="button" class="btn btn-primary btn-sm" data-action="next-pending">Next pending</button>` : ''}
+      ${next && st === 'approved' ? `<button type="button" class="btn btn-primary btn-sm" data-action="next-pending">Next pending</button>` : ''}
       <button type="button" class="btn btn-outline" data-action="close-sheet">Close detail</button>
     </div>
   </div>`;
@@ -3816,7 +4065,7 @@ function sessionFooter(s, target) {
   if (s.status === 'ended') {
     return `<div class="detail-foot"><p class="foot-helper">${icon('check')}This session ended. Claims were released; no further actions are available.</p></div>`;
   }
-  if (!isAdmin()) {
+  if (!isAdminOn(s.boardId)) {
     return `<div class="detail-foot"><p class="foot-helper">${icon('lock')}You can watch. A board admin pauses, resumes or ends sessions.</p><div class="detail-actions"><button type="button" class="btn btn-outline" data-action="open-board" data-board="${s.boardId}">Open board</button></div></div>`;
   }
   return `<div class="detail-foot">
@@ -3833,10 +4082,10 @@ function sessionFooter(s, target) {
 
 function runFooter(r, target) {
   return `<div class="detail-foot">
-    <p class="foot-helper">${icon('info')}Runs are history. ${isAdmin() ? 'Rollback is available only for applied runs without conflicts.' : 'A board admin can apply a rollback.'}</p>
+    <p class="foot-helper">${icon('info')}Runs are history. ${isAdminOn(r.boardId) ? 'Rollback is available only for applied runs without conflicts.' : 'A board admin can apply a rollback.'}</p>
     <div class="detail-actions">
       <button type="button" class="btn btn-outline" data-action="open-board" data-board="${r.boardId}">Open board</button>
-      <button type="button" class="btn btn-ghost" data-action="copy" data-copy="https://janosik.app/agents?section=runs&run=${r.id}">${icon('link')}Copy link</button>
+      <button type="button" class="btn btn-ghost" data-action="copy" data-copy="https://janosik.app/agents?board=${r.boardId}&section=runs&run=${r.id}">${icon('link')}Copy link</button>
     </div>
   </div>`;
 }
@@ -3845,23 +4094,31 @@ function runFooter(r, target) {
    Board scene + Agent control modal
    ------------------------------------------------------------------------- */
 function boardHeader({ section }) {
-  const pending = pendingCount('agent-ops');
-  const showBadge = isAdmin() && pending > 0;
+  const boardId = state.sceneBoard;
+  const boardAdmin = isAdminOn(boardId);
+  const pending = pendingKnownOn(boardId);
+  const unknown = boardAdmin && pending === null;
+  const showBadge = boardAdmin && pending !== null && pending > 0;
+  const pendingLabel = unknown
+    ? ', pending approvals unavailable'
+    : showBadge
+      ? ', ' + pending + ' approval' + (pending === 1 ? '' : 's') + ' waiting'
+      : '';
   const triggerAction = section === 'settings' ? 'section' : 'open-control';
   const triggerData = section === 'settings' ? 'data-section="control"' : '';
   return `
     <header class="app-header">
       <span class="app-brand"><span class="brand-tile" aria-hidden="true">${icon('feather')}</span><span class="app-wordmark">Janosik</span></span>
       <span class="header-divider" aria-hidden="true"></span>
-      <span class="board-title">Agent Ops Demo ${icon('chevron-down')}</span>
+      <span class="board-title">${esc(boardName(boardId))} ${icon('chevron-down')}</span>
       <div class="header-actions">
-        <button type="button" class="header-btn hide-mobile" data-action="bell" aria-label="Notifications">${icon('bell')}</button>
+        <button type="button" class="header-btn hide-mobile" data-action="bell" aria-label="Notifications, invitations only" title="Invitations only — approval attention lives in Agents">${icon('bell')}</button>
         <button type="button" class="header-btn hide-mobile" data-action="members" aria-label="Members">${icon('users')}</button>
         <button type="button" class="header-btn hide-mobile" data-action="share" aria-label="Share">${icon('share')}</button>
-        <button type="button" class="agents-trigger" id="agent-control-trigger" data-action="${triggerAction}" ${triggerData} aria-label="Agent control${showBadge ? ', ' + pending + ' approval' + (pending === 1 ? '' : 's') + ' waiting' : ''}" aria-expanded="${state.agentModalOpen}">
-          ${icon('bot')}<span>Agents</span>${showBadge ? `<span class="count-badge">${badgeText(pending)}</span>` : ''}
+        <button type="button" class="agents-trigger" id="agent-control-trigger" data-action="${triggerAction}" ${triggerData} aria-label="Agent control${pendingLabel}" aria-expanded="${state.agentModalOpen}">
+          ${icon('bot')}<span>Agents</span>${showBadge ? `<span class="count-badge">${badgeText(pending)}</span>` : ''}${unknown ? '<span class="count-badge is-quiet" title="Pending approvals unavailable" aria-label="Pending approvals unavailable">—</span>' : ''}
         </button>
-        <button type="button" class="header-btn" id="board-settings-trigger" data-action="open-settings" aria-label="Board settings" title="Board settings">${icon('settings')}</button>
+        ${boardAdmin ? `<button type="button" class="header-btn" id="board-settings-trigger" data-action="open-settings" aria-label="Board settings" title="Board settings">${icon('settings')}</button>` : ''}
         ${avatar('admin')}
       </div>
     </header>`;
@@ -3899,7 +4156,7 @@ function renderBoardScene({ section, modalOpen, calloutTitle, calloutBody, callo
         <button type="button" class="header-btn" data-action="board-display" aria-label="Board display" title="Board display — column style, density, glass">${icon('menu')}</button>
       </div>
       ${boardColumns()}
-      ${!modalOpen ? `<div class="board-scene-callout"><span class="empty-icon">${icon('bot')}</span><h3>${esc(calloutTitle)}</h3><p>${esc(calloutBody)}</p><button type="button" class="btn btn-primary btn-sm" data-action="${calloutAction}">${section === 'control' ? 'Open agent control' : 'Open board settings'}</button></div>` : ''}
+      ${!modalOpen ? `<div class="board-scene-callout"><span class="empty-icon">${icon('bot')}</span><h3>${esc(calloutTitle)}</h3><p>${esc(calloutBody)}</p>${calloutAction ? `<button type="button" class="btn btn-primary btn-sm" data-action="${calloutAction}">${section === 'control' ? 'Open agent control' : 'Open board settings'}</button>` : ''}</div>` : ''}
     </div>`;
 }
 
@@ -3916,16 +4173,23 @@ function renderControl() {
 }
 
 function renderAgentModal() {
-  const tab = isAdmin() ? state.acTab : (state.acTab === 'inbox' ? 'live' : state.acTab);
-  const pending = pendingCount('agent-ops');
-  const sessions = state.sessions.filter((s) => s.boardId === 'agent-ops' && s.status !== 'ended');
+  const boardId = state.sceneBoard;
+  const boardAdmin = isAdminOn(boardId);
+  const tab = boardAdmin ? state.acTab : (state.acTab === 'inbox' ? 'live' : state.acTab);
+  const pending = pendingKnownOn(boardId);
+  const sessions = state.sessions.filter((s) => s.boardId === boardId && s.status !== 'ended');
   const live = sessions.filter((s) => !s.stale).length;
-  const runs = state.runs.filter((r) => r.boardId === 'agent-ops');
+  const runs = state.runs.filter((r) => r.boardId === boardId);
   const inboxVisible = controlInboxVisible();
-  const railTab = (id, name, iconName, count, amber = false) => `
+  const inboxCount = pending === null ? '—' : inboxVisible.pending;
+  const railTab = (id, name, iconName, count, amber = false) => {
+    const text = count === '—' ? '—' : badgeText(count);
+    const show = count !== null && count !== 0 && count !== '';
+    return `
     <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-${id}" aria-selected="${tab === id}" aria-controls="ac-panel" tabindex="${tab === id ? '0' : '-1'}" data-action="ac-tab" data-tab="${id}">
-      ${icon(iconName)}<span>${name}</span>${count !== null && count > 0 ? `<span class="${amber ? 'count-badge' : 'rail-count'}">${amber ? badgeText(count) : count}</span>` : ''}
+      ${icon(iconName)}<span>${name}</span>${show ? `<span class="${amber ? 'count-badge' : 'rail-count'}">${text}</span>` : ''}
     </button>`;
+  };
   let panel = '';
   if (tab === 'inbox') panel = renderInboxPanel();
   else if (tab === 'live') panel = renderLivePanel();
@@ -3936,12 +4200,18 @@ function renderAgentModal() {
       <header class="ac-head">
         <span class="bot-tile" aria-hidden="true">${icon('bot')}</span>
         <div class="ac-title-wrap">
-          <h2 id="ac-title">Agents on this board</h2>
-          <p>${isAdmin() ? 'Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.' : 'Watch live work and review runs. Approvals stay with board admins.'}</p>
+          <h2 id="ac-title">Agents on ${esc(boardName(boardId))}</h2>
+          <p>${boardAdmin ? 'Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.' : 'Watch live work and review runs. Approvals stay with board admins.'}</p>
         </div>
         <div class="ac-head-right">
           <span class="ac-head-chip ${state.boardPaused ? 'warn' : 'ok'}"><span class="status-dot ${state.boardPaused ? 'warn' : 'ok'}"></span>${state.boardPaused ? 'Paused' : 'Running'}</span>
-          ${isAdmin() ? (pending > 0 ? `<span class="ac-head-chip warn">${icon('inbox')}${badgeText(pending)} waiting</span>` : `<span class="ac-head-chip muted">No pending</span>`) : `<span class="ac-head-chip muted">Read-only</span>`}
+          ${boardAdmin
+            ? pending === null
+              ? `<span class="ac-head-chip muted">Pending unknown</span>`
+              : pending > 0
+                ? `<span class="ac-head-chip warn">${icon('inbox')}${badgeText(pending)} waiting</span>`
+                : `<span class="ac-head-chip muted">No pending</span>`
+            : `<span class="ac-head-chip muted">Read-only</span>`}
           <button type="button" class="ac-head-link" data-action="section" data-section="agents">All agents ${icon('arrow-up-right')}</button>
           <button type="button" class="ac-close" id="ac-close" data-action="close-control" aria-label="Close agent control">${icon('x')}</button>
         </div>
@@ -3950,11 +4220,11 @@ function renderAgentModal() {
         <nav class="ac-rail" aria-label="Agent control sections">
           <div class="ac-rail-label">This board</div>
           <div class="ac-rail-tabs" role="tablist" aria-label="Agent control sections" data-tablist="ac" aria-orientation="vertical">
-            ${isAdmin() ? railTab('inbox', 'Inbox', 'inbox', inboxVisible.pending, true) : ''}
+            ${boardAdmin ? railTab('inbox', 'Inbox', 'inbox', inboxCount, true) : ''}
             ${railTab('live', 'Live', 'activity', live)}
             ${railTab('runs', 'Runs', 'history', runs.length)}
           </div>
-          ${isAdmin() ? `
+          ${boardAdmin ? `
             <div class="ac-rail-divider"></div>
             <div class="ac-rail-note"><strong>Agent policy ↗</strong>Approval rules, limits and destructive actions live in Board settings → Agents &amp; automation.</div>
             <button type="button" class="ac-rail-link" data-action="open-settings">${icon('settings')}Open policy settings</button>` : `
@@ -3975,18 +4245,18 @@ function renderAgentModal() {
 }
 
 function controlApprovals() {
-  let list = state.approvals.filter((a) => a.boardId === 'agent-ops');
-  if (state.acInboxFilter === 'needs') list = list.filter((a) => a.status === 'pending');
-  if (state.acInboxFilter === 'decided') list = list.filter((a) => a.status !== 'pending');
+  let list = state.approvals.filter((a) => a.boardId === state.sceneBoard);
+  if (state.acInboxFilter === 'needs') list = list.filter((a) => approvalStatus(a) === 'pending');
+  if (state.acInboxFilter === 'decided') list = list.filter((a) => approvalStatus(a) !== 'pending');
   const q = state.acSearch.trim().toLowerCase();
-  if (q) list = list.filter((a) => [a.summary, a.agent, a.card, a.session, a.hash].join(' ').toLowerCase().includes(q));
-  return list;
+  if (q) list = list.filter((a) => [a.summary, a.agent, a.card, a.target, a.session, a.hash].join(' ').toLowerCase().includes(q));
+  return sortApprovals(list);
 }
 
 function controlInboxVisible() {
   if (state.demoState === 'empty') return { pending: 0, decided: 0, all: 0 };
-  const all = state.approvals.filter((a) => a.boardId === 'agent-ops');
-  return { pending: all.filter((a) => a.status === 'pending').length, decided: all.filter((a) => a.status !== 'pending').length, all: all.length };
+  const all = state.approvals.filter((a) => a.boardId === state.sceneBoard);
+  return { pending: all.filter((a) => approvalStatus(a) === 'pending').length, decided: all.filter((a) => approvalStatus(a) !== 'pending').length, all: all.length };
 }
 
 function renderInboxPanel() {
@@ -3996,18 +4266,19 @@ function renderInboxPanel() {
   const visible = controlApprovals();
   const selected = state.demoState === 'empty' ? null : (visible.find((a) => a.id === state.acSelectedApprovalId) || visible[0] || null);
   if (selected) state.acSelectedApprovalId = selected.id;
-  const filterBtn = (id, label, count) => `<button type="button" class="chip ${state.acInboxFilter === id ? 'primary' : ''}" style="height:24px" data-action="ac-inbox-filter" data-filter="${id}" aria-pressed="${state.acInboxFilter === id}">${label} <b style="font-variant-numeric:tabular-nums">${count}</b></button>`;
+  const filterBtn = (id, label, count) => `<button type="button" class="chip ${state.acInboxFilter === id ? 'primary' : ''}" data-action="ac-inbox-filter" data-filter="${id}" aria-pressed="${state.acInboxFilter === id}">${label} <b style="font-variant-numeric:tabular-nums">${count}</b></button>`;
   const row = (a) => {
-    const isPending = a.status === 'pending';
+    const st = approvalStatus(a);
+    const isPending = st === 'pending';
     const selectedRow = selected?.id === a.id;
     return `<button type="button" class="ac-row ${isPending ? 'is-pending' : ''}" aria-selected="${selectedRow}" data-action="ac-select-approval" data-id="${a.id}">
       <p class="ac-row-title">${esc(a.summary)}</p>
       <span class="ac-row-sub">${esc(a.agent)}${a.card ? ' · ' + esc(a.card) : ''}</span>
-      <span class="ac-row-meta">${statusPill(statusLabel(a.status), statusTone(a.status), true)}<span class="sep"></span><span>${esc(a.risk)} risk</span>${isPending ? `<span class="ttl">expires in ${a.expiresMin} min</span>` : `<span class="ttl muted">${esc(a.decidedAt || '')}</span>`}</span>
+      <span class="ac-row-meta">${statusPill(statusLabel(st), statusTone(st), true)}<span class="sep"></span><span>${esc(a.risk)} risk</span>${isPending ? `<span class="ttl">expires ${esc(expiryLabel(a))}</span>` : `<span class="ttl muted">${esc(a.decidedAt || '')}</span>`}</span>
     </button>`;
   };
-  const pendingRows = visible.filter((a) => a.status === 'pending');
-  const decidedRows = visible.filter((a) => a.status !== 'pending');
+  const pendingRows = visible.filter((a) => approvalStatus(a) === 'pending');
+  const decidedRows = visible.filter((a) => approvalStatus(a) !== 'pending');
   const list = `<div class="ac-list" id="ac-list-scroll">
     <div class="ac-list-head"><span>${state.acInboxFilter === 'needs' ? 'Needs decision' : state.acInboxFilter === 'decided' ? 'Recently decided' : 'Approvals'}</span><span>Expires first</span></div>
     ${state.demoState === 'empty' || !visible.length ? `<div class="empty-state" style="min-height:220px"><span class="empty-icon">${icon('inbox')}</span><h3>${state.acInboxFilter === 'needs' ? 'No approvals waiting' : 'No requests here'}</h3><p>${state.acInboxFilter === 'needs' ? 'The board is clear. Decided requests stay in the history.' : 'Try another filter or clear the search.'}</p><div class="empty-actions"><button type="button" class="btn btn-outline btn-sm" data-action="ac-inbox-filter" data-filter="all">View all</button></div></div>` : `
@@ -4022,9 +4293,9 @@ function renderInboxPanel() {
         <button type="button" class="icon-btn-sm ac-detail-back" data-action="ac-back" aria-label="Back to approvals">${icon('arrow-left')}</button>
         <div style="min-width:0;flex:1">
           <h3>${esc(selected.summary)}</h3>
-          <div class="ac-detail-sub">${statusPill(statusLabel(selected.status), statusTone(selected.status), true)}${chip(esc(selected.risk) + ' risk', selected.risk === 'High' ? 'bad' : selected.risk === 'Medium' ? 'warn' : '')}${chip(esc(boardName(selected.boardId)))}</div>
+          <div class="ac-detail-sub">${statusPill(statusLabel(approvalStatus(selected)), statusTone(approvalStatus(selected)), true)}${chip(esc(selected.risk) + ' risk', selected.risk === 'High' ? 'bad' : selected.risk === 'Medium' ? 'warn' : '')}${chip(esc(boardName(selected.boardId)))}</div>
         </div>
-        ${selected.status === 'pending' ? `<button type="button" class="icon-btn-sm" data-action="cancel-approval" data-id="${selected.id}" aria-label="Cancel request" title="Cancel request">${icon('more')}</button>` : ''}
+        ${approvalStatus(selected) === 'pending' ? `<button type="button" class="icon-btn-sm" data-action="cancel-approval" data-id="${selected.id}" aria-label="Cancel request" title="Cancel request">${icon('more')}</button>` : ''}
       </div>
       <div class="ac-detail-scroll" id="ac-detail-scroll">${approvalDetailBody(selected)}</div>
     </div>` : `<div class="ac-detail"><div class="detail-empty"><span class="empty-icon">${icon('inbox')}</span><h3>Select an approval</h3><p>Choose a request to see its impact, hash and decision.</p></div></div>`;
@@ -4043,9 +4314,10 @@ function renderInboxPanel() {
 }
 
 function renderLivePanel() {
+  const boardAdmin = isAdminOn(state.sceneBoard);
   if (state.demoState === 'loading') return `<div class="ac-toolbar"><h3>Live</h3></div><div class="ac-panel-scroll">${loadingBlocks('sessions')}</div>`;
   if (state.demoState === 'error') return `<div class="ac-toolbar"><h3>Live</h3></div><div class="ac-panel-scroll">${errorBlock('Could not load live sessions', 'The last known board state is retained where available. Retry does not drop the filters.')}</div>`;
-  const sessions = state.sessions.filter((s) => s.boardId === 'agent-ops' && s.status !== 'ended');
+  const sessions = state.sessions.filter((s) => s.boardId === state.sceneBoard && s.status !== 'ended');
   const groups = [...new Set(sessions.map((s) => s.agent))];
   if (state.demoState === 'empty' || !sessions.length) {
     return `<div class="ac-toolbar"><h3>Live</h3><span class="meta">0 sessions</span></div><div class="ac-panel-scroll"><div class="empty-state"><span class="empty-icon">${icon('activity')}</span><h3>No live sessions</h3><p>Agent sessions appear here as soon as they heartbeat.</p></div></div>`;
@@ -4058,11 +4330,11 @@ function renderLivePanel() {
         <p>${state.boardPaused ? `Paused ${state.boardPauseBy ? 'by ' + esc(state.boardPauseBy) : 'on this board'}${state.boardPauseReason ? ' · ' + esc(state.boardPauseReason) : ''}. In-flight commands finish; new writes get <span class="mono">403 agent_paused</span>; claims stay.` : 'Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends.'}</p>
       </div>
       <div class="live-status-actions">
-        ${isAdmin() ? (state.boardPaused
+        ${boardAdmin ? (state.boardPaused
           ? `<button type="button" class="btn btn-outline btn-sm" data-action="board-resume">${icon('play')}Resume agents</button>`
-          : `<button type="button" class="btn btn-danger-outline btn-sm" data-action="board-pause">${icon('pause')}Pause all agents</button>
-             <button type="button" class="btn btn-ghost btn-sm" data-action="stop-all" title="Stop all writes (prototype: pauses the board)">${icon('stop')}Stop all</button>`)
+          : `<button type="button" class="btn btn-danger-outline btn-sm" data-action="board-pause">${icon('pause')}Pause all agents</button>`)
           : `<span class="chip">Read-only</span>`}
+        <button type="button" class="btn btn-ghost btn-sm" data-action="manage-tokens">${icon('key')}Manage tokens ${icon('arrow-up-right')}</button>
       </div>
     </div>`;
   const groupsHtml = groups.map((agent) => {
@@ -4072,8 +4344,9 @@ function renderLivePanel() {
       <div class="session-group-head">
         <span class="bot-tile">${icon('bot')}</span><b>${esc(agent)}</b><span class="session-token">${esc(rows[0].tokenId)}</span><span class="meta">${rows.filter((s) => s.status === 'active' || s.status === 'waiting').length} live${paused ? ' · ' + paused + ' paused' : ''}</span>
         <span class="group-actions">
-          ${isAdmin() ? `<button type="button" class="btn btn-ghost btn-xs" data-action="stop-token" data-token="${esc(agent)}" title="Stop all writes for this token">${icon('stop')}Stop token</button>` : ''}
-          <button type="button" class="btn btn-ghost btn-xs" data-action="token-info" data-token="${esc(agent)}">Token settings ${icon('arrow-up-right')}</button>
+          ${isOwnToken(agent)
+            ? `<button type="button" class="btn btn-ghost btn-xs" data-action="token-info" data-token="${esc(agent)}">Token settings ${icon('arrow-up-right')}</button>`
+            : `<span class="meta token-owner">${icon('lock')}Other member's token</span>`}
         </span>
       </div>
       ${rows.map((s) => `
@@ -4084,11 +4357,11 @@ function renderLivePanel() {
           </div>
           <div class="live-session-card"><b>${esc(s.currentCard || 'No current card')}</b><span>${s.currentRun ? 'Run ' + esc(s.currentRun) : 'No current run'}</span></div>
           <div class="live-session-actions">
-            ${isAdmin() ? (s.status === 'paused'
+            ${boardAdmin ? (s.status === 'paused'
               ? `<button type="button" class="btn btn-outline" data-action="session-resume" data-id="${s.id}">${icon('play')}Resume</button>`
               : `<button type="button" class="btn btn-outline" data-action="session-pause" data-id="${s.id}">${icon('pause')}Pause</button>`)
               : ''}
-            ${isAdmin() ? `<button type="button" class="icon-btn-sm" data-action="session-end" data-id="${s.id}" aria-label="End session" title="End session and release claims">${icon('stop')}</button>` : ''}
+            ${boardAdmin ? `<button type="button" class="icon-btn-sm" data-action="session-end" data-id="${s.id}" aria-label="End session" title="End session and release claims">${icon('stop')}</button>` : ''}
           </div>
         </div>`).join('')}
     </div>`;
@@ -4098,13 +4371,13 @@ function renderLivePanel() {
     <div class="ac-panel-scroll">
       ${statusCard}
       ${groupsHtml}
-      ${!isAdmin() ? `<div class="readonly-note">${icon('lock')}You can watch. A board admin pauses, resumes or ends sessions. There are no ghost buttons.</div>` : ''}
-      <p class="meta" style="margin:9px 0 0">Ending a session releases its claims. Token-level pause, stop-all and revoke live in Account → API keys; the token actions above open that surface conceptually in this demo.</p>
+      ${!boardAdmin ? `<div class="readonly-note">${icon('lock')}You can watch. A board admin pauses, resumes or ends sessions. There are no ghost buttons.</div>` : ''}
+      <p class="meta" style="margin:9px 0 0">Ending a session releases its claims. Token pause, stop-all and revoke are owner actions in Account → API keys; this board surface only links there.</p>
     </div>`;
 }
 
 function controlRuns() {
-  let list = state.runs.filter((r) => r.boardId === 'agent-ops');
+  let list = state.runs.filter((r) => r.boardId === state.sceneBoard);
   if (state.acRunStatus !== 'all') list = list.filter((r) => r.status === state.acRunStatus);
   if (state.acRunKind !== 'all') list = list.filter((r) => r.kind === state.acRunKind);
   if (state.acRunToken !== 'all') list = list.filter((r) => r.token === state.acRunToken);
@@ -4116,7 +4389,7 @@ function renderRunsPanel() {
   if (state.demoState === 'loading') return `<div class="ac-toolbar"><h3>Runs</h3></div><div class="ac-panel-scroll">${loadingBlocks('runs')}</div>`;
   if (state.demoState === 'error') return `<div class="ac-toolbar"><h3>Runs</h3></div><div class="ac-panel-scroll">${errorBlock('Could not load this run', 'The detail request failed. Retry is next to the error, not hidden in a menu.')}</div>`;
   if (state.demoState === 'empty') return `<div class="ac-toolbar"><h3>Runs</h3><span class="meta">No runs on this board</span></div><div class="ac-panel-scroll"><div class="empty-state"><span class="empty-icon">${icon('history')}</span><h3>No runs yet</h3><p>Runs appear when an agent applies commands. Rollback is available only for applied runs without conflicts.</p></div></div>`;
-  const all = state.runs.filter((r) => r.boardId === 'agent-ops');
+  const all = state.runs.filter((r) => r.boardId === state.sceneBoard);
   const visible = controlRuns();
   const selected = visible.find((r) => r.id === state.acSelectedRunId) || visible[0] || null;
   if (selected) state.acSelectedRunId = selected.id;
@@ -4156,15 +4429,16 @@ function renderRunsPanel() {
 }
 
 function renderAcFoot(tab) {
+  const boardAdmin = isAdminOn(state.sceneBoard);
   if (tab === 'inbox') {
     const visible = controlApprovals();
     const a = visible.find((x) => x.id === state.acSelectedApprovalId) || visible[0];
     if (!a) return `<footer class="ac-foot"><span class="ac-foot-note">${icon('shield')}Only a board admin can decide. This queue is empty.</span></footer>`;
-    if (!isAdmin()) return `<footer class="ac-foot"><span class="ac-foot-note">${icon('lock')}Approvals are board-admin only.</span></footer>`;
-    if (a.status === 'pending' && state.rejecting) {
+    if (!boardAdmin) return `<footer class="ac-foot"><span class="ac-foot-note">${icon('lock')}Approvals are board-admin only.</span></footer>`;
+    if (approvalStatus(a) === 'pending' && state.rejecting) {
       return `<footer class="ac-foot" style="display:block">${rejectForm('control')}</footer>`;
     }
-    if (a.status === 'pending') {
+    if (approvalStatus(a) === 'pending') {
       return `<footer class="ac-foot">
         <span class="ac-foot-note">${icon('shield')}Approving authorizes only <b>${esc(a.hash.slice(0, 10))}…</b>. The agent applies the exact plan.</span>
         <span class="ac-foot-mobile-hint">${icon('info')}Open a request to review its exact plan and decide.</span>
@@ -4175,7 +4449,7 @@ function renderAcFoot(tab) {
     return `<footer class="ac-foot"><span class="ac-foot-note">${icon(hint.tone === 'bad' ? 'x' : hint.tone === 'warn' ? 'clock' : 'check')}${esc(hint.text)}</span><div class="ac-foot-actions"><button type="button" class="btn btn-outline btn-sm" data-action="close-control">Close</button></div></footer>`;
   }
   if (tab === 'live') {
-    if (!isAdmin()) return `<footer class="ac-foot"><span class="ac-foot-note">${icon('lock')}You can watch. A board admin pauses and resumes agent writes.</span><div class="ac-foot-actions"><button type="button" class="btn btn-outline btn-sm" data-action="close-control">Close</button></div></footer>`;
+    if (!boardAdmin) return `<footer class="ac-foot"><span class="ac-foot-note">${icon('lock')}You can watch. A board admin pauses and resumes agent writes.</span><div class="ac-foot-actions"><button type="button" class="btn btn-outline btn-sm" data-action="close-control">Close</button></div></footer>`;
     return `<footer class="ac-foot">
       <span class="ac-foot-note">${icon('shield')}Pause is a board-wide safety switch, not a policy change. In-flight finishes; claims stay.</span>
       <div class="ac-foot-actions">
@@ -4186,7 +4460,7 @@ function renderAcFoot(tab) {
     </footer>`;
   }
   return `<footer class="ac-foot">
-    <span class="ac-foot-note">${icon('info')}History is read-only. ${isAdmin() ? 'Rollback requires a board admin and an applied run without conflicts.' : 'A board admin can apply a rollback.'}</span>
+    <span class="ac-foot-note">${icon('info')}History is read-only. ${boardAdmin ? 'Rollback requires a board admin and an applied run without conflicts.' : 'A board admin can apply a rollback.'}</span>
     <div class="ac-foot-actions"><button type="button" class="btn btn-outline btn-sm" data-action="section" data-section="agents" data-tab="runs">Open all runs ${icon('arrow-up-right')}</button></div>
   </footer>`;
 }
@@ -4194,10 +4468,19 @@ function renderAcFoot(tab) {
    Board Settings → Agents & automation
    ------------------------------------------------------------------------- */
 function renderSettings() {
-  const open = state.settingsModalOpen;
+  const boardAdmin = isAdminOn(state.sceneBoard);
+  const open = state.settingsModalOpen && boardAdmin;
   return `
     <div class="bs-scene">
-      ${renderBoardScene({ section: 'settings', modalOpen: open, calloutTitle: 'Board settings is closed', calloutBody: 'The gear opens the same settings shell as Workflow. Focus returns to it on close.', calloutAction: 'open-settings' })}
+      ${renderBoardScene({
+        section: 'settings',
+        modalOpen: open,
+        calloutTitle: boardAdmin ? 'Board settings is closed' : 'Board settings are admin-only',
+        calloutBody: boardAdmin
+          ? 'The gear opens the same settings shell as Workflow. Focus returns to it on close.'
+          : 'The gear is not rendered for MEMBER, and there is no read-only settings form. Policy stays with board admins.',
+        calloutAction: boardAdmin ? 'open-settings' : null,
+      })}
       <div class="scene-scrim ${open ? 'is-open' : ''}" data-action="close-settings"></div>
       ${open ? renderSettingsModal() : ''}
       ${pinsMarkup('settings')}
@@ -4208,16 +4491,16 @@ function renderSettings() {
 function renderSettingsModal() {
   const dirty = policyDirty();
   const tab = state.bsTab;
-  const pending = pendingCount('agent-ops');
+  const pending = pendingKnownOn(state.sceneBoard);
   return `
     <section class="bs-modal" role="dialog" aria-modal="true" aria-labelledby="bs-title">
       <header class="bs-head">
         <div class="bs-head-title">
           <p class="eyebrow">Board settings</p>
-          <h2 id="bs-title">${isAdmin() ? 'Agent Ops Demo' : 'Agent Ops Demo · read-only'}</h2>
+          <h2 id="bs-title">${esc(boardName(state.sceneBoard))}</h2>
           <p>Workflow and agent guardrails for this board.</p>
         </div>
-        <span class="bs-save-state" id="bs-save-state">${!isAdmin() ? '<span class="status-dot muted"></span>Read-only' : `<span class="status-dot ${state.casConflict ? 'bad' : dirty ? 'warn' : 'ok'}"></span>${state.casConflict ? 'Conflict · reload needed' : dirty ? 'Unsaved changes' : 'All changes saved'}`}</span>
+        <span class="bs-save-state" id="bs-save-state"><span class="status-dot ${state.casConflict ? 'bad' : dirty ? 'warn' : 'ok'}"></span>${state.casConflict ? 'Conflict · reload needed' : dirty ? 'Unsaved changes' : 'All changes saved'}</span>
         <button type="button" class="ac-close bs-close" id="bs-close" data-action="close-settings" aria-label="Close board settings">${icon('x')}</button>
       </header>
       <div class="bs-body">
@@ -4225,44 +4508,27 @@ function renderSettingsModal() {
           <div class="bs-rail-label">Settings</div>
           <div class="bs-rail-tabs" role="tablist" aria-label="Board settings sections" data-tablist="bs" aria-orientation="vertical">
             <button type="button" class="bs-rail-tab" role="tab" id="bs-tab-workflow" aria-selected="${tab === 'workflow'}" aria-controls="bs-panel" tabindex="${tab === 'workflow' ? '0' : '-1'}" data-action="bs-tab" data-tab="workflow">${icon('git-branch')}Workflow</button>
-            <button type="button" class="bs-rail-tab" role="tab" id="bs-tab-agents" aria-selected="${tab === 'agents'}" aria-controls="bs-panel" tabindex="${tab === 'agents' ? '0' : '-1'}" data-action="bs-tab" data-tab="agents">${icon('shield')}Agents &amp; automation${isAdmin() && pending ? `<span class="count-badge">${badgeText(pending)}</span>` : ''}</button>
+            <button type="button" class="bs-rail-tab" role="tab" id="bs-tab-agents" aria-selected="${tab === 'agents'}" aria-controls="bs-panel" tabindex="${tab === 'agents' ? '0' : '-1'}" data-action="bs-tab" data-tab="agents">${icon('shield')}Agents &amp; automation${pending !== null && pending > 0 ? `<span class="count-badge">${badgeText(pending)}</span>` : pending === null ? '<span class="count-badge is-quiet" title="Pending approvals unavailable">—</span>' : ''}</button>
           </div>
           <div class="bs-rail-note"><b>One settings surface</b>Workflow and agent guardrails share the same shell. Members and access stay in the board dialog; API keys live in Account.</div>
         </nav>
         <div class="bs-content" id="bs-panel" role="tabpanel" aria-labelledby="bs-tab-${tab}">
-          ${!isAdmin() ? renderSettingsPermission() : tab === 'workflow' ? renderWorkflowPlaceholder() : renderPolicySettings(dirty)}
+          ${tab === 'workflow' ? renderWorkflowPlaceholder() : renderPolicySettings(dirty)}
         </div>
       </div>
-      ${!isAdmin()
-        ? `<footer class="bs-foot"><div class="bs-foot-status"><span class="status-dot muted"></span><span class="status-text">Read-only for MEMBER</span></div><div class="bs-foot-actions"><button type="button" class="btn btn-outline btn-sm" data-action="section" data-section="agents">Open agent activity</button><button type="button" class="btn btn-primary btn-sm" data-action="close-settings">Close</button></div></footer>`
-        : `<footer class="bs-foot">
-            <div class="bs-foot-status" data-policy-status>
-              <span class="status-dot ${state.casConflict ? 'bad' : dirty ? 'warn' : 'ok'}"></span>
-              <span class="status-text">${state.casConflict ? 'Policy changed in another tab' : dirty ? 'Unsaved changes' : 'All changes saved'}</span>
-              <span class="sep" aria-hidden="true"></span>
-              <span>${state.casConflict ? `Server is at v${state.policyVersion}; reload to continue` : `Last saved by ${esc(state.policySavedBy)} · ${esc(state.policySavedAt)}`}</span>
-            </div>
-            <div class="bs-foot-actions">
-              <button type="button" class="btn btn-ghost btn-sm" data-action="policy-discard" ${dirty ? '' : 'disabled'}>Discard</button>
-              <button type="button" class="btn btn-primary btn-sm" data-action="policy-save" ${dirty && !state.casConflict && policyLimitsValid() ? '' : 'disabled'}>Save changes</button>
-            </div>
-          </footer>`}
+      <footer class="bs-foot">
+        <div class="bs-foot-status" data-policy-status>
+          <span class="status-dot ${state.casConflict ? 'bad' : dirty ? 'warn' : 'ok'}"></span>
+          <span class="status-text">${state.casConflict ? 'Policy changed in another tab' : dirty ? 'Unsaved changes' : 'All changes saved'}</span>
+          <span class="sep" aria-hidden="true"></span>
+          <span>${state.casConflict ? `Server is at v${state.policyVersion}; reload to continue` : `Last saved by ${esc(state.policySavedBy)} · ${esc(state.policySavedAt)}`}</span>
+        </div>
+        <div class="bs-foot-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-action="policy-discard" ${dirty ? '' : 'disabled'}>Discard</button>
+          <button type="button" class="btn btn-primary btn-sm" data-action="policy-save" ${dirty && !state.casConflict && policyLimitsValid() ? '' : 'disabled'}>Save changes</button>
+        </div>
+      </footer>
     </section>`;
-}
-
-function renderSettingsPermission() {
-  return `
-    <div class="readonly-shell">
-      <span class="empty-icon">${icon('lock')}</span>
-      <div>
-        <h2>Board settings are admin-only</h2>
-        <p>You can follow sessions and inspect runs on /agents. Approval decisions, board pause and policy are reserved for board admins. There is no request that ends in a 403.</p>
-      </div>
-      <div class="row">
-        <button type="button" class="btn btn-outline btn-sm" data-action="section" data-section="agents">Agent activity</button>
-        <button type="button" class="btn btn-primary btn-sm" data-action="close-settings">Close</button>
-      </div>
-    </div>`;
 }
 
 function renderWorkflowPlaceholder() {
@@ -4312,7 +4578,7 @@ function renderPolicySettings(dirty) {
           <button type="button" class="btn btn-ghost btn-sm" data-action="policy-reset" ${policyIsDefaults() ? 'disabled' : ''} title="${policyIsDefaults() ? 'Already using safe defaults' : 'Reset policy to defaults'}">${icon('rotate')}Reset…</button>
         </div>
       </div>
-      <div class="banner info" style="margin-bottom:10px">${icon('info')}<span><strong>Scope: Agent Ops Demo.</strong> Edits here change the board policy only. Decisions on the pending request happen in Agent control → Inbox.</span></div>
+      <div class="banner info" style="margin-bottom:10px">${icon('info')}<span><strong>Scope: ${esc(boardName(state.sceneBoard))}.</strong> Edits here change the board policy only. Decisions on the pending request happen in Agent control → Inbox.</span></div>
       <div class="status-strip">
         <span class="status-dot ${state.boardPaused ? 'warn' : 'ok'}"></span>
         <b>${state.boardPaused ? 'Agents paused' : 'Agents running'}</b>
@@ -4372,7 +4638,7 @@ function renderPolicySettings(dirty) {
 }
 
 function updateSettingsFooter() {
-  if (!isAdmin() || state.bsTab !== 'agents') return;
+  if (!isAdminOn(state.sceneBoard) || state.bsTab !== 'agents') return;
   const dirty = policyDirty();
   const conflict = state.casConflict;
   const statusWrap = document.querySelector('[data-policy-status]');
@@ -4406,7 +4672,7 @@ function dialogMeta(action, payload) {
       return {
         icon: 'shield', title: 'Approve this exact plan?',
         description: 'Approving authorizes only this plan hash. The decision is one-time and cannot be undone.',
-        body: `${a ? `<div class="dialog-impact"><b>${esc(a.impactTitle)}.</b> ${esc(a.impact)}</div><div class="hash-row" style="margin-top:9px"><code>${esc(a.hash.slice(0, 34))}…</code></div>` : ''}`,
+        body: `${a ? `<div class="dialog-impact"><b>${a.commands.length} command${a.commands.length === 1 ? '' : 's'}.</b> ${esc(a.summary)}. Target: ${esc(a.targetType)} ${esc(a.target)}.</div><div class="hash-row" style="margin-top:9px"><code>${esc(a.hash.slice(0, 34))}…</code></div>` : ''}`,
         confirm: 'Approve plan', tone: 'primary',
       };
     case 'cancel-approval':
@@ -4436,20 +4702,6 @@ function dialogMeta(action, payload) {
         description: 'Every token stops writing. In-flight commands finish; new writes get 403. Claims stay until a session ends.',
         body: `<div class="field"><label for="dialog-reason">Reason (optional)</label><textarea id="dialog-reason" placeholder="Why are you pausing the board?"></textarea></div>`,
         confirm: 'Pause all agents', tone: 'danger',
-      };
-    case 'stop-all':
-      return {
-        icon: 'stop', title: 'Stop all agent writes?',
-        description: 'This is the board-wide safety switch. It pauses every token and is recorded with a reason. Claims stay.',
-        body: `<div class="field"><label for="dialog-reason">Reason (optional)</label><textarea id="dialog-reason" placeholder="Incident, release freeze, or handover…"></textarea></div>`,
-        confirm: 'Stop all writes', tone: 'danger',
-      };
-    case 'stop-token':
-      return {
-        icon: 'key', title: 'Stop writes for this token?',
-        description: `Every session using ${esc(payload?.token || 'this token')} will be paused. In-flight commands finish; claims stay. Token revoke remains in Account.`,
-        body: `<div class="field"><label for="dialog-reason">Reason (optional)</label><textarea id="dialog-reason" placeholder="Why is this token being stopped?"></textarea></div>`,
-        confirm: 'Stop token writes', tone: 'danger',
       };
     case 'revert-run':
       return {
@@ -4489,15 +4741,15 @@ function dialogMeta(action, payload) {
     case 'tokens':
       return {
         icon: 'key', title: 'API keys live in Account',
-        description: 'Create, scope, pause, stop-all and revoke tokens in Account → API keys. The Agents surfaces link there instead of duplicating token security.',
-        body: `<div class="dialog-impact">Token-level pause and revoke are account operations. Board pause remains in Agent control → Live.</div>`,
+        description: 'Create, scope, pause, stop-all and revoke your own tokens in Account → API keys. The Agents surfaces link there instead of duplicating token security.',
+        body: `<div class="dialog-impact">Token pause and stop-all are owner actions in Account. Board pause remains in Agent control → Live.</div>`,
         confirm: 'Open Account → API keys', tone: 'primary',
       };
     case 'token-info':
       return {
-        icon: 'key', title: `Token ${payload?.token || ''}`,
-        description: 'Token-level pause, stop-all and revoke are security actions on the account, not board policy. This demo does not expose secrets.',
-        body: `<div class="dialog-impact">The board surface can stop writes for this token, but cannot rotate or reveal it.</div>`,
+        icon: 'key', title: `Your token · ${payload?.token || ''}`,
+        description: 'Token settings are available to the token owner in Account → API keys. Board Live never pauses or stops a token.',
+        body: `<div class="dialog-impact">This link is shown only for your own token. Other members' tokens stay read-only and expose no settings action.</div>`,
         confirm: 'Open Account → API keys', tone: 'primary',
       };
     default:
@@ -4586,7 +4838,7 @@ function handleDialogConfirm() {
   switch (action) {
     case 'approve': {
       const a = approval(payload.id);
-      if (a) {
+      if (a && approvalStatus(a) === 'pending') {
         a.status = 'approved';
         a.decidedBy = 'Audit Admin';
         a.decidedAt = 'just now';
@@ -4595,12 +4847,14 @@ function handleDialogConfirm() {
         state.rejectReason = '';
         if (state.section === 'control' && state.acInboxFilter === 'needs') state.acInboxFilter = 'all';
         showToast('Plan approved. The agent can now apply this exact hash.');
+      } else if (a) {
+        showToast('This request is no longer pending. Nothing was applied.', 'warn');
       }
       break;
     }
     case 'cancel-approval': {
       const a = approval(payload.id);
-      if (a) {
+      if (a && approvalStatus(a) === 'pending') {
         a.status = 'cancelled';
         a.decidedBy = 'Audit Admin';
         a.decidedAt = 'just now';
@@ -4608,6 +4862,8 @@ function handleDialogConfirm() {
         state.rejecting = false;
         if (state.section === 'control' && state.acInboxFilter === 'needs') state.acInboxFilter = 'all';
         showToast('Request cancelled. Nothing was applied.', 'warn');
+      } else if (a) {
+        showToast('This request is no longer pending.', 'warn');
       }
       break;
     }
@@ -4629,23 +4885,11 @@ function handleDialogConfirm() {
       }
       break;
     }
-    case 'board-pause':
-    case 'stop-all': {
+    case 'board-pause': {
       state.boardPaused = true;
-      state.boardPauseReason = reason || (action === 'stop-all' ? 'All writes stopped from Agent control' : 'Paused from Agent control');
+      state.boardPauseReason = reason || 'Paused from Agent control';
       state.boardPauseBy = 'Audit Admin';
-      showToast(action === 'stop-all' ? 'All agent writes stopped for this board.' : 'Board paused. New writes get 403 agent_paused.', 'warn');
-      break;
-    }
-    case 'stop-token': {
-      const token = payload.token;
-      state.sessions.forEach((s) => {
-        if (s.agent === token && s.status !== 'ended') {
-          s.status = 'paused';
-          s.pausedReason = reason || `Token writes stopped for ${token}.`;
-        }
-      });
-      showToast(`Writes stopped for ${token}. Claims stay until sessions end.`, 'warn');
+      showToast('Board paused. New writes get 403 agent_paused.', 'warn');
       break;
     }
     case 'revert-run': {
@@ -4726,6 +4970,7 @@ function resetDemo() {
   const theme = state.theme;
   state = initialState();
   state.theme = theme;
+  announcedExpired.clear();
   document.getElementById('toast-root').innerHTML = '';
   renderStage();
   showToast('Demo state reset.');
@@ -4742,16 +4987,16 @@ function goSection(section) {
   if (section === 'agents') {
     state.agentTab = 'attention';
     state.boardFilter = 'all';
-    state.selectedType = isAdmin() ? 'approval' : 'session';
-    state.selectedId = isAdmin() ? 'ap-1' : 's1';
     state.sheetOpen = false;
     state.search = '';
     state.agentFilter = 'all';
     state.statusFilter = 'all';
+    selectDefaultForScope();
   }
   if (section === 'control') {
+    state.sceneBoard = 'agent-ops';
     state.agentModalOpen = true;
-    state.acTab = isAdmin() ? 'inbox' : 'live';
+    state.acTab = isAdminOn('agent-ops') ? 'inbox' : 'live';
     state.acInboxFilter = 'needs';
     state.acSearch = '';
     state.acDetailOpen = false;
@@ -4760,7 +5005,8 @@ function goSection(section) {
     state.rejectReason = '';
   }
   if (section === 'settings') {
-    state.settingsModalOpen = true;
+    state.sceneBoard = 'agent-ops';
+    state.settingsModalOpen = isAdminOn('agent-ops');
     state.bsTab = 'agents';
   }
   if (section === 'evidence') state.evidenceFilter = 'all';
@@ -4780,7 +5026,7 @@ function closeControl() {
 }
 
 function closeSettings() {
-  if (isAdmin() && policyDirty()) {
+  if (isAdminOn(state.sceneBoard) && policyDirty()) {
     openDialog('discard-settings');
     return;
   }
@@ -4808,6 +5054,10 @@ function rejectSubmit() {
   const id = state.section === 'control' ? state.acSelectedApprovalId : state.selectedId;
   const a = approval(id);
   if (!a) return;
+  if (approvalStatus(a) !== 'pending') {
+    showToast('This request is no longer pending. Nothing was rejected.', 'warn');
+    return;
+  }
   a.status = 'rejected';
   a.decidedBy = 'Audit Admin';
   a.decidedAt = 'just now';
@@ -4820,7 +5070,7 @@ function rejectSubmit() {
 }
 function nextPending() {
   const list = state.section === 'control'
-    ? controlApprovals().filter((a) => a.status === 'pending')
+    ? controlApprovals().filter((a) => approvalStatus(a) === 'pending')
     : filteredApprovals({ includeDecided: false });
   const currentId = state.section === 'control' ? state.acSelectedApprovalId : state.selectedId;
   const next = list.find((a) => a.id !== currentId);
@@ -4880,20 +5130,24 @@ document.addEventListener('click', (event) => {
       state.device = target.getAttribute('data-device');
       renderStage();
       break;
-    case 'role': {
-      state.role = target.getAttribute('data-role');
-      if (state.role === 'MEMBER') {
-        if (state.agentTab === 'attention' && state.selectedType === 'approval') {
-          state.selectedType = 'session';
-          state.selectedId = 's1';
-        }
-        if (state.acTab === 'inbox') state.acTab = 'live';
-        state.rejecting = false;
-        state.rejectReason = '';
-        showToast('Previewing as MEMBER. Approvals are hidden, not denied with a 403.');
-      } else {
-        showToast('Previewing as ADMIN. Approvals are visible.');
+    case 'role-preset': {
+      const preset = target.getAttribute('data-preset');
+      if (!ROLE_PRESETS[preset]) break;
+      state.rolePreset = preset;
+      state.roles = { ...ROLE_PRESETS[preset] };
+      if (state.selectedType === 'approval' && !scopeIsAdmin()) {
+        state.selectedType = 'session';
+        state.selectedId = filteredSessions()[0]?.id || 's1';
       }
+      if (state.acTab === 'inbox' && !isAdminOn(state.sceneBoard)) state.acTab = 'live';
+      if (state.section === 'settings') state.settingsModalOpen = isAdminOn(state.sceneBoard);
+      state.rejecting = false;
+      state.rejectReason = '';
+      showToast(preset === 'mixed'
+        ? 'Previewing mixed roles: ADMIN on Agent Ops Demo, MEMBER on Website Relaunch.'
+        : preset === 'admin'
+          ? 'Previewing ADMIN on both boards.'
+          : 'Previewing MEMBER on both boards. Approvals and settings are hidden, not denied with a 403.');
       renderStage();
       break;
     }
@@ -4933,10 +5187,7 @@ document.addEventListener('click', (event) => {
     case 'board-select':
       state.boardFilter = target.getAttribute('data-board');
       state.sheetOpen = false;
-      if (state.agentTab === 'attention') {
-        state.selectedType = isAdmin() ? 'approval' : 'session';
-        state.selectedId = isAdmin() ? 'ap-1' : 's1';
-      }
+      if (state.agentTab === 'attention') selectDefaultForScope();
       renderStage();
       break;
     case 'agents-tab': {
@@ -4946,16 +5197,13 @@ document.addEventListener('click', (event) => {
       state.rejecting = false;
       if (tab === 'sessions') {
         state.selectedType = 'session';
-        state.selectedId = 's1';
+        state.selectedId = filteredSessions()[0]?.id || 's1';
       }
       if (tab === 'runs') {
         state.selectedType = 'run';
-        state.selectedId = 'run-128';
+        state.selectedId = filteredRuns()[0]?.id || 'run-128';
       }
-      if (tab === 'attention') {
-        state.selectedType = isAdmin() ? 'approval' : 'session';
-        state.selectedId = isAdmin() ? 'ap-1' : 's1';
-      }
+      if (tab === 'attention') selectDefaultForScope();
       state.focusAfterRender = `#agents-tab-${tab}`;
       renderStage();
       break;
@@ -5024,16 +5272,21 @@ document.addEventListener('click', (event) => {
       renderStage();
       window.setTimeout(() => {
         state.refreshing = false;
-        state.lastLoaded = 'just now';
+        const ids = state.boardFilter === 'all' ? BOARDS.map((b) => b.id) : [state.boardFilter];
+        const unavailable = ids.filter((id) => boardDataState(id) === 'error');
+        ids.filter((id) => boardDataState(id) !== 'error').forEach((id) => { state.freshness[id] = 'just now'; });
         renderStage();
-        showToast('Agents refreshed. One overview, not one request per board.');
+        showToast(unavailable.length
+          ? `Refreshed ${ids.length - unavailable.length} board${ids.length - unavailable.length === 1 ? '' : 's'}. ${unavailable.map(boardName).join(', ')} still unavailable; Retry.`
+          : `Refreshed ${ids.map(boardName).join(' and ')}. Freshness is tracked per board.`, unavailable.length ? 'warn' : 'ok');
       }, 620);
       break;
     }
     case 'retry-demo':
       state.demoState = 'default';
+      BOARDS.forEach((b) => { state.freshness[b.id] = 'just now'; });
       renderStage();
-      showToast('Reloaded the demo state.');
+      showToast('Retried. Both boards are fresh.');
       break;
     case 'demo-default':
       state.demoState = 'default';
@@ -5050,16 +5303,14 @@ document.addEventListener('click', (event) => {
       break;
     }
     case 'bell':
-      if (isAdmin()) showToast(`${pendingOn()} approval${pendingOn() === 1 ? '' : 's'} waiting. The bell opens the same Attention inbox.`);
-      else showToast('No approvals for MEMBER. The bell keeps invitations and session status.');
+      showToast('Notifications are invitations only. Approval attention lives in Agents until TASK-177.6.');
       break;
     case 'agents-home':
       if (state.section !== 'agents') {
         goSection('agents');
       } else {
         state.agentTab = 'attention';
-        state.selectedType = isAdmin() ? 'approval' : 'session';
-        state.selectedId = isAdmin() ? 'ap-1' : 's1';
+        selectDefaultForScope();
         document.getElementById('agents-main')?.scrollTo({ top: 0, behavior: 'smooth' });
         renderStage();
       }
@@ -5127,12 +5378,6 @@ document.addEventListener('click', (event) => {
       renderStage();
       showToast('Board resumed. Agent writes are allowed.');
       break;
-    case 'stop-all':
-      openDialog('stop-all');
-      break;
-    case 'stop-token':
-      openDialog('stop-token', { token: target.getAttribute('data-token') });
-      break;
     case 'run-revert':
       openDialog('revert-run', { id: target.getAttribute('data-id') });
       break;
@@ -5162,6 +5407,10 @@ document.addEventListener('click', (event) => {
       closeControl();
       break;
     case 'open-settings':
+      if (!isAdminOn(state.sceneBoard)) {
+        showToast('Board settings are admin-only. The gear is not rendered for MEMBER.', 'warn');
+        break;
+      }
       state.section = 'settings';
       state.compare = 'after';
       state.demoState = 'default';
@@ -5225,7 +5474,7 @@ document.addEventListener('click', (event) => {
       break;
     case 'ac-tab': {
       const tab = target.getAttribute('data-tab');
-      if (tab === 'inbox' && !isAdmin()) break;
+      if (tab === 'inbox' && !isAdminOn(state.sceneBoard)) break;
       state.acTab = tab;
       state.acDetailOpen = false;
       state.acRunDetailOpen = false;
@@ -5272,15 +5521,16 @@ document.addEventListener('click', (event) => {
       showToast('Approvals refreshed. Counts come from approval records.');
       break;
     case 'open-board': {
-      const boardId = target.getAttribute('data-board');
+      const boardId = target.getAttribute('data-board') || 'agent-ops';
+      state.sceneBoard = boardId;
       state.section = 'control';
       state.compare = 'after';
       state.agentModalOpen = true;
-      state.acTab = isAdmin() ? 'inbox' : 'live';
+      state.acTab = isAdminOn(boardId) ? 'inbox' : 'live';
       state.acDetailOpen = false;
       state.notesOpen = false;
       state.focusModal = true;
-      if (boardId) state.boardFilter = boardId;
+      state.boardFilter = boardId;
       renderStage();
       break;
     }
@@ -5468,6 +5718,17 @@ window.addEventListener('scroll', (event) => {
   if (target instanceof Element && target.closest('#combo-root')) return;
   closeCombo();
 }, true);
+
+/* Effective expiry: the demo keeps the countdown live without writing status.
+   A pending row becomes expired as soon as its TTL passes. */
+window.setInterval(() => {
+  if (document.hidden) return;
+  const newlyExpired = state.approvals.filter((a) => a.status === 'pending' && a.expiresAt && Date.now() >= a.expiresAt && !announcedExpired.has(a.id));
+  if (!newlyExpired.length) return;
+  newlyExpired.forEach((a) => announcedExpired.add(a.id));
+  if (['agents', 'control'].includes(state.section)) renderStage();
+  showToast(`${newlyExpired.length === 1 ? 'An approval expired' : newlyExpired.length + ' approvals expired'}. Approve is disabled.`, 'warn');
+}, 15000);
 
 /* -------------------------------------------------------------------------
    Boot
