@@ -60,6 +60,7 @@ import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
 import { docsUrl } from "@/utils/docs-url";
+import { effectiveApprovalStatus } from "@/utils/approval";
 
 type Section = "attention" | "sessions" | "runs";
 const SECTIONS = ["attention", "sessions", "runs"] as const;
@@ -294,6 +295,14 @@ export function AgentsPage() {
     filter.token,
     pending.rows,
   ]);
+  const scopedPendingCount = useMemo(
+    () =>
+      scopedApprovalRows.filter(
+        (row) =>
+          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+      ).length,
+    [now, scopedApprovalRows],
+  );
   const pendingAll = state.boards
     .filter((board) => board.role === "ADMIN")
     .reduce((total, board) => total + (pending.counts[board.id] ?? 0), 0);
@@ -387,6 +396,14 @@ export function AgentsPage() {
     filter.time !== "any" ||
     filter.query.trim() !== "" ||
     selectedSession !== null;
+  const showAllClear =
+    isAttentionAdmin &&
+    scopedPendingCount === 0 &&
+    approvalFilter === "needs" &&
+    !filteredActive &&
+    !state.error &&
+    !pending.error &&
+    !pending.loading;
   const unknownBoard =
     !state.loading &&
     (!state.error || state.errorStatus === 403 || state.errorStatus === 404) &&
@@ -937,24 +954,21 @@ export function AgentsPage() {
                       <MemberAttentionBanner />
                     ) : (
                       <>
-                        {scopedApprovalRows.length === 0 &&
-                        !filteredActive &&
-                        !state.error &&
-                        !pending.error &&
-                        !pending.loading ? (
+                        {showAllClear ? (
                           <AllClear
                             onViewSessions={() => setSection("sessions")}
                           />
-                        ) : null}
-                        <AttentionApprovalList
-                          rows={scopedApprovalRows}
-                          filter={approvalFilter}
-                          onFilterChange={setApprovalFilter}
-                          selectedId={selectedApprovalId}
-                          onSelect={openApproval}
-                          onReject={(row) => openApproval(row, "reject")}
-                          now={now}
-                        />
+                        ) : (
+                          <AttentionApprovalList
+                            rows={scopedApprovalRows}
+                            filter={approvalFilter}
+                            onFilterChange={setApprovalFilter}
+                            selectedId={selectedApprovalId}
+                            onSelect={openApproval}
+                            onReject={(row) => openApproval(row, "reject")}
+                            now={now}
+                          />
+                        )}
                       </>
                     )}
                     {groups.length === 0 ? (
@@ -1131,23 +1145,26 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
   const { t } = useI18n();
   return (
     <div
-      className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-success/30 bg-success/5 px-3 py-2.5"
+      className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-success/30 bg-success/5 px-[11px] py-[9px]"
       data-testid="agents-attention-clear"
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-success/30 bg-success/10 text-success">
+      <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-success/25 bg-success/10 text-success">
         <ShieldCheck className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[11.5px] font-semibold">
-          {t("agents.shell.allClear")}
-        </p>
+        <p className="text-[11.5px] font-[650]">{t("agents.shell.allClear")}</p>
         <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
           {t("agents.shell.allClearBody")}
         </p>
       </div>
-      <Button variant="ghost" size="sm" onClick={onViewSessions}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onViewSessions}
+        className="h-7 min-h-0 px-2.5 text-[11px] font-[650]"
+      >
         {t("agents.shell.viewSessions")}
-        <ChevronRight className="h-3 w-3" aria-hidden />
+        <ChevronRight className="h-[13px] w-[13px]" aria-hidden />
       </Button>
     </div>
   );
