@@ -250,11 +250,31 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
     approval.runId === null
       ? null
       : `${base}&run=${encodeURIComponent(approval.runId)}`;
-  if (cardHref === null && sessionHref === null && runHref === null) {
-    return null;
-  }
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = () => {
+    const clipboard = navigator.clipboard;
+    if (clipboard === undefined) return;
+    const url = `${window.location.origin}${base}&approval=${encodeURIComponent(approval.id)}`;
+    void clipboard.writeText(url).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
+      () => undefined,
+    );
+  };
+
   return (
     <div className="flex flex-wrap gap-2 text-[11px]">
+      <a
+        href={routes.board(approval.boardId)}
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
+        data-testid="approval-board-link"
+      >
+        <ExternalLink className="h-3 w-3" aria-hidden />
+        {t("agents.approvals.openBoard")}
+      </a>
       {cardHref ? (
         <a
           href={cardHref}
@@ -285,6 +305,22 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
           {t("agentControl.approvals.openRun")}
         </a>
       ) : null}
+      <button
+        type="button"
+        onClick={copyLink}
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-muted-foreground hover:bg-hover hover:text-foreground"
+        data-testid="approval-copy-link"
+      >
+        {copied ? (
+          <Check className="h-3 w-3 text-success" aria-hidden />
+        ) : (
+          <Copy className="h-3 w-3" aria-hidden />
+        )}
+        {t("agents.approvals.copyLink")}
+      </button>
+      <span className="sr-only" aria-live="polite">
+        {copied ? t("agentControl.approvals.copied") : ""}
+      </span>
     </div>
   );
 }
@@ -328,28 +364,25 @@ export function ApprovalDecisionForm({
 
   if (mode === null) {
     return (
-      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+      <div className="grid w-full grid-cols-2 gap-2">
         <Button
           type="button"
-          size="sm"
           variant="outline"
           data-testid="approval-reject"
           onClick={() => setMode("reject")}
           disabled={busy}
-          className="border-danger/40 text-danger hover:bg-danger/10 hover:text-danger"
+          className="w-full"
         >
-          <X className="h-4 w-4" aria-hidden />
           {t("agentControl.approvals.reject")}
         </Button>
         <Button
           type="button"
-          size="sm"
           data-testid="approval-approve"
           onClick={() => setMode("approve")}
           disabled={busy}
+          className="w-full"
         >
-          <Check className="h-4 w-4" aria-hidden />
-          {t("agentControl.approvals.approve")}
+          {t("agentControl.approvals.confirmApprove")}
         </Button>
       </div>
     );
@@ -391,7 +424,11 @@ export function ApprovalDecisionForm({
           }}
           rows={2}
           maxLength={2000}
-          placeholder={t("agentControl.approvals.commentPlaceholder")}
+          placeholder={
+            mode === "reject"
+              ? t("agentControl.approvals.rejectReasonPlaceholder")
+              : t("agentControl.approvals.commentPlaceholder")
+          }
           aria-invalid={touched && reasonRequired}
           aria-describedby={
             touched && reasonRequired ? "approval-comment-required" : undefined

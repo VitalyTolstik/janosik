@@ -312,6 +312,36 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("1");
   });
 
+  it("quick-rejects an approval with a required reason", async () => {
+    const row = approval();
+    hoisted.listApprovals.mockResolvedValue([row]);
+    renderPage("/agents?section=attention");
+
+    await userEvent.click(
+      await screen.findByTestId("agents-approval-reject-approval-1"),
+    );
+    expect(
+      screen.getByTestId("agents-approval-quick-reject-dialog"),
+    ).toHaveTextContent("Reason for rejection (required)");
+    expect(screen.getByTestId("agents-approval-reject-confirm")).toBeDisabled();
+    await userEvent.type(
+      screen.getByTestId("agents-approval-reject-reason"),
+      "Not this card",
+    );
+    await userEvent.click(screen.getByTestId("agents-approval-reject-confirm"));
+    await waitFor(() =>
+      expect(hoisted.decideApproval).toHaveBeenCalledWith(
+        "board-1",
+        "approval-1",
+        {
+          decision: "reject",
+          planHash: row.planHash,
+          comment: "Not this card",
+        },
+      ),
+    );
+  });
+
   it("shows an expired approval without decision controls", async () => {
     const expired = approval({ expiresAt: Date.now() - 1_000 });
     hoisted.listApprovals.mockResolvedValue([expired]);

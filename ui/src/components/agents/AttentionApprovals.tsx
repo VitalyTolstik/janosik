@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  ShieldCheck,
+} from "lucide-react";
 import type { ApprovalRequestDto } from "@janosik/shared";
 
 import { api, ApiError } from "@/api/client";
@@ -28,7 +34,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, formatRelative, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { APPROVAL_KIND_KEYS, effectiveApprovalStatus } from "@/utils/approval";
+import {
+  APPROVAL_KIND_KEYS,
+  APPROVAL_STATUS_KEYS,
+  effectiveApprovalStatus,
+} from "@/utils/approval";
 import { shortId } from "./agent-model";
 
 export type AttentionApprovalFilter = "needs" | "decided" | "all";
@@ -179,10 +189,10 @@ export function AttentionApprovalList({
                 <article
                   data-status={effective}
                   className={cn(
-                    "relative overflow-hidden rounded-lg border transition-colors",
+                    "relative overflow-hidden rounded-lg border bg-surface/60 transition-colors",
                     selectedId === row.id
-                      ? "border-warning/40 bg-warning/5"
-                      : "border-border bg-card/50 hover:bg-hover",
+                      ? "border-warning/40 bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))]"
+                      : "border-border hover:bg-surface/80",
                     effective === "pending" &&
                       "before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-warning",
                   )}
@@ -194,8 +204,8 @@ export function AttentionApprovalList({
                     onClick={() => onSelect(row)}
                     className="flex w-full flex-col gap-1.5 px-3 pt-2.5 text-left"
                   >
-                    <span className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <span className="font-semibold uppercase tracking-wide text-warning">
+                    <span className="flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                      <span className="font-[650] uppercase tracking-[0.06em] text-warning">
                         {t("agents.approvals.eyebrow")}
                       </span>
                       <span>·</span>
@@ -231,7 +241,6 @@ export function AttentionApprovalList({
                       variant="outline"
                       onClick={() => setRejecting(row)}
                       data-testid={`agents-approval-reject-${row.id}`}
-                      className="border-danger/40 text-danger hover:bg-danger/10 hover:text-danger"
                     >
                       {t("agents.approvals.reject")}
                     </Button>
@@ -326,6 +335,7 @@ function QuickRejectDialog({
               onChange={(event) => setReason(event.target.value)}
               rows={2}
               maxLength={2000}
+              placeholder={t("agentControl.approvals.rejectReasonPlaceholder")}
               autoFocus
             />
           </div>
@@ -475,6 +485,11 @@ export function AttentionApprovalDetail({
           <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("agents.approvals.selected")}
           </p>
+          {canDecide ? (
+            <div className="ml-auto">
+              <ApprovalCancelButton busy={busy} onCancel={cancel} />
+            </div>
+          ) : null}
         </div>
         <h2 className="mt-0.5 text-[13px] font-semibold">
           {detail?.summary ?? t("agents.approvals.loading")}
@@ -523,11 +538,14 @@ export function AttentionApprovalDetail({
             ) : null}
 
             <p className="text-[12px] leading-5">
-              {t("agents.approvals.asks", {
-                agent: shortId(detail.requestedByTokenId, 12),
-                action: detail.actionType,
-                board: boardTitle,
-              })}
+              <b className="font-semibold">
+                {shortId(detail.requestedByTokenId, 12)}
+              </b>{" "}
+              {t("agents.approvals.asksPrefix")}{" "}
+              <code className="font-mono text-[11px]">{detail.actionType}</code>{" "}
+              {t("agents.approvals.asksOn")}{" "}
+              <b className="font-semibold">{boardTitle}</b>.{" "}
+              {t("agents.approvals.asksSuffix")}
             </p>
 
             {detail.kind === "destructive" ? (
@@ -582,8 +600,32 @@ export function AttentionApprovalDetail({
                   {formatDate(detail.expiresAt, lang)}
                 </ApprovalMetaRow>
               </dl>
-              <ApprovalLinks approval={detail} />
             </section>
+
+            <div className="flex flex-wrap items-stretch gap-2">
+              <div className="min-w-0 flex-1 rounded-md border bg-background/30 p-2">
+                <span className="block text-[9px] uppercase tracking-wide text-muted-foreground">
+                  {t("agents.approvals.knownTarget")}
+                </span>
+                <b className="block truncate text-[11px]">
+                  {detail.cardId === null
+                    ? boardTitle
+                    : shortId(detail.cardId, 18)}
+                </b>
+              </div>
+              <ArrowRight
+                className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground"
+                aria-hidden
+              />
+              <div className="min-w-0 flex-1 rounded-md border border-warning/30 bg-warning/5 p-2">
+                <span className="block text-[9px] uppercase tracking-wide text-muted-foreground">
+                  {t("agents.approvals.exactAction")}
+                </span>
+                <b className="block truncate text-[11px] text-warning">
+                  {detail.actionType}
+                </b>
+              </div>
+            </div>
 
             <ApprovalPlanBlock
               approval={detail}
@@ -599,35 +641,111 @@ export function AttentionApprovalDetail({
               hint={t("agents.approvals.hashHint")}
             />
 
-            {detail.decisionComment !== null ? (
-              <div className="space-y-1" data-testid="agents-approval-comment">
-                <h4 className="text-xs font-semibold">
-                  {t("agentControl.approvals.comment")}
-                </h4>
-                <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-2 text-xs">
-                  {detail.decisionComment}
-                </p>
-              </div>
-            ) : null}
+            <section className="space-y-2 border-t border-border pt-3">
+              <h4 className="text-xs font-semibold">
+                {t("agents.approvals.decisionHistory")}
+              </h4>
+              <ol className="space-y-2 text-[11px] leading-5">
+                <li className="flex gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+                  <div>
+                    <b className="block text-foreground">
+                      {t("agents.approvals.historyRequested", {
+                        name: shortId(detail.requestedBy, 16),
+                      })}
+                    </b>
+                    <span className="text-muted-foreground">
+                      {formatDate(detail.createdAt, lang)} ·{" "}
+                      {t(APPROVAL_KIND_KEYS[detail.kind])} · {detail.risk} risk
+                    </span>
+                  </div>
+                </li>
+                {effectiveStatus === "pending" ? (
+                  <li className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                    <div>
+                      <b className="block text-foreground">
+                        {t("agents.approvals.historyWaiting")}
+                      </b>
+                      <span className="text-muted-foreground">
+                        {t("agents.approvals.expires", {
+                          time: formatRelative(detail.expiresAt, lang, now),
+                        })}{" "}
+                        · {t("agents.approvals.oneTime")}
+                      </span>
+                    </div>
+                  </li>
+                ) : (
+                  <li className="flex gap-2">
+                    <span
+                      className={cn(
+                        "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                        effectiveStatus === "rejected"
+                          ? "bg-danger"
+                          : effectiveStatus === "expired"
+                            ? "bg-warning"
+                            : effectiveStatus === "consumed"
+                              ? "bg-primary"
+                              : "bg-success",
+                      )}
+                    />
+                    <div>
+                      <b className="block text-foreground">
+                        {detail.decidedBy
+                          ? t("agents.approvals.historyDecision", {
+                              status: t(APPROVAL_STATUS_KEYS[effectiveStatus]),
+                              name: shortId(detail.decidedBy, 16),
+                            })
+                          : t(APPROVAL_STATUS_KEYS[effectiveStatus])}
+                      </b>
+                      <span className="text-muted-foreground">
+                        {detail.decidedAt === null
+                          ? formatDate(detail.expiresAt, lang)
+                          : formatDate(detail.decidedAt, lang)}
+                        {detail.decisionComment
+                          ? ` · “${detail.decisionComment}”`
+                          : ""}
+                      </span>
+                    </div>
+                  </li>
+                )}
+                {detail.consumedAt !== null ? (
+                  <li className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                    <div>
+                      <b className="block text-foreground">
+                        {t("agents.approvals.historyApplied")}
+                      </b>
+                      <span className="text-muted-foreground">
+                        {formatDate(detail.consumedAt, lang)}
+                      </span>
+                    </div>
+                  </li>
+                ) : null}
+              </ol>
+            </section>
 
-            <dl className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
-              <ApprovalMetaRow label={t("agentControl.approvals.created")}>
-                {formatDate(detail.createdAt, lang)}
-              </ApprovalMetaRow>
-              <ApprovalMetaRow label={t("agentControl.approvals.decidedBy")}>
-                {detail.decidedBy ?? t("agentControl.approvals.notDecided")}
-              </ApprovalMetaRow>
-              {detail.decidedAt !== null ? (
-                <ApprovalMetaRow label={t("agentControl.approvals.decidedAt")}>
-                  {formatDate(detail.decidedAt, lang)}
-                </ApprovalMetaRow>
-              ) : null}
-              {detail.consumedAt !== null ? (
-                <ApprovalMetaRow label={t("agentControl.approvals.consumedAt")}>
-                  {formatDate(detail.consumedAt, lang)}
-                </ApprovalMetaRow>
-              ) : null}
-            </dl>
+            <section className="space-y-2 border-t border-border pt-3">
+              <h4 className="text-xs font-semibold">
+                {t("agents.approvals.related")}
+              </h4>
+              <ApprovalLinks approval={detail} />
+              <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] text-muted-foreground">
+                {t("agentControl.approvals.token")}:{" "}
+                <code className="font-mono text-[10px]">
+                  {shortId(detail.requestedByTokenId, 16)}
+                </code>
+              </span>
+            </section>
+
+            <details className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px]">
+              <summary className="cursor-pointer text-muted-foreground">
+                {t("agents.approvals.technicalDetails")}
+              </summary>
+              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
+                {JSON.stringify(detail.plan ?? null, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
       </div>
@@ -635,15 +753,24 @@ export function AttentionApprovalDetail({
         <footer className="shrink-0 border-t border-border px-4 py-3">
           {canDecide ? (
             <div className="space-y-2">
-              <p className="text-[11px] text-muted-foreground">
-                {t("agents.approvals.footerHint")}
-              </p>
+              <div className="flex items-start gap-2 text-[11px] leading-5 text-muted-foreground">
+                <ShieldCheck
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success"
+                  aria-hidden
+                />
+                <p>
+                  {t("agents.approvals.footerBefore")}{" "}
+                  <b className="font-semibold text-foreground">
+                    {t("agents.approvals.footerHash")}
+                  </b>
+                  {t("agents.approvals.footerAfter")}
+                </p>
+              </div>
               <ApprovalDecisionForm
                 key={detail.id}
                 busy={busy}
                 onDecide={decide}
               />
-              <ApprovalCancelButton busy={busy} onCancel={cancel} />
             </div>
           ) : (
             <p className="text-[11px] text-muted-foreground">
