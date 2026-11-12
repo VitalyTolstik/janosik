@@ -1,5 +1,5 @@
 import { ArrowRight } from "lucide-react";
-import { useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import type { Card, Column } from "@janosik/shared";
 
 import { useI18n } from "@/i18n";
@@ -31,6 +31,17 @@ export function ColumnRail({
 }: ColumnRailProps) {
   const { t } = useI18n();
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  // The rail becomes a horizontal scroller as soon as the columns stop
+  // fitting. Keep the selected column in view when it is opened from the
+  // keyboard or from a deep link; `nearest` leaves an already visible tab
+  // alone and never scrolls the dialog itself sideways.
+  useEffect(() => {
+    refs.current[activeId]?.scrollIntoView?.({
+      inline: "nearest",
+      block: "nearest",
+    });
+  }, [activeId, columns.length]);
 
   const move = (direction: 1 | -1) => {
     if (columns.length === 0) return;
@@ -72,7 +83,7 @@ export function ColumnRail({
       role={columns.length === 0 ? undefined : "tablist"}
       aria-label={columns.length === 0 ? undefined : t("workflow.rail.label")}
       data-testid={`${testIdPrefix}-rail`}
-      className="flex shrink-0 snap-x items-stretch gap-0 overflow-x-auto border-b border-border/80 px-3 [scrollbar-width:none] max-md:px-1.5 [&::-webkit-scrollbar]:hidden"
+      className="flex w-full min-w-0 max-w-full shrink-0 snap-x flex-nowrap items-stretch gap-0 overflow-x-auto overscroll-x-contain scroll-px-3 border-b border-border/80 px-3 [scrollbar-width:none] max-md:scroll-px-1.5 max-md:px-1.5 [&::-webkit-scrollbar]:hidden"
     >
       {columns.length === 0 ? (
         <p className="px-2 py-3 text-[11px] text-muted-foreground">
@@ -90,7 +101,7 @@ export function ColumnRail({
           <div
             key={column.id}
             role="presentation"
-            className="flex min-w-0 shrink-0 snap-start items-center md:flex-1 md:basis-auto"
+            className="flex shrink-0 snap-start items-center md:flex-1 md:basis-auto"
           >
             <button
               ref={(element) => {
