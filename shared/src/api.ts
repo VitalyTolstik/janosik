@@ -1026,9 +1026,12 @@ export interface UpdateProfileRequest {
   locale?: AnnouncementLocale | null;
 }
 
-/** Body of `POST /users/me/password` (TASK-36.1). */
+/** Body of `POST /auth/password` (TASK-36.1). */
 export interface ChangePasswordRequest {
-  currentPassword: string;
+  /** Required for an account that already has a password. */
+  currentPassword?: string;
+  /** OAuth-only accounts prove the operation with a fresh OAuth token. */
+  oauthProof?: string;
   newPassword: string;
 }
 

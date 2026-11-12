@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsEmail, IsString } from "class-validator";
+import { IsEmail, IsOptional, IsString } from "class-validator";
 
 /**
  * `POST /auth/email/change/request` (TASK-51) — step 1 of the double
@@ -12,6 +12,8 @@ export class RequestEmailChangeDto {
   @IsEmail()
   newEmail!: string;
 
+  /** Required for an account that already has a password. */
+  @IsOptional()
   @IsString()
-  currentPassword!: string;
+  currentPassword?: string;
 }

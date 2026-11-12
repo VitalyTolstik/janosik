@@ -52,56 +52,76 @@ export class AccountDeletionService {
       agentSessionId?: string | null;
     } = {},
   ): Promise<{ deleteAfter: Date }> {
+    return this.prisma.$transaction((tx) =>
+      this.scheduleInTransaction(tx, userId, actorId, attribution),
+    );
+  }
+
+  /**
+   * The transaction half of `schedule`. Callers that must verify a
+   * credential under the same lock (self-service deletion) pass their own
+   * `tx`; the lock is taken here, and re-taking it in the same transaction
+   * is harmless.
+   */
+  async scheduleInTransaction(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    actorId: string,
+    attribution: {
+      actorType?: ActorType;
+      apiTokenId?: string | null;
+      agentSessionId?: string | null;
+    } = {},
+  ): Promise<{ deleteAfter: Date }> {
     const now = new Date();
     const deleteAfter = new Date(
       now.getTime() + ACCOUNT_DELETE_GRACE_DAYS * DAY_MS,
     );
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
     const tokenIds = (
-      await this.prisma.apiToken.findMany({
+      await tx.apiToken.findMany({
         where: { userId },
         select: { id: true },
       })
     ).map((token) => token.id);
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: { disabledAt: now },
-      });
-      await tx.apiToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: now },
-      });
-      await tx.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: now },
-      });
-      await tx.agentSession.updateMany({
-        where: {
-          userId,
-          status: { notIn: ["completed", "failed", "cancelled"] },
-        },
-        data: {
-          status: "cancelled",
-          endedAt: now,
-          endReason: "account_delete",
-        },
-      });
-      await this.releaseClaims(tx, userId, tokenIds, now);
-      await tx.securityAuditLog.create({
-        data: {
-          userId,
-          actorId,
-          actorType: attribution.actorType ?? "human",
-          apiTokenId: attribution.apiTokenId ?? null,
-          agentSessionId: attribution.agentSessionId ?? null,
-          action: ACCOUNT_DELETE_SCHEDULED_ACTION,
-          targetType: "user",
-          targetId: userId,
-          details: { deleteAfter: deleteAfter.toISOString() },
-          createdAt: now,
-        },
-      });
+    await tx.user.update({
+      where: { id: userId },
+      data: { disabledAt: now },
+    });
+    await tx.apiToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    await tx.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    await tx.agentSession.updateMany({
+      where: {
+        userId,
+        status: { notIn: ["completed", "failed", "cancelled"] },
+      },
+      data: {
+        status: "cancelled",
+        endedAt: now,
+        endReason: "account_delete",
+      },
+    });
+    await this.releaseClaims(tx, userId, tokenIds, now);
+    await tx.securityAuditLog.create({
+      data: {
+        userId,
+        actorId,
+        actorType: attribution.actorType ?? "human",
+        apiTokenId: attribution.apiTokenId ?? null,
+        agentSessionId: attribution.agentSessionId ?? null,
+        action: ACCOUNT_DELETE_SCHEDULED_ACTION,
+        targetType: "user",
+        targetId: userId,
+        details: { deleteAfter: deleteAfter.toISOString() },
+        createdAt: now,
+      },
     });
     return { deleteAfter };
   }

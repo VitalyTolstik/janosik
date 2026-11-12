@@ -137,6 +137,14 @@ describe("Registration email verification (e2e)", () => {
       where: { email: EMAIL },
     });
     expect(dbUser.emailVerifiedAt).not.toBeNull();
+
+    // Verifying changes the security stamp, so the old access token is
+    // deliberately stale; the browser refreshes (or signs in again).
+    const login = await server()
+      .post("/api/v1/auth/login")
+      .send({ email: EMAIL, password: PASSWORD })
+      .expect(200);
+    accessToken = login.body.accessToken;
   });
 
   it("rejects further verifies and resends once verified", async () => {

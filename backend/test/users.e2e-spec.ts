@@ -10,6 +10,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { MailerService } from "@/mailer/mailer.service";
 import { refreshCookieValue } from "./support/cookies";
 
 const PROFILE_EMAIL = "users-profile@example.com";
@@ -25,6 +26,7 @@ const NEW_PASSWORD = "fresh correct horse battery";
 describe("Users API (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let enabledSpy: jest.SpyInstance;
   let profileToken: string;
   let profileCookie: string;
   let profileId: string;
@@ -38,6 +40,9 @@ describe("Users API (e2e)", () => {
     setupApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    enabledSpy = jest
+      .spyOn(app.get(MailerService), "enabled", "get")
+      .mockReturnValue(true);
     await wipe(prisma);
 
     const profile = await register(PROFILE_EMAIL, "Vera");
@@ -50,6 +55,7 @@ describe("Users API (e2e)", () => {
   });
 
   afterAll(async () => {
+    enabledSpy.mockRestore();
     await wipe(prisma);
     await app.close();
   });
@@ -103,7 +109,8 @@ describe("Users API (e2e)", () => {
         avatarColor: "teal",
         avatarPath: null,
         createdAt: expect.any(Number),
-        emailVerifiedAt: expect.any(Number),
+        // A simulated live transport means the address awaits its code.
+        emailVerifiedAt: null,
         hasPassword: true,
       });
 
@@ -145,7 +152,8 @@ describe("Users API (e2e)", () => {
         avatarColor: null,
         avatarPath: null,
         createdAt: expect.any(Number),
-        emailVerifiedAt: expect.any(Number),
+        // A simulated live transport means the address awaits its code.
+        emailVerifiedAt: null,
         hasPassword: true,
       });
     });
@@ -231,11 +239,14 @@ describe("Users API (e2e)", () => {
         .expect(200);
       expect(res.body).toEqual({ status: "ok" });
 
-      // The caller's own cookie still rotates…
-      await server()
+      // The caller's own cookie still rotates; the old access token is
+      // stale because the password change bumped the security stamp.
+      const rotated = await server()
         .post("/api/v1/auth/refresh")
         .set(cookie(profileCookie))
         .expect(200);
+      profileToken = rotated.body.accessToken as string;
+      profileCookie = refreshCookieValue(rotated);
       // …while the other session's token is dead. Presenting a revoked
       // refresh token is the anti-reuse theft signal and revokes everything,
       // so this check must come after the caller's.

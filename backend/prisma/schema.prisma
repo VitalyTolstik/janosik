@@ -86,10 +86,15 @@ model RefreshToken {
   // a session came from. Nullable — sessions minted before the column exists.
   ip        String?
   userAgent String?
+  // Rotation family (PR #250 review): every token minted by rotating the
+  // same login shares it, so logout can revoke the whole chain atomically.
+  // Nullable — legacy rows predate the column.
+  familyId  String?
 
   @@index([userId, createdAt])
   @@index([expiresAt]) // dead-session sweep (TASK-148)
   @@index([revokedAt]) // dead-session sweep (TASK-148)
+  @@index([familyId, revokedAt])
 }
 
 // Email change (TASK-51) — double opt-in: the user proves the current
