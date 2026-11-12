@@ -32,11 +32,6 @@ export interface BoardSettingsShellProps {
   /** Dirty state is owned by the dialog so both sections share one guard. */
   dirty: boolean;
   saving?: boolean;
-  /**
-   * The workflow editor keeps its wider matrix layout; the agents section
-   * follows the 1040 px prototype shell.
-   */
-  wide?: boolean;
   discardTitle: string;
   discardDescription: string;
   discardConfirmLabel: string;
@@ -60,7 +55,6 @@ export function BoardSettingsShell({
   onSectionChange,
   dirty,
   saving = false,
-  wide = false,
   discardTitle,
   discardDescription,
   discardConfirmLabel,
@@ -133,7 +127,6 @@ export function BoardSettingsShell({
         hideClose
         className={cn(
           "h-[min(47.25rem,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]!",
-          wide && "min-[1200px]:max-w-[min(1360px,calc(100vw-4rem))]",
           "max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0!",
         )}
         data-testid="board-settings-dialog"

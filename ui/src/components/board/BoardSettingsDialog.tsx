@@ -141,7 +141,6 @@ export function BoardSettingsDialog({
       onSectionChange={selectSection}
       dirty={dirty}
       saving={saving}
-      wide={section === "workflow"}
       discardTitle={discardTitle}
       discardDescription={discardDescription}
       discardConfirmLabel={t("workflow.discard")}
