@@ -116,6 +116,7 @@
   "account.security.tooShort": "Новый пароль должен быть не короче 8 символов",
   "account.security.wrongCurrent": "Текущий пароль неверен",
   "account.security.oauthLinkHint": "Введите текущий пароль выше, чтобы привязать провайдера с тем же адресом почты.",
+  "account.security.oauthProofFailed": "Войдите заново через OAuth-провайдера и повторите",
   "account.security.oauthLink": "Привязать {{provider}}",
   "account.tokens.active": "Активен",
   "account.tokens.boardAll": "Все доски",

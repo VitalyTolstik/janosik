@@ -116,6 +116,7 @@
   "account.security.tooShort": "The new password must be at least 8 characters",
   "account.security.wrongCurrent": "Current password is incorrect",
   "account.security.oauthLinkHint": "Enter your current password above to link a provider with the same email address.",
+  "account.security.oauthProofFailed": "Re-authenticate with your OAuth provider and try again",
   "account.security.oauthLink": "Link {{provider}}",
   "account.tokens.active": "Active",
   "account.tokens.boardAll": "All boards",

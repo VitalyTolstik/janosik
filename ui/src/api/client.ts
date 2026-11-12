@@ -209,7 +209,7 @@ export function apiBaseUrl(): string {
   return import.meta.env.VITE_API_URL ?? "/api/v1";
 }
 
-/** Web Locks name: one refresh at a time per browser profile. */
+/** Web Locks name: one auth mutation at a time per browser profile. */
 export const REFRESH_LOCK = "janosik:auth-refresh";
 const PENDING_LOGOUT = "janosik:pending-logout";
 function setPendingLogout(value: boolean): void {
@@ -242,13 +242,16 @@ export function hasPendingLogout(): boolean {
  * API keep the old single-tab behaviour (the in-tab promise still
  * serializes).
  */
-async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
-  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  if (locks === undefined) return task();
-  return locks.request(REFRESH_LOCK, task);
-}
-
 let fallbackAuthQueue: Promise<void> = Promise.resolve();
+
+/**
+ * The one cross-tab lock for every auth mutation: refresh, login, register,
+ * logout and email confirmation. They must not overlap — a refresh that
+ * lands after logout would re-apply a `Set-Cookie` the logout just cleared,
+ * and a refresh that lands after a login for another account would replace
+ * the new session's cookie. Without Web Locks the in-tab queue provides the
+ * same ordering.
+ */
 async function withInteractiveAuthLock<T>(task: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   if (locks === undefined) {
@@ -259,7 +262,11 @@ async function withInteractiveAuthLock<T>(task: () => Promise<T>): Promise<T> {
     );
     return result;
   }
-  return locks.request("janosik:auth-interactive", task);
+  return locks.request(REFRESH_LOCK, task);
+}
+
+async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  return withInteractiveAuthLock(task);
 }
 
 export class ApiClient {
@@ -366,16 +373,21 @@ export class ApiClient {
   /** `POST /auth/logout` — revokes the refresh session server-side. */
   async logout(): Promise<void> {
     setPendingLogout(true);
-    const epoch = this.sessionEpoch;
+    // Invalidate a refresh that is already in flight before waiting for the
+    // lock: its late `Set-Cookie` must not resurrect the session. The lock
+    // then orders the logout request after that refresh, so the browser
+    // sends (and the server revokes) the freshly rotated cookie.
+    const epoch = ++this.sessionEpoch;
     try {
       await withInteractiveAuthLock(async () => {
+        // A login/register that won the lock first owns the session now.
+        if (epoch !== this.sessionEpoch) return;
         await this.request<{ status: "ok" }>("/auth/logout", {
           method: "POST",
           body: {},
           auth: false,
         });
         setPendingLogout(false);
-        if (epoch === this.sessionEpoch) this.clearAccessToken();
       });
     } finally {
       if (epoch === this.sessionEpoch) this.clearAccessToken();
@@ -554,10 +566,15 @@ export class ApiClient {
   changePassword(
     currentPassword: string,
     newPassword: string,
+    oauthProof?: string,
   ): Promise<{ status: "ok" }> {
     return this.request<{ status: "ok" }>("/auth/password", {
       method: "POST",
-      body: { currentPassword, newPassword },
+      body: {
+        currentPassword,
+        newPassword,
+        ...(oauthProof === undefined ? {} : { oauthProof }),
+      },
     });
   }
 
@@ -611,26 +628,29 @@ export class ApiClient {
    * login), so the stored access token is replaced here.
    */
   async confirmEmailChange(code: string): Promise<AuthResponseDto> {
-    return withInteractiveAuthLock(async () => {
-      const epoch = this.sessionEpoch;
-      const response = await this.request<AuthResponseDto>(
-        "/auth/email/change/confirm",
-        {
-          method: "POST",
-          body: { code },
-        },
+    // No auth lock here: unlike login/logout/refresh this endpoint sets no
+    // refresh cookie, so it cannot overwrite the session cookie. The epoch
+    // check below is enough to drop a late answer for a previous account,
+    // and keeping the request outside the lock lets a 401 retry refresh
+    // without re-entering the same Web Lock.
+    const epoch = this.sessionEpoch;
+    const response = await this.request<AuthResponseDto>(
+      "/auth/email/change/confirm",
+      {
+        method: "POST",
+        body: { code },
+      },
+    );
+    if (epoch !== this.sessionEpoch)
+      throw new ApiError(
+        0,
+        null,
+        "Session changed during email confirmation",
+        true,
       );
-      if (epoch !== this.sessionEpoch)
-        throw new ApiError(
-          0,
-          null,
-          "Session changed during email confirmation",
-          true,
-        );
-      this.accessToken = response.accessToken;
-      this.sessionEpoch += 1;
-      return response;
-    });
+    this.accessToken = response.accessToken;
+    this.sessionEpoch += 1;
+    return response;
   }
 
   /** `GET /users/me/tokens` — personal API tokens (TASK-36.1). */
@@ -868,6 +888,9 @@ export class ApiClient {
   private async runRefresh(): Promise<AuthResponseDto | null> {
     // A view-as tab must never rotate into the master session (TASK-85).
     if (this.impersonating) return null;
+    // A failed offline logout leaves the server cookie alive; do not let a
+    // reload silently restore the session before `retryPendingLogout`.
+    if (hasPendingLogout()) return null;
     const epoch = this.sessionEpoch;
     try {
       const response = await withRefreshLock(() =>
@@ -914,8 +937,15 @@ export class ApiClient {
     const { data, headers } = await this.requestWithHeaders<BoardAggregate>(
       `/boards/${boardId}`,
     );
-    const seq = Number(headers.get("X-Board-Seq") ?? "0");
-    return { board: data, seq: Number.isFinite(seq) && seq > 0 ? seq : 0 };
+    const header = headers.get("X-Board-Seq");
+    // No header = an older/proxied server with no baseline; a present but
+    // malformed value must not silently become a huge or negative seq.
+    if (header === null) return { board: data, seq: 0 };
+    const seq = /^\d+$/.test(header) ? Number(header) : Number.NaN;
+    return {
+      board: data,
+      seq: Number.isSafeInteger(seq) && seq >= 0 ? seq : 0,
+    };
   }
 
   deleteBoard(boardId: string): Promise<{ status: "ok" }> {

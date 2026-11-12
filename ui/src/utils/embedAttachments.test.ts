@@ -15,9 +15,17 @@ vi.mock("@/api/client", () => ({
   api: {
     fetchAttachment: vi.fn(),
   },
+  ApiError: class ApiError extends Error {
+    constructor(
+      public readonly status: number,
+      public readonly body: unknown = null,
+    ) {
+      super(`HTTP ${status}`);
+    }
+  },
 }));
 
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 
 describe("attachmentIdFromUrl", () => {
   it("extracts ids from embedded content URLs (any origin prefix)", () => {
@@ -148,6 +156,19 @@ describe("attachmentImagePreviewHandler", () => {
     expect(svg).not.toContain("red");
     expect(svg).not.toContain("⚠");
     vi.unstubAllGlobals();
+  });
+
+  it("caches a definitive 404 instead of retrying it", async () => {
+    vi.mocked(api.fetchAttachment).mockRejectedValue(new ApiError(404, null));
+    const src = "/api/v1/attachments/att-definitive-404/content";
+
+    expect(await attachmentImagePreviewHandler(src)).toMatch(
+      /^data:image\/svg/,
+    );
+    expect(await attachmentImagePreviewHandler(src)).toMatch(
+      /^data:image\/svg/,
+    );
+    expect(api.fetchAttachment).toHaveBeenCalledTimes(1);
   });
 
   it("retries a temporary failure instead of caching the placeholder", async () => {

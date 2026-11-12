@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Database, Download, ShieldAlert, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
@@ -31,10 +31,14 @@ export function DataPrivacySection() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const exportKey = user ? `janosik:account-export:${user.id}` : null;
+  // Bumped whenever a newer export starts; a slow initial lookup must not
+  // replace the row the user just requested.
+  const exportEpoch = useRef(0);
 
   useEffect(() => {
     if (!exportKey) return;
     let alive = true;
+    const epoch = ++exportEpoch.current;
     let id: string | null = null;
     try {
       id = localStorage.getItem(exportKey);
@@ -46,7 +50,7 @@ export function DataPrivacySection() {
       : api.latestAccountExport();
     void lookup
       .then((row) => {
-        if (alive && row) {
+        if (alive && epoch === exportEpoch.current && row) {
           setExportRow(row);
           try {
             localStorage.setItem(exportKey, row.id);
@@ -103,10 +107,12 @@ export function DataPrivacySection() {
   }, [exportRow]);
 
   const requestExport = async () => {
+    const epoch = ++exportEpoch.current;
     setExporting(true);
     setError(null);
     try {
       const row = await api.requestAccountExport();
+      if (epoch !== exportEpoch.current) return;
       if (exportKey) {
         try {
           localStorage.setItem(exportKey, row.id);
@@ -134,6 +140,7 @@ export function DataPrivacySection() {
       if (id) {
         try {
           const row = await api.accountExportStatus(id);
+          if (epoch !== exportEpoch.current) return;
           if (exportKey) {
             try {
               localStorage.setItem(exportKey, id);
