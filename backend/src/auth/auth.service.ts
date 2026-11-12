@@ -36,14 +36,25 @@ import { LoginBackoffService } from "./login-backoff.service";
 import { RegisterDto } from "./dto/register.dto";
 import { revokeApiTokens } from "./token-revocation";
 import { securityStamp } from "./security-stamp";
+import {
+  assertOAuthProofMatchesUser,
+  verifyOAuthProofToken,
+} from "./oauth-proof";
 import type { VerifyEmailDto } from "./dto/verify-email.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
 import type { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
 import type { RequestEmailChangeDto } from "./dto/request-email-change.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DUMMY_PASSWORD_HASH =
-  "$argon2id$v=19$m=65536,p=4,t=3$isfgtCAq+KXHgTYbJT7YOQ$Eue1lNnMvq+bV/ci5VxvMNojPEYrJFEXx2rs4ws9bJk";
+/**
+ * A random, never-revealed password hashed once when the process starts.
+ * Unknown-email logins verify against it so timing does not depend on a
+ * published hash of a known password.
+ */
+const DUMMY_PASSWORD_HASH: Promise<string> = argonHash(
+  randomBytes(32).toString("base64url"),
+  { type: argon2id },
+);
 /** TASK-166: marks a refresh token minted by an OAuth login. */
 const OAUTH_REFRESH_PREFIX = "jnko_";
 function oauthAuthenticationTime(token: string): number {
@@ -424,23 +435,53 @@ export class AuthService {
       });
       if (rotated.count === 0)
         throw new UnauthorizedException("Refresh token race detected");
-      const method = rawToken.startsWith(OAUTH_REFRESH_PREFIX)
-        ? "oauth"
-        : "password";
+      // Legacy OAuth-only refresh tokens predate the `jnko_` prefix; the
+      // account row is the only remaining proof that they came from OAuth.
+      const method =
+        rawToken.startsWith(OAUTH_REFRESH_PREFIX) ||
+        stored.user.passwordHash === null
+          ? "oauth"
+          : "password";
       const authTime =
         method === "oauth" ? oauthAuthenticationTime(rawToken) : undefined;
-      return this.createSession(tx, current, method, authTime);
+      // Rotation stays inside the login's family; a legacy token starts one.
+      const familyId = stored.familyId ?? this.newRefreshFamilyId();
+      return this.createSession(tx, current, method, authTime, familyId);
     });
   }
 
-  /** Idempotent by design: absent/stale/unknown cookies still end in 200. */
+  /**
+   * Idempotent by design: absent/stale/unknown cookies still end in 200.
+   *
+   * Rotation and logout serialize on the `User` row. Logout revokes the
+   * whole rotation family, not only the presented hash: a refresh that won
+   * the race just before this call may already have minted its successor,
+   * and that successor must not survive the logout.
+   */
   async logout(rawToken: string | undefined): Promise<void> {
     if (!rawToken) {
       return;
     }
-    await this.prisma.refreshToken.updateMany({
-      where: { tokenHash: this.hashToken(rawToken), revokedAt: null },
-      data: { revokedAt: new Date() },
+    const tokenHash = this.hashToken(rawToken);
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      select: { id: true, userId: true, familyId: true },
+    });
+    if (!stored) {
+      return;
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${stored.userId} FOR UPDATE`;
+      await tx.refreshToken.updateMany({
+        where: stored.familyId
+          ? {
+              userId: stored.userId,
+              familyId: stored.familyId,
+              revokedAt: null,
+            }
+          : { id: stored.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
   }
 
@@ -458,28 +499,49 @@ export class AuthService {
     userId: string,
     dto: ChangePasswordDto,
     refreshToken: string | undefined,
+    stamp: string | undefined,
   ): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UnauthorizedException();
+    if (!stamp) {
+      throw new UnauthorizedException("Credentials changed; sign in again");
     }
-    // An OAuth-only account (TASK-54) adopts its first password without the
-    // current-password proof — there is no local secret to verify against.
-    if (user.passwordHash !== null) {
-      const valid = await argonVerify(user.passwordHash, dto.currentPassword);
-      if (!valid) {
-        throw new UnauthorizedException({
-          message: "Current password is incorrect",
-          code: "current_password_invalid",
-        });
-      }
-    }
+    // Verify the OAuth proof's signature/freshness before taking the lock;
+    // its stamp is compared with the locked row below.
+    const proof = dto.oauthProof
+      ? await verifyOAuthProofToken(this.jwtService, dto.oauthProof)
+      : undefined;
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
     const revokedTokenIds = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
       const current = await tx.user.findUnique({ where: { id: userId } });
-      if (!current || securityStamp(current) !== securityStamp(user))
+      if (
+        !current ||
+        current.disabledAt !== null ||
+        securityStamp(current) !== stamp
+      ) {
         throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      if (current.passwordHash === null) {
+        // TASK-54: an OAuth-only account sets its first password only with
+        // a fresh provider proof — a surviving session alone is not enough.
+        if (!proof) {
+          throw new UnauthorizedException({
+            message: "OAuth re-authentication is required",
+            code: "oauth_proof_required",
+          });
+        }
+        assertOAuthProofMatchesUser(proof, current);
+      } else {
+        const valid = await argonVerify(
+          current.passwordHash,
+          dto.currentPassword ?? "",
+        );
+        if (!valid) {
+          throw new UnauthorizedException({
+            message: "Current password is incorrect",
+            code: "current_password_invalid",
+          });
+        }
+      }
       await tx.user.update({
         where: { id: userId },
         data: { passwordHash },
@@ -524,45 +586,64 @@ export class AuthService {
     userId: string,
     dto: RequestEmailChangeDto,
     locale: MailLocale,
+    stamp: string | undefined,
   ): Promise<{ expiresAt: number; queued: boolean }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UnauthorizedException();
-    }
-    // For an OAuth-only account (TASK-54) the provider already proves
-    // mailbox ownership on every login, so no current password is checked —
-    // the change itself still requires the code sent to the NEW address.
-    if (user.passwordHash !== null) {
-      const valid = await argonVerify(user.passwordHash, dto.currentPassword);
-      if (!valid) {
-        throw new UnauthorizedException({
-          message: "Current password is incorrect",
-          code: "current_password_invalid",
-        });
-      }
-    }
-    if (dto.newEmail === user.email) {
-      throw new BadRequestException(
-        "New email must differ from the current one",
+    if (!this.mailer.enabled) {
+      throw new ServiceUnavailableException(
+        "Email delivery must be configured before changing the address",
       );
     }
-    const taken = await this.prisma.user.findUnique({
-      where: { email: dto.newEmail },
-      select: { id: true },
-    });
-    if (taken) {
-      throw new ConflictException("Email is already registered");
+    if (!stamp) {
+      throw new UnauthorizedException("Credentials changed; sign in again");
     }
     const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
     const expiresAt = new Date(Date.now() + EMAIL_CHANGE_TTL_MS);
-    await this.prisma.emailChangeCode.deleteMany({ where: { userId } });
-    await this.prisma.emailChangeCode.create({
-      data: {
-        userId,
-        newEmail: dto.newEmail,
-        codeHash: this.hashToken(`email-change:${userId}:${code}`),
-        expiresAt,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: userId } });
+      if (
+        !current ||
+        current.disabledAt !== null ||
+        securityStamp(current) !== stamp
+      ) {
+        throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      // For an OAuth-only account (TASK-54) the provider already proves
+      // mailbox ownership on every login, so no current password is checked —
+      // the change itself still requires the code sent to the NEW address.
+      if (current.passwordHash !== null) {
+        const valid = await argonVerify(
+          current.passwordHash,
+          dto.currentPassword ?? "",
+        );
+        if (!valid) {
+          throw new UnauthorizedException({
+            message: "Current password is incorrect",
+            code: "current_password_invalid",
+          });
+        }
+      }
+      if (dto.newEmail === current.email) {
+        throw new BadRequestException(
+          "New email must differ from the current one",
+        );
+      }
+      const taken = await tx.user.findUnique({
+        where: { email: dto.newEmail },
+        select: { id: true },
+      });
+      if (taken) {
+        throw new ConflictException("Email is already registered");
+      }
+      await tx.emailChangeCode.deleteMany({ where: { userId } });
+      await tx.emailChangeCode.create({
+        data: {
+          userId,
+          newEmail: dto.newEmail,
+          codeHash: this.hashToken(`email-change:${userId}:${code}`),
+          expiresAt,
+        },
+      });
     });
     const message = await this.emailTemplates.emailChangeEmail(
       code,
@@ -710,6 +791,11 @@ export class AuthService {
     userId: string,
     locale: MailLocale,
   ): Promise<{ expiresAt: number; queued: boolean }> {
+    if (!this.mailer.enabled) {
+      throw new ServiceUnavailableException(
+        "Email delivery must be configured before verification",
+      );
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException();
@@ -855,15 +941,21 @@ export class AuthService {
         current,
         authMethod,
         authMethod === "oauth" ? (authenticatedAt ?? Date.now()) : undefined,
+        this.newRefreshFamilyId(),
       );
     });
+  }
+
+  private newRefreshFamilyId(): string {
+    return randomBytes(16).toString("base64url");
   }
 
   private async createSession(
     tx: Prisma.TransactionClient,
     user: User,
     authMethod: "password" | "oauth",
-    authTime?: number,
+    authTime: number | undefined,
+    familyId: string,
   ): Promise<AuthResult> {
     // The audience separates the two auth contours (TASK-36): a user token
     // fails the admin strategy and an admin token fails this one, so a
@@ -885,6 +977,7 @@ export class AuthService {
       user.id,
       authMethod,
       authTime,
+      familyId,
     );
     return {
       accessToken,
@@ -897,7 +990,8 @@ export class AuthService {
     tx: Prisma.TransactionClient,
     userId: string,
     authMethod: "password" | "oauth",
-    authTime?: number,
+    authTime: number | undefined,
+    familyId: string,
   ): Promise<string> {
     // The opaque refresh token carries the origin as a non-secret prefix:
     // rotation would otherwise lose the OAuth marker (there is no column for
@@ -910,6 +1004,7 @@ export class AuthService {
       data: {
         tokenHash: this.hashToken(token),
         userId,
+        familyId,
         expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * DAY_MS),
       },
     });
@@ -958,6 +1053,6 @@ export class AuthService {
    * reveal whether an email is registered.
    */
   private async burnPasswordTime(password: string): Promise<void> {
-    await argonVerify(DUMMY_PASSWORD_HASH, password);
+    await argonVerify(await DUMMY_PASSWORD_HASH, password);
   }
 }

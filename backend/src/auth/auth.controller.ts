@@ -192,8 +192,14 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Body() dto: ChangePasswordDto,
     @RefreshToken() refreshToken: string | undefined,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.auth.changePassword(user.id, dto, refreshToken);
+    await this.auth.changePassword(
+      user.id,
+      dto,
+      refreshToken,
+      principal?.stamp,
+    );
     return { status: "ok" };
   }
 
@@ -211,11 +217,13 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Body() dto: RequestEmailChangeDto,
     @Headers("accept-language") acceptLanguage: string | undefined,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<{ expiresAt: number; queued: boolean }> {
     return this.auth.requestEmailChange(
       user.id,
       dto,
       pickLocale(acceptLanguage),
+      principal?.stamp,
     );
   }
 

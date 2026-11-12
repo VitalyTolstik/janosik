@@ -28,7 +28,11 @@ import type {
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import { ApiTokenService } from "@/auth/api-token.service";
-import { SessionOnlyGuard } from "@/auth/auth-principal";
+import {
+  type AuthPrincipal,
+  CurrentPrincipal,
+  SessionOnlyGuard,
+} from "@/auth/auth-principal";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import {
@@ -189,8 +193,9 @@ export class UsersController {
   deleteAccount(
     @CurrentUser() user: AuthUser,
     @Body() dto: DeleteAccountDto,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<DeleteAccountResponse> {
-    return this.accountData.deleteAccount(user.id, dto);
+    return this.accountData.deleteAccount(user.id, dto, principal?.stamp);
   }
 
   /**
@@ -208,10 +213,14 @@ export class UsersController {
   createToken(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateUserTokenDto,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
   ): Promise<CreateUserTokenResponse> {
     // SessionOnlyGuard above proves a browser session; only it may enable
     // the privileged `trustedCi` flag (TASK-166 D9/D10).
-    return this.apiTokens.create(user.id, dto, { allowTrustedCi: true });
+    return this.apiTokens.create(user.id, dto, {
+      allowTrustedCi: true,
+      stamp: principal?.stamp,
+    });
   }
 
   @UseGuards(SessionOnlyGuard)

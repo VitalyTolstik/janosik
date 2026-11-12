@@ -21,6 +21,7 @@ import type { EmailTemplateService } from "@/ops/email-template.service";
 import type { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { AuthService, REFRESH_REUSE_GRACE_MS } from "./auth.service";
 import { LoginBackoffService } from "./login-backoff.service";
+import { securityStamp } from "./security-stamp";
 
 const prismaMock = {
   user: {
@@ -68,8 +69,12 @@ const prismaMock = {
   $transaction: jest.Mock;
 };
 
-const jwtMock = { signAsync: jest.fn() } as unknown as JwtService & {
+const jwtMock = {
+  signAsync: jest.fn(),
+  verifyAsync: jest.fn(),
+} as unknown as JwtService & {
   signAsync: jest.Mock;
+  verifyAsync: jest.Mock;
 };
 
 const mailerMock = {
@@ -397,6 +402,29 @@ describe("AuthService", () => {
       );
     });
 
+    it("keeps a legacy OAuth-only refresh marked as oauth with authTime 0", async () => {
+      const raw = "old-refresh-without-prefix";
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        user: makeUser({ passwordHash: null }),
+      });
+      prismaMock.user.findUnique.mockResolvedValue(
+        makeUser({ passwordHash: null }),
+      );
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.refresh(raw);
+
+      expect(result.refreshToken.startsWith("jnko_0_")).toBe(true);
+      expect(jwtMock.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ authMethod: "oauth", authTime: 0 }),
+        expect.anything(),
+      );
+    });
+
     it("looks the token up by its sha256 hash and rotates it", async () => {
       prismaMock.refreshToken.findUnique.mockResolvedValue({
         id: "token-1",
@@ -550,22 +578,49 @@ describe("AuthService", () => {
   });
 
   describe("logout", () => {
-    it("revokes the presented active token", async () => {
-      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    it("revokes the whole rotation family of the presented token", async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        userId: "user-1",
+        familyId: "family-1",
+      });
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 2 });
 
       await service.logout("raw-refresh-token-value");
 
+      expect(prismaMock.refreshToken.findUnique).toHaveBeenCalledWith({
+        where: { tokenHash: sha256("raw-refresh-token-value") },
+        select: { id: true, userId: true, familyId: true },
+      });
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
         where: {
-          tokenHash: sha256("raw-refresh-token-value"),
+          userId: "user-1",
+          familyId: "family-1",
           revokedAt: null,
         },
         data: { revokedAt: expect.any(Date) },
       });
     });
 
+    it("revokes a legacy token without a family by its id", async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        userId: "user-1",
+        familyId: null,
+      });
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.logout("raw-refresh-token-value");
+
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id: "token-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
     it("is a no-op without a cookie", async () => {
       await service.logout(undefined);
+      expect(prismaMock.refreshToken.findUnique).not.toHaveBeenCalled();
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
     });
   });
@@ -578,7 +633,8 @@ describe("AuthService", () => {
       const passwordHash = await argon2.hash(current, {
         type: argon2.argon2id,
       });
-      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+      const user = makeUser({ passwordHash });
+      prismaMock.user.findUnique.mockResolvedValue(user);
       prismaMock.user.update.mockResolvedValue(makeUser());
       prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
@@ -588,6 +644,7 @@ describe("AuthService", () => {
         "user-1",
         { currentPassword: current, newPassword: next },
         "caller-cookie",
+        securityStamp(user),
       );
 
       const stored = prismaMock.user.update.mock.calls[0][0].data.passwordHash;
@@ -620,13 +677,15 @@ describe("AuthService", () => {
       const passwordHash = await argon2.hash(current, {
         type: argon2.argon2id,
       });
-      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+      const user = makeUser({ passwordHash });
+      prismaMock.user.findUnique.mockResolvedValue(user);
 
       const error = await service
         .changePassword(
           "user-1",
           { currentPassword: "wrong horse battery", newPassword: next },
           undefined,
+          securityStamp(user),
         )
         .catch((e) => e);
 
@@ -637,17 +696,103 @@ describe("AuthService", () => {
       expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
     });
 
+    it("rejects an in-flight request after a reset changed the stamp", async () => {
+      const before = makeUser({
+        passwordHash: await argon2.hash(current, {
+          type: argon2.argon2id,
+        }),
+      });
+      const after = makeUser({
+        passwordHash: await argon2.hash(next, { type: argon2.argon2id }),
+      });
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      prismaMock.$transaction.mockImplementation(
+        async (fn: (tx: unknown) => Promise<unknown>) => {
+          entered();
+          await gate;
+          return fn(prismaMock);
+        },
+      );
+      prismaMock.user.findUnique.mockResolvedValue(after);
+
+      const pending = service.changePassword(
+        "user-1",
+        { currentPassword: current, newPassword: next },
+        undefined,
+        securityStamp(before),
+      );
+      // The request already passed the guard; the reset commits while it
+      // waits for the row lock.
+      await waiting;
+      release();
+
+      await expect(pending).rejects.toThrow("Credentials changed");
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it("requires a fresh OAuth proof to set the first password", async () => {
+      const user = makeUser({ passwordHash: null });
+      prismaMock.user.findUnique.mockResolvedValue(user);
+
+      const error = await service
+        .changePassword(
+          "user-1",
+          { newPassword: next },
+          undefined,
+          securityStamp(user),
+        )
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(UnauthorizedException);
+      expect(error.response).toMatchObject({ code: "oauth_proof_required" });
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it("accepts a fresh OAuth proof for the first password", async () => {
+      const user = makeUser({ passwordHash: null });
+      prismaMock.user.findUnique.mockResolvedValue(user);
+      prismaMock.user.update.mockResolvedValue(makeUser());
+      jwtMock.verifyAsync.mockResolvedValue({
+        sub: user.id,
+        authMethod: "oauth",
+        authTime: Date.now(),
+        stamp: securityStamp(user),
+      });
+
+      await service.changePassword(
+        "user-1",
+        { newPassword: next, oauthProof: "fresh-oauth-token" },
+        undefined,
+        securityStamp(user),
+      );
+
+      expect(jwtMock.verifyAsync).toHaveBeenCalledWith(
+        "fresh-oauth-token",
+        expect.objectContaining({ audience: "janosik-user" }),
+      );
+      expect(prismaMock.user.update).toHaveBeenCalled();
+    });
+
     it("revokes all sessions when no caller cookie is present", async () => {
       const passwordHash = await argon2.hash(current, {
         type: argon2.argon2id,
       });
-      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+      const user = makeUser({ passwordHash });
+      prismaMock.user.findUnique.mockResolvedValue(user);
       prismaMock.user.update.mockResolvedValue(makeUser());
 
       await service.changePassword(
         "user-1",
         { currentPassword: current, newPassword: next },
         undefined,
+        securityStamp(user),
       );
 
       expect(prismaMock.user.update).toHaveBeenCalled();
@@ -666,10 +811,9 @@ describe("AuthService", () => {
 
     describe("requestEmailChange", () => {
       it("replaces any pending code and emails a fresh one to the new address", async () => {
+        const user = makeUser({ passwordHash: await passwordHashOf() });
         prismaMock.user.findUnique
-          .mockResolvedValueOnce(
-            makeUser({ passwordHash: await passwordHashOf() }),
-          )
+          .mockResolvedValueOnce(user)
           .mockResolvedValueOnce(null); // uniqueness pre-check
         prismaMock.emailChangeCode.deleteMany.mockResolvedValue({ count: 1 });
         prismaMock.emailChangeCode.create.mockResolvedValue({});
@@ -679,6 +823,7 @@ describe("AuthService", () => {
           "user-1",
           { newEmail: "new@example.com", currentPassword },
           "en",
+          securityStamp(user),
         );
 
         expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
@@ -699,15 +844,15 @@ describe("AuthService", () => {
       });
 
       it("rejects a wrong current password without creating a code", async () => {
-        prismaMock.user.findUnique.mockResolvedValue(
-          makeUser({ passwordHash: await passwordHashOf() }),
-        );
+        const user = makeUser({ passwordHash: await passwordHashOf() });
+        prismaMock.user.findUnique.mockResolvedValue(user);
 
         const error = await service
           .requestEmailChange(
             "user-1",
             { newEmail: "new@example.com", currentPassword: "wrong" },
             "en",
+            securityStamp(user),
           )
           .catch((e) => e);
 
@@ -717,26 +862,62 @@ describe("AuthService", () => {
         expect(mailerMock.send).not.toHaveBeenCalled();
       });
 
-      it("refuses the unchanged address", async () => {
-        prismaMock.user.findUnique.mockResolvedValue(
-          makeUser({ passwordHash: await passwordHashOf() }),
+      it("rejects an in-flight request after the credential stamp changed", async () => {
+        const before = makeUser({ passwordHash: await passwordHashOf() });
+        const after = makeUser({
+          passwordHash: await argon2.hash("a newer password", {
+            type: argon2.argon2id,
+          }),
+        });
+        let entered!: () => void;
+        const waiting = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        prismaMock.$transaction.mockImplementation(
+          async (fn: (tx: unknown) => Promise<unknown>) => {
+            entered();
+            await gate;
+            return fn(prismaMock);
+          },
         );
+        prismaMock.user.findUnique.mockResolvedValue(after);
+
+        const pending = service.requestEmailChange(
+          "user-1",
+          { newEmail: "new@example.com", currentPassword },
+          "en",
+          securityStamp(before),
+        );
+        await waiting;
+        release();
+
+        await expect(pending).rejects.toThrow("Credentials changed");
+        expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
+      });
+
+      it("refuses the unchanged address", async () => {
+        const user = makeUser({ passwordHash: await passwordHashOf() });
+        prismaMock.user.findUnique.mockResolvedValue(user);
 
         await expect(
           service.requestEmailChange(
             "user-1",
             { newEmail: "user@example.com", currentPassword },
             "en",
+            securityStamp(user),
           ),
         ).rejects.toBeInstanceOf(BadRequestException);
         expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
       });
 
       it("refuses an address that is already registered", async () => {
+        const user = makeUser({ passwordHash: await passwordHashOf() });
         prismaMock.user.findUnique
-          .mockResolvedValueOnce(
-            makeUser({ passwordHash: await passwordHashOf() }),
-          )
+          .mockResolvedValueOnce(user)
           .mockResolvedValueOnce(makeUser({ id: "other-user" }));
 
         await expect(
@@ -744,16 +925,16 @@ describe("AuthService", () => {
             "user-1",
             { newEmail: "taken@example.com", currentPassword },
             "en",
+            securityStamp(user),
           ),
         ).rejects.toBeInstanceOf(ConflictException);
         expect(prismaMock.emailChangeCode.create).not.toHaveBeenCalled();
       });
 
       it("queues the code even when the transport fails (no 503, TASK-67)", async () => {
+        const user = makeUser({ passwordHash: await passwordHashOf() });
         prismaMock.user.findUnique
-          .mockResolvedValueOnce(
-            makeUser({ passwordHash: await passwordHashOf() }),
-          )
+          .mockResolvedValueOnce(user)
           .mockResolvedValueOnce(null);
         prismaMock.emailChangeCode.create.mockResolvedValue({});
         mailerMock.send.mockRejectedValue(new Error("smtp down"));
@@ -762,6 +943,7 @@ describe("AuthService", () => {
           "user-1",
           { newEmail: "new@example.com", currentPassword },
           "en",
+          securityStamp(user),
         );
         expect(result.queued).toBe(true);
         expect(prismaMock.emailChangeCode.create).toHaveBeenCalled();
