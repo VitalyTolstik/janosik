@@ -25,6 +25,7 @@ for (const role of ["MEMBER", "VIEWER"] as const) {
       await partner.open(page);
       await page.goto(new URL("agents", appUrl).href);
       await expect(page.getByTestId("agents-page")).toBeVisible();
+      await page.getByTestId("agents-section-sessions").click();
 
       const row = page
         .getByTestId("agent-row")

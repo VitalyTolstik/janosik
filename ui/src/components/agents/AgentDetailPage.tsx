@@ -56,7 +56,10 @@ export function AgentDetailPage() {
   } | null>(null);
 
   const canControl = (row: AgentSessionRow): boolean =>
-    !state.isAgentToken && row.boardRole === "ADMIN" && isLiveSession(row);
+    !state.isAgentToken &&
+    !state.staleBoardIds.includes(row.boardId) &&
+    row.boardRole === "ADMIN" &&
+    isLiveSession(row);
 
   if (state.loading) {
     return (
@@ -216,6 +219,18 @@ export function AgentDetailPage() {
           tone="warning"
         />
       </div>
+
+      {state.error ? (
+        <div
+          role="alert"
+          className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <span>{t("agents.error.stale")}</span>
+          <Button variant="outline" size="sm" onClick={state.reload}>
+            {t("agents.retry")}
+          </Button>
+        </div>
+      ) : null}
 
       {state.isAgentToken ? (
         <p

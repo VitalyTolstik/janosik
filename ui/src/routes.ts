@@ -8,8 +8,6 @@
 export const routes = {
   /** Home — always redirects to the first board. */
   home: "/",
-  /** Browse boards without changing the existing home redirect. */
-  boards: "/boards",
   /** Canonical board address. */
   boardPattern: "/board/:boardId",
   board: (boardId: string) => `/board/${boardId}`,

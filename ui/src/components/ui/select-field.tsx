@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 
 import {
@@ -24,6 +24,9 @@ interface SelectFieldProps<T extends string> {
   testId: string;
   /** Size/spacing overrides for the trigger (the h-9 default stays). */
   className?: string;
+  /** Optional decorative icon before the selected value. */
+  leadingIcon?: ReactNode;
+  chevronClassName?: string;
 }
 
 /**
@@ -42,6 +45,8 @@ export function SelectField<T extends string>({
   ariaLabel,
   testId,
   className,
+  leadingIcon,
+  chevronClassName,
 }: SelectFieldProps<T>) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
@@ -62,9 +67,15 @@ export function SelectField<T extends string>({
             className,
           )}
         >
-          <span className="truncate">{selected?.label ?? ""}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            {leadingIcon}
+            <span className="truncate">{selected?.label ?? ""}</span>
+          </span>
           <ChevronDown
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 text-muted-foreground",
+              chevronClassName,
+            )}
             aria-hidden
           />
         </button>

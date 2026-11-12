@@ -43,6 +43,7 @@ const isMac = isMacPlatform();
 interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */
   onOpenChange?: (open: boolean) => void;
+  iconOnly?: boolean;
 }
 
 /**
@@ -53,7 +54,10 @@ interface GlobalSearchProps {
  * Clicking a result opens the board with that card's dialog via `?card=`
  * (Jira/Trello open the item itself, not just the board).
  */
-export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
+export function GlobalSearch({
+  onOpenChange,
+  iconOnly = false,
+}: GlobalSearchProps) {
   const { t } = useI18n();
 
   const [open, setOpen] = useState(false);
@@ -93,7 +97,12 @@ export function GlobalSearch({ onOpenChange }: GlobalSearchProps) {
             onClick={() => setOpenBoth(true)}
             className="gap-1.5 pr-2.5 text-muted-foreground transition-colors hover:text-foreground"
           >
-            <span className="hidden text-xs font-medium sm:inline">
+            <span
+              className={cn(
+                "hidden text-xs font-medium",
+                !iconOnly && "sm:inline",
+              )}
+            >
               {t("search.label")}
             </span>
             <LazyAnimatedIcon name="search" size={20} />

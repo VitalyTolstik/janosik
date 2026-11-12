@@ -61,7 +61,7 @@ export function readAgentFilter(params: URLSearchParams): AgentFilter {
   const time = params.get("time");
   return {
     board: params.get("board") ?? "all",
-    token: params.get("token") ?? "all",
+    token: params.get("agent") ?? params.get("token") ?? "all",
     status:
       status !== null && (AGENT_STATUS_FILTERS as string[]).includes(status)
         ? (status as AgentStatusFilter)

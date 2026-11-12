@@ -118,10 +118,17 @@ describe("agent entry points in the header", () => {
         "href",
         "/agents",
       );
-      expect(screen.getByRole("link", { name: "Boards" })).toHaveAttribute(
+      expect(screen.getByTestId("agents-header-scope")).toBeInTheDocument();
+      expect(await screen.findByTestId("agents-home")).toHaveAttribute(
         "href",
-        "/boards",
+        "/",
       );
+      expect(
+        screen.queryByTestId("agents-return-board"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Boards" }),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByTestId("agent-control-trigger"),
       ).not.toBeInTheDocument();

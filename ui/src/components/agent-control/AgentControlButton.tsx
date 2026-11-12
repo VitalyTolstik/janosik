@@ -16,8 +16,8 @@ import { useBoardAccess, useBoardState } from "@/store/BoardContext";
  * Header entry to the agent-control dialog (TASK-166.14/166.15), shown in
  * server mode. A board ADMIN gets the control-plane entry with a
  * pending-approval badge; a MEMBER/VIEWER gets the same dialog on its
- * read-only Runs tab, so any board member can inspect the timeline and run a
- * dry-run conflict preview (applying a revert stays ADMIN-only). The badge is
+ * read-only Live tab, with Runs available for inspection and dry-run preview
+ * (applying a revert stays ADMIN-only). The badge is
  * refreshed by `approval` SSE frames, so a request appears without a reload.
  */
 export function AgentControlButton({

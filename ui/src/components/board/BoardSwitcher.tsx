@@ -31,6 +31,7 @@ import { useToast } from "@/components/Toast";
 import { api, isApiEnabled } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
+import { boardColor } from "@/utils/board-color";
 import type { Board } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { LimitCounter } from "@/components/ui/limit-counter";
@@ -48,29 +49,6 @@ import { LimitCounter } from "@/components/ui/limit-counter";
  * good. Creating is a footer row that turns into an inline input (Trello's
  * pattern) and navigates to the new board.
  */
-
-const BOARD_ICON_COLORS = [
-  "bg-primary",
-  "bg-secondary",
-  "bg-blue",
-  "bg-indigo",
-  "bg-teal",
-  "bg-success",
-  "bg-orange",
-  "bg-danger",
-  "bg-fuchsia",
-  "bg-pink",
-  "bg-slate",
-] as const;
-
-/** Stable color for a board — derived from its id, no storage needed. */
-function boardColor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  }
-  return BOARD_ICON_COLORS[Math.abs(hash) % BOARD_ICON_COLORS.length];
-}
 
 function boardInitial(title: string): string {
   const trimmed = title.trim();

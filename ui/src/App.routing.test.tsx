@@ -55,19 +55,16 @@ describe("BrowserRouter routing", () => {
     ).toBeDefined();
   });
 
-  it("opens a selectable board list from the agents breadcrumb", async () => {
+  it("returns from agents to the board through the brand link", async () => {
     localStorage.setItem(
       "janosik-boards",
       `[${boardJson("b-1", "Alpha")},${boardJson("b-2", "Beta")}]`,
     );
     visit("/agents");
-
-    await userEvent.click(await screen.findByRole("link", { name: "Boards" }));
-    expect(window.location.pathname).toBe("/boards");
-    expect(await screen.findByRole("link", { name: "Alpha" })).toBeVisible();
-    await userEvent.click(screen.getByRole("link", { name: "Beta" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/board/b-2"));
-    expect(await screen.findByRole("heading", { name: "Beta" })).toBeVisible();
+    const home = await screen.findByRole("link", { name: "Janosik home" });
+    await userEvent.click(home);
+    await waitFor(() => expect(window.location.pathname).toBe("/board/b-1"));
+    expect(await screen.findByRole("heading", { name: "Alpha" })).toBeVisible();
   });
 
   it("resets the board filter when switching boards (B-8)", async () => {

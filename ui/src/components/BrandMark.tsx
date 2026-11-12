@@ -8,17 +8,18 @@
 export function BrandMark({
   size = "default",
 }: {
-  size?: "default" | "large";
+  size?: "default" | "large" | "compact";
 }) {
   const large = size === "large";
+  const compact = size === "compact";
   return (
     <div
-      className={`janosik-brand-tile relative flex shrink-0 items-center justify-center text-primary-foreground shadow-sm ${large ? "h-12 w-12 rounded-2xl" : "h-8 w-8 rounded-lg"}`}
+      className={`janosik-brand-tile relative flex shrink-0 items-center justify-center text-primary-foreground shadow-sm ${large ? "h-12 w-12 rounded-2xl" : compact ? "h-6 w-6 rounded-[7px]" : "h-8 w-8 rounded-lg"}`}
     >
       <svg
         className={`janosik-feather${large ? " janosik-feather-large" : ""}`}
-        width={large ? 26 : 20}
-        height={large ? 26 : 20}
+        width={large ? 26 : compact ? 14 : 20}
+        height={large ? 26 : compact ? 14 : 20}
         viewBox="0 0 24 24"
         fill="none"
         aria-hidden

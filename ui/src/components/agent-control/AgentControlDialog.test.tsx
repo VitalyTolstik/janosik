@@ -241,6 +241,17 @@ describe("agent control (TASK-166.14)", () => {
     expect(screen.queryByTestId("approval-reject")).toBeNull();
   });
 
+  it("navigates the control rail with arrow keys", async () => {
+    renderDialog();
+    screen.getByTestId("agent-approvals-tab").focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByTestId("agent-pause-tab")).toHaveFocus();
+    expect(screen.getByTestId("agent-pause-tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("gives a member the read-only runs entry instead of the admin trigger", () => {
     mocks.role = "MEMBER";
     renderButton();
@@ -249,21 +260,16 @@ describe("agent control (TASK-166.14)", () => {
     expect(screen.getByTestId("agent-runs-trigger")).toBeInTheDocument();
   });
 
-  it("shows a read-only explanation to a non-admin board member", async () => {
+  it("hides approvals from a member and opens Live read-only", async () => {
     mocks.role = "MEMBER";
-    const row = approval();
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
-    vi.spyOn(api, "getApproval").mockResolvedValue(row);
-
+    const list = vi.spyOn(api, "listApprovals");
     renderDialog();
-    await screen.findByTestId("approval-queue");
-    await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
-
-    expect(
-      await screen.findByText(
-        "Only a board admin can approve or reject. You can read the plan.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-approvals-tab")).toBeNull();
+    expect(screen.getByTestId("agent-pause-tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(list).not.toHaveBeenCalled();
     expect(screen.queryByTestId("approval-approve")).toBeNull();
   });
 

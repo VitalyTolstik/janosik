@@ -88,9 +88,10 @@ async function openRunHistory(page: Page, runId: string): Promise<void> {
     await page.getByTestId("agent-runs-tab").click();
   } else {
     await page.getByTestId("agent-runs-trigger").click();
+    await page.getByTestId("agent-runs-tab").click();
   }
   await expect(page.getByTestId("agent-runs-tab")).toHaveAttribute(
-    "aria-pressed",
+    "aria-selected",
     "true",
   );
   await expect(page.getByTestId(`agent-run-row-${runId}`)).toBeVisible();

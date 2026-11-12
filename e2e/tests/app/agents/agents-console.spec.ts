@@ -13,6 +13,7 @@ import { appUrl } from "@/helpers/urls.js";
 async function openAgents(page: import("@playwright/test").Page) {
   await page.goto(new URL("agents", appUrl).href);
   await expect(page.getByTestId("agents-page")).toBeVisible();
+  await page.getByTestId("agents-section-sessions").click();
 }
 
 test("lists a live session, filters it and opens the detail", async ({
@@ -34,15 +35,23 @@ test("lists a live session, filters it and opens the detail", async ({
     await page.getByTestId("agent-control-all-agents").click();
     await expect(page.getByTestId("agents-page")).toBeVisible();
     await expect(page.getByTestId("agents-trigger")).toBeFocused();
+    const railHeading = await page
+      .getByRole("heading", { name: "Agents", exact: true })
+      .boundingBox();
+    const pageHeading = await page
+      .getByRole("heading", { name: "Attention", exact: true })
+      .boundingBox();
+    expect(railHeading).not.toBeNull();
+    expect(pageHeading).not.toBeNull();
+    expect(Math.abs(railHeading!.y - pageHeading!.y)).toBeLessThanOrEqual(1);
 
+    await page.getByTestId("agents-section-sessions").click();
     const row = page.getByTestId("agent-row").filter({ hasText: "QA agent" });
     await expect(row).toBeVisible();
     await expect(row).toContainText(board.title);
     await expect(row).toContainText("Nightly triage");
     await expect(row).toContainText("Fix the queue");
     await expect(row).toContainText("1 live");
-    await expect(page.getByTestId("agents-stat-agents")).toHaveText("1");
-    await expect(page.getByTestId("agents-stat-live")).toHaveText("1");
 
     // Status filter: the active session stays, a completed one would not.
     await page.getByTestId("agents-filter-status").click();
@@ -67,6 +76,36 @@ test("lists a live session, filters it and opens the detail", async ({
   } finally {
     await agent.dispose();
   }
+});
+
+test("keeps the shell usable on mobile and restores focus after API keys", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await board.open(page);
+  await openAgents(page);
+  const scopeBox = await page.getByTestId("agents-header-scope").boundingBox();
+  const accountBox = await page.getByTestId("account-trigger").boundingBox();
+  expect(scopeBox).not.toBeNull();
+  expect(accountBox).not.toBeNull();
+  expect(Math.abs(scopeBox!.y - accountBox!.y)).toBeLessThan(12);
+  await expect(page.getByTestId("agents-section-sessions")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  const createKey = page.getByRole("button", { name: "Create API key" });
+  await createKey.click();
+  await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  await expect(createKey).toBeFocused();
+  await page.getByTestId("agents-section-runs").click();
+  await expect(page.getByTestId("agents-runs-empty")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("pauses and resumes a session with a reason", async ({
