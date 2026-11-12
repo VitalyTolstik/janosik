@@ -345,17 +345,28 @@ describe("AgentsAutomation (TASK-179.7)", () => {
       effective: serverPolicy,
       version: 2,
     });
-    vi.spyOn(api, "getBoardAgentPolicy")
+    const newerPolicy = policy({
+      destructive: "deny",
+      approvalTtlMinutes: 120,
+    });
+    const newer = state({
+      policy: newerPolicy,
+      effective: newerPolicy,
+      version: 3,
+    });
+    const get = vi
+      .spyOn(api, "getBoardAgentPolicy")
       .mockResolvedValueOnce(initial)
-      .mockResolvedValue(latest);
+      .mockResolvedValueOnce(latest)
+      .mockResolvedValue(newer);
     const update = vi
       .spyOn(api, "updateBoardAgentPolicy")
       .mockRejectedValueOnce(versionConflict(2))
       .mockResolvedValueOnce(
         state({
-          policy: policy({ approvalTtlMinutes: 90 }),
-          effective: policy({ approvalTtlMinutes: 90 }),
-          version: 3,
+          policy: policy({ destructive: "deny", approvalTtlMinutes: 90 }),
+          effective: policy({ destructive: "deny", approvalTtlMinutes: 90 }),
+          version: 4,
         }),
       );
 
@@ -368,10 +379,14 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     await userEvent.click(screen.getByTestId("agents-automation-reload"));
     await waitFor(() =>
       expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
-        "Version 2",
+        "Version 3",
       ),
     );
+    expect(get).toHaveBeenCalledTimes(3);
     expect(screen.getByTestId("agent-policy-ttl")).toHaveValue("90");
+    expect(
+      screen.getByTestId("agent-policy-destructive-option-deny"),
+    ).toBeChecked();
     expect(
       screen.getByTestId("agents-automation-conflict-approvalTtlMinutes"),
     ).toBeVisible();
@@ -382,8 +397,11 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     await userEvent.click(screen.getByTestId("agent-policy-save"));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls[1][1]).toMatchObject({
-      version: 2,
-      policy: expect.objectContaining({ approvalTtlMinutes: 90 }),
+      version: 3,
+      policy: expect.objectContaining({
+        destructive: "deny",
+        approvalTtlMinutes: 90,
+      }),
     });
   });
 
@@ -468,10 +486,13 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(scroll.className).toContain("overflow-x-hidden");
     expect(scroll.className).toContain("max-md:px-2.5");
     expect(screen.getByTestId("agent-policy-require-list").className).toContain(
-      "sm:grid-cols-2",
+      "min-[1050px]:grid-cols-2",
     );
     expect(screen.getByTestId("agents-automation-footer").className).toContain(
       "max-md:flex-col",
+    );
+    expect(screen.getByTestId("agent-policy-save").className).toContain(
+      "max-md:h-11",
     );
   });
 });

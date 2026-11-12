@@ -67,8 +67,6 @@ function errorText(error: PolicySaveError | null, t: Translate): string | null {
       return t("agentControl.error.forbidden");
     case "pat":
       return t("agentControl.policy.sessionOnly");
-    case "scope":
-      return t("agentControl.policy.adminOnly");
     case "conflict":
       return t("board.settings.agents.conflictBody", {
         version: error.version ?? 0,
@@ -81,6 +79,7 @@ function errorText(error: PolicySaveError | null, t: Translate): string | null {
 function conflictValue(
   field: PolicyField,
   value: PolicyFieldValue,
+  other: PolicyFieldValue,
   t: Translate,
 ): string {
   switch (field) {
@@ -88,10 +87,16 @@ function conflictValue(
       return value === "approval"
         ? t("agentControl.policy.destructiveApproval")
         : t("agentControl.policy.destructiveDeny");
-    case "requireApprovalFor":
-      return t("board.settings.agents.conflictTriggers", {
-        count: Array.isArray(value) ? value.length : 0,
-      });
+    case "requireApprovalFor": {
+      const actions = Array.isArray(value) ? value : [];
+      const otherActions = Array.isArray(other) ? other : [];
+      const otherSet = new Set(otherActions);
+      const difference = actions.filter((action) => !otherSet.has(action));
+      const visible = difference.length > 0 ? difference : actions;
+      return visible.length === 0
+        ? t("board.settings.agents.conflictNoTriggers")
+        : visible.map((action) => t(ACTION_KEYS[action])).join(", ");
+    }
     default:
       return String(value);
   }
@@ -108,6 +113,7 @@ function PolicyNumberField({
   invalid,
   error,
   testId,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -119,6 +125,7 @@ function PolicyNumberField({
   invalid: boolean;
   error: string;
   testId: string;
+  disabled?: boolean;
 }) {
   const errorId = `${id}-error`;
   const step = (delta: number) => {
@@ -146,6 +153,7 @@ function PolicyNumberField({
           type="text"
           inputMode="numeric"
           value={value}
+          disabled={disabled}
           aria-label={label}
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? errorId : undefined}
@@ -160,7 +168,7 @@ function PolicyNumberField({
               step(-1);
             }
           }}
-          className="min-w-0 flex-1 border-0 bg-transparent px-1.5 text-[11.5px] tabular-nums text-foreground focus:outline-none"
+          className="min-w-0 flex-1 border-0 bg-transparent px-1.5 text-[11.5px] tabular-nums text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         />
         <span className="whitespace-nowrap pr-1.5 text-[9.5px] text-muted-foreground">
           {suffix}
@@ -317,9 +325,7 @@ export function AgentsAutomation({
         : "bg-success";
   const secondaryStatus = conflict
     ? t("board.settings.agents.serverAtVersion", { version: conflictVersion })
-    : t("board.settings.agents.versionMeta", {
-        version: policy.version ?? 0,
-      });
+    : t("board.settings.agents.footerHint");
   const resetDisabled = policy.saving || policy.usingDefaults;
 
   const save = async () => {
@@ -377,7 +383,7 @@ export function AgentsAutomation({
                 ? t("board.settings.agents.resetDisabledHint")
                 : t("board.settings.agents.resetHint")
             }
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 max-md:px-3"
           >
             <RotateCcw className="h-3 w-3" aria-hidden />
             {t("board.settings.agents.reset")}
@@ -500,7 +506,7 @@ export function AgentsAutomation({
                       {t("board.settings.agents.conflictMine")}
                     </span>
                     <span className="mt-0.5 block break-words">
-                      {conflictValue(entry.field, entry.local, t)}
+                      {conflictValue(entry.field, entry.local, entry.server, t)}
                     </span>
                   </button>
                   <button
@@ -515,7 +521,7 @@ export function AgentsAutomation({
                       {t("board.settings.agents.conflictServer")}
                     </span>
                     <span className="mt-0.5 block break-words">
-                      {conflictValue(entry.field, entry.server, t)}
+                      {conflictValue(entry.field, entry.server, entry.local, t)}
                     </span>
                   </button>
                 </div>
@@ -534,8 +540,8 @@ export function AgentsAutomation({
           </p>
         ) : null}
 
-        <div className="mb-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-[1.05fr_1fr]">
-          <section className="min-w-0 border-t border-border pt-2.5 first:border-t-0 first:pt-0 md:border-t-0 md:pt-0">
+        <div className="mb-3.5 grid grid-cols-1 gap-3.5 min-[1050px]:grid-cols-[1.05fr_1fr]">
+          <section className="min-w-0 border-t border-border pt-2.5 first:border-t-0 first:pt-0 min-[1050px]:border-t-0 min-[1050px]:pt-0">
             <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <h3 className="text-xs font-semibold">
                 {t("agentControl.policy.destructiveTitle")}
@@ -561,6 +567,7 @@ export function AgentsAutomation({
                     name="agent-destructive"
                     value={value}
                     checked={checked}
+                    disabled={policy.saving}
                     onChange={() => policy.setField("destructive", value)}
                     data-testid={`agent-policy-destructive-option-${value}`}
                     className="peer sr-only"
@@ -600,7 +607,7 @@ export function AgentsAutomation({
             </p>
           </section>
 
-          <section className="min-w-0 border-t border-border pt-2.5 md:border-t-0 md:pt-0">
+          <section className="min-w-0 border-t border-border pt-2.5 min-[1050px]:border-t-0 min-[1050px]:pt-0">
             <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <h3 className="text-xs font-semibold">
                 {t("board.settings.agents.limitsTitle")}
@@ -623,6 +630,7 @@ export function AgentsAutomation({
                 suffix={t("board.settings.agents.maxCommandsSuffix")}
                 invalid={commandsInvalid}
                 error={t("board.settings.agents.commandsError")}
+                disabled={policy.saving}
               />
               <PolicyNumberField
                 id="agent-policy-max-cards"
@@ -635,6 +643,7 @@ export function AgentsAutomation({
                 suffix={t("board.settings.agents.maxCardsSuffix")}
                 invalid={cardsInvalid}
                 error={t("board.settings.agents.cardsError")}
+                disabled={policy.saving}
               />
               <PolicyNumberField
                 id="agent-policy-ttl"
@@ -649,30 +658,26 @@ export function AgentsAutomation({
                 suffix={t("board.settings.agents.ttlSuffix")}
                 invalid={ttlInvalid}
                 error={t("board.settings.agents.ttlError")}
+                disabled={policy.saving}
               />
             </div>
             <div className="mt-2.5">
-              <label
-                htmlFor="agent-policy-approver-roles"
-                className="mb-[3px] block text-[10px] font-semibold text-muted-foreground"
-              >
+              <p className="mb-[3px] block text-[10px] font-semibold text-muted-foreground">
                 {t("board.settings.agents.approverRoles")}
-              </label>
-              <div className="relative">
-                <select
-                  id="agent-policy-approver-roles"
-                  data-testid="agent-policy-approver-roles"
-                  disabled
-                  value="ADMIN"
-                  onChange={() => undefined}
-                  className="h-[30px] w-full appearance-none rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--background)_32%,transparent)] px-1.5 pr-7 text-[11px] text-muted-foreground disabled:opacity-100"
-                >
-                  <option value="ADMIN">
-                    {t("board.settings.agents.approverRolesFixed")}
-                  </option>
-                </select>
+              </p>
+              <div
+                id="agent-policy-approver-roles"
+                data-testid="agent-policy-approver-roles"
+                role="textbox"
+                aria-readonly="true"
+                aria-label={t("board.settings.agents.approverRoles")}
+                className="flex h-[30px] w-full items-center justify-between gap-2 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--background)_32%,transparent)] px-1.5 text-[11px] text-muted-foreground"
+              >
+                <span className="min-w-0 truncate">
+                  {t("board.settings.agents.approverRolesFixed")}
+                </span>
                 <ChevronDown
-                  className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground"
+                  className="h-3 w-3 shrink-0 text-muted-foreground"
                   aria-hidden
                 />
               </div>
@@ -707,7 +712,7 @@ export function AgentsAutomation({
             </button>
           </div>
           <div
-            className="grid grid-cols-1 gap-x-4 sm:grid-cols-2"
+            className="grid grid-cols-1 gap-x-4 min-[1050px]:grid-cols-2"
             data-testid="agent-policy-require-list"
           >
             {POLICY_TRIGGER_ORDER.map((action) => {
@@ -726,7 +731,7 @@ export function AgentsAutomation({
                   <input
                     type="checkbox"
                     checked={checked}
-                    disabled={covered}
+                    disabled={covered || policy.saving}
                     onChange={() => policy.toggleAction(action)}
                     data-testid={`agent-policy-require-${action}`}
                     aria-label={t(ACTION_KEYS[action])}
@@ -846,7 +851,9 @@ export function AgentsAutomation({
         }
         description={
           resetConflictVersion === null
-            ? t("agentControl.policy.resetDescription")
+            ? policy.dirty
+              ? t("board.settings.agents.resetDirtyDescription")
+              : t("agentControl.policy.resetDescription")
             : t("board.settings.agents.resetConflictDescription", {
                 version: resetConflictVersion,
               })

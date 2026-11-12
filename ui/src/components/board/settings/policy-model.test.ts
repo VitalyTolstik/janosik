@@ -135,6 +135,29 @@ describe("policy model (TASK-179.7)", () => {
     expect(result.draft.destructive).toBe("deny");
   });
 
+  it("detects a server change back to the base between two syncs", () => {
+    const base = policy();
+    const previous = policy({ destructive: "deny" });
+    const latest = policy();
+    const draft = { ...draftOf(base), destructive: "deny" as const };
+
+    const result = mergePolicyDraft({
+      base,
+      previous,
+      latest,
+      draft,
+      localFields: ["destructive"],
+    });
+
+    expect(result.conflicts).toEqual([
+      {
+        field: "destructive",
+        local: "deny",
+        server: "approval",
+      },
+    ]);
+  });
+
   it("accepts the server value and drops the local field", () => {
     const conflict = {
       field: "approvalTtlMinutes" as const,

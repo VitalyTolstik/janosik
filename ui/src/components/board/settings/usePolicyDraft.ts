@@ -25,7 +25,7 @@ import {
 } from "./policy-model";
 
 export type PolicySaveErrorKind =
-  "offline" | "forbidden" | "pat" | "scope" | "conflict" | "generic";
+  "offline" | "forbidden" | "pat" | "conflict" | "generic";
 
 export interface PolicySaveError {
   kind: PolicySaveErrorKind;
@@ -41,10 +41,12 @@ export interface PolicyResetOutcome {
 
 interface PolicySession {
   state: BoardAgentPolicyStateDto;
-  /** The server policy the current draft is based on. */
+  /** The server policy the user first loaded; conflicts stay relative to it. */
   base: BoardAgentPolicy;
+  /** The server policy the draft was last synced against. */
+  lastSynced: BoardAgentPolicy;
   draft: PolicyDraft;
-  /** Fields the user edited relative to `base`. */
+  /** Fields whose draft value differs from the latest server policy. */
   localFields: PolicyField[];
   conflicts: PolicyFieldConflict[];
 }
@@ -135,6 +137,7 @@ export function usePolicyDraft({
       applySession({
         state: next,
         base: policy,
+        lastSynced: policy,
         draft: draftOf(policy),
         localFields: [],
         conflicts: [],
@@ -158,6 +161,7 @@ export function usePolicyDraft({
       applySession({
         state: next,
         base: policy,
+        lastSynced: policy,
         draft: draftOf(policy),
         localFields: [],
         conflicts: [],
@@ -191,9 +195,10 @@ export function usePolicyDraft({
       const conflicts = current.conflicts.filter(
         (conflict) => conflict.field !== field,
       );
-      const localFields = current.localFields.includes(field)
-        ? current.localFields
-        : [...current.localFields, field];
+      const localFields = localPolicyFields(
+        draft,
+        policyFromState(current.state),
+      );
       applySession({
         ...current,
         draft,
@@ -231,16 +236,10 @@ export function usePolicyDraft({
       const conflicts = current.conflicts.filter(
         (entry) => entry.field !== field,
       );
-      const localFields =
-        choice === "server"
-          ? current.localFields.filter((entry) => entry !== field)
-          : current.localFields.includes(field)
-            ? current.localFields
-            : [...current.localFields, field];
       applySession({
         ...current,
         draft,
-        localFields,
+        localFields: localPolicyFields(draft, policyFromState(current.state)),
         conflicts,
       });
       if (conflicts.length === 0) {
@@ -258,16 +257,20 @@ export function usePolicyDraft({
     setError(null);
     try {
       const fetched = await api.getBoardAgentPolicy(boardId);
+      const active = sessionRef.current;
+      if (active === null) return;
       const latest = policyFromState(fetched);
       const merged = mergePolicyDraft({
-        base: current.base,
+        base: active.base,
+        previous: active.lastSynced,
         latest,
-        draft: current.draft,
-        localFields: current.localFields,
+        draft: active.draft,
+        localFields: active.localFields,
       });
       applySession({
         state: fetched,
-        base: current.base,
+        base: active.base,
+        lastSynced: latest,
         draft: merged.draft,
         localFields: merged.localFields,
         conflicts: merged.conflicts,
@@ -325,6 +328,7 @@ export function usePolicyDraft({
         const latest = policyFromState(fetched);
         const merged = mergePolicyDraft({
           base: active.base,
+          previous: active.lastSynced,
           latest,
           draft: active.draft,
           localFields: active.localFields,
@@ -332,6 +336,7 @@ export function usePolicyDraft({
         applySession({
           state: fetched,
           base: active.base,
+          lastSynced: latest,
           draft: merged.draft,
           localFields: merged.localFields,
           conflicts: merged.conflicts,
@@ -347,6 +352,7 @@ export function usePolicyDraft({
           applySession({
             state: fetched,
             base: latest,
+            lastSynced: latest,
             draft: draftOf(latest),
             localFields: [],
             conflicts: [],
@@ -374,6 +380,7 @@ export function usePolicyDraft({
     applySession({
       ...current,
       base: latest,
+      lastSynced: latest,
       draft: draftOf(latest),
       localFields: [],
       conflicts: [],
@@ -419,6 +426,7 @@ export function usePolicyDraft({
       // draft with the new version.
       const merged = mergePolicyDraft({
         base: active.base,
+        previous: active.lastSynced,
         latest,
         draft: active.draft,
         localFields: active.localFields,
@@ -426,6 +434,7 @@ export function usePolicyDraft({
       applySession({
         state: fetched,
         base: active.base,
+        lastSynced: latest,
         draft: merged.draft,
         localFields: merged.localFields,
         conflicts: merged.conflicts,

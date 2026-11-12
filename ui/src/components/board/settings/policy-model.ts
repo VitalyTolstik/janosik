@@ -299,26 +299,32 @@ export interface PolicyMergeResult {
  */
 export function mergePolicyDraft({
   base,
+  previous,
   latest,
   draft,
   localFields,
 }: {
   base: BoardAgentPolicy;
+  /** The server policy this draft was last synced against, if different. */
+  previous?: BoardAgentPolicy;
   latest: BoardAgentPolicy;
   draft: PolicyDraft;
   localFields: readonly PolicyField[];
 }): PolicyMergeResult {
   const baseDraft = draftOf(base);
+  const previousDraft = previous === undefined ? null : draftOf(previous);
   let merged = draftOf(latest);
   const conflicts: PolicyFieldConflict[] = [];
 
   for (const field of localFields) {
     const localValue = draftFieldValue(draft, field);
-    const serverChanged = !policyFieldEqual(field, baseDraft, latest);
+    const changedSinceBase = !policyFieldEqual(field, baseDraft, latest);
+    const changedSinceSync =
+      previousDraft !== null && !policyFieldEqual(field, previousDraft, latest);
     const sameAsServer = policyFieldEqual(field, draft, latest);
 
     merged = setDraftField(merged, field, localValue);
-    if (serverChanged && !sameAsServer) {
+    if ((changedSinceBase || changedSinceSync) && !sameAsServer) {
       conflicts.push({
         field,
         local: localValue,
