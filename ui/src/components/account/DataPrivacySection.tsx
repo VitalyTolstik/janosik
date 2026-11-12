@@ -30,6 +30,36 @@ export function DataPrivacySection() {
   const [sendingCode, setSendingCode] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const exportKey = user ? `janosik:account-export:${user.id}` : null;
+
+  useEffect(() => {
+    if (!exportKey) return;
+    let alive = true;
+    let id: string | null = null;
+    try {
+      id = localStorage.getItem(exportKey);
+    } catch {
+      /* unavailable storage */
+    }
+    const lookup = id
+      ? api.accountExportStatus(id).catch(() => api.latestAccountExport())
+      : api.latestAccountExport();
+    void lookup
+      .then((row) => {
+        if (alive && row) {
+          setExportRow(row);
+          try {
+            localStorage.setItem(exportKey, row.id);
+          } catch {
+            /* unavailable storage */
+          }
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [exportKey]);
 
   const deletionMethod =
     user?.deletionMethod ??
@@ -76,10 +106,46 @@ export function DataPrivacySection() {
     setExporting(true);
     setError(null);
     try {
-      setExportRow(await api.requestAccountExport());
+      const row = await api.requestAccountExport();
+      if (exportKey) {
+        try {
+          localStorage.setItem(exportKey, row.id);
+        } catch {
+          /* unavailable storage */
+        }
+      }
+      setExportRow(row);
       toast.success(t("account.data.exportRequested"));
     } catch (cause) {
-      setError(exportError(cause, t));
+      const body =
+        cause instanceof ApiError
+          ? (cause.body as {
+              exportId?: unknown;
+              details?: { exportId?: unknown };
+            } | null)
+          : null;
+      const found = body?.exportId ?? body?.details?.exportId;
+      const id =
+        cause instanceof ApiError &&
+        cause.status === 409 &&
+        typeof found === "string"
+          ? found
+          : null;
+      if (id) {
+        try {
+          const row = await api.accountExportStatus(id);
+          if (exportKey) {
+            try {
+              localStorage.setItem(exportKey, id);
+            } catch {
+              /* unavailable storage */
+            }
+          }
+          setExportRow(row);
+        } catch {
+          setError(exportError(cause, t));
+        }
+      } else setError(exportError(cause, t));
     } finally {
       setExporting(false);
     }

@@ -74,11 +74,30 @@ describe("DataPrivacySection (TASK-166)", () => {
     vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
     mocks.logout.mockClear();
     mocks.downloadBlob.mockClear();
+    localStorage.removeItem("janosik:account-export:user-1");
+    vi.spyOn(api, "latestAccountExport").mockResolvedValue(null);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+  });
+
+  it("recovers a ready account export after reopening", async () => {
+    vi.mocked(api.latestAccountExport).mockResolvedValue({
+      id: "previous",
+      status: "ready",
+      createdAt: 1,
+      expiresAt: 2,
+      sizeBytes: 10,
+      error: null,
+    });
+    renderSection();
+    expect(await screen.findByTestId("account-export-download")).toBeVisible();
+    expect(localStorage.getItem("janosik:account-export:user-1")).toBe(
+      "previous",
+    );
   });
 
   it("requests an export, shows it ready and downloads the blob", async () => {
@@ -111,7 +130,14 @@ describe("DataPrivacySection (TASK-166)", () => {
     await userEvent.click(screen.getByTestId("account-export-request"));
 
     expect(await screen.findByTestId("account-export-download")).toBeVisible();
-    expect(calls[0]).toMatchObject({ method: "POST" });
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: "POST",
+          url: expect.stringMatching(/\/users\/me\/export$/),
+        }),
+      ]),
+    );
     await userEvent.click(screen.getByTestId("account-export-download"));
     await waitFor(() => expect(mocks.downloadBlob).toHaveBeenCalledTimes(1));
   });

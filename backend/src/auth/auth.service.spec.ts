@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   UnauthorizedException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Prisma, type User } from "@prisma/client";
@@ -40,10 +41,13 @@ const prismaMock = {
   agentSession: { updateMany: jest.fn() },
   card: { findMany: jest.fn(), updateMany: jest.fn() },
   $executeRaw: jest.fn(),
+  $queryRaw: jest.fn(),
+  emailVerificationCode: { deleteMany: jest.fn(), create: jest.fn() },
   emailChangeCode: {
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     deleteMany: jest.fn(),
   },
   $transaction: jest.fn(),
@@ -55,8 +59,10 @@ const prismaMock = {
   agentSession: Record<"updateMany", jest.Mock>;
   card: Record<"findMany" | "updateMany", jest.Mock>;
   $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
+  emailVerificationCode: Record<"deleteMany" | "create", jest.Mock>;
   emailChangeCode: Record<
-    "findFirst" | "create" | "update" | "deleteMany",
+    "findFirst" | "create" | "update" | "updateMany" | "deleteMany",
     jest.Mock
   >;
   $transaction: jest.Mock;
@@ -153,6 +159,15 @@ describe("AuthService", () => {
       { record: jest.fn() } as never,
     );
     jwtMock.signAsync.mockResolvedValue("access-token");
+    Object.defineProperty(mailerMock, "enabled", {
+      value: true,
+      configurable: true,
+    });
+    prismaMock.user.findUnique.mockResolvedValue(makeUser());
+    prismaMock.$queryRaw.mockResolvedValue([]);
+    prismaMock.emailVerificationCode.deleteMany.mockResolvedValue({ count: 0 });
+    prismaMock.emailVerificationCode.create.mockResolvedValue({});
+    prismaMock.emailChangeCode.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.refreshToken.create.mockResolvedValue({});
     prismaMock.apiToken.findMany.mockResolvedValue([]);
     prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
@@ -166,16 +181,31 @@ describe("AuthService", () => {
   });
 
   describe("register", () => {
+    it("refuses password registration when email delivery is disabled", async () => {
+      Object.defineProperty(mailerMock, "enabled", {
+        value: false,
+        configurable: true,
+      });
+      await expect(
+        service.register({
+          email: "user@example.com",
+          password: "correct horse battery",
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+    });
     it("hashes the password with argon2id and starts a session", async () => {
-      prismaMock.user.create.mockImplementation(async ({ data }) =>
-        makeUser({
+      prismaMock.user.create.mockImplementation(async ({ data }) => {
+        const created = makeUser({
           email: data.email,
           passwordHash: data.passwordHash,
           displayName: data.displayName,
           // The service decides verification at creation time (TASK-53).
           emailVerifiedAt: data.emailVerifiedAt,
-        }),
-      );
+        });
+        prismaMock.user.findUnique.mockResolvedValue(created);
+        return created;
+      });
 
       const result = await service.register({
         email: "user@example.com",
@@ -190,8 +220,7 @@ describe("AuthService", () => {
         avatarColor: null,
         avatarPath: null,
         createdAt: new Date("2026-09-01T00:00:00Z").getTime(),
-        // No mail transport in the unit env — the account auto-verifies.
-        emailVerifiedAt: expect.any(Number),
+        emailVerifiedAt: null,
         // TASK-166: the session method rides along for the account panel.
         authMethod: "password",
         hasPassword: true,
@@ -200,7 +229,7 @@ describe("AuthService", () => {
       // Audience isolation (TASK-36): user tokens are signed for this
       // contour only, so they can never pass the admin strategy.
       expect(jwtMock.signAsync).toHaveBeenCalledWith(
-        { sub: "user-1", authMethod: "password" },
+        { sub: "user-1", authMethod: "password", stamp: expect.any(String) },
         { audience: "janosik-user" },
       );
       const { passwordHash } = prismaMock.user.create.mock.calls[0][0].data;
@@ -243,6 +272,29 @@ describe("AuthService", () => {
   });
 
   describe("login", () => {
+    it("requires the current password before linking an OAuth provider", async () => {
+      const passwordHash = await argon2.hash("correct horse battery", {
+        type: argon2.argon2id,
+      });
+      prismaMock.user.findUnique.mockResolvedValue(makeUser({ passwordHash }));
+      await expect(
+        service.issueOAuthLinkProof("user-1", "wrong", "state"),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(jwtMock.signAsync).not.toHaveBeenCalled();
+      await service.issueOAuthLinkProof(
+        "user-1",
+        "correct horse battery",
+        "state",
+      );
+      expect(jwtMock.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: "user-1",
+          state: "state",
+          stamp: expect.any(String),
+        }),
+        expect.objectContaining({ audience: "janosik-oauth-link" }),
+      );
+    });
     it("issues a session for valid credentials", async () => {
       const passwordHash = await argon2.hash("correct horse battery", {
         type: argon2.argon2id,
@@ -304,6 +356,47 @@ describe("AuthService", () => {
   describe("refresh", () => {
     const rawToken = "raw-refresh-token-value";
 
+    it("rejects a rotation when credentials changed after the initial read", async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        user: makeUser({ passwordHash: "old" }),
+      });
+      prismaMock.user.findUnique.mockResolvedValue(
+        makeUser({ passwordHash: "new" }),
+      );
+      await expect(service.refresh(rawToken)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it("preserves the real OAuth authentication time when rotating", async () => {
+      const authenticatedAt = 1700000000000;
+      const raw = `jnko_${authenticatedAt}_opaque`;
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        user: makeUser(),
+      });
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      const result = await service.refresh(raw);
+      expect(result.refreshToken.startsWith(`jnko_${authenticatedAt}_`)).toBe(
+        true,
+      );
+      expect(jwtMock.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          authMethod: "oauth",
+          authTime: authenticatedAt,
+        }),
+        expect.anything(),
+      );
+    });
+
     it("looks the token up by its sha256 hash and rotates it", async () => {
       prismaMock.refreshToken.findUnique.mockResolvedValue({
         id: "token-1",
@@ -323,7 +416,11 @@ describe("AuthService", () => {
         include: { user: true },
       });
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
-        where: { id: "token-1", revokedAt: null },
+        where: {
+          id: "token-1",
+          revokedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
         data: { revokedAt: expect.any(Date) },
       });
     });
@@ -413,7 +510,11 @@ describe("AuthService", () => {
       // Only the single-token rotation attempt, no all-sessions revocation.
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledTimes(1);
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
-        where: { id: "token-1", revokedAt: null },
+        where: {
+          id: "token-1",
+          revokedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
         data: { revokedAt: expect.any(Date) },
       });
       expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
@@ -536,7 +637,7 @@ describe("AuthService", () => {
       expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
     });
 
-    it("does not revoke sessions when no caller cookie is present", async () => {
+    it("revokes all sessions when no caller cookie is present", async () => {
       const passwordHash = await argon2.hash(current, {
         type: argon2.argon2id,
       });
@@ -550,7 +651,10 @@ describe("AuthService", () => {
       );
 
       expect(prismaMock.user.update).toHaveBeenCalled();
-      expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
     });
   });
 
@@ -590,7 +694,7 @@ describe("AuthService", () => {
         expect(sent.to).toBe("new@example.com");
         expect(sent.subject).toContain("verification code");
         const code = sent.text.match(/\b\d{6}\b/)?.[0] ?? "";
-        expect(sha256(code)).toBe(created.codeHash);
+        expect(sha256(`email-change:user-1:${code}`)).toBe(created.codeHash);
         expect(result.expiresAt).toBe(created.expiresAt.getTime());
       });
 
@@ -687,17 +791,27 @@ describe("AuthService", () => {
         prismaMock.emailChangeCode.findFirst.mockResolvedValue(stored);
       };
 
-      it("moves the email, consumes the code and revokes every session", async () => {
+      it("moves the email, consumes the code and revokes other sessions", async () => {
         await expectConfirmation(pendingRow());
         const updatedUser = makeUser({ email: "new@example.com" });
         const txUserUpdate = jest.fn().mockResolvedValue(updatedUser);
-        const txCodeUpdate = jest.fn().mockResolvedValue({});
+        const txCodeUpdate = jest.fn().mockResolvedValue({ count: 1 });
+        const txSessionUpdate = jest.fn().mockResolvedValue({ count: 2 });
         prismaMock.$transaction.mockImplementation(
           async (fn: (tx: unknown) => Promise<unknown>) =>
             fn({
-              user: { update: txUserUpdate },
-              emailChangeCode: { update: txCodeUpdate },
+              $queryRaw: jest.fn(),
+              user: {
+                update: txUserUpdate,
+                findUnique: jest.fn().mockResolvedValue(updatedUser),
+              },
+              emailChangeCode: { updateMany: txCodeUpdate },
+              emailVerificationCode: { deleteMany: jest.fn() },
               passwordResetToken: { deleteMany: jest.fn() },
+              refreshToken: {
+                findFirst: jest.fn().mockResolvedValue({ id: "session" }),
+                updateMany: txSessionUpdate,
+              },
             }),
         );
         prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 2 });
@@ -707,20 +821,26 @@ describe("AuthService", () => {
           "user-1",
           { code },
           "ru",
+          "caller-cookie",
         );
 
         expect(txUserUpdate).toHaveBeenCalledWith({
           where: { id: "user-1" },
-          data: { email: "new@example.com" },
+          data: { email: "new@example.com", emailVerifiedAt: expect.any(Date) },
         });
         expect(txCodeUpdate).toHaveBeenCalledWith({
-          where: { id: "change-1" },
+          where: {
+            id: "change-1",
+            consumedAt: null,
+            expiresAt: { gt: expect.any(Date) },
+          },
           data: { consumedAt: expect.any(Date) },
         });
-        expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        expect(txSessionUpdate).toHaveBeenCalledWith({
           where: {
             userId: "user-1",
             revokedAt: null,
+            tokenHash: { not: sha256("caller-cookie") },
           },
           data: { revokedAt: expect.any(Date) },
         });
@@ -739,9 +859,14 @@ describe("AuthService", () => {
         await expect(
           service.confirmEmailChange("user-1", { code: "000000" }, "en"),
         ).rejects.toThrow("Invalid verification code");
-        expect(prismaMock.emailChangeCode.update).toHaveBeenCalledWith({
-          where: { id: "change-1" },
-          data: { attempts: 1 },
+        expect(prismaMock.emailChangeCode.updateMany).toHaveBeenCalledWith({
+          where: {
+            id: "change-1",
+            consumedAt: null,
+            expiresAt: { gt: expect.any(Date) },
+            attempts: { lt: 5 },
+          },
+          data: { attempts: { increment: 1 } },
         });
         expect(prismaMock.$transaction).not.toHaveBeenCalled();
       });
@@ -754,7 +879,7 @@ describe("AuthService", () => {
           service.confirmEmailChange("user-1", { code: "000000" }, "en"),
         ).rejects.toBeInstanceOf(BadRequestException);
         expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
-          where: { userId: "user-1" },
+          where: { id: "change-1", attempts: { gte: 5 } },
         });
         expect(prismaMock.emailChangeCode.update).not.toHaveBeenCalled();
       });

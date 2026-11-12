@@ -187,13 +187,13 @@ VITE_SITE_URL=http://localhost:4321/ npm run dev
 
 The self-host image sets both by serving the site at `/` and the app at `/app/` on one origin; a **split deployment** (two hosts) sets `PUBLIC_APP_URL` and `VITE_SITE_URL` to the two origins — see [docs/SELF-HOSTING.md](./docs/SELF-HOSTING.md).
 
-### Enabling outgoing email (optional — off by default)
+### Enabling outgoing email (required for password registration)
 
 **Email delivery is not enabled by default.** The API boots fine with no mail
-setup: with no SMTP transport configured it runs in **log mode** — every message
-(verification codes, email-change notices) is written to the server log instead
-of being sent, and registration auto-verifies so nobody is locked out. Messages
-are never actually delivered until you configure a transport in the master panel.
+setup: with no SMTP transport configured it runs in **log mode**, but password
+registration is disabled because mailbox ownership cannot be verified. Create
+a master with the CLI, then configure email in the master panel or through the
+`SMTP_*` environment variables before registering users.
 
 To actually send mail, open **`/admin` → Email service** (owner only), pick a preset and paste the credentials, then flip **Enable delivery** and hit **Send test email**:
 

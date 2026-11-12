@@ -440,6 +440,7 @@ export class AdminService {
         throw new ConflictException("Email is already registered");
       }
       data.email = emailChanged;
+      if (dto.emailVerified === undefined) data.emailVerifiedAt = null;
     }
     if (
       emailChanged !== null ||
@@ -450,7 +451,12 @@ export class AdminService {
     }
     const updated =
       Object.keys(data).length > 0
-        ? await this.prisma.user.update({ where: { id: userId }, data })
+        ? await this.prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+            if (emailChanged !== null)
+              await tx.emailVerificationCode.deleteMany({ where: { userId } });
+            return tx.user.update({ where: { id: userId }, data });
+          })
         : user;
 
     // Moving the sign-in address is a security action of its own (TASK-51):
@@ -535,9 +541,12 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException("User not found");
     }
-    const revoked = await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    const revoked = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      return tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
     if (options.silent !== true) {
       await this.audit(admin, "user.sessions_revoked", "user", userId, {

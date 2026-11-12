@@ -102,7 +102,7 @@ with `403`:
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
 - `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline`
-- `POST /users/me/export`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
+- `POST /users/me/export`, `GET /users/me/export/latest`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
 - `POST /users/me/delete/request-code`, `DELETE /users/me`
 - `GET /users/me/notifications`, `GET`/`PATCH /users/me/notification-settings`
 

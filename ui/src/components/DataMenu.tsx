@@ -49,7 +49,7 @@ import { createBackup, listBackups } from "@/utils/backup";
 export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
-  const { boards, board, importBoards } = useBoard();
+  const { boards, board, importBoards, exportBoards } = useBoard();
   // TASK-166 D21: Janosik does not create backups. Server mode shows only
   // export/import; the local "save a copy" / automatic-backup browser is a
   // localStorage-only safety net and must not imply server backups.
@@ -82,17 +82,21 @@ export function DataMenu() {
     }
   }, []);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
+      const completeBoards = serverMode ? await exportBoards() : boards;
       // Preflight first: a multi-hundred-MB board must not be stringified
       // just to discover it is over the cap. The estimate is rough, so it
       // only hard-stops gross oversize; the exact check below decides the
       // 25 MB boundary (avoid false positives near the limit).
-      if (estimateBoardExportBytes(boards) > MAX_BOARD_EXPORT_BYTES * 4) {
+      if (
+        estimateBoardExportBytes(completeBoards) >
+        MAX_BOARD_EXPORT_BYTES * 4
+      ) {
         toast.error(t("data.exportTooLarge"));
         return;
       }
-      const raw = serializeExport(boards);
+      const raw = serializeExport(completeBoards);
       // TASK-166.6: the combined file must be importable again. The server
       // import cap is 25 MB; never hand the user a file it would reject.
       if (new TextEncoder().encode(raw).length > MAX_BOARD_EXPORT_BYTES) {
@@ -168,7 +172,7 @@ export function DataMenu() {
         </Tooltip>
         <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuLabel>{t("data.tooltip")}</DropdownMenuLabel>
-          <DropdownMenuItem onClick={handleExport}>
+          <DropdownMenuItem onClick={() => void handleExport()}>
             <Download className="h-4 w-4" />
             {t("data.export")}
           </DropdownMenuItem>

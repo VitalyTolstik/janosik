@@ -13,6 +13,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import type { AuthResult } from "@/auth/auth.types";
 import { AuthService } from "@/auth/auth.service";
+import { securityStamp } from "@/auth/security-stamp";
 import { revokeApiTokens } from "@/auth/token-revocation";
 import {
   OAUTH_PROVIDERS,
@@ -89,6 +90,7 @@ export class OAuthService {
     code: string | undefined,
     state: string | undefined,
     stateCookie: string | undefined,
+    linkProof?: string,
   ): Promise<AuthResult> {
     const config = this.config(provider);
     this.assertState(config.id, state, stateCookie);
@@ -101,6 +103,32 @@ export class OAuthService {
     }
     const accessToken = await this.exchangeCode(config, credentials, code);
     const profile = await this.fetchProfile(config, accessToken);
+    if (linkProof) {
+      const user = await this.authService.verifyOAuthLinkProof(
+        linkProof,
+        state!,
+      );
+      if (normalizeEmail(user.email) !== normalizeEmail(profile.email))
+        throw new ForbiddenException("OAuth email does not match your account");
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+        const current = await tx.user.findUnique({ where: { id: user.id } });
+        if (
+          !current ||
+          current.disabledAt !== null ||
+          securityStamp(current) !== securityStamp(user)
+        )
+          throw new UnauthorizedException(
+            "Account changed during OAuth linking",
+          );
+        await tx.oAuthIdentity.upsert({
+          where: { userId_provider: { userId: user.id, provider: config.id } },
+          create: { userId: user.id, provider: config.id },
+          update: {},
+        });
+      });
+      return this.authService.startSession(user, "oauth");
+    }
     return this.provision(config.id, profile);
   }
 
@@ -233,18 +261,9 @@ export class OAuthService {
       where: { email: { equals: profile.email, mode: "insensitive" } },
     });
     if (existing !== null) {
-      if (existing.disabledAt !== null) {
-        throw new ForbiddenException("Account is disabled");
-      }
-      const user =
-        existing.emailVerifiedAt === null
-          ? await this.claimUnverifiedAccount(existing.id)
-          : existing;
-      this.logger.log(
-        `OAuth login (${provider}) linked into account ${user.id}`,
-      );
-      return this.authService.startSession(user, "oauth");
+      return this.sessionForExisting(provider, existing);
     }
+    await this.authService.assertRegistrationOpen();
     try {
       const created = await this.prisma.user.create({
         data: {
@@ -252,6 +271,7 @@ export class OAuthService {
           passwordHash: null,
           displayName: profile.displayName,
           emailVerifiedAt: new Date(),
+          oauthIdentities: { create: { provider } },
         },
       });
       this.logger.log(
@@ -259,7 +279,6 @@ export class OAuthService {
       );
       return this.authService.startSession(created, "oauth");
     } catch (error) {
-      // Two first logins racing for the same address.
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2002"
@@ -267,10 +286,48 @@ export class OAuthService {
         const user = await this.prisma.user.findUniqueOrThrow({
           where: { email: profile.email },
         });
-        return this.authService.startSession(user, "oauth");
+        return this.sessionForExisting(provider, user);
       }
       throw error;
     }
+  }
+
+  private async sessionForExisting(
+    provider: OAuthProviderId,
+    existing: User,
+  ): Promise<AuthResult> {
+    if (existing.disabledAt !== null) {
+      throw new ForbiddenException("Account is disabled");
+    }
+    // Legacy self-host accounts may have been marked verified without any
+    // mailbox proof. Do not silently link a password account by email.
+    const linked = await this.prisma.oAuthIdentity.findUnique({
+      where: { userId_provider: { userId: existing.id, provider } },
+    });
+    if (
+      existing.emailVerifiedAt !== null &&
+      existing.passwordHash !== null &&
+      !linked
+    ) {
+      throw new ForbiddenException(
+        "Sign in with your existing password; OAuth linking requires explicit account verification",
+      );
+    }
+    const user =
+      existing.emailVerifiedAt === null
+        ? await this.claimUnverifiedAccount(existing.id)
+        : existing;
+    if (user.passwordHash !== null && !linked)
+      throw new ForbiddenException(
+        "OAuth account linking requires explicit verification",
+      );
+    await this.prisma.oAuthIdentity.upsert({
+      where: { userId_provider: { userId: user.id, provider } },
+      create: { userId: user.id, provider },
+      update: {},
+    });
+    this.logger.log(`OAuth login (${provider}) linked into account ${user.id}`);
+    return this.authService.startSession(user, "oauth");
   }
 
   /**
@@ -287,6 +344,14 @@ export class OAuthService {
   private async claimUnverifiedAccount(userId: string): Promise<User> {
     const now = new Date();
     const { user, tokenIds } = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const current = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      if (current.disabledAt !== null)
+        throw new ForbiddenException("Account is disabled");
+      if (current.emailVerifiedAt !== null)
+        return { user: current, tokenIds: [] };
       await tx.refreshToken.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: now },

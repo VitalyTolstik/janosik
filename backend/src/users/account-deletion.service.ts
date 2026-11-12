@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { ActorType } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -166,16 +166,27 @@ export class AccountDeletionService {
       let lastError = "unknown";
       for (let attempt = 0; attempt < 2 && !deleted; attempt += 1) {
         try {
-          await this.boards.deleteBoard(boardId, userId, {
-            actorType: "human",
-            apiTokenId: null,
-            agentSessionId: null,
-            runId: null,
-            agentName: null,
-          });
+          await this.boards.deleteBoard(
+            boardId,
+            userId,
+            {
+              actorType: "human",
+              apiTokenId: null,
+              agentSessionId: null,
+              runId: null,
+              agentName: null,
+            },
+            undefined,
+            false,
+            true,
+          );
           deleted = true;
           cleaned += 1;
         } catch (error) {
+          if (error instanceof ConflictException) {
+            deleted = true;
+            break;
+          }
           lastError = error instanceof Error ? error.message : String(error);
           this.logger.warn(
             `Account deletion could not remove empty board ${boardId} (attempt ${
@@ -253,13 +264,20 @@ export class AccountDeletionService {
         continue;
       }
       try {
-        await this.boards.deleteBoard(boardId, entry.userId, {
-          actorType: "human",
-          apiTokenId: null,
-          agentSessionId: null,
-          runId: null,
-          agentName: null,
-        });
+        await this.boards.deleteBoard(
+          boardId,
+          entry.userId,
+          {
+            actorType: "human",
+            apiTokenId: null,
+            agentSessionId: null,
+            runId: null,
+            agentName: null,
+          },
+          undefined,
+          false,
+          true,
+        );
         await this.prisma.securityAuditLog.deleteMany({
           where: { id: { in: entry.markerIds } },
         });
@@ -276,6 +294,12 @@ export class AccountDeletionService {
         });
         removed += 1;
       } catch (error) {
+        if (error instanceof ConflictException) {
+          await this.prisma.securityAuditLog.deleteMany({
+            where: { id: { in: entry.markerIds } },
+          });
+          continue;
+        }
         this.logger.warn(
           `Orphan-board reaper could not delete ${boardId}: ${
             error instanceof Error ? error.message : String(error)
@@ -294,6 +318,7 @@ export class AccountDeletionService {
   async deleteAccount(
     userId: string,
     actor: { actorId?: string; actorType?: ActorType } = {},
+    dueCutoff?: Date,
   ): Promise<AccountDeletionSummary | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
@@ -326,7 +351,26 @@ export class AccountDeletionService {
     const boardIds = [...new Set(memberships.map((row) => row.boardId))];
     const now = new Date();
 
-    await this.prisma.$transaction(async (tx) => {
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      if (dueCutoff !== undefined) {
+        const current = await tx.user.findUnique({
+          where: { id: userId },
+          select: { disabledAt: true },
+        });
+        const latest = await tx.securityAuditLog.findFirst({
+          where: { userId, action: ACCOUNT_DELETE_SCHEDULED_ACTION },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+        if (
+          !current?.disabledAt ||
+          !latest ||
+          latest.createdAt > dueCutoff ||
+          current.disabledAt > latest.createdAt
+        )
+          return false;
+      }
       await tx.agentSession.deleteMany({ where: { userId } });
       await tx.approvalRequest.deleteMany({ where: { requestedBy: userId } });
       await tx.idempotencyRecord.deleteMany({
@@ -376,7 +420,9 @@ export class AccountDeletionService {
         now,
       );
       await tx.user.delete({ where: { id: userId } });
+      return true;
     });
+    if (!deleted) return null;
 
     // Boards with no accepted members left are unusable; soft-delete them
     // through the same path as a normal board delete. Pending invitations do

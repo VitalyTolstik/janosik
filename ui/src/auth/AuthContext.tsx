@@ -10,7 +10,8 @@ import {
 } from "react";
 
 import type { AuthResponseDto, AuthUserDto } from "@janosik/shared";
-import { api, isApiEnabled } from "@/api/client";
+import { api, hasPendingLogout, isApiEnabled } from "@/api/client";
+import { useToast } from "@/components/Toast";
 import { clearAvatarCache } from "@/hooks/use-avatar-object-url";
 import { ensureLocale, defaultI18n, type Lang } from "@/i18n/i18n";
 import {
@@ -82,6 +83,7 @@ const AuthContext = createContext<AuthValue | null>(null);
 export { AuthContext };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const toast = useToast();
   const serverMode = isApiEnabled();
   const [status, setStatus] = useState<AuthStatus>(() =>
     serverMode ? "boot" : "authenticated",
@@ -108,6 +110,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus("anonymous");
     };
     api.onAuthLost = onLost;
+    if (hasPendingLogout()) {
+      void api
+        .retryPendingLogout()
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled && api.getAccessToken() === null)
+            setStatus("anonymous");
+        });
+      return () => {
+        cancelled = true;
+        api.onAuthLost = null;
+      };
+    }
     // A support "view as" session (TASK-59) wins over the refresh cookie:
     // the impersonation token is adopted for this tab, then `/auth/me`
     // resolves the profile it belongs to. Only a genuine impersonation
@@ -178,6 +193,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [serverMode]);
 
+  useEffect(() => {
+    if (!serverMode) return;
+    const retry = () => {
+      if (hasPendingLogout())
+        void api.retryPendingLogout().catch(() => undefined);
+    };
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [serverMode]);
+
   const applySession = useCallback((session: AuthResponseDto) => {
     setUser(session.user);
     setStatus("authenticated");
@@ -216,20 +241,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } catch {
-      /* the local session ends whether or not the revoke call landed */
+      toast.error(defaultI18n.t("auth.logoutPending"));
     }
     // TASK-106: drop cached avatar object URLs so a shared browser never
     // keeps the previous account's images.
     clearAvatarCache();
     setUser(null);
     setStatus("anonymous");
-  }, []);
+  }, [toast]);
 
   const updateUser = useCallback((next: AuthUserDto) => {
     // TASK-166: `authMethod` is a property of the session, not the profile —
     // a profile PATCH response does not carry it, so keep the boot value.
     setUser((current) =>
-      current === null ? next : { ...next, authMethod: current.authMethod },
+      current === null || current.id !== next.id
+        ? current
+        : { ...next, authMethod: current.authMethod },
     );
   }, []);
 

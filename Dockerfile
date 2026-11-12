@@ -35,9 +35,9 @@ RUN npm ci
 COPY . .
 
 # The marketing site is baked with the app's sub-path (`/app/`) and a
-# build-time origin for its canonical/OG tags (a self-host origin is unknown
-# at build time). Override both with `--build-arg` when needed.
-ARG SITE_URL=http://localhost:3000
+# reserved build-time origin for canonical/OG tags. At startup the server
+# materializes those URLs using PUBLIC_ORIGIN, without modifying this image.
+ARG SITE_URL=https://site-origin.invalid
 ARG PUBLIC_APP_URL=/app/
 # The commit the image was built from — stamped into the app's `version.json`
 # and reported by the master panel. Pass with `--build-arg GIT_COMMIT=$(git rev-parse HEAD)`.

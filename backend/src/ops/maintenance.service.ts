@@ -1018,10 +1018,14 @@ export class MaintenanceService {
     let removed = 0;
     for (const userId of userIds) {
       try {
-        const deleted = await this.accountDeletion.deleteAccount(userId, {
-          actorId: userId,
-          actorType: "human",
-        });
+        const deleted = await this.accountDeletion.deleteAccount(
+          userId,
+          {
+            actorId: userId,
+            actorType: "human",
+          },
+          cutoff,
+        );
         if (deleted) removed += 1;
       } catch (error) {
         // One broken account must not abort the whole sweep; it is retried

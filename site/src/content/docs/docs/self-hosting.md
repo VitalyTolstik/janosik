@@ -128,8 +128,9 @@ APP_BIND_ADDRESS=127.0.0.1
 ALLOW_REGISTRATION=true
 ```
 
-`PUBLIC_ORIGIN` must match the URL users actually open. It builds OAuth
-callback URLs and drives the Secure-cookie check.
+`PUBLIC_ORIGIN` must match the URL users actually open. It sets the built-in
+site's canonical, social preview and sitemap URLs, builds OAuth callback URLs,
+and drives the Secure-cookie check.
 If converting an installer-created trial, keep its secrets and
 `COMPOSE_PROJECT_NAME`. The installer sets `PORT=3210`; either change it to
 `3000` for the examples below or configure the proxy for `127.0.0.1:3210`.
@@ -214,6 +215,9 @@ database and Redis ports stay internal.
 
 ## First run
 
+Configure SMTP first, or create the master using the CLI in step 3 and set up
+email in its panel before creating a password account.
+
 1. **Create your account.** Open `PUBLIC_ORIGIN/app/` and click
    **Create account**. The first account is a normal user. There is no
    auto-admin.
@@ -258,7 +262,7 @@ a container, use a reachable HTTPS origin instead of `localhost`.
 
 ## Email (optional)
 
-Without SMTP no mail is sent, and new accounts are automatically verified.
+Without SMTP no mail is sent and password registration is unavailable. Configure email before opening registration. Accounts created under the former automatic-verification policy require operator review. To link OAuth to an existing password account, sign in and use Account → Security with a provider using the same email address.
 Production logs omit message contents, including codes.
 
 To send real mail, open the master panel, go to **Email service**, pick a
@@ -395,8 +399,8 @@ In dev the app is not served under `/app/` on the site — that path belongs to 
 self-host image — so point its CTAs at the UI dev server:
 `PUBLIC_APP_URL=http://localhost:5173 npm run dev:site`.
 
-**Outgoing email is off by default** (log mode unless `SMTP_*` is set): codes go
-to the server log, nothing is emailed. See [Email service](/docs/admin/settings/)
+**Outgoing email is off by default** (log mode unless `SMTP_*` is set); password
+registration requires configured email. See [Email service](/docs/admin/settings/)
 and [Runbooks](/docs/runbooks/). A local sandbox is Mailpit:
 
 ```bash

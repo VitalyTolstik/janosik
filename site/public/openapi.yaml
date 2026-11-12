@@ -1954,6 +1954,24 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/export/latest:
+    get:
+      tags: [Account]
+      operationId: getLatestAccountExport
+      summary: Read the latest unexpired account export
+      description: Browser session only; returns null if no export exists.
+      responses:
+        "200":
+          description: Latest export status or null.
+          content:
+            application/json:
+              schema:
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/UserDataExport"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /users/me/export/{exportId}:
     parameters:
       - name: exportId

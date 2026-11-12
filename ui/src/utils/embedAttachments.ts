@@ -149,7 +149,12 @@ export function attachmentImagePreviewHandler(src: string): Promise<string> {
     // The raw src would keep failing as an <img> (no auth header) and
     // surface MDXEditor's red broken-image box — show the calm
     // placeholder instead.
-    .catch(() => imageUnavailableUrl());
+    .catch(() => {
+      // A transient error must not turn the placeholder into a permanent
+      // cached result. Do not remove a newer request for the same id.
+      if (previewCache.get(id) === pending) previewCache.delete(id);
+      return imageUnavailableUrl();
+    });
   cachePreview(id, pending);
   return pending;
 }

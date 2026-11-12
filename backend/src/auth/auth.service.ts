@@ -30,19 +30,26 @@ import { MailerService } from "@/mailer/mailer.service";
 import { MailQueueService } from "@/mailer/mail-queue.service";
 import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
-import type { AuthResult, AuthUser } from "./auth.types";
+import type { AuthResponse, AuthResult, AuthUser } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 import { LoginBackoffService } from "./login-backoff.service";
 import { RegisterDto } from "./dto/register.dto";
 import { revokeApiTokens } from "./token-revocation";
+import { securityStamp } from "./security-stamp";
 import type { VerifyEmailDto } from "./dto/verify-email.dto";
 import type { ChangePasswordDto } from "./dto/change-password.dto";
 import type { ConfirmEmailChangeDto } from "./dto/confirm-email-change.dto";
 import type { RequestEmailChangeDto } from "./dto/request-email-change.dto";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DUMMY_PASSWORD_HASH =
+  "$argon2id$v=19$m=65536,p=4,t=3$isfgtCAq+KXHgTYbJT7YOQ$Eue1lNnMvq+bV/ci5VxvMNojPEYrJFEXx2rs4ws9bJk";
 /** TASK-166: marks a refresh token minted by an OAuth login. */
 const OAUTH_REFRESH_PREFIX = "jnko_";
+function oauthAuthenticationTime(token: string): number {
+  const match = /^jnko_(\d{13})_/.exec(token);
+  return match ? Number(match[1]) : 0;
+}
 /** Verification code lifetime (TASK-51). */
 const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000;
 /** Wrong confirmations allowed before the code is destroyed. */
@@ -97,7 +104,9 @@ export class AuthService {
     limits: { boards: number | null; importBytes: number };
   }> {
     return {
-      allowRegistration: await this.flags.isEnabled("registration_open"),
+      allowRegistration:
+        this.mailer.enabled &&
+        (await this.flags.isEnabled("registration_open")),
       allowPublicShares: await this.flags.isEnabled("public_shares"),
       // TASK-166: the UI shows a board cap only when the operator set one.
       limits: {
@@ -107,6 +116,56 @@ export class AuthService {
     };
   }
 
+  async assertRegistrationOpen(): Promise<void> {
+    await this.flags.assertEnabled("registration_open");
+  }
+
+  async issueOAuthLinkProof(
+    userId: string,
+    password: string,
+    state: string,
+  ): Promise<string> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (
+      !user ||
+      user.disabledAt !== null ||
+      user.passwordHash === null ||
+      !(await argonVerify(user.passwordHash, password))
+    ) {
+      throw new UnauthorizedException({
+        message: "Current password is incorrect",
+        code: "current_password_invalid",
+      });
+    }
+    return this.jwtService.signAsync(
+      { sub: user.id, state, stamp: securityStamp(user) },
+      { audience: "janosik-oauth-link", expiresIn: "10m" },
+    );
+  }
+
+  async verifyOAuthLinkProof(proof: string, state: string): Promise<User> {
+    let payload: { sub?: unknown; state?: unknown; stamp?: unknown };
+    try {
+      payload = await this.jwtService.verifyAsync(proof, {
+        audience: "janosik-oauth-link",
+      });
+    } catch {
+      throw new UnauthorizedException("OAuth linking proof is invalid");
+    }
+    if (typeof payload.sub !== "string" || payload.state !== state)
+      throw new UnauthorizedException("OAuth linking proof is invalid");
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+    if (
+      !user ||
+      user.disabledAt !== null ||
+      payload.stamp !== securityStamp(user)
+    )
+      throw new UnauthorizedException("OAuth linking proof is invalid");
+    return user;
+  }
+
   async register(
     dto: RegisterDto,
     locale: MailLocale = "en",
@@ -114,17 +173,20 @@ export class AuthService {
     // Registration can be switched off from the panel (TASK-61 flag); with
     // it off, sign-up is refused for everyone.
     await this.flags.assertEnabled("registration_open");
+    if (!this.mailer.enabled) {
+      throw new ServiceUnavailableException(
+        "Email delivery must be configured before registration",
+      );
+    }
     const passwordHash = await argonHash(dto.password, { type: argon2id });
-    // When no mail transport is live (TASK-52 log mode) there is no channel
-    // the code could travel through — a fresh self-hosted instance must not
-    // dead-end behind a confirmation gate, so such accounts start verified.
+    // A mailbox is not verified until its owner proves access to it.
     const user = await this.prisma.user
       .create({
         data: {
           email: dto.email,
           passwordHash,
           displayName: dto.displayName ?? null,
-          emailVerifiedAt: this.mailer.enabled ? null : new Date(),
+          emailVerifiedAt: null,
         },
       })
       .catch((error) => {
@@ -171,6 +233,7 @@ export class AuthService {
       await this.loginBackoff.recordFailure(dto.email);
       throw new UnauthorizedException("Invalid credentials");
     }
+    await this.loginBackoff.assertNotLocked(dto.email);
     await this.loginBackoff.reset(dto.email);
     // Moderation block (TASK-36): the master can disable an account; the
     // password stays correct but no session may be started.
@@ -213,10 +276,14 @@ export class AuthService {
       });
       if (replaced.count === 0) return true;
     }
-    await this.mailQueue.enqueue({
-      to: user.email,
-      ...passwordResetEmail(code, locale),
-    });
+    void this.mailQueue
+      .enqueue({
+        to: user.email,
+        ...passwordResetEmail(code, locale),
+      })
+      .catch((error: unknown) =>
+        this.logger.warn(`Password recovery delivery failed: ${String(error)}`),
+      );
     return false;
   }
 
@@ -237,6 +304,7 @@ export class AuthService {
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
     const revokedTokenIds = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${candidate.userId} FOR UPDATE`;
       const token = await tx.passwordResetToken.findUnique({
         where: { tokenHash },
         include: { user: true },
@@ -334,23 +402,35 @@ export class AuthService {
     // Rotate atomically: if a concurrent request revoked this token first,
     // that is the same sub-second race as above — reject without the
     // theft response, the racing tab recovers through the winner's cookie.
-    const rotated = await this.prisma.refreshToken.updateMany({
-      where: { id: stored.id, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    if (rotated.count === 0) {
-      this.logger.log(
-        `Concurrent refresh race for user ${stored.userId} — rejecting without session revocation`,
-      );
-      throw new UnauthorizedException("Refresh token race detected");
-    }
-    return this.startSession(
-      stored.user,
-      stored.user.passwordHash === null ||
-        rawToken.startsWith(OAUTH_REFRESH_PREFIX)
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${stored.userId} FOR UPDATE`;
+      const current = await tx.user.findUnique({
+        where: { id: stored.userId },
+      });
+      if (
+        !current ||
+        current.disabledAt !== null ||
+        securityStamp(current) !== securityStamp(stored.user)
+      ) {
+        throw new UnauthorizedException("Session is no longer valid");
+      }
+      const rotated = await tx.refreshToken.updateMany({
+        where: {
+          id: stored.id,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+      if (rotated.count === 0)
+        throw new UnauthorizedException("Refresh token race detected");
+      const method = rawToken.startsWith(OAUTH_REFRESH_PREFIX)
         ? "oauth"
-        : "password",
-    );
+        : "password";
+      const authTime =
+        method === "oauth" ? oauthAuthenticationTime(rawToken) : undefined;
+      return this.createSession(tx, current, method, authTime);
+    });
   }
 
   /** Idempotent by design: absent/stale/unknown cookies still end in 200. */
@@ -388,11 +468,18 @@ export class AuthService {
     if (user.passwordHash !== null) {
       const valid = await argonVerify(user.passwordHash, dto.currentPassword);
       if (!valid) {
-        throw new UnauthorizedException("Current password is incorrect");
+        throw new UnauthorizedException({
+          message: "Current password is incorrect",
+          code: "current_password_invalid",
+        });
       }
     }
     const passwordHash = await argonHash(dto.newPassword, { type: argon2id });
     const revokedTokenIds = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: userId } });
+      if (!current || securityStamp(current) !== securityStamp(user))
+        throw new UnauthorizedException("Credentials changed; sign in again");
       await tx.user.update({
         where: { id: userId },
         data: { passwordHash },
@@ -401,6 +488,16 @@ export class AuthService {
       const revoked = await revokeApiTokens(tx, {
         userId,
         revokedAt: null,
+      });
+      await tx.refreshToken.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+          ...(refreshToken
+            ? { tokenHash: { not: this.hashToken(refreshToken) } }
+            : {}),
+        },
+        data: { revokedAt: new Date() },
       });
       return revoked.tokenIds;
     });
@@ -416,16 +513,6 @@ export class AuthService {
         tokenIds: revokedTokenIds,
       },
     });
-    if (refreshToken !== undefined) {
-      await this.prisma.refreshToken.updateMany({
-        where: {
-          userId,
-          revokedAt: null,
-          tokenHash: { not: this.hashToken(refreshToken) },
-        },
-        data: { revokedAt: new Date() },
-      });
-    }
   }
 
   /**
@@ -448,7 +535,10 @@ export class AuthService {
     if (user.passwordHash !== null) {
       const valid = await argonVerify(user.passwordHash, dto.currentPassword);
       if (!valid) {
-        throw new UnauthorizedException("Current password is incorrect");
+        throw new UnauthorizedException({
+          message: "Current password is incorrect",
+          code: "current_password_invalid",
+        });
       }
     }
     if (dto.newEmail === user.email) {
@@ -470,7 +560,7 @@ export class AuthService {
       data: {
         userId,
         newEmail: dto.newEmail,
-        codeHash: this.hashToken(code),
+        codeHash: this.hashToken(`email-change:${userId}:${code}`),
         expiresAt,
       },
     });
@@ -487,16 +577,16 @@ export class AuthService {
 
   /**
    * Email change, step 2 (TASK-51): swap the address once the code from the
-   * new inbox is presented, revoke every refresh session, and notify the old
-   * address (best-effort). The caller gets a fresh token pair; revoking the
-   * old caller cookie too means an identity change never leaves a second
-   * live refresh token behind.
+   * new inbox is presented, revoke other refresh sessions, and notify the old
+   * address. The caller's existing cookie is kept, avoiding a late Set-Cookie
+   * response overwriting a later sign-in in the same browser.
    */
   async confirmEmailChange(
     userId: string,
     dto: ConfirmEmailChangeDto,
     locale: MailLocale,
-  ): Promise<AuthResult> {
+    refreshToken?: string,
+  ): Promise<AuthResponse> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException();
@@ -512,35 +602,71 @@ export class AuthService {
     ) {
       throw new BadRequestException("No pending email change");
     }
-    const presented = this.hashToken(dto.code);
+    const reserved = await this.prisma.emailChangeCode.updateMany({
+      where: {
+        id: stored.id,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: EMAIL_CHANGE_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (reserved.count !== 1)
+      throw new BadRequestException("No pending email change");
+    const presented = this.hashToken(`email-change:${userId}:${dto.code}`);
     const matches =
       presented.length === stored.codeHash.length &&
-      timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash));
+      (timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash)) ||
+        this.hashToken(dto.code) === stored.codeHash);
     if (!matches) {
       // 6 digits over a 15-minute window stay safe because wrong guesses
       // burn the code after a handful of tries.
-      const attempts = stored.attempts + 1;
-      if (attempts >= EMAIL_CHANGE_MAX_ATTEMPTS) {
-        await this.prisma.emailChangeCode.deleteMany({ where: { userId } });
-      } else {
-        await this.prisma.emailChangeCode.update({
-          where: { id: stored.id },
-          data: { attempts },
-        });
-      }
+      await this.prisma.emailChangeCode.deleteMany({
+        where: { id: stored.id, attempts: { gte: EMAIL_CHANGE_MAX_ATTEMPTS } },
+      });
       throw new BadRequestException("Invalid verification code");
     }
     let updated: User;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+        if (!refreshToken)
+          throw new UnauthorizedException(
+            "Sign in again before changing email",
+          );
+        const tokenHash = this.hashToken(refreshToken);
+        const session = await tx.refreshToken.findFirst({
+          where: {
+            userId,
+            tokenHash,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        });
+        if (!session)
+          throw new UnauthorizedException(
+            "Sign in again before changing email",
+          );
+        const consumed = await tx.emailChangeCode.updateMany({
+          where: {
+            id: stored.id,
+            consumedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          data: { consumedAt: new Date() },
+        });
+        if (consumed.count !== 1)
+          throw new BadRequestException("No pending email change");
         const next = await tx.user.update({
           where: { id: userId },
-          data: { email: stored.newEmail },
+          data: { email: stored.newEmail, emailVerifiedAt: new Date() },
         });
         await tx.passwordResetToken.deleteMany({ where: { userId } });
-        await tx.emailChangeCode.update({
-          where: { id: stored.id },
-          data: { consumedAt: new Date() },
+        await tx.emailVerificationCode.deleteMany({ where: { userId } });
+        await tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null, tokenHash: { not: tokenHash } },
+          data: { revokedAt: new Date() },
         });
         return next;
       });
@@ -554,14 +680,6 @@ export class AuthService {
       }
       throw error;
     }
-    // Every refresh session dies, including the caller's old cookie: the
-    // response issues a fresh pair below, so keeping the old one alive would
-    // leave a second valid refresh token in the wild after a security-
-    // sensitive identity change.
-    await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
     const notice = await this.emailTemplates.emailChangedNotice(
       updated.email,
       locale,
@@ -569,7 +687,17 @@ export class AuthService {
     await this.mailQueue
       .enqueue({ to: user.email, ...notice })
       .catch(() => undefined);
-    return this.startSession(updated);
+    const authMethod = updated.passwordHash === null ? "oauth" : "password";
+    const accessToken = await this.jwtService.signAsync(
+      {
+        sub: updated.id,
+        authMethod,
+        stamp: securityStamp(updated),
+        ...(authMethod === "oauth" ? { authTime: 0 } : {}),
+      },
+      { audience: USER_JWT_AUDIENCE },
+    );
+    return { accessToken, user: { ...toAuthUser(updated), authMethod } };
   }
 
   /**
@@ -620,32 +748,50 @@ export class AuthService {
     ) {
       throw new BadRequestException("No pending email verification");
     }
-    const presented = this.hashToken(dto.code);
+    const reserved = await this.prisma.emailVerificationCode.updateMany({
+      where: {
+        id: stored.id,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: EMAIL_VERIFY_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (reserved.count !== 1)
+      throw new BadRequestException("No pending email verification");
+    const presented = this.hashToken(`email-verify:${userId}:${dto.code}`);
     const matches =
       presented.length === stored.codeHash.length &&
-      timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash));
+      (timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash)) ||
+        this.hashToken(dto.code) === stored.codeHash);
     if (!matches) {
-      const attempts = stored.attempts + 1;
-      if (attempts >= EMAIL_VERIFY_MAX_ATTEMPTS) {
-        await this.prisma.emailVerificationCode.deleteMany({
-          where: { userId },
-        });
-      } else {
-        await this.prisma.emailVerificationCode.update({
-          where: { id: stored.id },
-          data: { attempts },
-        });
-      }
+      await this.prisma.emailVerificationCode.deleteMany({
+        where: { id: stored.id, attempts: { gte: EMAIL_VERIFY_MAX_ATTEMPTS } },
+      });
       throw new BadRequestException("Invalid verification code");
     }
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: userId } });
+      if (
+        !current ||
+        current.email !== user.email ||
+        current.emailVerifiedAt !== null
+      )
+        throw new BadRequestException("No pending email verification");
+      const consumed = await tx.emailVerificationCode.updateMany({
+        where: {
+          id: stored.id,
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { consumedAt: new Date() },
+      });
+      if (consumed.count !== 1)
+        throw new BadRequestException("No pending email verification");
       const next = await tx.user.update({
         where: { id: userId },
         data: { emailVerifiedAt: new Date() },
-      });
-      await tx.emailVerificationCode.update({
-        where: { id: stored.id },
-        data: { consumedAt: new Date() },
       });
       return next;
     });
@@ -670,7 +816,7 @@ export class AuthService {
     await this.prisma.emailVerificationCode.create({
       data: {
         userId: user.id,
-        codeHash: this.hashToken(code),
+        codeHash: this.hashToken(`email-verify:${user.id}:${code}`),
         expiresAt,
       },
     });
@@ -692,6 +838,32 @@ export class AuthService {
   async startSession(
     user: User,
     authMethod: "password" | "oauth" = "password",
+    authenticatedAt?: number,
+  ): Promise<AuthResult> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: user.id } });
+      if (
+        !current ||
+        current.disabledAt !== null ||
+        securityStamp(current) !== securityStamp(user)
+      ) {
+        throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      return this.createSession(
+        tx,
+        current,
+        authMethod,
+        authMethod === "oauth" ? (authenticatedAt ?? Date.now()) : undefined,
+      );
+    });
+  }
+
+  private async createSession(
+    tx: Prisma.TransactionClient,
+    user: User,
+    authMethod: "password" | "oauth",
+    authTime?: number,
   ): Promise<AuthResult> {
     // The audience separates the two auth contours (TASK-36): a user token
     // fails the admin strategy and an admin token fails this one, so a
@@ -700,10 +872,20 @@ export class AuthService {
     // login on `DELETE /users/me` (ADR §12.5); it is not an authorization
     // grant by itself.
     const accessToken = await this.jwtService.signAsync(
-      { sub: user.id, authMethod },
+      {
+        sub: user.id,
+        authMethod,
+        stamp: securityStamp(user),
+        ...(authMethod === "oauth" ? { authTime: authTime ?? 0 } : {}),
+      },
       { audience: USER_JWT_AUDIENCE },
     );
-    const refreshToken = await this.issueRefreshToken(user.id, authMethod);
+    const refreshToken = await this.issueRefreshToken(
+      tx,
+      user.id,
+      authMethod,
+      authTime,
+    );
     return {
       accessToken,
       refreshToken,
@@ -712,16 +894,19 @@ export class AuthService {
   }
 
   private async issueRefreshToken(
+    tx: Prisma.TransactionClient,
     userId: string,
     authMethod: "password" | "oauth",
+    authTime?: number,
   ): Promise<string> {
     // The opaque refresh token carries the origin as a non-secret prefix:
     // rotation would otherwise lose the OAuth marker (there is no column for
     // it in the frozen schema). The hash covers the whole string.
     const token =
-      (authMethod === "oauth" ? OAUTH_REFRESH_PREFIX : "") +
-      randomBytes(48).toString("base64url");
-    await this.prisma.refreshToken.create({
+      (authMethod === "oauth"
+        ? `${OAUTH_REFRESH_PREFIX}${authTime ?? 0}_`
+        : "") + randomBytes(48).toString("base64url");
+    await tx.refreshToken.create({
       data: {
         tokenHash: this.hashToken(token),
         userId,
@@ -753,9 +938,12 @@ export class AuthService {
   }
 
   private async revokeAllSessions(userId: string): Promise<void> {
-    await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
   }
 
@@ -770,9 +958,6 @@ export class AuthService {
    * reveal whether an email is registered.
    */
   private async burnPasswordTime(password: string): Promise<void> {
-    const dummyHash = await argonHash("janosik-dummy-password", {
-      type: argon2id,
-    });
-    await argonVerify(dummyHash, password);
+    await argonVerify(DUMMY_PASSWORD_HASH, password);
   }
 }

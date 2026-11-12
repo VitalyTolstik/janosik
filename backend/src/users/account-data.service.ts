@@ -22,6 +22,7 @@ import { MailQueueService } from "@/mailer/mail-queue.service";
 import { accountDeletionCodeEmail } from "@/mailer/templates";
 import type { MailLocale } from "@/mailer/mail.types";
 import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
+import { securityStamp } from "@/auth/security-stamp";
 import { AccountDeletionService } from "./account-deletion.service";
 
 /** ADR §12.5: the deletion email code lives 10 minutes, one-time. */
@@ -68,6 +69,22 @@ export class AccountDataService {
   ): Promise<UserDataExportDto> {
     const row = await this.ownExport(userId, exportId);
     return toExportDto(row);
+  }
+
+  async latestExport(userId: string): Promise<UserDataExportDto | null> {
+    const where = { userId, expiresAt: { gt: new Date() } };
+    const row =
+      (await this.prisma.dataExport.findFirst({
+        where: { ...where, status: { in: ["pending", "ready"] } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      })) ??
+      (await this.prisma.dataExport.findFirst({
+        where,
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      }));
+    return row ? this.exportStatus(userId, row.id) : null;
   }
 
   /** Absolute path + filename of a ready export belonging to `userId`. */
@@ -185,7 +202,8 @@ export class AccountDataService {
     let payload: {
       sub?: unknown;
       authMethod?: unknown;
-      iat?: unknown;
+      authTime?: unknown;
+      stamp?: unknown;
     };
     try {
       payload = await this.jwt.verifyAsync(proof, {
@@ -199,11 +217,15 @@ export class AccountDataService {
       });
     }
     const issuedAt =
-      typeof payload.iat === "number" ? payload.iat * 1000 : Number.NaN;
+      typeof payload.authTime === "number" ? payload.authTime : Number.NaN;
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (
       payload.sub !== userId ||
       payload.authMethod !== "oauth" ||
+      !user ||
+      payload.stamp !== securityStamp(user) ||
       !Number.isFinite(issuedAt) ||
+      issuedAt > Date.now() ||
       Date.now() - issuedAt > OAUTH_PROOF_MAX_AGE_MS
     ) {
       throw new UnauthorizedException({
@@ -230,28 +252,33 @@ export class AccountDataService {
     if (!stored || stored.expiresAt.getTime() <= Date.now()) {
       throw new BadRequestException("No pending account-deletion code");
     }
+    const reserved = await this.prisma.emailVerificationCode.updateMany({
+      where: {
+        id: stored.id,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: DELETE_CODE_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (reserved.count !== 1)
+      throw new BadRequestException("No pending account-deletion code");
     const presented = this.codeHash(userId, code);
     const matches =
       presented.length === stored.codeHash.length &&
       timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash));
     if (!matches) {
-      const attempts = stored.attempts + 1;
-      if (attempts >= DELETE_CODE_MAX_ATTEMPTS) {
-        await this.prisma.emailVerificationCode.deleteMany({
-          where: { userId },
-        });
-      } else {
-        await this.prisma.emailVerificationCode.update({
-          where: { id: stored.id },
-          data: { attempts },
-        });
-      }
+      await this.prisma.emailVerificationCode.deleteMany({
+        where: { id: stored.id, attempts: { gte: DELETE_CODE_MAX_ATTEMPTS } },
+      });
       throw new BadRequestException("Invalid verification code");
     }
-    await this.prisma.emailVerificationCode.update({
-      where: { id: stored.id },
+    const consumed = await this.prisma.emailVerificationCode.updateMany({
+      where: { id: stored.id, consumedAt: null, expiresAt: { gt: new Date() } },
       data: { consumedAt: new Date() },
     });
+    if (consumed.count !== 1)
+      throw new BadRequestException("No pending account-deletion code");
   }
 
   private async ownExport(
