@@ -729,25 +729,32 @@ export function AgentsPage() {
           {(state.error || offline) && (
             <div
               className={cn(
-                "mb-3 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs",
+                "mb-2.5 flex flex-wrap items-center gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                 state.rows.length === 0
                   ? "border-danger/40 bg-danger/10 text-danger"
-                  : "border-warning/40 bg-warning/10 text-warning",
+                  : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-warning",
               )}
               data-testid="agents-error"
               role="alert"
             >
               <span>
-                {offline
-                  ? t("agents.shell.offline")
-                  : state.rows.length === 0
-                    ? t("agents.error.title")
-                    : t("agents.shell.partialError")}
+                {offline ? (
+                  t("agents.shell.offline")
+                ) : state.rows.length === 0 ? (
+                  t("agents.error.title")
+                ) : (
+                  <>
+                    <strong className="font-[650]">
+                      {t("agents.shell.partialErrorTitle")}
+                    </strong>{" "}
+                    {t("agents.shell.partialError")}
+                  </>
+                )}
               </span>
               <button
                 type="button"
                 onClick={state.reload}
-                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium"
+                className="ml-auto min-h-11 rounded-md border border-current/40 px-2.5 text-[11px] font-[650] md:h-7 md:min-h-7"
                 data-testid="agents-retry"
               >
                 {t("agents.retry")}
