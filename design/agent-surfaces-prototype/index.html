@@ -894,6 +894,7 @@ svg{display:block}
 .mini-card-foot{display:flex;align-items:center;gap:4px;margin-top:6px;color:var(--muted-foreground);font-size:8.5px}
 .scene-scrim{position:absolute;inset:0;z-index:10;background:var(--overlay);backdrop-filter:blur(2px);display:none}
 .scene-scrim.is-open{display:block;animation:fade-in var(--fast) var(--ease) both}
+.device-frame[data-device="tablet"] .scene-scrim{top:48px;height:calc(100% - 48px)}
 .board-scene-callout{
   position:absolute;z-index:8;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);
   border-radius:10px;padding:18px;text-align:center;box-shadow:var(--shadow-lg);width:min(320px,calc(100% - 32px));
@@ -1691,6 +1692,7 @@ svg{display:block}
 @container ac (max-width:760px){
   .ac-toolbar .icon-btn-sm{width:44px;height:44px}
   .ac-toolbar .seg .chip{height:44px;min-height:44px}
+  .live-status-actions .btn{height:44px;min-height:44px;font-size:11px;padding:0 10px}
   .live-session-actions .btn{height:44px;min-height:44px;font-size:11px;padding:0 10px}
   .live-session-actions .icon-btn-sm{width:44px;height:44px}
   .session-group-head .group-actions .btn{min-height:44px;height:44px}
@@ -1709,10 +1711,16 @@ svg{display:block}
   .number-field input{min-height:44px}
   .bs-modal .cselect-trigger.full{height:44px;min-height:44px}
   .show-keys{min-height:44px;display:inline-flex;align-items:center}
+  .bs-scroll .related-link{min-height:44px;height:auto;padding-top:8px;padding-bottom:8px}
+}
+@container scenesize (max-width:560px){
+  .board-scene .app-header .avatar{display:none}
+  .board-scene .header-actions{gap:2px}
 }
 @media (max-width:720px){
   .dialog-foot .btn{min-height:44px;height:44px}
 }
+body[data-device="mobile"] .dialog-foot .btn{min-height:44px;height:44px}
 </style>
 </head>
 <body>
@@ -2396,7 +2404,7 @@ const initialState = () => ({
   runSession: 'all',
   sessionGroup: 'board',
   selectedType: 'approval',
-  selectedId: 'ap-1',
+  selectedId: 'ap-8',
   sheetOpen: false,
   rejecting: false,
   rejectReason: '',
@@ -2544,15 +2552,6 @@ function pendingAll() {
 }
 function scopePending() {
   return state.boardFilter === 'all' ? pendingAll() : pendingKnownOn(state.boardFilter);
-}
-function pendingBadge(n, { quietUnknown = false } = {}) {
-  if (n === null) {
-    return quietUnknown
-      ? '<span class="count-badge is-quiet" title="Pending approvals unavailable" aria-label="Pending approvals unavailable">—</span>'
-      : '';
-  }
-  if (n <= 0) return '';
-  return `<span class="count-badge" aria-label="${n} pending approval${n === 1 ? '' : 's'}">${badgeText(n)}</span>`;
 }
 function railPending(n) {
   if (n === null) return '<span class="rail-count is-unknown" title="Pending approvals unavailable">—</span>';
@@ -3090,7 +3089,7 @@ function stagePath() {
   }
   if (state.section === 'control') {
     const params = new URLSearchParams();
-    params.set('agent', state.acTab);
+    params.set('tab', state.acTab);
     if (state.acTab === 'inbox' && isAdminOn(state.sceneBoard)) params.set('approval', state.acSelectedApprovalId);
     return `janosik.app/board/${state.sceneBoard}?${params.toString()}`;
   }
@@ -3099,6 +3098,7 @@ function stagePath() {
 }
 
 function syncChrome() {
+  document.body.dataset.device = state.device;
   const meta = SECTION_META[state.section];
   const path = stagePath();
   document.getElementById('section-kicker').textContent = meta.kicker;
@@ -3720,7 +3720,7 @@ function renderAgentsRail() {
   const sessionCount = filteredSessions({ search: '', agentFilter: 'all', statusFilter: 'all' }).length;
   const runCount = filteredRuns({ search: '', status: 'all', kind: 'all', token: 'all', sessionName: 'all', time: 'all' }).length;
   const tab = (id, name, iconName, count, amber = false) => {
-    const text = count === null ? '' : count === '—' ? '—' : badgeText(count);
+    const text = count === null || count === '' ? '' : count === '—' ? '—' : amber ? badgeText(count) : count;
     const show = count !== null && count !== 0 && count !== '';
     return `
     <button type="button" class="rail-tab" role="tab" id="agents-tab-${id}" aria-selected="${state.agentTab === id}" aria-controls="agents-main" tabindex="${state.agentTab === id ? '0' : '-1'}" data-action="agents-tab" data-tab="${id}">
@@ -4183,7 +4183,7 @@ function renderAgentModal() {
   const inboxVisible = controlInboxVisible();
   const inboxCount = pending === null ? '—' : inboxVisible.pending;
   const railTab = (id, name, iconName, count, amber = false) => {
-    const text = count === '—' ? '—' : badgeText(count);
+    const text = count === '—' ? '—' : amber ? badgeText(count) : count;
     const show = count !== null && count !== 0 && count !== '';
     return `
     <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-${id}" aria-selected="${tab === id}" aria-controls="ac-panel" tabindex="${tab === id ? '0' : '-1'}" data-action="ac-tab" data-tab="${id}">
@@ -4280,7 +4280,7 @@ function renderInboxPanel() {
   const pendingRows = visible.filter((a) => approvalStatus(a) === 'pending');
   const decidedRows = visible.filter((a) => approvalStatus(a) !== 'pending');
   const list = `<div class="ac-list" id="ac-list-scroll">
-    <div class="ac-list-head"><span>${state.acInboxFilter === 'needs' ? 'Needs decision' : state.acInboxFilter === 'decided' ? 'Recently decided' : 'Approvals'}</span><span>Expires first</span></div>
+    <div class="ac-list-head"><span>${state.acInboxFilter === 'needs' ? 'Needs decision' : state.acInboxFilter === 'decided' ? 'Recently decided' : 'Approvals'}</span><span>${state.acInboxFilter === 'decided' ? 'Decided' : 'Expires first'}</span></div>
     ${state.demoState === 'empty' || !visible.length ? `<div class="empty-state" style="min-height:220px"><span class="empty-icon">${icon('inbox')}</span><h3>${state.acInboxFilter === 'needs' ? 'No approvals waiting' : 'No requests here'}</h3><p>${state.acInboxFilter === 'needs' ? 'The board is clear. Decided requests stay in the history.' : 'Try another filter or clear the search.'}</p><div class="empty-actions"><button type="button" class="btn btn-outline btn-sm" data-action="ac-inbox-filter" data-filter="all">View all</button></div></div>` : `
       ${pendingRows.length ? `<div class="ac-list-group"><div class="ac-list-label"><span>Needs decision</span><span>${pendingRows.length}</span></div>${pendingRows.map(row).join('')}</div>` : ''}
       ${decidedRows.length && state.acInboxFilter !== 'needs' ? `<div class="ac-list-group"><div class="ac-list-label"><span>Recently decided</span><span>${decidedRows.length}</span></div>${decidedRows.map(row).join('')}</div>` : ''}

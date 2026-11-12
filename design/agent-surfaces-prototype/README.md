@@ -172,6 +172,7 @@ Validated with Playwright in Chromium on 13 November 2026. Captures are in `scre
 | `29-scoped-counts.png` | ADMIN on both boards: Website scope 1, All 3, Agent Ops 2 |
 | `30-partial-unknown.png` | Partial error: All and Website show `—`, Agent Ops keeps its known count |
 | `31-token-ownership.png` | Live: own token has Token settings, other member's token is read-only |
+| `32-agent-control-mobile-live.png` | 390 Live: 44 px pause/resume and Manage tokens, no Stop token |
 
 Checks performed:
 
@@ -191,7 +192,7 @@ Checks performed:
 - Board Settings dirty/Save/Discard/Reset and CAS conflict/Reload preserve or discard the draft as labelled.
 - Loading, empty and partial-error states switch; partial error keeps last-loaded rows, marks the unavailable board and leaves the healthy board's freshness intact.
 - The empty sessions state exposes Create API key + Read docs.
-- The 99+ badge appears in every count surface when stress-tested; the bell stays invitations-only.
+- The 99+ badge appears on every pending-approval surface when stress-tested; Sessions/Live/Runs keep their real numbers, and the bell stays invitations-only.
 - Escape/close in Agent control and Board Settings returns focus to the trigger; tablists support arrows/Home/End and the modal traps focus.
-- At 390, every visible primary button in the app shell, Agent control modal and Board Settings modal measures at least 44 px; the same check passes for the dialog footer. The 1024 sheet starts below the 48 px board header instead of covering it.
+- At 390, every visible primary button in the app shell, Agent control modal and Board Settings modal measures at least 44 px; the same check passes for the dialog footer. At 1024 both the sheet and its scrim start below the 48 px board header instead of covering it.
 - All 44 evidence images and both self-hosted fonts load; no external requests. The validation screenshots were regenerated on the synced prototype.
