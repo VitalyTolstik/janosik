@@ -733,7 +733,7 @@ export function SessionDetail({
             />
             <span>
               <strong className="font-[650] text-foreground">
-                {t("agentControl.pause.reasonLabel")}:
+                {t("agentControl.pause.reasonValue")}:
               </strong>{" "}
               {row.pausedReason}
             </span>

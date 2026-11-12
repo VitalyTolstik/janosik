@@ -51,9 +51,9 @@ test("lists a live session, filters it and opens the detail", async ({
     await expect(row).toContainText(board.title);
     await expect(row).toContainText("Nightly triage");
     await expect(row).toContainText("Fix the queue");
-    await expect(
-      page.getByTestId(`agents-board-group-${board.id}`),
-    ).toContainText("1 live");
+    await expect(page.getByTestId("agents-session-group-toggle")).toContainText(
+      "1 live",
+    );
 
     // Status filter: the active session stays, a completed one would not.
     await page.getByTestId("agents-filter-status").click();

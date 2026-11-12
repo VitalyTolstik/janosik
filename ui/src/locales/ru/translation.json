@@ -1977,5 +1977,14 @@
   "agentControl.header.allAgents": "Все агенты",
   "agents.startedAgo": "{{age}} назад",
   "agents.action.summaryOrReason": "Итог / причина (необязательно)",
-  "agents.action.summaryOrReasonPlaceholder": "Что сделал агент и почему сессия завершается?"
+  "agents.action.summaryOrReasonPlaceholder": "Что сделал агент и почему сессия завершается?",
+  "agentControl.pause.reasonValue": "Причина",
+  "agents.groups.summary_one": "{{count}} сессия · {{live}} live",
+  "agents.groups.summary_few": "{{count}} сессии · {{live}} live",
+  "agents.groups.summary_many": "{{count}} сессий · {{live}} live",
+  "agents.groups.summary_other": "{{count}} сессии · {{live}} live",
+  "agentControl.live.summary_one": "{{count}} сессия · {{tokens}} токенов · {{stale}} без heartbeat",
+  "agentControl.live.summary_few": "{{count}} сессии · {{tokens}} токенов · {{stale}} без heartbeat",
+  "agentControl.live.summary_many": "{{count}} сессий · {{tokens}} токенов · {{stale}} без heartbeat",
+  "agentControl.live.summary_other": "{{count}} сессии · {{tokens}} токенов · {{stale}} без heartbeat"
 }

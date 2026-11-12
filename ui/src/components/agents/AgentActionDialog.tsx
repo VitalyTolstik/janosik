@@ -206,6 +206,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
+            className="min-h-11 sm:min-h-9"
           >
             {t("common.cancel")}
           </Button>
@@ -214,6 +215,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
+            className="min-h-11 sm:min-h-9"
           >
             {busy ? t("agents.action.busy") : confirmLabel}
           </Button>

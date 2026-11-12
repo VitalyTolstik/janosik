@@ -178,8 +178,9 @@ export function AgentsPage() {
     setParams((current) => {
       const search = new URLSearchParams(current);
       setOrDelete(search, "section", value, "attention");
-      for (const key of ["session", "agent", "approval", "run"])
-        search.delete(key);
+      // Section switches close a detail selection, but board/token filters
+      // stay in the URL: `?agent=` is the old name of the token filter.
+      for (const key of ["session", "approval", "run"]) search.delete(key);
       return search;
     });
   };
@@ -404,10 +405,15 @@ export function AgentsPage() {
       groups: groupAgents(rows),
     }));
   }, [displayed]);
-  const sessionGroups = useMemo(
-    () => groupSessionRows(displayed, groupMode),
-    [displayed, groupMode],
-  );
+  const sessionGroups = useMemo(() => {
+    const groups = groupSessionRows(displayed, groupMode);
+    if (groupMode !== "board") return groups;
+    return groups.map((group) => ({
+      ...group,
+      pending:
+        group.boardId === undefined ? 0 : (pending.counts[group.boardId] ?? 0),
+    }));
+  }, [displayed, groupMode, pending.counts]);
   const sessionDetailRow = useMemo(() => {
     if (section !== "sessions") return undefined;
     if (selectedSession !== null) {

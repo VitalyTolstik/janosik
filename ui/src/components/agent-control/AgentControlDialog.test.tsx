@@ -538,6 +538,23 @@ describe("agent control (TASK-166.14)", () => {
     ).toBeNull();
   });
 
+  it("keeps board pause controls and the token link when sessions fail to load", async () => {
+    vi.spyOn(api, "listAgentSessions").mockRejectedValue({ status: 500 });
+
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    expect(await screen.findByTestId("board-pause-status")).toHaveAttribute(
+      "data-paused",
+      "false",
+    );
+    expect(screen.getByTestId("board-pause")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-live-manage-tokens")).toBeInTheDocument();
+    expect(
+      screen.getByText("Could not load agent sessions"),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the board pause dialog open with an inline error", async () => {
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
     vi.spyOn(api, "pauseBoardAgents").mockRejectedValue({ status: 500 });

@@ -1942,5 +1942,10 @@
   "agentControl.header.allAgents": "All agents",
   "agents.startedAgo": "{{age}} ago",
   "agents.action.summaryOrReason": "Summary / reason (optional)",
-  "agents.action.summaryOrReasonPlaceholder": "What did the agent do, and why is it ending?"
+  "agents.action.summaryOrReasonPlaceholder": "What did the agent do, and why is it ending?",
+  "agentControl.pause.reasonValue": "Reason",
+  "agents.groups.summary_one": "{{count}} session · {{live}} live",
+  "agents.groups.summary_other": "{{count}} sessions · {{live}} live",
+  "agentControl.live.summary_one": "{{count}} session · {{tokens}} tokens · {{stale}} no heartbeat",
+  "agentControl.live.summary_other": "{{count}} sessions · {{tokens}} tokens · {{stale}} no heartbeat"
 }

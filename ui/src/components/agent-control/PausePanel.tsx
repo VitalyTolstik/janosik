@@ -159,7 +159,7 @@ function LiveSessionRow({
         </div>
         {session.pausedReason ? (
           <p className="mt-0.5 text-[9.5px] text-warning">
-            {t("agentControl.pause.reasonLabel")}: {session.pausedReason}
+            {t("agentControl.pause.reasonValue")}: {session.pausedReason}
           </p>
         ) : null}
         {pausedByOtherScope ? (
@@ -323,6 +323,7 @@ function BoardPauseDialog({
             variant="outline"
             disabled={busy}
             onClick={onClose}
+            className="min-h-11 sm:min-h-9"
           >
             {t("common.cancel")}
           </Button>
@@ -332,6 +333,7 @@ function BoardPauseDialog({
             disabled={busy}
             data-testid={pause ? "board-pause-confirm" : "board-resume-confirm"}
             onClick={() => onConfirm(reason.trim())}
+            className="min-h-11 sm:min-h-9"
           >
             {busy ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -352,6 +354,104 @@ function BoardPauseDialog({
   );
 }
 
+function BoardPauseCard({
+  paused,
+  pausedAt,
+  pauseReason,
+  admin,
+  onPause,
+  onResume,
+}: {
+  paused: boolean;
+  pausedAt: number | null;
+  pauseReason: string | null;
+  admin: boolean;
+  onPause: () => void;
+  onResume: () => void;
+}) {
+  const { t, lang } = useI18n();
+  return (
+    <section
+      data-testid="board-pause-status"
+      data-paused={paused ? "true" : "false"}
+      className={cn(
+        "flex flex-wrap items-start gap-2.5 rounded-lg border px-2.5 py-2.5",
+        paused
+          ? "border-warning/34 bg-warning/5"
+          : "border-success/30 bg-success/5",
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] border",
+          paused
+            ? "border-warning/24 bg-warning/10 text-warning"
+            : "border-success/24 bg-success/10 text-success",
+        )}
+      >
+        {paused ? (
+          <CirclePause className="h-3.5 w-3.5" aria-hidden />
+        ) : (
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <b className="block text-[11.5px] font-[650] leading-[1.35]">
+          {paused
+            ? t("agentControl.live.boardPausedTitle")
+            : t("agentControl.live.boardAllowedTitle")}
+        </b>
+        <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
+          {paused
+            ? t("agentControl.live.boardPausedBody", {
+                when:
+                  pausedAt === null
+                    ? t("agentControl.live.pausedNow")
+                    : t("agentControl.live.pausedWhen", {
+                        date: formatDate(pausedAt, lang),
+                      }),
+                reason: pauseReason === null ? "" : ` · ${pauseReason}`,
+              })
+            : t("agentControl.live.boardAllowedBody")}
+        </p>
+      </div>
+      <div className="ml-auto flex flex-none flex-wrap items-center justify-end gap-1.5">
+        {admin ? (
+          paused ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="board-resume"
+              onClick={onResume}
+              className="min-h-11 min-[761px]:h-7 min-[761px]:min-h-7"
+            >
+              <CirclePlay className="h-3.5 w-3.5" aria-hidden />
+              {t("agentControl.pause.resumeAgents")}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="board-pause"
+              onClick={onPause}
+              className="min-h-11 border-danger/44 bg-danger/5 text-danger hover:bg-danger/10 hover:text-danger min-[761px]:h-7 min-[761px]:min-h-7"
+            >
+              <CirclePause className="h-3.5 w-3.5" aria-hidden />
+              {t("agentControl.pause.pauseAgents")}
+            </Button>
+          )
+        ) : (
+          <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] text-muted-foreground">
+            {t("agentControl.live.readOnly")}
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function PausePanel({
   role,
   onChanged,
@@ -359,7 +459,7 @@ export function PausePanel({
   role: "ADMIN" | "MEMBER" | "VIEWER" | undefined;
   onChanged?: () => void;
 }) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const { board } = useBoardState();
   const { refreshBoards } = useBoardActions();
@@ -532,11 +632,6 @@ export function PausePanel({
     return [...map.values()];
   }, [sessions, tokenNames]);
 
-  const liveCount = (sessions ?? []).filter(
-    (session) =>
-      !session.paused &&
-      (session.status === "active" || session.status === "waiting_approval"),
-  ).length;
   const staleCount = (sessions ?? []).filter((session) => session.stale).length;
   const actionTarget: AgentActionTarget | null =
     action === null
@@ -575,10 +670,9 @@ export function PausePanel({
         </h3>
         <span className="text-[10.5px] text-muted-foreground">
           {t("agentControl.live.summary", {
-            sessions: sessions?.length ?? 0,
+            count: sessions?.length ?? 0,
             tokens: groups.length,
             stale: staleCount,
-            live: liveCount,
           })}
         </span>
         <button
@@ -610,93 +704,23 @@ export function PausePanel({
             </Button>
           </div>
         ) : null}
+        <BoardPauseCard
+          paused={paused}
+          pausedAt={pausedAt}
+          pauseReason={pauseReason}
+          admin={admin}
+          onPause={() => {
+            setBoardError(null);
+            setBoardDialog("pause");
+          }}
+          onResume={() => {
+            setBoardError(null);
+            setBoardDialog("resume");
+          }}
+        />
+
         {sessions !== null && !sessionsError ? (
           <>
-            <section
-              data-testid="board-pause-status"
-              data-paused={paused ? "true" : "false"}
-              className={cn(
-                "flex flex-wrap items-start gap-2.5 rounded-lg border px-2.5 py-2.5",
-                paused
-                  ? "border-warning/34 bg-warning/5"
-                  : "border-success/30 bg-success/5",
-              )}
-            >
-              <span
-                className={cn(
-                  "grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] border",
-                  paused
-                    ? "border-warning/24 bg-warning/10 text-warning"
-                    : "border-success/24 bg-success/10 text-success",
-                )}
-              >
-                {paused ? (
-                  <CirclePause className="h-3.5 w-3.5" aria-hidden />
-                ) : (
-                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <b className="block text-[11.5px] font-[650] leading-[1.35]">
-                  {paused
-                    ? t("agentControl.live.boardPausedTitle")
-                    : t("agentControl.live.boardAllowedTitle")}
-                </b>
-                <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
-                  {paused
-                    ? t("agentControl.live.boardPausedBody", {
-                        when:
-                          pausedAt === null
-                            ? t("agentControl.live.pausedNow")
-                            : t("agentControl.live.pausedWhen", {
-                                date: formatDate(pausedAt, lang),
-                              }),
-                        reason: pauseReason === null ? "" : ` · ${pauseReason}`,
-                      })
-                    : t("agentControl.live.boardAllowedBody")}
-                </p>
-              </div>
-              <div className="ml-auto flex flex-none flex-wrap items-center justify-end gap-1.5">
-                {admin ? (
-                  paused ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      data-testid="board-resume"
-                      onClick={() => {
-                        setBoardError(null);
-                        setBoardDialog("resume");
-                      }}
-                      className="min-h-11 min-[761px]:h-7 min-[761px]:min-h-7"
-                    >
-                      <CirclePlay className="h-3.5 w-3.5" aria-hidden />
-                      {t("agentControl.pause.resumeAgents")}
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      data-testid="board-pause"
-                      onClick={() => {
-                        setBoardError(null);
-                        setBoardDialog("pause");
-                      }}
-                      className="min-h-11 border-danger/44 bg-danger/5 text-danger hover:bg-danger/10 hover:text-danger min-[761px]:h-7 min-[761px]:min-h-7"
-                    >
-                      <CirclePause className="h-3.5 w-3.5" aria-hidden />
-                      {t("agentControl.pause.pauseAgents")}
-                    </Button>
-                  )
-                ) : (
-                  <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] text-muted-foreground">
-                    {t("agentControl.live.readOnly")}
-                  </span>
-                )}
-              </div>
-            </section>
-
             {sessions.length === 0 ? (
               <div className="mt-2 flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">
                 <Bot className="h-6 w-6 opacity-60" aria-hidden />
@@ -762,30 +786,30 @@ export function PausePanel({
                     {t("agentControl.live.readOnlyNote")}
                   </div>
                 ) : null}
-
-                <p
-                  data-testid="pause-semantics"
-                  className="mt-2.5 text-[10.5px] leading-[1.5] text-muted-foreground"
-                >
-                  {t("agentControl.live.claims")}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
-                  <p className="min-w-0 flex-1 text-[10px] leading-[1.45] text-muted-foreground">
-                    {t("agentControl.live.tokenHint")}
-                  </p>
-                  <button
-                    type="button"
-                    data-testid="agent-live-manage-tokens"
-                    onClick={openTokens}
-                    className="inline-flex min-h-11 items-center gap-1 text-[10.5px] font-[600] text-foreground hover:underline min-[761px]:min-h-7"
-                  >
-                    {t("agents.shell.manageTokens")} ↗
-                  </button>
-                </div>
               </>
             )}
           </>
         ) : null}
+
+        <p
+          data-testid="pause-semantics"
+          className="mt-2.5 text-[10.5px] leading-[1.5] text-muted-foreground"
+        >
+          {t("agentControl.live.claims")}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
+          <p className="min-w-0 flex-1 text-[10px] leading-[1.45] text-muted-foreground">
+            {t("agentControl.live.tokenHint")}
+          </p>
+          <button
+            type="button"
+            data-testid="agent-live-manage-tokens"
+            onClick={openTokens}
+            className="inline-flex min-h-11 items-center gap-1 text-[10.5px] font-[600] text-foreground hover:underline min-[761px]:min-h-7"
+          >
+            {t("agents.shell.manageTokens")} ↗
+          </button>
+        </div>
       </div>
 
       {boardDialog !== null ? (
