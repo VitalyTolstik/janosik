@@ -426,4 +426,29 @@ describe("agent control (TASK-166.14)", () => {
       expect(resumeSession).toHaveBeenCalledWith("board-1", "session-1"),
     );
   });
+
+  it("has no Policy tab and links to Board Settings → Agents & automation", async () => {
+    vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    const onOpenPolicy = vi.fn();
+    render(
+      <MemoryRouter>
+        <I18nProvider>
+          <ToastProvider>
+            <BoardLiveProvider live={live}>
+              <AgentControlDialog
+                open
+                onOpenChange={vi.fn()}
+                onOpenPolicy={onOpenPolicy}
+              />
+            </BoardLiveProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("agent-open-policy");
+    expect(screen.queryByTestId("agent-policy-tab")).toBeNull();
+    await userEvent.click(screen.getByTestId("agent-open-policy"));
+    expect(onOpenPolicy).toHaveBeenCalledTimes(1);
+  });
 });
