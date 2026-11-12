@@ -191,8 +191,9 @@ describe("ApiClient", () => {
     }
   });
 
-  it("does not let a stale boot refresh clobber a login that landed later", async () => {
+  it("serializes a boot refresh before a login that lands later", async () => {
     const pending: { resolve?: (response: Response) => void } = {};
+    let loginSent = false;
     const client = new ApiClient({
       baseUrl: "/api/v1",
       fetchImpl: async (input) => {
@@ -201,22 +202,24 @@ describe("ApiClient", () => {
             pending.resolve = resolve;
           });
         }
+        loginSent = true;
         return json({ accessToken: "login-token", user });
       },
     });
 
-    // The boot refresh hangs; the user logs in meanwhile.
     const boot = client.refreshSession();
-    await client.login("admin@example.com", "password123");
-    expect(client.getAccessToken()).toBe("login-token");
+    const login = client.login("admin@example.com", "password123");
+    // The login waits for the refresh to release the shared auth lock.
+    await Promise.resolve();
+    expect(loginSent).toBe(false);
 
-    // The late 401 of the stale refresh must not wipe the fresh token.
     pending.resolve?.(json({ message: "Unauthorized" }, 401));
     await expect(boot).resolves.toBeNull();
+    await login;
     expect(client.getAccessToken()).toBe("login-token");
   });
 
-  it("does not let a stale refresh overwrite a newer login (account switch)", async () => {
+  it("serializes a refresh before an account switch and keeps the new session", async () => {
     const pending: { resolve?: (response: Response) => void } = {};
     const client = new ApiClient({
       baseUrl: "/api/v1",
@@ -231,11 +234,69 @@ describe("ApiClient", () => {
     });
 
     const boot = client.refreshSession();
-    await client.login("other@example.com", "password123");
+    const login = client.login("other@example.com", "password123");
 
+    await vi.waitFor(() => expect(pending.resolve).toBeDefined());
     pending.resolve?.(json({ accessToken: "a-token", user }));
-    await expect(boot).resolves.toBeNull();
+    await boot;
+    await login;
     expect(client.getAccessToken()).toBe("b-token");
+  });
+
+  it("waits for an in-flight refresh before logging out", async () => {
+    const pending: { resolve?: (response: Response) => void } = {};
+    const events: string[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        if (pathOf(input).endsWith("/auth/refresh")) {
+          events.push("refresh:start");
+          return new Promise<Response>((resolve) => {
+            pending.resolve = resolve;
+          });
+        }
+        if (pathOf(input).endsWith("/auth/logout")) {
+          events.push("logout:start");
+          return json({ status: "ok" });
+        }
+        return json(user);
+      },
+    });
+
+    const refresh = client.refreshSession();
+    const logout = client.logout();
+    await vi.waitFor(() => expect(events).toEqual(["refresh:start"]));
+
+    pending.resolve?.(json({ accessToken: "late-token", user }));
+    await refresh;
+    await logout;
+
+    // Logout runs after the rotation, so the browser sends (and the server
+    // revokes) the freshly rotated cookie rather than the stale one.
+    expect(events).toEqual(["refresh:start", "logout:start"]);
+    expect(client.getAccessToken()).toBeNull();
+  });
+
+  it("parses X-Board-Seq as a safe integer and tolerates a missing header", async () => {
+    const snapshotWith = async (header?: string) => {
+      const client = new ApiClient({
+        baseUrl: "/api/v1",
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ id: "board-1" }), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              ...(header === undefined ? {} : { "X-Board-Seq": header }),
+            },
+          }),
+      });
+      return client.getBoardSnapshot("board-1");
+    };
+
+    expect((await snapshotWith("42")).seq).toBe(42);
+    expect((await snapshotWith()).seq).toBe(0);
+    expect((await snapshotWith("12x")).seq).toBe(0);
+    expect((await snapshotWith("9007199254740993")).seq).toBe(0);
   });
 
   it("reports a dead session once and clears the token", async () => {

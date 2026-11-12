@@ -75,13 +75,24 @@ export function SecuritySection() {
   const [linking, setLinking] = useState(false);
   useEffect(() => {
     let alive = true;
-    void api.listOAuthProviders().then((result) => {
-      if (alive) setProviders(result.providers);
-    });
+    void api
+      .listOAuthProviders()
+      .then((result) => {
+        if (alive) setProviders(result.providers);
+      })
+      .catch(() => {
+        if (alive) setProviders([]);
+      });
     return () => {
       alive = false;
     };
   }, []);
+
+  /** OAuth-only accounts need a fresh provider proof for the first password. */
+  const freshAccessToken = async (): Promise<string | undefined> => {
+    await api.refreshSession().catch(() => null);
+    return api.getAccessToken() ?? undefined;
+  };
 
   const linkProvider = async (provider: string) => {
     setLinking(true);
@@ -119,7 +130,9 @@ export function SecuritySection() {
     setSaving(true);
     setError(null);
     try {
-      await api.changePassword(current, next);
+      const oauthProof =
+        user?.hasPassword === false ? await freshAccessToken() : undefined;
+      await api.changePassword(current, next, oauthProof);
       try {
         updateUser(await api.me());
       } catch {
@@ -130,10 +143,16 @@ export function SecuritySection() {
       setConfirm("");
       toast.success(t("account.security.changed"));
     } catch (cause) {
+      const code =
+        cause instanceof ApiError
+          ? (cause.body as { code?: unknown } | null)?.code
+          : undefined;
       setError(
-        cause instanceof ApiError && cause.status === 401
-          ? t("account.security.wrongCurrent")
-          : t("account.security.genericError"),
+        code === "oauth_proof_required" || code === "oauth_proof_invalid"
+          ? t("account.security.oauthProofFailed")
+          : cause instanceof ApiError && cause.status === 401
+            ? t("account.security.wrongCurrent")
+            : t("account.security.genericError"),
       );
     } finally {
       setSaving(false);

@@ -1,6 +1,6 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { defaultI18n } from "@/i18n/i18n";
 
 /**
@@ -149,10 +149,16 @@ export function attachmentImagePreviewHandler(src: string): Promise<string> {
     // The raw src would keep failing as an <img> (no auth header) and
     // surface MDXEditor's red broken-image box — show the calm
     // placeholder instead.
-    .catch(() => {
-      // A transient error must not turn the placeholder into a permanent
-      // cached result. Do not remove a newer request for the same id.
-      if (previewCache.get(id) === pending) previewCache.delete(id);
+    .catch((error: unknown) => {
+      // A transient network/5xx error must not turn the placeholder into a
+      // permanent cached result. A 403/404 is a definitive answer (deleted
+      // or not ours), so keep it cached and avoid hammering the endpoint.
+      // Do not remove a newer request for the same id.
+      const status = error instanceof ApiError ? error.status : 0;
+      const transient = status === 0 || status >= 500;
+      if (transient && previewCache.get(id) === pending) {
+        previewCache.delete(id);
+      }
       return imageUnavailableUrl();
     });
   cachePreview(id, pending);
