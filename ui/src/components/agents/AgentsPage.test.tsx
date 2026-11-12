@@ -317,6 +317,18 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("shows All clear when only decided approvals remain", async () => {
+    hoisted.listApprovals.mockResolvedValue([
+      approval({ status: "rejected", decisionComment: "No" }),
+    ]);
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByTestId("agents-attention-clear"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-approval-list")).toBeNull();
+  });
+
   it("filters approvals by needs, decided and all with true counts", async () => {
     hoisted.listApprovals.mockResolvedValue([
       approval(),
