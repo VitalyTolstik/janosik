@@ -8,15 +8,6 @@ import type {
   ApprovalStatus,
 } from "@janosik/shared";
 
-/** Effective approval statuses that are decided (everything but pending). */
-const DECIDED_APPROVAL_STATUSES = new Set<ApprovalStatus>([
-  "approved",
-  "rejected",
-  "expired",
-  "cancelled",
-  "consumed",
-]);
-
 /**
  * TASK-179.10 effective expiry: `pending` and `approved` rows past their
  * `expiresAt` are shown as `expired` without writing the row. A stored
@@ -33,11 +24,6 @@ export function effectiveApprovalStatus(
     expiresAt instanceof Date ? expiresAt.getTime() : expiresAt;
   const nowMs = now instanceof Date ? now.getTime() : now;
   return expiresAtMs <= nowMs ? "expired" : status;
-}
-
-/** True when the effective status belongs in the decided/history group. */
-export function isDecidedApprovalStatus(status: ApprovalStatus): boolean {
-  return DECIDED_APPROVAL_STATUSES.has(status);
 }
 
 /** Escape LIKE metacharacters so `q` is a literal substring search. */

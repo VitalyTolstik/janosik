@@ -1017,7 +1017,9 @@ paths:
         The scope is the caller's accepted, non-expired memberships on
         non-deleted, non-archived boards. Approvals are returned only for
         boards where the caller is `ADMIN`; sessions and runs for
-        `ADMIN`/`MEMBER`/`VIEWER`.
+        `ADMIN`/`MEMBER`/`VIEWER`. `section` defaults to `approvals`, so a
+        caller with no ADMIN board should pass `sessions` or `runs` explicitly
+        instead of relying on the default.
 
         Effective approval status is computed from `status + expiresAt` at
         `refreshedAt` in one time slice. This read never calls the lazy expiry
@@ -1027,9 +1029,12 @@ paths:
 
         `items` shape is selected by `section`; `total` is the filtered count
         before `limit`/`cursor`. `counts` and `facets` ignore
-        `q`/`status`/`kind`/`tokenId`/`sessionId`/`from`/`to` and follow the
-        board scope, so rail/combobox counts do not collapse while a filter is
-        active. Display names are disclosed only for boards, sessions, cards
+        `q`/`status`/`kind`/`tokenId`/`sessionId`/`from`/`to`, so rail counts
+        do not collapse while a filter is active. `counts.approvals`,
+        `counts.sessions` and `counts.runs` follow the selected board scope;
+        `counts.boards` always lists every accessible board so the scope
+        combobox can switch without a second request. Display names are
+        disclosed only for boards, sessions, cards
         and active members the caller can already read; a token name is
         returned only for the caller's own token. The approval plan itself is
         not part of this read — `GET /boards/{boardId}/approvals/{approvalId}`
