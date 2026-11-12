@@ -364,25 +364,28 @@ describe("Review hardening (e2e)", () => {
 
     it("hides invitations from an unverified account and refuses the accept", async () => {
       process.env.E2E_AUTO_VERIFY = "0";
-      const squatter = await register("hardening-unverified@example.com");
-      process.env.E2E_AUTO_VERIFY = "1";
-      await server()
-        .post(`/api/v1/boards/${boardId}/members`)
-        .set(auth(ownerToken))
-        .send({ email: "hardening-unverified@example.com", role: "ADMIN" })
-        .expect(201);
-      const feed = await server()
-        .get("/api/v1/invitations")
-        .set(auth(squatter.token))
-        .expect(200);
-      expect(feed.body).toEqual([]);
-      const row = await prisma.boardMember.findFirstOrThrow({
-        where: { boardId, userId: squatter.id },
-      });
-      await server()
-        .post(`/api/v1/invitations/${row.id}/accept`)
-        .set(auth(squatter.token))
-        .expect(403);
+      try {
+        const squatter = await register("hardening-unverified@example.com");
+        await server()
+          .post(`/api/v1/boards/${boardId}/members`)
+          .set(auth(ownerToken))
+          .send({ email: "hardening-unverified@example.com", role: "ADMIN" })
+          .expect(201);
+        const feed = await server()
+          .get("/api/v1/invitations")
+          .set(auth(squatter.token))
+          .expect(200);
+        expect(feed.body).toEqual([]);
+        const row = await prisma.boardMember.findFirstOrThrow({
+          where: { boardId, userId: squatter.id },
+        });
+        await server()
+          .post(`/api/v1/invitations/${row.id}/accept`)
+          .set(auth(squatter.token))
+          .expect(403);
+      } finally {
+        process.env.E2E_AUTO_VERIFY = "1";
+      }
     });
   });
 

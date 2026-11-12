@@ -88,8 +88,12 @@ export function SecuritySection() {
     };
   }, []);
 
-  /** OAuth-only accounts need a fresh provider proof for the first password. */
-  const freshAccessToken = async (): Promise<string | undefined> => {
+  /**
+   * OAuth-only first password: reuse the OAuth proof carried by the session.
+   * Rotation preserves its original `authTime`; older than ten minutes the
+   * server rejects it and the user must sign in with the provider again.
+   */
+  const oauthProofToken = async (): Promise<string | undefined> => {
     await api.refreshSession().catch(() => null);
     return api.getAccessToken() ?? undefined;
   };
@@ -131,7 +135,7 @@ export function SecuritySection() {
     setError(null);
     try {
       const oauthProof =
-        user?.hasPassword === false ? await freshAccessToken() : undefined;
+        user?.hasPassword === false ? await oauthProofToken() : undefined;
       await api.changePassword(current, next, oauthProof);
       try {
         updateUser(await api.me());
