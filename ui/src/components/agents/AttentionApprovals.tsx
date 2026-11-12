@@ -824,11 +824,9 @@ export function AttentionApprovalDetail({
                 >
                   {detail.planHash.slice(0, 44)}…
                 </code>
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-[22px] w-[22px] shrink-0"
+                  className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center self-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => void copyHash()}
                   aria-label={t("agentControl.approvals.copyHash")}
                   data-testid="approval-copy-hash"
@@ -836,9 +834,9 @@ export function AttentionApprovalDetail({
                   {hashCopied ? (
                     <Check className="h-3 w-3 text-success" aria-hidden />
                   ) : (
-                    <Copy className="h-3 w-3" aria-hidden />
+                    <Copy className="h-3 w-3 opacity-70" aria-hidden />
                   )}
-                </Button>
+                </button>
               </div>
               <p className="mt-1.5 text-[10.5px] leading-[1.5] text-muted-foreground">
                 {t("agents.approvals.hashHint")}
