@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Bot,
   ChevronRight,
+  Folder,
   History,
   Inbox,
   Info,
@@ -33,14 +34,22 @@ import {
   AGENT_STATUS_FILTERS,
   agentLabel,
   groupAgents,
+  isLiveSession,
   latestLiveSession,
   matchesAgentFilter,
   readAgentFilter,
+  readAgentGroup,
   shortId,
   type AgentFilter,
   type AgentGroup,
+  type AgentSessionRow,
   type AgentStatusFilter,
 } from "./agent-model";
+import {
+  SessionDetail,
+  SessionGroupList,
+  groupSessionRows,
+} from "./session-ui";
 import { useAgentSessions } from "./use-agent-sessions";
 import { usePendingApprovals } from "./use-pending-approvals";
 import { useAgentRuns } from "./use-agent-runs";
@@ -70,6 +79,7 @@ export function AgentsPage() {
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
   const filter = useMemo(() => readAgentFilter(params), [params]);
+  const groupMode = readAgentGroup(params);
   const sectionParam = params.get("section");
   const section: Section = SECTIONS.includes(sectionParam as Section)
     ? (sectionParam as Section)
@@ -114,10 +124,12 @@ export function AgentsPage() {
           setOrDelete(search, "status", next.status, "all");
           setOrDelete(search, "time", next.time, "any");
           setOrDelete(search, "q", next.query, "");
+          // A filter change can hide the selected row; closing the detail
+          // avoids an orphaned master-detail pane.
+          search.delete("session");
           if ("board" in patch) {
             search.delete("approval");
             search.delete("run");
-            search.delete("session");
           }
           return search;
         },
@@ -126,6 +138,42 @@ export function AgentsPage() {
     },
     [setParams],
   );
+  const setGroupMode = (mode: "board" | "token") => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        setOrDelete(next, "group", mode, "board");
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  const openSession = useCallback(
+    (row: AgentSessionRow) => {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "sessions");
+          next.set("session", row.id);
+          next.delete("approval");
+          next.delete("run");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const closeSession = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("session");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
   const setSection = (value: Section) => {
     setParams((current) => {
       const search = new URLSearchParams(current);
@@ -337,13 +385,8 @@ export function AgentsPage() {
     state.boards.find((board) => board.id === approvalBoardId)?.title ??
     "";
   const filtered = useMemo(
-    () =>
-      state.rows.filter(
-        (row) =>
-          matchesAgentFilter(row, filter, now) &&
-          (selectedSession === null || row.id === selectedSession),
-      ),
-    [state.rows, filter, selectedSession, now],
+    () => state.rows.filter((row) => matchesAgentFilter(row, filter, now)),
+    [state.rows, filter, now],
   );
   const displayed =
     section === "attention" ? filtered.filter((row) => row.stale) : filtered;
@@ -361,6 +404,20 @@ export function AgentsPage() {
       groups: groupAgents(rows),
     }));
   }, [displayed]);
+  const sessionGroups = useMemo(
+    () => groupSessionRows(displayed, groupMode),
+    [displayed, groupMode],
+  );
+  const sessionDetailRow = useMemo(() => {
+    if (section !== "sessions") return undefined;
+    if (selectedSession !== null) {
+      return displayed.find((row) => row.id === selectedSession);
+    }
+    return displayed[0];
+  }, [displayed, section, selectedSession]);
+  const sessionMissing =
+    selectedSession !== null && sessionDetailRow === undefined;
+  const sessionSheetOpen = section === "sessions" && selectedSession !== null;
   const boardOptions = [
     { value: "all", label: t("agents.filters.allBoards") },
     ...state.boards.map((board) => ({ value: board.id, label: board.title })),
@@ -378,6 +435,10 @@ export function AgentsPage() {
     ]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label)),
+    ...(filter.token !== "all" &&
+    !state.rows.some((row) => row.apiTokenId === filter.token)
+      ? [{ value: filter.token, label: shortId(filter.token) }]
+      : []),
   ];
   const statusOptions = AGENT_STATUS_FILTERS.map((value) => ({
     value,
@@ -394,8 +455,7 @@ export function AgentsPage() {
     filter.token !== "all" ||
     filter.status !== "all" ||
     filter.time !== "any" ||
-    filter.query.trim() !== "" ||
-    selectedSession !== null;
+    filter.query.trim() !== "";
   const showAllClear =
     isAttentionAdmin &&
     scopedPendingCount === 0 &&
@@ -636,13 +696,16 @@ export function AgentsPage() {
                   : t("agents.refresh")}
               </Button>
               {section === "sessions" ? (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={openTokens}
-                  className="inline-flex min-h-7 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:hidden min-[1061px]:max-[1279px]:hidden"
+                  data-testid="agents-manage-tokens"
+                  className="min-h-11 px-2 text-[11px] font-[650] md:h-7 md:min-h-7"
                 >
                   {t("agents.shell.manageTokens")}
-                </button>
+                </Button>
               ) : null}
               {section === "runs" ? (
                 <button
@@ -743,6 +806,73 @@ export function AgentsPage() {
               </>
             )}
           </div>
+          {section === "sessions" ? (
+            <>
+              <div
+                className="my-1 mb-2 flex flex-wrap items-center gap-2"
+                data-testid="agents-session-group-toggle"
+              >
+                <span className="text-[10.5px] font-[650] tracking-[0.06em] text-muted-foreground uppercase">
+                  {t("agents.groups.groupBy")}
+                </span>
+                <div
+                  role="group"
+                  aria-label={t("agents.groups.groupBy")}
+                  className="inline-flex items-center rounded-md border border-border bg-surface/58 p-0.5"
+                >
+                  <button
+                    type="button"
+                    data-testid="agents-session-group-board"
+                    aria-pressed={groupMode === "board"}
+                    onClick={() => setGroupMode("board")}
+                    className={cn(
+                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[10.5px] font-[550] text-muted-foreground md:h-[25px]",
+                      groupMode === "board" &&
+                        "bg-hover text-foreground shadow-sm",
+                    )}
+                  >
+                    <Folder className="h-[11px] w-[11px]" aria-hidden />
+                    {t("agents.groups.board")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="agents-session-group-token"
+                    aria-pressed={groupMode === "token"}
+                    onClick={() => setGroupMode("token")}
+                    className={cn(
+                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[10.5px] font-[550] text-muted-foreground md:h-[25px]",
+                      groupMode === "token" &&
+                        "bg-hover text-foreground shadow-sm",
+                    )}
+                  >
+                    <KeyRound className="h-[11px] w-[11px]" aria-hidden />
+                    {t("agents.groups.token")}
+                  </button>
+                </div>
+                <span className="ml-auto text-[10.5px] text-muted-foreground">
+                  {t("agents.groups.summary", {
+                    count: displayed.length,
+                    live: displayed.filter(isLiveSession).length,
+                  })}
+                </span>
+              </div>
+              <div
+                data-testid="agents-sessions-heartbeat-note"
+                className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
+              >
+                <Info
+                  className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+                  aria-hidden
+                />
+                <span>
+                  <strong className="font-[650] text-foreground">
+                    {t("agents.heartbeat.noteTitle")}
+                  </strong>{" "}
+                  {t("agents.heartbeat.noteBody")}
+                </span>
+              </div>
+            </>
+          ) : null}
           {(state.error || offline) && (
             <div
               className={cn(
@@ -1005,31 +1135,40 @@ export function AgentsPage() {
                   <LoadError onRetry={state.reload} />
                 ) : state.rows.length === 0 ? (
                   <SessionsEmpty onOpenTokens={openTokens} lang={lang} />
-                ) : groups.length === 0 ? (
+                ) : sessionGroups.length === 0 ? (
                   <FilteredEmpty onClear={clearFilters} />
                 ) : (
-                  <>
-                    <p className="mb-3 text-xs text-muted-foreground">
-                      {t("agents.shell.sessionsHint")}
-                    </p>
-                    <AgentGroupList
-                      boardGroups={boardGroups}
-                      boards={state.boards}
-                      staleBoardIds={state.staleBoardIds}
-                    />
-                  </>
+                  <SessionGroupList
+                    groups={sessionGroups}
+                    mode={groupMode}
+                    selectedId={sessionDetailRow?.id ?? null}
+                    now={now}
+                    staleBoardIds={state.staleBoardIds}
+                    onSelect={openSession}
+                    onOpenTokens={openTokens}
+                  />
                 )}
               </>
             )}
           </div>
         </div>
       </section>
+      {sessionSheetOpen ? (
+        <button
+          type="button"
+          aria-label={t("agents.detail.back")}
+          data-testid="agents-session-sheet-scrim"
+          onClick={closeSession}
+          className="fixed inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+        />
+      ) : null}
       <aside
         className={cn(
           "hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
-          section === "attention" &&
+          ((section === "attention" &&
             selectedApprovalId !== null &&
-            approvalBoardId !== null &&
+            approvalBoardId !== null) ||
+            sessionSheetOpen) &&
             "max-[1060px]:fixed max-[1060px]:inset-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-full max-[1060px]:border-l-0 max-[1060px]:bg-background",
         )}
         aria-label={t("agents.shell.details")}
@@ -1056,6 +1195,17 @@ export function AgentsPage() {
             initialMode={approvalIntent}
             onChanged={pending.reload}
             onBack={closeApproval}
+          />
+        ) : section === "sessions" ? (
+          <SessionDetail
+            row={sessionDetailRow}
+            missingId={sessionMissing ? selectedSession : null}
+            now={now}
+            isAgentToken={state.isAgentToken}
+            staleBoardIds={state.staleBoardIds}
+            onClose={closeSession}
+            onSaved={state.replaceSession}
+            onOpenTokens={openTokens}
           />
         ) : (
           <>

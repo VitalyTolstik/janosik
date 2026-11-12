@@ -46,12 +46,14 @@ test("lists a live session, filters it and opens the detail", async ({
     expect(Math.abs(railHeading!.y - pageHeading!.y)).toBeLessThanOrEqual(1);
 
     await page.getByTestId("agents-section-sessions").click();
-    const row = page.getByTestId("agent-row").filter({ hasText: "QA agent" });
+    const row = page.getByTestId(`agent-session-row-${agent.session.id}`);
     await expect(row).toBeVisible();
     await expect(row).toContainText(board.title);
     await expect(row).toContainText("Nightly triage");
     await expect(row).toContainText("Fix the queue");
-    await expect(row).toContainText("1 live");
+    await expect(
+      page.getByTestId(`agents-board-group-${board.id}`),
+    ).toContainText("1 live");
 
     // Status filter: the active session stays, a completed one would not.
     await page.getByTestId("agents-filter-status").click();
@@ -64,15 +66,15 @@ test("lists a live session, filters it and opens the detail", async ({
     await expect(row).toBeVisible();
 
     await row.click();
-    await expect(page.getByTestId("agent-detail-page")).toBeVisible();
-    await expect(page.getByTestId("agent-detail-name")).toHaveText("QA agent");
-    const session = page.getByTestId("agent-session");
-    await expect(session).toContainText("Nightly triage");
-    await expect(session).toContainText("playwright");
-    await expect(session).toContainText("e2e-model");
-    await expect(session).toContainText("Fix the queue");
-    await expect(page.getByTestId("agent-session-pause")).toBeVisible();
-    await expect(page.getByTestId("agent-session-end")).toBeVisible();
+    await expect(page.getByTestId("agents-session-detail-hint")).toContainText(
+      "Agent writes are allowed",
+    );
+    await expect(page.getByTestId("agents-session-pause")).toBeVisible();
+    await expect(page.getByTestId("agents-session-end")).toBeVisible();
+    await expect(page.getByTestId("agents-session-open-board")).toBeVisible();
+    await expect(
+      page.getByTestId("agents-session-token-settings"),
+    ).toBeVisible();
   } finally {
     await agent.dispose();
   }
@@ -121,20 +123,19 @@ test("pauses and resumes a session with a reason", async ({
   try {
     await board.open(page);
     await openAgents(page);
-    await page
-      .getByTestId("agent-row")
-      .filter({ hasText: "Pausable agent" })
-      .click();
-    await expect(page.getByTestId("agent-detail-page")).toBeVisible();
+    await page.getByTestId(`agent-session-row-${agent.session.id}`).click();
+    await expect(page.getByTestId("agents-session-detail-hint")).toBeVisible();
 
-    await page.getByTestId("agent-session-pause").click();
-    await expect(page.getByRole("dialog")).toContainText(
+    await page.getByTestId("agents-session-pause").click();
+    await expect(page.getByRole("dialog").last()).toContainText(
       "Pause this agent session?",
     );
     await page.getByTestId("agent-action-reason").fill("Stop the loop");
     await page.getByTestId("agent-action-confirm").click();
-    await expect(page.getByTestId("agent-pause-badge-session")).toBeVisible();
-    await expect(page.getByTestId("agent-session-resume")).toBeVisible();
+    await expect(
+      page.getByTestId("agent-pause-badge-session").first(),
+    ).toBeVisible();
+    await expect(page.getByTestId("agents-session-resume")).toBeVisible();
     const paused = await readAgentSession(
       board.api,
       board.id,
@@ -143,9 +144,9 @@ test("pauses and resumes a session with a reason", async ({
     expect(paused.paused).toBe(true);
     expect(paused.pausedReason).toBe("Stop the loop");
 
-    await page.getByTestId("agent-session-resume").click();
+    await page.getByTestId("agents-session-resume").click();
     await page.getByTestId("agent-action-confirm").click();
-    await expect(page.getByTestId("agent-session-pause")).toBeVisible();
+    await expect(page.getByTestId("agents-session-pause")).toBeVisible();
     const resumed = await readAgentSession(
       board.api,
       board.id,
@@ -170,19 +171,18 @@ test("ends a session with a final status and hides its controls", async ({
   try {
     await board.open(page);
     await openAgents(page);
-    await page
-      .getByTestId("agent-row")
-      .filter({ hasText: "Finishing agent" })
-      .click();
-    await page.getByTestId("agent-session-end").click();
-    await expect(page.getByRole("dialog")).toContainText(
+    await page.getByTestId(`agent-session-row-${agent.session.id}`).click();
+    await page.getByTestId("agents-session-end").click();
+    await expect(page.getByRole("dialog").last()).toContainText(
       "End this agent session?",
     );
     await page.getByTestId("agent-action-summary").fill("Queue drained");
     await page.getByTestId("agent-action-confirm").click();
 
-    await expect(page.getByTestId("agent-status-completed")).toBeVisible();
-    await expect(page.getByTestId("agent-session-end")).toHaveCount(0);
+    await expect(
+      page.getByTestId("agent-status-completed").first(),
+    ).toBeVisible();
+    await expect(page.getByTestId("agents-session-end")).toHaveCount(0);
     const ended = await readAgentSession(board.api, board.id, agent.session.id);
     expect(ended.status).toBe("completed");
     expect(ended.endedAt).not.toBeNull();
@@ -209,7 +209,7 @@ test("shows the empty state and then follows a new session over SSE", async ({
   try {
     // No reload: the `agent.started` frame refreshes the affected board.
     await expect(
-      page.getByTestId("agent-row").filter({ hasText: "SSE session" }),
+      page.getByTestId(`agent-session-row-${agent.session.id}`),
     ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("agents-empty")).not.toBeVisible();
   } finally {

@@ -309,8 +309,9 @@ test("board pause blocks new agent writes while reads stay available", async ({
     "false",
   );
 
-  await page.getByTestId("board-pause-reason").fill("Release freeze");
   await page.getByTestId("board-pause").click();
+  await page.getByTestId("board-pause-reason").fill("Release freeze");
+  await page.getByTestId("board-pause-confirm").click();
   await expect(page.getByTestId("board-pause-status")).toHaveAttribute(
     "data-paused",
     "true",
@@ -339,6 +340,7 @@ test("board pause blocks new agent writes while reads stay available", async ({
   expect((await pat.get(`/api/v1/boards/${board.id}`)).status()).toBe(200);
 
   await page.getByTestId("board-resume").click();
+  await page.getByTestId("board-resume-confirm").click();
   await expect(page.getByTestId("board-pause-status")).toHaveAttribute(
     "data-paused",
     "false",
@@ -379,8 +381,8 @@ test("session pause blocks only writes carrying that session id", async ({
   const row = page.getByTestId(`agent-session-row-${session.id}`);
   await expect(row).toBeVisible();
   await row.getByTestId("agent-session-pause").click();
-  await page.getByTestId("agent-session-pause-reason").fill("Review changes");
-  await page.getByTestId("agent-session-pause-confirm").click();
+  await page.getByTestId("agent-action-reason").fill("Review changes");
+  await page.getByTestId("agent-action-confirm").click();
   await expect(row.getByTestId("agent-session-paused")).toBeVisible();
 
   const blocked = await pat.post(`/api/v1/boards/${board.id}/commands`, {
@@ -401,6 +403,7 @@ test("session pause blocks only writes carrying that session id", async ({
   expect((await blocked.json()).code).toBe("agent_paused");
 
   await row.getByTestId("agent-session-resume").click();
+  await page.getByTestId("agent-action-confirm").click();
   await expect(row.getByTestId("agent-session-paused")).toHaveCount(0);
   const allowed = await pat.post(`/api/v1/boards/${board.id}/commands`, {
     headers: { "X-Agent-Session": session.id },

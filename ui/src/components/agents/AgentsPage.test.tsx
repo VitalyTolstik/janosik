@@ -24,25 +24,41 @@ const hoisted = vi.hoisted(() => ({
   listRuns: vi.fn(),
 }));
 
-vi.mock("@/api/client", () => ({
-  isApiEnabled: () => true,
-  api: {
-    listBoards: hoisted.listBoards,
-    listTokens: hoisted.listTokens,
-    me: hoisted.me,
-    listAgentSessions: hoisted.listAgentSessions,
-    pauseAgentSession: hoisted.pauseAgentSession,
-    resumeAgentSession: hoisted.resumeAgentSession,
-    endAgentSession: hoisted.endAgentSession,
-    listApprovals: hoisted.listApprovals,
-    getApproval: hoisted.getApproval,
-    decideApproval: hoisted.decideApproval,
-    cancelApproval: hoisted.cancelApproval,
-    getBoard: hoisted.getBoard,
-    listMembers: hoisted.listMembers,
-    listRuns: hoisted.listRuns,
-  },
-}));
+vi.mock("@/api/client", () => {
+  class ApiError extends Error {
+    constructor(
+      readonly status: number,
+      readonly body: unknown,
+      message?: string,
+    ) {
+      super(message ?? `HTTP ${status}`);
+      this.name = "ApiError";
+    }
+    get offline(): boolean {
+      return this.status === 0;
+    }
+  }
+  return {
+    ApiError,
+    isApiEnabled: () => true,
+    api: {
+      listBoards: hoisted.listBoards,
+      listTokens: hoisted.listTokens,
+      me: hoisted.me,
+      listAgentSessions: hoisted.listAgentSessions,
+      pauseAgentSession: hoisted.pauseAgentSession,
+      resumeAgentSession: hoisted.resumeAgentSession,
+      endAgentSession: hoisted.endAgentSession,
+      listApprovals: hoisted.listApprovals,
+      getApproval: hoisted.getApproval,
+      decideApproval: hoisted.decideApproval,
+      cancelApproval: hoisted.cancelApproval,
+      getBoard: hoisted.getBoard,
+      listMembers: hoisted.listMembers,
+      listRuns: hoisted.listRuns,
+    },
+  };
+});
 
 vi.mock("@/store/BoardContext", () => ({
   useBoard: () => ({ boards: [] }),
@@ -230,7 +246,7 @@ describe("AgentsPage", () => {
       "may be out of date",
     );
     expect(screen.getByText("Docs agent")).toBeInTheDocument();
-    expect(screen.getByText("QA agent")).toBeInTheDocument();
+    expect(screen.getAllByText("QA agent").length).toBeGreaterThan(0);
     expect(screen.getByText("Data may be out of date")).toBeInTheDocument();
     expect(screen.getByTestId("agents-updated")).toHaveTextContent(
       "incomplete",
@@ -323,9 +339,9 @@ describe("AgentsPage", () => {
     ]);
     renderPage("/agents?section=attention");
 
-    expect(
-      await screen.findByTestId("agents-attention-clear"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-attention-clear")).toBeInTheDocument(),
+    );
     expect(screen.queryByTestId("agents-approval-list")).toBeNull();
   });
 
@@ -401,27 +417,58 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("approval-reject")).toBeNull();
   });
 
-  it("groups sessions by agent and shows the board, status and heartbeat", async () => {
+  it("groups sessions board-first and shows the board, status and heartbeat", async () => {
     renderPage("/agents?section=sessions");
 
-    expect(await screen.findByTestId("agents-list")).toBeInTheDocument();
-    const rows = screen.getAllByTestId("agent-row");
-    expect(rows).toHaveLength(2);
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
+    const rows = screen.getAllByTestId(/^agent-session-row-/);
+    expect(rows).toHaveLength(3);
     const qa = rows.find((row) => row.textContent?.includes("QA agent"))!;
     const docs = rows.find((row) => row.textContent?.includes("Docs agent"))!;
     expect(qa).toHaveTextContent("Launch");
     expect(docs).toHaveTextContent("Docs");
-    expect(screen.getAllByTestId("agent-last-seen").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("agent-heartbeat").length).toBeGreaterThan(0);
+    expect(
+      screen.getByTestId("agents-board-group-board-1"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agents-board-group-board-2"),
+    ).toBeInTheDocument();
   });
 
   it("filters by status from the URL without a round-trip", async () => {
     renderPage("/agents?section=sessions&status=completed");
 
-    expect(await screen.findByTestId("agents-list")).toBeInTheDocument();
-    const rows = screen.getAllByTestId("agent-row");
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
+    const rows = screen.getAllByTestId(/^agent-session-row-/);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toHaveTextContent("QA agent");
     expect(rows[0]).toHaveTextContent("Completed");
+  });
+
+  it("groups by token and keeps the old ?token= filter link working", async () => {
+    renderPage("/agents?section=sessions&group=token&token=token-2");
+
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agents-token-group-token-2"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-token-group-token-1")).toBeNull();
+    expect(screen.getAllByTestId(/^agent-session-row-/)).toHaveLength(1);
+    expect(screen.getByTestId("agents-session-group-token")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("agents-session-group-board")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("shows the filtered empty state and clears it", async () => {
@@ -431,7 +478,9 @@ describe("AgentsPage", () => {
       await screen.findByTestId("agents-filtered-empty"),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByTestId("agents-clear-filters"));
-    expect(await screen.findByTestId("agents-list")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
   });
 
   it("shows the sessions empty state when no agent has ever run", async () => {
@@ -457,7 +506,7 @@ describe("AgentsPage", () => {
     hoisted.listAgentSessions.mockResolvedValue([session()]);
     await userEvent.click(screen.getByTestId("agents-retry"));
     await waitFor(() =>
-      expect(screen.getByTestId("agents-list")).toBeInTheDocument(),
+      expect(screen.getByTestId("agents-session-list")).toBeInTheDocument(),
     );
   });
   it("defaults to Attention, switches sections, and preserves board scope", async () => {
@@ -470,7 +519,7 @@ describe("AgentsPage", () => {
       "page",
     );
     await userEvent.click(screen.getByTestId("agents-section-sessions"));
-    expect(await screen.findByTestId("agents-list")).toHaveTextContent(
+    expect(await screen.findByTestId("agents-session-list")).toHaveTextContent(
       "QA agent",
     );
     expect(
@@ -500,7 +549,7 @@ describe("AgentsPage", () => {
     );
     await userEvent.click(screen.getByTestId("agents-refresh"));
     await waitFor(() => expect(screen.queryByText("Docs agent")).toBeNull());
-    expect(screen.getByText("QA agent")).toBeInTheDocument();
+    expect(screen.getAllByText("QA agent").length).toBeGreaterThan(0);
     expect(screen.getByTestId("agents-updated")).toHaveTextContent(
       "incomplete",
     );
@@ -516,7 +565,9 @@ describe("AgentsPage", () => {
         name: "All boards",
       }),
     );
-    expect(await screen.findByTestId("agents-list")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
   });
 
   it("offers API keys and documentation when there are no sessions", async () => {
@@ -536,14 +587,223 @@ describe("AgentsPage", () => {
   });
   it("honors session links and clears a missing selection", async () => {
     renderPage("/agents?section=sessions&board=board-1&session=missing");
-    expect(
-      await screen.findByTestId("agents-filtered-empty"),
-    ).toBeInTheDocument();
-    await userEvent.click(screen.getByTestId("agents-clear-filters"));
-    expect(await screen.findByTestId("agents-list")).toHaveTextContent(
+    expect(await screen.findByTestId("agents-session-list")).toHaveTextContent(
       "QA agent",
     );
-    expect(screen.getByTestId("agents-list")).toHaveTextContent("Docs agent");
+    expect(
+      await screen.findByTestId("agents-session-detail-missing"),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear selection" }),
+    );
+    expect(await screen.findByTestId("agents-session-list")).toHaveTextContent(
+      "QA agent",
+    );
+    expect(screen.queryByTestId("agents-session-detail-missing")).toBeNull();
+  });
+
+  it("keeps the real lifecycle and renders heartbeat separately", async () => {
+    const now = Date.now();
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId !== "board-1"
+          ? []
+          : [
+              session({
+                id: "active-stale",
+                status: "active",
+                stale: true,
+                lastHeartbeatAt: now - 6 * 60_000,
+              }),
+              session({ id: "idle", status: "idle", name: "Idle session" }),
+              session({
+                id: "waiting",
+                status: "waiting_approval",
+                name: "Waiting session",
+              }),
+              session({
+                id: "completed",
+                status: "completed",
+                name: "Completed session",
+                endedAt: now - 1_000,
+              }),
+              session({
+                id: "failed",
+                status: "failed",
+                name: "Failed session",
+                endedAt: now - 1_000,
+              }),
+              session({
+                id: "cancelled",
+                status: "cancelled",
+                name: "Cancelled session",
+                endedAt: now - 1_000,
+              }),
+            ],
+      ),
+    );
+    renderPage("/agents?section=sessions&board=board-1");
+
+    const list = await screen.findByTestId("agents-session-list");
+    for (const status of [
+      "active",
+      "idle",
+      "waiting_approval",
+      "completed",
+      "failed",
+      "cancelled",
+    ]) {
+      expect(
+        within(list).getByTestId(`agent-status-${status}`),
+      ).toBeInTheDocument();
+    }
+    const staleRow = screen.getByTestId("agent-session-row-active-stale");
+    expect(
+      within(staleRow).getByTestId("agent-status-active"),
+    ).toHaveTextContent("Active");
+    expect(within(staleRow).queryByText("Stale")).toBeNull();
+    const heartbeat = within(staleRow).getByTestId("agent-heartbeat");
+    expect(heartbeat).toHaveAttribute("data-stale", "true");
+    expect(heartbeat).toHaveTextContent("No heartbeat · 6m");
+    expect(screen.queryByTestId("agent-stale-badge")).toBeNull();
+    expect(screen.queryByText("Stale")).toBeNull();
+  });
+
+  it("pauses, resumes and ends a session with confirm and busy/error states", async () => {
+    hoisted.pauseAgentSession.mockResolvedValue(
+      session({
+        paused: true,
+        pausedAt: Date.now(),
+        pausedBy: "user-1",
+        pausedReason: "Review",
+        pauseScope: "session",
+      }),
+    );
+    hoisted.resumeAgentSession.mockResolvedValue(session());
+    hoisted.endAgentSession.mockResolvedValue(
+      session({
+        status: "completed",
+        endedAt: Date.now(),
+        endReason: "completed",
+      }),
+    );
+    renderPage("/agents?section=sessions&board=board-1&session=session-1");
+
+    expect(
+      await screen.findByTestId("agents-session-detail-hint"),
+    ).toHaveTextContent("Agent writes are allowed");
+    expect(screen.getByText(/Claims are not released/)).toBeInTheDocument();
+    expect(screen.getByText(/release-claim/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("agents-session-pause"));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Pause this agent session?",
+    );
+    await userEvent.type(screen.getByTestId("agent-action-reason"), "Review");
+    await userEvent.click(screen.getByTestId("agent-action-confirm"));
+    await waitFor(() =>
+      expect(hoisted.pauseAgentSession).toHaveBeenCalledWith(
+        "board-1",
+        "session-1",
+        "Review",
+      ),
+    );
+    expect(
+      (await screen.findAllByTestId("agent-pause-badge-session")).length,
+    ).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByTestId("agents-session-resume"));
+    await userEvent.click(await screen.findByTestId("agent-action-confirm"));
+    await waitFor(() =>
+      expect(hoisted.resumeAgentSession).toHaveBeenCalledWith(
+        "board-1",
+        "session-1",
+        undefined,
+      ),
+    );
+
+    await userEvent.click(screen.getByTestId("agents-session-end"));
+    await userEvent.type(screen.getByTestId("agent-action-summary"), "Done");
+    await userEvent.click(screen.getByTestId("agent-action-confirm"));
+    await waitFor(() =>
+      expect(hoisted.endAgentSession).toHaveBeenCalledWith(
+        "board-1",
+        "session-1",
+        { status: "completed", summary: "Done" },
+      ),
+    );
+    expect(
+      (await screen.findAllByTestId("agent-status-completed")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByTestId("agents-session-pause")).toBeNull();
+    expect(screen.queryByTestId("agents-session-resume")).toBeNull();
+    expect(screen.queryByTestId("agents-session-end")).toBeNull();
+  });
+
+  it("keeps the action dialog open and reports a busy/error failure", async () => {
+    hoisted.pauseAgentSession.mockRejectedValue({ status: 500 });
+    renderPage("/agents?section=sessions&board=board-1&session=session-1");
+
+    await userEvent.click(await screen.findByTestId("agents-session-pause"));
+    await userEvent.click(await screen.findByTestId("agent-action-confirm"));
+    expect(
+      await screen.findByText("Could not update the session"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-action-confirm")).toBeEnabled();
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Pause this agent session?",
+    );
+  });
+
+  it("hides every session action on a terminal session", async () => {
+    renderPage("/agents?section=sessions&board=board-1&session=session-2");
+
+    expect(
+      await screen.findByTestId("agents-session-detail-hint"),
+    ).toHaveTextContent("This session completed");
+    expect(screen.queryByTestId("agents-session-pause")).toBeNull();
+    expect(screen.queryByTestId("agents-session-resume")).toBeNull();
+    expect(screen.queryByTestId("agents-session-end")).toBeNull();
+    expect(screen.queryByTestId("agents-session-open-board")).toBeNull();
+  });
+
+  it("shows token settings only for the caller's own token", async () => {
+    hoisted.listTokens.mockResolvedValue([{ id: "token-1", name: "QA agent" }]);
+    const own = renderPage(
+      "/agents?section=sessions&board=board-1&session=session-1",
+    );
+    expect(
+      await screen.findByTestId("agents-session-token-settings"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agents-session-token-settings-readonly"),
+    ).toBeNull();
+    own.unmount();
+
+    renderPage("/agents?section=sessions&board=board-2&session=session-3");
+    expect(
+      await screen.findByTestId("agents-session-token-settings-readonly"),
+    ).toHaveTextContent("Other member's token");
+    expect(screen.queryByTestId("agents-session-token-settings")).toBeNull();
+  });
+
+  it("keeps the master-detail sheet and 44px actions on mobile", async () => {
+    renderPage("/agents?section=sessions&board=board-1&session=session-1");
+
+    expect(
+      await screen.findByTestId("agents-session-detail-back"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agents-session-sheet-scrim"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("agents-session-pause").className).toContain(
+      "min-h-11",
+    );
+    await userEvent.click(screen.getByTestId("agents-session-detail-back"));
+    expect(screen.queryByTestId("agents-session-sheet-scrim")).toBeNull();
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
   });
 
   it("limits concurrent board requests to four", async () => {

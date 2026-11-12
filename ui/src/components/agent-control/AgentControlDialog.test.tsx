@@ -6,6 +6,7 @@ import type {
   AgentSessionDto,
   ApprovalRequestDto,
   Board,
+  UserTokenDto,
 } from "@janosik/shared";
 
 import { api } from "@/api/client";
@@ -115,6 +116,30 @@ function session(overrides: Partial<AgentSessionDto> = {}): AgentSessionDto {
   };
 }
 
+function token(overrides: Partial<UserTokenDto> = {}): UserTokenDto {
+  return {
+    id: "token-1",
+    name: "QA agent",
+    createdAt: 1,
+    lastUsedAt: null,
+    expiresAt: null,
+    revokedAt: null,
+    boardId: null,
+    readOnly: false,
+    rateLimitPerMinute: null,
+    scopePreset: "worker",
+    trustedCi: false,
+    individualPausedAt: null,
+    individualPausedBy: null,
+    individualPausedReason: null,
+    stopAllPausedAt: null,
+    stopAllPausedBy: null,
+    paused: false,
+    effectiveTokenScope: "worker",
+    ...overrides,
+  };
+}
+
 let live: BoardLive;
 let onOpenChange: (open: boolean) => void;
 
@@ -155,6 +180,9 @@ describe("agent control (TASK-166.14)", () => {
     vi.restoreAllMocks();
     mocks.role = "ADMIN";
     live = createBoardLive();
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listApprovals").mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -279,6 +307,10 @@ describe("agent control (TASK-166.14)", () => {
       "aria-selected",
       "true",
     );
+    expect(await screen.findByTestId("board-pause-status")).toHaveAttribute(
+      "data-paused",
+      "false",
+    );
     expect(list).not.toHaveBeenCalled();
     expect(screen.queryByTestId("approval-approve")).toBeNull();
   });
@@ -386,11 +418,13 @@ describe("agent control (TASK-166.14)", () => {
     const boardStatus = await screen.findByTestId("board-pause-status");
     expect(boardStatus).toHaveAttribute("data-paused", "false");
 
+    await userEvent.click(screen.getByTestId("board-pause"));
+    expect(await screen.findByTestId("board-pause-dialog")).toBeInTheDocument();
     await userEvent.type(
       screen.getByTestId("board-pause-reason"),
       "Release freeze",
     );
-    await userEvent.click(screen.getByTestId("board-pause"));
+    await userEvent.click(screen.getByTestId("board-pause-confirm"));
     await waitFor(() =>
       expect(pauseBoard).toHaveBeenCalledWith("board-1", "Release freeze"),
     );
@@ -400,16 +434,19 @@ describe("agent control (TASK-166.14)", () => {
     );
 
     await userEvent.click(screen.getByTestId("board-resume"));
-    await waitFor(() => expect(resumeBoard).toHaveBeenCalledWith("board-1"));
+    expect(
+      await screen.findByTestId("board-resume-dialog"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("board-resume-confirm"));
+    await waitFor(() =>
+      expect(resumeBoard).toHaveBeenCalledWith("board-1", undefined),
+    );
 
     const row = await screen.findByTestId("agent-session-row-session-1");
     expect(within(row).getByText("Release bot")).toBeInTheDocument();
     await userEvent.click(within(row).getByTestId("agent-session-pause"));
-    await userEvent.type(
-      screen.getByTestId("agent-session-pause-reason"),
-      "Review",
-    );
-    await userEvent.click(screen.getByTestId("agent-session-pause-confirm"));
+    await userEvent.type(screen.getByTestId("agent-action-reason"), "Review");
+    await userEvent.click(screen.getByTestId("agent-action-confirm"));
     await waitFor(() =>
       expect(pauseSession).toHaveBeenCalledWith(
         "board-1",
@@ -422,8 +459,130 @@ describe("agent control (TASK-166.14)", () => {
       await screen.findByTestId("agent-session-paused"),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByTestId("agent-session-resume"));
+    await userEvent.click(await screen.findByTestId("agent-action-confirm"));
     await waitFor(() =>
-      expect(resumeSession).toHaveBeenCalledWith("board-1", "session-1"),
+      expect(resumeSession).toHaveBeenCalledWith(
+        "board-1",
+        "session-1",
+        undefined,
+      ),
+    );
+  });
+
+  it("shows lifecycle and heartbeat separately, and hides terminal actions", async () => {
+    const staleActive = session({
+      id: "stale-active",
+      stale: true,
+      lastHeartbeatAt: Date.now() - 6 * 60_000,
+    });
+    const completed = session({
+      id: "completed",
+      status: "completed",
+      endedAt: Date.now() - 1_000,
+      lastHeartbeatAt: Date.now() - 1_100,
+    });
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+      staleActive,
+      completed,
+    ]);
+
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    const staleRow = await screen.findByTestId(
+      "agent-session-row-stale-active",
+    );
+    expect(
+      within(staleRow).getByTestId("agent-status-active"),
+    ).toHaveTextContent("Active");
+    expect(staleRow).toHaveTextContent("No heartbeat · 6m");
+    expect(within(staleRow).queryByText("Stale")).toBeNull();
+    const terminalRow = screen.getByTestId("agent-session-row-completed");
+    expect(
+      within(terminalRow).getByTestId("agent-status-completed"),
+    ).toHaveTextContent("Completed");
+    expect(within(terminalRow).queryByTestId("agent-session-pause")).toBeNull();
+    expect(
+      within(terminalRow).queryByTestId("agent-session-resume"),
+    ).toBeNull();
+    expect(within(terminalRow).queryByTestId("agent-session-end")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Stop token|Stop all/i }),
+    ).toBeNull();
+  });
+
+  it("links token settings only for the caller's own token", async () => {
+    vi.spyOn(api, "listTokens").mockResolvedValue([
+      token({ id: "token-1", name: "QA agent" }),
+    ]);
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+      session({ id: "own", apiTokenId: "token-1" }),
+      session({
+        id: "other",
+        apiTokenId: "token-2",
+        name: "Other session",
+      }),
+    ]);
+
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    expect(
+      await screen.findByTestId("agent-live-token-settings-token-1"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agent-live-token-settings-token-2-readonly"),
+    ).toHaveTextContent("Other member's token");
+    expect(
+      screen.queryByTestId("agent-live-token-settings-token-2"),
+    ).toBeNull();
+  });
+
+  it("keeps the board pause dialog open with an inline error", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+    vi.spyOn(api, "pauseBoardAgents").mockRejectedValue({ status: 500 });
+
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    await userEvent.click(await screen.findByTestId("board-pause"));
+    await userEvent.click(await screen.findByTestId("board-pause-confirm"));
+
+    expect(await screen.findByTestId("board-pause-error")).toHaveTextContent(
+      "Could not complete the action",
+    );
+    expect(screen.getByTestId("board-pause-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("board-pause-confirm")).toBeEnabled();
+    expect(
+      screen.getByText("Pause all agents on this board?"),
+    ).toBeInTheDocument();
+  });
+
+  it("ends a live session from the Live panel and removes its row", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+    const end = vi.spyOn(api, "endAgentSession").mockResolvedValue(
+      session({
+        status: "completed",
+        endedAt: Date.now(),
+        endReason: "completed",
+      }),
+    );
+
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    const row = await screen.findByTestId("agent-session-row-session-1");
+    await userEvent.click(within(row).getByTestId("agent-session-end"));
+    expect(
+      await screen.findByText("End this agent session?"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("agent-action-confirm"));
+
+    await waitFor(() =>
+      expect(end).toHaveBeenCalledWith("board-1", "session-1", {
+        status: "completed",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-session-row-session-1")).toBeNull(),
     );
   });
 });
