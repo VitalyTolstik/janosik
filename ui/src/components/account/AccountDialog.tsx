@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   Bot,
@@ -67,12 +67,33 @@ const SECTIONS: {
  * Rendered without a server session (local mode, tests) the trigger simply
  * disappears — same guard the sign-out button used before it.
  */
-export function AccountDialog({ onOpenAgents }: { onOpenAgents?: () => void }) {
+export function AccountDialog({
+  onOpenAgents,
+  compact = false,
+}: {
+  onOpenAgents?: () => void;
+  compact?: boolean;
+}) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const externalTrigger = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const openTokens = () => {
+      externalTrigger.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      setSection("tokens");
+      setOpen(true);
+    };
+    window.addEventListener("janosik:open-api-keys", openTokens);
+    return () =>
+      window.removeEventListener("janosik:open-api-keys", openTokens);
+  }, []);
 
   if (!isApiEnabled() || user === null) {
     return null;
@@ -100,12 +121,20 @@ export function AccountDialog({ onOpenAgents }: { onOpenAgents?: () => void }) {
                 avatarPath={user.avatarPath}
                 size="sm"
               />
-              <span className="hidden max-w-28 truncate text-sm sm:inline">
+              <span
+                className={cn(
+                  "hidden max-w-28 truncate text-sm",
+                  !compact && "sm:inline",
+                )}
+              >
                 {name}
               </span>
               <ChevronDown
                 aria-hidden
-                className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block"
+                className={cn(
+                  "hidden h-3.5 w-3.5 shrink-0 text-muted-foreground",
+                  !compact && "sm:block",
+                )}
               />
             </Button>
           </DialogTrigger>
@@ -114,6 +143,13 @@ export function AccountDialog({ onOpenAgents }: { onOpenAgents?: () => void }) {
       </Tooltip>
 
       <DialogContent
+        onCloseAutoFocus={(event) => {
+          if (externalTrigger.current?.isConnected) {
+            event.preventDefault();
+            externalTrigger.current.focus();
+          }
+          externalTrigger.current = null;
+        }}
         data-testid="account-dialog"
         // Fixed, viewport-bound height: sections differ in content length,
         // so the panel must not resize when switching tabs. Caps at 48rem on

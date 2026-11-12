@@ -65,6 +65,30 @@ test("the rail opens a column, allows a rule and saves it", async ({
   ).toHaveAttribute("aria-pressed", "true");
 });
 
+test("wide screens fit the transition matrix next to its inspector", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1465, height: 1243 });
+  for (const name of ["Backlog", "In progress", "Blocked", "Review", "Done"]) {
+    await board.column(name);
+  }
+  await board.open(page);
+  const dialog = await openBoardSettings(page);
+  await showWorkflowMatrix(page);
+  const box = await dialog.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThan(1300);
+  await expect(dialog.getByTestId("workflow-inspector")).toBeVisible();
+  expect(
+    await dialog.getByTestId("workflow-matrix-grid").evaluate((grid) => {
+      const container = grid.parentElement;
+      return (
+        container !== null && container.scrollWidth <= container.clientWidth
+      );
+    }),
+  ).toBe(true);
+});
+
 test("Escape on a dirty draft asks before closing", async ({ page, board }) => {
   await board.column("Backlog");
   const doing = await board.column("Doing");

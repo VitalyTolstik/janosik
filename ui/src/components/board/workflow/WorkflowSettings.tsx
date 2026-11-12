@@ -52,6 +52,7 @@ export interface WorkflowSettingsProps {
   testIdPrefix?: string;
   /** Dialog shell (default) or the master panel's embedded page. */
   variant?: "dialog" | "embedded";
+  insideSettingsShell?: boolean;
 }
 
 /**
@@ -76,6 +77,7 @@ export function WorkflowSettings({
   onDirtyChange,
   testIdPrefix = "workflow",
   variant = "embedded",
+  insideSettingsShell = false,
 }: WorkflowSettingsProps) {
   const { t } = useI18n();
   const controller = useWorkflowDraft({
@@ -211,26 +213,28 @@ export function WorkflowSettings({
       aria-busy={saving || undefined}
     >
       <header className="flex shrink-0 items-start gap-[18px] border-b border-border/75 px-5 pb-[15px] pt-[17px] max-md:flex-wrap max-md:gap-2 max-md:px-3.5 max-md:pb-3 max-md:pt-[13px]">
-        <div className="min-w-0">
-          {variant === "dialog" ? (
-            <DialogTitle className="m-0 text-lg font-semibold leading-[1.2] tracking-[-0.025em] text-foreground max-md:text-base">
-              {t("board.settings.title")}
-            </DialogTitle>
-          ) : (
-            <h2 className="m-0 text-lg font-semibold leading-[1.2] tracking-[-0.025em] text-foreground max-md:text-base">
-              {t("workflow.title")}
-            </h2>
-          )}
-          {variant === "dialog" ? (
-            <DialogDescription className="mt-1 max-w-[66ch] text-[12.5px] leading-[1.48] text-muted-foreground max-md:text-[11px]">
-              {t("board.settings.subtitle")}
-            </DialogDescription>
-          ) : (
-            <p className="mt-1 max-w-[66ch] text-[12.5px] leading-[1.48] text-muted-foreground max-md:text-[11px]">
-              {t("workflow.subtitle")}
-            </p>
-          )}
-        </div>
+        {!insideSettingsShell ? (
+          <div className="min-w-0">
+            {variant === "dialog" ? (
+              <DialogTitle className="m-0 text-lg font-semibold leading-[1.2] tracking-[-0.025em] text-foreground max-md:text-base">
+                {t("board.settings.title")}
+              </DialogTitle>
+            ) : (
+              <h2 className="m-0 text-lg font-semibold leading-[1.2] tracking-[-0.025em] text-foreground max-md:text-base">
+                {t("workflow.title")}
+              </h2>
+            )}
+            {variant === "dialog" ? (
+              <DialogDescription className="mt-1 max-w-[66ch] text-[12.5px] leading-[1.48] text-muted-foreground max-md:text-[11px]">
+                {t("board.settings.subtitle")}
+              </DialogDescription>
+            ) : (
+              <p className="mt-1 max-w-[66ch] text-[12.5px] leading-[1.48] text-muted-foreground max-md:text-[11px]">
+                {t("workflow.subtitle")}
+              </p>
+            )}
+          </div>
+        ) : null}
 
         <div className="ml-auto flex flex-none items-center gap-[9px] max-md:ml-0 max-md:w-full max-md:justify-end">
           <div
@@ -319,7 +323,7 @@ export function WorkflowSettings({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {variant === "dialog" ? (
+          {variant === "dialog" && !insideSettingsShell ? (
             <DialogClose asChild>
               <button
                 type="button"

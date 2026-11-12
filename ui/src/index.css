@@ -37,6 +37,9 @@ body.janosik-touch-dragging {
 @theme inline {
   /* Wordmark display font — the family stack comes from the brand tokens. */
   --font-display: var(--janosik-font-display);
+  --font-agent-surface:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

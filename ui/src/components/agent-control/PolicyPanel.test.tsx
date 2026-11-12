@@ -110,7 +110,6 @@ describe("PolicyPanel (TASK-166.15)", () => {
       screen.getByTestId("agent-policy-effective-limits"),
     ).toHaveTextContent("100");
 
-    await userEvent.click(screen.getByTestId("agent-policy-destructive"));
     await userEvent.click(
       screen.getByTestId("agent-policy-destructive-option-deny"),
     );

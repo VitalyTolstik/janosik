@@ -179,7 +179,7 @@ test("policy edit, stale-version CAS and reset work from the dashboard", async (
 }) => {
   await board.open(page);
   await openAgentControl(page);
-  await page.getByTestId("agent-policy-tab").click();
+  await page.getByTestId("agent-open-policy").click();
 
   await expect(page.getByTestId("agent-policy-version")).toContainText(
     "Version 1",
@@ -189,8 +189,10 @@ test("policy edit, stale-version CAS and reset work from the dashboard", async (
   );
 
   await page.getByTestId("agent-policy-max-commands").fill("7");
+  await page.getByTestId("board-settings-workflow").click();
+  await page.getByTestId("board-settings-agents").click();
+  await expect(page.getByTestId("agent-policy-max-commands")).toHaveValue("7");
   await page.getByTestId("agent-policy-require-move_to_done").click();
-  await page.getByTestId("agent-policy-destructive").click();
   await page.getByTestId("agent-policy-destructive-option-deny").click();
   await page.getByTestId("agent-policy-save").click();
 
@@ -312,10 +314,11 @@ test("a member reads run history and previews conflicts but cannot apply", async
     await expect(memberPage.getByTestId("agent-runs-trigger")).toBeVisible();
     await memberPage.getByTestId("agent-runs-trigger").click();
     await expect(memberPage.getByTestId("agent-control-dialog")).toBeVisible();
-    await expect(memberPage.getByTestId("agent-runs-tab")).toHaveAttribute(
-      "aria-pressed",
+    await expect(memberPage.getByTestId("agent-pause-tab")).toHaveAttribute(
+      "aria-selected",
       "true",
     );
+    await memberPage.getByTestId("agent-runs-tab").click();
     await expect(
       memberPage.getByTestId(`agent-run-row-${run.runId}`),
     ).toBeVisible();

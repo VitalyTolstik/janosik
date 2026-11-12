@@ -20,7 +20,6 @@ import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { NumberStepper } from "@/components/ui/number-stepper";
-import { SelectField } from "@/components/ui/select-field";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDate, useI18n } from "@/i18n";
@@ -121,7 +120,13 @@ function policyError(error: unknown, t: Translate): string {
   return t("agentControl.error.generic");
 }
 
-export function PolicyPanel({ role }: { role: Role }) {
+export function PolicyPanel({
+  role,
+  onDirtyChange,
+}: {
+  role: Role;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const { t, lang } = useI18n();
   const toast = useToast();
   const { board } = useBoardState();
@@ -136,6 +141,7 @@ export function PolicyPanel({ role }: { role: Role }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
 
   const load = useCallback(() => {
     if (!admin || boardId === undefined || !isApiEnabled()) return;
@@ -185,6 +191,15 @@ export function PolicyPanel({ role }: { role: Role }) {
       approvalTtlMinutes: intInRange(draft.approvalTtlMinutes, 5, 1440),
     };
   }, [draft]);
+  const dirty =
+    state !== null &&
+    draft !== null &&
+    JSON.stringify(draft) !==
+      JSON.stringify(draftOf(state.policy ?? state.effective));
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
   const draftValid =
     limits !== null &&
     limits.maxCommandsPerRun !== null &&
@@ -303,10 +318,10 @@ export function PolicyPanel({ role }: { role: Role }) {
           </div>
         </SkeletonRegion>
       ) : (
-        <div className="space-y-4">
-          <header className="flex flex-wrap items-start justify-between gap-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <header className="order-1 flex flex-wrap items-start justify-between gap-2 lg:col-span-2">
             <div className="space-y-1">
-              <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <h3 className="flex items-center gap-2 font-display text-[17px] font-bold tracking-[-0.025em]">
                 <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
                 {t("agentControl.policy.title")}
               </h3>
@@ -326,7 +341,7 @@ export function PolicyPanel({ role }: { role: Role }) {
             data-testid="agent-policy-pause"
             data-paused={paused ? "true" : "false"}
             className={cn(
-              "flex flex-wrap items-start justify-between gap-2 rounded-lg border p-3",
+              "order-2 flex flex-wrap items-start justify-between gap-2 rounded-lg border p-3 lg:col-span-2",
               paused ? "border-warning/40 bg-warning/10" : "bg-muted/20",
             )}
           >
@@ -362,7 +377,7 @@ export function PolicyPanel({ role }: { role: Role }) {
             </span>
           </section>
 
-          <section className="space-y-2">
+          <section className="order-6 space-y-2 border-t pt-3 lg:col-span-2">
             <h4 className="text-xs font-semibold">
               {t("agentControl.policy.effectiveLimits")}
             </h4>
@@ -400,54 +415,87 @@ export function PolicyPanel({ role }: { role: Role }) {
             </p>
           </section>
 
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold">
+          <section className="order-3 space-y-2">
+            <h4 className="text-sm font-semibold">
               {t("agentControl.policy.destructiveTitle")}
             </h4>
-            <SelectField
-              value={draft.destructive}
-              options={[
-                {
-                  value: "approval",
-                  label: t("agentControl.policy.destructiveApproval"),
-                },
-                {
-                  value: "deny",
-                  label: t("agentControl.policy.destructiveDeny"),
-                },
-              ]}
-              onChange={(value) =>
-                setDraft((current) =>
-                  current === null
-                    ? current
-                    : { ...current, destructive: value },
-                )
-              }
-              ariaLabel={t("agentControl.policy.destructiveTitle")}
-              testId="agent-policy-destructive"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              {draft.destructive === "deny"
-                ? t("agentControl.policy.destructiveDenyHint")
-                : t("agentControl.policy.destructiveApprovalHint")}
-            </p>
+            <div
+              role="radiogroup"
+              aria-label={t("agentControl.policy.destructiveTitle")}
+              className="space-y-2"
+            >
+              {(["approval", "deny"] as const).map((value) => (
+                <label
+                  key={value}
+                  className={cn(
+                    "flex cursor-pointer gap-2 rounded-md border p-3 text-xs",
+                    draft.destructive === value
+                      ? "border-primary/60 bg-primary/5"
+                      : "border-border bg-background/30",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="agent-destructive"
+                    value={value}
+                    checked={draft.destructive === value}
+                    data-testid={`agent-policy-destructive-option-${value}`}
+                    onChange={() =>
+                      setDraft((current) =>
+                        current === null
+                          ? current
+                          : { ...current, destructive: value },
+                      )
+                    }
+                    className="mt-0.5 accent-primary"
+                  />
+                  <span>
+                    <span className="block font-semibold">
+                      {t(
+                        value === "approval"
+                          ? "agentControl.policy.destructiveApproval"
+                          : "agentControl.policy.destructiveDeny",
+                      )}
+                    </span>
+                    <span className="mt-1 block leading-5 text-muted-foreground">
+                      {t(
+                        value === "approval"
+                          ? "agentControl.policy.destructiveApprovalHint"
+                          : "agentControl.policy.destructiveDenyHint",
+                      )}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
           </section>
 
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold">
-              {t("agentControl.policy.approvalListTitle")}
-            </h4>
+          <section className="order-5 space-y-2 border-t pt-3 lg:col-span-2">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold">
+                {t("agentControl.policy.approvalListTitle")}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowKeys((value) => !value)}
+                className="min-h-9 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showKeys
+                  ? t("agentControl.shell.hideKeys")
+                  : t("agentControl.shell.showKeys")}
+              </button>
+            </div>
             <p className="text-[11px] text-muted-foreground">
               {t("agentControl.policy.approvalListHint")}
             </p>
             <div
-              className="grid gap-1.5 rounded-md border p-2 sm:grid-cols-2"
+              className="grid gap-x-4 sm:grid-cols-2"
               data-testid="agent-policy-require-list"
             >
               {BOARD_AGENT_POLICY_ACTIONS.map((action) => (
                 <label
                   key={action}
-                  className="flex cursor-pointer items-start gap-2 text-[11px]"
+                  className="flex min-h-9 cursor-pointer items-start gap-2 border-b border-border/60 py-2 text-xs"
                 >
                   <Checkbox
                     checked={draft.requireApprovalFor.includes(action)}
@@ -458,9 +506,11 @@ export function PolicyPanel({ role }: { role: Role }) {
                   />
                   <span>
                     <span className="block">{t(ACTION_KEYS[action])}</span>
-                    <code className="block text-[10px] text-muted-foreground">
-                      {action}
-                    </code>
+                    {showKeys ? (
+                      <code className="block text-[10px] text-muted-foreground">
+                        {action}
+                      </code>
+                    ) : null}
                   </span>
                 </label>
               ))}
@@ -470,8 +520,8 @@ export function PolicyPanel({ role }: { role: Role }) {
             </p>
           </section>
 
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold">
+          <section className="order-4 space-y-2">
+            <h4 className="text-sm font-semibold">
               {t("agentControl.policy.limitInputsTitle")}
             </h4>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -551,13 +601,13 @@ export function PolicyPanel({ role }: { role: Role }) {
             <p
               role="alert"
               data-testid="agent-policy-error"
-              className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger"
+              className="order-7 rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger lg:col-span-2"
             >
               {saveError}
             </p>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+          <div className="sticky bottom-0 z-10 order-8 flex flex-wrap items-center gap-2 border-t bg-popover py-3 lg:col-span-2">
             <Button
               type="button"
               size="sm"

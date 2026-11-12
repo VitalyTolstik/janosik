@@ -7,13 +7,13 @@ import type {
 } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
+import { useAgentSessionEvents } from "./use-agent-events";
 import { useBoard } from "@/store/BoardContext";
 import {
   groupAgents,
   type AgentGroup,
   type AgentSessionRow,
 } from "./agent-model";
-import { useAgentSessionEvents } from "./use-agent-events";
 
 /** How often the console re-reads sessions when no SSE frame arrives. */
 const POLL_MS = 30_000;
@@ -36,13 +36,15 @@ export interface AgentSessionsState {
   refreshBoard: (boardId: string) => Promise<void>;
   replaceSession: (session: AgentSessionDto) => void;
   lastLoadedAt: number | null;
+  staleBoardIds: string[];
 }
 
 /**
  * The agents console data: every board's agent sessions, merged and decorated
  * with board/token/card labels. The server exposes sessions per board only, so
  * the client fans out over the caller's boards (`GET /boards`), then keeps the
- * merged list live through the agent lifecycle SSE frames and a slow poll.
+ * merged list live with up to four agent event streams and a periodic poll
+ * covering every board.
  */
 export function useAgentSessions(): AgentSessionsState {
   const serverMode = isApiEnabled();
@@ -58,6 +60,9 @@ export function useAgentSessions(): AgentSessionsState {
   const generation = useRef(0);
   const inFlight = useRef(false);
   const failedBoards = useRef(new Set<string>());
+  const boardListFailed = useRef(false);
+  const [staleBoardIds, setStaleBoardIds] = useState<string[]>([]);
+  const summaryRef = useRef<BoardSummary[]>([]);
 
   const load = useCallback(
     async (kind: "initial" | "refresh"): Promise<void> => {
@@ -77,34 +82,33 @@ export function useAgentSessions(): AgentSessionsState {
           api.listTokens().catch(() => [] as UserTokenDto[]),
           api.me().catch(() => null),
         ]);
-        const results = await Promise.allSettled(
-          nextSummaries.map((board) => api.listAgentSessions(board.id)),
-        );
+        const results = await boundedSessions(nextSummaries);
         if (request !== generation.current) return;
         const merged: AgentSessionDto[] = [];
         let failures = 0;
         let firstFailureStatus: number | null = null;
         const failed = new Set<string>();
+        const revoked = new Set<string>();
         for (const [index, result] of results.entries()) {
           if (result.status === "fulfilled") {
             merged.push(...result.value);
           } else {
             failures += 1;
-            failed.add(nextSummaries[index].id);
             const status = statusOf(result.reason);
+            if (status === 403 || status === 404) {
+              revoked.add(nextSummaries[index].id);
+            } else {
+              failed.add(nextSummaries[index].id);
+            }
             if (firstFailureStatus === null) firstFailureStatus = status;
           }
         }
+        boardListFailed.current = false;
         failedBoards.current = failed;
-        // One board failing (a membership that just expired, a deleted
-        // board) must not blank a healthy list; only a total failure is an
-        // error the user has to see.
-        if (failures > 0 && failures === results.length) {
-          setError(true);
-          setErrorStatus(firstFailureStatus);
-          return;
-        }
-        setSummaries(nextSummaries);
+        setStaleBoardIds([...failed]);
+        const visible = nextSummaries.filter((board) => !revoked.has(board.id));
+        summaryRef.current = visible;
+        setSummaries(visible);
         setTokens(nextTokens);
         setMe(nextMe);
         setSessions((current) => [
@@ -117,6 +121,11 @@ export function useAgentSessions(): AgentSessionsState {
       } catch (error) {
         if (request !== generation.current) return;
         setError(true);
+        boardListFailed.current = true;
+        failedBoards.current = new Set(
+          summaryRef.current.map((board) => board.id),
+        );
+        setStaleBoardIds([...failedBoards.current]);
         setErrorStatus(statusOf(error));
       } finally {
         if (request === generation.current) {
@@ -133,8 +142,7 @@ export function useAgentSessions(): AgentSessionsState {
     void load("initial");
   }, [load]);
 
-  // Visibility-driven and periodic fallback: agent frames are live-only, so a
-  // tab that slept through one still reconciles without a reload.
+  // Poll all boards periodically and after returning to a sleeping tab.
   useEffect(() => {
     if (!serverMode) return;
     const timer = window.setInterval(() => {
@@ -153,6 +161,7 @@ export function useAgentSessions(): AgentSessionsState {
   const refreshBoard = useCallback(
     async (boardId: string): Promise<void> => {
       if (!serverMode) return;
+      const request = generation.current;
       try {
         // A brand-new token may not have existed at page load; refresh the
         // small token-name map alongside the affected board so the row shows
@@ -161,30 +170,53 @@ export function useAgentSessions(): AgentSessionsState {
           api.listAgentSessions(boardId),
           api.listTokens().catch(() => null),
         ]);
+        if (request !== generation.current) return;
         setSessions((current) => {
           if (current === null) return current;
           const others = current.filter((row) => row.boardId !== boardId);
           return [...others, ...next];
         });
         if (nextTokens !== null) setTokens(nextTokens);
-        setLastLoadedAt(Date.now());
         failedBoards.current.delete(boardId);
-        if (failedBoards.current.size === 0) {
+        setStaleBoardIds([...failedBoards.current]);
+        if (failedBoards.current.size === 0 && !boardListFailed.current) {
           setError(false);
           setErrorStatus(null);
         }
       } catch (error) {
+        if (request !== generation.current) return;
         // A background refresh is best effort: keep the rows but mark them
         // stale so the manual Retry and the poll have a visible reason.
         setError(true);
-        failedBoards.current.add(boardId);
-        setErrorStatus(statusOf(error));
+        const status = statusOf(error);
+        if (status === 403 || status === 404) {
+          generation.current += 1;
+          inFlight.current = false;
+          setRefreshing(false);
+          summaryRef.current = summaryRef.current.filter(
+            (board) => board.id !== boardId,
+          );
+          failedBoards.current.delete(boardId);
+          setSessions(
+            (current) =>
+              current?.filter((row) => row.boardId !== boardId) ?? current,
+          );
+          setSummaries((current) =>
+            current.filter((board) => board.id !== boardId),
+          );
+        } else {
+          failedBoards.current.add(boardId);
+        }
+        setStaleBoardIds([...failedBoards.current]);
+        setErrorStatus(status);
       }
     },
     [serverMode],
   );
 
   const replaceSession = useCallback((session: AgentSessionDto): void => {
+    if (!summaryRef.current.some((board) => board.id === session.boardId))
+      return;
     setSessions((current) => {
       if (current === null) return current;
       const index = current.findIndex((row) => row.id === session.id);
@@ -197,23 +229,42 @@ export function useAgentSessions(): AgentSessionsState {
       next[index] = session;
       return next;
     });
-    setLastLoadedAt(Date.now());
   }, []);
 
   const reload = useCallback(() => {
     void load("refresh");
   }, [load]);
 
-  const boardIds = useMemo(
-    () => summaries.map((summary) => summary.id),
+  // Keep live updates for a bounded number of boards; polling covers the rest.
+  const handleAccessLost = useCallback((boardId: string) => {
+    // Invalidate in-flight fan-outs so they cannot restore revoked rows.
+    generation.current += 1;
+    inFlight.current = false;
+    setRefreshing(false);
+    summaryRef.current = summaryRef.current.filter(
+      (board) => board.id !== boardId,
+    );
+    setSummaries(summaryRef.current);
+    setSessions(
+      (current) => current?.filter((row) => row.boardId !== boardId) ?? current,
+    );
+    failedBoards.current.delete(boardId);
+    setStaleBoardIds([...failedBoards.current]);
+    setError(true);
+    setErrorStatus(403);
+  }, []);
+
+  const liveBoards = useMemo(
+    () => summaries.slice(0, 4).map((board) => board.id),
     [summaries],
   );
   useAgentSessionEvents(
-    boardIds,
+    liveBoards,
     (boardId) => {
       void refreshBoard(boardId);
     },
     serverMode,
+    handleAccessLost,
   );
 
   const cardTitles = useMemo(() => {
@@ -261,6 +312,7 @@ export function useAgentSessions(): AgentSessionsState {
     refreshBoard,
     replaceSession,
     lastLoadedAt,
+    staleBoardIds,
   };
 }
 
@@ -271,4 +323,31 @@ function statusOf(error: unknown): number | null {
   }
   const status = (error as { status?: unknown }).status;
   return typeof status === "number" ? status : null;
+}
+
+// Limit simultaneous requests for accounts with many boards.
+async function boundedSessions(
+  boards: BoardSummary[],
+): Promise<PromiseSettledResult<AgentSessionDto[]>[]> {
+  const results: PromiseSettledResult<AgentSessionDto[]>[] = new Array(
+    boards.length,
+  );
+  let index = 0;
+  async function worker(): Promise<void> {
+    while (index < boards.length) {
+      const current = index++;
+      try {
+        results[current] = {
+          status: "fulfilled",
+          value: await api.listAgentSessions(boards[current].id),
+        };
+      } catch (reason) {
+        results[current] = { status: "rejected", reason };
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(4, boards.length) }, () => worker()),
+  );
+  return results;
 }

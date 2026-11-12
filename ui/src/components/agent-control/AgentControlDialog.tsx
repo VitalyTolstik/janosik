@@ -1,11 +1,5 @@
-import { useState } from "react";
-import {
-  ClipboardCheck,
-  CirclePause,
-  FileClock,
-  ShieldCheck,
-  SlidersHorizontal,
-} from "lucide-react";
+import { useState, type KeyboardEvent } from "react";
+import { Activity, Bot, History, Inbox, Settings2 } from "lucide-react";
 
 import {
   Dialog,
@@ -19,142 +13,196 @@ import { cn } from "@/lib/utils";
 import { useBoardAccess } from "@/store/BoardContext";
 import { ApprovalsPanel } from "./ApprovalsPanel";
 import { PausePanel } from "./PausePanel";
-import { PolicyPanel } from "./PolicyPanel";
 import { RunsPanel } from "./RunsPanel";
 
-export type AgentControlTab = "approvals" | "pause" | "runs" | "policy";
+export type AgentControlTab = "approvals" | "pause" | "runs";
 
-/**
- * «Agent control» dialog (TASK-166.14): the human side of TASK-166 on one
- * board. Approvals authorize an exact plan; pause stops new agent writes.
- * Both are board-ADMIN and browser-session-only; the token owner's own token
- * pause / stop-all controls stay in Account → API keys.
- *
- * The body is mounted inside `DialogContent`, so closing the dialog unmounts
- * every draft — the project's reset-by-remount rule (AGENT.md).
- */
 export function AgentControlDialog({
   open,
   onOpenChange,
   initialTab = "approvals",
   onOpenAllAgents,
+  onOpenPolicy,
   onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Members land on the read-only runs view; ADMINs start at approvals. */
   initialTab?: AgentControlTab;
   onOpenAllAgents?: () => void;
+  onOpenPolicy?: () => void;
   onCloseAutoFocus?: (event: Event) => void;
 }) {
   const { t } = useI18n();
   const { role } = useBoardAccess();
-  const [tab, setTab] = useState<AgentControlTab>(initialTab);
-
-  const tabs: {
-    id: AgentControlTab;
-    labelKey:
-      | "agentControl.tab.approvals"
-      | "agentControl.tab.pause"
-      | "agentControl.tab.runs"
-      | "agentControl.tab.policy";
-    icon: typeof ClipboardCheck;
-    testId: string;
-    adminOnly?: boolean;
-  }[] = [
+  const [tab, setTab] = useState<AgentControlTab>(
+    role !== "ADMIN" && initialTab === "approvals" ? "pause" : initialTab,
+  );
+  const tabs = [
+    ...(role === "ADMIN"
+      ? [
+          {
+            id: "approvals" as const,
+            label: t("agentControl.shell.inbox"),
+            icon: Inbox,
+            testId: "agent-approvals-tab",
+          },
+        ]
+      : []),
     {
-      id: "approvals",
-      labelKey: "agentControl.tab.approvals",
-      icon: ClipboardCheck,
-      testId: "agent-approvals-tab",
-    },
-    {
-      id: "pause",
-      labelKey: "agentControl.tab.pause",
-      icon: CirclePause,
+      id: "pause" as const,
+      label: t("agentControl.shell.live"),
+      icon: Activity,
       testId: "agent-pause-tab",
     },
     {
-      id: "runs",
-      labelKey: "agentControl.tab.runs",
-      icon: FileClock,
+      id: "runs" as const,
+      label: t("agentControl.shell.runs"),
+      icon: History,
       testId: "agent-runs-tab",
     },
-    {
-      id: "policy",
-      labelKey: "agentControl.tab.policy",
-      icon: SlidersHorizontal,
-      testId: "agent-policy-tab",
-      adminOnly: true,
-    },
   ];
-
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const current = tabs.findIndex((item) => item.id === tab);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : event.key === "ArrowDown" || event.key === "ArrowRight"
+            ? (current + 1) % tabs.length
+            : event.key === "ArrowUp" || event.key === "ArrowLeft"
+              ? (current + tabs.length - 1) % tabs.length
+              : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    setTab(tabs[next].id);
+    document.getElementById(`control-tab-${tabs[next].id}`)?.focus();
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="agent-control-dialog"
         onCloseAutoFocus={onCloseAutoFocus}
-        className="flex h-[min(46rem,calc(100dvh-2rem))] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
+        className="flex h-[min(48rem,calc(100dvh-2rem))] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 font-agent-surface sm:max-w-6xl max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:rounded-none"
       >
-        <DialogHeader className="shrink-0 space-y-1 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-4 py-3 pr-12">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-5 py-4 pr-12">
+          <DialogTitle className="flex items-center gap-3 font-display text-base font-bold tracking-[-0.025em]">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10">
+              <Bot className="h-4 w-4 text-primary" aria-hidden />
+            </span>
             {t("agentControl.title")}
           </DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogDescription className="pl-12 text-xs">
             {t("agentControl.description")}
           </DialogDescription>
         </DialogHeader>
-
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
-          <div
-            role="group"
-            aria-label={t("agentControl.title")}
-            className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border/60 bg-card/80 p-1"
-          >
-            {tabs
-              .filter((entry) => !entry.adminOnly || role === "ADMIN")
-              .map(({ id, labelKey, icon: Icon, testId }) => (
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <aside className="flex shrink-0 flex-col border-b border-border p-3 md:w-52 md:border-r md:border-b-0">
+            <p className="hidden px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:block">
+              {t("agentControl.shell.thisBoard")}
+            </p>
+            <div
+              role="tablist"
+              aria-label={t("agentControl.title")}
+              className="flex gap-1 md:flex-col"
+            >
+              {tabs.map(({ id, label, icon: Icon, testId }) => (
                 <button
                   key={id}
                   type="button"
                   data-testid={testId}
-                  aria-pressed={tab === id}
+                  role="tab"
+                  id={`control-tab-${id}`}
+                  aria-controls="control-panel"
+                  aria-selected={tab === id}
+                  tabIndex={tab === id ? 0 : -1}
+                  onKeyDown={onTabKeyDown}
                   onClick={() => setTab(id)}
                   className={cn(
-                    "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                    tab === id
-                      ? "bg-primary/15 text-primary"
-                      : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                    "flex min-h-11 flex-1 items-center gap-2 rounded-md border border-transparent px-2 text-left font-agent-surface text-[12px] font-[550] leading-[1.45] text-muted-foreground hover:bg-hover md:min-h-[34px] md:flex-none",
+                    tab === id &&
+                      "border-border bg-surface text-foreground shadow-[inset_2px_0_0_var(--primary)]",
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" aria-hidden />
-                  {t(labelKey)}
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  {label}
                 </button>
               ))}
+            </div>
+            {role === "ADMIN" && onOpenPolicy ? (
+              <div className="mt-4 hidden border-t border-border px-2 pt-3 md:block">
+                <p className="text-xs font-semibold">
+                  {t("agentControl.shell.policy")}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t("agentControl.shell.policyHint")}
+                </p>
+                <button
+                  type="button"
+                  onClick={onOpenPolicy}
+                  data-testid="agent-open-policy"
+                  className="mt-2 inline-flex min-h-9 items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Settings2 className="h-3 w-3" aria-hidden />
+                  {t("agentControl.shell.openPolicy")}
+                </button>
+              </div>
+            ) : null}
+            {onOpenAllAgents ? (
+              <div className="mt-auto hidden border-t border-border px-2 pt-3 md:block">
+                <p className="text-xs font-semibold">
+                  {t("agentControl.shell.acrossBoards")}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t("agentControl.shell.acrossHint")}
+                </p>
+                <button
+                  type="button"
+                  onClick={onOpenAllAgents}
+                  className="mt-2 min-h-9 text-xs text-primary hover:underline"
+                  data-testid="agent-control-all-agents"
+                >
+                  {t("agentControl.allAgents")} ↗
+                </button>
+              </div>
+            ) : null}
+            <div className="flex gap-4 md:hidden">
+              {onOpenAllAgents ? (
+                <button
+                  type="button"
+                  onClick={onOpenAllAgents}
+                  className="min-h-11 text-xs text-primary"
+                  data-testid="agent-control-all-agents-mobile"
+                >
+                  {t("agentControl.allAgents")} ↗
+                </button>
+              ) : null}
+              {role === "ADMIN" && onOpenPolicy ? (
+                <button
+                  type="button"
+                  onClick={onOpenPolicy}
+                  className="min-h-11 text-xs text-primary"
+                  data-testid="agent-open-policy-mobile"
+                >
+                  {t("agentControl.shell.openPolicy")}
+                </button>
+              ) : null}
+            </div>
+          </aside>
+          <div
+            id="control-panel"
+            role="tabpanel"
+            aria-labelledby={`control-tab-${tab}`}
+            className="min-h-0 min-w-0 flex-1 overflow-hidden"
+          >
+            {tab === "approvals" && role === "ADMIN" ? (
+              <ApprovalsPanel role={role} />
+            ) : tab === "pause" ? (
+              <PausePanel role={role} />
+            ) : (
+              <RunsPanel role={role} />
+            )}
           </div>
-          {onOpenAllAgents ? (
-            <button
-              type="button"
-              onClick={onOpenAllAgents}
-              className="text-xs font-medium text-primary hover:underline sm:ml-auto"
-              data-testid="agent-control-all-agents"
-            >
-              {t("agentControl.allAgents")}
-            </button>
-          ) : null}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {tab === "approvals" ? (
-            <ApprovalsPanel role={role} />
-          ) : tab === "pause" ? (
-            <PausePanel role={role} />
-          ) : tab === "runs" ? (
-            <RunsPanel role={role} />
-          ) : (
-            <PolicyPanel role={role} />
-          )}
         </div>
       </DialogContent>
     </Dialog>

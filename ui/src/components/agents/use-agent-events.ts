@@ -26,11 +26,14 @@ export function useAgentSessionEvents(
   boardIds: readonly string[],
   onEvent: AgentEventHandler,
   enabled = true,
+  onAccessLost?: (boardId: string) => void,
 ): void {
   const handlerRef = useRef(onEvent);
+  const accessLostRef = useRef(onAccessLost);
   useEffect(() => {
     handlerRef.current = onEvent;
-  }, [onEvent]);
+    accessLostRef.current = onAccessLost;
+  }, [onEvent, onAccessLost]);
 
   // A stable key keeps the effect from reconnecting on every render while a
   // caller passes a freshly filtered array.
@@ -50,6 +53,7 @@ export function useAgentSessionEvents(
           controllers[index].signal,
           parseEventStream,
           handlerRef,
+          accessLostRef,
         );
       }
     });
@@ -68,6 +72,7 @@ async function followAgents(
     stream: ReadableStream<Uint8Array>,
   ) => AsyncGenerator<BoardSseEvent>,
   handlerRef: { current: AgentEventHandler },
+  accessLostRef: { current: ((boardId: string) => void) | undefined },
 ): Promise<void> {
   let attempt = 0;
   while (!signal.aborted) {
@@ -89,9 +94,11 @@ async function followAgents(
         if (restored === null && api.getAccessToken() === null) return;
         continue;
       }
-      // Membership lost or board gone: the main board stream owns that
-      // reaction; this auxiliary reader simply stops retrying.
-      if (response.status === 403 || response.status === 404) return;
+      // Revoke cached rows as soon as the server confirms lost access.
+      if (response.status === 403 || response.status === 404) {
+        accessLostRef.current?.(boardId);
+        return;
+      }
       if (!response.ok || response.body === null) {
         throw new Error(`agent events answered ${response.status}`);
       }
