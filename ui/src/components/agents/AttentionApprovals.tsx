@@ -200,7 +200,7 @@ function DetailSection({
             {icon}
           </span>
         ) : null}
-        <h3 className="text-[11px] font-[650] tracking-[0.03em]">{title}</h3>
+        <h3 className="text-[11.5px] font-[650] tracking-[0.03em]">{title}</h3>
         {aside !== undefined ? <span className="ml-auto">{aside}</span> : null}
       </div>
       {children}
@@ -310,7 +310,7 @@ export function AttentionApprovalList({
           aria-hidden
         />
         <h2 className="text-[12.5px] font-[650]">{heading}</h2>
-        <span className="text-[10.5px] text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground">
           {t("agents.approvals.sortedByExpiry")}
         </span>
         <div
@@ -332,14 +332,14 @@ export function AttentionApprovalList({
               aria-pressed={filter === value}
               onClick={() => onFilterChange(value)}
               className={cn(
-                "inline-flex items-center gap-1 text-[10.5px] transition-colors",
+                "inline-flex items-center gap-1 text-[11px] transition-colors",
                 filter === value
                   ? "font-semibold text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(key)}
-              <span className="text-[10px] tabular-nums text-muted-foreground">
+              <span className="text-[11px] tabular-nums text-muted-foreground">
                 {counts[countKey]}
               </span>
             </button>
@@ -398,7 +398,7 @@ export function AttentionApprovalList({
                     onClick={() => onSelect(row)}
                     className="flex w-full flex-col text-left"
                   >
-                    <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                    <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                       <span className="font-[650] uppercase tracking-[0.06em] text-warning">
                         {t(`agents.approvals.eyebrow.${effective}`)}
                       </span>
@@ -416,7 +416,7 @@ export function AttentionApprovalList({
                         {row.agentName ?? shortId(row.requestedByTokenId, 12)}
                       </b>{" "}
                       {t("agents.approvals.asksPrefix")}{" "}
-                      <code className="font-mono text-[10.5px]">
+                      <code className="font-mono text-[11.5px]">
                         {row.actionType}
                       </code>{" "}
                       {t("agents.approvals.asksOn")}{" "}
@@ -444,7 +444,7 @@ export function AttentionApprovalList({
                     >
                       {t("agents.approvals.reject")}
                     </Button>
-                    <code className="ml-auto truncate font-mono text-[10px] text-muted-foreground/75">
+                    <code className="ml-auto truncate font-mono text-[11px] text-muted-foreground/75">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
                       })}
@@ -646,7 +646,7 @@ export function AttentionApprovalDetail({
             </button>
           ) : null}
           <div className="min-w-0">
-            <p className="text-[10px] font-[650] uppercase tracking-[0.07em] text-muted-foreground">
+            <p className="text-[11px] font-[650] uppercase tracking-[0.04em] text-muted-foreground">
               {t("agents.approvals.selected")}
             </p>
             <h2 className="mt-0.5 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
@@ -683,7 +683,7 @@ export function AttentionApprovalDetail({
             <p className="text-[11.5px] leading-[1.55] text-foreground">
               <b className="font-semibold">{agentName}</b>{" "}
               {t("agents.approvals.asksPrefix")}{" "}
-              <code className="font-mono text-[10.5px]">
+              <code className="font-mono text-[11.5px]">
                 {detail.actionType}
               </code>{" "}
               {t("agents.approvals.asksOn")}{" "}
@@ -702,7 +702,7 @@ export function AttentionApprovalDetail({
                     ? t("agents.approvals.destructiveCardTitle")
                     : t("agents.approvals.destructiveTitle")}
                 </p>
-                <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
+                <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
                   {destructiveCard
                     ? t("agents.approvals.destructiveCardBody", {
                         card: cardTitle,
@@ -723,7 +723,7 @@ export function AttentionApprovalDetail({
                 <RequestMeta label={t("agents.approvals.agent")}>
                   {session?.name === undefined &&
                   agentName === detail.requestedByTokenId ? (
-                    <span className="font-mono text-[10px]">{agentName}</span>
+                    <span className="font-mono text-[11px]">{agentName}</span>
                   ) : (
                     agentName
                   )}
@@ -734,7 +734,7 @@ export function AttentionApprovalDetail({
                   ) : session?.name !== undefined ? (
                     session.name
                   ) : (
-                    <span className="font-mono text-[10px]">
+                    <span className="font-mono text-[11px]">
                       {detail.agentSessionId}
                     </span>
                   )}
@@ -771,7 +771,7 @@ export function AttentionApprovalDetail({
             >
               <div className="grid grid-cols-[minmax(0,1fr)_20px_minmax(0,1fr)] items-center gap-1.5">
                 <div className="min-w-0 rounded-md border border-border bg-background/35 px-2 py-1.5">
-                  <span className="block text-[9.5px] tracking-[0.04em] text-muted-foreground uppercase">
+                  <span className="block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
                     {t("agents.approvals.knownTarget")}
                   </span>
                   <b className="mt-0.5 block text-[11px] leading-[1.4] font-semibold break-words">
@@ -792,7 +792,7 @@ export function AttentionApprovalDetail({
                         : "border-border bg-background/35",
                   )}
                 >
-                  <span className="block text-[9.5px] tracking-[0.04em] text-muted-foreground uppercase">
+                  <span className="block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
                     {t("agents.approvals.exactAction")}
                   </span>
                   <b
@@ -820,7 +820,7 @@ export function AttentionApprovalDetail({
                 <code
                   data-testid="approval-plan-hash"
                   title={detail.planHash}
-                  className="min-w-0 flex-1 overflow-hidden font-mono text-[9.5px] whitespace-nowrap text-ellipsis text-muted-foreground"
+                  className="min-w-0 flex-1 overflow-hidden font-mono text-[11px] whitespace-nowrap text-ellipsis text-muted-foreground"
                 >
                   {detail.planHash.slice(0, 44)}…
                 </code>
@@ -838,7 +838,7 @@ export function AttentionApprovalDetail({
                   )}
                 </button>
               </div>
-              <p className="mt-1.5 text-[10.5px] leading-[1.5] text-muted-foreground">
+              <p className="mt-1.5 text-[11px] leading-[1.5] text-muted-foreground">
                 {t("agents.approvals.hashHint")}
               </p>
             </DetailSection>
@@ -918,14 +918,14 @@ export function AttentionApprovalDetail({
               className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
               data-testid="agents-approval-technical"
             >
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[10.5px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
                 <ChevronRight
                   className="h-[11px] w-[11px] transition-transform group-open:rotate-90"
                   aria-hidden
                 />
                 {t("agents.approvals.technicalDetails")}
               </summary>
-              <pre className="m-0 border-t border-border p-2 font-mono text-[9.5px] leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
+              <pre className="m-0 border-t border-border p-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
                 {detail.plan === undefined
                   ? t("agentControl.approvals.noPlan")
                   : JSON.stringify(detail.plan ?? null, null, 2)}
@@ -958,7 +958,7 @@ export function AttentionApprovalDetail({
             />
           ) : (
             <>
-              <p className="mb-2 flex items-start gap-1.5 text-[10.5px] leading-[1.45] text-muted-foreground">
+              <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
                 <span className="mt-px shrink-0">{hint.icon}</span>
                 <span>{hint.text}</span>
               </p>
@@ -992,7 +992,7 @@ function RequestMeta({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[9.5px] tracking-[0.05em] text-muted-foreground uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
         {label}
       </span>
       <span className="block text-[11px] leading-[1.4] font-medium break-words text-foreground">
@@ -1004,7 +1004,7 @@ function RequestMeta({
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex h-5 items-center rounded border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[10.5px] font-semibold whitespace-nowrap text-muted-foreground">
+    <span className="inline-flex h-[21px] items-center rounded border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground">
       {children}
     </span>
   );
@@ -1027,7 +1027,7 @@ function HistoryItem({
     muted: "bg-muted-foreground",
   } as const;
   return (
-    <div className="flex items-start gap-[7px] text-[10.5px] leading-[1.4]">
+    <div className="flex items-start gap-[7px] text-[11px] leading-[1.4]">
       <span
         className={cn(
           "mt-1 h-1.5 w-1.5 shrink-0 rounded-full",

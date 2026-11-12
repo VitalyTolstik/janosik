@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 import { APPROVAL_RISK_KEYS, APPROVAL_STATUS_KEYS } from "@/utils/approval";
 
 const RELATED_CLASS =
-  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[10px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground";
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground";
 
 const STATUS_CLASS: Record<ApprovalStatus, string> = {
   pending: "border-warning/40 bg-warning/10 text-warning",
@@ -96,7 +96,7 @@ export function ApprovalRiskBadge({
       data-testid={testId}
       data-risk={risk}
       className={cn(
-        "inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10.5px] font-semibold whitespace-nowrap",
+        "inline-flex h-[21px] shrink-0 items-center rounded border px-1.5 text-[11px] font-semibold whitespace-nowrap",
         RISK_CLASS[risk],
       )}
     >
@@ -222,7 +222,7 @@ export function ApprovalHash({
       <div className="flex items-start gap-2">
         <code
           data-testid="approval-plan-hash"
-          className="min-w-0 flex-1 break-all rounded-md border bg-muted/30 p-2 font-mono text-[10px] text-muted-foreground"
+          className="min-w-0 flex-1 break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground"
         >
           {hash}
         </code>
@@ -488,7 +488,7 @@ export function ApprovalDecisionForm({
 
   return (
     <>
-      <p className="mb-2 flex items-start gap-1.5 text-[10.5px] leading-[1.45] text-muted-foreground">
+      <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
         <ShieldCheck
           className="mt-px h-[11px] w-[11px] shrink-0 text-success"
           aria-hidden
@@ -509,7 +509,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-reject"
           onClick={() => setMode("reject")}
           disabled={busy}
-          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11px] font-[650]"
+          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650]"
         >
           {t("agentControl.approvals.reject")}
         </Button>
@@ -519,7 +519,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-approve"
           onClick={() => setApproveOpen(true)}
           disabled={busy}
-          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11px] font-[650]"
+          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650]"
         >
           {t("agents.approvals.confirmApprove")}
         </Button>
@@ -549,7 +549,7 @@ export function ApprovalDecisionForm({
               <b className="block font-[650]">
                 {impactTitle ?? t("agents.approvals.approveImpactTitle")}
               </b>
-              <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
+              <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
                 {impactText ?? t("agents.approvals.approveImpactBody")}
               </p>
             </div>
@@ -644,7 +644,7 @@ export function ApprovalMetaRow({
 }) {
   return (
     <div className="min-w-0 space-y-0.5" data-testid={testId}>
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
       <dd className="break-words text-xs">{children}</dd>

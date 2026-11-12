@@ -669,7 +669,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.token")}
                   testId="agents-filter-token"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-xs md:h-7 md:min-h-7"
+                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
                 />
                 <SelectField
                   value={filter.status}
@@ -680,7 +680,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.status")}
                   testId="agents-filter-status"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-xs md:h-7 md:min-h-7"
+                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
                 />
                 <BoardScopeSelect
                   value={filter.board}
