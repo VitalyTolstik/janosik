@@ -190,14 +190,19 @@ export class AuthService {
       );
     }
     const passwordHash = await argonHash(dto.password, { type: argon2id });
-    // A mailbox is not verified until its owner proves access to it.
+    // A mailbox is not verified until its owner proves access to it. The
+    // e2e harness opts out of the gate by default (`E2E_AUTO_VERIFY`), so
+    // unrelated suites can create verified members; the verification suite
+    // clears the flag to exercise the real flow.
+    const autoVerify =
+      process.env.NODE_ENV === "test" && process.env.E2E_AUTO_VERIFY === "1";
     const user = await this.prisma.user
       .create({
         data: {
           email: dto.email,
           passwordHash,
           displayName: dto.displayName ?? null,
-          emailVerifiedAt: null,
+          emailVerifiedAt: autoVerify ? new Date() : null,
         },
       })
       .catch((error) => {
@@ -425,13 +430,20 @@ export class AuthService {
       ) {
         throw new UnauthorizedException("Session is no longer valid");
       }
+      // Rotation stays inside the login's family; a legacy token starts one,
+      // and the old row is stamped too so a later logout presenting it can
+      // still revoke the successor it never knew about.
+      const familyId = stored.familyId ?? this.newRefreshFamilyId();
       const rotated = await tx.refreshToken.updateMany({
         where: {
           id: stored.id,
           revokedAt: null,
           expiresAt: { gt: new Date() },
         },
-        data: { revokedAt: new Date() },
+        data: {
+          revokedAt: new Date(),
+          ...(stored.familyId === null ? { familyId } : {}),
+        },
       });
       if (rotated.count === 0)
         throw new UnauthorizedException("Refresh token race detected");
@@ -444,8 +456,6 @@ export class AuthService {
           : "password";
       const authTime =
         method === "oauth" ? oauthAuthenticationTime(rawToken) : undefined;
-      // Rotation stays inside the login's family; a legacy token starts one.
-      const familyId = stored.familyId ?? this.newRefreshFamilyId();
       return this.createSession(tx, current, method, authTime, familyId);
     });
   }

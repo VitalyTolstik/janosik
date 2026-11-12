@@ -6,7 +6,6 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { MailerService } from "@/mailer/mailer.service";
 import { refreshCookie, refreshCookieValue } from "./support/cookies";
 
 const FIRST_EMAIL = "cycle-first@example.com";
@@ -24,7 +23,6 @@ const sha256 = (value: string) =>
 describe("Auth API (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let enabledSpy: jest.SpyInstance;
   let firstUserAccessToken: string;
   let activeSessionToken: string;
 
@@ -36,11 +34,6 @@ describe("Auth API (e2e)", () => {
     setupApp(app);
     await app.init();
     prisma = app.get(PrismaService);
-    // Registration requires a live mail transport (TASK-53); the test env
-    // clears SMTP_*, so opt in while sends still land in the outbox.
-    enabledSpy = jest
-      .spyOn(app.get(MailerService), "enabled", "get")
-      .mockReturnValue(true);
     // Refresh tokens first: the FK restricts deleting a user with sessions.
     await prisma.apiToken.deleteMany();
     await prisma.refreshToken.deleteMany();
@@ -49,7 +42,6 @@ describe("Auth API (e2e)", () => {
   });
 
   afterAll(async () => {
-    enabledSpy.mockRestore();
     await app.close();
   });
 
@@ -93,8 +85,8 @@ describe("Auth API (e2e)", () => {
       avatarColor: null,
       avatarPath: null,
       createdAt: expect.any(Number),
-      // A live transport is simulated: the address waits for its code.
-      emailVerifiedAt: null,
+      // The e2e harness auto-verifies registrations by default.
+      emailVerifiedAt: expect.any(Number),
       // TASK-166: how the session authenticated (password login).
       authMethod: "password",
       hasPassword: true,

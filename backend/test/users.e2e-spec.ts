@@ -10,7 +10,6 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { MailerService } from "@/mailer/mailer.service";
 import { refreshCookieValue } from "./support/cookies";
 
 const PROFILE_EMAIL = "users-profile@example.com";
@@ -26,7 +25,6 @@ const NEW_PASSWORD = "fresh correct horse battery";
 describe("Users API (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let enabledSpy: jest.SpyInstance;
   let profileToken: string;
   let profileCookie: string;
   let profileId: string;
@@ -40,9 +38,6 @@ describe("Users API (e2e)", () => {
     setupApp(app);
     await app.init();
     prisma = app.get(PrismaService);
-    enabledSpy = jest
-      .spyOn(app.get(MailerService), "enabled", "get")
-      .mockReturnValue(true);
     await wipe(prisma);
 
     const profile = await register(PROFILE_EMAIL, "Vera");
@@ -55,7 +50,6 @@ describe("Users API (e2e)", () => {
   });
 
   afterAll(async () => {
-    enabledSpy.mockRestore();
     await wipe(prisma);
     await app.close();
   });
@@ -109,8 +103,8 @@ describe("Users API (e2e)", () => {
         avatarColor: "teal",
         avatarPath: null,
         createdAt: expect.any(Number),
-        // A simulated live transport means the address awaits its code.
-        emailVerifiedAt: null,
+        // The e2e harness auto-verifies registrations by default.
+        emailVerifiedAt: expect.any(Number),
         hasPassword: true,
       });
 
@@ -152,8 +146,8 @@ describe("Users API (e2e)", () => {
         avatarColor: null,
         avatarPath: null,
         createdAt: expect.any(Number),
-        // A simulated live transport means the address awaits its code.
-        emailVerifiedAt: null,
+        // The e2e harness auto-verifies registrations by default.
+        emailVerifiedAt: expect.any(Number),
         hasPassword: true,
       });
     });

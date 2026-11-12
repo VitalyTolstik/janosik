@@ -55,6 +55,8 @@ describe("Registration email verification (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
+    // This suite is precisely about the unverified gate.
+    process.env.E2E_AUTO_VERIFY = "0";
     enabledSpy = jest.spyOn(mailer, "enabled", "get");
 
     await prisma.emailVerificationCode.deleteMany();
@@ -65,6 +67,7 @@ describe("Registration email verification (e2e)", () => {
 
   afterAll(async () => {
     enabledSpy.mockRestore();
+    process.env.E2E_AUTO_VERIFY = "1";
     await app.close();
   });
 

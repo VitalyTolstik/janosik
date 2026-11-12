@@ -425,6 +425,27 @@ describe("AuthService", () => {
       );
     });
 
+    it("writes the new family onto a legacy rotated token", async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue({
+        id: "token-1",
+        tokenHash: sha256(rawToken),
+        userId: "user-1",
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        familyId: null,
+        user: makeUser(),
+      });
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.refreshToken.create.mockResolvedValue({});
+
+      await service.refresh(rawToken);
+
+      const rotation = prismaMock.refreshToken.updateMany.mock.calls[0][0];
+      expect(rotation.data.familyId).toEqual(expect.any(String));
+      const created = prismaMock.refreshToken.create.mock.calls[0][0];
+      expect(created.data.familyId).toBe(rotation.data.familyId);
+    });
+
     it("looks the token up by its sha256 hash and rotates it", async () => {
       prismaMock.refreshToken.findUnique.mockResolvedValue({
         id: "token-1",
