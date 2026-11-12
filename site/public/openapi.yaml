@@ -1007,6 +1007,141 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /agents/overview:
+    get:
+      tags: [Agents]
+      operationId: getAgentsOverview
+      summary: Read the cross-board agent control overview
+      description: |
+        Browser-session only; every PAT is refused with `403 pat_forbidden`.
+        The scope is the caller's accepted, non-expired memberships on
+        non-deleted, non-archived boards. Approvals are returned only for
+        boards where the caller is `ADMIN`; sessions and runs for
+        `ADMIN`/`MEMBER`/`VIEWER`.
+
+        Effective approval status is computed from `status + expiresAt` at
+        `refreshedAt` in one time slice. This read never calls the lazy expiry
+        writer, never creates activity/notification/SSE and never deletes an
+        expired membership. Existing board endpoints keep their lazy-expiry
+        behavior.
+
+        `items` shape is selected by `section`; `total` is the filtered count
+        before `limit`/`cursor`. `counts` and `facets` ignore
+        `q`/`status`/`kind`/`tokenId`/`sessionId`/`from`/`to` and follow the
+        board scope, so rail/combobox counts do not collapse while a filter is
+        active. Display names are disclosed only for boards, sessions, cards
+        and active members the caller can already read; a token name is
+        returned only for the caller's own token. The approval plan itself is
+        not part of this read — `GET /boards/{boardId}/approvals/{approvalId}`
+        remains the detail contract.
+
+        Ordering is server-side before `limit`/`cursor`: effective pending
+        approvals by `expiresAt ASC, id ASC`; decided approvals by
+        `decidedAt DESC NULLS LAST, id DESC` (effective-expired rows without a
+        decision sort last); `status=all` returns pending first, then decided.
+        Sessions use `startedAt DESC, id DESC`; runs use
+        `createdAt DESC, id DESC`. `nextCursor` is opaque and bound to the
+        section, every filter and the caller's current board/role scope; reusing
+        it with another section/filter/scope is `400 invalid_cursor`. Rows that
+        change status between pages can move between the pending/decided groups;
+        the cursor is stable for unchanged rows.
+      parameters:
+        - name: section
+          in: query
+          required: false
+          description: Item schema; defaults to `approvals`.
+          schema:
+            $ref: "#/components/schemas/AgentsOverviewSection"
+        - name: boardId
+          in: query
+          required: false
+          description: |
+            One accessible board. Omitted = all boards in scope. Unknown,
+            deleted, archived, pending, expired and revoked boards all answer
+            the same `404 not_found`.
+          schema:
+            type: string
+            maxLength: 128
+        - name: q
+          in: query
+          required: false
+          description: |
+            Case-insensitive literal search over the section whitelist:
+            approvals search summary/actionType/kind/planHash/id/token id/
+            session id plus visible board, card, session and active-member
+            names; sessions add name/clientName/model/status/current card/run;
+            runs add kind/status/clientRunId/planHash/approvalId/actor.
+            Unauthorized board data and foreign token names are never searched.
+          schema:
+            type: string
+            maxLength: 200
+        - name: status
+          in: query
+          required: false
+          description: |
+            Per-section effective status. Approvals: `all`, `pending`,
+            `decided` (everything not effectively pending), `approved`,
+            `rejected`, `expired`, `cancelled`, `consumed`. Sessions: `all`,
+            `live`, `stale`, `paused`, `active`, `idle`, `waiting_approval`,
+            `completed`, `failed`, `cancelled`. Runs: `all`, `applied`,
+            `reverted`, `failed`.
+          schema:
+            $ref: "#/components/schemas/AgentsOverviewStatus"
+        - name: kind
+          in: query
+          required: false
+          description: |
+            Approval kind for `section=approvals`, run kind for
+            `section=runs`; refused with `400 invalid_filter` for sessions.
+          schema:
+            type: string
+            enum: [destructive, done, custom, batch, plan, single, revert]
+        - name: tokenId
+          in: query
+          required: false
+          description: Approval requester token, session token or run token.
+          schema:
+            type: string
+            maxLength: 128
+        - name: sessionId
+          in: query
+          required: false
+          description: Approval agent session, session id or run agent session.
+          schema:
+            type: string
+            maxLength: 128
+        - name: from
+          in: query
+          required: false
+          description: |
+            Unix ms inclusive lower bound on `createdAt` (approvals/runs) or
+            `startedAt` (sessions).
+          schema:
+            type: integer
+            minimum: 0
+        - name: to
+          in: query
+          required: false
+          description: |
+            Unix ms inclusive upper bound on `createdAt` (approvals/runs) or
+            `startedAt` (sessions).
+          schema:
+            type: integer
+            minimum: 0
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: One page plus scope counts, facets and the time slice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentsOverviewResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /agents/pause-all:
     post:
       tags: [Agents]
@@ -4617,6 +4752,366 @@ components:
           type: string
           maxLength: 64
           description: Idempotency key for a real revert (required when `dryRun` is false).
+    AgentsOverviewSection:
+      type: string
+      enum: [approvals, sessions, runs]
+    AgentsOverviewStatus:
+      type: string
+      enum:
+        - all
+        - pending
+        - decided
+        - approved
+        - rejected
+        - expired
+        - cancelled
+        - consumed
+        - live
+        - stale
+        - paused
+        - active
+        - idle
+        - waiting_approval
+        - completed
+        - failed
+        - applied
+        - reverted
+    AgentsOverviewBoardCount:
+      type: object
+      required: [id, title, role, pendingApprovals]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        role:
+          $ref: "#/components/schemas/BoardRole"
+        pendingApprovals:
+          type: [integer, "null"]
+          description: |
+            Exact effective pending approvals for an ADMIN board; `null` for
+            MEMBER/VIEWER so the UI never renders a false zero.
+    AgentsOverviewApprovalCounts:
+      type: object
+      required: [pending, decided, total]
+      properties:
+        pending:
+          type: integer
+          description: Effective pending (stored pending and `expiresAt > refreshedAt`).
+        decided:
+          type: integer
+        total:
+          type: integer
+    AgentsOverviewSessionCounts:
+      type: object
+      required: [total, live, active, idle, waiting, stale, paused]
+      properties:
+        total:
+          type: integer
+        live:
+          type: integer
+          description: Non-terminal session with `endedAt === null`.
+        active:
+          type: integer
+        idle:
+          type: integer
+        waiting:
+          type: integer
+        stale:
+          type: integer
+          description: Live session with no heartbeat for `AGENT_SESSION_STALE_MS`.
+        paused:
+          type: integer
+          description: Effective session, board or token pause on a live session.
+    AgentsOverviewRunCounts:
+      type: object
+      required: [total, applied, reverted, failed]
+      properties:
+        total:
+          type: integer
+        applied:
+          type: integer
+        reverted:
+          type: integer
+        failed:
+          type: integer
+    AgentsOverviewCounts:
+      type: object
+      required: [boards, approvals, sessions, runs]
+      properties:
+        boards:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentsOverviewBoardCount"
+        approvals:
+          $ref: "#/components/schemas/AgentsOverviewApprovalCounts"
+        sessions:
+          $ref: "#/components/schemas/AgentsOverviewSessionCounts"
+        runs:
+          $ref: "#/components/schemas/AgentsOverviewRunCounts"
+    AgentsOverviewScope:
+      type: object
+      required: [boardId, boardTitle, role, canViewApprovals]
+      properties:
+        boardId:
+          type: [string, "null"]
+        boardTitle:
+          type: [string, "null"]
+        role:
+          oneOf:
+            - $ref: "#/components/schemas/BoardRole"
+            - type: "null"
+        canViewApprovals:
+          type: boolean
+    AgentsOverviewTokenFacet:
+      type: object
+      required: [id, name, own]
+      properties:
+        id:
+          type: string
+        name:
+          type: [string, "null"]
+          description: The caller's own token name; null for another user's token.
+        own:
+          type: boolean
+    AgentsOverviewSessionFacet:
+      type: object
+      required: [id, name, boardId, boardTitle]
+      properties:
+        id:
+          type: string
+        name:
+          type: [string, "null"]
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+    AgentsOverviewFacets:
+      type: object
+      required: [tokens, sessions, tokensTruncated, sessionsTruncated]
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentsOverviewTokenFacet"
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentsOverviewSessionFacet"
+        tokensTruncated:
+          type: boolean
+          description: True when more than 200 distinct tokens exist in scope.
+        sessionsTruncated:
+          type: boolean
+          description: True when more than 200 sessions exist in scope.
+    AgentsOverviewApprovalItem:
+      type: object
+      required:
+        [
+          id,
+          boardId,
+          cardId,
+          requestedBy,
+          requestedByTokenId,
+          agentSessionId,
+          kind,
+          actionType,
+          summary,
+          risk,
+          planHash,
+          status,
+          storedStatus,
+          expiresAt,
+          decidedBy,
+          decidedAt,
+          decisionComment,
+          runId,
+          consumedAt,
+          createdAt,
+          boardTitle,
+          boardRole,
+          cardTitle,
+          sessionName,
+          tokenName,
+          requestedByName,
+          requestedByEmail,
+          decidedByName,
+          commandCount,
+          operationCount,
+        ]
+      properties:
+        id:
+          type: string
+        boardId:
+          type: string
+        cardId:
+          type: [string, "null"]
+        requestedBy:
+          type: string
+        requestedByTokenId:
+          type: string
+        agentSessionId:
+          type: [string, "null"]
+        kind:
+          $ref: "#/components/schemas/ApprovalKind"
+        actionType:
+          type: string
+        summary:
+          type: string
+        risk:
+          $ref: "#/components/schemas/ApprovalRisk"
+        planHash:
+          type: string
+        status:
+          $ref: "#/components/schemas/ApprovalStatus"
+          description: Effective status at `refreshedAt`.
+        storedStatus:
+          $ref: "#/components/schemas/ApprovalStatus"
+          description: The persisted row status.
+        expiresAt:
+          type: integer
+        decidedBy:
+          type: [string, "null"]
+        decidedAt:
+          type: [integer, "null"]
+        decisionComment:
+          type: [string, "null"]
+        runId:
+          type: [string, "null"]
+        consumedAt:
+          type: [integer, "null"]
+        createdAt:
+          type: integer
+        boardTitle:
+          type: string
+        boardRole:
+          $ref: "#/components/schemas/BoardRole"
+        cardTitle:
+          type: [string, "null"]
+        sessionName:
+          type: [string, "null"]
+        tokenName:
+          type: [string, "null"]
+          description: Own token name only; null for another user's token.
+        requestedByName:
+          type: [string, "null"]
+        requestedByEmail:
+          type: [string, "null"]
+        decidedByName:
+          type: [string, "null"]
+        commandCount:
+          type: integer
+        operationCount:
+          type: integer
+    AgentsOverviewSessionItem:
+      allOf:
+        - $ref: "#/components/schemas/AgentSession"
+        - type: object
+          required: [boardTitle, boardRole, tokenName, cardTitle]
+          properties:
+            boardTitle:
+              type: string
+            boardRole:
+              $ref: "#/components/schemas/BoardRole"
+            tokenName:
+              type: [string, "null"]
+            cardTitle:
+              type: [string, "null"]
+    AgentsOverviewRunItem:
+      allOf:
+        - $ref: "#/components/schemas/AgentRun"
+        - type: object
+          required:
+            [
+              boardTitle,
+              boardRole,
+              tokenName,
+              sessionName,
+              actorName,
+              durationMs,
+            ]
+          properties:
+            boardTitle:
+              type: string
+            boardRole:
+              $ref: "#/components/schemas/BoardRole"
+            tokenName:
+              type: [string, "null"]
+            sessionName:
+              type: [string, "null"]
+            actorName:
+              type: [string, "null"]
+            durationMs:
+              type: integer
+              description: "`appliedAt - createdAt`, clamped at zero."
+    AgentsOverviewResponseBase:
+      type: object
+      required: [scope, nextCursor, total, counts, facets, refreshedAt]
+      properties:
+        scope:
+          $ref: "#/components/schemas/AgentsOverviewScope"
+        nextCursor:
+          type: [string, "null"]
+        total:
+          type: integer
+          description: Filtered rows before `limit`/`cursor`.
+        counts:
+          $ref: "#/components/schemas/AgentsOverviewCounts"
+        facets:
+          $ref: "#/components/schemas/AgentsOverviewFacets"
+        refreshedAt:
+          type: integer
+          description: Single server time slice for effective expiry.
+    AgentsOverviewApprovalsResponse:
+      allOf:
+        - $ref: "#/components/schemas/AgentsOverviewResponseBase"
+        - type: object
+          required: [section, items]
+          properties:
+            section:
+              type: string
+              const: approvals
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AgentsOverviewApprovalItem"
+    AgentsOverviewSessionsResponse:
+      allOf:
+        - $ref: "#/components/schemas/AgentsOverviewResponseBase"
+        - type: object
+          required: [section, items]
+          properties:
+            section:
+              type: string
+              const: sessions
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AgentsOverviewSessionItem"
+    AgentsOverviewRunsResponse:
+      allOf:
+        - $ref: "#/components/schemas/AgentsOverviewResponseBase"
+        - type: object
+          required: [section, items]
+          properties:
+            section:
+              type: string
+              const: runs
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/AgentsOverviewRunItem"
+    AgentsOverviewResponse:
+      oneOf:
+        - $ref: "#/components/schemas/AgentsOverviewApprovalsResponse"
+        - $ref: "#/components/schemas/AgentsOverviewSessionsResponse"
+        - $ref: "#/components/schemas/AgentsOverviewRunsResponse"
+      discriminator:
+        propertyName: section
+        mapping:
+          approvals: "#/components/schemas/AgentsOverviewApprovalsResponse"
+          sessions: "#/components/schemas/AgentsOverviewSessionsResponse"
+          runs: "#/components/schemas/AgentsOverviewRunsResponse"
     CommentKind:
       type: string
       enum: [note, status, question, blocker, evidence, handoff]
