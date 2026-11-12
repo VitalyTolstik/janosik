@@ -2,6 +2,7 @@ import "@mdxeditor/editor/style.css";
 
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
   type ClipboardEvent as ReactClipboardEvent,
@@ -42,6 +43,8 @@ interface CommentComposerEditorProps {
   onChange: (markdown: string) => void;
   /** Ctrl/Cmd+Enter submit — Enter inserts a newline, like the description. */
   onSubmit: () => void;
+  /** Escape cancels (inline comment editing, TASK-176.2). */
+  onCancel?: () => void;
   placeholder?: string;
 }
 
@@ -60,7 +63,7 @@ export const CommentComposerEditor = forwardRef<
   CommentComposerEditorHandle,
   CommentComposerEditorProps
 >(function CommentComposerEditor(
-  { cardId, value, onChange, onSubmit, placeholder },
+  { cardId, value, onChange, onSubmit, onCancel, placeholder },
   ref,
 ) {
   const { lang, t } = useI18n();
@@ -118,6 +121,12 @@ export const CommentComposerEditor = forwardRef<
           event.preventDefault();
           event.stopPropagation();
           onSubmit();
+          return;
+        }
+        if (event.key === "Escape" && onCancel !== undefined) {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
         }
       }}
       onPasteCapture={onPasteCapture}
@@ -165,6 +174,15 @@ export function CommentBody({
   className?: string;
 }) {
   const { lang } = useI18n();
+  const methodsRef = useRef<MDXEditorMethods | null>(null);
+  const markdown = emojify(autolinkMarkdown(sanitizeMarkdownForImport(text)));
+
+  // A row can change text without remounting (a live edit from another tab,
+  // TASK-176.2). The `markdown` prop alone does not refresh the read-only
+  // Lexical tree here, so push the new body through the imperative API.
+  useEffect(() => {
+    methodsRef.current?.setMarkdown(markdown);
+  }, [markdown]);
 
   return (
     <div
@@ -175,10 +193,11 @@ export function CommentBody({
       onDoubleClickCapture={(event) => handleAttachmentImageOpen(event)}
     >
       <MDXEditor
+        ref={methodsRef}
         key={lang}
         className={cn("janosik-mdx janosik-mdx-readonly", className)}
         contentEditableClassName="janosik-md-content janosik-md-flush"
-        markdown={emojify(autolinkMarkdown(sanitizeMarkdownForImport(text)))}
+        markdown={markdown}
         readOnly
         suppressHtmlProcessing
         translation={editorTranslation}

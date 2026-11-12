@@ -27,6 +27,7 @@ import type { AuthPrincipal } from "@/auth/auth-principal";
 import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
 import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
+import type { UpdateCommentDto } from "./dto/update-comment.dto";
 import { reconcileDescriptionAttachments } from "@/commands/command-writers";
 
 /** Default page size of `GET /cards/:id/comments` (`?limit=`). */
@@ -42,9 +43,9 @@ const INLINE_ATTACHMENT_URL =
  * Card comments (§7.4, TASK-28) — plain text, ordinary REST.
  *
  * Comments are not reducer actions, so each write also records an
- * `Activity` row (`comment_added` / `comment_deleted`) that the activity
- * feeds pick up. Deletion is soft (a purge job reclaims rows later) and
- * only the author may delete their own comment.
+ * `Activity` row (`comment_added` / `comment_deleted` / `comment_updated`)
+ * that the activity feeds pick up. Deletion is soft (a purge job reclaims
+ * rows later) and only the author may edit or delete their own comment.
  *
  * After the transaction commits each write is also published as a
  * `type: "activity"` SSE frame (TASK-37): open cards append the foreign
@@ -236,6 +237,119 @@ export class CommentsService {
     return toCommentDto(created.comment);
   }
 
+  /**
+   * Edit the caller's own comment (TASK-176.2). Author-only, like delete:
+   * the text and `editedAt` change; kind, attribution and the original
+   * `createdAt` stay untouched. Inline media removed from the text is
+   * soft-deleted under the same board lock, and the change lands in the
+   * activity feed / SSE stream as `comment_updated`.
+   */
+  async update(
+    commentId: string,
+    userId: string,
+    dto: UpdateCommentDto,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    principal?: AuthPrincipal,
+  ): Promise<CommentDto> {
+    const text = dto.text.trim();
+    if (text.length === 0) {
+      throw beforeWrite(
+        new BadRequestException({
+          message: "text must not be blank",
+          field: "text",
+        }),
+      );
+    }
+    const comment = await rollbackOnThrow(() =>
+      this.prisma.comment.findFirst({
+        where: { id: commentId, deletedAt: null },
+        select: {
+          id: true,
+          authorId: true,
+          cardId: true,
+          text: true,
+          card: { select: { column: { select: { boardId: true } } } },
+        },
+      }),
+    );
+    if (!comment) {
+      throw beforeWrite(new NotFoundException("Comment not found"));
+    }
+    if (comment.authorId !== userId) {
+      throw beforeWrite(
+        new ForbiddenException({
+          message: "Only the author can edit a comment",
+          code: "scope_denied",
+          requiredScope: "worker",
+          action: "comment.update",
+        }),
+      );
+    }
+    const boardId = comment.card.column.boardId;
+
+    const updated = await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        const row = await tx.comment.update({
+          where: { id: comment.id },
+          data: { text, editedAt: new Date() },
+        });
+        await reconcileDescriptionAttachments(tx, boardId, comment.text, text);
+        // Inline pasted media lives outside `reconcileDescriptionAttachments`
+        // (it tracks description embeds only), so the URLs that disappeared
+        // from this comment are unlinked explicitly — like a delete does for
+        // the whole body.
+        const beforeIds = inlineAttachmentIds(comment.text);
+        const afterIds = new Set(inlineAttachmentIds(text));
+        const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
+        if (removedIds.length > 0) {
+          await tx.attachment.updateMany({
+            where: {
+              id: { in: removedIds },
+              boardId,
+              isInline: true,
+              deletedAt: null,
+            },
+            data: { deletedAt: new Date() },
+          });
+        }
+        const activity = await tx.activity.create({
+          data: {
+            boardId,
+            cardId: comment.cardId,
+            type: "comment_updated",
+            actorId: userId,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
+            details: { commentId: comment.id, text },
+          },
+        });
+        return {
+          comment: row,
+          activityId: activity.id,
+          at: activity.createdAt.getTime(),
+          boardId,
+        };
+      },
+      pauseGateFor(principal, attribution.agentSessionId),
+    );
+
+    this.publishActivity(
+      updated.boardId,
+      comment.cardId,
+      updated.activityId,
+      userId,
+      updated.at,
+      "comment_updated",
+      comment.id,
+      attribution,
+    );
+    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    return toCommentDto(updated.comment);
+  }
+
   /** Newest-first page with an opaque `at:id` cursor. */
   async list(
     cardId: string,
@@ -392,7 +506,7 @@ export class CommentsService {
     boardId: string,
     text: string,
   ): Promise<void> {
-    const ids = [...text.matchAll(INLINE_ATTACHMENT_URL)].map((m) => m[1]);
+    const ids = [...inlineAttachmentIds(text)];
     if (ids.length === 0) return;
     await tx.attachment.updateMany({
       where: { id: { in: ids }, boardId, isInline: true, deletedAt: null },
@@ -407,7 +521,7 @@ export class CommentsService {
     activityId: string,
     actorId: string,
     at: number,
-    kind: "comment_added" | "comment_deleted",
+    kind: "comment_added" | "comment_deleted" | "comment_updated",
     commentId: string,
     attribution: RequestAttribution,
   ): void {
@@ -442,7 +556,13 @@ function toCommentDto(comment: Comment): CommentDto {
     agentSessionId: comment.agentSessionId,
     agentName: comment.agentName,
     createdAt: comment.createdAt.getTime(),
+    ...(comment.editedAt ? { editedAt: comment.editedAt.getTime() } : {}),
   };
+}
+
+/** Attachment ids embedded as `…/attachments/<id>/content` in free text. */
+function inlineAttachmentIds(text: string): Set<string> {
+  return new Set([...text.matchAll(INLINE_ATTACHMENT_URL)].map((m) => m[1]));
 }
 
 interface CommentCursor {

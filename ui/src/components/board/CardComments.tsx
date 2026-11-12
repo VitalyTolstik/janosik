@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Check, ChevronDown, Loader2, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, Pencil, Trash2 } from "lucide-react";
 import type {
   ActivitySseEvent,
   AuthUserDto,
@@ -157,6 +157,23 @@ export function CardComments({
     }
   }, [cardId, serverMode]);
 
+  // An edit is not in the frame body either: re-read the newest page and
+  // replace the matching rows in place, keeping the list position (TASK-176.2).
+  const refreshEdited = useCallback(async () => {
+    if (!serverMode) return;
+    try {
+      const page = await api.listComments(cardId, undefined, PAGE_SIZE);
+      setItems((prev) => {
+        const byId = new Map(
+          page.items.map((comment) => [comment.id, comment]),
+        );
+        return prev.map((comment) => byId.get(comment.id) ?? comment);
+      });
+    } catch {
+      /* best effort: the next open or frame retries */
+    }
+  }, [cardId, serverMode]);
+
   useEffect(() => {
     if (!serverMode) return;
     return activity.subscribe((event: ActivitySseEvent) => {
@@ -165,12 +182,16 @@ export function CardComments({
         void refreshNewest();
         return;
       }
+      if (event.kind === "comment_updated") {
+        void refreshEdited();
+        return;
+      }
       if (event.kind === "comment_deleted" && event.detail) {
         const deletedId = event.detail;
         setItems((prev) => prev.filter((comment) => comment.id !== deletedId));
       }
     });
-  }, [activity, boardId, cardId, serverMode, refreshNewest]);
+  }, [activity, boardId, cardId, serverMode, refreshNewest, refreshEdited]);
 
   const trimmed = draft.trim();
   const canSend =
@@ -291,10 +312,16 @@ export function CardComments({
             <CommentRow
               key={comment.id}
               comment={comment}
+              cardId={cardId}
               boardId={boardId}
               currentUserId={user?.id}
               readOnly={readOnly}
               onDelete={() => setPendingDelete(comment)}
+              onUpdated={(saved) =>
+                setItems((prev) =>
+                  prev.map((item) => (item.id === saved.id ? saved : item)),
+                )
+              }
             />
           ))}
         </ol>
@@ -522,27 +549,74 @@ function CommentComposer({
 
 interface CommentRowProps {
   comment: CommentDto;
+  cardId: string;
   boardId: string;
   currentUserId: string | undefined;
   readOnly: boolean;
   onDelete: () => void;
+  /** Replaces the row after a successful inline edit (TASK-176.2). */
+  onUpdated: (comment: CommentDto) => void;
 }
 
 function CommentRow({
   comment,
+  cardId,
   boardId,
   currentUserId,
   readOnly,
   onDelete,
+  onUpdated,
 }: CommentRowProps) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
+  const toast = useToast();
   const openProfile = useOpenProfile();
   const member = useBoardMember(boardId, comment.authorId);
   const own = currentUserId !== undefined && comment.authorId === currentUserId;
   const pending = comment.id.startsWith("pending-");
   const email = member?.email ?? "";
   const name = userLabel(member?.displayName ?? null, email) || "?";
+
+  // Inline edit (TASK-176.2): the row stays in place; only its body swaps
+  // for the same markdown editor the composer uses.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.text);
+  const [saving, setSaving] = useState(false);
+  const [editorNonce, setEditorNonce] = useState(0);
+
+  const canSave =
+    !saving && draft.trim().length > 0 && draft.trim().length <= LIMITS.comment;
+
+  const startEdit = () => {
+    if (!own || readOnly || pending) return;
+    setDraft(comment.text);
+    setEditorNonce((nonce) => nonce + 1);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    if (saving) return;
+    setEditing(false);
+    setDraft(comment.text);
+  };
+
+  const saveEdit = async () => {
+    const text = draft.trim();
+    if (!canSave || text.length === 0) return;
+    setSaving(true);
+    try {
+      const saved = await api.updateComment(comment.id, text);
+      onUpdated(saved);
+      setEditing(false);
+      setDraft(saved.text);
+    } catch {
+      // Keep the editor and the draft: the author can retry without
+      // retyping, and the row below still shows the stored text.
+      toast.error(t("comment.editError"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <li
@@ -592,6 +666,15 @@ function CommentRow({
             {/* eslint-disable-next-line react-hooks/purity -- relative time is refreshed every render on purpose */}
             {formatRelative(comment.createdAt, lang, Date.now(), hour12)}
           </time>
+          {comment.editedAt ? (
+            <span
+              data-testid="comment-edited"
+              className="shrink-0 cursor-help text-[11px] text-muted-foreground/70"
+              title={formatDate(comment.editedAt, lang, hour12)}
+            >
+              {t("comment.edited")}
+            </span>
+          ) : null}
           {comment.kind !== DEFAULT_COMMENT_KIND ? (
             <span
               data-testid="comment-kind-badge"
@@ -600,16 +683,27 @@ function CommentRow({
               {kindLabel(comment.kind, t)}
             </span>
           ) : null}
-          {own && !readOnly && !pending ? (
-            <button
-              type="button"
-              aria-label={t("comment.delete")}
-              data-testid="comment-delete"
-              className="ml-auto shrink-0 rounded-sm p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+          {own && !readOnly && !pending && !editing ? (
+            <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+              <button
+                type="button"
+                aria-label={t("comment.edit")}
+                data-testid="comment-edit"
+                className="shrink-0 rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground"
+                onClick={startEdit}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={t("comment.delete")}
+                data-testid="comment-delete"
+                className="shrink-0 rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                onClick={onDelete}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           ) : null}
         </div>
         {comment.actorType === "agent" &&
@@ -622,15 +716,68 @@ function CommentRow({
           />
         ) : null}
         <div className="mt-0.5 text-foreground/90">
-          <Suspense
-            fallback={
-              /* Raw text for a frame — the real chunk is cached after the
-                 first open, so this is only the composer's own chunk ride. */
-              <p className="whitespace-pre-wrap break-words">{comment.text}</p>
-            }
-          >
-            <CommentBody text={comment.text} />
-          </Suspense>
+          {editing ? (
+            <div className="space-y-2">
+              <Suspense fallback={<Skeleton className="h-9 rounded-md" />}>
+                <CommentComposerEditor
+                  key={editorNonce}
+                  cardId={cardId}
+                  value={draft}
+                  onChange={(value) => {
+                    // While the PATCH is in flight the draft is frozen, so a
+                    // late keystroke cannot diverge from what is being saved.
+                    if (!saving) setDraft(value);
+                  }}
+                  onSubmit={() => void saveEdit()}
+                  onCancel={cancelEdit}
+                  placeholder={t("comment.placeholder")}
+                />
+              </Suspense>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="premium"
+                    size="sm"
+                    disabled={!canSave}
+                    data-testid="comment-edit-save"
+                    onClick={() => void saveEdit()}
+                  >
+                    {saving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : null}
+                    {t("comment.send")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-foreground"
+                    disabled={saving}
+                    data-testid="comment-edit-cancel"
+                    onClick={cancelEdit}
+                  >
+                    {t("comment.cancel")}
+                  </Button>
+                </div>
+                <LimitCounter
+                  length={draft.length}
+                  limit={LIMITS.comment}
+                  testId="comment-edit-counter"
+                />
+              </div>
+            </div>
+          ) : (
+            <Suspense
+              fallback={
+                /* Raw text for a frame — the real chunk is cached after the
+                   first open, so this is only the composer's own chunk ride. */
+                <p className="whitespace-pre-wrap break-words">
+                  {comment.text}
+                </p>
+              }
+            >
+              <CommentBody text={comment.text} />
+            </Suspense>
+          )}
         </div>
       </div>
     </li>

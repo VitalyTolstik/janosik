@@ -30,6 +30,7 @@ import {
   type UserAvatarColor,
   type UserTokenDto,
 } from "@janosik/shared";
+import { LIMITS } from "@janosik/shared";
 
 /**
  * In-memory stand-in for the NestJS API (TASK-29 UI tests).
@@ -766,6 +767,27 @@ export class FakeServer {
       }
     }
     const deleteCommentMatch = /^\/api\/v1\/comments\/([^/]+)$/.exec(path);
+    if (deleteCommentMatch !== null && method === "PATCH") {
+      const { text } = (body ?? {}) as { text?: string };
+      const trimmed = (text ?? "").trim();
+      if (trimmed.length === 0 || trimmed.length > LIMITS.comment) {
+        return json(400, { message: "text is invalid", field: "text" });
+      }
+      for (const list of this.commentsByCard.values()) {
+        const comment = list.find((item) => item.id === deleteCommentMatch[1]);
+        if (comment === undefined) continue;
+        if (comment.authorId !== this.account.id) {
+          return json(403, {
+            message: "Only the author can edit a comment",
+            code: "scope_denied",
+          });
+        }
+        comment.text = trimmed;
+        comment.editedAt = Date.now();
+        return json(200, structuredClone(comment));
+      }
+      return json(404, { message: "Comment not found" });
+    }
     if (deleteCommentMatch !== null && method === "DELETE") {
       for (const list of this.commentsByCard.values()) {
         const index = list.findIndex(

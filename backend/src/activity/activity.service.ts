@@ -291,15 +291,23 @@ function toActivityEntry(row: {
  * Comment rows carry their text in `Activity.details`, frozen at write
  * time (TASK-37) — the feed turns it into the same Jira-style diff the
  * command log renders: added is `null → text`, deleted is `text → null`,
- * and `detail` keeps the comment id the SSE frames reference. The column
- * is free JSON (legacy rows may lack the text), so the shape is validated
- * here — a malformed row degrades to a sentence-only entry, never a 500.
+ * and `detail` keeps the comment id the SSE frames reference. An update has
+ * no meaningful before/after in the frozen `{ commentId, text }` snapshot,
+ * so it renders as a sentence with the id and no diff. The column is free
+ * JSON (legacy rows may lack the text), so the shape is validated here — a
+ * malformed row degrades to a sentence-only entry, never a 500.
  */
 function readCommentSnapshot(
   type: string,
   value: Prisma.JsonValue | null,
 ): { detail?: string; changes?: ActivityChange[] } {
-  if (type !== "comment_added" && type !== "comment_deleted") return {};
+  if (
+    type !== "comment_added" &&
+    type !== "comment_deleted" &&
+    type !== "comment_updated"
+  ) {
+    return {};
+  }
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -308,7 +316,7 @@ function readCommentSnapshot(
     typeof record.commentId === "string" ? record.commentId : undefined;
   const text = typeof record.text === "string" ? record.text : undefined;
   const changes =
-    text === undefined
+    text === undefined || type === "comment_updated"
       ? undefined
       : [
           type === "comment_added"

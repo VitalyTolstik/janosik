@@ -171,6 +171,7 @@ export function adminComment(
     text: "Looks good",
     createdAt: now,
     updatedAt: now,
+    editedAt: null,
     deletedAt: null,
     ...overrides,
   };

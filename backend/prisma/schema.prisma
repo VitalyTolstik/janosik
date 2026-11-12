@@ -713,6 +713,7 @@ model Comment {
   agentSessionId String?
   agentName      String?
   deletedAt      DateTime? // soft-delete (§7.0)
+  editedAt       DateTime? // TASK-176.2: last author edit; null = never edited
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

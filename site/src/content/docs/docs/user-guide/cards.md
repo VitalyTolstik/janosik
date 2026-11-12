@@ -179,8 +179,11 @@ The `Activity` section is the last part of the dialog. It has two tabs,
 Comments are written in the same Markdown editor as the description, with
 `Save` and `Cancel`. Press Ctrl+Enter (or Cmd+Enter) to save. Comments are
 listed newest first, with `Show older comments` to page back. You can delete
-your own
-comments after confirmation. Comments need server mode.
+your own comments after confirmation, and edit them with the pencil next to
+the delete icon: `Save` or Ctrl/Cmd+Enter applies the change, `Escape`
+cancels. An edited comment keeps its place in the thread and shows an
+`edited` marker; only the author can edit or delete a comment. Comments need
+server mode.
 
 ### History
 

@@ -294,6 +294,7 @@ describe("ApiClient", () => {
     await client.listComments("c-1", "50:abc", 20);
     await client.createComment("c-1", "hi", "idem-key");
     await client.deleteComment("comment-1");
+    await client.updateComment("comment-1", "edited");
     await client.cardActivity("c-1", "at:c:7");
     expect(calls).toEqual([
       {
@@ -308,6 +309,11 @@ describe("ApiClient", () => {
         body: { text: "hi", commandId: "idem-key" },
       },
       { method: "DELETE", url: "/api/v1/comments/comment-1", body: undefined },
+      {
+        method: "PATCH",
+        url: "/api/v1/comments/comment-1",
+        body: { text: "edited" },
+      },
       {
         method: "GET",
         url: "/api/v1/cards/c-1/activity?cursor=at%3Ac%3A7",

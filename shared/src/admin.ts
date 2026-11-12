@@ -242,6 +242,8 @@ export interface AdminCommentRowDto {
   createdAt: number;
   /** Unix ms; `null` while visible. */
   updatedAt: number;
+  /** Unix ms of the last author edit (TASK-176.2); `null` = never edited. */
+  editedAt: number | null;
   deletedAt: number | null;
 }
 

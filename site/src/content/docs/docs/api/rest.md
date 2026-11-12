@@ -130,6 +130,7 @@ owning board from the card or comment and enforces membership.
 | -------- | ------------------------- | ------------------ | ------------------ | ------------------ |
 | `POST`   | `/cards/:cardId/comments` | `ADMIN` / `MEMBER` | `CreateCommentDto` | `CommentDto`       |
 | `GET`    | `/cards/:cardId/comments` | member             | query `cursor`, `limit`, `kind` | `CommentPage`      |
+| `PATCH`  | `/comments/:commentId`    | `ADMIN` / `MEMBER` | `UpdateCommentDto` | `CommentDto`       |
 | `DELETE` | `/comments/:commentId`    | `ADMIN` / `MEMBER` | none               | `{ status: "ok" }` |
 
 `POST` takes no query parameters; the body is `CreateCommentDto`. A blank
@@ -144,6 +145,13 @@ answers `400`, and an unknown `kind` answers `400`. Pages are newest-first and
 
 `DELETE` removes a comment. Only the author may delete their own comment;
 another author answers `403`.
+
+`PATCH` edits the caller's own comment. The body is `{ "text": "..." }`
+(non-blank, at most 10 000 characters). Only the author may edit; another
+author answers `403`, a deleted comment `404`. `kind`, `authorId`,
+attribution and `createdAt` stay as they were, `editedAt` is stamped (Unix ms
+in `CommentDto`), and inline media removed from the text is soft-deleted.
+The edit writes a `comment_updated` activity row and SSE frame.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
 
