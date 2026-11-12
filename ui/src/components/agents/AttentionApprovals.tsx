@@ -1,8 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import type { ApprovalRequestDto } from "@janosik/shared";
 
 import { api, ApiError } from "@/api/client";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/Toast";
 import {
   ApprovalCancelButton,
   ApprovalDecisionForm,
@@ -15,10 +26,10 @@ import {
   ApprovalStatusBadge,
 } from "@/components/approvals/approval-ui";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { APPROVAL_KIND_KEYS, effectiveApprovalStatus } from "@/utils/approval";
+import { shortId } from "./agent-model";
 
 export type AttentionApprovalFilter = "needs" | "decided" | "all";
 
@@ -73,6 +84,7 @@ export function AttentionApprovalList({
   onFilterChange,
   selectedId,
   onSelect,
+  onChanged,
   now,
 }: {
   rows: readonly AttentionApprovalRow[];
@@ -80,9 +92,11 @@ export function AttentionApprovalList({
   onFilterChange: (filter: AttentionApprovalFilter) => void;
   selectedId: string | null;
   onSelect: (row: AttentionApprovalRow) => void;
+  onChanged: () => void;
   now: number;
 }) {
   const { t, lang } = useI18n();
+  const [rejecting, setRejecting] = useState<AttentionApprovalRow | null>(null);
   const counts = useMemo(() => {
     let needs = 0;
     for (const row of rows) {
@@ -162,14 +176,10 @@ export function AttentionApprovalList({
             );
             return (
               <li key={row.id}>
-                <button
-                  type="button"
-                  data-testid={`agents-approval-${row.id}`}
+                <article
                   data-status={effective}
-                  aria-current={selectedId === row.id}
-                  onClick={() => onSelect(row)}
                   className={cn(
-                    "relative flex w-full flex-col gap-1.5 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-colors",
+                    "relative overflow-hidden rounded-lg border transition-colors",
                     selectedId === row.id
                       ? "border-warning/40 bg-warning/5"
                       : "border-border bg-card/50 hover:bg-hover",
@@ -177,39 +187,172 @@ export function AttentionApprovalList({
                       "before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-warning",
                   )}
                 >
-                  <span className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-                    <span className="font-semibold uppercase tracking-wide text-warning">
-                      {t("agents.approvals.eyebrow")}
+                  <button
+                    type="button"
+                    data-testid={`agents-approval-${row.id}`}
+                    aria-current={selectedId === row.id}
+                    onClick={() => onSelect(row)}
+                    className="flex w-full flex-col gap-1.5 px-3 pt-2.5 text-left"
+                  >
+                    <span className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <span className="font-semibold uppercase tracking-wide text-warning">
+                        {t("agents.approvals.eyebrow")}
+                      </span>
+                      <span>·</span>
+                      <span>{row.boardTitle}</span>
+                      <span>·</span>
+                      <span>{formatRelative(row.expiresAt, lang, now)}</span>
+                      <ApprovalRiskBadge risk={row.risk} />
+                      <ApprovalStatusBadge
+                        status={effective}
+                        testId="agents-approval-status"
+                      />
                     </span>
-                    <span>·</span>
-                    <span>{row.boardTitle}</span>
-                    <span>·</span>
-                    <span>{formatRelative(row.expiresAt, lang, now)}</span>
-                    <ApprovalRiskBadge risk={row.risk} />
-                    <ApprovalStatusBadge
-                      status={effective}
-                      testId="agents-approval-status"
-                    />
-                  </span>
-                  <span className="text-[13px] font-semibold leading-5">
-                    {row.summary}
-                  </span>
-                  <span className="text-[11px] leading-5 text-muted-foreground">
-                    {t("agents.approvals.action", { action: row.actionType })} ·{" "}
-                    {t(APPROVAL_KIND_KEYS[row.kind])}
-                  </span>
-                  <code className="truncate font-mono text-[10px] text-muted-foreground">
-                    {t("agents.approvals.hash", {
-                      hash: row.planHash.slice(0, 14),
-                    })}
-                  </code>
-                </button>
+                    <span className="text-[13px] font-semibold leading-5">
+                      {row.summary}
+                    </span>
+                    <span className="text-[11px] leading-5 text-muted-foreground">
+                      {t("agents.approvals.action", {
+                        action: row.actionType,
+                      })}{" "}
+                      · {t(APPROVAL_KIND_KEYS[row.kind])}
+                    </span>
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2 px-3 pb-2.5 pt-1">
+                    <Button
+                      size="sm"
+                      onClick={() => onSelect(row)}
+                      data-testid={`agents-approval-review-${row.id}`}
+                    >
+                      {t("agents.approvals.reviewPlan")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRejecting(row)}
+                      data-testid={`agents-approval-reject-${row.id}`}
+                      className="border-danger/40 text-danger hover:bg-danger/10 hover:text-danger"
+                    >
+                      {t("agents.approvals.reject")}
+                    </Button>
+                    <code className="ml-auto truncate font-mono text-[10px] text-muted-foreground">
+                      {t("agents.approvals.hash", {
+                        hash: row.planHash.slice(0, 14),
+                      })}
+                    </code>
+                  </div>
+                </article>
               </li>
             );
           })}
         </ul>
       )}
+      <QuickRejectDialog
+        row={rejecting}
+        onOpenChange={(open) => {
+          if (!open) setRejecting(null);
+        }}
+        onRejected={onChanged}
+      />
     </section>
+  );
+}
+
+function QuickRejectDialog({
+  row,
+  onOpenChange,
+  onRejected,
+}: {
+  row: AttentionApprovalRow | null;
+  onOpenChange: (open: boolean) => void;
+  onRejected: () => void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new row starts with an empty reason
+    if (row !== null) setReason("");
+  }, [row]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (row === null || reason.trim() === "" || busy) return;
+    setBusy(true);
+    try {
+      await api.decideApproval(row.boardId, row.id, {
+        decision: "reject",
+        planHash: row.planHash,
+        comment: reason.trim(),
+      });
+      onRejected();
+      toast.success(t("agentControl.approvals.rejectedToast"));
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(decisionError(error, t));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={row !== null}
+      onOpenChange={(open) => {
+        if (!open) onOpenChange(false);
+      }}
+    >
+      <DialogContent data-testid="agents-approval-quick-reject-dialog">
+        <DialogHeader>
+          <DialogTitle>{t("agents.approvals.quickRejectTitle")}</DialogTitle>
+          <DialogDescription>
+            {t("agents.approvals.quickRejectDescription")}
+          </DialogDescription>
+        </DialogHeader>
+        <form noValidate onSubmit={submit} className="space-y-3">
+          <div className="space-y-1">
+            <label
+              htmlFor="agents-approval-reject-reason"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {t("agentControl.approvals.rejectReasonLabel")}
+            </label>
+            <Textarea
+              id="agents-approval-reject-reason"
+              data-testid="agents-approval-reject-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={2}
+              maxLength={2000}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={busy}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              data-testid="agents-approval-reject-confirm"
+              disabled={busy || reason.trim() === ""}
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : null}
+              {t("agents.approvals.rejectConfirm")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -257,6 +400,11 @@ export function AttentionApprovalDetail({
       ? undefined
       : effectiveApprovalStatus(detail.status, detail.expiresAt, now);
   const canDecide = effectiveStatus === "pending";
+  const commandCount =
+    detail === null
+      ? 0
+      : (detail.plan?.commands?.length ?? 0) +
+        (detail.plan?.operations?.length ?? 0);
 
   const decide = async (
     decision: "approve" | "reject",
@@ -350,43 +498,119 @@ export function AttentionApprovalDetail({
               <ApprovalStatusBadge status={effectiveStatus} />
               <ApprovalRiskBadge risk={detail.risk} />
               <span className="text-[11px] text-muted-foreground">
-                {t(APPROVAL_KIND_KEYS[detail.kind])} · {detail.actionType}
+                {t(APPROVAL_KIND_KEYS[detail.kind])}
               </span>
             </div>
+
             {effectiveStatus === "pending" ? (
-              <p className="rounded-md border border-warning/30 bg-warning/5 px-2 py-1.5 text-[11px] text-warning">
-                {t("agents.approvals.expires", {
+              <p className="rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2 text-[11px] leading-5 text-warning">
+                {t("agents.approvals.waiting", {
                   time: formatRelative(detail.expiresAt, lang, now),
                 })}
               </p>
+            ) : effectiveStatus === "expired" ? (
+              <p className="rounded-md border border-border bg-muted px-2.5 py-2 text-[11px] leading-5 text-muted-foreground">
+                {t("agentControl.approvals.expiredHint")}
+              </p>
+            ) : effectiveStatus === "approved" ? (
+              <p className="rounded-md border border-success/30 bg-success/10 px-2.5 py-2 text-[11px] leading-5 text-success">
+                {t("agentControl.approvals.approvedHint")}
+              </p>
+            ) : effectiveStatus === "consumed" ? (
+              <p className="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-[11px] leading-5 text-primary">
+                {t("agentControl.approvals.consumedHint")}
+              </p>
             ) : null}
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <ApprovalMetaRow label={t("agentControl.approvals.board")}>
-                {boardTitle}
-              </ApprovalMetaRow>
-              <ApprovalMetaRow label={t("agentControl.approvals.token")}>
-                <code className="font-mono text-[10px]">
-                  {detail.requestedByTokenId}
-                </code>
-              </ApprovalMetaRow>
-              <ApprovalMetaRow label={t("agentControl.approvals.session")}>
-                {detail.agentSessionId ? (
+
+            <p className="text-[12px] leading-5">
+              {t("agents.approvals.asks", {
+                agent: shortId(detail.requestedByTokenId, 12),
+                action: detail.actionType,
+                board: boardTitle,
+              })}
+            </p>
+
+            {detail.kind === "destructive" ? (
+              <div className="rounded-md border border-danger/40 bg-danger/5 p-2.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-danger">
+                  <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                  {t("agents.approvals.destructiveTitle")}
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                  {t("agents.approvals.destructiveBody")}
+                </p>
+              </div>
+            ) : null}
+
+            <section className="space-y-2">
+              <h4 className="text-xs font-semibold">
+                {t("agents.approvals.request")}
+              </h4>
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ApprovalMetaRow label={t("agentControl.approvals.board")}>
+                  {boardTitle}
+                </ApprovalMetaRow>
+                <ApprovalMetaRow label={t("agents.approvals.requestedBy")}>
                   <code className="font-mono text-[10px]">
-                    {detail.agentSessionId}
+                    {shortId(detail.requestedBy, 16)}
                   </code>
-                ) : (
-                  t("agentControl.approvals.noSession")
-                )}
-              </ApprovalMetaRow>
-              <ApprovalMetaRow label={t("agentControl.approvals.card")}>
-                {detail.cardId === null ? (
-                  t("agentControl.approvals.noCard")
-                ) : (
-                  <span data-testid="agents-approval-card">
-                    {detail.cardId}
-                  </span>
-                )}
-              </ApprovalMetaRow>
+                </ApprovalMetaRow>
+                <ApprovalMetaRow label={t("agentControl.approvals.token")}>
+                  <code className="font-mono text-[10px]">
+                    {shortId(detail.requestedByTokenId, 16)}
+                  </code>
+                </ApprovalMetaRow>
+                <ApprovalMetaRow label={t("agentControl.approvals.session")}>
+                  {detail.agentSessionId ? (
+                    <code className="font-mono text-[10px]">
+                      {shortId(detail.agentSessionId, 16)}
+                    </code>
+                  ) : (
+                    t("agentControl.approvals.noSession")
+                  )}
+                </ApprovalMetaRow>
+                <ApprovalMetaRow label={t("agentControl.approvals.card")}>
+                  {detail.cardId === null ? (
+                    t("agentControl.approvals.noCard")
+                  ) : (
+                    <span data-testid="agents-approval-card">
+                      {shortId(detail.cardId, 16)}
+                    </span>
+                  )}
+                </ApprovalMetaRow>
+                <ApprovalMetaRow label={t("agentControl.approvals.expires")}>
+                  {formatDate(detail.expiresAt, lang)}
+                </ApprovalMetaRow>
+              </dl>
+              <ApprovalLinks approval={detail} />
+            </section>
+
+            <ApprovalPlanBlock
+              approval={detail}
+              title={t("agents.approvals.whatWillChange")}
+              countLabel={t("agents.approvals.commands", {
+                count: commandCount,
+              })}
+            />
+            <ApprovalHash
+              hash={detail.planHash}
+              title={t("agents.approvals.integrity")}
+              badge={t("agents.approvals.exactHash")}
+              hint={t("agents.approvals.hashHint")}
+            />
+
+            {detail.decisionComment !== null ? (
+              <div className="space-y-1" data-testid="agents-approval-comment">
+                <h4 className="text-xs font-semibold">
+                  {t("agentControl.approvals.comment")}
+                </h4>
+                <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-2 text-xs">
+                  {detail.decisionComment}
+                </p>
+              </div>
+            ) : null}
+
+            <dl className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-2">
               <ApprovalMetaRow label={t("agentControl.approvals.created")}>
                 {formatDate(detail.createdAt, lang)}
               </ApprovalMetaRow>
@@ -404,26 +628,16 @@ export function AttentionApprovalDetail({
                 </ApprovalMetaRow>
               ) : null}
             </dl>
-            <ApprovalLinks approval={detail} />
-            {detail.decisionComment !== null ? (
-              <div className="space-y-1" data-testid="agents-approval-comment">
-                <h4 className="text-xs font-semibold">
-                  {t("agentControl.approvals.comment")}
-                </h4>
-                <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-2 text-xs">
-                  {detail.decisionComment}
-                </p>
-              </div>
-            ) : null}
-            <ApprovalPlanBlock approval={detail} />
-            <ApprovalHash hash={detail.planHash} />
           </div>
         )}
       </div>
       {detail !== null && effectiveStatus !== undefined ? (
         <footer className="shrink-0 border-t border-border px-4 py-3">
           {canDecide ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="space-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                {t("agents.approvals.footerHint")}
+              </p>
               <ApprovalDecisionForm
                 key={detail.id}
                 busy={busy}

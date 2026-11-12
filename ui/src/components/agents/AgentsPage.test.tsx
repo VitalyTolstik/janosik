@@ -386,9 +386,9 @@ describe("AgentsPage", () => {
   });
   it("defaults to Attention, switches sections, and preserves board scope", async () => {
     renderPage("/agents?board=board-1");
-    expect(
-      await screen.findByTestId("agents-attention-clear"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-attention-clear")).toBeInTheDocument(),
+    );
     expect(screen.getByTestId("agents-section-attention")).toHaveAttribute(
       "aria-current",
       "page",

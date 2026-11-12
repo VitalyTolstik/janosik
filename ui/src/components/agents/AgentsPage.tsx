@@ -890,6 +890,7 @@ export function AgentsPage() {
                           onFilterChange={setApprovalFilter}
                           selectedId={selectedApprovalId}
                           onSelect={openApproval}
+                          onChanged={pending.reload}
                           now={now}
                         />
                       </>

@@ -91,17 +91,28 @@ export function ApprovalRiskBadge({
 
 export function ApprovalPlanBlock({
   approval,
+  title,
+  countLabel,
 }: {
   approval: ApprovalRequestDto;
+  title?: string;
+  countLabel?: string;
 }) {
   const { t } = useI18n();
   const commands = approval.plan?.commands ?? [];
   const operations = approval.plan?.operations ?? [];
   return (
     <section className="space-y-2" data-testid="approval-plan">
-      <h4 className="text-xs font-semibold">
-        {t("agentControl.approvals.plan")}
-      </h4>
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold">
+          {title ?? t("agentControl.approvals.plan")}
+        </h4>
+        {countLabel !== undefined ? (
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {countLabel}
+          </span>
+        ) : null}
+      </div>
       {commands.length === 0 && operations.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {t("agentControl.approvals.noPlan")}
@@ -152,7 +163,17 @@ export function ApprovalPlanBlock({
   );
 }
 
-export function ApprovalHash({ hash }: { hash: string }) {
+export function ApprovalHash({
+  hash,
+  title,
+  badge,
+  hint,
+}: {
+  hash: string;
+  title?: string;
+  badge?: string;
+  hint?: string;
+}) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
@@ -170,9 +191,16 @@ export function ApprovalHash({ hash }: { hash: string }) {
 
   return (
     <div className="space-y-1">
-      <h4 className="text-xs font-semibold">
-        {t("agentControl.approvals.planHash")}
-      </h4>
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold">
+          {title ?? t("agentControl.approvals.planHash")}
+        </h4>
+        {badge !== undefined ? (
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {badge}
+          </span>
+        ) : null}
+      </div>
       <div className="flex items-start gap-2">
         <code
           data-testid="approval-plan-hash"
@@ -196,6 +224,9 @@ export function ApprovalHash({ hash }: { hash: string }) {
           )}
         </Button>
       </div>
+      {hint !== undefined ? (
+        <p className="text-[11px] leading-5 text-muted-foreground">{hint}</p>
+      ) : null}
       <span className="sr-only" aria-live="polite">
         {copied ? t("agentControl.approvals.copied") : ""}
       </span>
@@ -297,18 +328,7 @@ export function ApprovalDecisionForm({
 
   if (mode === null) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          data-testid="approval-approve"
-          onClick={() => setMode("approve")}
-          disabled={busy}
-          className="bg-success text-white hover:bg-success/90"
-        >
-          <Check className="h-4 w-4" aria-hidden />
-          {t("agentControl.approvals.approve")}
-        </Button>
+      <div className="flex w-full flex-wrap items-center justify-between gap-2">
         <Button
           type="button"
           size="sm"
@@ -320,6 +340,16 @@ export function ApprovalDecisionForm({
         >
           <X className="h-4 w-4" aria-hidden />
           {t("agentControl.approvals.reject")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          data-testid="approval-approve"
+          onClick={() => setMode("approve")}
+          disabled={busy}
+        >
+          <Check className="h-4 w-4" aria-hidden />
+          {t("agentControl.approvals.approve")}
         </Button>
       </div>
     );
