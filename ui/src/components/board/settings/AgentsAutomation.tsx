@@ -552,7 +552,7 @@ export function AgentsAutomation({
                 <label
                   key={value}
                   className={cn(
-                    "mb-1.5 flex cursor-pointer items-start gap-2 rounded-[7px] border px-2.5 py-2 transition-colors motion-reduce:transition-none",
+                    "relative mb-1.5 flex cursor-pointer items-start gap-2 rounded-[7px] border px-2.5 py-2 transition-colors motion-reduce:transition-none",
                     checked
                       ? "border-primary/50 bg-primary/[0.06]"
                       : "border-border bg-[color-mix(in_oklab,var(--surface)_55%,var(--background))] hover:border-muted-foreground/30",
@@ -566,7 +566,7 @@ export function AgentsAutomation({
                     disabled={policy.saving}
                     onChange={() => policy.setField("destructive", value)}
                     data-testid={`agent-policy-destructive-option-${value}`}
-                    className="peer sr-only"
+                    className="peer absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
                   />
                   <span
                     aria-hidden
