@@ -47,4 +47,11 @@ describe("AdminListQueryDto structural filters", () => {
     expect(dto.boardId).toBeUndefined();
     expect(dto.columnId).toBeUndefined();
   });
+
+  it("caps an oversized offset instead of passing it to Prisma", async () => {
+    const errors = await check({
+      offset: String(1_000_001),
+    });
+    expect(errors.map((error) => error.property)).toEqual(["offset"]);
+  });
 });

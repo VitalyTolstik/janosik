@@ -132,12 +132,13 @@ its entity supports.
   tokens, audit): any time, 24 hours, 7 days, 30 days.
 - Pagination shows the total, the page size and the current page. The page
   size default is 50, the minimum is 1 and the maximum is 100.
-- The list state lives in the URL (`search`, `status`, `period`, `limit`,
-  `offset`). Reloading, sharing the link or using browser back/forward restores
-  the same filtered page; hub keys such as `tab` are preserved. Typing in the
-  search box replaces the current history entry, while filters and pagination
-  add one, so Back returns to the previous view rather than one keystroke.
-  The URL carries filters only — never a token, password or one-time code.
+- The entity list state lives in the URL (`search`, `status`, `period`,
+  `limit`, `offset`). Reloading, sharing the link or using browser
+  back/forward restores the same filtered page; hub keys such as `tab` are
+  preserved. Typing in the search box replaces the current history entry,
+  while filters and pagination add one, so Back returns to the previous view
+  rather than one keystroke. The URL carries filters only — never a token,
+  password or one-time code.
 - A row click carries `returnTo` with the exact filtered list URL, and the
   detail page's back control returns there. Only internal `/admin` paths are
   accepted, so a crafted query cannot redirect off the panel.
@@ -165,13 +166,16 @@ collide. The filters combine with `status` and the period window; a request
 that names a column from another board returns no rows rather than widening
 the result. Filtered links show removable chips above the table.
 
-Deleted and archived rows follow the list's own status tabs. With no explicit
+Deleted and archived rows follow the list's own status tabs (board-scoped
+content and moderation lists have them; the log feeds do not). With no explicit
 status filter a board-scoped list still includes soft-deleted comments/files
 and archived or deleted cards, marked with their badge; `status=active`
-excludes them and `status=deleted` selects them. Board counters count live
-rows (cards exclude deleted, comments/files exclude deleted), so a linked list
-without a status filter can show more rows than the counter — the filter chips
-and status tabs are the documented way to narrow it.
+excludes them and `status=deleted` selects them. The Comments and Files
+counters link with `status=active`, matching their live-row definition. The
+Cards counter includes archived cards but excludes deleted ones, so its linked
+list can show archived rows in addition to the count; the Cards counter and
+the Commands/Events counters stay unfiltered by status. The status tabs and
+filter chips are the documented way to narrow any of these lists.
 
 The dashboard is described here; the user, board and content listings are on
 their own pages: see [users and masters](/docs/admin/people/) and

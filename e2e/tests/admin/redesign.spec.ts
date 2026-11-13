@@ -235,7 +235,9 @@ test("REDESIGN-6: a table row is keyboard reachable and the migration sheet list
   await expect(row).toBeVisible();
   await row.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`/admin/users/${user.id}$`));
+  await expect(page).toHaveURL(
+    (url) => url.pathname === `/admin/users/${user.id}`,
+  );
   await expect(
     page.getByRole("heading", { name: user.email, exact: true }),
   ).toBeVisible();

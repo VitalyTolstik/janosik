@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   Archive,
   ArrowLeft,
@@ -20,7 +25,11 @@ import { cn } from "@/lib/utils";
 import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
-import { currentAdminPath, withReturnTo } from "./admin-navigation";
+import {
+  currentAdminPath,
+  readReturnTo,
+  withReturnTo,
+} from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { ConfirmDialog, ErrorState, IdChip, PageHeader, Panel } from "./ui";
 import { BoardEditorSkeleton } from "./skeletons";
@@ -45,7 +54,9 @@ export function BoardContentPage() {
   const toast = useToast();
   const { boardId = "" } = useParams();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const returnTo = currentAdminPath(location);
+  const backTo = readReturnTo(searchParams) ?? routes.adminBoardDetail(boardId);
 
   const [board, setBoard] = useState<BoardAggregate | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -175,7 +186,7 @@ export function BoardContentPage() {
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
         <Link
-          to={routes.adminBoardDetail(boardId)}
+          to={backTo}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />

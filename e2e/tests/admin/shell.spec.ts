@@ -320,11 +320,19 @@ test("NAV-7: browser Back and Forward move between list and details", async ({
   page,
   targetUser,
 }) => {
+  const detailUrl = (url: URL) =>
+    url.pathname === `/admin/users/${targetUser.id}` &&
+    url.searchParams.get("returnTo")?.startsWith("/admin/users?search=") ===
+      true;
+  const filteredListUrl = (url: URL) =>
+    url.pathname === "/admin/users" &&
+    url.searchParams.get("search") === targetUser.email;
+
   await loginAsMaster(page, ownerCredentials());
   await page.goto(adminPath("users"), { waitUntil: "domcontentloaded" });
   await searchAdminList(page, "users", targetUser.email);
   await page.getByTestId(`admin-user-row-${targetUser.id}`).click();
-  await expect(page).toHaveURL(new RegExp(`/admin/users/${targetUser.id}$`));
+  await expect(page).toHaveURL(detailUrl);
 
   await page.goto(adminPath("boards"), { waitUntil: "domcontentloaded" });
   await expect(
@@ -332,16 +340,26 @@ test("NAV-7: browser Back and Forward move between list and details", async ({
   ).toBeVisible();
 
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/admin/users/${targetUser.id}$`));
+  await expect(page).toHaveURL(detailUrl);
   await expect(
     page.getByRole("heading", { name: targetUser.email, exact: true }),
   ).toBeVisible();
 
   await page.goBack();
-  await expect(page).toHaveURL(/\/admin\/users$/);
+  await expect(page).toHaveURL(filteredListUrl);
+  await expect(page.getByRole("textbox", { name: "Search" })).toHaveValue(
+    targetUser.email,
+  );
 
   await page.goForward();
-  await expect(page).toHaveURL(new RegExp(`/admin/users/${targetUser.id}$`));
+  await expect(page).toHaveURL(detailUrl);
+
+  // The detail back control uses the same saved context, not a fixed route.
+  await page.getByRole("link", { name: "Back", exact: true }).click();
+  await expect(page).toHaveURL(filteredListUrl);
+  await expect(
+    page.getByTestId(`admin-user-row-${targetUser.id}`),
+  ).toBeVisible();
 });
 
 test("NAV-8: a deep link survives the login screen", async ({

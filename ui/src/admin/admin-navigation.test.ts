@@ -53,6 +53,20 @@ describe("admin navigation", () => {
     expect(back).toBe("/admin/moderation?tab=comments&boardId=b-1");
   });
 
+  it("keeps a fragment after the query when adding returnTo", () => {
+    const href = withReturnTo(
+      "/admin/cards/c-1#comments",
+      "/admin/moderation?tab=comments",
+    );
+    expect(href.startsWith("/admin/cards/c-1?returnTo=")).toBe(true);
+    expect(href.endsWith("#comments")).toBe(true);
+    const url = new URL(href, "http://admin.test");
+    expect(url.searchParams.get("returnTo")).toBe(
+      "/admin/moderation?tab=comments",
+    );
+    expect(url.hash).toBe("#comments");
+  });
+
   it("refuses external or malformed return paths", () => {
     const read = (value: string) =>
       readReturnTo(new URLSearchParams({ returnTo: value }));

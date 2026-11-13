@@ -45,6 +45,7 @@ export class AdminListQueryDto {
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(0)
+  @Max(ADMIN_PAGE_LIMITS.maxOffset)
   offset?: number;
 
   @IsOptional()

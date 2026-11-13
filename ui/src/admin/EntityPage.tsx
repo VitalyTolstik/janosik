@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import type {
@@ -12,6 +12,7 @@ import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import {
   ADMIN_LIST_FILTER_KEYS,
+  adminFiltersKey,
   hasAdminFilters,
   type AdminListFilterKey,
 } from "./admin-list-query";
@@ -109,6 +110,22 @@ export function EntityPage<E extends AdminEntity>({
     bulkEnabled &&
     visibleIds.length > 0 &&
     visibleIds.every((id) => selected.has(id));
+
+  /**
+   * A result-set change clears the selection, including one that arrived via
+   * the URL (browser back/forward, a shared link). Offset/reload keep it,
+   * exactly as the 176.1 contract says (TASK-176.5 review).
+   */
+  const selectionScopeKey = [
+    list.effectiveSearch,
+    list.status,
+    list.period,
+    list.limit,
+    adminFiltersKey(list.filters),
+  ].join("|");
+  useEffect(() => {
+    setSelected(new Set());
+  }, [selectionScopeKey]);
 
   /**
    * The selection contract (TASK-176.1): it survives pagination but not a
@@ -421,7 +438,26 @@ export function EntityPage<E extends AdminEntity>({
                             ? "cursor-pointer transition-colors hover:bg-hover/50"
                             : undefined
                         }
-                        onClick={href ? () => void navigate(href) : undefined}
+                        onClick={
+                          href
+                            ? (event) => {
+                                // A cell can be its own link (board, card,
+                                // identity) or button. The row must not steal
+                                // that click and navigate to the row target
+                                // (TASK-176.5 review, 176.6 column links).
+                                const target = event.target;
+                                if (
+                                  target instanceof Element &&
+                                  target.closest(
+                                    "a,button,input,select,textarea,label,[role='button']",
+                                  ) !== null
+                                ) {
+                                  return;
+                                }
+                                void navigate(href);
+                              }
+                            : undefined
+                        }
                         onKeyDown={
                           href
                             ? (event) => {

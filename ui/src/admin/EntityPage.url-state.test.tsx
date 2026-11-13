@@ -237,6 +237,26 @@ describe("admin list URL state", () => {
     expect(screen.getByTestId("location-probe")).toHaveTextContent("period=7d");
   });
 
+  it("keeps a cell link from being stolen by the row link", async () => {
+    const server = new FakeAdminServer(stateWithTwoBoards());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards?tab=cards");
+
+    const row = await screen.findByTestId("admin-card-row-card-2");
+    const boardLink = row.querySelector('a[href^="/admin/boards/b-2"]');
+    expect(boardLink).not.toBeNull();
+    fireEvent.click(boardLink as Element);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location-probe")).toHaveTextContent(
+        "/admin/boards/b-2",
+      );
+    });
+    expect(screen.getByTestId("location-probe")).not.toHaveTextContent(
+      "/admin/cards/card-2",
+    );
+  });
+
   it("carries the filtered list into a card and back", async () => {
     const server = new FakeAdminServer(stateWithTwoBoards());
     vi.stubGlobal("fetch", server.fetchImpl);

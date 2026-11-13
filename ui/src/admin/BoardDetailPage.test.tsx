@@ -81,18 +81,29 @@ describe("board detail addressable links", () => {
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin(ADMIN_BOARD);
 
-    const cases: Array<[string, string, string]> = [
-      ["admin-board-counter-cards", "/admin/boards", "cards"],
-      ["admin-board-counter-comments", "/admin/moderation", "comments"],
-      ["admin-board-counter-attachments", "/admin/moderation", "attachments"],
-      ["admin-board-counter-commands", "/admin/audit", "commands"],
-      ["admin-board-counter-activity", "/admin/audit", "activity"],
+    const cases: Array<[string, string, string, string | null]> = [
+      ["admin-board-counter-cards", "/admin/boards", "cards", null],
+      [
+        "admin-board-counter-comments",
+        "/admin/moderation",
+        "comments",
+        "active",
+      ],
+      [
+        "admin-board-counter-attachments",
+        "/admin/moderation",
+        "attachments",
+        "active",
+      ],
+      ["admin-board-counter-commands", "/admin/audit", "commands", null],
+      ["admin-board-counter-activity", "/admin/audit", "activity", null],
     ];
-    for (const [testId, pathname, tab] of cases) {
+    for (const [testId, pathname, tab, status] of cases) {
       const href = hrefOf(await screen.findByTestId(testId));
       expect(href.pathname).toBe(pathname);
       expect(href.searchParams.get("tab")).toBe(tab);
       expect(href.searchParams.get("boardId")).toBe("b-1");
+      expect(href.searchParams.get("status")).toBe(status);
       expect(href.searchParams.get("returnTo")).toBe(ADMIN_BOARD);
     }
   });
@@ -167,6 +178,7 @@ describe("board detail addressable links", () => {
       .filter((entry) => entry.path === "/admin/entities/comments")
       .at(-1);
     expect(request?.query.get("boardId")).toBe("b-1");
+    expect(request?.query.get("status")).toBe("active");
   });
 
   it("uses returnTo as the back target", async () => {

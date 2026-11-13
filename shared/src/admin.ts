@@ -633,7 +633,13 @@ export const ADMIN_PASSWORD_MIN = 8;
 export const ADMIN_PASSWORD_MAX = 100;
 
 /** `GET /admin/*` page size bounds. */
-export const ADMIN_PAGE_LIMITS = { min: 1, max: 100, default: 50 } as const;
+export const ADMIN_PAGE_LIMITS = {
+  min: 1,
+  max: 100,
+  default: 50,
+  /** Offset cap for list windows: keeps Prisma's int32 `skip` safe. */
+  maxOffset: 1_000_000,
+} as const;
 
 /**
  * Page windows of the detail tabs (TASK-176.3). The list is a window, never

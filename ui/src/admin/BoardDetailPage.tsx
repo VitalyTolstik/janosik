@@ -239,7 +239,13 @@ export function BoardDetailPage() {
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  window.open(routes.adminBoardContent(board.id), "_self")
+                  window.open(
+                    withReturnTo(
+                      routes.adminBoardContent(board.id),
+                      listReturnTo,
+                    ),
+                    "_self",
+                  )
                 }
               >
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -354,13 +360,13 @@ export function BoardDetailPage() {
         <CountItem
           label={t("admin.boardDetail.count.comments")}
           value={board.counts.comments}
-          to={counterHref(adminCommentsHref(board.id))}
+          to={counterHref(adminCommentsHref(board.id, "active"))}
           testId="admin-board-counter-comments"
         />
         <CountItem
           label={t("admin.boardDetail.count.attachments")}
           value={board.counts.attachments}
-          to={counterHref(adminAttachmentsHref(board.id))}
+          to={counterHref(adminAttachmentsHref(board.id, "active"))}
           testId="admin-board-counter-attachments"
         />
         <CountItem

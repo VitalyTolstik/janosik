@@ -57,7 +57,13 @@ function window(query: AdminListQueryDto): { limit: number; offset: number } {
     Math.max(query.limit ?? ADMIN_PAGE_LIMITS.default, ADMIN_PAGE_LIMITS.min),
     ADMIN_PAGE_LIMITS.max,
   );
-  return { limit, offset: Math.max(query.offset ?? 0, 0) };
+  return {
+    limit,
+    offset: Math.min(
+      Math.max(query.offset ?? 0, 0),
+      ADMIN_PAGE_LIMITS.maxOffset,
+    ),
+  };
 }
 
 /** Clamped window of a detail tab (TASK-176.3). */

@@ -28,11 +28,14 @@ export function hasAdminUrlContext(location: AdminLocationLike): boolean {
 export function withReturnTo(href: string, returnTo: string | null): string {
   if (returnTo === null || returnTo === "") return href;
   if (href === returnTo) return href;
-  const [path, query = ""] = href.split("?");
+  const hashIndex = href.indexOf("#");
+  const hash = hashIndex === -1 ? "" : href.slice(hashIndex);
+  const withoutHash = hashIndex === -1 ? href : href.slice(0, hashIndex);
+  const [path, query = ""] = withoutHash.split("?");
   const params = new URLSearchParams(query);
   params.set(RETURN_TO_PARAM, returnTo);
   const value = params.toString();
-  return value === "" ? path : `${path}?${value}`;
+  return `${value === "" ? path : `${path}?${value}`}${hash}`;
 }
 
 /**
@@ -78,12 +81,26 @@ export function adminCardsHref(
   });
 }
 
-export function adminCommentsHref(boardId?: string | null): string {
-  return adminListHref("/admin/moderation", { tab: "comments", boardId });
+export function adminCommentsHref(
+  boardId?: string | null,
+  status?: string | null,
+): string {
+  return adminListHref("/admin/moderation", {
+    tab: "comments",
+    boardId,
+    status,
+  });
 }
 
-export function adminAttachmentsHref(boardId?: string | null): string {
-  return adminListHref("/admin/moderation", { tab: "attachments", boardId });
+export function adminAttachmentsHref(
+  boardId?: string | null,
+  status?: string | null,
+): string {
+  return adminListHref("/admin/moderation", {
+    tab: "attachments",
+    boardId,
+    status,
+  });
 }
 
 export function adminCommandsHref(boardId?: string | null): string {

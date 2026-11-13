@@ -145,7 +145,13 @@ test("F2: an audit master link opens Masters and survives master deletion", asyn
   const link = row.getByRole("link", { name: master.email, exact: true });
   await expect(link).toBeVisible();
   await link.click();
-  await expect(page).toHaveURL(/\/admin\/access\?tab=masters$/);
+  await expect(page).toHaveURL((url) => {
+    return (
+      url.pathname === "/admin/access" &&
+      url.searchParams.get("tab") === "masters" &&
+      url.searchParams.get("returnTo")?.startsWith("/admin/audit?") === true
+    );
+  });
   await expect(
     page.getByRole("heading", { name: "Masters", exact: true }),
   ).toBeVisible();

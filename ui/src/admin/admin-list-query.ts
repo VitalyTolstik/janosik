@@ -108,7 +108,7 @@ export function readAdminListQuery(
       ADMIN_PAGE_LIMITS.min,
       ADMIN_PAGE_LIMITS.max,
     ),
-    offset: readInt(params.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER),
+    offset: readInt(params.get("offset"), 0, 0, ADMIN_PAGE_LIMITS.maxOffset),
     filters: {
       boardId: readId(params.get("boardId")),
       columnId: readId(params.get("columnId")),
@@ -165,22 +165,4 @@ export function adminFiltersKey(filters: AdminListFilters): string {
 
 export function hasAdminFilters(filters: AdminListFilters): boolean {
   return ADMIN_LIST_FILTER_KEYS.some((key) => filters[key] !== null);
-}
-
-/** True when the list has no URL-visible state beyond the defaults. */
-export function isDefaultAdminListQuery(
-  state: AdminListQueryState,
-  options: AdminListQueryOptions = {},
-): boolean {
-  return (
-    adminListQueryKey(state) ===
-    adminListQueryKey({
-      search: "",
-      status: "all",
-      period: "any",
-      limit: defaultLimit(options),
-      offset: 0,
-      filters: EMPTY_ADMIN_LIST_FILTERS,
-    })
-  );
 }

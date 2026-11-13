@@ -871,6 +871,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         bulk: true,
         title: t("admin.comments.title"),
         subtitle: t("admin.comments.subtitle"),
+        statuses: [
+          { value: "active", label: statusLabels.active },
+          { value: "deleted", label: statusLabels.deleted },
+        ],
         columns: [
           {
             label: t("admin.comments.column.text"),

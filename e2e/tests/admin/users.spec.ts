@@ -492,7 +492,12 @@ test("U13: user detail shows eight counters and nine populated tabs", async ({
 
     await page.getByTestId("admin-user-tab-memberships").click();
     await page.getByRole("link", { name: seeded.boardTitle }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/boards/${board.id}$`));
+    await expect(page).toHaveURL((url) => {
+      return (
+        url.pathname === `/admin/boards/${board.id}` &&
+        url.searchParams.get("returnTo")?.includes("tab=memberships") === true
+      );
+    });
   } finally {
     await seeded.context.close();
   }
