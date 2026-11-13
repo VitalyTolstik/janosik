@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import agentsPage from "./AgentsPage.tsx?raw";
+import agentDetailPage from "./AgentDetailPage.tsx?raw";
 import attention from "./AttentionApprovals.tsx?raw";
 import runUi from "./run-ui.tsx?raw";
 import sessionUi from "./session-ui.tsx?raw";
@@ -20,6 +21,7 @@ const indexCss = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 
 const SURFACES = {
   AgentsPage: agentsPage,
+  AgentDetailPage: agentDetailPage,
   AttentionApprovals: attention,
   "run-ui": runUi,
   "session-ui": sessionUi,

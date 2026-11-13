@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 export type BoardSettingsSectionId = "workflow" | "agents";
 
@@ -62,6 +63,7 @@ export function BoardSettingsShell({
   children,
 }: BoardSettingsShellProps) {
   const { t } = useI18n();
+  const verticalRail = useMediaQuery("(min-width: 768px)");
   const [confirmClose, setConfirmClose] = useState(false);
   const tabRefs = useRef<
     Partial<Record<BoardSettingsSectionId, HTMLButtonElement | null>>
@@ -186,7 +188,7 @@ export function BoardSettingsShell({
               aria-label={t("board.settings.title")}
               className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
               role="tablist"
-              aria-orientation="vertical"
+              aria-orientation={verticalRail ? "vertical" : "horizontal"}
             >
               {sections.map((entry, index) => {
                 const Icon = entry.icon;

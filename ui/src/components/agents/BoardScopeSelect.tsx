@@ -66,7 +66,9 @@ export function BoardScopeSelect({
     value,
     open,
     onOpenChange: setOpen,
-    onSelect: onChange,
+    onSelect: (next) => {
+      if (next !== value) onChange(next);
+    },
     triggerRef,
   });
 

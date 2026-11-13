@@ -448,7 +448,7 @@ export function AgentsAutomation({
             className="mb-3 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/40 bg-warning/[0.07] px-2.5 py-2 text-[11px] leading-[1.45]"
           >
             <AlertTriangle
-              className="mt-px h-3.5 w-3.5 shrink-0 text-warning"
+              className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
               aria-hidden
             />
             <div className="min-w-0 flex-1">
@@ -479,7 +479,7 @@ export function AgentsAutomation({
             className="mb-3 space-y-2"
             data-testid="agents-automation-conflicts"
           >
-            <p className="text-[11px] text-warning">
+            <p className="text-[11px] text-[color:var(--agent-tone-warning)]">
               {t("board.settings.agents.conflictUnresolved")}
             </p>
             {policy.conflicts.map((entry) => (

@@ -89,4 +89,18 @@ describe("BoardScopeSelect (TASK-179.9)", () => {
     expect(option.className).toContain("min-h-9");
     expect(option.className).toContain("max-md:min-h-11");
   });
+
+  it("typeaheads board titles", async () => {
+    const user = userEvent.setup();
+    const { trigger, onChange } = renderScope();
+    await user.click(trigger);
+    await user.keyboard("w");
+    const listbox = screen.getByTestId("scope-listbox");
+    expect(trigger).toHaveAttribute(
+      "aria-activedescendant",
+      `${listbox.id}-option-1`,
+    );
+    await user.keyboard("{Enter}");
+    expect(onChange).toHaveBeenCalledWith("board-1");
+  });
 });

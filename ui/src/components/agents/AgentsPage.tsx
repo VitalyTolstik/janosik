@@ -77,6 +77,7 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select-field";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import { cn } from "@/lib/utils";
@@ -89,6 +90,7 @@ const SECTIONS = ["attention", "sessions", "runs"] as const;
 
 export function AgentsPage() {
   const { t, lang } = useI18n();
+  const verticalRail = useMediaQuery("(min-width: 768px)");
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
   const { boards: loadedBoards } = useBoard();
@@ -702,7 +704,7 @@ export function AgentsPage() {
         <nav
           role="tablist"
           aria-label={t("agents.title")}
-          aria-orientation="vertical"
+          aria-orientation={verticalRail ? "vertical" : "horizontal"}
           className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
         >
           {SECTIONS.map((item) => {
@@ -755,7 +757,7 @@ export function AgentsPage() {
                     className={cn(
                       "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[11px] font-semibold tabular-nums",
                       item === "attention"
-                        ? "border border-warning/30 bg-warning/10 text-warning"
+                        ? "border border-warning/30 bg-warning/10 text-[color:var(--agent-tone-warning)]"
                         : section === item
                           ? "bg-primary/15 text-primary"
                           : "bg-hover text-muted-foreground",
@@ -812,7 +814,7 @@ export function AgentsPage() {
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
                   {count !== null && count > 0 ? (
                     <span
-                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[11px] font-semibold tabular-nums text-warning"
+                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[11px] font-semibold tabular-nums text-[color:var(--agent-tone-warning)]"
                       data-state={pending.stale ? "stale" : "fresh"}
                       title={
                         pending.stale ? t("agents.pending.stale") : undefined
@@ -962,7 +964,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground/78 focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
+                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -1171,7 +1173,9 @@ export function AgentsPage() {
               <AlertTriangle
                 className={cn(
                   "mt-px h-3.5 w-3.5 shrink-0",
-                  state.rows.length === 0 ? "text-danger" : "text-warning",
+                  state.rows.length === 0
+                    ? "text-danger"
+                    : "text-[color:var(--agent-tone-warning)]",
                 )}
                 aria-hidden
               />
@@ -1202,7 +1206,7 @@ export function AgentsPage() {
           )}
           {section === "attention" && pending.error ? (
             <div
-              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
               data-testid="agents-approvals-error"
               role="alert"
             >
@@ -1661,7 +1665,7 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
       className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-success/30 bg-success/5 px-[11px] py-[9px]"
       data-testid="agents-attention-clear"
     >
-      <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-success/25 bg-success/10 text-success">
+      <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-success/25 bg-success/10 text-[color:var(--agent-tone-success)]">
         <ShieldCheck className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
@@ -1821,7 +1825,7 @@ function AgentRow({
                 t("agents.tokenShort", { id: shortId(group.tokenId) })}
             </div>
             {group.liveCount > 0 ? (
-              <span className="inline-flex items-center gap-1 text-xs text-success">
+              <span className="inline-flex items-center gap-1 text-xs text-[color:var(--agent-tone-success)]">
                 <AgentLiveDot />
                 {t("agents.liveCount", { count: group.liveCount })}
               </span>
@@ -1860,7 +1864,7 @@ function AgentRow({
           ) : null}
           {group.rows.some((row) => row.stale) ? <AgentStaleBadge /> : null}
           {group.boardIds.some((id) => staleBoardIds.includes(id)) ? (
-            <span className="text-xs text-warning">
+            <span className="text-xs text-[color:var(--agent-tone-warning)]">
               {t("agents.shell.staleData")}
             </span>
           ) : null}
