@@ -1887,6 +1887,60 @@ export class AdminService {
       this.prisma.adminAuditLog.count({ where }),
     ]);
 
+    // A target id is only safe to link while the row still exists: user
+    // deletion is a hard delete, and a board/card may since have been purged.
+    const idsOfType = (type: string) => [
+      ...new Set(
+        items
+          .filter((entry) => entry.targetType === type && entry.targetId)
+          .map((entry) => entry.targetId as string),
+      ),
+    ];
+    const userIds = idsOfType("user");
+    const boardIds = idsOfType("board");
+    const cardIds = idsOfType("card");
+    const [users, boards, cards] = await Promise.all([
+      userIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true },
+          }),
+      boardIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.board.findMany({
+            where: { id: { in: boardIds } },
+            select: { id: true },
+          }),
+      cardIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.card.findMany({
+            where: { id: { in: cardIds } },
+            select: { id: true },
+          }),
+    ]);
+    const existing = {
+      user: new Set(users.map((row) => row.id)),
+      board: new Set(boards.map((row) => row.id)),
+      card: new Set(cards.map((row) => row.id)),
+    };
+    const targetExists = (entry: {
+      targetType: string | null;
+      targetId: string | null;
+    }): boolean | null => {
+      if (entry.targetId === null) return null;
+      if (entry.targetType === "user") {
+        return existing.user.has(entry.targetId);
+      }
+      if (entry.targetType === "board") {
+        return existing.board.has(entry.targetId);
+      }
+      if (entry.targetType === "card") {
+        return existing.card.has(entry.targetId);
+      }
+      return null;
+    };
+
     return {
       items: items.map((entry) => ({
         id: entry.id,
@@ -1895,6 +1949,7 @@ export class AdminService {
         action: entry.action,
         targetType: entry.targetType,
         targetId: entry.targetId,
+        targetExists: targetExists(entry),
         details: entry.aggregateKey
           ? {
               ...((entry.details as Record<string, unknown> | null) ?? {}),
@@ -2281,7 +2336,7 @@ export class AdminService {
     return { status: "ok" };
   }
 
-  /** Master deletes an attachment and its blob (TASK-60). */
+  /** Master soft-deletes an attachment; the blob is kept for restore. */
   async deleteAttachment(
     attachmentId: string,
     admin: AdminPrincipal,

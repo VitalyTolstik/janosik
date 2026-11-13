@@ -106,6 +106,7 @@ export function EntityLink({
   className,
   testId,
   copyValue,
+  ariaLabel,
 }: {
   to: string | null;
   children: React.ReactNode;
@@ -113,6 +114,8 @@ export function EntityLink({
   testId?: string;
   /** When set, a copy icon rides next to the link (searchable values). */
   copyValue?: string;
+  /** Full value when the visible label is shortened (ids, long names). */
+  ariaLabel?: string;
 }) {
   if (to === null) {
     return <span className="text-muted-foreground">—</span>;
@@ -122,6 +125,7 @@ export function EntityLink({
       <Link
         to={to}
         data-testid={testId}
+        aria-label={ariaLabel}
         className={cn(
           "truncate font-medium text-primary underline-offset-2 hover:underline",
           className,
@@ -133,6 +137,41 @@ export function EntityLink({
       {copyValue ? <CopyButton value={copyValue} /> : null}
     </span>
   );
+}
+
+/**
+ * Foreign key whose human label may be missing: link when the id and label
+ * both exist, fall back to plain text for a deleted target, and to a
+ * copyable id when only the id survives. Never renders a broken link.
+ */
+export function IdentityLink({
+  id,
+  label,
+  href,
+  testId,
+}: {
+  id: string | null;
+  label: string | null;
+  href: (id: string) => string;
+  testId?: string;
+}) {
+  if (id !== null && label !== null && label !== "") {
+    return (
+      <EntityLink to={href(id)} copyValue={label} testId={testId}>
+        {label}
+      </EntityLink>
+    );
+  }
+  if (label !== null && label !== "") {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1.5">
+        <span className="truncate">{label}</span>
+        <CopyButton value={label} />
+      </span>
+    );
+  }
+  if (id !== null) return <IdCell id={id} />;
+  return <span className="text-muted-foreground">—</span>;
 }
 
 /** Copyable id chip with an optional leading label (e.g. a cuid owner id). */

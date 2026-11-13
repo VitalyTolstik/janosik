@@ -94,7 +94,7 @@ labels.
 | Role | the member role |
 | Accepted | acceptance time, or a `Pending` badge |
 | Expires | expiry, or a dash |
-| Invited by | inviter email, or a dash |
+| Invited by | inviter email, linked to the profile, or a dash |
 | Actions | the member menu |
 
 `Add member` opens a dialog with a user email and a role select (`MEMBER`,
@@ -180,7 +180,7 @@ delete. A status badge, a priority badge and a due-date chip are shown.
 | Version | the card version |
 | Created by | derived from the first add-card command, or a dash |
 | Assignee | assignee, linked, or a dash |
-| Last changed by | the label of the last actor, or a dash |
+| Last changed by | the last actor, linked to the profile, or a dash/deleted-user id |
 
 A card has no separate creator field, so `Created by` is derived from the first
 `ADD_CARD` or `DUPLICATE_CARD` command whose payload names the card. It is a
@@ -195,10 +195,11 @@ dash for cards imported before the command log.
   links with a down-left arrow, each with a type badge and a `Deleted` badge
   when applicable. Types are `blocks`, `relates_to` and `duplicates`.
 - Attachments table: File (thumbnail, name, download), Size, Uploaded by,
-  Created, Status.
-- Comments table: Comment, Author, Created, Status.
+  Created, Status, Actions.
+- Comments table: Comment, Author (linked), Created, Status, Actions.
 - Timeline, a merged feed of activity rows and commands, each with a type
-  badge, the actor email, the details as JSON and the time.
+  badge, the actor email linked to the profile, the details as JSON and the
+  time.
 
 Comments, attachments and the timeline are windows, not full lists. Each
 block footer reads `50 of N` and offers `Load more` while `N` is larger. The
@@ -213,6 +214,11 @@ detail centres that block on the row, highlights it and offers
 `Show from the start`. A deleted anchor still opens the row because the
 anchored block includes deleted rows. A block window stops at 5,000 rows; for
 deeper history use the searchable Commands and Activity lists with the card id.
+
+The Actions menu on a live comment or attachment deletes that single row
+(confirmed; the audit log records it). The block then reloads with deleted
+rows included, so the affected row stays visible with its `Deleted` badge
+instead of disappearing.
 
 ## Columns
 
@@ -315,8 +321,9 @@ The page has a search box, status tabs, pagination and bulk selection.
 Row actions:
 
 - `Delete file` (when the row is live): soft-deletes the attachment. The
-  confirm dialog warns that the file is removed from storage. The row then
-  shows `Restore`, and the retention purge later reclaims the blob.
+  confirm dialog explains that the file is hidden from the card and can be
+  restored. The row then shows `Restore`, and the retention purge later
+  reclaims the blob.
 - `Restore` (when the row is deleted): clears `deletedAt`, so the file streams
   again.
 

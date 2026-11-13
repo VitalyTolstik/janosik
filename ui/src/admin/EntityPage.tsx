@@ -1,23 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { MoreHorizontal } from "lucide-react";
 import type {
   AdminEntity,
   AdminEntityRowMap,
   AdminPage,
 } from "@janosik/shared";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/Toast";
-import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
+import { RowActions, type EntityAction } from "./row-actions";
 import { EntityListSkeleton } from "./skeletons";
 import { useAdminList } from "./use-admin-list";
 import {
@@ -35,6 +28,8 @@ import {
   Th,
 } from "./ui";
 
+export type { EntityAction } from "./row-actions";
+
 /**
  * Generic entity listing (TASK-48): one table implementation for every
  * `GET /admin/entities/:entity` variant. A per-entity config supplies the
@@ -49,29 +44,6 @@ import {
  * instead of a generic 400 from validation (TASK-176.1).
  */
 const ADMIN_BULK_LIMIT = 500;
-
-export interface EntityAction {
-  label: string;
-  destructive?: boolean;
-  /** Render the menu item in the warning colour (e.g. promote). */
-  warning?: boolean;
-  /** Pure navigation actions do not toast. */
-  noToast?: boolean;
-  /** Optional confirmation dialog copy. */
-  confirmTitle?: string;
-  confirmBody?: string;
-  run: () => Promise<unknown>;
-  /**
-   * A custom dialog host (TASK-51: the email-change form) instead of the
-   * confirm flow. When present the menu item mounts this node; the action
-   * closes itself via `close` and refreshes the list via `reload`. `run`
-   * stays unused for such actions.
-   */
-  renderDialog?: (options: {
-    close: () => void;
-    reload: () => void;
-  }) => ReactNode;
-}
 
 export interface EntityColumn<T> {
   label: string;
@@ -97,105 +69,6 @@ export interface EntityListConfig<T> {
   skipActions?: boolean;
   /** Enable bulk selection (delete / restore) for entities with `deletedAt`. */
   bulk?: boolean;
-}
-
-function RowActions({
-  testId,
-  actions,
-  reload,
-}: {
-  testId: string;
-  actions: Array<EntityAction>;
-  reload: () => void;
-}) {
-  const t = useAdminT();
-  const [pending, setPending] = useState<EntityAction | null>(null);
-  const [dialog, setDialog] = useState<EntityAction | null>(null);
-  const [busy, setBusy] = useState(false);
-  const toast = useToast();
-
-  const execute = async (action: EntityAction) => {
-    setBusy(true);
-    try {
-      await action.run();
-      if (!action.noToast) {
-        toast.success(action.label);
-        reload();
-      }
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 403) {
-        toast.error(t("admin.common.forbidden"));
-      } else if (error instanceof ApiError && error.status === 0) {
-        toast.error(t("admin.common.offline"));
-      } else {
-        toast.error(t("admin.common.actionFailed"));
-      }
-    } finally {
-      setBusy(false);
-      setPending(null);
-    }
-  };
-
-  if (actions.length === 0) {
-    return null;
-  }
-
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={t("admin.common.actions")}
-            data-testid={testId}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
-          >
-            <MoreHorizontal className="h-4 w-4" aria-hidden />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-44">
-          {actions.map((action) => (
-            <DropdownMenuItem
-              key={action.label}
-              className={
-                action.destructive
-                  ? "text-danger focus:text-danger"
-                  : action.warning
-                    ? "text-warning focus:text-warning"
-                    : undefined
-              }
-              onSelect={() => {
-                if (action.renderDialog) {
-                  setDialog(action);
-                } else if (action.confirmTitle) {
-                  setPending(action);
-                } else {
-                  void execute(action);
-                }
-              }}
-            >
-              {action.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {pending ? (
-        <ConfirmDialog
-          open
-          title={pending.confirmTitle ?? pending.label}
-          body={pending.confirmBody ?? ""}
-          confirmLabel={pending.label}
-          destructive={pending.destructive ?? true}
-          busy={busy}
-          onConfirm={() => void execute(pending)}
-          onClose={() => (busy ? undefined : setPending(null))}
-        />
-      ) : null}
-      {dialog?.renderDialog
-        ? dialog.renderDialog({ close: () => setDialog(null), reload })
-        : null}
-    </>
-  );
 }
 
 export function EntityPage<E extends AdminEntity>({

@@ -21,6 +21,7 @@ describe("Admin detail windows (e2e)", () => {
   let prisma: PrismaService;
   let adminToken: string;
   let userId: string;
+  let inviterId: string;
   let boardId: string;
   let targetCardId: string;
   let anchorCommentId: string;
@@ -57,6 +58,10 @@ describe("Admin detail windows (e2e)", () => {
       data: { email: USER_EMAIL, passwordHash: "unused" },
     });
     userId = user.id;
+    const inviter = await prisma.user.create({
+      data: { email: "windows-inviter@example.com", passwordHash: "unused" },
+    });
+    inviterId = inviter.id;
     const board = await prisma.board.create({
       data: { title: "Windows board" },
     });
@@ -67,6 +72,7 @@ describe("Admin detail windows (e2e)", () => {
         userId,
         role: "ADMIN",
         acceptedAt: at(0),
+        invitedById: inviterId,
       },
     });
     // A deleted board is still visible in the Memberships tab, but the
@@ -95,6 +101,7 @@ describe("Admin detail windows (e2e)", () => {
       createdAt: at(index),
       updatedAt: at(index),
       attachmentCount: index === 0 ? 55 : 0,
+      lastActorId: index === 0 ? userId : null,
     }));
     await prisma.card.createMany({ data: cards });
     targetCardId = cards[0]!.id;
@@ -267,6 +274,14 @@ describe("Admin detail windows (e2e)", () => {
           membership.boardDeletedAt !== null,
       ),
     ).toBe(true);
+    expect(
+      body.memberships.find(
+        (membership: { boardId: string }) => membership.boardId === boardId,
+      ),
+    ).toMatchObject({
+      invitedById: inviterId,
+      invitedByEmail: "windows-inviter@example.com",
+    });
     expect(body.windows.sessions).toMatchObject({ total: 25, hasMore: false });
     expect(
       body.sessions.every(
@@ -330,6 +345,8 @@ describe("Admin detail windows (e2e)", () => {
     ).expect(200);
     const body = res.body;
 
+    expect(body.card.lastActorId).toBe(userId);
+    expect(body.card.lastActorEmail).toBe(USER_EMAIL);
     expect(body.card.commentIds).toHaveLength(25);
     expect(body.windows.comments).toMatchObject({
       offset: 0,

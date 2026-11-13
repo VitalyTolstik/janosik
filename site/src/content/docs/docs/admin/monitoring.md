@@ -93,8 +93,8 @@ The legacy path `/admin/log` redirects to `/admin/commands`.
 | Column | Value |
 | --- | --- |
 | Action | the audit action name |
-| Master | master email, linked to the masters page, or copied when the master is gone |
-| Target | the target type and id, or a dash |
+| Master | master email; linked to the masters page for an OWNER, plain copyable text for an OPERATOR, or copied when the master is gone |
+| Target | the target type and id; user/board/card targets link to their detail page, other targets keep a copyable id, or a dash |
 | Details | the audit payload as JSON |
 | When | creation time |
 

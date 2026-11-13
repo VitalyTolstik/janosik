@@ -278,6 +278,11 @@ export interface AdminAuditRowDto {
   action: string;
   targetType: string | null;
   targetId: string | null;
+  /**
+   * Whether a `user`/`board`/`card` target still exists; `null` for other
+   * target types. Deleted hard targets (`user.delete`) degrade to text.
+   */
+  targetExists: boolean | null;
   details: Record<string, unknown> | null;
   /** Unix ms. */
   createdAt: number;
@@ -945,6 +950,8 @@ export interface AdminUserMembershipDto {
   role: string;
   acceptedAt: number | null;
   expiresAt: number | null;
+  /** `BoardMember.invitedById`; `null` for master-added memberships. */
+  invitedById: string | null;
   invitedByEmail: string | null;
   createdAt: number;
 }
@@ -1039,7 +1046,9 @@ export interface AdminCardDetailDto {
     coverValue: string | null;
     version: number;
     attachmentCount: number;
-    /** Label of `Card.lastActorId`; `null` when untouched. */
+    /** `Card.lastActorId`; `null` when untouched. */
+    lastActorId: string | null;
+    /** Label of `Card.lastActorId`; `null` when untouched or the user is gone. */
     lastActorEmail: string | null;
   };
   labels: Array<{ id: string; name: string; color: string; position: number }>;

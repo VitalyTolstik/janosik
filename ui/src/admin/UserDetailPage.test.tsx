@@ -13,10 +13,12 @@ import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
+import { adminMessage } from "./admin-i18n";
 import AdminApp from "./AdminApp";
 import {
   adminCard,
   adminComment,
+  adminMembership,
   adminSession,
   adminToken,
   adminUser,
@@ -196,5 +198,223 @@ describe("UserDetailPage windows", () => {
     const commentsTab = await screen.findByTestId("admin-user-tab-comments");
     expect(within(commentsTab).getByText("25")).toBeTruthy();
     expect(within(commentsTab).queryByText("52")).toBeNull();
+  });
+});
+
+describe("UserDetailPage identity links and per-row moderation", () => {
+  function stateWithRows(): FakeAdminState {
+    const state = emptyAdminState();
+    state.users = [adminUser()];
+    state.comments = [adminComment()];
+    state.sessions = [adminSession({ expiresAt: Date.now() + 86_400_000 })];
+    state.tokens = [adminToken()];
+    state.memberships = [
+      adminMembership({
+        invitedById: "u-2",
+        invitedByEmail: "inviter@example.com",
+      }),
+    ];
+    return state;
+  }
+
+  async function openAction(testId: string, label: string) {
+    fireEvent.pointerDown(await screen.findByTestId(testId), { button: 0 });
+    fireEvent.click(await screen.findByText(label));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+  }
+
+  it("links the inviter and degrades a missing inviter to a copyable id", async () => {
+    const state = stateWithRows();
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    const view = renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-memberships"));
+    expect(
+      await screen.findByTestId("admin-user-invited-by-membership-1"),
+    ).toHaveAttribute("href", "/admin/users/u-2");
+
+    view.unmount();
+
+    state.memberships = [
+      adminMembership({ invitedById: "u-ghost", invitedByEmail: null }),
+    ];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderUser();
+    fireEvent.click(await screen.findByTestId("admin-user-tab-memberships"));
+    const cell = await screen.findByRole("tabpanel");
+    expect(
+      within(cell).queryByTestId("admin-user-invited-by-membership-1"),
+    ).toBeNull();
+    expect(await screen.findByTestId("admin-id-u-ghost")).toBeTruthy();
+  });
+
+  it("deletes one comment and keeps it visible as deleted", async () => {
+    const server = new FakeAdminServer(stateWithRows());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-comments"));
+    await openAction("admin-user-comment-actions-comment-1", "Delete");
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/comments/comment-1",
+        ),
+      ).toBe(true);
+    });
+    expect(
+      await screen.findByTestId("admin-user-comments-count"),
+    ).toHaveTextContent("1 of 1");
+    expect(
+      within(screen.getByRole("tabpanel")).getByText("Deleted"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-user-comment-actions-comment-1"),
+    ).toBeNull();
+  });
+
+  it("keeps earlier loaded pages after deleting a row on a later page", async () => {
+    const state = stateWithRows();
+    const stamp = Date.UTC(2026, 0, 1);
+    state.comments = Array.from({ length: 60 }, (_, index) =>
+      adminComment({
+        id: `comment-live-${index}`,
+        text: `Live comment ${index}`,
+        createdAt: stamp + index,
+      }),
+    );
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-comments"));
+    expect(
+      await screen.findByTestId("admin-user-comments-count"),
+    ).toHaveTextContent("25 of 60");
+    fireEvent.click(screen.getByTestId("admin-user-comments-more"));
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-user-comments-count")).toHaveTextContent(
+        "50 of 60",
+      );
+    });
+
+    await openAction("admin-user-comment-actions-comment-live-10", "Delete");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-user-comments-count")).toHaveTextContent(
+        "50 of 60",
+      );
+    });
+    expect(screen.getByText("Live comment 59")).toBeTruthy();
+    const deletedRow = screen
+      .getByText("Live comment 10")
+      .closest("tr") as HTMLElement;
+    expect(within(deletedRow).getByText("Deleted")).toBeTruthy();
+  });
+
+  it("revokes one session and keeps it visible as revoked", async () => {
+    const server = new FakeAdminServer(stateWithRows());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-sessions"));
+    await openAction("admin-user-session-actions-session-1", "Revoke session");
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/admin/sessions/session-1/revoke",
+        ),
+      ).toBe(true);
+    });
+    expect(
+      within(screen.getByRole("tabpanel")).getByText("Revoked"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-user-session-actions-session-1"),
+    ).toBeNull();
+  });
+
+  it("revokes one token and keeps it visible as revoked", async () => {
+    const server = new FakeAdminServer(stateWithRows());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-tokens"));
+    await openAction("admin-user-token-actions-token-1", "Revoke");
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/admin/tokens/token-1/revoke",
+        ),
+      ).toBe(true);
+    });
+    expect(
+      within(screen.getByRole("tabpanel")).getByText("Revoked"),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-user-token-actions-token-1")).toBeNull();
+  });
+
+  it("surfaces a 403 and leaves the row actionable", async () => {
+    const server = new FakeAdminServer(stateWithRows());
+    server.failNextStatuses.push({
+      path: "/admin/comments/comment-1",
+      status: 403,
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-comments"));
+    await openAction("admin-user-comment-actions-comment-1", "Delete");
+
+    expect(
+      await screen.findByText(adminMessage("admin.common.forbidden", "en")),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("admin-user-comment-actions-comment-1"),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("tabpanel")).queryByText("Deleted"),
+    ).toBeNull();
+  });
+
+  it("does not offer actions for already deleted or revoked rows", async () => {
+    const state = stateWithRows();
+    const stamp = Date.UTC(2026, 0, 1);
+    state.comments = [adminComment({ deletedAt: stamp })];
+    state.sessions = [adminSession({ revokedAt: stamp })];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-comments"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show deleted (1)" }),
+    );
+    expect(
+      await within(screen.getByRole("tabpanel")).findByText("Deleted"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-user-comment-actions-comment-1"),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByTestId("admin-user-tab-sessions"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show inactive (1)" }),
+    );
+    expect(
+      await within(screen.getByRole("tabpanel")).findByText("Revoked"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-user-session-actions-session-1"),
+    ).toBeNull();
   });
 });

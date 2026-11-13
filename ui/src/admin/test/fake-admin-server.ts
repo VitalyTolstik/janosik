@@ -33,6 +33,7 @@ import type {
   AdminUpdateThrottleSettingsRequest,
   AdminUserRowDto,
   AdminBoardMemberRowDto,
+  AdminUserMembershipDto,
   AdminAnnouncementDto,
   AdminAnnouncementTranslationDto,
   AdminEmailTemplateDto,
@@ -70,6 +71,10 @@ export interface FakeAdminState {
   comments: AdminCommentRowDto[];
   attachments: AdminAttachmentRowDto[];
   activity: AdminActivityRowDto[];
+  /** User-detail membership rows (TASK-176.4 inviter links). */
+  memberships: AdminUserMembershipDto[];
+  /** Last actor per card id, served by the card-detail DTO. */
+  cardLastActors: Record<string, { id: string; email: string | null }>;
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
@@ -89,6 +94,8 @@ export function emptyAdminState(): FakeAdminState {
     comments: [],
     attachments: [],
     activity: [],
+    memberships: [],
+    cardLastActors: {},
     contentBoard: null,
   };
 }
@@ -290,6 +297,24 @@ export function boardMember(
   };
 }
 
+export function adminMembership(
+  overrides: Partial<AdminUserMembershipDto> = {},
+): AdminUserMembershipDto {
+  return {
+    id: "membership-1",
+    boardId: "b-1",
+    boardTitle: "Roadmap",
+    boardDeletedAt: null,
+    role: "MEMBER",
+    acceptedAt: now,
+    expiresAt: null,
+    invitedById: null,
+    invitedByEmail: null,
+    createdAt: now,
+    ...overrides,
+  };
+}
+
 export class FakeAdminServer {
   state: FakeAdminState;
   requests: Array<{
@@ -300,6 +325,8 @@ export class FakeAdminServer {
   }> = [];
   /** Paths whose next call answers 500 once (matched via `includes`). */
   failNext: string[] = [];
+  /** Paths whose next call answers with an explicit status once. */
+  failNextStatuses: Array<{ path: string; status: number }> = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
   sessionAlive = true;
   /**
@@ -507,6 +534,15 @@ export class FakeAdminServer {
       if (failure) {
         this.failNext = this.failNext.filter((item) => item !== failure);
         return this.json({ message: "boom" }, 500);
+      }
+      const statusFailure = this.failNextStatuses.find((candidate) =>
+        path.includes(candidate.path),
+      );
+      if (statusFailure) {
+        this.failNextStatuses = this.failNextStatuses.filter(
+          (item) => item !== statusFailure,
+        );
+        return this.json({ message: "denied" }, statusFailure.status);
       }
 
       return this.route(method, path, body, url);
@@ -813,17 +849,24 @@ export class FakeAdminServer {
     }
 
     if (path === "/admin/sessions" && method === "GET") {
-      return this.json(this.page(this.state.sessions, url));
+      return this.json(
+        this.page(
+          this.state.sessions.filter(
+            (item) => item.revokedAt === null && item.expiresAt > now,
+          ),
+          url,
+        ),
+      );
     }
     const sessionRevoke = path.match(/^\/admin\/sessions\/([^/]+)\/revoke$/);
     if (sessionRevoke && method === "POST") {
-      const found = this.state.sessions.some(
+      const session = this.state.sessions.find(
         (item) => item.id === sessionRevoke[1],
       );
-      this.state.sessions = this.state.sessions.filter(
-        (item) => item.id !== sessionRevoke[1],
-      );
-      return this.json({ revoked: found ? 1 : 0 }, 201);
+      const revoked =
+        session !== undefined && session.revokedAt === null ? 1 : 0;
+      if (session) session.revokedAt = now;
+      return this.json({ revoked }, 201);
     }
 
     if (path === "/admin/tokens" && method === "GET") {
@@ -1200,6 +1243,10 @@ export class FakeAdminServer {
 
     const deleteAttachment = path.match(/^\/admin\/attachments\/([^/]+)$/);
     if (deleteAttachment && method === "DELETE") {
+      const file = this.state.attachments.find(
+        (item) => item.id === deleteAttachment[1],
+      );
+      if (file) file.deletedAt = now;
       return this.json({ status: "ok" });
     }
 
@@ -1563,7 +1610,9 @@ export class FakeAdminServer {
         cards: this.state.cards,
         comments: this.state.comments,
         attachments: this.state.attachments,
-        sessions: this.state.sessions,
+        sessions: this.state.sessions.filter(
+          (item) => item.revokedAt === null && item.expiresAt > now,
+        ),
         tokens: this.state.tokens,
         commands: this.state.commands,
         audit: this.state.audit,
@@ -1604,7 +1653,7 @@ export class FakeAdminServer {
             activity: 0,
           },
         },
-        members: [],
+        members: this.boardMembers[board.id] ?? [],
         columns: [],
         labels: [],
         workflowSummary: {
@@ -1750,7 +1799,8 @@ export class FakeAdminServer {
         coverValue: null,
         version: 0,
         attachmentCount: liveAttachments.length,
-        lastActorEmail: null,
+        lastActorId: this.state.cardLastActors[card.id]?.id ?? null,
+        lastActorEmail: this.state.cardLastActors[card.id]?.email ?? null,
         commentIds: liveComments.map((comment) => comment.id),
       },
       labels: [],
@@ -1865,7 +1915,10 @@ export class FakeAdminServer {
         commands: commands.length,
       },
       windows: {
-        memberships: window(0, 0),
+        memberships: window(
+          this.state.memberships.length,
+          this.state.memberships.length,
+        ),
         cards: window(createdCards.length, slice(createdCards).length),
         assignedCards: window(
           assignedCards.length,
@@ -1896,7 +1949,7 @@ export class FakeAdminServer {
         sessions: sessions.length - liveSessions.length,
         tokens: tokens.length - liveTokens.length,
       },
-      memberships: [],
+      memberships: this.state.memberships,
       createdCards: slice(createdCards),
       assignedCards: slice(assignedCards),
       comments: slice(visibleComments),

@@ -26,6 +26,7 @@ import {
   DateCell,
   EntityLink,
   IdCell,
+  IdentityLink,
   LabelChip,
   NumberCell,
   RoleBadge,
@@ -388,7 +389,14 @@ export function BoardDetailPage() {
                 <Td>
                   <DateCell value={member.expiresAt} />
                 </Td>
-                <Td>{member.invitedByEmail ?? "—"}</Td>
+                <Td>
+                  <IdentityLink
+                    id={member.invitedById}
+                    label={member.invitedByEmail}
+                    href={userHref}
+                    testId={`admin-board-member-invited-by-${member.id}`}
+                  />
+                </Td>
                 <Td>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

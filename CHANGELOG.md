@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.4 + TASK-176.7 admin navigation and per-row moderation: card
+  detail links comment authors, timeline actors and the last actor to
+  `/admin/users/:id` (a deleted last actor degrades to a copyable id, never a
+  broken link), and exposes `lastActorId` in `AdminCardDetailDto`; board and
+  user detail link the inviter and expose `invitedById` in
+  `AdminUserMembershipDto`. Audit rows link `user`/`board`/`card` targets to
+  their detail pages, keep unknown targets as copyable ids, and show an
+  OPERATOR the master email as text instead of an owner-only masters link.
+  User profile comments, sessions and tokens and card comments/attachments
+  gained per-row delete/revoke actions with the existing confirmations and
+  audited endpoints; the refresh keeps the affected row visible with its
+  `Deleted`/`Revoked` state. EN/RU admin docs cover the links and actions;
+  backend e2e and UI tests cover success, 403, already inactive rows and
+  inviter/last-actor link fallbacks.
 - TASK-176.3 honest admin detail counters: user and card detail tabs are now
   server-side windows with exact totals (`25 of N` / `50 of N`, `Load more`)
   instead of samples presented as complete lists. `cardsCreated` counts the
