@@ -192,6 +192,18 @@ test("a run deep link includes the board and survives reload and history back", 
     `/agents?section=runs&board=${board.id}&run=${run.runId}`,
   );
 
+  // The detail pane is 352 px wide; the footer helper must keep a readable
+  // column and the actions must sit below it, not squeeze it.
+  const footer = page.getByTestId("agent-run-detail").locator("footer");
+  const helper = await footer.locator("p").first().boundingBox();
+  const footerActions = await footer.locator("div").last().boundingBox();
+  expect(helper).not.toBeNull();
+  expect(footerActions).not.toBeNull();
+  expect(helper!.width).toBeGreaterThan(200);
+  expect(footerActions!.y).toBeGreaterThanOrEqual(
+    helper!.y + helper!.height - 1,
+  );
+
   await page.reload();
   await expect(page.getByTestId("agent-run-detail")).toBeVisible();
 

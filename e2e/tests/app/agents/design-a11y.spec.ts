@@ -170,6 +170,24 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
       expect(box.width, testId).toBeGreaterThanOrEqual(44);
     }
 
+    // The prototype stacks the Live actions under the copy at 390; the copy
+    // must keep a readable column instead of being squeezed between the icon
+    // and the action cluster.
+    const liveCard = await triggerBox(page, "live-status-card");
+    const liveCopy = await page
+      .locator('[data-testid="live-status-card"] .live-status-main')
+      .boundingBox();
+    const liveActions = await page
+      .locator('[data-testid="live-status-card"] .live-status-actions')
+      .boundingBox();
+    expect(liveCopy).not.toBeNull();
+    expect(liveActions).not.toBeNull();
+    expect(liveCopy!.width).toBeGreaterThan(160);
+    expect(liveActions!.y).toBeGreaterThanOrEqual(
+      liveCopy!.y + liveCopy!.height - 1,
+    );
+    expect(liveCard.width).toBeLessThanOrEqual(390);
+
     await page.getByTestId("agent-session-end").click();
     await page.waitForTimeout(250);
     for (const testId of ["agent-action-cancel", "agent-action-confirm"]) {
