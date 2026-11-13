@@ -450,7 +450,7 @@ export function AgentsAutomation({
                 type="button"
                 onClick={onOpenLiveControls}
                 data-testid="agent-policy-open-live"
-                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                className="inline-flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
               >
                 {t("board.settings.agents.openLive")}
                 <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
@@ -752,9 +752,8 @@ export function AgentsAutomation({
                   key={action}
                   className={cn(
                     "agent-check-row flex min-h-7 items-center gap-[7px] border-b border-[color-mix(in_oklab,var(--border)_62%,transparent)] py-1 text-[11px] leading-[1.45] last:border-b-0 max-md:min-h-11",
-                    covered
-                      ? "is-disabled text-muted-foreground"
-                      : "text-foreground",
+                    covered ? "text-muted-foreground" : "text-foreground",
+                    disabled && "is-disabled",
                   )}
                   data-testid={`agent-policy-require-row-${action}`}
                 >
@@ -799,7 +798,7 @@ export function AgentsAutomation({
                         action: t(ACTION_KEYS[action]),
                       })}
                       title={t("board.settings.agents.coveredHint")}
-                      className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] leading-[1.45] text-muted-foreground hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="ml-auto shrink-0 cursor-pointer whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] leading-[1.45] text-muted-foreground hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {t("board.settings.agents.covered")}
                     </button>
@@ -864,11 +863,8 @@ export function AgentsAutomation({
           >
             {footerStatus}
           </span>
-          <span
-            aria-hidden
-            className="h-3 w-px shrink-0 bg-border max-md:hidden"
-          />
-          <span className="truncate text-muted-foreground max-md:hidden">
+          <span aria-hidden className="h-3 w-px shrink-0 bg-border" />
+          <span className="truncate text-muted-foreground">
             {secondaryStatus}
           </span>
         </div>
