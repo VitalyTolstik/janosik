@@ -54,10 +54,10 @@ Separately, the product has no way for a user to edit their own comment, althoug
 | 176.8 | Admin editing pilot: description + move card | P2 | M | Product decision | 3 |
 | 176.9 | Broader admin card editing | P3 | L | Product decision | 3 |
 | 176.10 | Command ↔ audit correlation and master attribution | P3 | M | Product decision | 3 |
-| 176.11 | Admin agent section / boundary documentation | P3 | L | Intentional limitation | backlog |
+| 176.11 | Admin agent section / boundary documentation | P3 | S | Deliberate boundary | done (docs-only) |
 | 176.12 | Checklist-item browser / search | P3 | M | Low value | deferred |
 
-Waves are a recommendation, not a hard dependency. 176.1–176.3 are the first PR set. 176.4–176.7 can run in parallel after the first merge. 176.8–176.10 require explicit product sign-off; 176.11 is not planned.
+Waves are a recommendation, not a hard dependency. 176.1–176.3 are the first PR set. 176.4–176.7 can run in parallel after the first merge. 176.8–176.10 require explicit product sign-off; 176.11 is closed as a docs-only boundary.
 
 ---
 
@@ -342,13 +342,31 @@ Master-authored comments/uploads are also a separate product decision: decide th
 
 ---
 
-## 14. 176.11 — Admin agent section (P3, L) — intentional limitation
+## 14. 176.11 — Admin agent section (P3, S) — closed (docs-only)
 
-Do not add a cross-board agent control section to `/admin` in this task. The agent contour is board-scoped by design. The deliverable is documentation:
+Do not add a cross-board agent control section to `/admin`. The agent contour is
+board-scoped by design. The deliverable is documentation:
 
 - state in the admin docs and ADR that `/admin` does not manage agent runs/approvals/policy;
 - explain where the user/board admin finds them (`/agents`, `AgentControlDialog`);
 - if cross-board oversight is needed later, open a separate task with a master API, audit and permission model.
+
+**Delivered (2026-11-13, docs-only, no code/UI/API changes):**
+
+- `site/src/content/docs/docs/admin/index.md` and the RU counterpart gained an
+  explicit boundary section: no runs/approvals/policy control and no
+  cross-board agent section in `/admin`; `/agents`, board Agent Control and
+  Board Settings → Agents & automation are named as the real surfaces, and
+  token revocation in Access is described as account administration, not agent
+  control.
+- `site/src/content/docs/{docs,ru/docs}/admin/redesign.md` state that the eight
+  hubs are the whole panel and there is deliberately no Agents hub.
+- ADR-166 §2 principle 5 and new §18 record the same boundary and the future
+  process (master API, permission model, audit).
+- `CHANGELOG.md` and `ROADMAP.md` record the closure.
+
+TASK-179 remains the owner of the `/agents` and board agent-control UX; this
+subtask only fixes the admin boundary and does not duplicate that design.
 
 ---
 
@@ -414,6 +432,6 @@ Suggested PR split:
 
 1. Comment editing: should masters ever edit another user's comment? (Current answer: no; author-only.)
 2. Should a master edit appear as the owner or as the master in board history? (176.8 must answer before shipping.)
-3. Is cross-board agent oversight needed in `/admin`, or is `/agents` + board dialog enough? (Current answer: enough.)
+3. Is cross-board agent oversight needed in `/admin`, or is `/agents` + board dialog enough? (Current answer: enough; recorded as a deliberate boundary in the admin docs and ADR-166 §18 by 176.11.)
 4. Is cross-page bulk selection the desired contract, or should selection be page-local? (176.1 recommends cross-page with a 500 guard.)
 5. Should deleted/revoked rows be hidden by default or shown with a filter? (176.3 recommends hidden by default with an explicit filter.)

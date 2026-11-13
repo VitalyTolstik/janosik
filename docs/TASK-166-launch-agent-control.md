@@ -1,6 +1,6 @@
 # ADR-166 / TASK-166: Launch readiness — agent-first with human control
 
-- **Status:** Accepted / frozen (2026-11-09)
+- **Status:** Accepted / frozen (2026-11-09); amended 2026-11-13 (TASK-176.11, §2 principle 5 and §18)
 - **Task:** TASK-166.0 "Policy & ADR"
 - **Normative program source:** `ROADMAP.md` §7.23 (goals, waves,
   dependencies) and this ADR (frozen decisions, schema, matrix, codes).
@@ -66,9 +66,12 @@ remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
 4. **One run → one audit and one rollback.** A batch/plan and a single
    destructive action receive a `runId`; a pre-image is stored for every run
    command; a human can inspect and revert the run.
-5. **Contract first, UI later.** Backend primitives do not depend on
-   `feat/admin-redesign`. Agents/Approvals/Audit/Rollback/Scopes screens are
-   built in the new admin UI (W3).
+5. **Contract first, UI later.** Backend primitives do not depend on any admin
+   console. Agent control surfaces are user-facing: the global `/agents` page,
+   the board-scoped Agent Control modal and Board Settings → Agents &
+   automation. The master panel (`/admin`) remains a support, moderation and
+   investigation console; it does not manage agent runs, approvals or policy
+   (TASK-176.11, §18).
 6. **Do not break self-host.** New fields are nullable or have safe defaults;
    old boards, exports, and PATs keep working. All new tables are additive;
    existing fields are not renamed.
@@ -2054,7 +2057,9 @@ contracts/schema/matrix.
 - **MCP `mcp/src/tools/*`**: each stream adds its own file/section; 166.4
   changes `format/errors`; 166.11 updates README/OpenAPI/count.
 - **UI streams 166.13–15** do not start before `feat/admin-redesign` merges;
-  backend streams do not depend on it.
+  backend streams do not depend on it. That dependency was the shared design
+  system/shell, not an agent section in `/admin`: the agent UI shipped in the
+  user app (`/agents`, Agent Control, Board Settings).
 - If two streams still touch one file, the ROADMAP rule applies: separate
   them in time or use one worktree with an explicit owner.
 
@@ -2127,3 +2132,37 @@ contracts/schema/matrix.
 a contradiction, it does not reopen the question; it sends a change to this
 document through the 166.0 owner, and the current revision applies until that
 change merges.
+
+---
+
+## 18. Admin panel boundary (TASK-176.11, added 2026-11-13)
+
+This section records an existing boundary; it does not change the agent-control
+semantics in §4–§13.
+
+`/admin` is a support, moderation and investigation console. It is not a second
+board client and not an agent control plane.
+
+- **No cross-board agent section.** The panel does not list or manage agent
+  runs, approvals or board policy, and it has no approve/reject, pause/resume,
+  run-revert, destructive-mode or TTL controls. A master cannot decide an
+  approval or change policy from `/admin`.
+- **Human control stays in the user app:** `/agents` (Attention / Sessions /
+  Runs), the board-scoped Agent Control modal (Inbox / Live / Runs) and Board
+  Settings → Agents & automation (policy). Token-level pause and `Stop all`
+  remain token-owner actions in Account → API keys. A master can still revoke
+  any token in Access & security → API tokens; that is account administration,
+  not an approval, run or policy decision.
+- **Evidence is not control.** Agent-authored cards, comments, commands and
+  activity appear in the panel as ordinary rows attributed to the token's
+  owner account. Token, session and run attribution is in the board's
+  Watch/History and card comments, not in `/admin`. An owner impersonation
+  session is a short, audited user-app session, not a master control surface.
+- **Future cross-board oversight is a separate task.** It must define a master
+  API, an explicit permission model (a master account does not become a board
+  ADMIN) and audit of every master access. It must not be delivered as a
+  UI-only section on top of the board-scoped endpoints.
+
+The user-facing boundary is documented in the admin guide, EN and RU:
+`site/src/content/docs/docs/admin/index.md` and
+`site/src/content/docs/ru/docs/admin/index.md`.

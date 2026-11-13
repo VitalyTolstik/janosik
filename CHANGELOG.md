@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.11 admin agent boundary (docs-only): the English and Russian admin
+  guides and ADR-166 now state explicitly that `/admin` is a support,
+  moderation and investigation console and does not manage agent runs,
+  approvals or board policy; the panel deliberately has no cross-board agent
+  section. The docs point to the real surfaces — the global `/agents`
+  (Attention / Sessions / Runs), the board-scoped Agent Control (Inbox / Live /
+  Runs) and Board Settings → Agents & automation for policy — and note that
+  future cross-board oversight needs a separate task with a master API,
+  permission model and audit. No code, UI or API changes.
+
 - TASK-176.5 + TASK-176.6 admin URL state and addressable filters: every
   admin entity list keeps `search/status/period/limit/offset` in the URL and
   restores it on load and browser back/forward, preserving the hub `tab`. Row
