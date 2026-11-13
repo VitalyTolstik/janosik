@@ -295,14 +295,19 @@ export function UserDetailPage() {
    */
   const loadSection = async (
     section: AdminUserDetailSection,
-    params: { offset: number; includeDeleted?: boolean; append: boolean },
+    params: {
+      offset: number;
+      limit?: number;
+      includeDeleted?: boolean;
+      append: boolean;
+    },
   ) => {
     setSectionLoading(section);
     try {
       const page = await adminApi.userDetail(userId, {
         section,
         offset: params.offset,
-        limit: ADMIN_DETAIL_LIMITS.user,
+        limit: params.limit ?? ADMIN_DETAIL_LIMITS.user,
         ...(params.includeDeleted ? { includeDeleted: true } : {}),
       });
       setDetail((previous) =>
@@ -488,11 +493,25 @@ export function UserDetailPage() {
    * Reload one tab after a per-row write. The mutated row may now be
    * soft-deleted/revoked, so include inactive rows to keep it visible with
    * its new state instead of silently dropping it from the live window.
+   * Refresh the whole already-loaded range from offset 0 rather than only the
+   * current page: otherwise a write after `Load more` would discard the rows
+   * above it and shift the footer to a bogus window.
    */
-  const reloadSection = (section: AdminUserDetailSection) => {
-    const window = detail.windows[section];
+  const reloadSection = (section: "comments" | "sessions" | "tokens") => {
+    const loaded =
+      section === "comments"
+        ? detail.comments.length
+        : section === "sessions"
+          ? detail.sessions.length
+          : detail.tokens.length;
     void loadSection(section, {
-      offset: window.offset,
+      offset: 0,
+      // Rows already loaded plus the previously hidden ones: a row that was
+      // visible before the write must stay inside the refreshed range.
+      limit: Math.min(
+        Math.max(loaded + detail.hidden[section], ADMIN_DETAIL_LIMITS.user),
+        ADMIN_DETAIL_LIMITS.max,
+      ),
       includeDeleted: true,
       append: false,
     });

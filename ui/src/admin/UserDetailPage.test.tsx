@@ -277,6 +277,45 @@ describe("UserDetailPage identity links and per-row moderation", () => {
     ).toBeNull();
   });
 
+  it("keeps earlier loaded pages after deleting a row on a later page", async () => {
+    const state = stateWithRows();
+    const stamp = Date.UTC(2026, 0, 1);
+    state.comments = Array.from({ length: 60 }, (_, index) =>
+      adminComment({
+        id: `comment-live-${index}`,
+        text: `Live comment ${index}`,
+        createdAt: stamp + index,
+      }),
+    );
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-comments"));
+    expect(
+      await screen.findByTestId("admin-user-comments-count"),
+    ).toHaveTextContent("25 of 60");
+    fireEvent.click(screen.getByTestId("admin-user-comments-more"));
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-user-comments-count")).toHaveTextContent(
+        "50 of 60",
+      );
+    });
+
+    await openAction("admin-user-comment-actions-comment-live-10", "Delete");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-user-comments-count")).toHaveTextContent(
+        "50 of 60",
+      );
+    });
+    expect(screen.getByText("Live comment 59")).toBeTruthy();
+    const deletedRow = screen
+      .getByText("Live comment 10")
+      .closest("tr") as HTMLElement;
+    expect(within(deletedRow).getByText("Deleted")).toBeTruthy();
+  });
+
   it("revokes one session and keeps it visible as revoked", async () => {
     const server = new FakeAdminServer(stateWithRows());
     vi.stubGlobal("fetch", server.fetchImpl);

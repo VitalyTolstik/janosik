@@ -1515,7 +1515,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   ) : (
                     <EntityLink
                       to={href}
+                      testId={`admin-id-${entry.targetId}`}
                       copyValue={entry.targetId}
+                      ariaLabel={entry.targetId}
                       className="font-mono text-[11px] font-normal"
                     >
                       {entry.targetId.slice(0, 8)}

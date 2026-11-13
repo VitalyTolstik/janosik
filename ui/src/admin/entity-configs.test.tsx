@@ -141,6 +141,9 @@ describe("admin audit identity links", () => {
       }),
     ).toHaveAttribute("href", "/admin/users/u-9");
     expect(
+      within(rowFor("user.impersonated")).getByTestId("admin-id-u-9"),
+    ).toHaveAttribute("href", "/admin/users/u-9");
+    expect(
       within(rowFor("board.archive")).getByRole("link", { name: "b-9" }),
     ).toHaveAttribute("href", "/admin/boards/b-9");
     expect(

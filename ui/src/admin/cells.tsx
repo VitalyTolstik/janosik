@@ -106,6 +106,7 @@ export function EntityLink({
   className,
   testId,
   copyValue,
+  ariaLabel,
 }: {
   to: string | null;
   children: React.ReactNode;
@@ -113,6 +114,8 @@ export function EntityLink({
   testId?: string;
   /** When set, a copy icon rides next to the link (searchable values). */
   copyValue?: string;
+  /** Full value when the visible label is shortened (ids, long names). */
+  ariaLabel?: string;
 }) {
   if (to === null) {
     return <span className="text-muted-foreground">—</span>;
@@ -122,6 +125,7 @@ export function EntityLink({
       <Link
         to={to}
         data-testid={testId}
+        aria-label={ariaLabel}
         className={cn(
           "truncate font-medium text-primary underline-offset-2 hover:underline",
           className,

@@ -199,6 +199,9 @@ describe("CardDetailPage windows", () => {
       );
     });
     expect(await screen.findByText("Deleted comment 0")).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-comment-actions-comment-deleted-0"),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Show deleted (5)" }));
     await waitFor(() => {
@@ -213,6 +216,11 @@ describe("CardDetailPage windows", () => {
       ).toHaveTextContent("60 of 60");
     });
     expect(await screen.findByText("deleted-0.png")).toBeTruthy();
+    expect(
+      screen.queryByTestId(
+        "admin-card-attachment-actions-attachment-deleted-0",
+      ),
+    ).toBeNull();
   });
 
   it("centres and highlights the comment an anchor link points at", async () => {

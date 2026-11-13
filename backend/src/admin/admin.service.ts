@@ -1896,19 +1896,28 @@ export class AdminService {
           .map((entry) => entry.targetId as string),
       ),
     ];
+    const userIds = idsOfType("user");
+    const boardIds = idsOfType("board");
+    const cardIds = idsOfType("card");
     const [users, boards, cards] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { id: { in: idsOfType("user") } },
-        select: { id: true },
-      }),
-      this.prisma.board.findMany({
-        where: { id: { in: idsOfType("board") } },
-        select: { id: true },
-      }),
-      this.prisma.card.findMany({
-        where: { id: { in: idsOfType("card") } },
-        select: { id: true },
-      }),
+      userIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true },
+          }),
+      boardIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.board.findMany({
+            where: { id: { in: boardIds } },
+            select: { id: true },
+          }),
+      cardIds.length === 0
+        ? Promise.resolve([])
+        : this.prisma.card.findMany({
+            where: { id: { in: cardIds } },
+            select: { id: true },
+          }),
     ]);
     const existing = {
       user: new Set(users.map((row) => row.id)),

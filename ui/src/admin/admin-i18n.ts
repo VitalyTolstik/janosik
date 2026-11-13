@@ -231,7 +231,7 @@ const en = {
   "admin.attachments.action.delete": "Delete file",
   "admin.attachments.confirm.delete.title": "Delete {name}?",
   "admin.attachments.confirm.delete.body":
-    "The file is removed from storage; the blob cannot be recovered.",
+    "The file is hidden from the card (soft-delete) and can be restored from the moderation list.",
 
   "admin.entities.restore": "Restore",
   "admin.bulk.selected": "{count} selected ({visible} on this page)",
@@ -1436,7 +1436,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.attachments.action.delete": "Удалить файл",
   "admin.attachments.confirm.delete.title": "Удалить {name}?",
   "admin.attachments.confirm.delete.body":
-    "Файл будет удалён из хранилища; блоб не восстановить.",
+    "Файл будет скрыт с карточки (мягкое удаление); восстановить его можно из списка модерации.",
 
   "admin.entities.restore": "Восстановить",
   "admin.bulk.selected": "Выбрано: {count} ({visible} на странице)",
