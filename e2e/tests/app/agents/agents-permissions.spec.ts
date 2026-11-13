@@ -27,18 +27,18 @@ for (const role of ["MEMBER", "VIEWER"] as const) {
       await expect(page.getByTestId("agents-page")).toBeVisible();
       await page.getByTestId("agents-section-sessions").click();
 
-      const row = page
-        .getByTestId("agent-row")
-        .filter({ hasText: `Owner session ${role}` });
+      const row = page.getByTestId(`agent-session-row-${agent.session.id}`);
       await expect(row).toBeVisible();
       await row.click();
 
-      await expect(page.getByTestId("agent-detail-page")).toBeVisible();
-      await expect(page.getByTestId("agent-read-only-notice")).toBeVisible();
-      await expect(page.getByTestId("agent-session-pause")).toHaveCount(0);
-      await expect(page.getByTestId("agent-session-resume")).toHaveCount(0);
-      await expect(page.getByTestId("agent-session-end")).toHaveCount(0);
-      await expect(page.getByTestId("agent-session-open-board")).toBeVisible();
+      await expect(
+        page.getByTestId("agents-session-detail-hint"),
+      ).toBeVisible();
+      await expect(page.getByTestId("agents-session-read-only")).toBeVisible();
+      await expect(page.getByTestId("agents-session-pause")).toHaveCount(0);
+      await expect(page.getByTestId("agents-session-resume")).toHaveCount(0);
+      await expect(page.getByTestId("agents-session-end")).toHaveCount(0);
+      await expect(page.getByTestId("agents-session-open-board")).toBeVisible();
     } finally {
       await agent.dispose();
     }

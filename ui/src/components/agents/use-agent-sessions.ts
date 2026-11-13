@@ -111,10 +111,19 @@ export function useAgentSessions(): AgentSessionsState {
         setSummaries(visible);
         setTokens(nextTokens);
         setMe(nextMe);
-        setSessions((current) => [
-          ...merged,
-          ...(current ?? []).filter((row) => failed.has(row.boardId)),
-        ]);
+        setSessions((current) => {
+          // A retry can briefly return the same id for two boards (or keep a
+          // stale row beside a fresh one); the list renders by id, so collapse
+          // duplicates before they reach React.
+          const byId = new Map<string, AgentSessionDto>();
+          for (const row of merged) byId.set(row.id, row);
+          for (const row of current ?? []) {
+            if (failed.has(row.boardId) && !byId.has(row.id)) {
+              byId.set(row.id, row);
+            }
+          }
+          return [...byId.values()];
+        });
         setError(failures > 0);
         setErrorStatus(firstFailureStatus);
         if (failures === 0) setLastLoadedAt(Date.now());
@@ -291,6 +300,10 @@ export function useAgentSessions(): AgentSessionsState {
             ? null
             : (cardTitles.get(session.currentCardId) ?? null),
         tokenName: tokenById.get(session.apiTokenId) ?? null,
+        // `listTokens` is session-only and returns the caller's own keys;
+        // presence in the map is therefore an ownership check, not a name
+        // fallback. Other members' token names stay hidden.
+        isOwnToken: tokenById.has(session.apiTokenId),
       };
     });
   }, [cardTitles, sessions, summaries, tokens]);
