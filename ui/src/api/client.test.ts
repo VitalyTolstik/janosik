@@ -32,6 +32,59 @@ function headerOf(init: RequestInit | undefined, name: string): string | null {
 }
 
 describe("ApiClient", () => {
+  it("refreshes an expired session before confirming an email change", async () => {
+    const calls: string[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input, init) => {
+        const path = pathOf(input);
+        calls.push(path);
+        if (path.endsWith("/auth/login"))
+          return json({ accessToken: "stale", user });
+        if (path.endsWith("/auth/refresh"))
+          return json({ accessToken: "fresh", user });
+        return headerOf(init, "Authorization") === "Bearer fresh"
+          ? json({ accessToken: "changed", user })
+          : json({ message: "Unauthorized" }, 401);
+      },
+    });
+    await client.login("admin@example.com", "password123");
+    await client.confirmEmailChange("123456");
+    expect(calls.filter((path) => path.endsWith("/auth/refresh"))).toHaveLength(
+      1,
+    );
+    expect(
+      calls.filter((path) => path.endsWith("/auth/email/change/confirm")),
+    ).toHaveLength(2);
+    expect(client.getAccessToken()).toBe("changed");
+  });
+  it("does not refresh and replay a wrong password", async () => {
+    let attempts = 0;
+    let refreshes = 0;
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        const path = pathOf(input);
+        if (path.endsWith("/auth/login"))
+          return json({ accessToken: "access", user });
+        if (path.endsWith("/auth/refresh")) {
+          refreshes += 1;
+          return json({ accessToken: "fresh", user });
+        }
+        attempts += 1;
+        return json(
+          { code: "current_password_invalid", message: "Wrong password" },
+          401,
+        );
+      },
+    });
+    await client.login("admin@example.com", "password123");
+    await expect(
+      client.changePassword("wrong", "newpassword"),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(attempts).toBe(1);
+    expect(refreshes).toBe(0);
+  });
   it("logs in, keeps the token in memory and attaches it to later calls", async () => {
     const calls: Array<{ path: string; auth: string | null }> = [];
     const client = new ApiClient({
@@ -138,8 +191,9 @@ describe("ApiClient", () => {
     }
   });
 
-  it("does not let a stale boot refresh clobber a login that landed later", async () => {
+  it("serializes a boot refresh before a login that lands later", async () => {
     const pending: { resolve?: (response: Response) => void } = {};
+    let loginSent = false;
     const client = new ApiClient({
       baseUrl: "/api/v1",
       fetchImpl: async (input) => {
@@ -148,22 +202,24 @@ describe("ApiClient", () => {
             pending.resolve = resolve;
           });
         }
+        loginSent = true;
         return json({ accessToken: "login-token", user });
       },
     });
 
-    // The boot refresh hangs; the user logs in meanwhile.
     const boot = client.refreshSession();
-    await client.login("admin@example.com", "password123");
-    expect(client.getAccessToken()).toBe("login-token");
+    const login = client.login("admin@example.com", "password123");
+    // The login waits for the refresh to release the shared auth lock.
+    await Promise.resolve();
+    expect(loginSent).toBe(false);
 
-    // The late 401 of the stale refresh must not wipe the fresh token.
     pending.resolve?.(json({ message: "Unauthorized" }, 401));
     await expect(boot).resolves.toBeNull();
+    await login;
     expect(client.getAccessToken()).toBe("login-token");
   });
 
-  it("does not let a stale refresh overwrite a newer login (account switch)", async () => {
+  it("serializes a refresh before an account switch and keeps the new session", async () => {
     const pending: { resolve?: (response: Response) => void } = {};
     const client = new ApiClient({
       baseUrl: "/api/v1",
@@ -178,11 +234,69 @@ describe("ApiClient", () => {
     });
 
     const boot = client.refreshSession();
-    await client.login("other@example.com", "password123");
+    const login = client.login("other@example.com", "password123");
 
+    await vi.waitFor(() => expect(pending.resolve).toBeDefined());
     pending.resolve?.(json({ accessToken: "a-token", user }));
-    await expect(boot).resolves.toBeNull();
+    await boot;
+    await login;
     expect(client.getAccessToken()).toBe("b-token");
+  });
+
+  it("waits for an in-flight refresh before logging out", async () => {
+    const pending: { resolve?: (response: Response) => void } = {};
+    const events: string[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input) => {
+        if (pathOf(input).endsWith("/auth/refresh")) {
+          events.push("refresh:start");
+          return new Promise<Response>((resolve) => {
+            pending.resolve = resolve;
+          });
+        }
+        if (pathOf(input).endsWith("/auth/logout")) {
+          events.push("logout:start");
+          return json({ status: "ok" });
+        }
+        return json(user);
+      },
+    });
+
+    const refresh = client.refreshSession();
+    const logout = client.logout();
+    await vi.waitFor(() => expect(events).toEqual(["refresh:start"]));
+
+    pending.resolve?.(json({ accessToken: "late-token", user }));
+    await refresh;
+    await logout;
+
+    // Logout runs after the rotation, so the browser sends (and the server
+    // revokes) the freshly rotated cookie rather than the stale one.
+    expect(events).toEqual(["refresh:start", "logout:start"]);
+    expect(client.getAccessToken()).toBeNull();
+  });
+
+  it("parses X-Board-Seq as a safe integer and tolerates a missing header", async () => {
+    const snapshotWith = async (header?: string) => {
+      const client = new ApiClient({
+        baseUrl: "/api/v1",
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ id: "board-1" }), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              ...(header === undefined ? {} : { "X-Board-Seq": header }),
+            },
+          }),
+      });
+      return client.getBoardSnapshot("board-1");
+    };
+
+    expect((await snapshotWith("42")).seq).toBe(42);
+    expect((await snapshotWith()).seq).toBe(0);
+    expect((await snapshotWith("12x")).seq).toBe(0);
+    expect((await snapshotWith("9007199254740993")).seq).toBe(0);
   });
 
   it("reports a dead session once and clears the token", async () => {
@@ -294,6 +408,7 @@ describe("ApiClient", () => {
     await client.listComments("c-1", "50:abc", 20);
     await client.createComment("c-1", "hi", "idem-key");
     await client.deleteComment("comment-1");
+    await client.updateComment("comment-1", "edited");
     await client.cardActivity("c-1", "at:c:7");
     expect(calls).toEqual([
       {
@@ -308,6 +423,11 @@ describe("ApiClient", () => {
         body: { text: "hi", commandId: "idem-key" },
       },
       { method: "DELETE", url: "/api/v1/comments/comment-1", body: undefined },
+      {
+        method: "PATCH",
+        url: "/api/v1/comments/comment-1",
+        body: { text: "edited" },
+      },
       {
         method: "GET",
         url: "/api/v1/cards/c-1/activity?cursor=at%3Ac%3A7",

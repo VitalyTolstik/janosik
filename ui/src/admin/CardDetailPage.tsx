@@ -691,6 +691,17 @@ export function CardDetailPage() {
                     >
                       <Td className="max-w-[30rem] whitespace-normal">
                         {comment.text}
+                        {comment.editedAt !== null ? (
+                          <span
+                            data-testid="admin-comment-edited"
+                            className="ml-2 inline-flex align-middle"
+                            title={formatDate(comment.editedAt, lang, hour12)}
+                          >
+                            <Badge variant="neutral">
+                              {t("admin.comments.edited")}
+                            </Badge>
+                          </span>
+                        ) : null}
                       </Td>
                       <Td>{comment.authorEmail}</Td>
                       <Td>

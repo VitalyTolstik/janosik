@@ -2,14 +2,15 @@ import type { AgentSessionStatus } from "@janosik/shared";
 
 import { formatRelative, useHour12, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { StatusBadge, type StatusTone } from "./status-badge";
 
-const STATUS_CLASS: Record<AgentSessionStatus, string> = {
-  active: "border-success/40 bg-success/10 text-success",
-  idle: "border-border bg-hover text-muted-foreground",
-  waiting_approval: "border-warning/40 bg-warning/10 text-warning",
-  completed: "border-primary/30 bg-primary/10 text-primary",
-  failed: "border-danger/40 bg-danger/10 text-danger",
-  cancelled: "border-border bg-hover text-muted-foreground",
+const STATUS_TONE: Record<AgentSessionStatus, StatusTone> = {
+  active: "ok",
+  idle: "muted",
+  waiting_approval: "warn",
+  completed: "primary",
+  failed: "bad",
+  cancelled: "muted",
 };
 
 export function AgentStatusBadge({
@@ -21,32 +22,25 @@ export function AgentStatusBadge({
 }) {
   const { t } = useI18n();
   return (
-    <span
-      data-testid={`agent-status-${status}`}
-      className={cn(
-        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        STATUS_CLASS[status],
-        className,
-      )}
-    >
-      {t(`agents.status.${status}`)}
-    </span>
+    <StatusBadge
+      label={t(`agents.status.${status}`)}
+      tone={STATUS_TONE[status]}
+      status={status}
+      testId={`agent-status-${status}`}
+      className={className}
+    />
   );
 }
 
 export function AgentStaleBadge({ className }: { className?: string }) {
   const { t } = useI18n();
   return (
-    <span
-      data-testid="agent-stale-badge"
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning",
-        className,
-      )}
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden />
-      {t("agents.status.stale")}
-    </span>
+    <StatusBadge
+      label={t("agents.status.stale")}
+      tone="warn"
+      testId="agent-stale-badge"
+      className={className}
+    />
   );
 }
 
@@ -61,16 +55,14 @@ export function AgentPauseBadge({
 }) {
   const { t } = useI18n();
   return (
-    <span
-      data-testid={`agent-pause-badge-${scope}`}
+    <StatusBadge
+      label={t(`agents.pause.scope.${scope}`)}
+      tone="warn"
+      withDot={false}
       title={title}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning",
-        className,
-      )}
-    >
-      {t(`agents.pause.scope.${scope}`)}
-    </span>
+      testId={`agent-pause-badge-${scope}`}
+      className={className}
+    />
   );
 }
 
@@ -96,9 +88,7 @@ export function AgentLastSeen({
       title={exact}
       data-testid="agent-last-seen"
     >
-      {prefix ? (
-        <span className="text-muted-foreground/70">{prefix}</span>
-      ) : null}
+      {prefix ? <span className="text-muted-foreground">{prefix}</span> : null}
       <span className="truncate">
         {/* eslint-disable-next-line react-hooks/purity -- relative time is refreshed on purpose */}
         {formatRelative(at, lang, Date.now(), hour12)}

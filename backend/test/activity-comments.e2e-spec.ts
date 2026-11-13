@@ -6,6 +6,7 @@ import type {
   ActivityFeedPage,
   Board,
   BoardAction,
+  BoardSseEvent,
   CommandResponse,
   CommentDto,
   CommentPage,
@@ -15,6 +16,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 import { LIMITS } from "@janosik/shared";
 
 const ADMIN_EMAIL = "activity-admin@example.com";
@@ -679,6 +681,127 @@ describe("Activity & comments API (e2e)", () => {
         .set(auth(adminToken))
         .send({ text: "x".repeat(LIMITS.comment) })
         .expect(201);
+    });
+  });
+
+  describe("comment editing (TASK-176.2)", () => {
+    it("lets the author edit the text, keeps the kind and records activity + SSE", async () => {
+      const { boardId, cardId } = await boardWithCard("Edit comments", "ed");
+      const created = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "First draft", kind: "blocker" })
+        .expect(201);
+      expect(created.body.editedAt).toBeUndefined();
+
+      const realtime = app.get(RealtimeService);
+      const events: BoardSseEvent[] = [];
+      const subscription = realtime.watch(boardId).subscribe((event) => {
+        events.push(event);
+      });
+      try {
+        const edited = await server()
+          .patch(`/api/v1/comments/${created.body.id as string}`)
+          .set(auth(memberToken))
+          .send({ text: "  Edited text  " })
+          .expect(200);
+
+        expect(edited.body).toMatchObject({
+          id: created.body.id,
+          cardId,
+          authorId: memberId,
+          text: "Edited text",
+          kind: "blocker",
+          actorType: "human",
+          createdAt: created.body.createdAt,
+        });
+        expect(edited.body.editedAt).toEqual(expect.any(Number));
+
+        const page = await server()
+          .get(`/api/v1/cards/${cardId}/comments`)
+          .set(auth(viewerToken))
+          .expect(200);
+        expect((page.body as CommentPage).items[0]).toMatchObject({
+          id: created.body.id,
+          text: "Edited text",
+          kind: "blocker",
+          editedAt: edited.body.editedAt,
+        });
+
+        const feed = await cardFeed(cardId);
+        const updated = feed.items.find(
+          (entry) => entry.type === "comment_updated",
+        );
+        expect(updated?.actorId).toBe(memberId);
+        expect(updated?.details).toMatchObject({
+          commentId: created.body.id,
+          text: "Edited text",
+        });
+        expect(updated?.detail).toBe(created.body.id);
+
+        // The live stream carries the id; the body comes from the list.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const frame = events.find(
+          (event) =>
+            event.type === "activity" &&
+            event.kind === "comment_updated" &&
+            event.detail === created.body.id,
+        );
+        expect(frame).toMatchObject({
+          boardId,
+          cardId,
+          actorId: memberId,
+          kind: "comment_updated",
+          detail: created.body.id,
+        });
+      } finally {
+        subscription.unsubscribe();
+      }
+    });
+
+    it("rejects a non-author, a deleted comment and invalid text", async () => {
+      const { cardId } = await boardWithCard("Edit guards", "eg");
+      const created = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Mine" })
+        .expect(201);
+      const commentId = created.body.id as string;
+
+      // Another writer (even an ADMIN) cannot edit someone else's comment.
+      const forbidden = await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(adminToken))
+        .send({ text: "Hijacked" })
+        .expect(403);
+      expect(forbidden.body.code).toBe("scope_denied");
+
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(viewerToken))
+        .send({ text: "Viewer edit" })
+        .expect(403);
+
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ text: "   " })
+        .expect(400);
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ text: "x".repeat(LIMITS.comment + 1) })
+        .expect(400);
+
+      await server()
+        .delete(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .expect(200);
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ text: "After delete" })
+        .expect(404);
     });
   });
 

@@ -1,11 +1,19 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSessionDto, BoardSummary } from "@janosik/shared";
+import type {
+  AgentSessionDto,
+  BoardAction,
+  BoardSummary,
+  RevertPreviewDto,
+  RunDetailDto,
+  RunSummaryDto,
+} from "@janosik/shared";
 
 import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
+import { overviewItem, overviewResponse } from "@/test/agents-overview";
 
 const hoisted = vi.hoisted(() => ({
   listBoards: vi.fn(),
@@ -15,6 +23,7 @@ const hoisted = vi.hoisted(() => ({
   pauseAgentSession: vi.fn(),
   resumeAgentSession: vi.fn(),
   endAgentSession: vi.fn(),
+  agentsOverview: vi.fn(),
   listApprovals: vi.fn(),
   getApproval: vi.fn(),
   decideApproval: vi.fn(),
@@ -22,6 +31,9 @@ const hoisted = vi.hoisted(() => ({
   getBoard: vi.fn(),
   listMembers: vi.fn(),
   listRuns: vi.fn(),
+  getRun: vi.fn(),
+  previewRunRevert: vi.fn(),
+  revertRun: vi.fn(),
 }));
 
 vi.mock("@/api/client", () => {
@@ -49,6 +61,7 @@ vi.mock("@/api/client", () => {
       pauseAgentSession: hoisted.pauseAgentSession,
       resumeAgentSession: hoisted.resumeAgentSession,
       endAgentSession: hoisted.endAgentSession,
+      agentsOverview: hoisted.agentsOverview,
       listApprovals: hoisted.listApprovals,
       getApproval: hoisted.getApproval,
       decideApproval: hoisted.decideApproval,
@@ -56,6 +69,9 @@ vi.mock("@/api/client", () => {
       getBoard: hoisted.getBoard,
       listMembers: hoisted.listMembers,
       listRuns: hoisted.listRuns,
+      getRun: hoisted.getRun,
+      previewRunRevert: hoisted.previewRunRevert,
+      revertRun: hoisted.revertRun,
     },
   };
 });
@@ -150,12 +166,80 @@ function approval(
   };
 }
 
+function run(overrides: Partial<RunSummaryDto> = {}): RunSummaryDto {
+  return {
+    id: "run-1",
+    boardId: "board-1",
+    apiTokenId: "token-1",
+    agentSessionId: "session-1",
+    actorId: "user-1",
+    kind: "batch",
+    status: "applied",
+    clientRunId: "client-1",
+    planHash: "a".repeat(64),
+    approvalId: null,
+    commandCount: 2,
+    firstSeq: 1,
+    lastSeq: 2,
+    revertsRunId: null,
+    createdAt: Date.now() - 60_000,
+    appliedAt: Date.now() - 59_000,
+    revertedAt: null,
+    ...overrides,
+  };
+}
+
+function runDetail(overrides: Partial<RunSummaryDto> = {}): RunDetailDto {
+  return {
+    run: run(overrides),
+    commands: [
+      {
+        seq: 1,
+        action: {
+          type: "DELETE_CARD",
+          boardId: "board-1",
+          cardId: "card-1",
+          at: 1,
+        } as unknown as BoardAction,
+        actorId: "user-1",
+        actorType: "agent",
+        commandId: "command-1",
+        touches: ["card:card-1"],
+        runId: "run-1",
+        agentName: "QA agent",
+      },
+    ],
+    preimages: {
+      "command-1": { schemaVersion: 1, entities: [] },
+    },
+  };
+}
+
+function revertPreview(
+  overrides: Partial<RevertPreviewDto> = {},
+): RevertPreviewDto {
+  return {
+    dryRun: true,
+    run: run(),
+    conflicts: [],
+    canRevert: true,
+    diff: { "card:card-1": { title: "Card claim visibility" } },
+    ...overrides,
+  };
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{location.search}</span>;
+}
+
 function renderPage(path = "/agents") {
   return render(
     <I18nProvider>
       <ToastProvider>
         <MemoryRouter initialEntries={[path]}>
           <AgentsPage />
+          <LocationProbe />
         </MemoryRouter>
       </ToastProvider>
     </I18nProvider>,
@@ -170,6 +254,7 @@ beforeEach(() => {
     { id: "token-2", name: "Docs agent" },
   ]);
   hoisted.me.mockResolvedValue({ id: "user-1", token: null });
+  hoisted.agentsOverview.mockResolvedValue(overviewResponse([]));
   hoisted.listApprovals.mockResolvedValue([]);
   hoisted.getApproval.mockResolvedValue(approval());
   hoisted.decideApproval.mockResolvedValue(approval({ status: "rejected" }));
@@ -205,6 +290,9 @@ beforeEach(() => {
     },
   ]);
   hoisted.listRuns.mockResolvedValue([]);
+  hoisted.getRun.mockResolvedValue(runDetail());
+  hoisted.previewRunRevert.mockResolvedValue(revertPreview());
+  hoisted.revertRun.mockResolvedValue(runDetail({ status: "reverted" }));
   hoisted.listAgentSessions.mockImplementation((boardId: string) =>
     Promise.resolve(
       boardId === "board-1"
@@ -268,7 +356,7 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-count-attention")).toBeNull();
   });
 
-  it("explains approvals to a member and labels the rail scope", async () => {
+  it("explains approvals to a member and never requests them", async () => {
     renderPage("/agents?board=board-2");
 
     expect(await screen.findByTestId("agents-member-note")).toHaveTextContent(
@@ -276,6 +364,18 @@ describe("AgentsPage", () => {
     );
     expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
     expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(hoisted.agentsOverview).not.toHaveBeenCalled();
+    expect(hoisted.listApprovals).not.toHaveBeenCalled();
+  });
+
+  it("never opens an approval detail from a member deep link", async () => {
+    renderPage("/agents?section=attention&board=board-2&approval=approval-1");
+
+    expect(await screen.findByTestId("agents-member-note")).toBeVisible();
+    expect(hoisted.getApproval).not.toHaveBeenCalled();
+    expect(hoisted.agentsOverview).not.toHaveBeenCalled();
+    expect(hoisted.listApprovals).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("agents-approval-detail")).toBeNull();
   });
 
   it("shows the runs empty state and clear-all action", async () => {
@@ -287,9 +387,215 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agents-runs-clear-all")).toBeInTheDocument();
   });
 
+  it("reads run filters from the URL, sends them to the API and clears them", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage(
+      "/agents?section=runs&board=board-1&status=applied&kind=batch&time=24h&agent=token-1&session=session-1",
+    );
+
+    expect(
+      await screen.findByTestId("agents-run-row-run-1"),
+    ).toBeInTheDocument();
+    expect(hoisted.listRuns).toHaveBeenCalledWith(
+      "board-1",
+      expect.objectContaining({
+        status: "applied",
+        kind: "batch",
+        apiTokenId: "token-1",
+        agentSessionId: "session-1",
+        from: expect.any(Number),
+      }),
+    );
+    expect(screen.getByTestId("agents-run-filter-status")).toHaveTextContent(
+      "Applied",
+    );
+    expect(screen.getByTestId("agents-run-filter-kind")).toHaveTextContent(
+      "Batch",
+    );
+    expect(screen.getByTestId("agents-run-filter-time")).toHaveTextContent(
+      "Last 24 hours",
+    );
+    expect(screen.getByTestId("agents-run-filter-token")).toHaveTextContent(
+      "QA agent",
+    );
+    expect(screen.getByTestId("agents-run-filter-session")).toHaveTextContent(
+      "Nightly triage",
+    );
+    expect(screen.getByTestId("agents-run-filter-board")).toHaveTextContent(
+      "Launch",
+    );
+    const initialUrl = new URLSearchParams(
+      screen.getByTestId("location").textContent ?? "",
+    );
+    expect(initialUrl.get("section")).toBe("runs");
+    expect(initialUrl.get("board")).toBe("board-1");
+    expect(initialUrl.get("status")).toBe("applied");
+    expect(initialUrl.get("agent")).toBe("token-1");
+
+    await userEvent.click(screen.getByTestId("agents-runs-clear-all"));
+    await waitFor(() => {
+      const last = hoisted.listRuns.mock.calls.at(-1)?.[1] as
+        Record<string, unknown> | undefined;
+      expect(last).not.toHaveProperty("status");
+      expect(last).not.toHaveProperty("kind");
+      expect(last).not.toHaveProperty("from");
+      expect(last).not.toHaveProperty("apiTokenId");
+      expect(last).not.toHaveProperty("agentSessionId");
+      const cleared = new URLSearchParams(
+        screen.getByTestId("location").textContent ?? "",
+      );
+      expect(cleared.get("status")).toBeNull();
+      expect(cleared.get("kind")).toBeNull();
+      expect(cleared.get("time")).toBeNull();
+      expect(cleared.get("agent")).toBeNull();
+      expect(cleared.get("session")).toBeNull();
+      expect(cleared.get("board")).toBe("board-1");
+    });
+  });
+
+  it("shows a loaded total and appends the next runs page", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      run({
+        id: `run-${index}`,
+        createdAt: Date.now() - index * 1000,
+        appliedAt: Date.now() - index * 1000,
+      }),
+    );
+    hoisted.listRuns.mockImplementation(
+      (boardId: string, query?: { cursor?: string }) =>
+        boardId !== "board-1"
+          ? Promise.resolve([])
+          : Promise.resolve(
+              query?.cursor === undefined
+                ? firstPage
+                : [run({ id: "run-old", createdAt: 1, appliedAt: 1 })],
+            ),
+    );
+    renderPage("/agents?section=runs");
+
+    const total = await screen.findByTestId("agents-runs-total");
+    await waitFor(() => expect(total).toHaveTextContent("100 runs"));
+    expect(total).toHaveAttribute("data-has-more", "true");
+    await userEvent.click(screen.getByTestId("agents-runs-more"));
+
+    await waitFor(() => expect(total).toHaveTextContent("101 runs"));
+    expect(hoisted.listRuns).toHaveBeenLastCalledWith(
+      "board-1",
+      expect.objectContaining({ cursor: "run-99" }),
+    );
+  });
+
+  it("keeps the auto-selected run when a refresh prepends its revert run", async () => {
+    const revertRun = run({
+      id: "run-revert",
+      kind: "revert",
+      revertsRunId: "run-1",
+      createdAt: Date.now(),
+      appliedAt: Date.now(),
+    });
+    hoisted.listRuns.mockResolvedValue([run()]);
+    hoisted.getRun.mockImplementation((_boardId: string, runId: string) =>
+      Promise.resolve(
+        runDetail({
+          id: runId,
+          kind: runId === "run-revert" ? "revert" : "batch",
+        }),
+      ),
+    );
+    hoisted.previewRunRevert.mockResolvedValue(revertPreview());
+    renderPage("/agents?section=runs");
+
+    expect(await screen.findByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      "run-1",
+    );
+    hoisted.listRuns.mockResolvedValue([revertRun, run()]);
+    await userEvent.click(screen.getByTestId("agents-refresh"));
+
+    expect(
+      await screen.findByTestId("agents-run-row-run-revert"),
+    ).toBeVisible();
+    expect(screen.getByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      "run-1",
+    );
+  });
+
+  it("opens a board-scoped run deep link and copies a link with ?board=", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    expect(await screen.findByTestId("agent-run-detail")).toBeVisible();
+    expect(hoisted.getRun).toHaveBeenCalledWith("board-1", "run-1");
+    expect(screen.getByTestId("agent-run-copy-link")).toHaveAttribute(
+      "data-copy-url",
+      "/agents?section=runs&board=board-1&run=run-1",
+    );
+    await userEvent.click(screen.getByTestId("agent-run-open-session"));
+    expect(
+      await screen.findByTestId("agents-session-detail-hint"),
+    ).toBeVisible();
+  });
+
+  it("requires a board for a run deep link", async () => {
+    renderPage("/agents?section=runs&run=run-1");
+    expect(await screen.findByTestId("agents-missing-scope")).toHaveTextContent(
+      "Approval and run links must include a board.",
+    );
+  });
+
+  it("keeps rollback read-only on a board where the caller is a member", async () => {
+    const memberRun = run({ id: "run-2", boardId: "board-2" });
+    hoisted.listRuns.mockResolvedValue([memberRun]);
+    hoisted.getRun.mockResolvedValue(
+      runDetail({ id: "run-2", boardId: "board-2" }),
+    );
+    renderPage("/agents?section=runs&board=board-2&run=run-2");
+
+    expect(await screen.findByTestId("agent-run-detail")).toBeVisible();
+    expect(screen.getByTestId("agent-run-admin-only-note")).toBeVisible();
+    expect(screen.queryByTestId("agent-run-revert-apply")).toBeNull();
+    expect(screen.queryByTestId("agent-run-preimages")).toBeNull();
+    expect(screen.queryByTestId("agent-run-diff")).toBeNull();
+  });
+
+  it("shows the unknown-board recovery for a revoked run board", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? Promise.reject({ status: 403 })
+        : Promise.resolve([]),
+    );
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    expect(await screen.findByTestId("agents-unknown-board")).toBeVisible();
+    expect(screen.queryByTestId("agent-run-detail")).toBeNull();
+  });
+
+  it("links an approval run and session with ?board=", async () => {
+    const row = approval({ runId: "run-1" });
+    hoisted.listApprovals.mockResolvedValue([row]);
+    hoisted.getApproval.mockResolvedValue(row);
+    renderPage("/agents?section=attention&board=board-1&approval=approval-1");
+
+    expect(await screen.findByTestId("approval-run-link")).toHaveAttribute(
+      "href",
+      "/agents?board=board-1&section=runs&run=run-1",
+    );
+    expect(await screen.findByTestId("approval-session-link")).toHaveAttribute(
+      "href",
+      "/agents?board=board-1&section=sessions&session=session-1",
+    );
+  });
+
   it("shows pending approvals in the rail and board scope", async () => {
-    hoisted.listApprovals.mockImplementation((boardId: string) =>
-      Promise.resolve(boardId === "board-1" ? [approval()] : []),
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
     );
     renderPage("/agents?section=attention");
 
@@ -299,15 +605,160 @@ describe("AgentsPage", () => {
     expect(
       await screen.findByTestId("agents-approval-approval-1"),
     ).toHaveTextContent("Delete card");
+    expect(hoisted.listApprovals).not.toHaveBeenCalled();
     await userEvent.click(screen.getByTestId("agents-filter-board"));
     expect(
       screen.getByTestId("agents-filter-board-option-board-1"),
     ).toHaveTextContent("1");
+    expect(
+      screen.getByTestId("agents-filter-board-option-board-2"),
+    ).not.toHaveTextContent(/\d/);
+  });
+
+  it("uses the selected board scope and its exact count, not All boards", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boardId: "board-1",
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+    renderPage("/agents?section=attention&board=board-1");
+
+    expect(
+      await screen.findByTestId("agents-count-attention"),
+    ).toHaveTextContent("1");
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith({
+      section: "approvals",
+      boardId: "board-1",
+      limit: 100,
+    });
+    await userEvent.click(screen.getByTestId("agents-filter-board"));
+    expect(
+      screen.getByTestId("agents-filter-board-option-all"),
+    ).toHaveTextContent("1");
+  });
+
+  it("counts only ADMIN boards in All scope and ignores member boards", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1, "board-2": 7 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByTestId("agents-count-attention"),
+    ).toHaveTextContent("1");
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith({
+      section: "approvals",
+      limit: 100,
+    });
+    await userEvent.click(screen.getByTestId("agents-filter-board"));
+    expect(
+      screen.getByTestId("agents-filter-board-option-all"),
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByTestId("agents-filter-board-option-board-2"),
+    ).not.toHaveTextContent(/\d/);
+  });
+
+  it("renders 99+ for large exact counts", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 150 },
+        pendingTotal: 150,
+        totalApprovals: 150,
+        total: 150,
+      }),
+    );
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByTestId("agents-count-attention"),
+    ).toHaveTextContent("99+");
+    await userEvent.click(screen.getByTestId("agents-filter-board"));
+    expect(
+      screen.getByTestId("agents-filter-board-option-all"),
+    ).toHaveTextContent("99+");
+    expect(
+      screen.getByTestId("agents-filter-board-option-board-1"),
+    ).toHaveTextContent("99+");
+  });
+
+  it("renders an unknown count as unknown and retries a network failure", async () => {
+    hoisted.agentsOverview.mockRejectedValueOnce({ status: 0 });
+    renderPage("/agents?section=attention");
+
+    const error = await screen.findByTestId("agents-approvals-error");
+    expect(screen.queryByTestId("agents-count-attention")).toBeNull();
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+    await userEvent.click(within(error).getByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByTestId("agents-count-attention"),
+    ).toHaveTextContent("1");
+  });
+
+  it("drops data on a confirmed 403 without a Retry trap", async () => {
+    hoisted.agentsOverview.mockRejectedValueOnce({ status: 403 });
+    renderPage("/agents?section=attention");
+
+    await waitFor(() =>
+      expect(hoisted.agentsOverview).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByTestId("agents-approvals-error")).toBeNull();
+    expect(screen.queryByTestId("agents-count-attention")).toBeNull();
+  });
+
+  it("keeps the last count but marks it stale after a failed refresh", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByTestId("agents-count-attention"),
+    ).toHaveTextContent("1");
+    hoisted.agentsOverview.mockRejectedValueOnce({ status: 503 });
+    await userEvent.click(screen.getByTestId("agents-refresh"));
+
+    expect(
+      await screen.findByTestId("agents-approvals-error"),
+    ).toBeInTheDocument();
+    const count = screen.getByTestId("agents-count-attention");
+    expect(count).toHaveTextContent("1");
+    expect(count).toHaveAttribute("data-state", "stale");
   });
 
   it("opens an approval plan and requires a rejection reason", async () => {
     const row = approval();
-    hoisted.listApprovals.mockResolvedValue([row]);
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem({ planHash: row.planHash })], {
+        boardId: "board-1",
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
     hoisted.getApproval.mockResolvedValue(row);
     renderPage("/agents?section=attention&board=board-1&approval=approval-1");
 
@@ -334,9 +785,23 @@ describe("AgentsPage", () => {
   });
 
   it("shows All clear when only decided approvals remain", async () => {
-    hoisted.listApprovals.mockResolvedValue([
-      approval({ status: "rejected", decisionComment: "No" }),
-    ]);
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse(
+        [
+          overviewItem({
+            status: "rejected",
+            storedStatus: "rejected",
+            decisionComment: "No",
+          }),
+        ],
+        {
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 0 },
+          pendingTotal: 0,
+          totalApprovals: 1,
+        },
+      ),
+    );
     renderPage("/agents?section=attention");
 
     await waitFor(() =>
@@ -346,15 +811,26 @@ describe("AgentsPage", () => {
   });
 
   it("filters approvals by needs, decided and all with true counts", async () => {
-    hoisted.listApprovals.mockResolvedValue([
-      approval(),
-      approval({
-        id: "approval-2",
-        status: "rejected",
-        summary: "Rejected request",
-        decisionComment: "No",
-      }),
-    ]);
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse(
+        [
+          overviewItem(),
+          overviewItem({
+            id: "approval-2",
+            status: "rejected",
+            storedStatus: "rejected",
+            summary: "Rejected request",
+            decisionComment: "No",
+          }),
+        ],
+        {
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 1 },
+          pendingTotal: 1,
+          totalApprovals: 2,
+        },
+      ),
+    );
     renderPage("/agents?section=attention");
 
     const list = await screen.findByTestId("agents-approval-list");
@@ -376,15 +852,25 @@ describe("AgentsPage", () => {
 
   it("quick-rejects an approval with a required reason", async () => {
     const row = approval();
-    hoisted.listApprovals.mockResolvedValue([row]);
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem({ planHash: row.planHash })], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
     renderPage("/agents?section=attention");
 
     await userEvent.click(
       await screen.findByTestId("agents-approval-reject-approval-1"),
     );
-    expect(
-      await screen.findByTestId("agents-approval-detail"),
-    ).toHaveTextContent("Reason for rejection");
+    expect(await screen.findByTestId("agents-approval-detail")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-approval-detail")).toHaveTextContent(
+        "Reason for rejection",
+      ),
+    );
     expect(screen.getByTestId("approval-confirm")).toBeDisabled();
     await userEvent.type(
       screen.getByTestId("approval-comment"),
@@ -406,13 +892,33 @@ describe("AgentsPage", () => {
 
   it("shows an expired approval without decision controls", async () => {
     const expired = approval({ expiresAt: Date.now() - 1_000 });
-    hoisted.listApprovals.mockResolvedValue([expired]);
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse(
+        [
+          overviewItem({
+            status: "expired",
+            storedStatus: "pending",
+            expiresAt: expired.expiresAt,
+          }),
+        ],
+        {
+          boardId: "board-1",
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 0 },
+          pendingTotal: 0,
+          totalApprovals: 1,
+        },
+      ),
+    );
     hoisted.getApproval.mockResolvedValue(expired);
     renderPage("/agents?section=attention&board=board-1&approval=approval-1");
 
-    expect(
-      await screen.findByTestId("agents-approval-detail"),
-    ).toHaveTextContent("Expired");
+    expect(await screen.findByTestId("agents-approval-detail")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-approval-detail")).toHaveTextContent(
+        "Expired",
+      ),
+    );
     expect(screen.queryByTestId("approval-approve")).toBeNull();
     expect(screen.queryByTestId("approval-reject")).toBeNull();
   });

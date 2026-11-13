@@ -49,6 +49,9 @@ services:
       # silent default.
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      # One-time fresh-install bootstrap without SMTP; inert after the first
+      # user exists. The local installer enables it, production keeps it off.
+      ALLOW_BOOTSTRAP_USER: ${ALLOW_BOOTSTRAP_USER:-false}
       ALLOW_PUBLIC_SHARES: ${ALLOW_PUBLIC_SHARES:-true}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}

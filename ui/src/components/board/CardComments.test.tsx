@@ -25,21 +25,29 @@ import { FakeServer } from "@/test/fake-server";
 // thread behaviour under test is the data flow, not the editor internals.
 vi.mock("@/components/editor/CommentEditor", () => ({
   CommentComposerEditor: ({
+    value,
     onChange,
     onSubmit,
+    onCancel,
     placeholder,
   }: {
+    value?: string;
     onChange: (value: string) => void;
     onSubmit: () => void;
+    onCancel?: () => void;
     placeholder?: string;
   }) => (
     <textarea
       data-testid="comment-input"
+      value={value ?? ""}
       placeholder={placeholder}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
           onSubmit();
+        }
+        if (event.key === "Escape" && onCancel !== undefined) {
+          onCancel();
         }
       }}
     />
@@ -462,5 +470,181 @@ describe("CardComments", () => {
     await waitFor(() =>
       expect(screen.queryByText("Doomed")).not.toBeInTheDocument(),
     );
+  });
+
+  it("offers Edit only on the author's own comment and never in read-only", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-9", authorId: "user-2", text: "Foreign" }),
+    ]);
+    const { unmount } = renderComments(server);
+    expect(await screen.findByText("Foreign")).toBeInTheDocument();
+    expect(screen.queryByTestId("comment-edit")).toBeNull();
+    unmount();
+
+    const readOnlyServer = new FakeServer([seedBoard()]);
+    readOnlyServer.seedComments("card-1", [comment()]);
+    renderComments(readOnlyServer, true);
+    expect(await screen.findByText("First!")).toBeInTheDocument();
+    expect(screen.queryByTestId("comment-edit")).toBeNull();
+  });
+
+  it("edits an own comment in place, keeps its position and marks it edited", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "First!" }),
+      comment({ id: "comment-2", text: "Second" }),
+    ]);
+    renderComments(server);
+    await screen.findByText("First!");
+
+    fireEvent.click(screen.getAllByTestId("comment-edit")[0]);
+    const editingRow = screen.getAllByTestId("comment")[0];
+    const input = await within(editingRow).findByTestId("comment-input");
+    expect(input).toHaveValue("First!");
+    fireEvent.change(input, { target: { value: "First, edited" } });
+    fireEvent.click(screen.getByTestId("comment-edit-save"));
+
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("comment");
+      expect(rows[0]).toHaveTextContent("First, edited");
+      expect(rows[1]).toHaveTextContent("Second");
+      expect(within(rows[0]).getByTestId("comment-edited")).toBeInTheDocument();
+      // The editor is gone: the text above is the rendered body, not the
+      // textarea's value.
+      expect(
+        within(rows[0]).queryByTestId("comment-edit-save"),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      server.requests.find(
+        (request) =>
+          request.method === "PATCH" &&
+          request.path === "/api/v1/comments/comment-1",
+      )?.body,
+    ).toEqual({ text: "First, edited" });
+  });
+
+  it("cancels the inline edit with Escape without sending", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Unchanged" })]);
+    renderComments(server);
+    await screen.findByText("Unchanged");
+
+    fireEvent.click(screen.getByTestId("comment-edit"));
+    const row = screen.getByTestId("comment");
+    const input = await within(row).findByTestId("comment-input");
+    fireEvent.change(input, { target: { value: "Discarded" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(await screen.findByText("Unchanged")).toBeInTheDocument();
+    expect(screen.queryByTestId("comment-edit-save")).toBeNull();
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "PATCH" &&
+          request.path === "/api/v1/comments/comment-1",
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps the draft open and the stored row intact when saving fails", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Stored" })]);
+    renderComments(server, false, async (input, init) => {
+      if (init?.method === "PATCH") {
+        return new Response(JSON.stringify({ message: "nope" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("Stored");
+
+    fireEvent.click(screen.getByTestId("comment-edit"));
+    const row = screen.getByTestId("comment");
+    const input = await within(row).findByTestId("comment-input");
+    fireEvent.change(input, { target: { value: "Attempt" } });
+    fireEvent.click(screen.getByTestId("comment-edit-save"));
+
+    expect(
+      await screen.findByText("Could not save the comment"),
+    ).toBeInTheDocument();
+    // The draft survives the failure…
+    expect(
+      within(screen.getByTestId("comment")).getByTestId("comment-input"),
+    ).toHaveValue("Attempt");
+    // …and cancelling shows the original stored text again.
+    fireEvent.click(screen.getByTestId("comment-edit-cancel"));
+    expect(await screen.findByText("Stored")).toBeInTheDocument();
+  });
+
+  it("saves with Ctrl+Enter and disables Save for blank, unchanged and over-limit text", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Keyboard edit" })]);
+    renderComments(server);
+    await screen.findByText("Keyboard edit");
+
+    fireEvent.click(screen.getByTestId("comment-edit"));
+    const row = screen.getByTestId("comment");
+    const input = await within(row).findByTestId("comment-input");
+    const save = screen.getByTestId("comment-edit-save");
+    // Open with the stored text: there is nothing to save yet.
+    expect(save).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "   " } });
+    expect(save).toBeDisabled();
+    fireEvent.change(input, {
+      target: { value: "x".repeat(LIMITS.comment + 1) },
+    });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Saved with the keyboard" } });
+    expect(save).toBeEnabled();
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("comment")).toHaveTextContent(
+        "Saved with the keyboard",
+      );
+      expect(screen.queryByTestId("comment-edit-save")).toBeNull();
+    });
+  });
+
+  it("updates an edited comment from a second tab through comment_updated", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-7", text: "Before" }),
+    ]);
+    renderComments(server);
+    await screen.findByText("Before");
+    await waitStream(server);
+
+    act(() => {
+      server.seedComments("card-1", [
+        comment({
+          id: "comment-7",
+          text: "After",
+          editedAt: Date.now(),
+        }),
+      ]);
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-3",
+        boardId: "b-1",
+        cardId: "card-1",
+        actorId: "user-1",
+        at: Date.now(),
+        kind: "comment_updated",
+        detail: "comment-7",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("comment")).toHaveTextContent("After"),
+    );
+    expect(screen.getByTestId("comment-edited")).toBeInTheDocument();
+    expect(screen.queryByText("Before")).not.toBeInTheDocument();
   });
 });

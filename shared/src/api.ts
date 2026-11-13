@@ -559,6 +559,7 @@ export const ACTIVITY_EVENT_TYPES = [
   "member_removed",
   "comment_added",
   "comment_deleted",
+  "comment_updated",
   // TASK-166 agent control / approvals / pause.
   "approval_requested",
   "approval_approved",
@@ -788,6 +789,8 @@ export interface CommentDto {
   agentName?: string | null;
   /** Unix ms. */
   createdAt: number;
+  /** Unix ms of the last author edit (TASK-176.2); absent = never edited. */
+  editedAt?: number;
 }
 
 /** A page of `GET /cards/:id/comments`, newest-first. */
@@ -1029,9 +1032,12 @@ export interface UpdateProfileRequest {
   locale?: AnnouncementLocale | null;
 }
 
-/** Body of `POST /users/me/password` (TASK-36.1). */
+/** Body of `POST /auth/password` (TASK-36.1). */
 export interface ChangePasswordRequest {
-  currentPassword: string;
+  /** Required for an account that already has a password. */
+  currentPassword?: string;
+  /** OAuth-only accounts prove the operation with a fresh OAuth token. */
+  oauthProof?: string;
   newPassword: string;
 }
 

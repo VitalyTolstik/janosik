@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { BoardSummary } from "@janosik/shared";
 
-import { api, isApiEnabled } from "@/api/client";
+import { isApiEnabled } from "@/api/client";
 import {
   AgentLastSeen,
   AgentLiveDot,
@@ -60,12 +60,26 @@ import {
   type AttentionApprovalRow,
 } from "./AttentionApprovals";
 import { BoardScopeSelect } from "./BoardScopeSelect";
+import { RunDetail, RunList } from "./run-ui";
+import {
+  hasRunFilter,
+  readRunFilter,
+  runBoardRole as roleForRunBoard,
+  runFilterOptions,
+  writeRunFilter,
+  type AgentRunFilter,
+  type RunKindFilter,
+  type RunStatusFilter,
+  type RunTimeFilter,
+} from "./run-model";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select-field";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
-import { formatRelative, useI18n } from "@/i18n";
+import { useI18n } from "@/i18n";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { routes } from "@/routes";
+import { useBoard } from "@/store/BoardContext";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
 import { docsUrl } from "@/utils/docs-url";
@@ -76,9 +90,12 @@ const SECTIONS = ["attention", "sessions", "runs"] as const;
 
 export function AgentsPage() {
   const { t, lang } = useI18n();
+  const verticalRail = useMediaQuery("(min-width: 768px)");
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
+  const { boards: loadedBoards } = useBoard();
   const filter = useMemo(() => readAgentFilter(params), [params]);
+  const runFilter = useMemo(() => readRunFilter(params), [params]);
   const groupMode = readAgentGroup(params);
   const sectionParam = params.get("section");
   const section: Section = SECTIONS.includes(sectionParam as Section)
@@ -87,6 +104,10 @@ export function AgentsPage() {
   const [now, setNow] = useState(() => Date.now());
   const [offline, setOffline] = useState(() => !navigator.onLine);
   const [approvalIntent, setApprovalIntent] = useState<"reject" | null>(null);
+  const [runConflicts, setRunConflicts] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  const [autoRunId, setAutoRunId] = useState<string | null>(null);
 
   useEffect(() => {
     const previous = document.title;
@@ -138,6 +159,94 @@ export function AgentsPage() {
     },
     [setParams],
   );
+  const setRunFilter = useCallback(
+    (patch: Partial<AgentRunFilter>) => {
+      setParams(
+        (current) => {
+          const search = new URLSearchParams(current);
+          const next = { ...readRunFilter(search), ...patch };
+          writeRunFilter(search, next);
+          search.set("section", "runs");
+          search.delete("run");
+          search.delete("approval");
+          if ("board" in patch) search.delete("session");
+          return search;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const clearRunFilters = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        for (const key of [
+          "agent",
+          "token",
+          "status",
+          "kind",
+          "time",
+          "session",
+          "q",
+          "run",
+          "approval",
+        ]) {
+          next.delete(key);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+  const openRun = useCallback(
+    (run: { id: string; boardId: string }) => {
+      setAutoRunId(run.id);
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "runs");
+          next.set("board", run.boardId);
+          next.set("run", run.id);
+          next.delete("approval");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const closeRun = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("run");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+  const openRunSession = useCallback(
+    (sessionId: string) => {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "sessions");
+          next.set("session", sessionId);
+          next.delete("run");
+          next.delete("approval");
+          // The caller comes from the Runs section: its status/kind/time are
+          // run filters, not session filters.
+          next.delete("status");
+          next.delete("kind");
+          next.delete("time");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
   const setGroupMode = (mode: "board" | "token") => {
     setParams(
       (current) => {
@@ -181,6 +290,22 @@ export function AgentsPage() {
       // Section switches close a detail selection, but board/token filters
       // stay in the URL: `?agent=` is the old name of the token filter.
       for (const key of ["session", "approval", "run"]) search.delete(key);
+      // Normalise values that belong to the other section so the URL never
+      // claims a filter the visible list is not applying.
+      if (value === "runs") {
+        writeRunFilter(search, readRunFilter(search));
+      } else if (section === "runs") {
+        // Run status/kind/time values are not session filters; `failed`
+        // overlaps by name but means a failed run, not a failed session.
+        search.delete("status");
+        search.delete("kind");
+        search.delete("time");
+      } else {
+        const next = readAgentFilter(search);
+        setOrDelete(search, "status", next.status, "all");
+        setOrDelete(search, "time", next.time, "any");
+        search.delete("kind");
+      }
       return search;
     });
   };
@@ -257,8 +382,28 @@ export function AgentsPage() {
     );
   }, [setParams]);
 
-  const pending = usePendingApprovals(state.boards, !state.isAgentToken);
-  const runs = useAgentRuns(state.boards, section === "runs");
+  const pending = usePendingApprovals({
+    boardId: filter.board === "all" ? null : filter.board,
+    boards: state.boards,
+    enabled: !state.isAgentToken,
+  });
+  const runs = useAgentRuns(state.boards, {
+    enabled: section === "runs",
+    filter: runFilter,
+  });
+  // The master-detail opens the newest run until the URL pins one. Remember
+  // which run that was so a refresh that prepends the new `revert` audit run
+  // does not steal the open pane. A filter/no-rows change falls back again.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- remember the auto-opened run across list refreshes
+    setAutoRunId((current) =>
+      section !== "runs"
+        ? null
+        : current !== null && runs.rows.some((row) => row.id === current)
+          ? current
+          : (runs.rows[0]?.id ?? null),
+    );
+  }, [section, runs.rows]);
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
   const approvalAgentNames = useMemo(() => {
@@ -267,45 +412,6 @@ export function AgentsPage() {
     for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
     return names;
   }, [state.rows, state.tokens]);
-  const approvalBoardIds = useMemo(
-    () => [...new Set(pending.rows.map((row) => row.boardId))],
-    [pending.rows],
-  );
-  const [loadedApprovalCards, setLoadedApprovalCards] = useState<
-    Map<string, string>
-  >(() => new Map());
-  useEffect(() => {
-    if (approvalBoardIds.length === 0) return;
-    let alive = true;
-    void Promise.allSettled(
-      approvalBoardIds.map((boardId) => api.getBoard(boardId)),
-    ).then((results) => {
-      if (!alive) return;
-      const titles = new Map<string, string>();
-      for (const result of results) {
-        if (result.status !== "fulfilled") continue;
-        for (const card of Object.values(result.value.cards)) {
-          titles.set(card.id, card.title);
-        }
-      }
-      setLoadedApprovalCards(titles);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [approvalBoardIds]);
-  const approvalCardTitles = useMemo(() => {
-    const titles = new Map<string, string>();
-    for (const row of state.rows) {
-      if (row.currentCardId !== null && row.cardTitle !== null) {
-        titles.set(row.currentCardId, row.cardTitle);
-      }
-    }
-    for (const [cardId, title] of loadedApprovalCards) {
-      if (!titles.has(cardId)) titles.set(cardId, title);
-    }
-    return titles;
-  }, [loadedApprovalCards, state.rows]);
   const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
     const query = filter.query.trim().toLowerCase();
     return pending.rows
@@ -333,12 +439,9 @@ export function AgentsPage() {
       .map((row) => ({
         ...row,
         agentName: approvalAgentNames.get(row.requestedByTokenId),
-        cardTitle:
-          row.cardId === null ? undefined : approvalCardTitles.get(row.cardId),
       }));
   }, [
     approvalAgentNames,
-    approvalCardTitles,
     filter.board,
     filter.query,
     filter.token,
@@ -352,11 +455,11 @@ export function AgentsPage() {
       ).length,
     [now, scopedApprovalRows],
   );
-  const pendingAll = state.boards
-    .filter((board) => board.role === "ADMIN")
-    .reduce((total, board) => total + (pending.counts[board.id] ?? 0), 0);
+  const pendingAll = pending.totalCount;
   const pendingForScope =
-    filter.board === "all" ? pendingAll : (pending.counts[filter.board] ?? 0);
+    filter.board === "all"
+      ? pendingAll
+      : (pending.counts[filter.board] ?? null);
   const scopedRows = useMemo(
     () =>
       filter.board === "all"
@@ -365,18 +468,73 @@ export function AgentsPage() {
     [filter.board, state.rows],
   );
   const staleCount = scopedRows.filter((row) => row.stale).length;
-  const attentionCount = pendingForScope + staleCount;
-  const sessionCount = scopedRows.length;
   const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
   const isAttentionAdmin =
     filter.board === "all"
       ? hasAdminBoard
       : state.boards.find((board) => board.id === filter.board)?.role ===
         "ADMIN";
+  const attentionCount = isAttentionAdmin
+    ? pendingForScope === null
+      ? null
+      : pendingForScope + staleCount
+    : staleCount;
+  const sessionCount = scopedRows.length;
 
   const selectedSession = params.get("session");
   const selectedApprovalId = params.get("approval");
+  const selectedRunId = params.get("run");
   const approvalBoardId = params.get("board");
+  const selectedRunRow =
+    selectedRunId === null
+      ? undefined
+      : runs.rows.find((run) => run.id === selectedRunId);
+  // The desktop master-detail opens the newest run until the URL pins one;
+  // mobile keeps the list until a row is tapped.
+  const autoRunRow =
+    section === "runs" && selectedRunId === null
+      ? (runs.rows.find((row) => row.id === autoRunId) ?? runs.rows[0])
+      : undefined;
+  const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
+  const runDetailBoardId =
+    selectedRunId !== null
+      ? runFilter.board
+      : (autoRunRow?.boardId ?? runFilter.board);
+  const runBoardRole =
+    roleForRunBoard(state.boards, runDetailBoardId) ??
+    selectedRunRow?.boardRole ??
+    autoRunRow?.boardRole;
+  const runBoardTitle =
+    selectedRunRow?.boardTitle ??
+    autoRunRow?.boardTitle ??
+    state.boards.find((board) => board.id === runDetailBoardId)?.title ??
+    runDetailBoardId;
+  const runBoard = loadedBoards.find((board) => board.id === runDetailBoardId);
+  const runTokenNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const token of state.tokens) names.set(token.id, token.name);
+    for (const row of state.rows) {
+      if (names.has(row.apiTokenId)) continue;
+      names.set(row.apiTokenId, agentLabel(row));
+    }
+    for (const row of runs.rows) {
+      if (row.apiTokenId === null || names.has(row.apiTokenId)) continue;
+      names.set(row.apiTokenId, shortId(row.apiTokenId));
+    }
+    return names;
+  }, [runs.rows, state.rows, state.tokens]);
+  const runSessionNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const row of state.rows) {
+      names.set(row.id, row.name ?? shortId(row.id));
+    }
+    for (const row of runs.rows) {
+      if (row.agentSessionId === null || names.has(row.agentSessionId))
+        continue;
+      names.set(row.agentSessionId, shortId(row.agentSessionId));
+    }
+    return names;
+  }, [runs.rows, state.rows]);
   const selectedApprovalBase =
     selectedApprovalId === null
       ? undefined
@@ -424,6 +582,12 @@ export function AgentsPage() {
   const sessionMissing =
     selectedSession !== null && sessionDetailRow === undefined;
   const sessionSheetOpen = section === "sessions" && selectedSession !== null;
+  const runBoardKnown =
+    runDetailBoardId !== "all" &&
+    state.boards.some((board) => board.id === runDetailBoardId) &&
+    !runs.revokedBoardIds.includes(runDetailBoardId);
+  const runSheetOpen =
+    section === "runs" && selectedRunId !== null && runBoardKnown;
   const boardOptions = [
     { value: "all", label: t("agents.filters.allBoards") },
     ...state.boards.map((board) => ({ value: board.id, label: board.title })),
@@ -457,6 +621,38 @@ export function AgentsPage() {
             ? t("agents.filters.stale")
             : t(`agents.status.${value}`),
   }));
+  const runOptions = useMemo(() => runFilterOptions(t), [t]);
+  const runTokenOptions = useMemo(
+    () => [
+      { value: "all", label: t("agents.filters.allTokens") },
+      ...[...runTokenNames.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(runFilter.token !== "all" && !runTokenNames.has(runFilter.token)
+        ? [{ value: runFilter.token, label: shortId(runFilter.token) }]
+        : []),
+    ],
+    [runFilter.token, runTokenNames, t],
+  );
+  const runSessionOptions = useMemo(
+    () => [
+      { value: "all", label: t("agents.shell.allSessions") },
+      ...[...runSessionNames.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(runFilter.session !== "all" && !runSessionNames.has(runFilter.session)
+        ? [{ value: runFilter.session, label: shortId(runFilter.session) }]
+        : []),
+    ],
+    [runFilter.session, runSessionNames, t],
+  );
+  const noteRunConflicts = useCallback((runId: string, count: number) => {
+    setRunConflicts((current) => {
+      const next = new Map(current);
+      next.set(runId, count);
+      return next;
+    });
+  }, []);
   const filteredActive =
     filter.token !== "all" ||
     filter.status !== "all" ||
@@ -464,6 +660,7 @@ export function AgentsPage() {
     filter.query.trim() !== "";
   const showAllClear =
     isAttentionAdmin &&
+    pendingForScope !== null &&
     scopedPendingCount === 0 &&
     approvalFilter === "needs" &&
     !filteredActive &&
@@ -474,7 +671,8 @@ export function AgentsPage() {
     !state.loading &&
     (!state.error || state.errorStatus === 403 || state.errorStatus === 404) &&
     filter.board !== "all" &&
-    !state.boards.some((board) => board.id === filter.board);
+    (!state.boards.some((board) => board.id === filter.board) ||
+      (section === "runs" && runs.revokedBoardIds.includes(filter.board)));
   const missingScope =
     filter.board === "all" && (params.has("approval") || params.has("run"));
   const openTokens = () =>
@@ -496,7 +694,7 @@ export function AgentsPage() {
     >
       <aside className="flex shrink-0 flex-col border-b border-border bg-card/40 px-[10px] pb-3 pt-4 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px]">
         <div className="hidden px-1 pb-3 md:block">
-          <h1 className="font-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
+          <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}
           </h1>
           <p className="mt-[3px] max-w-[19ch] text-[11px] leading-[1.45] text-muted-foreground">
@@ -506,7 +704,8 @@ export function AgentsPage() {
         <nav
           role="tablist"
           aria-label={t("agents.title")}
-          className="flex gap-1 md:flex-col"
+          aria-orientation={verticalRail ? "vertical" : "horizontal"}
+          className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
         >
           {SECTIONS.map((item) => {
             const Icon =
@@ -542,15 +741,25 @@ export function AgentsPage() {
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden />
                 {t(`agents.shell.${item}`)}
-                {count > 0 ? (
+                {count !== null && count > 0 ? (
                   <span
                     data-testid={`agents-count-${item}`}
+                    data-state={
+                      item === "attention" && pending.stale
+                        ? "stale"
+                        : undefined
+                    }
+                    title={
+                      item === "attention" && pending.stale
+                        ? t("agents.pending.stale")
+                        : undefined
+                    }
                     className={cn(
-                      "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[10.5px] font-semibold tabular-nums",
+                      "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[11px] font-semibold tabular-nums",
                       item === "attention"
-                        ? "border border-warning/30 bg-warning/10 text-warning"
+                        ? "border border-warning/30 bg-warning/10 text-[color:var(--agent-tone-warning)]"
                         : section === item
-                          ? "bg-primary/15 text-primary"
+                          ? "bg-primary/15 text-[color:var(--agent-tone-primary)]"
                           : "bg-hover text-muted-foreground",
                     )}
                   >
@@ -562,7 +771,7 @@ export function AgentsPage() {
           })}
         </nav>
         <div className="mt-4 hidden border-t border-border pt-3 md:block">
-          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[10.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
             <span>{t("agents.shell.boards")}</span>
             <span>
               {isAttentionAdmin
@@ -575,12 +784,16 @@ export function AgentsPage() {
               const count =
                 board.value === "all"
                   ? pendingAll
-                  : (pending.counts[board.value] ?? 0);
+                  : (pending.counts[board.value] ?? null);
               return (
                 <button
                   key={board.value}
                   type="button"
-                  onClick={() => setFilter({ board: board.value })}
+                  onClick={() =>
+                    section === "runs"
+                      ? setRunFilter({ board: board.value })
+                      : setFilter({ board: board.value })
+                  }
                   aria-pressed={filter.board === board.value}
                   className={cn(
                     "flex min-h-8 w-full items-center gap-[7px] rounded-md border border-transparent px-2 text-left font-agent-surface text-[11.5px] font-normal leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -599,8 +812,14 @@ export function AgentsPage() {
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
-                  {count > 0 ? (
-                    <span className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[10px] font-semibold tabular-nums text-warning">
+                  {count !== null && count > 0 ? (
+                    <span
+                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[11px] font-semibold tabular-nums text-[color:var(--agent-tone-warning)]"
+                      data-state={pending.stale ? "stale" : "fresh"}
+                      title={
+                        pending.stale ? t("agents.pending.stale") : undefined
+                      }
+                    >
                       {count > 99 ? "99+" : count}
                     </span>
                   ) : null}
@@ -609,7 +828,7 @@ export function AgentsPage() {
             })}
           </div>
         </div>
-        <div className="mt-auto hidden border-t border-border px-2 pt-3 text-[10.5px] leading-[1.5] text-muted-foreground md:block">
+        <div className="mt-auto hidden border-t border-border px-2 pt-3 text-[11px] leading-[1.5] text-muted-foreground md:block">
           <p>{t("agents.shell.tokenHint")}</p>
           <button
             type="button"
@@ -629,7 +848,7 @@ export function AgentsPage() {
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px]">
           <header className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="font-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em]">
+              <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em]">
                 {t(`agents.shell.${section}`)}
               </h2>
               <p className="mt-[3px] text-[11.5px] leading-[1.45] text-muted-foreground">
@@ -682,6 +901,7 @@ export function AgentsPage() {
                 size="sm"
                 onClick={() => {
                   state.reload();
+                  pending.reload();
                   if (section === "runs") runs.reload();
                 }}
                 disabled={
@@ -716,7 +936,7 @@ export function AgentsPage() {
               {section === "runs" ? (
                 <button
                   type="button"
-                  onClick={clearFilters}
+                  onClick={clearRunFilters}
                   data-testid="agents-runs-clear-all"
                   className="inline-flex min-h-7 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:hidden min-[1061px]:max-[1279px]:hidden"
                 >
@@ -744,7 +964,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground/78 focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
+                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -781,33 +1001,93 @@ export function AgentsPage() {
                   className="w-auto min-w-[108px]"
                   counts={pending.counts}
                   totalCount={pendingAll}
+                  stale={pending.stale}
                 />
               </>
             ) : (
               <>
-                {[
-                  t("agents.filters.allStatuses"),
-                  t("agents.shell.allKinds"),
-                  t("agents.filters.anyTime"),
-                  t("agents.filters.allTokens"),
-                  t("agents.shell.allSessions"),
-                ].map((label) => (
-                  <SelectField
-                    key={label}
-                    value="all"
-                    options={[{ value: "all", label }]}
-                    onChange={() => {}}
-                    disabled
-                    ariaLabel={label}
-                    testId={`agents-runs-filter-${label}`}
-                    chevronClassName="h-[11px] w-[11px]"
-                    className="min-h-11 w-auto min-w-[104px] text-xs md:h-7 md:min-h-7"
-                  />
-                ))}
-                <span className="ml-auto text-[10.5px] text-muted-foreground">
-                  {t("agents.runs.shown", {
-                    count: runs.loading ? 0 : runs.rows.length,
-                  })}
+                <SelectField
+                  value={runFilter.status}
+                  options={runOptions.status}
+                  onChange={(status) =>
+                    setRunFilter({ status: status as RunStatusFilter })
+                  }
+                  ariaLabel={t("agentControl.runs.filter.status")}
+                  testId="agents-run-filter-status"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[104px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.kind}
+                  options={runOptions.kind}
+                  onChange={(kind) =>
+                    setRunFilter({ kind: kind as RunKindFilter })
+                  }
+                  ariaLabel={t("agentControl.runs.filter.kind")}
+                  testId="agents-run-filter-kind"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.time}
+                  options={runOptions.time}
+                  onChange={(time) =>
+                    setRunFilter({ time: time as RunTimeFilter })
+                  }
+                  ariaLabel={t("agentControl.runs.filter.time")}
+                  testId="agents-run-filter-time"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[92px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.token}
+                  options={runTokenOptions}
+                  onChange={(token) => setRunFilter({ token })}
+                  ariaLabel={t("agentControl.runs.filter.token")}
+                  testId="agents-run-filter-token"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[104px] max-w-[160px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.session}
+                  options={runSessionOptions}
+                  onChange={(session) => setRunFilter({ session })}
+                  ariaLabel={t("agentControl.runs.filter.session")}
+                  testId="agents-run-filter-session"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[104px] max-w-[160px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <BoardScopeSelect
+                  value={runFilter.board}
+                  boards={state.boards.map((board) => ({
+                    id: board.id,
+                    title: board.title,
+                  }))}
+                  onChange={(board) => setRunFilter({ board })}
+                  ariaLabel={t("agents.filters.board")}
+                  testId="agents-run-filter-board"
+                  variant="filter"
+                  className="w-auto min-w-[108px]"
+                  counts={pending.counts}
+                  totalCount={pendingAll}
+                />
+                <button
+                  type="button"
+                  onClick={clearRunFilters}
+                  data-testid="agents-runs-clear-mobile"
+                  className="hidden min-h-11 items-center rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:inline-flex"
+                >
+                  {t("agents.runs.clearAll")}
+                </button>
+                <span
+                  className="ml-auto text-[11px] text-muted-foreground"
+                  data-testid="agents-runs-total"
+                  data-total={runs.total}
+                  data-has-more={runs.hasMore ? "true" : "false"}
+                >
+                  {runs.hasMore
+                    ? t("agents.runs.totalMore", { count: runs.total })
+                    : t("agents.runs.shown", { count: runs.total })}
                 </span>
               </>
             )}
@@ -819,7 +1099,7 @@ export function AgentsPage() {
                 className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
               >
                 <Info
-                  className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+                  className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
                   aria-hidden
                 />
                 <span>
@@ -833,7 +1113,7 @@ export function AgentsPage() {
                 className="my-1 mb-2 flex flex-wrap items-center gap-2"
                 data-testid="agents-session-group-toggle"
               >
-                <span className="text-[10.5px] font-[650] tracking-[0.06em] text-muted-foreground uppercase">
+                <span className="text-[11px] font-[650] tracking-[0.06em] text-muted-foreground uppercase">
                   {t("agents.groups.groupBy")}
                 </span>
                 <div
@@ -847,7 +1127,7 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "board"}
                     onClick={() => setGroupMode("board")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[10.5px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
                       groupMode === "board" &&
                         "bg-hover text-foreground shadow-sm",
                     )}
@@ -861,7 +1141,7 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "token"}
                     onClick={() => setGroupMode("token")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[10.5px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
                       groupMode === "token" &&
                         "bg-hover text-foreground shadow-sm",
                     )}
@@ -870,7 +1150,7 @@ export function AgentsPage() {
                     {t("agents.groups.token")}
                   </button>
                 </div>
-                <span className="ml-auto text-[10.5px] text-muted-foreground">
+                <span className="ml-auto text-[11px] text-muted-foreground">
                   {t("agents.groups.summary", {
                     count: displayed.length,
                     live: displayed.filter(isLiveSession).length,
@@ -884,7 +1164,7 @@ export function AgentsPage() {
               className={cn(
                 "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                 state.rows.length === 0
-                  ? "border-danger/40 bg-danger/10 text-danger"
+                  ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
                   : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
               )}
               data-testid="agents-error"
@@ -893,7 +1173,9 @@ export function AgentsPage() {
               <AlertTriangle
                 className={cn(
                   "mt-px h-3.5 w-3.5 shrink-0",
-                  state.rows.length === 0 ? "text-danger" : "text-warning",
+                  state.rows.length === 0
+                    ? "text-[color:var(--agent-tone-danger)]"
+                    : "text-[color:var(--agent-tone-warning)]",
                 )}
                 aria-hidden
               />
@@ -924,7 +1206,7 @@ export function AgentsPage() {
           )}
           {section === "attention" && pending.error ? (
             <div
-              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
               data-testid="agents-approvals-error"
               role="alert"
             >
@@ -932,7 +1214,7 @@ export function AgentsPage() {
               <button
                 type="button"
                 onClick={pending.reload}
-                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium"
+                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium max-md:min-h-11"
               >
                 {t("agents.retry")}
               </button>
@@ -962,7 +1244,12 @@ export function AgentsPage() {
                 action={
                   <Button
                     variant="outline"
-                    onClick={() => setFilter({ board: "all" })}
+                    className="max-md:min-h-11"
+                    onClick={() =>
+                      section === "runs"
+                        ? setRunFilter({ board: "all" })
+                        : setFilter({ board: "all" })
+                    }
                   >
                     {t("agents.shell.allBoards")}
                   </Button>
@@ -992,92 +1279,117 @@ export function AgentsPage() {
                   testId="agents-runs-error"
                   icon={<AlertTriangle className="h-[18px] w-[18px]" />}
                   title={t("agents.runs.loadError")}
-                  body={t("agents.error.stale")}
+                  body={t("agents.runs.stale")}
                   action={
-                    <Button variant="outline" onClick={runs.reload}>
+                    <Button
+                      variant="outline"
+                      onClick={runs.reload}
+                      className="max-md:min-h-11"
+                    >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       {t("agents.retry")}
                     </Button>
                   }
                 />
               ) : runs.rows.length === 0 ? (
-                <EmptyState
-                  testId="agents-runs-empty"
-                  icon={<History className="h-[18px] w-[18px]" />}
-                  title={t("agents.runs.emptyTitle")}
-                  body={t("agents.runs.emptyBody")}
-                  action={
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={clearFilters}
-                        data-testid="agents-runs-empty-clear"
-                      >
-                        {t("agents.clearFilters")}
-                      </Button>
-                      <Button variant="ghost" asChild>
-                        <a
-                          href={docsUrl(lang)}
-                          target="_blank"
-                          rel="noreferrer"
+                hasRunFilter(runFilter) ? (
+                  <RunFilteredEmpty onClear={clearRunFilters} />
+                ) : (
+                  <EmptyState
+                    testId="agents-runs-empty"
+                    icon={<History className="h-[18px] w-[18px]" />}
+                    title={t("agents.runs.emptyTitle")}
+                    body={t("agents.runs.emptyBody")}
+                    action={
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={clearRunFilters}
+                          data-testid="agents-runs-empty-clear"
+                          className="max-md:min-h-11"
                         >
-                          {t("agents.runs.howRollback")}
-                        </a>
-                      </Button>
-                    </>
-                  }
-                />
+                          {t("agents.clearFilters")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          asChild
+                          className="max-md:min-h-11"
+                        >
+                          <a
+                            href={docsUrl(lang)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t("agents.runs.howRollback")}
+                          </a>
+                        </Button>
+                      </>
+                    }
+                  />
+                )
               ) : (
                 <>
                   {runs.error ? (
                     <div
-                      className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+                      className="mb-2.5 flex flex-wrap items-center gap-3 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
                       role="alert"
+                      data-testid="agents-runs-stale"
                     >
-                      <span>{t("agents.error.stale")}</span>
-                      <Button variant="outline" size="sm" onClick={runs.reload}>
+                      <span>{t("agents.runs.stale")}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={runs.reload}
+                        className="max-md:min-h-11"
+                      >
                         {t("agents.retry")}
                       </Button>
                     </div>
                   ) : null}
-                  <ul
-                    data-testid="agents-runs-list"
-                    className="divide-y divide-border border-y border-border"
-                  >
-                    {runs.rows.map((run) => (
-                      <li
-                        key={run.id}
-                        className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2 text-xs"
+                  <RunList
+                    rows={runs.rows}
+                    selectedId={runDetailRunId}
+                    onSelect={openRun}
+                    now={now}
+                    variant="global"
+                    testIdPrefix="agents-run"
+                    listTestId="agents-runs-list"
+                    boardTitle={(run) =>
+                      state.boards.find((board) => board.id === run.boardId)
+                        ?.title ?? run.boardId
+                    }
+                    tokenLabel={(tokenId) =>
+                      tokenId === null
+                        ? t("agentControl.runs.noToken")
+                        : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+                    }
+                    conflicts={runConflicts}
+                  />
+                  <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-[11px] text-muted-foreground">
+                    <span data-testid="agents-runs-footer-total">
+                      {runs.hasMore
+                        ? t("agents.runs.totalMore", { count: runs.total })
+                        : t("agents.runs.footerCount", { count: runs.total })}
+                    </span>
+                    {runs.hasMore ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid="agents-runs-more"
+                        disabled={runs.loadingMore}
+                        onClick={() => void runs.loadMore()}
+                        className="max-md:min-h-11"
                       >
-                        <span className="font-medium">
-                          {t(`agentControl.runs.kind.${run.kind}`)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {run.boardTitle}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {t("agentControl.runs.commands", {
-                            count: run.commandCount,
-                          })}
-                        </span>
-                        <span
-                          className={cn(
-                            "ml-auto rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
-                            run.status === "applied"
-                              ? "border-success/40 bg-success/10 text-success"
-                              : run.status === "reverted"
-                                ? "border-primary/40 bg-primary/10 text-primary"
-                                : "border-danger/40 bg-danger/10 text-danger",
-                          )}
-                        >
-                          {t(`agentControl.runs.status.${run.status}`)}
-                        </span>
-                        <time className="text-muted-foreground">
-                          {formatRelative(run.createdAt, lang)}
-                        </time>
-                      </li>
-                    ))}
-                  </ul>
+                        {runs.loadingMore ? (
+                          <RefreshCw
+                            className="h-3.5 w-3.5 animate-spin"
+                            aria-hidden
+                          />
+                        ) : null}
+                        {t("agentControl.runs.loadMore")}
+                      </Button>
+                    ) : null}
+                  </div>
                 </>
               )
             ) : section === "attention" ? (
@@ -1168,6 +1480,15 @@ export function AgentsPage() {
           className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
+      {runSheetOpen ? (
+        <button
+          type="button"
+          aria-label={t("agents.runs.backToList")}
+          data-testid="agents-run-sheet-scrim"
+          onClick={closeRun}
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+        />
+      ) : null}
       <aside
         data-testid="agents-detail-panel"
         className={cn(
@@ -1175,14 +1496,53 @@ export function AgentsPage() {
           ((section === "attention" &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
-            sessionSheetOpen) &&
-            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[760px]:w-full",
+            sessionSheetOpen ||
+            runSheetOpen) &&
+            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >
-        {section === "attention" &&
-        selectedApprovalId !== null &&
-        approvalBoardId !== null ? (
+        {section === "runs" ? (
+          runDetailRunId !== null && runBoardKnown ? (
+            <RunDetail
+              boardId={runDetailBoardId}
+              runId={runDetailRunId}
+              role={runBoardRole}
+              boardTitle={runBoardTitle}
+              board={runBoard}
+              variant="global"
+              tokenLabel={(tokenId) =>
+                tokenId === null
+                  ? t("agentControl.runs.noToken")
+                  : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+              }
+              sessionLabel={(sessionId) =>
+                sessionId === null
+                  ? t("agentControl.runs.noSession")
+                  : (runSessionNames.get(sessionId) ?? shortId(sessionId))
+              }
+              onClose={closeRun}
+              onChanged={() => runs.reload()}
+              onPreview={noteRunConflicts}
+              onOpenSession={openRunSession}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+                <History className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <p className="text-[13px] font-semibold text-foreground">
+                {t("agents.runs.selectTitle")}
+              </p>
+              <p className="max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+                {t("agents.runs.selectBody")}
+              </p>
+            </div>
+          )
+        ) : section === "attention" &&
+          isAttentionAdmin &&
+          selectedApprovalId !== null &&
+          approvalBoardId !== null ? (
           <AttentionApprovalDetail
             boardId={approvalBoardId}
             approvalId={selectedApprovalId}
@@ -1194,11 +1554,7 @@ export function AgentsPage() {
                     selectedApprovalBase.requestedByTokenId,
                   )
             }
-            fallbackCardTitle={
-              selectedApprovalBase?.cardId == null
-                ? undefined
-                : approvalCardTitles.get(selectedApprovalBase.cardId)
-            }
+            fallbackCardTitle={selectedApprovalBase?.cardTitle ?? undefined}
             initialMode={approvalIntent}
             onChanged={pending.reload}
             onBack={closeApproval}
@@ -1217,7 +1573,7 @@ export function AgentsPage() {
         ) : (
           <>
             <header className="border-b border-border px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t("agents.shell.detailEyebrow")}
               </p>
               <h2 className="mt-0.5 text-[13px] font-semibold">
@@ -1234,7 +1590,11 @@ export function AgentsPage() {
               <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
                 {t("agents.shell.noSessionsBody")}
               </p>
-              <Button size="sm" onClick={openTokens} className="mt-1">
+              <Button
+                size="sm"
+                onClick={openTokens}
+                className="mt-1 max-md:min-h-11"
+              >
                 {t("agents.shell.createKey")}
               </Button>
             </div>
@@ -1285,7 +1645,7 @@ function MemberAttentionBanner() {
       data-testid="agents-member-note"
       role="status"
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10 text-[color:var(--agent-tone-primary)]">
         <Info className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <p className="min-w-0 pt-0.5 text-[11.5px] leading-[1.55] text-muted-foreground">
@@ -1305,12 +1665,12 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
       className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-success/30 bg-success/5 px-[11px] py-[9px]"
       data-testid="agents-attention-clear"
     >
-      <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-success/25 bg-success/10 text-success">
+      <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-success/25 bg-success/10 text-[color:var(--agent-tone-success)]">
         <ShieldCheck className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[11.5px] font-[650]">{t("agents.shell.allClear")}</p>
-        <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
+        <p className="text-[11px] leading-[1.45] text-muted-foreground">
           {t("agents.shell.allClearBody")}
         </p>
       </div>
@@ -1318,7 +1678,7 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
         variant="ghost"
         size="sm"
         onClick={onViewSessions}
-        className="h-7 min-h-0 px-2.5 text-[11px] font-[650]"
+        className="h-7 min-h-0 px-2.5 text-[11px] font-[650] max-md:min-h-11"
       >
         {t("agents.shell.viewSessions")}
         <ChevronRight className="h-[13px] w-[13px]" aria-hidden />
@@ -1340,9 +1700,32 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
           variant="outline"
           onClick={onRetry}
           data-testid="agents-load-error-retry"
+          className="max-md:min-h-11"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {t("agents.retry")}
+        </Button>
+      }
+    />
+  );
+}
+
+function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
+  const { t } = useI18n();
+  return (
+    <EmptyState
+      testId="agents-runs-filtered-empty"
+      icon={<Search className="h-[18px] w-[18px]" />}
+      title={t("agents.runs.noMatch")}
+      body={t("agents.runs.noMatchBody")}
+      action={
+        <Button
+          variant="outline"
+          onClick={onClear}
+          data-testid="agents-runs-clear-filters"
+          className="max-md:min-h-11"
+        >
+          {t("agents.clearFilters")}
         </Button>
       }
     />
@@ -1362,6 +1745,7 @@ function FilteredEmpty({ onClear }: { onClear: () => void }) {
           variant="outline"
           onClick={onClear}
           data-testid="agents-clear-filters"
+          className="max-md:min-h-11"
         >
           {t("agents.clearFilters")}
         </Button>
@@ -1386,8 +1770,10 @@ function SessionsEmpty({
       body={t("agents.empty.body")}
       action={
         <>
-          <Button onClick={onOpenTokens}>{t("agents.shell.createKey")}</Button>
-          <Button variant="outline" asChild>
+          <Button onClick={onOpenTokens} className="max-md:min-h-11">
+            {t("agents.shell.createKey")}
+          </Button>
+          <Button variant="outline" asChild className="max-md:min-h-11">
             <a href={docsUrl(lang)} target="_blank" rel="noreferrer">
               {t("agents.shell.readDocs")}
             </a>
@@ -1427,7 +1813,7 @@ function AgentRow({
         className="grid min-w-0 gap-2 border-b border-border/70 px-2 py-3 transition-colors hover:bg-hover sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
       >
         <div className="flex min-w-0 items-start gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border bg-card text-primary">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border bg-card text-[color:var(--agent-tone-primary)]">
             <Bot className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0">
@@ -1439,7 +1825,7 @@ function AgentRow({
                 t("agents.tokenShort", { id: shortId(group.tokenId) })}
             </div>
             {group.liveCount > 0 ? (
-              <span className="inline-flex items-center gap-1 text-xs text-success">
+              <span className="inline-flex items-center gap-1 text-xs text-[color:var(--agent-tone-success)]">
                 <AgentLiveDot />
                 {t("agents.liveCount", { count: group.liveCount })}
               </span>
@@ -1478,7 +1864,7 @@ function AgentRow({
           ) : null}
           {group.rows.some((row) => row.stale) ? <AgentStaleBadge /> : null}
           {group.boardIds.some((id) => staleBoardIds.includes(id)) ? (
-            <span className="text-xs text-warning">
+            <span className="text-xs text-[color:var(--agent-tone-warning)]">
               {t("agents.shell.staleData")}
             </span>
           ) : null}

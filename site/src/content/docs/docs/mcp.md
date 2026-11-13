@@ -49,7 +49,9 @@ filesystem of the computer running the MCP server. These operations are disabled
 until you set
 `JANOSIK_MCP_ALLOW_FS=1`. Add `JANOSIK_MCP_FS_ROOT=/path` to confine them to
 one directory: symlinks out of it are refused and existing files are never
-overwritten.
+overwritten. Confined access requires Linux x64/arm64, `python3`, `/proc` and a
+kernel with `openat2`; on unsupported systems it fails closed. Without
+`JANOSIK_MCP_FS_ROOT`, filesystem access is not confined.
 
 ## Tools
 

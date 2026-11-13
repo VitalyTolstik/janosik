@@ -48,6 +48,7 @@ import {
   type CardFilter,
   type CreatedWindow,
   type DueFilter,
+  type FilterChange,
   type LabelMatch,
 } from "@/utils/filter";
 
@@ -105,7 +106,11 @@ interface FilterBarProps {
   boardId?: string;
   /** Total number of matching cards across all columns (for the count). */
   matchCount: number;
-  onChange: (next: CardFilter) => void;
+  /**
+   * Apply a filter change. The reducer form is resolved against the latest
+   * filter in `BoardSection`, not the `filter` prop this render captured.
+   */
+  onChange: (change: FilterChange) => void;
 }
 
 /** Section title inside the filters popover. */
@@ -277,22 +282,24 @@ export function FilterBar({
         if (query === "") {
           inputRef.current?.blur();
         } else {
-          onChange({ ...filter, query: "" });
+          onChange((current) => ({ ...current, query: "" }));
         }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filter, onChange, query]);
+  }, [onChange, query]);
 
   const toggleLabel = (labelId: string, checked: boolean) => {
-    const next = new Set(filter.labelIds);
-    if (checked) {
-      next.add(labelId);
-    } else {
-      next.delete(labelId);
-    }
-    onChange({ ...filter, labelIds: [...next] });
+    onChange((current) => {
+      const next = new Set(current.labelIds);
+      if (checked) {
+        next.add(labelId);
+      } else {
+        next.delete(labelId);
+      }
+      return { ...current, labelIds: [...next] };
+    });
   };
 
   const selectedLabels = filter.labelIds
@@ -327,7 +334,9 @@ export function FilterBar({
               ? "filter-query-limit"
               : undefined
           }
-          onChange={(e) => onChange({ ...filter, query: e.target.value })}
+          onChange={(e) =>
+            onChange((current) => ({ ...current, query: e.target.value }))
+          }
           placeholder={t("filter.searchPlaceholder")}
           aria-label={t("filter.searchAria")}
           className="h-9 rounded-lg pl-9 pr-8"
@@ -344,7 +353,7 @@ export function FilterBar({
           <button
             type="button"
             aria-label={t("filter.reset")}
-            onClick={() => onChange({ ...filter, query: "" })}
+            onClick={() => onChange((current) => ({ ...current, query: "" }))}
             className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" />
@@ -399,7 +408,9 @@ export function FilterBar({
                 <OptionRow
                   key={value}
                   selected={filter.due === value}
-                  onSelect={() => onChange({ ...filter, due: value })}
+                  onSelect={() =>
+                    onChange((current) => ({ ...current, due: value }))
+                  }
                 >
                   <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
                   {t(DUE_LABEL_KEY[value])}
@@ -425,7 +436,12 @@ export function FilterBar({
                     role="radio"
                     aria-checked={filter.labelMatch === mode}
                     tabIndex={filter.labelMatch === mode ? 0 : -1}
-                    onClick={() => onChange({ ...filter, labelMatch: mode })}
+                    onClick={() =>
+                      onChange((current) => ({
+                        ...current,
+                        labelMatch: mode,
+                      }))
+                    }
                     className={cn(
                       "rounded px-2 py-0.5 text-xs transition-colors",
                       filter.labelMatch === mode
@@ -457,7 +473,7 @@ export function FilterBar({
               <CheckRow
                 checked={filter.noLabel}
                 onCheckedChange={(checked) =>
-                  onChange({ ...filter, noLabel: checked })
+                  onChange((current) => ({ ...current, noLabel: checked }))
                 }
               >
                 <span className="inline-block h-2.5 w-2.5 rounded-full border border-dashed border-border bg-transparent" />
@@ -474,13 +490,15 @@ export function FilterBar({
                   key={value}
                   checked={filter.priorities.includes(value)}
                   onCheckedChange={(checked) => {
-                    const next = new Set(filter.priorities);
-                    if (checked) {
-                      next.add(value);
-                    } else {
-                      next.delete(value);
-                    }
-                    onChange({ ...filter, priorities: [...next] });
+                    onChange((current) => {
+                      const next = new Set(current.priorities);
+                      if (checked) {
+                        next.add(value);
+                      } else {
+                        next.delete(value);
+                      }
+                      return { ...current, priorities: [...next] };
+                    });
                   }}
                 >
                   <Icon
@@ -498,13 +516,15 @@ export function FilterBar({
                 key={member.userId}
                 checked={filter.assignees.includes(member.userId)}
                 onCheckedChange={(checked) => {
-                  const next = new Set(filter.assignees);
-                  if (checked) {
-                    next.add(member.userId);
-                  } else {
-                    next.delete(member.userId);
-                  }
-                  onChange({ ...filter, assignees: [...next] });
+                  onChange((current) => {
+                    const next = new Set(current.assignees);
+                    if (checked) {
+                      next.add(member.userId);
+                    } else {
+                      next.delete(member.userId);
+                    }
+                    return { ...current, assignees: [...next] };
+                  });
                 }}
               >
                 <UserAvatar
@@ -522,7 +542,7 @@ export function FilterBar({
             <CheckRow
               checked={filter.unassigned}
               onCheckedChange={(checked) =>
-                onChange({ ...filter, unassigned: checked })
+                onChange((current) => ({ ...current, unassigned: checked }))
               }
             >
               <CircleUserRound
@@ -536,7 +556,7 @@ export function FilterBar({
             <CheckRow
               checked={filter.blocked}
               onCheckedChange={(checked) =>
-                onChange({ ...filter, blocked: checked })
+                onChange((current) => ({ ...current, blocked: checked }))
               }
             >
               <Ban className="h-3.5 w-3.5 shrink-0 text-danger" aria-hidden />
@@ -545,7 +565,7 @@ export function FilterBar({
             <CheckRow
               checked={filter.hasLinks}
               onCheckedChange={(checked) =>
-                onChange({ ...filter, hasLinks: checked })
+                onChange((current) => ({ ...current, hasLinks: checked }))
               }
             >
               <Link2
@@ -568,12 +588,12 @@ export function FilterBar({
                     filter.createdOn === null && filter.created === value
                   }
                   onSelect={() =>
-                    onChange({
-                      ...filter,
+                    onChange((current) => ({
+                      ...current,
                       created: value,
                       // An exact day and a relative window are mutually exclusive.
                       createdOn: null,
-                    })
+                    }))
                   }
                 >
                   <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
@@ -602,14 +622,14 @@ export function FilterBar({
                       : undefined
                   }
                   onSelect={(day) => {
-                    onChange({
-                      ...filter,
+                    onChange((current) => ({
+                      ...current,
                       // Picking a day retires the relative window for good:
                       // leaving it dormant made it resurrect when the day
                       // chip was removed.
                       created: "any",
                       createdOn: day ? formatIsoDate(day) : null,
-                    });
+                    }));
                     if (day) setDayCalendarOpen(false);
                   }}
                   autoFocus
@@ -672,7 +692,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, due: "any" })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, due: "any" }))
+                }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -710,7 +732,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, noLabel: false })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, noLabel: false }))
+                }
                 className="rounded-full p-0.5 transition-colors hover:bg-hover hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -729,7 +753,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, created: "any" })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, created: "any" }))
+                }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -747,7 +773,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, createdOn: null })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, createdOn: null }))
+                }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -773,12 +801,12 @@ export function FilterBar({
                   type="button"
                   aria-label={t("label.pickerRemove")}
                   onClick={() =>
-                    onChange({
-                      ...filter,
-                      priorities: filter.priorities.filter(
+                    onChange((current) => ({
+                      ...current,
+                      priorities: current.priorities.filter(
                         (value) => value !== priority,
                       ),
-                    })
+                    }))
                   }
                   className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
                 >
@@ -815,12 +843,12 @@ export function FilterBar({
                 type="button"
                 aria-label={t("label.pickerRemove")}
                 onClick={() =>
-                  onChange({
-                    ...filter,
-                    assignees: filter.assignees.filter(
+                  onChange((current) => ({
+                    ...current,
+                    assignees: current.assignees.filter(
                       (value) => value !== userId,
                     ),
-                  })
+                  }))
                 }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
@@ -842,7 +870,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, unassigned: false })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, unassigned: false }))
+                }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -860,7 +890,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, blocked: false })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, blocked: false }))
+                }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -881,7 +913,9 @@ export function FilterBar({
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}
-                onClick={() => onChange({ ...filter, hasLinks: false })}
+                onClick={() =>
+                  onChange((current) => ({ ...current, hasLinks: false }))
+                }
                 className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <X className="h-3 w-3" />

@@ -2,6 +2,9 @@ import type {
   ActivityFeedPage,
   AgentSessionDto,
   AgentStopAllPauseDto,
+  AgentsOverviewQuery,
+  AgentsOverviewResponse,
+  AnnouncementDismissResponse,
   AnnouncementDto,
   ApprovalDecisionRequest,
   ApprovalListQuery,
@@ -208,8 +211,24 @@ export function apiBaseUrl(): string {
   return import.meta.env.VITE_API_URL ?? "/api/v1";
 }
 
-/** Web Locks name: one refresh at a time per browser profile. */
+/** Web Locks name: one auth mutation at a time per browser profile. */
 export const REFRESH_LOCK = "janosik:auth-refresh";
+const PENDING_LOGOUT = "janosik:pending-logout";
+function setPendingLogout(value: boolean): void {
+  try {
+    if (value) localStorage.setItem(PENDING_LOGOUT, "1");
+    else localStorage.removeItem(PENDING_LOGOUT);
+  } catch {
+    /* storage unavailable */
+  }
+}
+export function hasPendingLogout(): boolean {
+  try {
+    return localStorage.getItem(PENDING_LOGOUT) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Run `task` under a cross-tab lock when the browser has the Web Locks API.
@@ -225,10 +244,31 @@ export const REFRESH_LOCK = "janosik:auth-refresh";
  * API keep the old single-tab behaviour (the in-tab promise still
  * serializes).
  */
-async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+let fallbackAuthQueue: Promise<void> = Promise.resolve();
+
+/**
+ * The one cross-tab lock for every auth mutation: refresh, login, register,
+ * logout and email confirmation. They must not overlap — a refresh that
+ * lands after logout would re-apply a `Set-Cookie` the logout just cleared,
+ * and a refresh that lands after a login for another account would replace
+ * the new session's cookie. Without Web Locks the in-tab queue provides the
+ * same ordering.
+ */
+async function withInteractiveAuthLock<T>(task: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  if (locks === undefined) return task();
+  if (locks === undefined) {
+    const result = fallbackAuthQueue.then(task, task);
+    fallbackAuthQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
   return locks.request(REFRESH_LOCK, task);
+}
+
+async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  return withInteractiveAuthLock(task);
 }
 
 export class ApiClient {
@@ -284,26 +324,32 @@ export class ApiClient {
     password: string,
     displayName?: string,
   ): Promise<AuthResponseDto> {
-    const response = await this.request<AuthResponseDto>("/auth/register", {
-      method: "POST",
-      body: { email, password, displayName },
-      auth: false,
+    return withInteractiveAuthLock(async () => {
+      const response = await this.request<AuthResponseDto>("/auth/register", {
+        method: "POST",
+        body: { email, password, displayName },
+        auth: false,
+      });
+      this.accessToken = response.accessToken;
+      this.sessionEpoch += 1;
+      setPendingLogout(false);
+      return response;
     });
-    this.accessToken = response.accessToken;
-    this.sessionEpoch += 1;
-    return response;
   }
 
   /** `POST /auth/login` — starts the session; the refresh cookie is set. */
   async login(email: string, password: string): Promise<AuthResponseDto> {
-    const response = await this.request<AuthResponseDto>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-      auth: false,
+    return withInteractiveAuthLock(async () => {
+      const response = await this.request<AuthResponseDto>("/auth/login", {
+        method: "POST",
+        body: { email, password },
+        auth: false,
+      });
+      this.accessToken = response.accessToken;
+      this.sessionEpoch += 1;
+      setPendingLogout(false);
+      return response;
     });
-    this.accessToken = response.accessToken;
-    this.sessionEpoch += 1;
-    return response;
   }
 
   async requestPasswordReset(email: string): Promise<void> {
@@ -328,15 +374,39 @@ export class ApiClient {
 
   /** `POST /auth/logout` — revokes the refresh session server-side. */
   async logout(): Promise<void> {
+    setPendingLogout(true);
+    // Invalidate a refresh that is already in flight before waiting for the
+    // lock: its late `Set-Cookie` must not resurrect the session. The lock
+    // then orders the logout request after that refresh, so the browser
+    // sends (and the server revokes) the freshly rotated cookie.
+    const epoch = ++this.sessionEpoch;
     try {
-      await this.request<{ status: "ok" }>("/auth/logout", {
+      await withInteractiveAuthLock(async () => {
+        // A login/register that won the lock first owns the session now.
+        if (epoch !== this.sessionEpoch) return;
+        await this.request<{ status: "ok" }>("/auth/logout", {
+          method: "POST",
+          body: {},
+          auth: false,
+        });
+        setPendingLogout(false);
+      });
+    } finally {
+      if (epoch === this.sessionEpoch) this.clearAccessToken();
+    }
+  }
+
+  async retryPendingLogout(): Promise<void> {
+    await withInteractiveAuthLock(async () => {
+      if (!hasPendingLogout()) return;
+      // Never let a 401 retry a refresh while this lock is already held.
+      await this.request("/auth/logout", {
         method: "POST",
         body: {},
         auth: false,
       });
-    } finally {
-      this.clearAccessToken();
-    }
+      setPendingLogout(false);
+    });
   }
 
   /**
@@ -352,6 +422,21 @@ export class ApiClient {
   activeAnnouncements(locale?: "en" | "ru"): Promise<AnnouncementDto[]> {
     const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
     return this.request<AnnouncementDto[]>(`/announcements/active${query}`);
+  }
+
+  /**
+   * `POST /announcements/:id/dismiss` — remember this version as closed for
+   * the signed-in user. The server owns the state, so it survives a new
+   * device and never leaks to another account in the same browser.
+   */
+  dismissAnnouncement(
+    id: string,
+    version: number,
+  ): Promise<AnnouncementDismissResponse> {
+    return this.request<AnnouncementDismissResponse>(
+      `/announcements/${encodeURIComponent(id)}/dismiss`,
+      { method: "POST", body: { version } },
+    );
   }
 
   /**
@@ -377,6 +462,16 @@ export class ApiClient {
   /** Full-page navigation target that starts the OAuth round trip. */
   oauthStartUrl(provider: string): string {
     return `${apiBaseUrl()}/auth/oauth/${provider}/start`;
+  }
+
+  startOAuthLink(
+    provider: string,
+    password: string,
+  ): Promise<{ redirectUrl: string }> {
+    return this.request(`/auth/oauth/${encodeURIComponent(provider)}/link`, {
+      method: "POST",
+      body: { password },
+    });
   }
 
   /**
@@ -428,6 +523,10 @@ export class ApiClient {
     );
   }
 
+  latestAccountExport(): Promise<UserDataExportDto | null> {
+    return this.request<UserDataExportDto | null>("/users/me/export/latest");
+  }
+
   /** Download a ready export as a blob (session-only, TTL link). */
   async downloadAccountExport(exportId: string): Promise<Blob> {
     const response = await this.requestRaw(
@@ -470,10 +569,15 @@ export class ApiClient {
   changePassword(
     currentPassword: string,
     newPassword: string,
+    oauthProof?: string,
   ): Promise<{ status: "ok" }> {
     return this.request<{ status: "ok" }>("/auth/password", {
       method: "POST",
-      body: { currentPassword, newPassword },
+      body: {
+        currentPassword,
+        newPassword,
+        ...(oauthProof === undefined ? {} : { oauthProof }),
+      },
     });
   }
 
@@ -527,6 +631,12 @@ export class ApiClient {
    * login), so the stored access token is replaced here.
    */
   async confirmEmailChange(code: string): Promise<AuthResponseDto> {
+    // No auth lock here: unlike login/logout/refresh this endpoint sets no
+    // refresh cookie, so it cannot overwrite the session cookie. The epoch
+    // check below is enough to drop a late answer for a previous account,
+    // and keeping the request outside the lock lets a 401 retry refresh
+    // without re-entering the same Web Lock.
+    const epoch = this.sessionEpoch;
     const response = await this.request<AuthResponseDto>(
       "/auth/email/change/confirm",
       {
@@ -534,6 +644,13 @@ export class ApiClient {
         body: { code },
       },
     );
+    if (epoch !== this.sessionEpoch)
+      throw new ApiError(
+        0,
+        null,
+        "Session changed during email confirmation",
+        true,
+      );
     this.accessToken = response.accessToken;
     this.sessionEpoch += 1;
     return response;
@@ -774,6 +891,9 @@ export class ApiClient {
   private async runRefresh(): Promise<AuthResponseDto | null> {
     // A view-as tab must never rotate into the master session (TASK-85).
     if (this.impersonating) return null;
+    // A failed offline logout leaves the server cookie alive; do not let a
+    // reload silently restore the session before `retryPendingLogout`.
+    if (hasPendingLogout()) return null;
     const epoch = this.sessionEpoch;
     try {
       const response = await withRefreshLock(() =>
@@ -820,8 +940,15 @@ export class ApiClient {
     const { data, headers } = await this.requestWithHeaders<BoardAggregate>(
       `/boards/${boardId}`,
     );
-    const seq = Number(headers.get("X-Board-Seq") ?? "0");
-    return { board: data, seq: Number.isFinite(seq) && seq > 0 ? seq : 0 };
+    const header = headers.get("X-Board-Seq");
+    // No header = an older/proxied server with no baseline; a present but
+    // malformed value must not silently become a huge or negative seq.
+    if (header === null) return { board: data, seq: 0 };
+    const seq = /^\d+$/.test(header) ? Number(header) : Number.NaN;
+    return {
+      board: data,
+      seq: Number.isSafeInteger(seq) && seq >= 0 ? seq : 0,
+    };
   }
 
   deleteBoard(boardId: string): Promise<{ status: "ok" }> {
@@ -1008,6 +1135,17 @@ export class ApiClient {
     );
   }
 
+  /**
+   * Edits the caller's own comment (TASK-176.2). Only the author may edit;
+   * the server answers 403 otherwise and 404 for a deleted comment.
+   */
+  updateComment(commentId: string, text: string): Promise<CommentDto> {
+    return this.request<CommentDto>(
+      `/comments/${encodeURIComponent(commentId)}`,
+      { method: "PATCH", body: { text } },
+    );
+  }
+
   /** Live attachments of one card, newest-first (TASK-47). */
   listAttachments(cardId: string): Promise<AttachmentDto[]> {
     return this.request<AttachmentDto[]>(
@@ -1122,6 +1260,31 @@ export class ApiClient {
     );
   }
 
+  /**
+   * `GET /agents/overview` — session-only read-only aggregation (TASK-179.10).
+   * The `/agents` control room uses one call for scope-correct counts and
+   * rows. A PAT is refused with `403 pat_forbidden`; callers must render that
+   * as unknown, never as a zero count.
+   */
+  agentsOverview(
+    query: AgentsOverviewQuery = {},
+  ): Promise<AgentsOverviewResponse> {
+    const params = new URLSearchParams();
+    if (query.section !== undefined) params.set("section", query.section);
+    if (query.boardId !== undefined) params.set("boardId", query.boardId);
+    if (query.q !== undefined) params.set("q", query.q);
+    if (query.status !== undefined) params.set("status", String(query.status));
+    if (query.kind !== undefined) params.set("kind", String(query.kind));
+    if (query.tokenId !== undefined) params.set("tokenId", query.tokenId);
+    if (query.sessionId !== undefined) params.set("sessionId", query.sessionId);
+    if (query.from !== undefined) params.set("from", String(query.from));
+    if (query.to !== undefined) params.set("to", String(query.to));
+    if (query.cursor !== undefined) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.toString() === "" ? "" : `?${params.toString()}`;
+    return this.request<AgentsOverviewResponse>(`/agents/overview${suffix}`);
+  }
+
   /** `GET /boards/:id/agent-sessions` — any board member (TASK-166.1). */
   listAgentSessions(
     boardId: string,
@@ -1205,7 +1368,7 @@ export class ApiClient {
       return fetch(`${base}${path}`, { headers, credentials: "include" });
     };
     try {
-      const response = await send();
+      let response = await send();
       if (response.status === 401 && this.accessToken !== null) {
         if (this.impersonating) {
           this.onAuthLost?.();
@@ -1213,9 +1376,10 @@ export class ApiClient {
         }
         const restored = await this.refreshSession();
         if (restored !== null || this.accessToken !== null) {
-          return send();
+          response = await send();
+        } else {
+          this.onAuthLost?.();
         }
-        this.onAuthLost?.();
       }
       if (!response.ok) throw new ApiError(response.status, null);
       return response;
@@ -1236,6 +1400,7 @@ export class ApiClient {
       if (
         error instanceof ApiError &&
         error.status === 401 &&
+        error.code !== "current_password_invalid" &&
         init.auth !== false
       ) {
         // TASK-85: a dead view-as token must not be refreshed against the

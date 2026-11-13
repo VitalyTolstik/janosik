@@ -97,6 +97,65 @@ body.janosik-touch-dragging {
 }
 
 /* ---------------------------------------------------------------------------
+ * Agent surfaces (TASK-179.9)
+ *
+ * `font-agent-display` is the Space Grotesk display face for Latin headings.
+ * Space Grotesk ships no Cyrillic glyphs, so a Russian UI falls back to the
+ * body stack instead of letting the browser mix two faces inside one word.
+ *
+ * Status tones are explicit, AA-checked shades for 11 px text on the real
+ * 6–15% status tints in both themes. They deliberately do not reuse the raw
+ * `--warning`/`--success`/`--danger`/`--primary` values: `--warning` and
+ * `--success` fail on the light surface, `--danger`/`--primary` are marginal
+ * on the dark surface, and every chip adds its own 6–15% tint under the text.
+ * ------------------------------------------------------------------------- */
+.font-agent-display {
+  font-family: var(--font-display);
+}
+
+html[lang="ru"] .font-agent-display {
+  font-family: var(--font-agent-surface);
+}
+
+:root {
+  /* AA-checked status text on the dark surface (#172033); the worst case is
+     ≥4.75:1 on the 6–15% status tints. */
+  --agent-tone-success: #10b981;
+  --agent-tone-warning: #f59e0b;
+  --agent-tone-danger: #f87171;
+  --agent-tone-primary: #60a5fa;
+}
+
+html.light {
+  /* Deeper shades clear 4.5:1 on the 6–15% status tints over both `--surface`
+     and `--background`, not only on a bare surface. */
+  --agent-tone-success: #065f46;
+  --agent-tone-warning: #92400e;
+  --agent-tone-danger: #b91c1c;
+  --agent-tone-primary: #1d4ed8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation: none !important;
+  }
+  [data-state="open"],
+  [data-state="closed"] {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Base styles
  * ------------------------------------------------------------------------- */
 

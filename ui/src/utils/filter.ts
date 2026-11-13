@@ -77,6 +77,22 @@ export interface CardFilter {
   hasLinks: boolean;
 }
 
+/**
+ * A filter update: either the complete next filter or a reducer over the
+ * latest one. The reducer form keeps rapid facet picks from overwriting each
+ * other — the URL update is a router transition, so the `filter` prop can
+ * still describe an older state when the next click arrives.
+ */
+export type FilterChange = CardFilter | ((current: CardFilter) => CardFilter);
+
+/** Resolve a {@link FilterChange} against the latest filter. */
+export function resolveFilterChange(
+  change: FilterChange,
+  current: CardFilter,
+): CardFilter {
+  return typeof change === "function" ? change(current) : change;
+}
+
 export const EMPTY_FILTER: CardFilter = {
   query: "",
   labelIds: [],
@@ -254,7 +270,7 @@ export function createdFromMs(
 }
 
 /**
- * Local-day range [start, start + 1 day) for an exact "YYYY-MM-DD" date,
+ * Local-day range [start, next local midnight) for an exact "YYYY-MM-DD" date,
  * or null when the string is not a valid date. Parsed as local calendar
  * parts (not UTC) so a chosen day never shifts across time zones.
  */
@@ -271,7 +287,9 @@ export function createdDayRange(createdOn: string): [number, number] | null {
     start.getDate() !== Number(d)
   )
     return null;
-  return [start.getTime(), start.getTime() + DAY_MS];
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return [start.getTime(), end.getTime()];
 }
 
 /** Whether a single card passes the `due` deadline facet. */
@@ -363,7 +381,7 @@ export function matchesCardFilter(
   }
 
   const hasSelected =
-    filter.labelMatch === "all"
+    filter.labelMatch === "all" && filter.labelIds.length > 0
       ? filter.labelIds.every((id) => card.labelIds.includes(id))
       : card.labelIds.some((id) => filter.labelIds.includes(id));
   if (filter.noLabel) return card.labelIds.length === 0 || hasSelected;

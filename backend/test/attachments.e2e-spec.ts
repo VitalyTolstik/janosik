@@ -426,6 +426,67 @@ describe("Attachments (TASK-47)", () => {
   });
 
   describe("inline media (pasted into bodies, TASK-48)", () => {
+    it("does not delete another member's inline file when deleting a comment", async () => {
+      const uploaded = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(admin.token))
+        .attach("file", png, {
+          filename: "admin-inline.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const id = uploaded.body.id as string;
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(member.token))
+        .send({ text: `see /api/v1/attachments/${id}/content` })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .get(`/api/v1/attachments/${id}/content`)
+        .set(auth(admin.token))
+        .expect(200);
+    });
+
+    it("keeps a shared inline file until the last referencing comment is deleted", async () => {
+      const uploaded = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "shared-inline.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const id = uploaded.body.id as string;
+      const createComment = () =>
+        server()
+          .post(`/api/v1/cards/${cardId}/comments`)
+          .set(auth(member.token))
+          .send({ text: `see /api/v1/attachments/${id}/content` })
+          .expect(201);
+      const first = await createComment();
+      const second = await createComment();
+      await server()
+        .delete(`/api/v1/comments/${first.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .get(`/api/v1/attachments/${id}/content`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .delete(`/api/v1/comments/${second.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .get(`/api/v1/attachments/${id}/content`)
+        .set(auth(member.token))
+        .expect(404);
+    });
+
     it("uploads hidden inline media without the card badge count", async () => {
       const res = await server()
         .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
@@ -570,6 +631,53 @@ describe("Attachments (TASK-47)", () => {
         .set(auth(admin.token))
         .expect(200);
       expect(snapshot.body.cards[cardId].attachmentCount).toBe(2);
+    });
+
+    it("soft-deletes inline media removed by an edit and keeps the surviving one", async () => {
+      const removed = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "removed.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const kept = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "kept.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(member.token))
+        .send({
+          text: `before /api/v1/attachments/${removed.body.id as string}/content and /api/v1/attachments/${kept.body.id as string}/content`,
+        })
+        .expect(201);
+      const edited = await server()
+        .patch(`/api/v1/comments/${comment.body.id as string}`)
+        .set(auth(member.token))
+        .send({
+          text: `after /api/v1/attachments/${kept.body.id as string}/content`,
+        })
+        .expect(200);
+      expect(edited.body.text).toBe(
+        `after /api/v1/attachments/${kept.body.id as string}/content`,
+      );
+      expect(edited.body.editedAt).toEqual(expect.any(Number));
+
+      await server()
+        .get(`/api/v1/attachments/${removed.body.id as string}/content`)
+        .set(auth(member.token))
+        .expect(404);
+      await server()
+        .get(`/api/v1/attachments/${kept.body.id as string}/content`)
+        .set(auth(member.token))
+        .expect(200);
     });
   });
 

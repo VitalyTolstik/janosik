@@ -412,9 +412,12 @@ announcements addressed to them. The banner requests the viewer's current
 interface language and re-fetches when it changes.
 
 Each banner is styled by level (info, warning, danger) and can be dismissed.
-A dismissal is remembered per announcement in `localStorage`, so a user sees
-each one once; switching the interface language does not bring a dismissed
-banner back. When the announcement has no translation in the viewer's
+A dismissal is stored on the server per user and announcement version, so it
+survives a new device, browser or session and never leaks to another account
+signed in on the same browser. A dismissed announcement stays hidden until an
+admin edits it: every PATCH increments its version, which shows the updated
+banner again. The old device-local `janosik.announcements.dismissed` key is no
+longer read. When the announcement has no translation in the viewer's
 language, the fallback policy decides: strict announcements are not published
 in that state, while a fallback announcement shows the original text with a
 localized "This announcement is available in … only" notice.

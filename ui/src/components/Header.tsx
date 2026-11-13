@@ -63,21 +63,27 @@ export function Header() {
     matchPath(routes.agentPattern, location.pathname) !== null;
   // Narrow subscriptions on purpose (TASK-21.4): the actions never change
   // and the flags flip rarely, so typing in a card leaves the header alone.
-  const { undo, redo } = useBoardActions();
+  const { undo, redo, roleOf } = useBoardActions();
   const { canUndo, canRedo } = useBoardHistory();
   const { role } = useBoardAccess();
   const { boards } = useBoard();
-  const pendingApprovals = usePendingApprovals(undefined, isAgentsRoute);
   const scopeParam = new URLSearchParams(location.search).get("board");
-  const pendingAll = Object.values(pendingApprovals.counts).reduce(
-    (total, count) => total + count,
-    0,
-  );
+  const pendingBoards = boards.map((board) => ({
+    id: board.id,
+    role: roleOf(board.id),
+    archivedAt: board.archivedAt,
+  }));
+  const pendingApprovals = usePendingApprovals({
+    boardId: scopeParam,
+    boards: pendingBoards,
+    enabled: isAgentsRoute,
+  });
+  const pendingAll = pendingApprovals.totalCount;
   const pendingForScope =
     scopeParam === null
       ? pendingAll
-      : (pendingApprovals.counts[scopeParam] ?? 0);
-  const pendingBadge = pendingApprovals.error ? 0 : pendingForScope;
+      : (pendingApprovals.counts[scopeParam] ?? null);
+  const pendingBadge = pendingForScope;
   // A VIEWER has no mutating affordances, undo included: a stale local stack
   // after a live demotion would only offer commands the server refuses.
   const readOnly = role === "VIEWER";
@@ -178,6 +184,7 @@ export function Header() {
                 variant="header"
                 counts={pendingApprovals.counts}
                 totalCount={pendingAll}
+                stale={pendingApprovals.stale}
               />
             </div>
             <span
@@ -257,14 +264,24 @@ export function Header() {
             data-testid="agents-trigger"
             aria-label={t("agents.open")}
             aria-current="page"
+            title={
+              (pendingApprovals.error || pendingApprovals.forbidden) &&
+              pendingBadge === null
+                ? t("agents.pending.unknown")
+                : undefined
+            }
             className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 font-agent-surface text-[11.5px] font-semibold leading-[1.45] text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[30px]"
           >
             <LazyAnimatedIcon name="bot" size={15} aria-hidden />
             <span className="hidden sm:inline">{t("agents.open")}</span>
-            {pendingBadge > 0 ? (
+            {pendingBadge !== null && pendingBadge > 0 ? (
               <span
                 data-testid="agents-pending-count"
-                className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-[10.5px] font-bold leading-none tabular-nums text-[#1b1305]"
+                data-state={pendingApprovals.stale ? "stale" : "fresh"}
+                title={
+                  pendingApprovals.stale ? t("agents.pending.stale") : undefined
+                }
+                className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-[11px] font-bold leading-none tabular-nums text-[#1b1305]"
               >
                 {pendingBadge > 99 ? "99+" : pendingBadge}
               </span>
@@ -328,8 +345,12 @@ export function Header() {
                 <DialogDescription
                   className="flex items-center gap-2"
                   role="status"
+                  data-testid="agent-control-fallback"
                 >
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  <Loader2
+                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden
+                  />
                   {t("common.loading")}
                 </DialogDescription>
               </DialogContent>

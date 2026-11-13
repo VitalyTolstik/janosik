@@ -55,6 +55,8 @@ describe("Registration email verification (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
+    // This suite is precisely about the unverified gate.
+    process.env.E2E_AUTO_VERIFY = "0";
     enabledSpy = jest.spyOn(mailer, "enabled", "get");
 
     await prisma.emailVerificationCode.deleteMany();
@@ -65,6 +67,7 @@ describe("Registration email verification (e2e)", () => {
 
   afterAll(async () => {
     enabledSpy.mockRestore();
+    process.env.E2E_AUTO_VERIFY = "1";
     await app.close();
   });
 
@@ -137,6 +140,14 @@ describe("Registration email verification (e2e)", () => {
       where: { email: EMAIL },
     });
     expect(dbUser.emailVerifiedAt).not.toBeNull();
+
+    // Verifying changes the security stamp, so the old access token is
+    // deliberately stale; the browser refreshes (or signs in again).
+    const login = await server()
+      .post("/api/v1/auth/login")
+      .send({ email: EMAIL, password: PASSWORD })
+      .expect(200);
+    accessToken = login.body.accessToken;
   });
 
   it("rejects further verifies and resends once verified", async () => {
@@ -151,16 +162,14 @@ describe("Registration email verification (e2e)", () => {
       .expect(400);
   });
 
-  it("auto-verifies when no mail transport is configured", async () => {
+  it("refuses password registration when no mail transport is configured", async () => {
     enabledSpy.mockReturnValue(false);
-    const res = await server()
+    await server()
       .post("/api/v1/auth/register")
       .send({ email: SECOND_EMAIL, password: PASSWORD })
-      .expect(201);
-    expect(res.body.user.emailVerifiedAt).toBeGreaterThan(0);
-    // No live code email was written for the auto-verified account (the one
-    // consumed row belongs to the earlier verification).
-    const codes = await prisma.emailVerificationCode.findMany();
-    expect(codes.every((row) => row.consumedAt !== null)).toBe(true);
+      .expect(503);
+    expect(
+      await prisma.user.findUnique({ where: { email: SECOND_EMAIL } }),
+    ).toBeNull();
   });
 });

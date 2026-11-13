@@ -18,6 +18,7 @@ import {
   type AdminEmailTemplateDto,
   type AdminSendEmailResponse,
   type AdminUpdateAnnouncementRequest,
+  type AnnouncementDismissResponse,
   type AnnouncementDto,
   type AnnouncementFallbackPolicy,
   type AnnouncementLocale,
@@ -587,8 +588,14 @@ export class CommsService {
     });
   }
 
-  /** Active announcements for the signed-in user's app banner. */
+  /**
+   * Active announcements for the signed-in user's app banner. Read state is
+   * server-side and per user: a row is hidden when this user's dismissal is
+   * at least as new as the row's current version. An edit bumps the version,
+   * so the updated announcement is shown again.
+   */
   async activeFor(
+    userId: string,
     email: string,
     options: {
       locale?: string;
@@ -605,22 +612,33 @@ export class CommsService {
         : pickLocale(options.acceptLanguage);
     const now = new Date();
     const rows = await this.prisma.announcement.findMany({
-      where: {
-        active: true,
-        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
-        AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
-      },
+      where: this.liveWhere(now),
       include: { translations: true },
       orderBy: { createdAt: "desc" },
     });
+    // Only the visible rows matter: keep the read proportional to the banner
+    // list instead of loading every dismissal the account has ever made.
+    const dismissals =
+      rows.length === 0
+        ? []
+        : await this.prisma.announcementDismissal.findMany({
+            where: {
+              userId,
+              announcementId: { in: rows.map((row) => row.id) },
+            },
+            select: { announcementId: true, version: true },
+          });
+    const dismissedVersion = new Map(
+      dismissals.map((dismissal) => [
+        dismissal.announcementId,
+        dismissal.version,
+      ]),
+    );
     return rows
       .filter(
         (row) =>
-          row.audience === "all" ||
-          (row.segment ?? "")
-            .split(",")
-            .map((entry) => entry.trim().toLowerCase())
-            .includes(email.toLowerCase()),
+          this.isAddressedTo(row, email) &&
+          (dismissedVersion.get(row.id) ?? 0) < row.version,
       )
       .flatMap((row) => {
         const content = resolveAnnouncementContent({
@@ -646,9 +664,79 @@ export class CommsService {
             contentLocale: content.contentLocale,
             requestedLocale,
             isFallback: content.isFallback,
+            version: row.version,
           },
         ];
       });
+  }
+
+  /**
+   * `POST /announcements/:id/dismiss` — remember that this user closed the
+   * current version of an announcement. Visibility uses the same helpers as
+   * `activeFor`; anything the caller could not see answers 404, so the route
+   * never reveals another user's, inactive or out-of-window announcement.
+   */
+  async dismissAnnouncement(
+    id: string,
+    userId: string,
+    email: string,
+    version: number,
+  ): Promise<AnnouncementDismissResponse> {
+    const now = new Date();
+    const row = await this.prisma.announcement.findFirst({
+      where: { id, ...this.liveWhere(now) },
+      select: { id: true, version: true, audience: true, segment: true },
+    });
+    if (!row || !this.isAddressedTo(row, email)) {
+      throw new NotFoundException("Announcement not found");
+    }
+    if (version !== row.version) {
+      throw new ConflictException({
+        statusCode: 409,
+        conflict: "version",
+        currentVersion: row.version,
+        message: "The announcement was updated; dismiss its current version",
+      });
+    }
+    // Never move a stored dismissal backwards: a stale request may pass the
+    // version check above just before an admin PATCH, while a newer dismissal
+    // for the bumped version is already landing. Insert first (skipping an
+    // existing row) and then advance only a lower stored version, so neither
+    // a missing row nor an equal/newer row can be clobbered.
+    await this.prisma.announcementDismissal.createMany({
+      data: [{ announcementId: id, userId, version, dismissedAt: now }],
+      skipDuplicates: true,
+    });
+    await this.prisma.announcementDismissal.updateMany({
+      where: { announcementId: id, userId, version: { lt: version } },
+      data: { version, dismissedAt: now },
+    });
+    return { dismissed: true, version };
+  }
+
+  /** Live window shared by the banner read and the dismiss check. */
+  private liveWhere(now: Date): Prisma.AnnouncementWhereInput {
+    return {
+      active: true,
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
+      ],
+    };
+  }
+
+  /** Audience predicate shared by the banner read and the dismiss check. */
+  private isAddressedTo(
+    row: { audience: string; segment: string | null },
+    email: string,
+  ): boolean {
+    return (
+      row.audience === "all" ||
+      (row.segment ?? "")
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .includes(email.toLowerCase())
+    );
   }
 
   // ------------------------------------------------------- announcement io

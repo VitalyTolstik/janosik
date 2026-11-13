@@ -98,10 +98,32 @@ test("an agent request appears live, is approved with a reason and consumed afte
   const todo = await board.column("Todo");
   const cardId = await board.card(todo, "Delete me with approval");
   const pat = await createAgentToken(board, playwright, testIp);
-  await board.open(page);
 
-  // The page is already open; the badge is fed by the approval SSE frame.
+  // Wait for the header store and the board SSE stream before creating the
+  // approval: a frame sent while `/events` is still connecting is lost and
+  // the 30 s poll would hide the live update this test proves.
+  const overviewLoaded = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/agents/overview") &&
+      response.status() === 200,
+  );
+  const liveConnected = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/boards/${board.id}/events`) &&
+      response.status() === 200,
+  );
+  await board.open(page);
+  await Promise.all([overviewLoaded, liveConnected]);
+
+  // The page is already open and its SSE stream is connected; the badge is
+  // fed by the approval SSE frame.
+  const refreshed = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/agents/overview") &&
+      response.status() === 200,
+  );
   const ref = await requestCardDelete(pat, board.id, cardId);
+  await refreshed;
   await expect(page.getByTestId("agent-control-pending-count")).toHaveText("1");
 
   await openAgentControl(page);

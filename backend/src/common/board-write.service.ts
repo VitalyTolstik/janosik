@@ -1,5 +1,6 @@
 import {
   Injectable,
+  ForbiddenException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -12,6 +13,7 @@ import {
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { rollbackOnThrow } from "./rollback-certainty";
 import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
+import { currentBoardWriteContext } from "./request-context";
 
 /**
  * How many times a transaction that lost a race is replayed from scratch.
@@ -129,7 +131,10 @@ export class BoardWriteService {
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
     pause?: AgentPauseGate,
   ): Promise<T> {
-    return this.enqueue(boardId, () => this.attempt(boardId, fn, pause));
+    const membership = currentBoardWriteContext();
+    return this.enqueue(boardId, () =>
+      this.attempt(boardId, fn, pause, membership),
+    );
   }
 
   /** Serialize tasks per board without holding a database connection. */
@@ -155,6 +160,7 @@ export class BoardWriteService {
     boardId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
     pause?: AgentPauseGate,
+    membership?: ReturnType<typeof currentBoardWriteContext>,
   ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -186,6 +192,31 @@ export class BoardWriteService {
                     board.agentPolicy,
                     LIFECYCLE_ACTIONS[pause.lifecycle.action],
                     { approvalApplied: pause.lifecycle.approvalApplied },
+                  );
+                }
+              }
+              if (membership?.boardId === boardId) {
+                const current = await tx.boardMember.findUnique({
+                  where: {
+                    boardId_userId: { boardId, userId: membership.userId },
+                  },
+                  select: {
+                    id: true,
+                    acceptedAt: true,
+                    expiresAt: true,
+                    role: true,
+                  },
+                });
+                if (
+                  !current ||
+                  current.id !== membership.membershipId ||
+                  current.acceptedAt === null ||
+                  (current.expiresAt !== null &&
+                    current.expiresAt.getTime() <= Date.now()) ||
+                  current.role !== membership.role
+                ) {
+                  throw new ForbiddenException(
+                    "Board membership or role changed; retry the request",
                   );
                 }
               }

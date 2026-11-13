@@ -283,6 +283,9 @@ export function sentenceFor(
   if (entry.type === "comment_deleted") {
     return { key: "activity.comment-deleted" };
   }
+  if (entry.type === "comment_updated") {
+    return { key: "activity.comment-updated" };
+  }
 
   const membership = MEMBERSHIP_KEYS[entry.type];
   if (membership !== undefined) {

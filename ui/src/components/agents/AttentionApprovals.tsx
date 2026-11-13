@@ -18,6 +18,7 @@ import {
 import { Link } from "react-router-dom";
 import type {
   AgentSessionDto,
+  AgentsOverviewApprovalItem,
   ApprovalRequestDto,
   Board,
   BoardMemberDto,
@@ -44,13 +45,10 @@ import { shortId } from "./agent-model";
 
 export type AttentionApprovalFilter = "needs" | "decided" | "all";
 
-export interface AttentionApprovalRow extends ApprovalRequestDto {
-  boardTitle: string;
+export type AttentionApprovalRow = AgentsOverviewApprovalItem & {
   /** Token name when a live session from the same token is known. */
   agentName?: string;
-  /** Card title when the loaded board aggregate has that card. */
-  cardTitle?: string;
-}
+};
 
 type ApprovalStatus = keyof typeof APPROVAL_STATUS_KEYS;
 
@@ -113,7 +111,7 @@ function lengthOfPlan(approval: ApprovalRequestDto): number {
 }
 
 function titleForApproval(
-  approval: ApprovalRequestDto,
+  approval: Pick<AgentsOverviewApprovalItem, "actionType" | "summary">,
   cardTitle: string | null,
   t: Translate,
 ): string {
@@ -332,7 +330,7 @@ export function AttentionApprovalList({
               aria-pressed={filter === value}
               onClick={() => onFilterChange(value)}
               className={cn(
-                "inline-flex items-center gap-1 text-[11px] transition-colors",
+                "inline-flex min-h-11 items-center gap-1 text-[11px] transition-colors md:min-h-0",
                 filter === value
                   ? "font-semibold text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -370,7 +368,7 @@ export function AttentionApprovalList({
                 : formatDate(row.decidedAt ?? row.expiresAt, lang);
             const cardKindKey =
               row.kind === "destructive"
-                ? row.cardTitle !== undefined
+                ? row.cardTitle !== null
                   ? "destructiveCard"
                   : "destructive"
                 : row.kind;
@@ -399,7 +397,7 @@ export function AttentionApprovalList({
                     className="flex w-full flex-col text-left"
                   >
                     <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="font-[650] uppercase tracking-[0.06em] text-warning">
+                      <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--agent-tone-warning)]">
                         {t(`agents.approvals.eyebrow.${effective}`)}
                       </span>
                       <span className="text-border">·</span>
@@ -431,7 +429,7 @@ export function AttentionApprovalList({
                       size="sm"
                       onClick={() => onSelect(row)}
                       data-testid={`agents-approval-review-${row.id}`}
-                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650]"
+                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650] max-md:min-h-11"
                     >
                       {t("agents.approvals.reviewPlan")}
                     </Button>
@@ -440,11 +438,11 @@ export function AttentionApprovalList({
                       variant="outline"
                       onClick={() => onReject(row)}
                       data-testid={`agents-approval-reject-${row.id}`}
-                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650]"
+                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650] max-md:min-h-11"
                     >
                       {t("agents.approvals.reject")}
                     </Button>
-                    <code className="ml-auto truncate font-mono text-[11px] text-muted-foreground/75">
+                    <code className="ml-auto truncate font-mono text-[11px] text-muted-foreground">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
                       })}
@@ -621,9 +619,9 @@ export function AttentionApprovalDetail({
   };
 
   const toneClasses = {
-    warn: "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-warning",
-    ok: "border-success/30 bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-success",
-    bad: "border-danger/35 bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-danger",
+    warn: "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-warning)]",
+    ok: "border-success/30 bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-success)]",
+    bad: "border-danger/35 bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-danger)]",
     muted:
       "border-border bg-muted/40 text-muted-foreground [&_svg]:text-muted-foreground",
   } as const;
@@ -640,7 +638,7 @@ export function AttentionApprovalDetail({
               type="button"
               onClick={onBack}
               aria-label={t("agents.approvals.back")}
-              className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground min-[1061px]:hidden"
+              className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground min-[1061px]:hidden"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             </button>
@@ -697,7 +695,10 @@ export function AttentionApprovalDetail({
                 data-testid="agents-approval-impact"
               >
                 <p className="flex items-center gap-1.5 text-[11px] font-[650] text-foreground">
-                  <AlertTriangle className="h-3 w-3 text-danger" aria-hidden />
+                  <AlertTriangle
+                    className="h-3 w-3 text-[color:var(--agent-tone-danger)]"
+                    aria-hidden
+                  />
                   {destructiveCard
                     ? t("agents.approvals.destructiveCardTitle")
                     : t("agents.approvals.destructiveTitle")}
@@ -799,9 +800,9 @@ export function AttentionApprovalDetail({
                     className={cn(
                       "mt-0.5 block text-[11px] leading-[1.4] font-semibold break-words",
                       detail.risk === "high" || detail.kind === "destructive"
-                        ? "text-danger"
+                        ? "text-[color:var(--agent-tone-danger)]"
                         : detail.risk === "medium"
-                          ? "text-warning"
+                          ? "text-[color:var(--agent-tone-warning)]"
                           : "text-foreground",
                     )}
                   >
@@ -832,7 +833,10 @@ export function AttentionApprovalDetail({
                   data-testid="approval-copy-hash"
                 >
                   {hashCopied ? (
-                    <Check className="h-3 w-3 text-success" aria-hidden />
+                    <Check
+                      className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                      aria-hidden
+                    />
                   ) : (
                     <Copy className="h-3 w-3 opacity-70" aria-hidden />
                   )}
@@ -968,7 +972,7 @@ export function AttentionApprovalDetail({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
+                    className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
                     onClick={onBack}
                   >
                     {t("agents.approvals.closeDetail")}

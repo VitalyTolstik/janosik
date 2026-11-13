@@ -85,13 +85,13 @@ export function AgentDetailPage() {
           data-testid="agent-detail-error"
           role="alert"
         >
-          <p className="text-sm font-medium text-danger">
+          <p className="text-sm font-medium text-[color:var(--agent-tone-danger)]">
             {t("agents.error.title")}
           </p>
           <Button
             variant="outline"
             size="sm"
-            className="mt-3"
+            className="mt-3 max-md:min-h-11"
             onClick={() => state.reload()}
             data-testid="agent-detail-retry"
           >
@@ -120,7 +120,12 @@ export function AgentDetailPage() {
               {t("agents.notFound.body")}
             </p>
           </div>
-          <Button variant="outline" size="sm" asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="max-md:min-h-11"
+          >
             <Link to={routes.agents} data-testid="agent-back">
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
               {t("agents.back")}
@@ -142,7 +147,12 @@ export function AgentDetailPage() {
       data-testid="agent-detail-page"
     >
       <div className="mb-3">
-        <Button variant="ghost" size="sm" asChild className="-ml-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          asChild
+          className="-ml-2 max-md:min-h-11"
+        >
           <Link to={routes.agents} data-testid="agent-back">
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             {t("agents.back")}
@@ -152,12 +162,12 @@ export function AgentDetailPage() {
 
       <header className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-primary">
+          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-[color:var(--agent-tone-primary)]">
             <Bot className="h-5 w-5" aria-hidden />
           </span>
           <div className="min-w-0">
             <h1
-              className="truncate text-xl font-semibold tracking-[-0.025em] text-foreground"
+              className="truncate text-[18px] font-semibold tracking-[-0.025em] text-foreground"
               data-testid="agent-detail-name"
             >
               {group.name}
@@ -182,12 +192,12 @@ export function AgentDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {group.liveCount > 0 ? (
-            <span className="rounded-md border border-success/30 bg-success/10 px-2 py-1 text-[11px] font-medium text-success">
+            <span className="rounded-md border border-success/30 bg-success/10 px-2 py-1 text-[11px] font-medium text-[color:var(--agent-tone-success)]">
               {t("agents.liveCount", { count: group.liveCount })}
             </span>
           ) : null}
           {group.waitingCount > 0 ? (
-            <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning">
+            <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-[color:var(--agent-tone-warning)]">
               {t("agents.waitingCount", { count: group.waitingCount })}
             </span>
           ) : null}
@@ -223,10 +233,15 @@ export function AgentDetailPage() {
       {state.error ? (
         <div
           role="alert"
-          className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+          className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
         >
           <span>{t("agents.error.stale")}</span>
-          <Button variant="outline" size="sm" onClick={state.reload}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={state.reload}
+            className="max-md:min-h-11"
+          >
             {t("agents.retry")}
           </Button>
         </div>
@@ -234,7 +249,7 @@ export function AgentDetailPage() {
 
       {state.isAgentToken ? (
         <p
-          className="mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+          className="mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
           data-testid="agent-token-notice"
         >
           {t("agents.agentOnly")}
@@ -339,6 +354,7 @@ function SessionCard({
                   size="sm"
                   onClick={() => onAction("pause")}
                   data-testid="agent-session-pause"
+                  className="max-md:min-h-11"
                 >
                   <Pause className="h-3.5 w-3.5" aria-hidden />
                   {t("agents.action.pause")}
@@ -350,6 +366,7 @@ function SessionCard({
                   size="sm"
                   onClick={() => onAction("resume")}
                   data-testid="agent-session-resume"
+                  className="max-md:min-h-11"
                 >
                   <Play className="h-3.5 w-3.5" aria-hidden />
                   {t("agents.action.resume")}
@@ -359,7 +376,7 @@ function SessionCard({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-danger hover:text-danger"
+                  className="text-[color:var(--agent-tone-danger)] hover:text-[color:var(--agent-tone-danger)] max-md:min-h-11"
                   onClick={() => onAction("end")}
                   data-testid="agent-session-end"
                 >
@@ -369,7 +386,7 @@ function SessionCard({
               ) : null}
             </>
           ) : null}
-          <Button variant="ghost" size="sm" asChild>
+          <Button variant="ghost" size="sm" asChild className="max-md:min-h-11">
             <Link
               to={boardHref}
               data-testid="agent-session-open-board"
@@ -388,7 +405,7 @@ function SessionCard({
         <Field label={t("agents.heartbeat")}>
           <span className="flex flex-wrap items-center gap-1.5">
             <AgentLastSeen at={row.lastHeartbeatAt} />
-            <span className="text-muted-foreground/60">
+            <span className="text-muted-foreground">
               ({formatDate(row.lastHeartbeatAt, lang, hour12)})
             </span>
           </span>
@@ -405,7 +422,7 @@ function SessionCard({
           ) : (
             <Link
               to={boardHref}
-              className="truncate text-primary hover:underline"
+              className="truncate text-[color:var(--agent-tone-primary)] hover:underline"
               title={row.cardTitle ?? row.currentCardId}
             >
               {row.cardTitle ?? shortId(row.currentCardId)}
@@ -463,7 +480,7 @@ function Field({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+      <dt className="text-[11px] uppercase tracking-widest text-muted-foreground">
         {label}
       </dt>
       <dd className="mt-0.5 min-w-0 truncate text-foreground/85">{children}</dd>
@@ -488,15 +505,15 @@ function Stat({
         data-testid={testId}
         className={
           tone === "success"
-            ? "text-xl font-semibold tabular-nums text-success"
+            ? "text-[18px] font-semibold tabular-nums text-[color:var(--agent-tone-success)]"
             : tone === "warning"
-              ? "text-xl font-semibold tabular-nums text-warning"
-              : "text-xl font-semibold tabular-nums text-foreground"
+              ? "text-[18px] font-semibold tabular-nums text-[color:var(--agent-tone-warning)]"
+              : "text-[18px] font-semibold tabular-nums text-foreground"
         }
       >
         {value}
       </div>
-      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
     </div>

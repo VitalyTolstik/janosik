@@ -43,6 +43,25 @@ describe("emoji in markdown viewers", () => {
     expect(content).not.toHaveTextContent(":rocket:");
   });
 
+  it("reflects a new text prop without remounting the row (TASK-176.2)", async () => {
+    const { rerender } = render(<CommentBody text="Before the edit" />);
+    await waitFor(() => {
+      expect(document.querySelector(".janosik-md-content")).toHaveTextContent(
+        "Before the edit",
+      );
+    });
+
+    rerender(<CommentBody text="Edited from another tab" />);
+    await waitFor(() => {
+      expect(document.querySelector(".janosik-md-content")).toHaveTextContent(
+        "Edited from another tab",
+      );
+    });
+    expect(document.querySelector(".janosik-md-content")).not.toHaveTextContent(
+      "Before the edit",
+    );
+  });
+
   it("renders emoji in the read-only description but keeps raw markdown editable", async () => {
     const { unmount } = render(
       <DescriptionEditor

@@ -52,6 +52,11 @@ describe("Announcements (e2e)", () => {
     if (acceptLanguage) req.set("Accept-Language", acceptLanguage);
     return req;
   };
+  const dismiss = (token: string, id: string, version: number) =>
+    server()
+      .post(`/api/v1/announcements/${id}/dismiss`)
+      .set(auth(token))
+      .send({ version });
 
   /** Background fan-out: poll the in-memory outbox instead of assuming sync. */
   const waitForOutbox = async (
@@ -337,6 +342,7 @@ describe("Announcements (e2e)", () => {
       contentLocale: null,
       requestedLocale: "en",
       isFallback: false,
+      version: legacy.version,
     });
   });
 
@@ -685,6 +691,198 @@ describe("Announcements (e2e)", () => {
       fallbackPolicy: "require_all",
     });
     expect(JSON.stringify(audit?.details)).not.toContain(both.en.body);
+  });
+
+  it("keeps a dismissal per user across logins and re-shows an edited version", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: true,
+    }).expect(201);
+    const id = created.body.id as string;
+    const version = created.body.version as number;
+    expect(version).toBe(1);
+
+    const before = await active(enToken, "?locale=en").expect(200);
+    expect(
+      before.body.find((item: { id: string }) => item.id === id),
+    ).toMatchObject({ id, version });
+
+    await dismiss(enToken, id, version)
+      .expect(200)
+      .expect({ dismissed: true, version });
+
+    const afterA = await active(enToken, "?locale=en").expect(200);
+    expect(
+      afterA.body.find((item: { id: string }) => item.id === id),
+    ).toBeUndefined();
+    const afterB = await active(ruToken, "?locale=ru").expect(200);
+    expect(
+      afterB.body.find((item: { id: string }) => item.id === id),
+    ).toMatchObject({ id, version });
+
+    const relogin = await server()
+      .post("/api/v1/auth/login")
+      .send({ email: EN_EMAIL, password: USER_PASSWORD })
+      .expect(200);
+    const afterRelogin = await active(
+      relogin.body.accessToken as string,
+      "?locale=en",
+    ).expect(200);
+    expect(
+      afterRelogin.body.find((item: { id: string }) => item.id === id),
+    ).toBeUndefined();
+
+    const patched = await patchAnnouncement(id, {
+      translations: { en: { title: "Updated", body: "Updated body" } },
+      version,
+    }).expect(200);
+    expect(patched.body.version).toBe(version + 1);
+
+    const afterEdit = await active(enToken, "?locale=en").expect(200);
+    expect(
+      afterEdit.body.find((item: { id: string }) => item.id === id),
+    ).toMatchObject({ id, title: "Updated", version: version + 1 });
+
+    const stale = await dismiss(enToken, id, version).expect(409);
+    expect(stale.body).toMatchObject({
+      conflict: "version",
+      currentVersion: version + 1,
+    });
+
+    await dismiss(enToken, id, version + 1).expect(200);
+    const afterSecondDismiss = await active(enToken, "?locale=en").expect(200);
+    expect(
+      afterSecondDismiss.body.find((item: { id: string }) => item.id === id),
+    ).toBeUndefined();
+  });
+
+  it("is idempotent and hides only the dismissed announcement", async () => {
+    const first = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: true,
+    }).expect(201);
+    const sibling = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: true,
+    }).expect(201);
+
+    const id = first.body.id as string;
+    const version = first.body.version as number;
+    await dismiss(enToken, id, version).expect(200);
+    await dismiss(enToken, id, version).expect(200);
+    expect(
+      await prisma.announcementDismissal.count({
+        where: { announcementId: id },
+      }),
+    ).toBe(1);
+
+    const list = await active(enToken, "?locale=en").expect(200);
+    expect(
+      list.body.find((item: { id: string }) => item.id === id),
+    ).toBeUndefined();
+    expect(
+      list.body.find(
+        (item: { id: string }) => item.id === (sibling.body.id as string),
+      ),
+    ).toMatchObject({ id: sibling.body.id, version: sibling.body.version });
+  });
+
+  it("does not reveal unaddressed, inactive or out-of-window announcements", async () => {
+    const segment = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "segment",
+      segment: RU_EMAIL,
+      active: true,
+    }).expect(201);
+    await dismiss(enToken, segment.body.id as string, 1).expect(404);
+
+    const inactive = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: false,
+    }).expect(201);
+    await dismiss(enToken, inactive.body.id as string, 1).expect(404);
+
+    const now = Date.now();
+    const expired = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: true,
+      startsAt: now - 10_000,
+      endsAt: now - 5_000,
+    }).expect(201);
+    await dismiss(enToken, expired.body.id as string, 1).expect(404);
+
+    await dismiss(enToken, "announcement-does-not-exist", 1).expect(404);
+    await server()
+      .post(`/api/v1/announcements/${segment.body.id as string}/dismiss`)
+      .send({ version: 1 })
+      .expect(401);
+  });
+
+  it("rejects a missing or invalid dismissal version", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: true,
+    }).expect(201);
+    const id = created.body.id as string;
+
+    await server()
+      .post(`/api/v1/announcements/${id}/dismiss`)
+      .set(auth(enToken))
+      .send({})
+      .expect(400);
+    await dismiss(enToken, id, 0).expect(400);
+    await server()
+      .post(`/api/v1/announcements/${id}/dismiss`)
+      .set(auth(enToken))
+      .send({ version: "1" })
+      .expect(400);
+  });
+
+  it("cascades dismissals when the announcement is deleted", async () => {
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      audience: "all",
+      active: true,
+    }).expect(201);
+    const id = created.body.id as string;
+    await dismiss(enToken, id, created.body.version as number).expect(200);
+    expect(
+      await prisma.announcementDismissal.count({
+        where: { announcementId: id },
+      }),
+    ).toBe(1);
+
+    await server()
+      .delete(`/api/v1/admin/announcements/${id}`)
+      .set(admin())
+      .expect(200);
+    expect(
+      await prisma.announcementDismissal.count({
+        where: { announcementId: id },
+      }),
+    ).toBe(0);
   });
 
   it("keeps writes owner-only", async () => {
