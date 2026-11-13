@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { I18nProvider } from "@/i18n";
@@ -7,6 +13,7 @@ import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
+import { adminMessage } from "./admin-i18n";
 import AdminApp from "./AdminApp";
 import {
   adminActivity,
@@ -192,6 +199,9 @@ describe("CardDetailPage windows", () => {
       );
     });
     expect(await screen.findByText("Deleted comment 0")).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-comment-actions-comment-deleted-0"),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Show deleted (5)" }));
     await waitFor(() => {
@@ -206,6 +216,11 @@ describe("CardDetailPage windows", () => {
       ).toHaveTextContent("60 of 60");
     });
     expect(await screen.findByText("deleted-0.png")).toBeTruthy();
+    expect(
+      screen.queryByTestId(
+        "admin-card-attachment-actions-attachment-deleted-0",
+      ),
+    ).toBeNull();
   });
 
   it("centres and highlights the comment an anchor link points at", async () => {
@@ -278,5 +293,199 @@ describe("CardDetailPage windows", () => {
         '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
       ),
     ).toHaveTextContent("Long live 80");
+  });
+});
+
+describe("CardDetailPage identity links and per-row moderation", () => {
+  function stateWithOneRow(): FakeAdminState {
+    const state = emptyAdminState();
+    state.users = [adminUser()];
+    state.cards = [adminCard()];
+    state.comments = [adminComment()];
+    state.attachments = [adminAttachment()];
+    state.activity = [adminActivity()];
+    return state;
+  }
+
+  it("links the comment author, timeline actor and last actor to profiles", async () => {
+    const state = stateWithOneRow();
+    state.cardLastActors["card-1"] = {
+      id: "u-2",
+      email: "actor@example.com",
+    };
+    state.activity = [
+      adminActivity({
+        actorId: "u-2",
+        actorEmail: "actor@example.com",
+      }),
+    ];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderCard();
+
+    expect(await screen.findByTestId("admin-card-last-actor")).toHaveAttribute(
+      "href",
+      "/admin/users/u-2",
+    );
+    expect(
+      screen.getByTestId("admin-card-comment-author-comment-1"),
+    ).toHaveAttribute("href", "/admin/users/u-1");
+    expect(
+      screen.getByTestId("admin-card-timeline-actor-activity-activity-1"),
+    ).toHaveAttribute("href", "/admin/users/u-2");
+  });
+
+  it("degrades a deleted last actor to text, not a broken link", async () => {
+    const state = stateWithOneRow();
+    state.cardLastActors["card-1"] = { id: "u-ghost", email: null };
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderCard();
+
+    const meta = await screen.findByTestId("admin-card-detail-meta");
+    expect(within(meta).queryByTestId("admin-card-last-actor")).toBeNull();
+    expect(within(meta).getByTestId("admin-id-u-ghost")).toBeTruthy();
+  });
+
+  it("deletes one comment and keeps the row visible with its state", async () => {
+    const server = new FakeAdminServer(stateWithOneRow());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    await screen.findByTestId("admin-card-comments-count");
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-card-comment-actions-comment-1"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText("Delete"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/comments/comment-1",
+        ),
+      ).toBe(true);
+    });
+    expect(
+      await screen.findByTestId("admin-card-comments-count"),
+    ).toHaveTextContent("1 of 1");
+    expect(
+      within(screen.getByTestId("admin-card-detail-comments")).getByText(
+        "Deleted",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-comment-actions-comment-1"),
+    ).toBeNull();
+  });
+
+  it("keeps an anchored comment window after deleting its row", async () => {
+    const server = new FakeAdminServer(stateWithLongThread());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard("card-1", "?comment=long-live-80");
+
+    expect(
+      await screen.findByTestId("admin-card-anchor-comments"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
+      "50 of 130",
+    );
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-card-comment-actions-long-live-80"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText("Delete"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/comments/long-live-80",
+        ),
+      ).toBe(true);
+    });
+    expect(screen.getByTestId("admin-card-anchor-comments")).toBeTruthy();
+    // The anchor had a centred offset (24), not offset 0: the refresh must
+    // keep that window instead of jumping to the first page.
+    expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
+      "50 of 130",
+    );
+    const anchored = document.querySelector(
+      '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
+    );
+    expect(anchored).toHaveTextContent("Long live 80");
+    expect(within(anchored as HTMLElement).getByText("Deleted")).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-anchor-missing-comments"),
+    ).toBeNull();
+  });
+
+  it("deletes one attachment and keeps it visible with its state", async () => {
+    const server = new FakeAdminServer(stateWithOneRow());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    await screen.findByTestId("admin-card-attachments-count");
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-card-attachment-actions-attachment-1"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText("Delete file"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/attachments/attachment-1",
+        ),
+      ).toBe(true);
+    });
+    expect(
+      within(screen.getByTestId("admin-card-detail-attachments")).getByText(
+        "Deleted",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-attachment-actions-attachment-1"),
+    ).toBeNull();
+  });
+
+  it("surfaces a 403 without dropping the live row", async () => {
+    const server = new FakeAdminServer(stateWithOneRow());
+    server.failNextStatuses.push({
+      path: "/admin/comments/comment-1",
+      status: 403,
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    await screen.findByTestId("admin-card-comments-count");
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-card-comment-actions-comment-1"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText("Delete"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    expect(
+      await screen.findByText(adminMessage("admin.common.forbidden", "en")),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("admin-card-comment-actions-comment-1"),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByTestId("admin-card-detail-comments")).queryByText(
+        "Deleted",
+      ),
+    ).toBeNull();
   });
 });
