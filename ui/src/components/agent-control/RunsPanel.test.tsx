@@ -365,7 +365,23 @@ describe("RunsPanel (TASK-179.5)", () => {
     ).toBeInTheDocument();
     await userEvent.click(screen.getByTestId("agent-runs-retry"));
 
-    expect(await screen.findByText("No agent runs yet")).toBeInTheDocument();
+    expect(await screen.findByText("No runs yet")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Runs appear when an agent applies commands. Rollback is available only for applied runs without conflicts.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No runs on this board")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-runs-open-all")).toHaveTextContent(
+      "Open all runs",
+    );
+    expect(screen.getByTestId("agent-runs-open-all")).toHaveClass(
+      "btn",
+      "btn-outline",
+      "btn-sm",
+    );
+    expect(screen.queryByTestId("run-filter-status")).toBeNull();
+    expect(screen.queryByText("Select a run")).toBeNull();
     expect(list).toHaveBeenCalledTimes(2);
   });
 

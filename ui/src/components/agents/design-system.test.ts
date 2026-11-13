@@ -18,6 +18,10 @@ import boardSettingsShell from "../board/settings/BoardSettingsShell.tsx?raw";
 import agentsAutomation from "../board/settings/AgentsAutomation.tsx?raw";
 
 const indexCss = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+const agentControlCss = readFileSync(
+  resolve(process.cwd(), "src/components/agent-control/agent-control.css"),
+  "utf8",
+);
 
 const SURFACES = {
   AgentsPage: agentsPage,
@@ -52,8 +56,16 @@ describe("agent design system (TASK-179.9)", () => {
     expect(indexCss).toContain(".font-agent-display");
     expect(indexCss).toContain('html[lang="ru"] .font-agent-display');
     expect(agentsPage).toContain("font-agent-display");
-    expect(agentControlDialog).toContain("font-agent-display");
     expect(boardSettingsShell).toContain("font-agent-display");
+    // Agent control mirrors the prototype's own heading styles instead of
+    // the generic DialogTitle defaults: 16/700 display face, 1.25 leading.
+    expect(agentControlDialog).toContain('import "./agent-control.css"');
+    expect(agentControlCss).toContain("font-size: 16px");
+    expect(agentControlCss).toContain("font-weight: 700");
+    expect(agentControlCss).toContain("line-height: 1.25");
+    expect(agentControlCss).toContain(".ac-description");
+    expect(agentControlCss).toContain("font-size: 11px");
+    expect(agentControlCss).toContain("line-height: 1.45");
   });
 
   it("defines AA status tones for both themes", () => {
@@ -65,9 +77,9 @@ describe("agent design system (TASK-179.9)", () => {
   });
 
   it("keeps the 390 full-screen shell, the 1024 sheet and safe-area padding", () => {
-    expect(agentControlDialog).toContain("max-md:h-[100dvh]");
-    expect(agentControlDialog).toContain("md:top-[56px]");
-    expect(agentControlDialog).toContain("safe-area-inset-bottom");
+    expect(agentControlCss).toContain("top: 56px");
+    expect(agentControlCss).toContain("height: 100dvh");
+    expect(agentControlCss).toContain("safe-area-inset-bottom");
     expect(boardSettingsShell).toContain("max-md:h-[100dvh]");
     expect(boardSettingsShell).toContain("md:top-[56px]");
   });

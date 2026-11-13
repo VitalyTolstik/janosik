@@ -332,7 +332,11 @@ describe("agent control (TASK-166.14)", () => {
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByText("No pending approvals")).toBeInTheDocument();
+    expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
+    expect(
+      screen.getByText("Only a board admin can decide. This queue is empty."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Select an approval")).toBeInTheDocument();
     // One request from the Inbox panel, one from the rail/header counter,
     // plus the manual retry.
     expect(list).toHaveBeenCalledTimes(3);
@@ -615,7 +619,7 @@ describe("agent control (TASK-166.14)", () => {
     expect(screen.queryByText("No pending")).toBeNull();
   });
 
-  it("keeps board pause controls and the token link when sessions fail to load", async () => {
+  it("keeps the pause footer when sessions fail to load", async () => {
     vi.spyOn(api, "listAgentSessions").mockRejectedValue({ status: 500 });
 
     renderDialog();
@@ -626,7 +630,11 @@ describe("agent control (TASK-166.14)", () => {
       "false",
     );
     expect(screen.getByTestId("board-pause")).toBeInTheDocument();
-    expect(screen.getByTestId("agent-live-manage-tokens")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Pause is a board-wide safety switch, not a policy change. In-flight finishes; claims stay.",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Could not load agent sessions"),
     ).toBeInTheDocument();
@@ -699,9 +707,99 @@ describe("agent control (TASK-166.14)", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByTestId("agent-open-policy");
+    const policyLink = await screen.findByTestId("agent-open-policy");
     expect(screen.queryByTestId("agent-policy-tab")).toBeNull();
-    await userEvent.click(screen.getByTestId("agent-open-policy"));
+    expect(screen.getByText("Agent policy ↗")).toBeInTheDocument();
+    expect(policyLink).toHaveClass("ac-rail-link");
+    expect(policyLink).toHaveTextContent("Open policy settings");
+    await userEvent.click(policyLink);
     expect(onOpenPolicy).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the prototype empty Inbox state with search and refresh", async () => {
+    const list = vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    renderDialog();
+
+    expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The board is clear. Decided requests stay in the history.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Select an approval")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Choose a request to see its impact, hash and decision.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("approval-search")).toHaveAttribute(
+      "placeholder",
+      "Search approvals…",
+    );
+    expect(screen.getByTestId("approval-filter-needs")).toHaveClass(
+      "chip",
+      "primary",
+    );
+    expect(screen.getByTestId("approval-filter-needs")).toHaveTextContent(
+      "Needs0",
+    );
+
+    const before = list.mock.calls.length;
+    await userEvent.click(screen.getByTestId("approval-refresh"));
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it("filters approvals by the search query", async () => {
+    const first = approval();
+    const second = approval({
+      id: "approval-2",
+      summary: "Archive old column",
+      planHash: "b".repeat(64),
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([first, second]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(first);
+
+    renderDialog();
+    await screen.findByTestId("approval-queue");
+
+    await userEvent.type(screen.getByTestId("approval-search"), "Archive");
+    expect(screen.queryByTestId(`approval-row-${first.id}`)).toBeNull();
+    expect(screen.getByTestId(`approval-row-${second.id}`)).toBeInTheDocument();
+    // The prototype keeps the full counts; search only narrows the list.
+    expect(screen.getByTestId("approval-filter-needs")).toHaveTextContent(
+      "Needs2",
+    );
+
+    await userEvent.clear(screen.getByTestId("approval-search"));
+    expect(screen.getByTestId(`approval-row-${first.id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`approval-row-${second.id}`)).toBeInTheDocument();
+  });
+
+  it("shows the prototype empty Live state and pause footer", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    expect(await screen.findByTestId("agent-live-empty")).toBeInTheDocument();
+    expect(screen.getByText("0 sessions")).toBeInTheDocument();
+    expect(screen.getByText("No live sessions")).toBeInTheDocument();
+    expect(
+      screen.getByText("Agent sessions appear here as soon as they heartbeat."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Pause is a board-wide safety switch, not a policy change. In-flight finishes; claims stay.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("board-pause")).toHaveTextContent(
+      "Pause all agents",
+    );
+    expect(screen.queryByTestId("pause-semantics")).toBeNull();
+    expect(screen.queryByTestId("agent-live-manage-tokens")).toBeNull();
+    expect(
+      screen.queryByText(
+        "Ending a session releases its claims. Token-level pause, stop-all and revoke stay in Account → API keys; this board surface only links there.",
+      ),
+    ).toBeNull();
   });
 });

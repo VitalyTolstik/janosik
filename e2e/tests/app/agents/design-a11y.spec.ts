@@ -159,7 +159,7 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
     await dialog.getByTestId("agent-pause-tab").click();
     for (const testId of [
       "agent-live-refresh",
-      "board-pause",
+      "live-status-pause",
       "agent-session-pause",
       "agent-session-end",
     ]) {

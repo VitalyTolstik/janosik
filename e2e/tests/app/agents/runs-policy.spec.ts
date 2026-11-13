@@ -218,7 +218,7 @@ test("an empty board explains that there are no runs yet", async ({
   await openAgentControl(page);
   await page.getByTestId("agent-runs-tab").click();
   await expect(page.getByTestId("agent-runs-empty")).toContainText(
-    "No agent runs yet",
+    "No runs yet",
   );
 });
 
