@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { BoardSummary } from "@janosik/shared";
 
-import { api, isApiEnabled } from "@/api/client";
+import { isApiEnabled } from "@/api/client";
 import {
   AgentLastSeen,
   AgentLiveDot,
@@ -380,7 +380,11 @@ export function AgentsPage() {
     );
   }, [setParams]);
 
-  const pending = usePendingApprovals(state.boards, !state.isAgentToken);
+  const pending = usePendingApprovals({
+    boardId: filter.board === "all" ? null : filter.board,
+    boards: state.boards,
+    enabled: !state.isAgentToken,
+  });
   const runs = useAgentRuns(state.boards, {
     enabled: section === "runs",
     filter: runFilter,
@@ -406,45 +410,6 @@ export function AgentsPage() {
     for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
     return names;
   }, [state.rows, state.tokens]);
-  const approvalBoardIds = useMemo(
-    () => [...new Set(pending.rows.map((row) => row.boardId))],
-    [pending.rows],
-  );
-  const [loadedApprovalCards, setLoadedApprovalCards] = useState<
-    Map<string, string>
-  >(() => new Map());
-  useEffect(() => {
-    if (approvalBoardIds.length === 0) return;
-    let alive = true;
-    void Promise.allSettled(
-      approvalBoardIds.map((boardId) => api.getBoard(boardId)),
-    ).then((results) => {
-      if (!alive) return;
-      const titles = new Map<string, string>();
-      for (const result of results) {
-        if (result.status !== "fulfilled") continue;
-        for (const card of Object.values(result.value.cards)) {
-          titles.set(card.id, card.title);
-        }
-      }
-      setLoadedApprovalCards(titles);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [approvalBoardIds]);
-  const approvalCardTitles = useMemo(() => {
-    const titles = new Map<string, string>();
-    for (const row of state.rows) {
-      if (row.currentCardId !== null && row.cardTitle !== null) {
-        titles.set(row.currentCardId, row.cardTitle);
-      }
-    }
-    for (const [cardId, title] of loadedApprovalCards) {
-      if (!titles.has(cardId)) titles.set(cardId, title);
-    }
-    return titles;
-  }, [loadedApprovalCards, state.rows]);
   const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
     const query = filter.query.trim().toLowerCase();
     return pending.rows
@@ -472,12 +437,9 @@ export function AgentsPage() {
       .map((row) => ({
         ...row,
         agentName: approvalAgentNames.get(row.requestedByTokenId),
-        cardTitle:
-          row.cardId === null ? undefined : approvalCardTitles.get(row.cardId),
       }));
   }, [
     approvalAgentNames,
-    approvalCardTitles,
     filter.board,
     filter.query,
     filter.token,
@@ -491,11 +453,11 @@ export function AgentsPage() {
       ).length,
     [now, scopedApprovalRows],
   );
-  const pendingAll = state.boards
-    .filter((board) => board.role === "ADMIN")
-    .reduce((total, board) => total + (pending.counts[board.id] ?? 0), 0);
+  const pendingAll = pending.totalCount;
   const pendingForScope =
-    filter.board === "all" ? pendingAll : (pending.counts[filter.board] ?? 0);
+    filter.board === "all"
+      ? pendingAll
+      : (pending.counts[filter.board] ?? null);
   const scopedRows = useMemo(
     () =>
       filter.board === "all"
@@ -504,14 +466,18 @@ export function AgentsPage() {
     [filter.board, state.rows],
   );
   const staleCount = scopedRows.filter((row) => row.stale).length;
-  const attentionCount = pendingForScope + staleCount;
-  const sessionCount = scopedRows.length;
   const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
   const isAttentionAdmin =
     filter.board === "all"
       ? hasAdminBoard
       : state.boards.find((board) => board.id === filter.board)?.role ===
         "ADMIN";
+  const attentionCount = isAttentionAdmin
+    ? pendingForScope === null
+      ? null
+      : pendingForScope + staleCount
+    : staleCount;
+  const sessionCount = scopedRows.length;
 
   const selectedSession = params.get("session");
   const selectedApprovalId = params.get("approval");
@@ -692,6 +658,7 @@ export function AgentsPage() {
     filter.query.trim() !== "";
   const showAllClear =
     isAttentionAdmin &&
+    pendingForScope !== null &&
     scopedPendingCount === 0 &&
     approvalFilter === "needs" &&
     !filteredActive &&
@@ -771,9 +738,19 @@ export function AgentsPage() {
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden />
                 {t(`agents.shell.${item}`)}
-                {count > 0 ? (
+                {count !== null && count > 0 ? (
                   <span
                     data-testid={`agents-count-${item}`}
+                    data-state={
+                      item === "attention" && pending.stale
+                        ? "stale"
+                        : undefined
+                    }
+                    title={
+                      item === "attention" && pending.stale
+                        ? t("agents.pending.stale")
+                        : undefined
+                    }
                     className={cn(
                       "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[10.5px] font-semibold tabular-nums",
                       item === "attention"
@@ -804,7 +781,7 @@ export function AgentsPage() {
               const count =
                 board.value === "all"
                   ? pendingAll
-                  : (pending.counts[board.value] ?? 0);
+                  : (pending.counts[board.value] ?? null);
               return (
                 <button
                   key={board.value}
@@ -832,8 +809,14 @@ export function AgentsPage() {
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
-                  {count > 0 ? (
-                    <span className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[10px] font-semibold tabular-nums text-warning">
+                  {count !== null && count > 0 ? (
+                    <span
+                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[10px] font-semibold tabular-nums text-warning"
+                      data-state={pending.stale ? "stale" : "fresh"}
+                      title={
+                        pending.stale ? t("agents.pending.stale") : undefined
+                      }
+                    >
                       {count > 99 ? "99+" : count}
                     </span>
                   ) : null}
@@ -915,6 +898,7 @@ export function AgentsPage() {
                 size="sm"
                 onClick={() => {
                   state.reload();
+                  pending.reload();
                   if (section === "runs") runs.reload();
                 }}
                 disabled={
@@ -1014,6 +998,7 @@ export function AgentsPage() {
                   className="w-auto min-w-[108px]"
                   counts={pending.counts}
                   totalCount={pendingAll}
+                  stale={pending.stale}
                 />
               </>
             ) : (
@@ -1545,6 +1530,7 @@ export function AgentsPage() {
             </div>
           )
         ) : section === "attention" &&
+          isAttentionAdmin &&
           selectedApprovalId !== null &&
           approvalBoardId !== null ? (
           <AttentionApprovalDetail
@@ -1558,11 +1544,7 @@ export function AgentsPage() {
                     selectedApprovalBase.requestedByTokenId,
                   )
             }
-            fallbackCardTitle={
-              selectedApprovalBase?.cardId == null
-                ? undefined
-                : approvalCardTitles.get(selectedApprovalBase.cardId)
-            }
+            fallbackCardTitle={selectedApprovalBase?.cardTitle ?? undefined}
             initialMode={approvalIntent}
             onChanged={pending.reload}
             onBack={closeApproval}

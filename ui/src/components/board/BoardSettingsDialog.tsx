@@ -67,8 +67,11 @@ export function BoardSettingsDialog({
       },
     ];
   }, [boardId, boardTitle, boardCardCount, boardColumnCount, role]);
-  const pending = usePendingApprovals(adminBoard, adminBoard.length > 0);
-  const pendingCount = board ? (pending.counts[board.id] ?? 0) : 0;
+  const pending = usePendingApprovals({
+    boards: adminBoard,
+    enabled: adminBoard.length > 0,
+  });
+  const pendingCount = board ? (pending.counts[board.id] ?? null) : null;
   if (!board) return null;
 
   const sections: BoardSettingsRailItem[] = [
@@ -82,7 +85,10 @@ export function BoardSettingsDialog({
       label: t("board.settings.shell.agents"),
       icon: Shield,
       badge:
-        role === "ADMIN" && !pending.error && pendingCount > 0
+        role === "ADMIN" &&
+        !pending.error &&
+        pendingCount !== null &&
+        pendingCount > 0
           ? pendingCount > 99
             ? "99+"
             : String(pendingCount)

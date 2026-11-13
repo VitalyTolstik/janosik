@@ -26,6 +26,16 @@ const board: Board = {
   updatedAt: 1,
 };
 
+const boardTwo: Board = {
+  id: "board-2",
+  title: "Docs board",
+  columns: [],
+  cards: {},
+  labels: [],
+  createdAt: 2,
+  updatedAt: 2,
+};
+
 function RouteProbe() {
   const location = useLocation();
   return <output data-testid="location">{location.pathname}</output>;
@@ -152,6 +162,75 @@ describe("agent entry points in the header", () => {
     await userEvent.click(await screen.findByTestId("account-trigger"));
     await userEvent.click(await screen.findByTestId("account-open-agents"));
     expect(screen.getByTestId("location")).toHaveTextContent("/agents");
+  });
+
+  it("uses the selected board scope for the header count, not All boards", async () => {
+    const server = new FakeServer([board, boardTwo]);
+    server.pendingApprovals.set("board-1", 0);
+    server.pendingApprovals.set("board-2", 2);
+    renderHeader("/agents?board=board-1", server);
+
+    await screen.findByTestId("agents-trigger");
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/api/v1/agents/overview",
+        ),
+      ).toBe(true),
+    );
+    expect(screen.queryByTestId("agents-pending-count")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("agents-header-scope"));
+    await userEvent.click(
+      screen.getByTestId("agents-header-scope-option-board-2"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-pending-count")).toHaveTextContent("2"),
+    );
+  });
+
+  it("sums All boards, renders 99+ and leaves the bell invitations-only", async () => {
+    const server = new FakeServer([board, boardTwo]);
+    server.pendingApprovals.set("board-1", 60);
+    server.pendingApprovals.set("board-2", 40);
+    renderHeader("/agents", server);
+
+    expect(await screen.findByTestId("agents-pending-count")).toHaveTextContent(
+      "99+",
+    );
+    expect(screen.queryByTestId("notifications-badge")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("agents-header-scope"));
+    expect(
+      screen.getByTestId("agents-header-scope-option-all"),
+    ).toHaveTextContent("99+");
+    expect(
+      screen.getByTestId("agents-header-scope-option-board-1"),
+    ).toHaveTextContent("60");
+    expect(
+      screen.getByTestId("agents-header-scope-option-board-2"),
+    ).toHaveTextContent("40");
+  });
+
+  it("never requests approvals in a member board scope", async () => {
+    const server = new FakeServer([board, boardTwo]);
+    server.roles.set("board-2", "MEMBER");
+    server.pendingApprovals.set("board-2", 5);
+    renderHeader("/agents?board=board-2", server);
+
+    await screen.findByTestId("agents-trigger");
+    await waitFor(() =>
+      expect(
+        server.requests.filter((request) => request.path === "/api/v1/boards")
+          .length,
+      ).toBeGreaterThan(0),
+    );
+    expect(
+      server.requests.some(
+        (request) => request.path === "/api/v1/agents/overview",
+      ),
+    ).toBe(false);
+    expect(screen.queryByTestId("agents-pending-count")).toBeNull();
   });
 
   it("does not show undo or redo to a board viewer", async () => {
