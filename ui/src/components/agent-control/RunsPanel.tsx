@@ -292,7 +292,7 @@ export function RunsPanel({ role }: { role: Role }) {
             </SkeletonRegion>
           ) : runs.error && runs.rows.length === 0 ? (
             <div className="space-y-2 p-4" data-testid="agent-runs-error">
-              <p className="text-[11px] text-danger">
+              <p className="text-[11px] text-[color:var(--agent-tone-danger)]">
                 {t("agentControl.runs.loadError")}
               </p>
               <Button

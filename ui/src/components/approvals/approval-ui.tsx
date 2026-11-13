@@ -53,7 +53,7 @@ const RISK_CLASS: Record<ApprovalRisk, string> = {
   low: "border-border bg-muted text-muted-foreground",
   medium:
     "border-warning/40 bg-warning/10 text-[color:var(--agent-tone-warning)]",
-  high: "border-danger/40 bg-danger/10 text-danger",
+  high: "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]",
 };
 
 function approvalStatusLabel(

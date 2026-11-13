@@ -221,7 +221,7 @@ function LiveSessionRow({
               aria-label={t("agentControl.live.endSession")}
               title={t("agentControl.live.endSessionHint")}
               onClick={() => onAction("end", session)}
-              className="h-11 w-11 min-h-11 border-danger/44 bg-danger/5 px-0 text-danger hover:bg-danger/10 hover:text-danger min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6"
+              className="h-11 w-11 min-h-11 border-danger/44 bg-danger/5 px-0 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 hover:text-[color:var(--agent-tone-danger)] min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6"
             >
               <Square className="h-3.5 w-3.5" aria-hidden />
             </Button>
@@ -311,7 +311,7 @@ function BoardPauseDialog({
           <p
             role="alert"
             data-testid="board-pause-error"
-            className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-xs text-danger"
+            className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-xs text-[color:var(--agent-tone-danger)]"
           >
             <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
             {error}
@@ -436,7 +436,7 @@ function BoardPauseCard({
               variant="outline"
               data-testid="board-pause"
               onClick={onPause}
-              className="min-h-11 border-danger/44 bg-danger/5 text-danger hover:bg-danger/10 hover:text-danger min-[761px]:h-7 min-[761px]:min-h-7"
+              className="min-h-11 border-danger/44 bg-danger/5 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 hover:text-[color:var(--agent-tone-danger)] min-[761px]:h-7 min-[761px]:min-h-7"
             >
               <CirclePause className="h-3.5 w-3.5" aria-hidden />
               {t("agentControl.pause.pauseAgents")}

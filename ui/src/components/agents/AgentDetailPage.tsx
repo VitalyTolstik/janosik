@@ -85,7 +85,7 @@ export function AgentDetailPage() {
           data-testid="agent-detail-error"
           role="alert"
         >
-          <p className="text-sm font-medium text-danger">
+          <p className="text-sm font-medium text-[color:var(--agent-tone-danger)]">
             {t("agents.error.title")}
           </p>
           <Button
