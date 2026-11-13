@@ -3,6 +3,26 @@
    the `brand/` workspace, mirrored in `brand/src/tokens.ts`. */
 @import "../../brand/src/tokens.css";
 
+/* The agent-surface headings use Space Grotesk. The files are copied from
+   Fontsource into the UI source tree on purpose: a linked node_modules in a
+   worktree is outside Vite's fs.allow root, so importing the package CSS made
+   the font 403 in dev while the family stack silently fell back to the body
+   sans. Self-hosting the Latin subset keeps dev and production identical. */
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("./assets/fonts/space-grotesk-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("./assets/fonts/space-grotesk-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* `shared/` lives outside this Vite root, so Tailwind's automatic content
    detection never sees it — and the label color maps (LABEL_COLOR_CHIP /
    LABEL_COLOR_DOT) are the only place several utilities are written down.
@@ -133,6 +153,69 @@ html.light {
   --agent-tone-warning: #92400e;
   --agent-tone-danger: #b91c1c;
   --agent-tone-primary: #1d4ed8;
+}
+
+:root {
+  /* Prototype `--primary-strong`: the filled primary action in Board Settings.
+     Dark keeps the brand blue; light uses the deeper pressed shade. */
+  --agent-primary-strong: #2563eb;
+}
+
+html.light {
+  --agent-primary-strong: #1d4ed8;
+}
+
+/* Board Settings policy checkbox (TASK-179 feedback #6).
+ *
+ * Native `accent-color` is enough while a checkbox is enabled, but the
+ * browser paints a disabled checked box grey while an unchecked one stays
+ * white — the exact mismatch the review reported. Drawing the box keeps the
+ * checked/disabled state on the same brand blue at 42% opacity, matching the
+ * prototype's dim checked trigger. */
+.agent-check {
+  display: grid;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  place-items: center;
+  border: 1px solid
+    color-mix(in oklab, var(--muted-foreground) 55%, var(--border));
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--primary-foreground);
+  transition:
+    background-color var(--janosik-duration-fast) var(--janosik-ease-out),
+    border-color var(--janosik-duration-fast) var(--janosik-ease-out),
+    opacity var(--janosik-duration-fast) var(--janosik-ease-out);
+}
+
+.agent-check > svg {
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+  stroke-width: 3;
+}
+
+.agent-check-row:not(.is-disabled):hover .agent-check {
+  border-color: color-mix(in oklab, var(--primary) 58%, var(--border));
+}
+
+.peer:checked + .agent-check {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.peer:checked + .agent-check > svg {
+  opacity: 1;
+}
+
+.peer:focus-visible + .agent-check {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.peer:disabled + .agent-check {
+  opacity: 0.42;
 }
 
 @media (prefers-reduced-motion: reduce) {
