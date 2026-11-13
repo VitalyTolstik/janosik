@@ -220,7 +220,10 @@ email in its panel before creating a password account.
 
 1. **Create your account.** Open `PUBLIC_ORIGIN/app/` and click
    **Create account**. The first account is a normal user. There is no
-   auto-admin.
+   auto-admin. On a fresh install without SMTP, the local installer sets
+   `ALLOW_BOOTSTRAP_USER=true`: it allows exactly one account, marks it
+   verified, and is inert once any user exists. Set it back to `false` after
+   the first account, or configure SMTP first and leave it off.
 2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and run
    `docker compose up -d`. You can also toggle **Feature flags → Open
    registration** in the master panel later. The sign-in screen then hides the
@@ -262,7 +265,7 @@ a container, use a reachable HTTPS origin instead of `localhost`.
 
 ## Email (optional)
 
-Without SMTP no mail is sent and password registration is unavailable. Configure email before opening registration. Accounts created under the former automatic-verification policy require operator review. To link OAuth to an existing password account, sign in and use Account → Security with a provider using the same email address.
+Without SMTP no mail is sent and password registration is unavailable, except for the one-time `ALLOW_BOOTSTRAP_USER` first account. Configure email before opening registration. Accounts created under the former automatic-verification policy require operator review. To link OAuth to an existing password account, sign in and use Account → Security with a provider using the same email address.
 Production logs omit message contents, including codes.
 
 To send real mail, open the master panel, go to **Email service**, pick a
@@ -292,6 +295,7 @@ compose stack fills the ones it needs from `.env`.
 | `UI_BASE` | `/` | Sub-path the app is served from, used for OAuth redirects. The image sets `/app/`. |
 | `ALLOW_PUBLIC_SHARES` | `true` | Master switch for public read-only share links. `false` makes the whole share API answer `404`. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
+| `ALLOW_BOOTSTRAP_USER` | `false` | One-time bootstrap without SMTP: allows exactly the first account and auto-verifies it. Inert once a user exists; set `false` after setup. The local installer enables it. |
 | `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
 | `MAX_BOARDS_PER_USER` | `0` | Server-mode board cap per account. `0` = unlimited (the product default); a positive value is an operator safety cap. Local/offline mode keeps its own 10-board localStorage guard. |

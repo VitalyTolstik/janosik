@@ -28,6 +28,7 @@ const prismaMock = {
     create: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
   refreshToken: {
     create: jest.fn(),
@@ -53,7 +54,7 @@ const prismaMock = {
   },
   $transaction: jest.fn(),
 } as unknown as PrismaService & {
-  user: Record<"create" | "findUnique" | "update", jest.Mock>;
+  user: Record<"create" | "findUnique" | "update" | "count", jest.Mock>;
   refreshToken: Record<"create" | "findUnique" | "updateMany", jest.Mock>;
   apiToken: Record<"findMany" | "updateMany", jest.Mock>;
   passwordResetToken: Record<"deleteMany", jest.Mock>;
@@ -273,6 +274,63 @@ describe("AuthService", () => {
           password: "correct horse battery",
         }),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("bootstraps exactly the first account without email delivery", async () => {
+      Object.defineProperty(mailerMock, "enabled", {
+        value: false,
+        configurable: true,
+      });
+      const original = process.env.ALLOW_BOOTSTRAP_USER;
+      process.env.ALLOW_BOOTSTRAP_USER = "true";
+      const created = makeUser({
+        email: "first@example.com",
+        emailVerifiedAt: new Date(),
+      });
+      prismaMock.user.count.mockResolvedValue(0);
+      prismaMock.user.create.mockResolvedValue(created);
+      prismaMock.user.findUnique.mockResolvedValue(created);
+      try {
+        const result = await service.register({
+          email: "first@example.com",
+          password: "correct horse battery",
+        });
+
+        expect(result.user.email).toBe("first@example.com");
+        expect(prismaMock.$queryRaw).toHaveBeenCalled();
+        expect(prismaMock.user.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              emailVerifiedAt: expect.any(Date),
+            }),
+          }),
+        );
+      } finally {
+        if (original === undefined) delete process.env.ALLOW_BOOTSTRAP_USER;
+        else process.env.ALLOW_BOOTSTRAP_USER = original;
+      }
+    });
+
+    it("refuses bootstrap once a user already exists", async () => {
+      Object.defineProperty(mailerMock, "enabled", {
+        value: false,
+        configurable: true,
+      });
+      const original = process.env.ALLOW_BOOTSTRAP_USER;
+      process.env.ALLOW_BOOTSTRAP_USER = "true";
+      prismaMock.user.count.mockResolvedValue(1);
+      try {
+        await expect(
+          service.register({
+            email: "second@example.com",
+            password: "correct horse battery",
+          }),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      } finally {
+        if (original === undefined) delete process.env.ALLOW_BOOTSTRAP_USER;
+        else process.env.ALLOW_BOOTSTRAP_USER = original;
+      }
     });
   });
 

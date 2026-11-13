@@ -184,7 +184,9 @@ export class AuthService {
     // Registration can be switched off from the panel (TASK-61 flag); with
     // it off, sign-up is refused for everyone.
     await this.flags.assertEnabled("registration_open");
-    if (!this.mailer.enabled) {
+    const bootstrap =
+      !this.mailer.enabled && process.env.ALLOW_BOOTSTRAP_USER === "true";
+    if (!this.mailer.enabled && !bootstrap) {
       throw new ServiceUnavailableException(
         "Email delivery must be configured before registration",
       );
@@ -196,24 +198,52 @@ export class AuthService {
     // clears the flag to exercise the real flow.
     const autoVerify =
       process.env.NODE_ENV === "test" && process.env.E2E_AUTO_VERIFY === "1";
-    const user = await this.prisma.user
-      .create({
+    const createUser = (verifiedAt: Date | null) =>
+      this.prisma.user.create({
         data: {
           email: dto.email,
           passwordHash,
           displayName: dto.displayName ?? null,
-          emailVerifiedAt: autoVerify ? new Date() : null,
+          emailVerifiedAt: verifiedAt,
         },
-      })
-      .catch((error) => {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2002"
-        ) {
-          throw new ConflictException("Email is already registered");
-        }
-        throw error;
       });
+    let user: User;
+    try {
+      if (bootstrap) {
+        // One-time, race-safe bootstrap: serialize on an advisory lock and
+        // re-check the user count inside it. After the first account this
+        // path can never verify another mailbox.
+        user = await this.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('janosik:bootstrap-user'))::text`;
+          if ((await tx.user.count()) > 0) {
+            throw new ServiceUnavailableException(
+              "Bootstrap is already complete; configure email delivery and use the normal sign-up flow",
+            );
+          }
+          return tx.user.create({
+            data: {
+              email: dto.email,
+              passwordHash,
+              displayName: dto.displayName ?? null,
+              emailVerifiedAt: new Date(),
+            },
+          });
+        });
+        this.logger.warn(
+          `Bootstrap account created for ${user.email}; set ALLOW_BOOTSTRAP_USER=false`,
+        );
+      } else {
+        user = await createUser(autoVerify ? new Date() : null);
+      }
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new ConflictException("Email is already registered");
+      }
+      throw error;
+    }
     if (user.emailVerifiedAt === null) {
       // Best-effort: the account exists either way, and the verification
       // gate offers a resend — a transient SMTP hiccup must not fail the

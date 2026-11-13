@@ -187,7 +187,11 @@ Configure SMTP first, or create the master using the CLI in step 3 and set up
 email in its panel before creating a password account.
 
 1. **Create your account.** Open `PUBLIC_ORIGIN/app/`, click **Create account**.
-   The first account is a normal user — there is no auto-admin.
+   The first account is a normal user — there is no auto-admin. On a fresh
+   install without SMTP the local installer sets `ALLOW_BOOTSTRAP_USER=true`:
+   it allows exactly one account, marks it verified, and is inert once any
+   user exists. Set it back to `false` after the first account (or configure
+   SMTP first and leave it off).
 2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and
    `docker compose up -d`. (Or toggle **Feature flags → Open registration** in
    the panel later.) The sign-in screen then hides the register form. A flag
@@ -255,6 +259,7 @@ that matter most:
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials (created on first `up`). |
 | `COOKIE_SECURE` | `true` (compose default) | `Secure` flag on the refresh cookie. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial. A production install served over HTTP with it unset/`true` **refuses to boot**. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Turn off after creating your account. |
+| `ALLOW_BOOTSTRAP_USER` | `false` | One-time bootstrap without SMTP: allows exactly the first account and auto-verifies it. Inert once a user exists; set `false` after setup. The local installer enables it. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.2.0`). |
@@ -297,7 +302,7 @@ both for the single-origin layout (`UI_BASE=/app/`, `PUBLIC_APP_URL=/app/`).
 
 ## 5. Email (optional)
 
-Without SMTP no mail is sent and password registration is unavailable. Configure email in the master panel before opening registration. Existing accounts created under the former automatic-verification policy should be reviewed by the operator; their email addresses were not proved by that policy. To link OAuth to an existing password account, sign in with the password, open Account → Security, and link a provider using the same email address.
+Without SMTP no mail is sent and password registration is unavailable, except for the one-time `ALLOW_BOOTSTRAP_USER` first account. Configure email in the master panel before opening registration. Existing accounts created under the former automatic-verification policy should be reviewed by the operator; their email addresses were not proved by that policy. To link OAuth to an existing password account, sign in with the password, open Account → Security, and link a provider using the same email address.
 Production logs omit message contents, including codes.
 
 To send real mail, open `PUBLIC_ORIGIN/app/admin` → **Email service**, pick a

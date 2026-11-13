@@ -284,6 +284,7 @@ Environment variables (see `.env.example` for the full annotated list):
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials |
 | `COOKIE_SECURE` | `true` | `Secure` cookie flag. Keep `true` behind HTTPS (the API refuses to boot on HTTP in production); set `false` only for a plain-HTTP trial. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up; turn off after creating your account |
+| `ALLOW_BOOTSTRAP_USER` | `false` | One-time first-account bootstrap without SMTP; inert after the first user. The local installer enables it. |
 | `TRUST_PROXY` | `0` | Reverse-proxy hops (set `1` behind nginx/Caddy/Traefik) |
 | `SMTP_*` | unset | Outgoing email. Unset = log mode; in production codes are withheld from the log, so configure SMTP to deliver them. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep |
