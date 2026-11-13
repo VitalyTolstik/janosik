@@ -121,7 +121,7 @@ export function BoardScopeSelect({
           {...combobox.listboxProps}
           aria-label={ariaLabel}
           data-testid={`${testId}-listbox`}
-          className="max-h-80 overflow-y-auto overscroll-contain"
+          className="max-h-80 overflow-y-auto overscroll-contain bg-popover"
         >
           {options.map((option, index) => {
             const count =

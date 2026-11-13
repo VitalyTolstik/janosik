@@ -175,6 +175,18 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
       expect(box.height, testId).toBeGreaterThanOrEqual(44);
     }
     await page.getByTestId("agent-action-cancel").click();
+    await expect(page.getByTestId("agent-action-cancel")).toBeHidden();
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId("agent-session-end")).toBeFocused();
+    expect(
+      await page.evaluate(() => {
+        const active = document.activeElement;
+        const modal = document.querySelector(
+          '[data-testid="agent-control-dialog"]',
+        );
+        return active !== null && modal !== null && modal.contains(active);
+      }),
+    ).toBe(true);
 
     // Focus stays inside the modal while tabbing.
     for (let index = 0; index < 12; index += 1) {
@@ -220,13 +232,13 @@ test("390 board settings primary actions stay at 44 px", async ({
 });
 
 test("no horizontal overflow at 1440/1024/390", async ({ page, board }) => {
+  await board.open(page);
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1024, height: 768 },
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    await board.open(page);
     await openAgents(page);
     expect(
       await page.evaluate(
@@ -435,8 +447,7 @@ test("Russian headings use the body stack, English keeps Space Grotesk", async (
     .evaluate((node) => getComputedStyle(node).fontFamily);
   expect(english).toContain("Space Grotesk");
 
-  await page.addInitScript(() => localStorage.setItem("janosik-lang", "ru"));
-  await page.reload();
+  await page.goto(new URL("agents?lng=ru", appUrl).href);
   await expect(page.getByTestId("agents-page")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
   const russian = await page
