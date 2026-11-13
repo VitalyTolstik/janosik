@@ -133,7 +133,7 @@ function PolicyNumberField({
     <div className="min-w-0">
       <label
         htmlFor={id}
-        className="mb-[3px] block text-[10px] font-semibold text-muted-foreground"
+        className="mb-[3px] block text-[11px] font-semibold text-muted-foreground"
       >
         {label}
       </label>
@@ -166,14 +166,14 @@ function PolicyNumberField({
           }}
           className="min-w-0 flex-1 border-0 bg-transparent px-1.5 text-[11.5px] tabular-nums text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         />
-        <span className="whitespace-nowrap pr-1.5 text-[9.5px] text-muted-foreground">
+        <span className="whitespace-nowrap pr-1.5 text-[11px] text-muted-foreground">
           {suffix}
         </span>
       </div>
       {invalid ? (
         <span
           id={errorId}
-          className="mt-1 block text-[9.5px] leading-[1.4] text-danger"
+          className="mt-1 block text-[11px] leading-[1.4] text-[color:var(--agent-tone-danger)]"
         >
           {error}
         </span>
@@ -267,7 +267,7 @@ export function AgentsAutomation({
   if (policy.status === "error" || policy.draft === null) {
     return (
       <div className="space-y-2 p-4" data-testid="agent-policy-load-error">
-        <p className="text-xs text-danger">
+        <p className="text-xs text-[color:var(--agent-tone-danger)]">
           {t("agentControl.policy.loadError")}
         </p>
         <button
@@ -362,7 +362,7 @@ export function AgentsAutomation({
       >
         <header className="mb-3 flex items-start gap-3 max-md:flex-wrap">
           <div className="min-w-0 flex-1">
-            <h2 className="m-0 font-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
+            <h2 className="m-0 font-agent-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
               {t("board.settings.agents.title")}
             </h2>
             <p className="mt-[3px] max-w-[66ch] text-[11px] leading-[1.5] text-muted-foreground">
@@ -388,7 +388,7 @@ export function AgentsAutomation({
 
         <div className="mb-3 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
           <Info
-            className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+            className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
             aria-hidden
           />
           <span className="min-w-0">
@@ -403,7 +403,7 @@ export function AgentsAutomation({
 
         <div
           className={cn(
-            "mb-3 flex flex-wrap items-center gap-2 rounded-[7px] border px-2.5 py-[7px] text-[10.5px] text-muted-foreground",
+            "mb-3 flex flex-wrap items-center gap-2 rounded-[7px] border px-2.5 py-[7px] text-[11px] text-muted-foreground",
             paused
               ? "border-warning/40 bg-warning/10"
               : "border-border bg-[color-mix(in_oklab,var(--surface)_52%,var(--background))]",
@@ -445,10 +445,10 @@ export function AgentsAutomation({
           <div
             role="alert"
             data-testid="agents-automation-cas-banner"
-            className="mb-3 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/40 bg-warning/[0.07] px-2.5 py-2 text-[10.5px] leading-[1.45]"
+            className="mb-3 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/40 bg-warning/[0.07] px-2.5 py-2 text-[11px] leading-[1.45]"
           >
             <AlertTriangle
-              className="mt-px h-3.5 w-3.5 shrink-0 text-warning"
+              className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
               aria-hidden
             />
             <div className="min-w-0 flex-1">
@@ -466,7 +466,7 @@ export function AgentsAutomation({
               onClick={() => void policy.reload()}
               disabled={policy.saving}
               data-testid="agents-automation-reload"
-              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-popover px-2 text-[10px] font-medium text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 max-md:h-11"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-popover px-2 text-[11px] font-medium text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 max-md:h-11"
             >
               <RefreshCw className="h-3 w-3" aria-hidden />
               {t("board.settings.agents.reload")}
@@ -479,7 +479,7 @@ export function AgentsAutomation({
             className="mb-3 space-y-2"
             data-testid="agents-automation-conflicts"
           >
-            <p className="text-[10.5px] text-warning">
+            <p className="text-[11px] text-[color:var(--agent-tone-warning)]">
               {t("board.settings.agents.conflictUnresolved")}
             </p>
             {policy.conflicts.map((entry) => (
@@ -496,9 +496,9 @@ export function AgentsAutomation({
                     type="button"
                     onClick={() => policy.resolveConflict(entry.field, "mine")}
                     data-testid={`agents-automation-conflict-${entry.field}-mine`}
-                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[10.5px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[11px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
-                    <span className="block text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                       {t("board.settings.agents.conflictMine")}
                     </span>
                     <span className="mt-0.5 block break-words">
@@ -511,9 +511,9 @@ export function AgentsAutomation({
                       policy.resolveConflict(entry.field, "server")
                     }
                     data-testid={`agents-automation-conflict-${entry.field}-server`}
-                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[10.5px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[11px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
-                    <span className="block text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+                    <span className="block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                       {t("board.settings.agents.conflictServer")}
                     </span>
                     <span className="mt-0.5 block break-words">
@@ -530,7 +530,7 @@ export function AgentsAutomation({
           <p
             role="alert"
             data-testid="agent-policy-error"
-            className="mb-3 rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger"
+            className="mb-3 rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-[color:var(--agent-tone-danger)]"
           >
             {inlineError}
           </p>
@@ -542,7 +542,7 @@ export function AgentsAutomation({
               <h3 className="text-xs font-semibold">
                 {t("agentControl.policy.destructiveTitle")}
               </h3>
-              <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
+              <p className="text-[11px] leading-[1.45] text-muted-foreground">
                 {t("board.settings.agents.destructiveDescription")}
               </p>
             </div>
@@ -587,7 +587,7 @@ export function AgentsAutomation({
                           : "agentControl.policy.destructiveDeny",
                       )}
                     </span>
-                    <span className="mt-px block text-[10px] leading-[1.45] text-muted-foreground">
+                    <span className="mt-px block text-[11px] leading-[1.45] text-muted-foreground">
                       {t(
                         value === "approval"
                           ? "board.settings.agents.destructiveApprovalHint"
@@ -598,7 +598,7 @@ export function AgentsAutomation({
                 </label>
               );
             })}
-            <p className="mt-1 text-[9.5px] leading-[1.4] text-muted-foreground">
+            <p className="mt-1 text-[11px] leading-[1.4] text-muted-foreground">
               {t("board.settings.agents.destructiveCovered")}
             </p>
           </section>
@@ -608,7 +608,7 @@ export function AgentsAutomation({
               <h3 className="text-xs font-semibold">
                 {t("board.settings.agents.limitsTitle")}
               </h3>
-              <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
+              <p className="text-[11px] leading-[1.45] text-muted-foreground">
                 {t("board.settings.agents.limitsDescription")}
               </p>
             </div>
@@ -658,7 +658,7 @@ export function AgentsAutomation({
               />
             </div>
             <div className="mt-2.5">
-              <p className="mb-[3px] block text-[10px] font-semibold text-muted-foreground">
+              <p className="mb-[3px] block text-[11px] font-semibold text-muted-foreground">
                 {t("board.settings.agents.approverRoles")}
               </p>
               <div
@@ -677,7 +677,7 @@ export function AgentsAutomation({
                   aria-hidden
                 />
               </div>
-              <span className="mt-1 block text-[9.5px] leading-[1.4] text-muted-foreground">
+              <span className="mt-1 block text-[11px] leading-[1.4] text-muted-foreground">
                 {t("board.settings.agents.approverRolesHint")}
               </span>
             </div>
@@ -689,7 +689,7 @@ export function AgentsAutomation({
             <h3 className="text-xs font-semibold">
               {t("board.settings.agents.triggersTitle")}
             </h3>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground">
               {t("board.settings.agents.triggersMeta", {
                 count: activeTriggerCount,
                 total: EDITABLE_POLICY_ACTIONS.length,
@@ -699,7 +699,7 @@ export function AgentsAutomation({
               type="button"
               onClick={() => setShowKeys((value) => !value)}
               data-testid="agents-automation-show-keys"
-              className="ml-auto inline-flex min-h-7 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="ml-auto inline-flex min-h-7 items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
             >
               <Terminal className="h-3 w-3" aria-hidden />
               {showKeys
@@ -718,7 +718,7 @@ export function AgentsAutomation({
                 <label
                   key={action}
                   className={cn(
-                    "flex min-h-7 items-center gap-[7px] border-b border-border/60 py-1 text-[10.5px] last:border-b-0",
+                    "flex min-h-7 items-center gap-[7px] border-b border-border/60 py-1 text-[11px] last:border-b-0 max-md:min-h-11",
                     covered
                       ? "cursor-not-allowed text-muted-foreground"
                       : "cursor-pointer text-foreground",
@@ -742,11 +742,11 @@ export function AgentsAutomation({
                     {t(ACTION_KEYS[action])}
                   </span>
                   {covered ? (
-                    <span className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[8.5px] text-muted-foreground">
+                    <span className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] text-muted-foreground">
                       {t("board.settings.agents.covered")}
                     </span>
                   ) : showKeys ? (
-                    <code className="ml-auto shrink-0 whitespace-nowrap font-mono text-[8.5px] text-muted-foreground/70">
+                    <code className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
                       {action}
                     </code>
                   ) : null}
@@ -757,7 +757,7 @@ export function AgentsAutomation({
         </section>
 
         <div
-          className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5 text-[10px] text-muted-foreground"
+          className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5 text-[11px] text-muted-foreground"
           data-testid="agent-policy-effective-limits"
         >
           <span
@@ -787,7 +787,7 @@ export function AgentsAutomation({
         data-testid="agents-automation-footer"
         className="flex shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-2.5 max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:px-2.5 max-md:pb-[max(8px,env(safe-area-inset-bottom))] max-md:pt-2"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[10.5px] text-muted-foreground max-md:w-full">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-muted-foreground max-md:w-full">
           <span
             aria-hidden
             className={cn(
@@ -806,7 +806,7 @@ export function AgentsAutomation({
           >
             {footerStatus}
           </span>
-          <span className="truncate border-l border-border pl-2.5 text-muted-foreground/75 max-md:hidden">
+          <span className="truncate border-l border-border pl-2.5 text-muted-foreground max-md:hidden">
             {secondaryStatus}
           </span>
         </div>

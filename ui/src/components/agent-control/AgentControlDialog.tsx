@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardAccess, useBoardState } from "@/store/BoardContext";
@@ -42,6 +43,7 @@ export function AgentControlDialog({
   onCloseAutoFocus?: (event: Event) => void;
 }) {
   const { t } = useI18n();
+  const verticalRail = useMediaQuery("(min-width: 768px)");
   const { role } = useBoardAccess();
   const { board } = useBoardState();
   const live = useBoardLive();
@@ -171,20 +173,23 @@ export function AgentControlDialog({
         data-testid="agent-control-dialog"
         onCloseAutoFocus={onCloseAutoFocus}
         closeClassName="grid h-11 w-11 place-items-center max-md:top-1 max-md:right-1 md:h-8 md:w-8"
-        className="flex h-[min(48rem,calc(100dvh-2rem))] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 font-agent-surface sm:max-w-6xl max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:rounded-none"
+        className="flex h-[min(760px,calc(100dvh-4.75rem))] w-[calc(100vw-1.75rem)] max-w-[1120px] flex-col gap-0 overflow-hidden p-0 font-agent-surface max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:rounded-none max-md:pb-[env(safe-area-inset-bottom)] md:top-[56px] md:bottom-auto"
       >
-        <DialogHeader className="shrink-0 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-5 py-4 pr-12">
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-4 py-3.5 pr-12">
           <div className="flex flex-wrap items-start gap-3 text-left">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10">
-              <Bot className="h-4 w-4 text-primary" aria-hidden />
+              <Bot
+                className="h-4 w-4 text-[color:var(--agent-tone-primary)]"
+                aria-hidden
+              />
             </span>
             <div className="min-w-0 flex-1">
-              <DialogTitle className="font-display text-base font-bold tracking-[-0.025em]">
+              <DialogTitle className="font-agent-display text-base font-bold tracking-[-0.025em]">
                 {t("agentControl.titleWithBoard", {
                   board: board?.title ?? t("agentControl.title"),
                 })}
               </DialogTitle>
-              <DialogDescription className="mt-0.5 text-xs">
+              <DialogDescription className="mt-0.5 text-[11px] leading-[1.45]">
                 {t(
                   role === "ADMIN"
                     ? "agentControl.description.admin"
@@ -197,10 +202,10 @@ export function AgentControlDialog({
                 data-testid="agent-control-status"
                 data-paused={boardPaused ? "true" : "false"}
                 className={cn(
-                  "inline-flex h-[22px] items-center gap-1 rounded-full border px-2 text-[10px] font-[600] whitespace-nowrap",
+                  "inline-flex h-[22px] items-center gap-1 rounded-full border px-2 text-[11px] font-[600] whitespace-nowrap",
                   boardPaused
-                    ? "border-warning/34 bg-warning/6 text-warning"
-                    : "border-success/34 bg-success/6 text-success",
+                    ? "border-warning/34 bg-warning/6 text-[color:var(--agent-tone-warning)]"
+                    : "border-success/34 bg-success/6 text-[color:var(--agent-tone-success)]",
                 )}
               >
                 <span
@@ -220,7 +225,7 @@ export function AgentControlDialog({
                 pending === null ? null : pending > 0 ? (
                   <span
                     data-testid="agent-control-header-pending"
-                    className="inline-flex h-[22px] items-center gap-1 rounded-full border border-warning/34 bg-warning/6 px-2 text-[10px] font-[600] whitespace-nowrap text-warning"
+                    className="inline-flex h-[22px] items-center gap-1 rounded-full border border-warning/34 bg-warning/6 px-2 text-[11px] font-[600] whitespace-nowrap text-[color:var(--agent-tone-warning)]"
                   >
                     <Inbox className="h-3 w-3" aria-hidden />
                     {pending > 99
@@ -230,12 +235,12 @@ export function AgentControlDialog({
                         })}
                   </span>
                 ) : (
-                  <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] whitespace-nowrap text-muted-foreground">
+                  <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[11px] font-[600] whitespace-nowrap text-muted-foreground">
                     {t("agentControl.header.noPending")}
                   </span>
                 )
               ) : (
-                <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] whitespace-nowrap text-muted-foreground">
+                <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[11px] font-[600] whitespace-nowrap text-muted-foreground">
                   {t("agentControl.header.readOnly")}
                 </span>
               )}
@@ -244,7 +249,7 @@ export function AgentControlDialog({
                   type="button"
                   onClick={onOpenAllAgents}
                   data-testid="agent-control-header-all-agents"
-                  className="inline-flex min-h-9 items-center gap-1 px-1 text-[10.5px] text-muted-foreground hover:text-foreground"
+                  className="inline-flex min-h-9 items-center gap-1 px-1 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
                 >
                   {t("agentControl.header.allAgents")}
                   <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
@@ -261,7 +266,8 @@ export function AgentControlDialog({
             <div
               role="tablist"
               aria-label={t("agentControl.title")}
-              className="flex gap-1 md:flex-col"
+              aria-orientation={verticalRail ? "vertical" : "horizontal"}
+              className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
             >
               {tabs.map(({ id, label, icon: Icon, testId, count }) => (
                 <button
@@ -286,7 +292,7 @@ export function AgentControlDialog({
                   {count !== undefined && count > 0 ? (
                     <span
                       data-testid={`agent-${id}-count`}
-                      className="ml-auto inline-grid h-[17px] min-w-[17px] place-items-center rounded bg-warning/12 px-1 text-[10px] font-[650] tabular-nums text-warning"
+                      className="ml-auto inline-grid h-[17px] min-w-[17px] place-items-center rounded bg-warning/12 px-1 text-[11px] font-[650] tabular-nums text-[color:var(--agent-tone-warning)]"
                     >
                       {count > 99 ? "99+" : count}
                     </span>
@@ -306,7 +312,7 @@ export function AgentControlDialog({
                   type="button"
                   onClick={onOpenPolicy}
                   data-testid="agent-open-policy"
-                  className="mt-2 inline-flex min-h-9 items-center gap-1 text-xs text-primary hover:underline"
+                  className="mt-2 inline-flex min-h-9 items-center gap-1 text-xs text-[color:var(--agent-tone-primary)] hover:underline"
                 >
                   <Settings2 className="h-3 w-3" aria-hidden />
                   {t("agentControl.shell.openPolicy")}
@@ -333,7 +339,7 @@ export function AgentControlDialog({
                 <button
                   type="button"
                   onClick={onOpenAllAgents}
-                  className="mt-2 min-h-9 text-xs text-primary hover:underline"
+                  className="mt-2 min-h-9 text-xs text-[color:var(--agent-tone-primary)] hover:underline"
                   data-testid="agent-control-all-agents"
                 >
                   {t("agentControl.allAgents")} ↗
@@ -345,7 +351,7 @@ export function AgentControlDialog({
                 <button
                   type="button"
                   onClick={onOpenAllAgents}
-                  className="min-h-11 text-xs text-primary"
+                  className="min-h-11 text-xs text-[color:var(--agent-tone-primary)]"
                   data-testid="agent-control-all-agents-mobile"
                 >
                   {t("agentControl.allAgents")} ↗
@@ -355,7 +361,7 @@ export function AgentControlDialog({
                 <button
                   type="button"
                   onClick={onOpenPolicy}
-                  className="min-h-11 text-xs text-primary"
+                  className="min-h-11 text-xs text-[color:var(--agent-tone-primary)]"
                   data-testid="agent-open-policy-mobile"
                 >
                   {t("agentControl.shell.openPolicy")}
