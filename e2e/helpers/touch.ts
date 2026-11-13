@@ -11,6 +11,20 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 const HOLD_MS = 400;
 
+/**
+ * Wait until the long press actually activated the drag (the layer marks the
+ * body). The activation timer runs on the page's main thread, so on a loaded
+ * CI runner it can land after the fixed hold; moving first would make the
+ * browser treat the whole gesture as a scroll and cancel the drag.
+ */
+async function waitForDragActive(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => document.body.classList.contains("janosik-touch-dragging"),
+    null,
+    { timeout: 3_000 },
+  );
+}
+
 /** Page-level horizontal overflow (the one thing a phone layout must not do). */
 export async function expectNoPageOverflow(
   page: Page,
@@ -168,6 +182,7 @@ export async function touchDragTo(
       touchPoints: [{ ...start, id: 1, radiusX: 1, radiusY: 1, force: 1 }],
     });
     await page.waitForTimeout(holdMs);
+    await waitForDragActive(page);
     const steps = 10;
     for (let step = 1; step <= steps; step += 1) {
       const point = {
@@ -271,6 +286,7 @@ export async function touchDragToOffscreen(
       touchPoints: [{ ...start, id: 1, radiusX: 1, radiusY: 1, force: 1 }],
     });
     await page.waitForTimeout(holdMs);
+    await waitForDragActive(page);
     const steps = 6;
     for (let step = 1; step <= steps; step += 1) {
       await client.send("Input.dispatchTouchEvent", {
@@ -290,18 +306,33 @@ export async function touchDragToOffscreen(
     }
 
     // Keep the finger parked at the edge; the hook's rAF loop scrolls.
+    // Wait until the row is fully inside the scroll container: the last row
+    // of a table sits flush with the container's bottom edge at max scroll,
+    // so a fixed 40 px viewport margin could never be satisfied.
+    const top = scrollBox?.top ?? 0;
+    const bottom = scrollBox?.bottom ?? viewport.height;
+    const fullyInside = (
+      candidate: { x: number; y: number; width: number; height: number } | null,
+    ) =>
+      candidate !== null &&
+      candidate.y >= top - 0.5 &&
+      candidate.y + candidate.height <= bottom + 0.5 &&
+      candidate.x >= -0.5 &&
+      candidate.x + candidate.width <= viewport.width + 0.5;
     let box = await target.boundingBox({ timeout: 500 }).catch(() => null);
     const deadline = Date.now() + 10_000;
-    while (
-      Date.now() < deadline &&
-      (!box || box.y < 40 || box.y + box.height > viewport.height - 40)
-    ) {
+    while (Date.now() < deadline && !fullyInside(box)) {
       await page.waitForTimeout(100);
       box = await target.boundingBox({ timeout: 500 }).catch(() => null);
     }
     if (!box) throw new Error("touchDragToOffscreen: target disappeared");
     const visible = visibleBox(page, box, "target after auto-scroll");
 
+    // The release point can still sit inside the auto-scroll band. The table
+    // cases target the last row (scrollTop already clamped), and the calendar
+    // day cell is 128 px tall, so its centre settles outside the 48 px band.
+    // Re-measure and move the finger again before releasing if this helper is
+    // ever used for a short mid-list row.
     await client.send("Input.dispatchTouchEvent", {
       type: "touchMove",
       touchPoints: [
