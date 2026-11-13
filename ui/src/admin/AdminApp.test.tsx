@@ -446,6 +446,7 @@ describe("AdminApp", () => {
         action: "admin.login",
         targetType: null,
         targetId: null,
+        targetExists: null,
         details: null,
         createdAt: 1_760_000_000_000,
       },

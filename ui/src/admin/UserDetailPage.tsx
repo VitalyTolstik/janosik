@@ -51,10 +51,12 @@ import {
   DateCell,
   EntityLink,
   IdCell,
+  IdentityLink,
   RoleBadge,
   StatusBadge,
   TextCell,
 } from "./cells";
+import { RowActions, type EntityAction } from "./row-actions";
 import {
   Badge,
   ConfirmDialog,
@@ -90,6 +92,7 @@ type TabKey =
 
 const cardHref = (id: string) => `/admin/cards/${id}`;
 const boardHref = (id: string) => `/admin/boards/${id}`;
+const userHref = (id: string) => `/admin/users/${id}`;
 
 const TAB_KEYS: TabKey[] = [
   "overview",
@@ -479,6 +482,20 @@ export function UserDetailPage() {
         testId={`admin-user-${section}`}
       />
     );
+  };
+
+  /**
+   * Reload one tab after a per-row write. The mutated row may now be
+   * soft-deleted/revoked, so include inactive rows to keep it visible with
+   * its new state instead of silently dropping it from the live window.
+   */
+  const reloadSection = (section: AdminUserDetailSection) => {
+    const window = detail.windows[section];
+    void loadSection(section, {
+      offset: window.offset,
+      includeDeleted: true,
+      append: false,
+    });
   };
 
   const moderationFilter = (
@@ -981,9 +998,11 @@ export function UserDetailPage() {
                       <DateCell value={membership.expiresAt} />
                     </Td>
                     <Td>
-                      <TextCell
-                        value={membership.invitedByEmail}
-                        maxWidth="12rem"
+                      <IdentityLink
+                        id={membership.invitedById}
+                        label={membership.invitedByEmail}
+                        href={userHref}
+                        testId={`admin-user-invited-by-${membership.id}`}
                       />
                     </Td>
                     <Td>
@@ -1125,6 +1144,11 @@ export function UserDetailPage() {
                     <Th>{t("admin.comments.column.card")}</Th>
                     <Th>{t("admin.comments.column.created")}</Th>
                     <Th>{t("admin.comments.column.status")}</Th>
+                    <Th className="w-10 text-right">
+                      <span className="sr-only">
+                        {t("admin.common.actions")}
+                      </span>
+                    </Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1151,6 +1175,30 @@ export function UserDetailPage() {
                             {t("admin.status.active")}
                           </Badge>
                         )}
+                      </Td>
+                      <Td className="text-right">
+                        <RowActions
+                          testId={`admin-user-comment-actions-${comment.id}`}
+                          actions={
+                            comment.deletedAt === null
+                              ? [
+                                  {
+                                    label: t("admin.comments.action.delete"),
+                                    destructive: true,
+                                    confirmTitle: t(
+                                      "admin.comments.confirm.title",
+                                    ),
+                                    confirmBody: t(
+                                      "admin.comments.confirm.body",
+                                    ),
+                                    run: () =>
+                                      adminApi.deleteComment(comment.id),
+                                  } satisfies EntityAction,
+                                ]
+                              : []
+                          }
+                          reload={() => reloadSection("comments")}
+                        />
                       </Td>
                     </tr>
                   ))}
@@ -1231,6 +1279,11 @@ export function UserDetailPage() {
                     <Th>{t("admin.sessions.column.expires")}</Th>
                     <Th>{t("admin.sessions.column.id")}</Th>
                     <Th>{t("admin.common.status")}</Th>
+                    <Th className="w-10 text-right">
+                      <span className="sr-only">
+                        {t("admin.common.actions")}
+                      </span>
+                    </Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1262,6 +1315,31 @@ export function UserDetailPage() {
                             </Badge>
                           )}
                         </Td>
+                        <Td className="text-right">
+                          <RowActions
+                            testId={`admin-user-session-actions-${session.id}`}
+                            actions={
+                              session.revokedAt === null && !expired
+                                ? [
+                                    {
+                                      label: t("admin.sessions.action.revoke"),
+                                      destructive: true,
+                                      confirmTitle: t(
+                                        "admin.sessions.confirm.title",
+                                        { email: session.userEmail },
+                                      ),
+                                      confirmBody: t(
+                                        "admin.sessions.confirm.body",
+                                      ),
+                                      run: () =>
+                                        adminApi.revokeSession(session.id),
+                                    } satisfies EntityAction,
+                                  ]
+                                : []
+                            }
+                            reload={() => reloadSection("sessions")}
+                          />
+                        </Td>
                       </tr>
                     );
                   })}
@@ -1288,6 +1366,11 @@ export function UserDetailPage() {
                     <Th>{t("admin.tokens.column.lastUsed")}</Th>
                     <Th>{t("admin.tokens.column.expires")}</Th>
                     <Th>{t("admin.tokens.column.status")}</Th>
+                    <Th className="w-10 text-right">
+                      <span className="sr-only">
+                        {t("admin.common.actions")}
+                      </span>
+                    </Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1312,6 +1395,28 @@ export function UserDetailPage() {
                             active: t("admin.status.active"),
                             deleted: t("admin.status.revoked"),
                           }}
+                        />
+                      </Td>
+                      <Td className="text-right">
+                        <RowActions
+                          testId={`admin-user-token-actions-${token.id}`}
+                          actions={
+                            token.revokedAt === null
+                              ? [
+                                  {
+                                    label: t("admin.tokens.action.revoke"),
+                                    destructive: true,
+                                    confirmTitle: t(
+                                      "admin.tokens.confirm.title",
+                                      { name: token.name },
+                                    ),
+                                    confirmBody: t("admin.tokens.confirm.body"),
+                                    run: () => adminApi.revokeToken(token.id),
+                                  } satisfies EntityAction,
+                                ]
+                              : []
+                          }
+                          reload={() => reloadSection("tokens")}
                         />
                       </Td>
                     </tr>

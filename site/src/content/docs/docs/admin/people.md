@@ -143,13 +143,13 @@ is the total for the current filter, never the number of loaded rows.
 
 | Tab | Columns |
 | --- | --- |
-| Memberships | Board, Role, Accepted, Expires, Invited by, Joined |
+| Memberships | Board, Role, Accepted, Expires, Invited by (linked), Joined |
 | Created cards | Card, Board, Column, Updated, Status |
 | Assigned cards | Card, Board, Column, Updated, Status |
-| Comments | Comment, Card, Created, Status |
+| Comments | Comment, Card, Created, Status, Actions |
 | Attachments | File, Card, Size, Created, Status |
-| Sessions | Started, Expires, Session, Status |
-| API tokens | Token, Created, Last used, Expires, Status |
+| Sessions | Started, Expires, Session, Status, Actions |
+| API tokens | Token, Created, Last used, Expires, Status, Actions |
 | Commands | Action, Board, Seq, When |
 | Activity | Event, Board, Card, When |
 
@@ -168,6 +168,13 @@ is empty still exposes the matching control when hidden rows exist, so
 deleted/revoked rows can never hide the live ones. Empty tabs show a short
 empty state. A tab window stops at 5,000 rows; for deeper history use the
 searchable Commands and Activity lists, which accept the user id.
+
+The Actions menu deletes one comment or revokes one session/token without
+leaving the profile. Each write asks for confirmation and refreshes the tab
+with inactive rows included, so the affected row keeps its `Deleted` or
+`Revoked` badge. Already deleted/revoked rows have no action; a 403 shows the
+standard forbidden toast and leaves the row untouched. Session and token
+actions call the same audited endpoints as the moderation lists.
 
 ## Masters
 

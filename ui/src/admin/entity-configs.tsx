@@ -1453,6 +1453,17 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
     }
 
     case "audit": {
+      /** Only targets with a detail route become links; everything else
+       * keeps the type label and a copyable id. */
+      const targetHref = (entry: AdminAuditRowDto): string | null => {
+        if (entry.targetId === null) return null;
+        // A hard-deleted user (or purged board/card) degrades to text.
+        if (entry.targetExists === false) return null;
+        if (entry.targetType === "user") return userHref(entry.targetId);
+        if (entry.targetType === "board") return boardHref(entry.targetId);
+        if (entry.targetType === "card") return cardHref(entry.targetId);
+        return null;
+      };
       const config: EntityListConfig<AdminAuditRowDto> = {
         entity,
         title: t("admin.audit.title"),
@@ -1470,7 +1481,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.audit.column.admin"),
             render: (entry) =>
-              entry.adminId ? (
+              entry.adminId && isOwner ? (
                 <EntityLink
                   to="/admin/access?tab=masters"
                   className="font-normal"
@@ -1489,17 +1500,30 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.audit.column.target"),
-            render: (entry) =>
-              entry.targetId ? (
+            render: (entry) => {
+              if (entry.targetId === null) {
+                return <span className="text-muted-foreground">—</span>;
+              }
+              const href = targetHref(entry);
+              return (
                 <span className="inline-flex items-center gap-2">
                   <span className="text-muted-foreground">
                     {entry.targetType}
                   </span>
-                  <IdCell id={entry.targetId} />
+                  {href === null ? (
+                    <IdCell id={entry.targetId} />
+                  ) : (
+                    <EntityLink
+                      to={href}
+                      copyValue={entry.targetId}
+                      className="font-mono text-[11px] font-normal"
+                    >
+                      {entry.targetId.slice(0, 8)}
+                    </EntityLink>
+                  )}
                 </span>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              ),
+              );
+            },
           },
           {
             label: t("admin.audit.column.details"),

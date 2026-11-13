@@ -24,10 +24,12 @@ import {
   DateCell,
   EntityLink,
   IdCell,
+  IdentityLink,
   JsonCell,
   LabelChip,
   SizeCell,
 } from "./cells";
+import { RowActions, type EntityAction } from "./row-actions";
 
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
@@ -241,6 +243,20 @@ export function CardDetailPage() {
     );
   };
 
+  /**
+   * Reload one block after a per-row write. The mutated row may now be
+   * soft-deleted/revoked, so include the inactive rows to keep it visible
+   * with its new state instead of silently dropping it from the live window.
+   */
+  const reloadSection = (section: AdminCardDetailSection) => {
+    const window = detail.windows[section];
+    void loadSection(section, {
+      offset: window.offset,
+      includeDeleted: true,
+      append: false,
+    });
+  };
+
   const moderationFilter = (section: "comments" | "attachments") => {
     const window = detail.windows[section];
     const hidden = detail.hidden[section];
@@ -450,7 +466,12 @@ export function CardDetailPage() {
           )}
         </MetaItem>
         <MetaItem label={t("admin.cardDetail.lastActor")}>
-          {card.lastActorEmail ?? "—"}
+          <IdentityLink
+            id={card.lastActorId}
+            label={card.lastActorEmail}
+            href={userHref}
+            testId="admin-card-last-actor"
+          />
         </MetaItem>
       </Panel>
 
@@ -591,6 +612,9 @@ export function CardDetailPage() {
                   <Th>{t("admin.attachments.column.uploader")}</Th>
                   <Th>{t("admin.attachments.column.created")}</Th>
                   <Th>{t("admin.attachments.column.status")}</Th>
+                  <Th className="w-10 text-right">
+                    <span className="sr-only">{t("admin.common.actions")}</span>
+                  </Th>
                 </tr>
               </thead>
               <tbody>
@@ -644,6 +668,31 @@ export function CardDetailPage() {
                           </Badge>
                         )}
                       </Td>
+                      <Td className="text-right">
+                        <RowActions
+                          testId={`admin-card-attachment-actions-${file.id}`}
+                          actions={
+                            file.deletedAt === null
+                              ? [
+                                  {
+                                    label: t("admin.attachments.action.delete"),
+                                    destructive: true,
+                                    confirmTitle: t(
+                                      "admin.attachments.confirm.delete.title",
+                                      { name: file.fileName },
+                                    ),
+                                    confirmBody: t(
+                                      "admin.attachments.confirm.delete.body",
+                                    ),
+                                    run: () =>
+                                      adminApi.deleteAttachment(file.id),
+                                  } satisfies EntityAction,
+                                ]
+                              : []
+                          }
+                          reload={() => reloadSection("attachments")}
+                        />
+                      </Td>
                     </tr>
                   );
                 })}
@@ -675,6 +724,9 @@ export function CardDetailPage() {
                   <Th>{t("admin.comments.column.author")}</Th>
                   <Th>{t("admin.comments.column.created")}</Th>
                   <Th>{t("admin.comments.column.status")}</Th>
+                  <Th className="w-10 text-right">
+                    <span className="sr-only">{t("admin.common.actions")}</span>
+                  </Th>
                 </tr>
               </thead>
               <tbody>
@@ -703,7 +755,15 @@ export function CardDetailPage() {
                           </span>
                         ) : null}
                       </Td>
-                      <Td>{comment.authorEmail}</Td>
+                      <Td>
+                        <EntityLink
+                          to={userHref(comment.authorId)}
+                          copyValue={comment.authorEmail}
+                          testId={`admin-card-comment-author-${comment.id}`}
+                        >
+                          {comment.authorEmail}
+                        </EntityLink>
+                      </Td>
                       <Td>
                         <DateCell value={comment.createdAt} />
                       </Td>
@@ -717,6 +777,30 @@ export function CardDetailPage() {
                             {t("admin.status.active")}
                           </Badge>
                         )}
+                      </Td>
+                      <Td className="text-right">
+                        <RowActions
+                          testId={`admin-card-comment-actions-${comment.id}`}
+                          actions={
+                            comment.deletedAt === null
+                              ? [
+                                  {
+                                    label: t("admin.comments.action.delete"),
+                                    destructive: true,
+                                    confirmTitle: t(
+                                      "admin.comments.confirm.title",
+                                    ),
+                                    confirmBody: t(
+                                      "admin.comments.confirm.body",
+                                    ),
+                                    run: () =>
+                                      adminApi.deleteComment(comment.id),
+                                  } satisfies EntityAction,
+                                ]
+                              : []
+                          }
+                          reload={() => reloadSection("comments")}
+                        />
                       </Td>
                     </tr>
                   );
@@ -753,7 +837,13 @@ export function CardDetailPage() {
                   {event.type}
                 </span>
                 <span className="text-muted-foreground">
-                  {event.actorEmail}
+                  <EntityLink
+                    to={userHref(event.actorId)}
+                    copyValue={event.actorEmail}
+                    testId={`admin-card-timeline-actor-${event.kind}-${event.id}`}
+                  >
+                    {event.actorEmail}
+                  </EntityLink>
                 </span>
                 {event.details ? <JsonCell value={event.details} /> : null}
                 <span className="ml-auto tabular-nums text-[11px] text-muted-foreground">

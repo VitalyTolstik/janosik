@@ -479,7 +479,11 @@ describe("Admin API (e2e)", () => {
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200);
     expect(created.body.total).toBe(1);
-    expect(created.body.items[0].adminEmail).toBe(adminEmail);
+    expect(created.body.items[0]).toMatchObject({
+      adminEmail: adminEmail,
+      targetType: "user",
+      targetExists: true,
+    });
   });
 
   it("filters the log pages by a createdAt window (from/to)", async () => {
@@ -800,6 +804,10 @@ describe("Admin API (e2e)", () => {
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
       expect(audit.body.total).toBe(1);
+      expect(audit.body.items[0]).toMatchObject({
+        targetType: "card",
+        targetExists: true,
+      });
     });
 
     it("lists and revokes individual sessions", async () => {

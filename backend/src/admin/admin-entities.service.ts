@@ -1453,6 +1453,7 @@ export class AdminEntitiesService {
         role: membership.role,
         acceptedAt: MS(membership.acceptedAt),
         expiresAt: MS(membership.expiresAt),
+        invitedById: membership.invitedById,
         invitedByEmail: membership.invitedBy?.email ?? null,
         createdAt: membership.createdAt.getTime(),
       })),
@@ -1787,6 +1788,7 @@ export class AdminEntitiesService {
         coverValue: card.coverValue,
         version: card.version,
         attachmentCount: card.attachmentCount,
+        lastActorId: card.lastActorId,
         lastActorEmail,
       },
       labels: card.labels.map((row) => ({

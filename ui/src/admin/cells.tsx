@@ -135,6 +135,41 @@ export function EntityLink({
   );
 }
 
+/**
+ * Foreign key whose human label may be missing: link when the id and label
+ * both exist, fall back to plain text for a deleted target, and to a
+ * copyable id when only the id survives. Never renders a broken link.
+ */
+export function IdentityLink({
+  id,
+  label,
+  href,
+  testId,
+}: {
+  id: string | null;
+  label: string | null;
+  href: (id: string) => string;
+  testId?: string;
+}) {
+  if (id !== null && label !== null && label !== "") {
+    return (
+      <EntityLink to={href(id)} copyValue={label} testId={testId}>
+        {label}
+      </EntityLink>
+    );
+  }
+  if (label !== null && label !== "") {
+    return (
+      <span className="inline-flex max-w-full items-center gap-1.5">
+        <span className="truncate">{label}</span>
+        <CopyButton value={label} />
+      </span>
+    );
+  }
+  if (id !== null) return <IdCell id={id} />;
+  return <span className="text-muted-foreground">—</span>;
+}
+
 /** Copyable id chip with an optional leading label (e.g. a cuid owner id). */
 export function IdCell({ id }: { id: string | null }) {
   if (id === null) {
