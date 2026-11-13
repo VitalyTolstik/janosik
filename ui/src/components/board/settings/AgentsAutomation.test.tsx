@@ -68,6 +68,7 @@ function versionConflict(version: number): ApiError {
 function renderPanel(
   props: {
     onDirtyChange?: (dirty: boolean) => void;
+    onOpenLiveControls?: () => void;
   } = {},
 ) {
   return render(
@@ -118,7 +119,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     await screen.findByTestId("agent-policy-panel");
 
     expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
-      "Version 1",
+      "Policy v1",
     );
     expect(
       screen.getByTestId("agent-policy-effective-limits"),
@@ -154,7 +155,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(await screen.findByText("Agent policy saved")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
-        "Version 2",
+        "Policy v2",
       ),
     );
     expect(screen.getByTestId("agent-policy-reset")).not.toBeDisabled();
@@ -169,7 +170,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(screen.getByTestId("agent-policy-reset")).toBeDisabled();
     expect(
       screen.getByTestId("agent-policy-effective-limits"),
-    ).toHaveTextContent("Using safe defaults");
+    ).toHaveTextContent("Safe defaults are active where unset");
   });
 
   it("validates limits inline, reports dirty state and discards local edits", async () => {
@@ -246,7 +247,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(screen.queryByTestId("agents-automation-cas-banner")).toBeNull();
     expect(await screen.findByText("Agent policy saved")).toBeInTheDocument();
     expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
-      "Version 3",
+      "Policy v3",
     );
   });
 
@@ -413,7 +414,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     await userEvent.click(screen.getByTestId("agents-automation-reload"));
     await waitFor(() =>
       expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
-        "Version 3",
+        "Policy v3",
       ),
     );
     expect(get).toHaveBeenCalledTimes(3);
@@ -507,6 +508,98 @@ describe("AgentsAutomation (TASK-179.7)", () => {
       await screen.findByTestId("agent-policy-read-only"),
     ).toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it("opens board Agent Control on Live from the status strip", async () => {
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
+    const onOpenLiveControls = vi.fn();
+
+    renderPanel({ onOpenLiveControls });
+    await screen.findByTestId("agent-policy-panel");
+
+    await userEvent.click(screen.getByTestId("agent-policy-open-live"));
+    expect(onOpenLiveControls).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the prototype copy for the destructive mode and safe defaults", async () => {
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
+
+    renderPanel({ onOpenLiveControls: vi.fn() });
+    await screen.findByTestId("agent-policy-panel");
+
+    expect(screen.getByText("Block completely")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Click one to change the mode/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
+      "Policy v1",
+    );
+    expect(screen.getByTestId("agent-policy-open-live")).toHaveTextContent(
+      "Open live controls",
+    );
+    expect(
+      screen.getByTestId("agent-policy-effective-limits"),
+    ).toHaveTextContent("Safe defaults are active where unset");
+  });
+
+  it("draws checked, unchecked and disabled triggers with one checkbox style", async () => {
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+
+    const editable = screen.getByTestId("agent-policy-require-move_to_done");
+    expect(editable).not.toBeChecked();
+    expect(editable).not.toBeDisabled();
+
+    const checkedEditable = screen.getByTestId(
+      "agent-policy-require-workflow.update",
+    );
+    expect(checkedEditable).toBeChecked();
+    expect(checkedEditable).not.toBeDisabled();
+
+    const checkedCovered = screen.getByTestId(
+      "agent-policy-require-delete_board",
+    );
+    expect(checkedCovered).toBeChecked();
+    expect(checkedCovered).toBeDisabled();
+    expect(
+      screen.getByTestId("agent-policy-require-row-delete_board").className,
+    ).toContain("is-disabled");
+
+    const uncheckedCovered = screen.getByTestId(
+      "agent-policy-require-delete_card",
+    );
+    expect(uncheckedCovered).not.toBeChecked();
+    expect(uncheckedCovered).toBeDisabled();
+
+    for (const action of [
+      "move_to_done",
+      "workflow.update",
+      "delete_board",
+      "delete_card",
+    ]) {
+      expect(
+        screen.getByTestId(`agent-policy-check-${action}`).className,
+      ).toContain("agent-check");
+      expect(
+        screen.getByTestId(`agent-policy-require-${action}`).className,
+      ).toContain("peer");
+    }
+  });
+
+  it("jumps from a covered trigger to the destructive mode switch", async () => {
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+
+    await userEvent.click(
+      screen.getByTestId("agent-policy-covered-delete_card"),
+    );
+    expect(
+      screen.getByTestId("agent-policy-destructive-option-approval"),
+    ).toHaveFocus();
   });
 
   it("uses the mobile-safe layout and a single scroll region", async () => {

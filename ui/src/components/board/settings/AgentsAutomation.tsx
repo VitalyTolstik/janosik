@@ -1,6 +1,8 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import {
   AlertTriangle,
+  ArrowUpRight,
+  Check,
   ChevronDown,
   Info,
   RefreshCw,
@@ -133,13 +135,13 @@ function PolicyNumberField({
     <div className="min-w-0">
       <label
         htmlFor={id}
-        className="mb-[3px] block text-[11px] font-semibold text-muted-foreground"
+        className="mb-[3px] block text-[11px] font-semibold leading-[1.45] text-muted-foreground"
       >
         {label}
       </label>
       <div
         className={cn(
-          "flex h-[30px] items-center overflow-hidden rounded-[5px] border bg-[color-mix(in_oklab,var(--background)_32%,transparent)] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/15",
+          "flex h-[30px] items-center overflow-hidden rounded-[5px] border bg-[color-mix(in_oklab,var(--background)_32%,transparent)] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/15 max-md:h-11",
           invalid ? "border-danger" : "border-border",
         )}
       >
@@ -164,9 +166,9 @@ function PolicyNumberField({
               step(-1);
             }
           }}
-          className="min-w-0 flex-1 border-0 bg-transparent px-1.5 text-[11.5px] tabular-nums text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-w-0 flex-1 border-0 bg-transparent px-1.5 text-[11.5px] leading-[1.45] tabular-nums text-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 max-md:h-11"
         />
-        <span className="whitespace-nowrap pr-1.5 text-[11px] text-muted-foreground">
+        <span className="whitespace-nowrap pr-1.5 text-[11px] leading-[1.45] text-muted-foreground">
           {suffix}
         </span>
       </div>
@@ -192,9 +194,11 @@ function PolicyNumberField({
 export function AgentsAutomation({
   role,
   onDirtyChange,
+  onOpenLiveControls,
 }: {
   role: BoardRole | undefined;
   onDirtyChange?: (dirty: boolean) => void;
+  onOpenLiveControls?: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -211,6 +215,16 @@ export function AgentsAutomation({
   const [resetConflictVersion, setResetConflictVersion] = useState<
     number | null
   >(null);
+  const destructiveSectionRef = useRef<HTMLElement | null>(null);
+  const destructiveInputRef = useRef<HTMLInputElement | null>(null);
+
+  const focusDestructiveMode = () => {
+    destructiveSectionRef.current?.scrollIntoView?.({
+      block: "nearest",
+      behavior: "smooth",
+    });
+    destructiveInputRef.current?.focus({ preventScroll: true });
+  };
 
   const livePause = useSyncExternalStore(live.agentControl.subscribe, () =>
     live.agentControl.getBoardPause(boardId),
@@ -379,20 +393,20 @@ export function AgentsAutomation({
                 ? t("board.settings.agents.resetDisabledHint")
                 : t("board.settings.agents.resetHint")
             }
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 max-md:px-3"
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] border border-transparent px-[9px] text-[11px] font-[650] leading-none text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 max-md:px-3"
           >
-            <RotateCcw className="h-3 w-3" aria-hidden />
+            <RotateCcw className="h-[13px] w-[13px]" aria-hidden />
             {t("board.settings.agents.reset")}
           </button>
         </header>
 
-        <div className="mb-3 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
+        <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
           <Info
             className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
             aria-hidden
           />
           <span className="min-w-0">
-            <strong className="font-semibold text-foreground">
+            <strong className="font-[650] text-foreground">
               {t("board.settings.agents.scopeTitle", {
                 board: board?.title ?? "",
               })}
@@ -403,7 +417,7 @@ export function AgentsAutomation({
 
         <div
           className={cn(
-            "mb-3 flex flex-wrap items-center gap-2 rounded-[7px] border px-2.5 py-[7px] text-[11px] text-muted-foreground",
+            "mb-3 flex flex-wrap items-center gap-2 rounded-[7px] border px-[9px] py-[7px] text-[11px] leading-[1.45] text-muted-foreground max-md:px-2 max-md:py-1.5",
             paused
               ? "border-warning/40 bg-warning/10"
               : "border-border bg-[color-mix(in_oklab,var(--surface)_52%,var(--background))]",
@@ -430,14 +444,27 @@ export function AgentsAutomation({
               ? (pauseReason ?? t("board.settings.agents.pausedBody"))
               : t("board.settings.agents.pauseOff")}
           </span>
-          <span className="ml-auto flex flex-wrap items-center gap-1 whitespace-nowrap">
-            <span data-testid="agent-policy-version">
-              {t("agentControl.policy.version", {
-                version: policy.version ?? 0,
-              })}
+          <span className="ml-auto flex flex-wrap items-center gap-2 max-md:ml-0">
+            {onOpenLiveControls ? (
+              <button
+                type="button"
+                onClick={onOpenLiveControls}
+                data-testid="agent-policy-open-live"
+                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+              >
+                {t("board.settings.agents.openLive")}
+                <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
+              </button>
+            ) : null}
+            <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
+              <span data-testid="agent-policy-version">
+                {t("agentControl.policy.version", {
+                  version: policy.version ?? 0,
+                })}
+              </span>
+              <span aria-hidden>·</span>
+              <span>{t("board.settings.agents.adminsOnly")}</span>
             </span>
-            <span aria-hidden>·</span>
-            <span>{t("board.settings.agents.adminsOnly")}</span>
           </span>
         </div>
 
@@ -537,9 +564,13 @@ export function AgentsAutomation({
         ) : null}
 
         <div className="mb-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-[1.05fr_1fr]">
-          <section className="min-w-0 border-t border-border pt-2.5 first:border-t-0 first:pt-0">
-            <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <h3 className="text-xs font-semibold">
+          <section
+            ref={destructiveSectionRef}
+            className="min-w-0 border-t border-border pt-2.5 first:border-t-0 first:pt-0"
+            data-testid="agent-policy-destructive-mode"
+          >
+            <div className="mb-[7px] flex flex-wrap items-baseline gap-[7px]">
+              <h3 className="text-xs font-[650] leading-[1.45]">
                 {t("agentControl.policy.destructiveTitle")}
               </h3>
               <p className="text-[11px] leading-[1.45] text-muted-foreground">
@@ -552,13 +583,14 @@ export function AgentsAutomation({
                 <label
                   key={value}
                   className={cn(
-                    "relative mb-1.5 flex cursor-pointer items-start gap-2 rounded-[7px] border px-2.5 py-2 transition-colors motion-reduce:transition-none",
+                    "relative mb-1.5 flex cursor-pointer items-start gap-2 rounded-[7px] border px-[9px] py-2 transition-colors motion-reduce:transition-none",
                     checked
-                      ? "border-primary/50 bg-primary/[0.06]"
-                      : "border-border bg-[color-mix(in_oklab,var(--surface)_55%,var(--background))] hover:border-muted-foreground/30",
+                      ? "border-[color-mix(in_oklab,var(--primary)_48%,var(--border))] bg-primary/[0.06]"
+                      : "border-border bg-[color-mix(in_oklab,var(--surface)_55%,var(--background))] hover:border-[color-mix(in_oklab,var(--muted-foreground)_27%,var(--border))]",
                   )}
                 >
                   <input
+                    ref={value === "approval" ? destructiveInputRef : undefined}
                     type="radio"
                     name="agent-destructive"
                     value={value}
@@ -580,7 +612,7 @@ export function AgentsAutomation({
                     ) : null}
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[11px] font-semibold leading-[1.35]">
+                    <span className="block text-[11px] font-[650] leading-[1.35]">
                       {t(
                         value === "approval"
                           ? "agentControl.policy.destructiveApproval"
@@ -598,14 +630,14 @@ export function AgentsAutomation({
                 </label>
               );
             })}
-            <p className="mt-1 text-[11px] leading-[1.4] text-muted-foreground">
+            <p className="mb-[11px] mt-[3px] text-[11px] leading-[1.4] text-muted-foreground">
               {t("board.settings.agents.destructiveCovered")}
             </p>
           </section>
 
           <section className="min-w-0 border-t border-border pt-2.5">
-            <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <h3 className="text-xs font-semibold">
+            <div className="mb-[7px] flex flex-wrap items-baseline gap-[7px]">
+              <h3 className="text-xs font-[650] leading-[1.45]">
                 {t("board.settings.agents.limitsTitle")}
               </h3>
               <p className="text-[11px] leading-[1.45] text-muted-foreground">
@@ -658,7 +690,7 @@ export function AgentsAutomation({
               />
             </div>
             <div className="mt-2.5">
-              <p className="mb-[3px] block text-[11px] font-semibold text-muted-foreground">
+              <p className="mb-[3px] block text-[11px] font-semibold leading-[1.45] text-muted-foreground">
                 {t("board.settings.agents.approverRoles")}
               </p>
               <div
@@ -667,7 +699,7 @@ export function AgentsAutomation({
                 role="textbox"
                 aria-readonly="true"
                 aria-label={t("board.settings.agents.approverRoles")}
-                className="flex h-[30px] w-full items-center justify-between gap-2 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--background)_32%,transparent)] px-1.5 text-[11px] text-muted-foreground"
+                className="flex h-7 w-full cursor-not-allowed items-center justify-between gap-1.5 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,var(--background))] px-2 text-[11px] leading-[1.2] text-foreground opacity-[0.52] max-md:h-11"
               >
                 <span className="min-w-0 truncate">
                   {t("board.settings.agents.approverRolesFixed")}
@@ -677,19 +709,19 @@ export function AgentsAutomation({
                   aria-hidden
                 />
               </div>
-              <span className="mt-1 block text-[11px] leading-[1.4] text-muted-foreground">
+              <span className="mt-[3px] block text-[11px] leading-[1.4] text-muted-foreground">
                 {t("board.settings.agents.approverRolesHint")}
               </span>
             </div>
           </section>
         </div>
 
-        <section className="border-t border-border pt-2.5">
+        <section className="mt-0.5 border-t border-border pt-2.5">
           <div className="mb-1.5 flex flex-wrap items-center gap-2">
-            <h3 className="text-xs font-semibold">
+            <h3 className="text-xs font-[650] leading-[1.45]">
               {t("board.settings.agents.triggersTitle")}
             </h3>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] leading-[1.45] text-muted-foreground">
               {t("board.settings.agents.triggersMeta", {
                 count: activeTriggerCount,
                 total: EDITABLE_POLICY_ACTIONS.length,
@@ -699,9 +731,9 @@ export function AgentsAutomation({
               type="button"
               onClick={() => setShowKeys((value) => !value)}
               data-testid="agents-automation-show-keys"
-              className="ml-auto inline-flex min-h-7 items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+              className="ml-auto inline-flex items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
             >
-              <Terminal className="h-3 w-3" aria-hidden />
+              <Terminal className="h-[11px] w-[11px]" aria-hidden />
               {showKeys
                 ? t("board.settings.agents.hideKeys")
                 : t("board.settings.agents.showKeys")}
@@ -714,50 +746,76 @@ export function AgentsAutomation({
             {POLICY_TRIGGER_ORDER.map((action) => {
               const covered = isDestructivePolicyAction(action);
               const checked = draft.requireApprovalFor.includes(action);
+              const disabled = covered || policy.saving;
               return (
-                <label
+                <div
                   key={action}
                   className={cn(
-                    "flex min-h-7 items-center gap-[7px] border-b border-border/60 py-1 text-[11px] last:border-b-0 max-md:min-h-11",
+                    "agent-check-row flex min-h-7 items-center gap-[7px] border-b border-[color-mix(in_oklab,var(--border)_62%,transparent)] py-1 text-[11px] leading-[1.45] last:border-b-0 max-md:min-h-11",
                     covered
-                      ? "cursor-not-allowed text-muted-foreground"
-                      : "cursor-pointer text-foreground",
+                      ? "is-disabled text-muted-foreground"
+                      : "text-foreground",
                   )}
+                  data-testid={`agent-policy-require-row-${action}`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={covered || policy.saving}
-                    onChange={() => policy.toggleAction(action)}
-                    data-testid={`agent-policy-require-${action}`}
-                    aria-label={t(ACTION_KEYS[action])}
-                    className="h-[13px] w-[13px] shrink-0 accent-primary disabled:cursor-not-allowed disabled:opacity-40"
-                  />
-                  <span
+                  <label
                     className={cn(
-                      "min-w-0 truncate",
-                      covered && "line-through decoration-muted-foreground/40",
+                      "flex min-w-0 flex-1 items-center gap-[7px]",
+                      disabled ? "cursor-not-allowed" : "cursor-pointer",
                     )}
                   >
-                    {t(ACTION_KEYS[action])}
-                  </span>
-                  {covered ? (
-                    <span className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] text-muted-foreground">
-                      {t("board.settings.agents.covered")}
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => policy.toggleAction(action)}
+                      data-testid={`agent-policy-require-${action}`}
+                      aria-label={t(ACTION_KEYS[action])}
+                      className="peer sr-only"
+                    />
+                    <span
+                      aria-hidden
+                      className="agent-check"
+                      data-testid={`agent-policy-check-${action}`}
+                    >
+                      <Check />
                     </span>
+                    <span
+                      className={cn(
+                        "min-w-0 truncate",
+                        covered &&
+                          "line-through decoration-muted-foreground/40",
+                      )}
+                    >
+                      {t(ACTION_KEYS[action])}
+                    </span>
+                  </label>
+                  {covered ? (
+                    <button
+                      type="button"
+                      onClick={focusDestructiveMode}
+                      data-testid={`agent-policy-covered-${action}`}
+                      aria-label={t("board.settings.agents.coveredAction", {
+                        action: t(ACTION_KEYS[action]),
+                      })}
+                      title={t("board.settings.agents.coveredHint")}
+                      className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] leading-[1.45] text-muted-foreground hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {t("board.settings.agents.covered")}
+                    </button>
                   ) : showKeys ? (
                     <code className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
                       {action}
                     </code>
                   ) : null}
-                </label>
+                </div>
               );
             })}
           </div>
         </section>
 
         <div
-          className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5 text-[11px] text-muted-foreground"
+          className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-[9px] text-[11px] leading-[1.45] text-muted-foreground"
           data-testid="agent-policy-effective-limits"
         >
           <span
@@ -772,7 +830,7 @@ export function AgentsAutomation({
               ? t("board.settings.agents.safeDefaults")
               : t("board.settings.agents.customPolicy")}
           </span>
-          <span className="h-3 w-px bg-border" aria-hidden />
+          <span className="h-[11px] w-px bg-border" aria-hidden />
           <span>
             {t("board.settings.agents.effective", {
               commands: state?.effective.maxCommandsPerRun ?? 0,
@@ -785,9 +843,9 @@ export function AgentsAutomation({
 
       <footer
         data-testid="agents-automation-footer"
-        className="flex shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-2.5 max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:px-2.5 max-md:pb-[max(8px,env(safe-area-inset-bottom))] max-md:pt-2"
+        className="flex min-h-12 shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-[9px] max-md:flex-col max-md:items-stretch max-md:gap-2.5 max-md:px-2.5 max-md:pb-[max(8px,env(safe-area-inset-bottom))] max-md:pt-2"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-muted-foreground max-md:w-full">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] leading-[1.45] text-muted-foreground max-md:w-full">
           <span
             aria-hidden
             className={cn(
@@ -806,7 +864,11 @@ export function AgentsAutomation({
           >
             {footerStatus}
           </span>
-          <span className="truncate border-l border-border pl-2.5 text-muted-foreground max-md:hidden">
+          <span
+            aria-hidden
+            className="h-3 w-px shrink-0 bg-border max-md:hidden"
+          />
+          <span className="truncate text-muted-foreground max-md:hidden">
             {secondaryStatus}
           </span>
         </div>
@@ -816,7 +878,7 @@ export function AgentsAutomation({
             onClick={policy.discard}
             disabled={!policy.dirty || policy.saving}
             data-testid="agents-automation-discard"
-            className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 md:flex-none"
+            className="inline-flex h-7 flex-1 items-center justify-center rounded-[6px] border border-transparent px-[9px] text-[11px] font-[650] leading-none text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 md:flex-none"
           >
             {t("board.settings.agents.discard")}
           </button>
@@ -825,7 +887,7 @@ export function AgentsAutomation({
             onClick={() => void save()}
             disabled={!policy.canSave}
             data-testid="agent-policy-save"
-            className="inline-flex h-8 flex-1 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 md:flex-none"
+            className="inline-flex h-7 flex-1 items-center justify-center rounded-[6px] bg-[var(--agent-primary-strong)] px-[9px] text-[11px] font-[650] leading-none text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 md:flex-none"
           >
             {policy.saving
               ? t("board.settings.agents.saving")

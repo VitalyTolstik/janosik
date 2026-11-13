@@ -233,7 +233,7 @@ test("policy edit, stale-version CAS and reset work from the dashboard", async (
   await page.getByTestId("agent-open-policy").click();
 
   await expect(page.getByTestId("agent-policy-version")).toContainText(
-    "Version 1",
+    "Policy v1",
   );
   await expect(page.getByTestId("agent-policy-effective-limits")).toContainText(
     "100",
@@ -248,7 +248,7 @@ test("policy edit, stale-version CAS and reset work from the dashboard", async (
   await page.getByTestId("agent-policy-save").click();
 
   await expect(page.getByTestId("agent-policy-version")).toContainText(
-    "Version 2",
+    "Policy v2",
   );
   const saved = await board.api.get(`/api/v1/boards/${board.id}/agent-policy`);
   expect(saved.status()).toBe(200);
@@ -302,7 +302,7 @@ test("policy edit, stale-version CAS and reset work from the dashboard", async (
   });
   await resetDialog.getByRole("button", { name: "Reset to defaults" }).click();
   await expect(page.getByTestId("agent-policy-version")).toContainText(
-    "Version 3",
+    "Policy v3",
   );
   const reset = await board.api.get(`/api/v1/boards/${board.id}/agent-policy`);
   const resetBody = (await reset.json()) as {
