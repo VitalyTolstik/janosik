@@ -302,6 +302,40 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     });
   });
 
+  it("shows the differing trigger labels for an array conflict", async () => {
+    const initial = state();
+    const serverPolicy = policy({
+      requireApprovalFor: DEFAULT_BOARD_AGENT_POLICY.requireApprovalFor.filter(
+        (action) => action !== "workflow.update",
+      ),
+    });
+    const latest = state({
+      policy: serverPolicy,
+      effective: serverPolicy,
+      version: 2,
+    });
+    vi.spyOn(api, "getBoardAgentPolicy")
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue(latest);
+    vi.spyOn(api, "updateBoardAgentPolicy").mockRejectedValueOnce(
+      versionConflict(2),
+    );
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+    await userEvent.click(
+      screen.getByTestId("agent-policy-require-move_to_done"),
+    );
+    await userEvent.click(screen.getByTestId("agent-policy-save"));
+
+    const conflict = await screen.findByTestId(
+      "agents-automation-conflict-requireApprovalFor",
+    );
+    expect(conflict).toHaveTextContent("Move a card to Done");
+    expect(conflict).toHaveTextContent("Change the board workflow");
+    expect(conflict).toHaveTextContent("Invite a member");
+  });
+
   it("accepts the server value without writing the stale draft", async () => {
     const initial = state();
     const serverPolicy = policy({ approvalTtlMinutes: 120 });
@@ -486,7 +520,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(scroll.className).toContain("overflow-x-hidden");
     expect(scroll.className).toContain("max-md:px-2.5");
     expect(screen.getByTestId("agent-policy-require-list").className).toContain(
-      "min-[1050px]:grid-cols-2",
+      "sm:grid-cols-2",
     );
     expect(screen.getByTestId("agents-automation-footer").className).toContain(
       "max-md:flex-col",

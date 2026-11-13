@@ -122,6 +122,7 @@ export function usePolicyDraft({
   );
   const [session, setSession] = useState<PolicySession | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [error, setError] = useState<PolicySaveError | null>(null);
   const [revision, setRevision] = useState(0);
   const sessionRef = useRef<PolicySession | null>(null);
@@ -285,7 +286,14 @@ export function usePolicyDraft({
 
   const save = useCallback(async (): Promise<PolicySaveOutcome> => {
     const current = sessionRef.current;
-    if (current === null || boardId === undefined || saving) return "error";
+    if (
+      current === null ||
+      boardId === undefined ||
+      saving ||
+      savingRef.current
+    ) {
+      return "error";
+    }
     if (current.conflicts.length > 0) {
       setError({ kind: "conflict", version: current.state.version });
       return "conflict";
@@ -364,11 +372,13 @@ export function usePolicyDraft({
       }
     };
 
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
       return await persist(current.draft, current.state.version, 2);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }, [applyServerState, applySession, boardId, saving]);
@@ -390,9 +400,15 @@ export function usePolicyDraft({
 
   const reset = useCallback(async (): Promise<PolicyResetOutcome> => {
     const current = sessionRef.current;
-    if (current === null || boardId === undefined || saving) {
+    if (
+      current === null ||
+      boardId === undefined ||
+      saving ||
+      savingRef.current
+    ) {
       return { kind: "error" };
     }
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -442,6 +458,7 @@ export function usePolicyDraft({
       setError({ kind: "conflict", version: fetched.version });
       return { kind: "conflict", version: fetched.version };
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }, [applyServerState, applySession, boardId, saving]);

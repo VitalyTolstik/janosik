@@ -1362,7 +1362,6 @@
   "board.settings.agents.conflictUnresolved": "Выберите «моё» или «серверное» для каждого конфликтующего поля перед сохранением.",
   "board.settings.agents.conflictMine": "Моё",
   "board.settings.agents.conflictServer": "Серверное",
-  "board.settings.agents.conflictTriggers": "Выбрано триггеров: {{count}}",
   "board.settings.agents.conflictNoTriggers": "Триггеры не выбраны",
   "board.settings.agents.reload": "Перезагрузить политику",
   "board.settings.agents.destructiveDescription": "Удаление карточки, колонки, участника, отзыв ссылки.",

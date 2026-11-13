@@ -1348,7 +1348,6 @@
   "board.settings.agents.conflictUnresolved": "Choose mine or server for each conflicting field before saving.",
   "board.settings.agents.conflictMine": "Mine",
   "board.settings.agents.conflictServer": "Server",
-  "board.settings.agents.conflictTriggers": "{{count}} triggers selected",
   "board.settings.agents.conflictNoTriggers": "No triggers selected",
   "board.settings.agents.reload": "Reload policy",
   "board.settings.agents.destructiveDescription": "Delete card, delete column, remove member, revoke a share.",

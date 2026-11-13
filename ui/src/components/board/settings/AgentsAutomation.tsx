@@ -67,10 +67,6 @@ function errorText(error: PolicySaveError | null, t: Translate): string | null {
       return t("agentControl.error.forbidden");
     case "pat":
       return t("agentControl.policy.sessionOnly");
-    case "conflict":
-      return t("board.settings.agents.conflictBody", {
-        version: error.version ?? 0,
-      });
     default:
       return t("agentControl.error.generic");
   }
@@ -470,7 +466,7 @@ export function AgentsAutomation({
               onClick={() => void policy.reload()}
               disabled={policy.saving}
               data-testid="agents-automation-reload"
-              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-popover px-2 text-[10px] font-medium text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-popover px-2 text-[10px] font-medium text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 max-md:h-11"
             >
               <RefreshCw className="h-3 w-3" aria-hidden />
               {t("board.settings.agents.reload")}
@@ -500,7 +496,7 @@ export function AgentsAutomation({
                     type="button"
                     onClick={() => policy.resolveConflict(entry.field, "mine")}
                     data-testid={`agents-automation-conflict-${entry.field}-mine`}
-                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[10.5px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[10.5px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     <span className="block text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                       {t("board.settings.agents.conflictMine")}
@@ -515,7 +511,7 @@ export function AgentsAutomation({
                       policy.resolveConflict(entry.field, "server")
                     }
                     data-testid={`agents-automation-conflict-${entry.field}-server`}
-                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[10.5px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="min-w-0 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-[10.5px] hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
                   >
                     <span className="block text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
                       {t("board.settings.agents.conflictServer")}
@@ -540,8 +536,8 @@ export function AgentsAutomation({
           </p>
         ) : null}
 
-        <div className="mb-3.5 grid grid-cols-1 gap-3.5 min-[1050px]:grid-cols-[1.05fr_1fr]">
-          <section className="min-w-0 border-t border-border pt-2.5 first:border-t-0 first:pt-0 min-[1050px]:border-t-0 min-[1050px]:pt-0">
+        <div className="mb-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-[1.05fr_1fr]">
+          <section className="min-w-0 border-t border-border pt-2.5 first:border-t-0 first:pt-0">
             <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <h3 className="text-xs font-semibold">
                 {t("agentControl.policy.destructiveTitle")}
@@ -607,7 +603,7 @@ export function AgentsAutomation({
             </p>
           </section>
 
-          <section className="min-w-0 border-t border-border pt-2.5 min-[1050px]:border-t-0 min-[1050px]:pt-0">
+          <section className="min-w-0 border-t border-border pt-2.5">
             <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <h3 className="text-xs font-semibold">
                 {t("board.settings.agents.limitsTitle")}
@@ -712,7 +708,7 @@ export function AgentsAutomation({
             </button>
           </div>
           <div
-            className="grid grid-cols-1 gap-x-4 min-[1050px]:grid-cols-2"
+            className="grid grid-cols-1 gap-x-4 sm:grid-cols-2"
             data-testid="agent-policy-require-list"
           >
             {POLICY_TRIGGER_ORDER.map((action) => {
