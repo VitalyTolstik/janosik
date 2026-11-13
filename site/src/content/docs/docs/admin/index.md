@@ -159,6 +159,52 @@ against `GET /admin/search?q=`; results are grouped and keyboard-navigable
 with `↑`/`↓` and Enter. If the request fails it offers a retry instead of an
 empty result.
 
+## Agent control is not part of the admin panel
+
+The panel is a support, moderation and investigation console, not a second
+board client and not an agent control plane. **`/admin` does not list or manage
+agent runs, approvals or board policy, and it has no cross-board agent
+section.** There are no approve/reject, pause/resume, run-revert,
+destructive-mode or TTL controls in the panel. This is a deliberate boundary,
+not a missing page.
+
+Agent control lives in the user app, where board roles are enforced:
+
+- **`/agents`** is the global cross-board inbox with three sections:
+  **Attention** (pending approvals on boards where you are an ADMIN, plus
+  stale sessions), **Sessions** (board-first session list and detail) and
+  **Runs** (filters, run detail and a conditional revert that only a board
+  ADMIN can apply; read-only for a MEMBER or VIEWER). The selected board,
+  search and deep-linked session/run/approval are kept in the URL.
+- **Agent Control** on a board (the bot button in the board header) is the
+  board-scoped operational surface: **Inbox** for approvals, **Live** for
+  board and session pause/resume/end, and **Runs** for run inspection and
+  revert. Approve/reject and live control are board-ADMIN only; a MEMBER or
+  VIEWER sees Live and Runs read-only and has no Inbox.
+- **Board Settings → Agents & automation** owns the policy: destructive mode,
+  approval triggers, per-run command and card limits, and approval TTL. Only a
+  board ADMIN can read or change it.
+- Token-level pause, **Stop all** and revoke are in **Account → API keys**,
+  not in the board dialog and not in `/admin`.
+
+A master account is not a board account: signing in to `/admin` neither grants
+board membership nor these controls. If the same person needs them, they sign
+in to the user app with their normal account and board role. The panel still
+shows agent-authored cards, comments, commands and audit/activity rows with
+token, session and run attribution; that is evidence for support work, not
+control over the agent. The Demo runner on Settings can start a disposable
+swarm on a throwaway board; that is a platform demo fixture, not a view or
+control of real agent runs, approvals or policy.
+
+Cross-board oversight from the master panel is **not part of TASK-176**. If it
+is needed later, it requires a separate task with a master API, an explicit
+permission model and audit of master access. A UI-only section built on the
+existing board-scoped endpoints would bypass board roles and is not acceptable.
+
+See the [agent launch guide](/docs/agent-launch/), [board agent
+controls](/docs/user-guide/boards/#agent-approvals-runs-and-policy) and
+[Account → API keys](/docs/user-guide/account/#pausing-and-stopping-agents).
+
 ## Pages in this section
 
 - [Admin redesign](./redesign/) maps the eight hubs, legacy redirects,
