@@ -234,13 +234,15 @@ const en = {
     "The file is removed from storage; the blob cannot be recovered.",
 
   "admin.entities.restore": "Restore",
-  "admin.bulk.selected": "{count} selected",
+  "admin.bulk.selected": "{count} selected ({visible} on this page)",
   "admin.bulk.clear": "Clear",
   "admin.bulk.delete": "Delete selected",
   "admin.bulk.restore": "Restore selected",
-  "admin.bulk.confirm.title": "Delete {count} rows?",
-  "admin.bulk.confirm.body": "This cannot be undone for the selected rows.",
+  "admin.bulk.confirm.title": "Apply to {count} selected?",
+  "admin.bulk.confirm.body": "Delete the selected rows? This cannot be undone.",
   "admin.bulk.partial": "{count} refused — kept selected for retry.",
+  "admin.bulk.tooMany":
+    "Too many rows selected: {count}. The bulk limit is {limit} — narrow the filters or select fewer rows.",
 
   "admin.boardDetail.member.add": "Add member",
   "admin.boardDetail.member.email": "User email",
@@ -1418,13 +1420,15 @@ const ru: Record<AdminMessageKey, string> = {
     "Файл будет удалён из хранилища; блоб не восстановить.",
 
   "admin.entities.restore": "Восстановить",
-  "admin.bulk.selected": "Выбрано: {count}",
+  "admin.bulk.selected": "Выбрано: {count} ({visible} на странице)",
   "admin.bulk.clear": "Сбросить",
   "admin.bulk.delete": "Удалить выбранные",
   "admin.bulk.restore": "Восстановить выбранные",
-  "admin.bulk.confirm.title": "Удалить {count} строк?",
-  "admin.bulk.confirm.body": "Для выбранных строк это необратимо.",
+  "admin.bulk.confirm.title": "Применить к выбранным: {count}?",
+  "admin.bulk.confirm.body": "Удалить выбранные строки? Отменить это нельзя.",
   "admin.bulk.partial": "Отказано: {count} — оставлены выбранными для повтора.",
+  "admin.bulk.tooMany":
+    "Выбрано слишком много строк: {count}. Лимит массового действия — {limit}; сузьте фильтры или выберите меньше строк.",
 
   "admin.boardDetail.member.add": "Добавить участника",
   "admin.boardDetail.member.email": "Email пользователя",
