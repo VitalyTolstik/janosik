@@ -186,6 +186,18 @@ describe("AdminApiClient", () => {
 
     await api.listUsers({ status: "all" });
     expect(calls[1].url).not.toContain("status=");
+
+    await api.listEntity("cards", {
+      boardId: "b-1",
+      columnId: "col-1",
+      labelId: "l-1",
+      cardId: "c-1",
+    });
+    const filtered = new URL(calls[2].url);
+    expect(filtered.searchParams.get("boardId")).toBe("b-1");
+    expect(filtered.searchParams.get("columnId")).toBe("col-1");
+    expect(filtered.searchParams.get("labelId")).toBe("l-1");
+    expect(filtered.searchParams.get("cardId")).toBe("c-1");
   });
 
   it("builds paged detail queries for the windowed tabs (TASK-176.3)", async () => {

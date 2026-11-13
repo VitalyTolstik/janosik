@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { X } from "lucide-react";
 import type {
   AdminEntity,
   AdminEntityRowMap,
@@ -9,10 +10,16 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
-import { useAdminT } from "./admin-i18n";
+import {
+  ADMIN_LIST_FILTER_KEYS,
+  hasAdminFilters,
+  type AdminListFilterKey,
+} from "./admin-list-query";
+import { currentAdminPath, withReturnTo } from "./admin-navigation";
+import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { RowActions, type EntityAction } from "./row-actions";
 import { EntityListSkeleton } from "./skeletons";
-import { useAdminList } from "./use-admin-list";
+import { useAdminListQuery } from "./use-admin-list-query";
 import {
   ConfirmDialog,
   EmptyState,
@@ -78,11 +85,17 @@ export function EntityPage<E extends AdminEntity>({
 }) {
   const t = useAdminT();
   const navigate = useNavigate();
-  const list = useAdminList<AdminEntityRowMap[E]>(
+  const location = useLocation();
+  const returnTo = currentAdminPath(location);
+  const list = useAdminListQuery<AdminEntityRowMap[E]>(
     (params) =>
       adminApi.listEntity(config.entity, params) as Promise<
         AdminPage<AdminEntityRowMap[E]>
       >,
+    {
+      statuses: config.statuses?.map((status) => status.value),
+      periods: config.periods === true,
+    },
   );
   const toast = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -192,13 +205,27 @@ export function EntityPage<E extends AdminEntity>({
       ]
     : undefined;
 
+  const filterLabelKeys: Record<AdminListFilterKey, AdminMessageKey> = {
+    boardId: "admin.filter.board",
+    columnId: "admin.filter.column",
+    labelId: "admin.filter.label",
+    cardId: "admin.filter.card",
+  };
+  const activeFilters = ADMIN_LIST_FILTER_KEYS.filter(
+    (key) => list.filters[key] !== null,
+  );
+
   const filtered =
-    list.search.trim() !== "" || list.status !== "all" || list.period !== "any";
-  const clearFilters = () => {
+    list.search.trim() !== "" ||
+    list.status !== "all" ||
+    list.period !== "any" ||
+    hasAdminFilters(list.filters);
+  const clearAllFilters = () => {
     withSelectionReset(() => {
       list.setSearch("");
       list.setStatus("all");
       list.setPeriod("any");
+      list.clearFilters();
     });
   };
 
@@ -237,6 +264,47 @@ export function EntityPage<E extends AdminEntity>({
           </>
         }
       />
+      {activeFilters.length > 0 ? (
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          data-testid="admin-filter-banner"
+        >
+          {activeFilters.map((key) => (
+            <span
+              key={key}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-hover/40 px-2 text-[11px] text-muted-foreground"
+              data-testid={`admin-filter-${key}`}
+            >
+              <span>{t(filterLabelKeys[key])}</span>
+              <span className="max-w-[12rem] truncate font-mono text-foreground">
+                {list.filters[key]}
+              </span>
+              <button
+                type="button"
+                className="rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t("admin.filter.clearOne", {
+                  filter: t(filterLabelKeys[key]),
+                })}
+                data-testid={`admin-filter-clear-${key}`}
+                onClick={() =>
+                  withSelectionReset(() => list.setFilter(key, null))
+                }
+              >
+                <X className="h-3 w-3" aria-hidden />
+              </button>
+            </span>
+          ))}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            data-testid="admin-filter-clear"
+            onClick={clearAllFilters}
+          >
+            {t("admin.common.clearFilters")}
+          </Button>
+        </div>
+      ) : null}
       <Panel
         className="flex min-h-0 flex-1 flex-col"
         data-testid="admin-entity-panel"
@@ -259,7 +327,7 @@ export function EntityPage<E extends AdminEntity>({
             reference={`${config.entity}:${new Date().toISOString().slice(0, 19)}`}
           />
         ) : list.items.length === 0 ? (
-          <EmptyState filtered={filtered} onClear={clearFilters} />
+          <EmptyState filtered={filtered} onClear={clearAllFilters} />
         ) : (
           <>
             {bulkEnabled && selected.size > 0 ? (
@@ -329,7 +397,11 @@ export function EntityPage<E extends AdminEntity>({
               </thead>
               <tbody>
                 {list.items.map((row, index) => {
-                  const href = config.rowHref?.(row);
+                  const plannedHref = config.rowHref?.(row);
+                  const href =
+                    plannedHref === undefined
+                      ? undefined
+                      : withReturnTo(plannedHref, returnTo);
                   const testId =
                     config.rowTestId?.(row) ??
                     `admin-row-${config.entity}-${index}`;

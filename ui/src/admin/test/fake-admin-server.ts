@@ -15,6 +15,8 @@ import type {
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  AdminColumnRowDto,
+  AdminLabelRowDto,
   AdminDemoStartRequest,
   AdminDemoStatusDto,
   AdminEmailSettingsDto,
@@ -492,6 +494,9 @@ export class FakeAdminServer {
 
   /** Board members keyed by boardId (TASK-60 moderation tests). */
   boardMembers: Record<string, AdminBoardMemberRowDto[]> = {};
+  /** Board-detail columns/labels keyed by boardId (TASK-176.6 links). */
+  boardColumns: Record<string, AdminColumnRowDto[]> = {};
+  boardLabels: Record<string, AdminLabelRowDto[]> = {};
 
   /** Totp enrollment secret echoed by `POST /admin/security/totp`. */
   totpSecret = "JBSWY3DPEHPK3PXP";
@@ -1654,8 +1659,8 @@ export class FakeAdminServer {
           },
         },
         members: this.boardMembers[board.id] ?? [],
-        columns: [],
-        labels: [],
+        columns: this.boardColumns[board.id] ?? [],
+        labels: this.boardLabels[board.id] ?? [],
         workflowSummary: {
           present: false,
           enabled: false,
@@ -1971,11 +1976,24 @@ export class FakeAdminServer {
     offset: number;
   } {
     const search = url.searchParams.get("search")?.toLowerCase();
-    const filtered = search
-      ? items.filter((item) =>
-          JSON.stringify(item).toLowerCase().includes(search),
-        )
-      : items;
+    const boardId = url.searchParams.get("boardId");
+    const columnId = url.searchParams.get("columnId");
+    const cardId = url.searchParams.get("cardId");
+    const filtered = items.filter((item) => {
+      const record = item as Record<string, unknown>;
+      // Mirrors the server's structural filters enough to catch a cross-board
+      // row in the UI tests; labels are exercised in the backend e2e suite.
+      if (boardId && record.boardId !== boardId && record.id !== boardId) {
+        return false;
+      }
+      if (columnId && record.columnId !== columnId) return false;
+      if (cardId && record.cardId !== cardId && record.id !== cardId) {
+        return false;
+      }
+      return search
+        ? JSON.stringify(item).toLowerCase().includes(search)
+        : true;
+    });
     const limit = Number(url.searchParams.get("limit") ?? 50);
     const offset = Number(url.searchParams.get("offset") ?? 0);
     return {

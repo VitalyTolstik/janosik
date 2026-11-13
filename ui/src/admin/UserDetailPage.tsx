@@ -38,6 +38,7 @@ import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { appPath } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
+import { readReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import {
@@ -258,6 +259,7 @@ export function UserDetailPage() {
   // and export all answer 403 to an OPERATOR, so the menu hides them.
   const isOwner = useAdminAuth().admin?.role === "OWNER";
   const [searchParams, setSearchParams] = useSearchParams();
+  const backTo = readReturnTo(searchParams) ?? "/admin/users";
   const [detail, setDetail] = useState<AdminUserDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTabState] = useState<TabKey>(() => {
@@ -569,7 +571,7 @@ export function UserDetailPage() {
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
         <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
-          <Link to="/admin/users" aria-label={t("admin.common.back")}>
+          <Link to={backTo} aria-label={t("admin.common.back")}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
         </Button>

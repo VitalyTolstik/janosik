@@ -708,9 +708,17 @@ describe("admin content and security pages", () => {
     renderAdmin("/admin/cards");
     const cardLink = await screen.findByTestId("admin-card-row-card-1");
     expect(cardLink).toHaveTextContent("Moderate me");
-    expect(
-      cardLink.querySelector('a[href="/admin/boards/b-7"]'),
-    ).not.toBeNull();
+    const boardLink = cardLink.querySelector('a[href^="/admin/boards/b-7"]');
+    expect(boardLink).not.toBeNull();
+    const boardHref = new URL(
+      boardLink?.getAttribute("href") ?? "",
+      "http://admin.test",
+    );
+    expect(boardHref.pathname).toBe("/admin/boards/b-7");
+    // The cards tab is the current context: its back control returns there.
+    expect(boardHref.searchParams.get("returnTo")).toBe(
+      "/admin/boards?tab=cards",
+    );
   });
 
   it("revokes a single session", async () => {

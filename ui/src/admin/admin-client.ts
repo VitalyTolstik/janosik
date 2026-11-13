@@ -90,6 +90,11 @@ export interface AdminListParams {
   from?: number;
   /** Inclusive `createdAt` upper bound, unix ms. */
   to?: number;
+  /** Structural filters (TASK-176.6): exact ids, never name matching. */
+  boardId?: string;
+  columnId?: string;
+  labelId?: string;
+  cardId?: string;
   limit?: number;
   offset?: number;
 }
@@ -886,6 +891,10 @@ export class AdminApiClient {
       search.set("offset", String(params.offset));
     if (params.from !== undefined) search.set("from", String(params.from));
     if (params.to !== undefined) search.set("to", String(params.to));
+    if (params.boardId) search.set("boardId", params.boardId);
+    if (params.columnId) search.set("columnId", params.columnId);
+    if (params.labelId) search.set("labelId", params.labelId);
+    if (params.cardId) search.set("cardId", params.cardId);
     const value = search.toString();
     return value === "" ? "" : `?${value}`;
   }

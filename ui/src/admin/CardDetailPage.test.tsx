@@ -488,4 +488,16 @@ describe("CardDetailPage identity links and per-row moderation", () => {
       ),
     ).toBeNull();
   });
+
+  it("uses returnTo as the back target (TASK-176.5)", async () => {
+    const state = stateWithOneRow();
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    const backTo = "/admin/moderation?tab=comments&boardId=b-1&search=found";
+    renderCard("card-1", `?returnTo=${encodeURIComponent(backTo)}`);
+
+    const back = await screen.findByRole("link", {
+      name: adminMessage("admin.common.back", "en"),
+    });
+    expect(back).toHaveAttribute("href", backTo);
+  });
 });
