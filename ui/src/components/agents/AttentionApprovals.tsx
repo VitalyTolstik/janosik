@@ -421,7 +421,9 @@ export function AttentionApprovalList({
                       <b className="font-semibold text-foreground">
                         {row.boardTitle}
                       </b>
-                      . {cardKindSentence}
+                      {row.kind === "custom" ? null : (
+                        <> . {cardKindSentence}</>
+                      )}
                     </span>
                   </button>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -442,7 +444,7 @@ export function AttentionApprovalList({
                     >
                       {t("agents.approvals.reject")}
                     </Button>
-                    <code className="ml-auto truncate font-mono text-[11px] text-muted-foreground">
+                    <code className="ml-auto hidden truncate font-mono text-[11px] text-muted-foreground md:block">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
                       })}

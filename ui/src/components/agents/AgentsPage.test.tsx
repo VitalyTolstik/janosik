@@ -561,6 +561,13 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("requires a board for an approval deep link", async () => {
+    renderPage("/agents?section=attention&approval=approval-1");
+    expect(await screen.findByTestId("agents-missing-scope")).toHaveTextContent(
+      "Approval and run links must include a board.",
+    );
+  });
+
   it("keeps rollback read-only on a board where the caller is a member", async () => {
     const memberRun = run({ id: "run-2", boardId: "board-2" });
     hoisted.listRuns.mockResolvedValue([memberRun]);
@@ -1000,6 +1007,27 @@ describe("AgentsPage", () => {
       "aria-pressed",
       "false",
     );
+  });
+
+  it("reads the canonical ?agent= token filter", async () => {
+    renderPage("/agents?section=sessions&agent=token-2");
+
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
+    const rows = screen.getAllByTestId(/^agent-session-row-/);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Docs pass");
+  });
+
+  it("keeps ?q= and ?time= filters from a shared URL", async () => {
+    renderPage("/agents?section=sessions&q=Nightly&time=24h");
+
+    expect(await screen.findByTestId("agents-search")).toHaveValue("Nightly");
+    expect(
+      await screen.findByTestId("agent-session-row-session-1"),
+    ).toBeVisible();
+    expect(screen.queryByTestId("agent-session-row-session-3")).toBeNull();
   });
 
   it("shows the filtered empty state and clears it", async () => {

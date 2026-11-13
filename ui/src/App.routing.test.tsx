@@ -67,6 +67,17 @@ describe("BrowserRouter routing", () => {
     expect(await screen.findByRole("heading", { name: "Alpha" })).toBeVisible();
   });
 
+  it("keeps the legacy /agents/:tokenId deep link on its own route", async () => {
+    visit("/agents/token-1");
+    // The token detail owns this route: in local mode it renders its own
+    // empty state, never the generic in-app 404. TASK-179.11 keeps this URL
+    // working while `/agents` grows master-detail.
+    expect(
+      await screen.findByTestId("agent-not-found", {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Page not found")).toBeNull();
+  });
+
   it("resets the board filter when switching boards (B-8)", async () => {
     localStorage.setItem(
       "janosik-boards",
