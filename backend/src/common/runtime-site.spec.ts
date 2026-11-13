@@ -48,6 +48,44 @@ describe("prepareRuntimeSite", () => {
     );
   });
 
+  it("does not rewrite lookalike hosts, userinfo, ports or the wrong protocol", () => {
+    const malicious = [
+      "https://site-origin.invalid.evil/docs/",
+      "https://user@site-origin.invalid/docs/",
+      "https://site-origin.invalid:8443/docs/",
+      "http://site-origin.invalid/docs/",
+      "https://site-origin.invalid@evil.example/docs/",
+    ].join("\n");
+    fs.writeFileSync(path.join(source, "index.html"), malicious);
+
+    generated = prepareRuntimeSite(source, "https://example.org");
+
+    expect(generated).toBe(source);
+    expect(fs.readFileSync(path.join(source, "index.html"), "utf8")).toBe(
+      malicious,
+    );
+  });
+
+  it("rewrites exact origins with a path, query or fragment", () => {
+    fs.writeFileSync(
+      path.join(source, "index.html"),
+      [
+        "https://site-origin.invalid/docs/",
+        "https://site-origin.invalid?x=1",
+        "https://site-origin.invalid#top",
+      ].join("\n"),
+    );
+
+    generated = prepareRuntimeSite(source, "https://example.org");
+    const rewritten = fs.readFileSync(
+      path.join(generated, "index.html"),
+      "utf8",
+    );
+    expect(rewritten).toContain("https://example.org/docs/");
+    expect(rewritten).toContain("https://example.org/?x=1");
+    expect(rewritten).toContain("https://example.org/#top");
+  });
+
   it("leaves sites with an explicit build origin untouched", () => {
     fs.writeFileSync(
       path.join(source, "index.html"),
