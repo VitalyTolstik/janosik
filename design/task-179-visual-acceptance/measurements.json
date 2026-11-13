@@ -1,0 +1,228 @@
+{
+  "agents": {
+    "pageTitle": {
+      "rect": [240, 72, 220, 22],
+      "fontFamily": "\"Space Grotesk\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+      "fontSize": "18px",
+      "fontWeight": "700",
+      "lineHeight": "21.6px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "pageSub": {
+      "rect": [240, 97, 220, 17],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "11.5px",
+      "fontWeight": "400",
+      "lineHeight": "16.675px",
+      "color": "rgb(147, 164, 189)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "railTitle": {
+      "rect": [16, 72, 189, 20],
+      "fontFamily": "\"Space Grotesk\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+      "fontSize": "17px",
+      "fontWeight": "700",
+      "lineHeight": "19.55px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "railTab": {
+      "rect": [10, 138, 201, 34],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "550",
+      "lineHeight": "17.4px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgb(23, 32, 51)",
+      "padding": "0px 8px",
+      "radius": "6px"
+    },
+    "search": {
+      "rect": [240, 125, 340, 30],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "11.5px",
+      "fontWeight": "400",
+      "lineHeight": "17.25px",
+      "color": "rgb(230, 237, 247)",
+      "background": "oklab(0.221394 -0.00370806 -0.0355773)",
+      "padding": "0px 9px 0px 27px",
+      "radius": "6px"
+    },
+    "refresh": {
+      "rect": [983, 72, 87, 28],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "11px",
+      "fontWeight": "650",
+      "lineHeight": "11px",
+      "color": "rgb(230, 237, 247)",
+      "background": "oklab(0.244858 -0.00380383 -0.0385778 / 0.65)",
+      "padding": "0px 9px",
+      "radius": "6px"
+    },
+    "card": {
+      "rect": [255, 205, 802, 64],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "24px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "detail": {
+      "rect": [1088, 56, 352, 844],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "24px",
+      "color": "rgb(230, 237, 247)",
+      "background": "oklab(0.212749 -0.00367278 -0.0344719)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "detailTitle": {
+      "rect": [1103, 88, 123, 18],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "13px",
+      "fontWeight": "650",
+      "lineHeight": "17.55px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    }
+  },
+  "control": {
+    "modal": {
+      "rect": [160, 56, 1120, 760],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "13px",
+      "fontWeight": "400",
+      "lineHeight": "18.85px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgb(23, 32, 51)",
+      "padding": "0px",
+      "radius": "11px"
+    },
+    "title": {
+      "rect": [220, 71, 737, 20],
+      "fontFamily": "\"Space Grotesk\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "700",
+      "lineHeight": "20px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "rail": {
+      "rect": [161, 138, 206, 627],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "13px",
+      "fontWeight": "400",
+      "lineHeight": "18.85px",
+      "color": "rgb(230, 237, 247)",
+      "background": "oklab(0.230038 -0.00374335 -0.0366828)",
+      "padding": "12px 9px 10px",
+      "radius": "0px"
+    },
+    "tab": {
+      "rect": [170, 173, 187, 38],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "550",
+      "lineHeight": "17.4px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgb(23, 32, 51)",
+      "padding": "0px 8px",
+      "radius": "6px"
+    },
+    "body": {
+      "rect": [367, 138, 912, 627],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "13px",
+      "fontWeight": "400",
+      "lineHeight": "18.85px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "foot": {
+      "rect": [161, 765, 1118, 50],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "13px",
+      "fontWeight": "400",
+      "lineHeight": "18.85px",
+      "color": "rgb(230, 237, 247)",
+      "background": "oklab(0.233743 -0.00375847 -0.0371565)",
+      "padding": "9px 12px",
+      "radius": "0px"
+    }
+  },
+  "settings": {
+    "dialog": {
+      "rect": [200, 56, 1040, 756],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "24px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgb(23, 32, 51)",
+      "padding": "0px",
+      "radius": "11px"
+    },
+    "title": {
+      "rect": [217, 89, 842, 21],
+      "fontFamily": "\"Space Grotesk\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+      "fontSize": "17px",
+      "fontWeight": "700",
+      "lineHeight": "21.25px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    },
+    "rail": {
+      "rect": [201, 141, 194, 670],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "24px",
+      "color": "rgb(230, 237, 247)",
+      "background": "oklab(0.231273 -0.00374839 -0.0368407)",
+      "padding": "12px 9px",
+      "radius": "0px"
+    },
+    "tab": {
+      "rect": [210, 218, 175, 38],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "12px",
+      "fontWeight": "550",
+      "lineHeight": "17.4px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgb(23, 32, 51)",
+      "padding": "0px 8px",
+      "radius": "6px"
+    },
+    "panel": {
+      "rect": [395, 141, 844, 670],
+      "fontFamily": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "24px",
+      "color": "rgb(230, 237, 247)",
+      "background": "rgba(0, 0, 0, 0)",
+      "padding": "0px",
+      "radius": "0px"
+    }
+  }
+}
