@@ -49,7 +49,7 @@ interface RunAnalysis {
   currentByTouch: Map<string, CurrentState>;
 }
 
-function runToDto(row: AgentRun): AgentRunDto {
+export function runToDto(row: AgentRun): AgentRunDto {
   return {
     id: row.id,
     boardId: row.boardId,

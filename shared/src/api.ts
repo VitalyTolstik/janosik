@@ -157,6 +157,9 @@ export const API_ERROR_CODES = [
   "announcement_translations_incomplete",
   "announcement_source_translation_required",
   "board_write_timeout",
+  "invalid_cursor",
+  "invalid_filter",
+  "invalid_range",
   "not_found",
   "validation_failed",
   "unauthorized",
@@ -1352,6 +1355,244 @@ export interface RunListQuery {
   /** Run id to page after (older rows). */
   cursor?: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * TASK-179.10 — read-only cross-board /agents overview
+ * ------------------------------------------------------------------ */
+
+/**
+ * The section of the global `/agents` page. `attention` in the UI is built
+ * from the `approvals` section (pending filter) plus stale `sessions`; the
+ * API keeps the item shapes separate on purpose.
+ */
+export const AGENTS_OVERVIEW_SECTIONS = [
+  "approvals",
+  "sessions",
+  "runs",
+] as const;
+export type AgentsOverviewSection = (typeof AGENTS_OVERVIEW_SECTIONS)[number];
+
+export const AGENTS_OVERVIEW_APPROVAL_STATUSES = [
+  "all",
+  "pending",
+  "decided",
+  "approved",
+  "rejected",
+  "expired",
+  "cancelled",
+  "consumed",
+] as const;
+export type AgentsOverviewApprovalStatus =
+  (typeof AGENTS_OVERVIEW_APPROVAL_STATUSES)[number];
+
+export const AGENTS_OVERVIEW_SESSION_STATUSES = [
+  "all",
+  "live",
+  "stale",
+  "paused",
+  ...AGENT_SESSION_STATUSES,
+] as const;
+export type AgentsOverviewSessionStatus =
+  (typeof AGENTS_OVERVIEW_SESSION_STATUSES)[number];
+
+export const AGENTS_OVERVIEW_RUN_STATUSES = [
+  "all",
+  ...AGENT_RUN_STATUSES,
+] as const;
+export type AgentsOverviewRunStatus =
+  (typeof AGENTS_OVERVIEW_RUN_STATUSES)[number];
+
+/** `GET /agents/overview` filters. */
+export interface AgentsOverviewQuery {
+  /** Defaults to `approvals`. */
+  section?: AgentsOverviewSection;
+  /** One accessible board; omitted = every accepted, non-expired membership. */
+  boardId?: string;
+  /** Case-insensitive search over the section's documented field whitelist. */
+  q?: string;
+  status?:
+    | AgentsOverviewApprovalStatus
+    | AgentsOverviewSessionStatus
+    | AgentsOverviewRunStatus;
+  /** Approval kind for `approvals`; run kind for `runs`; refused for sessions. */
+  kind?: ApprovalKind | AgentRunKind;
+  /** Approval requester token, session token or run token. */
+  tokenId?: string;
+  /** Approval agent session, session id or run agent session. */
+  sessionId?: string;
+  /** Unix ms lower bound on `createdAt` (approvals/runs) or `startedAt` (sessions). */
+  from?: number;
+  /** Unix ms upper bound on `createdAt` (approvals/runs) or `startedAt` (sessions). */
+  to?: number;
+  cursor?: string;
+  /** 1–100; defaults to 50. */
+  limit?: number;
+}
+
+/** One board in the scope combobox; pending is exact only for an ADMIN. */
+export interface AgentsOverviewBoardCount {
+  id: string;
+  title: string;
+  role: BoardRole;
+  /**
+   * Effective pending approvals on this board when the caller is ADMIN.
+   * `null` for MEMBER/VIEWER so the UI never renders a false zero.
+   */
+  pendingApprovals: number | null;
+}
+
+export interface AgentsOverviewApprovalCounts {
+  /** Effective pending: stored pending and `expiresAt > refreshedAt`. */
+  pending: number;
+  /** Everything else (approved/rejected/expired/cancelled/consumed). */
+  decided: number;
+  total: number;
+}
+
+export interface AgentsOverviewSessionCounts {
+  total: number;
+  /** Non-terminal session with `endedAt === null`. */
+  live: number;
+  active: number;
+  idle: number;
+  waiting: number;
+  /** Live session with no heartbeat for `AGENT_SESSION_STALE_MS`. */
+  stale: number;
+  /** Effective pause: session, board or token pause on a live session. */
+  paused: number;
+}
+
+export interface AgentsOverviewRunCounts {
+  total: number;
+  applied: number;
+  reverted: number;
+  failed: number;
+}
+
+/**
+ * Scope counts. They intentionally ignore `q`, `status`, `kind`, `tokenId`,
+ * `sessionId`, `from` and `to`: the rail/combobox counts must not collapse to
+ * zero while a filter is active. `total` is the filtered count.
+ */
+export interface AgentsOverviewCounts {
+  boards: AgentsOverviewBoardCount[];
+  approvals: AgentsOverviewApprovalCounts;
+  sessions: AgentsOverviewSessionCounts;
+  runs: AgentsOverviewRunCounts;
+}
+
+export interface AgentsOverviewScope {
+  boardId: string | null;
+  boardTitle: string | null;
+  /** The caller's role on `boardId`; `null` for the All-boards scope. */
+  role: BoardRole | null;
+  /** True when approvals can be read in this scope (ADMIN on the board). */
+  canViewApprovals: boolean;
+}
+
+export interface AgentsOverviewTokenFacet {
+  id: string;
+  /** The caller's own token name; `null` for another user's token. */
+  name: string | null;
+  own: boolean;
+}
+
+export interface AgentsOverviewSessionFacet {
+  id: string;
+  name: string | null;
+  boardId: string;
+  boardTitle: string;
+}
+
+/** Named filter options; names are disclosed only for visible objects. */
+export interface AgentsOverviewFacets {
+  tokens: AgentsOverviewTokenFacet[];
+  sessions: AgentsOverviewSessionFacet[];
+  tokensTruncated: boolean;
+  sessionsTruncated: boolean;
+}
+
+/**
+ * One approval row in the overview. `status` is effective at `refreshedAt`;
+ * `storedStatus` keeps the row's persisted status visible. The plan itself is
+ * not part of this read — the existing board approval detail owns it.
+ */
+export interface AgentsOverviewApprovalItem extends Omit<
+  ApprovalRequestDto,
+  "status" | "plan"
+> {
+  status: ApprovalStatus;
+  storedStatus: ApprovalStatus;
+  boardTitle: string;
+  boardRole: BoardRole;
+  /** Card title only while the card still exists on the accessible board. */
+  cardTitle: string | null;
+  /** Session name only while the session is on the accessible board. */
+  sessionName: string | null;
+  /** The caller's own token name; `null` for another user's token. */
+  tokenName: string | null;
+  /** Requester display name only while they are an active board member. */
+  requestedByName: string | null;
+  /** Requester email only while they are an active board member. */
+  requestedByEmail: string | null;
+  /** Decider display name only while they are an active board member. */
+  decidedByName: string | null;
+  /** Number of commands in the stored plan (not the plan itself). */
+  commandCount: number;
+  /** Number of lifecycle operations in the stored plan. */
+  operationCount: number;
+}
+
+/** One session row in the overview, decorated for the global list. */
+export interface AgentsOverviewSessionItem extends AgentSessionDto {
+  boardTitle: string;
+  boardRole: BoardRole;
+  tokenName: string | null;
+  cardTitle: string | null;
+}
+
+/** One run row in the overview, decorated for the global list. */
+export interface AgentsOverviewRunItem extends RunSummaryDto {
+  boardTitle: string;
+  boardRole: BoardRole;
+  tokenName: string | null;
+  sessionName: string | null;
+  /** Actor display name only while they are an active board member. */
+  actorName: string | null;
+  /** `appliedAt - createdAt`, clamped at zero; display only. */
+  durationMs: number;
+}
+
+export interface AgentsOverviewResponseBase {
+  scope: AgentsOverviewScope;
+  nextCursor: string | null;
+  /** Matching rows after filters, before `limit`/`cursor`. */
+  total: number;
+  counts: AgentsOverviewCounts;
+  facets: AgentsOverviewFacets;
+  /** The single server time slice used for every effective expiry decision. */
+  refreshedAt: number;
+}
+
+export interface AgentsOverviewApprovalsResponse extends AgentsOverviewResponseBase {
+  section: "approvals";
+  items: AgentsOverviewApprovalItem[];
+}
+
+export interface AgentsOverviewSessionsResponse extends AgentsOverviewResponseBase {
+  section: "sessions";
+  items: AgentsOverviewSessionItem[];
+}
+
+export interface AgentsOverviewRunsResponse extends AgentsOverviewResponseBase {
+  section: "runs";
+  items: AgentsOverviewRunItem[];
+}
+
+export type AgentsOverviewResponse =
+  | AgentsOverviewApprovalsResponse
+  | AgentsOverviewSessionsResponse
+  | AgentsOverviewRunsResponse;
 
 /* ------------------------------------------------------------------ *
  * TASK-166.8 — plan preview & atomic apply
