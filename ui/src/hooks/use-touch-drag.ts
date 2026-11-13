@@ -371,7 +371,11 @@ export function useTouchDrag({
             axis === "y" ? session.y : session.x,
           );
           if (delta === 0) continue;
-          const distance = Math.round(delta * scale);
+          // Keep at least 1 px per frame (with the original sign): on a
+          // high-refresh display scale can be below 0.5, and rounding the
+          // smallest edge step to zero would freeze auto-scroll forever.
+          const distance =
+            Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta) * scale));
           if (axis === "y") {
             container.scrollTop += distance;
           } else {

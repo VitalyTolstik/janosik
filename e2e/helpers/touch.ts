@@ -328,6 +328,11 @@ export async function touchDragToOffscreen(
     if (!box) throw new Error("touchDragToOffscreen: target disappeared");
     const visible = visibleBox(page, box, "target after auto-scroll");
 
+    // The release point can still sit inside the auto-scroll band. The table
+    // cases target the last row (scrollTop already clamped), and the calendar
+    // day cell is 128 px tall, so its centre settles outside the 48 px band.
+    // Re-measure and move the finger again before releasing if this helper is
+    // ever used for a short mid-list row.
     await client.send("Input.dispatchTouchEvent", {
       type: "touchMove",
       touchPoints: [

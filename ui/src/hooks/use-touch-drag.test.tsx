@@ -354,13 +354,17 @@ describe("useTouchDrag (TASK-31)", () => {
     expect(frames.length).toBeGreaterThan(0);
     act(() => frames.shift()?.call(window, 0));
 
-    expect(scroller.scrollTop).toBeGreaterThan(0);
+    // A normal 60 Hz frame keeps the original 14 px step.
+    expect(scroller.scrollTop).toBe(14);
 
     // A stalled frame (rAF drops to a few fps on a loaded machine) must not
-    // slow the gesture down: the step scales with the elapsed time, while a
-    // normal 60 Hz frame keeps the old 14 px step.
+    // slow the gesture down: 200 ms is 12 frames' worth of scrolling.
     act(() => frames.shift()?.call(window, 200));
-    expect(scroller.scrollTop).toBeGreaterThan(100);
+    expect(scroller.scrollTop).toBe(182);
+
+    // Catch-up is capped at 250 ms, so a 1 s gap moves 15 frames at most.
+    act(() => frames.shift()?.call(window, 1000));
+    expect(scroller.scrollTop).toBe(392);
 
     release(10, 99);
     expect(onDrop).not.toHaveBeenCalled();

@@ -113,8 +113,12 @@ describe("FilterBar", () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Bug" }));
-    expect(lastApplied(onChange)).toEqual({
-      ...EMPTY_FILTER,
+    // The click can arrive while the previous URL write is still in a router
+    // transition. Resolving against that newer state must keep its facet;
+    // the old object-shaped update dropped it.
+    const newer = { ...EMPTY_FILTER, blocked: true };
+    expect(lastApplied(onChange, newer)).toEqual({
+      ...newer,
       labelIds: ["l1"],
     });
   });
