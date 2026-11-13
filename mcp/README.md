@@ -80,10 +80,10 @@ Tools come in groups. The default set works the board, agent sessions,
 approvals, plans and run inspection; the groups that change _who_ can see a
 board or expose the account identity are opt-in:
 
-| Variable / flag                          | Effect                                                                                                                                                                                                                                 |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Variable / flag                          | Effect                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions,approvals,plans,runs`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
-| `JANOSIK_MCP_READONLY=1` / `--read-only` | Register only tools that never change anything — for an agent that watches and reports.                                                                                                                                                |
+| `JANOSIK_MCP_READONLY=1` / `--read-only` | Register only tools that never change anything — for an agent that watches and reports.                                                                                                                                                                                                                                     |
 
 In read-only mode, `janosik_export_board` can return an export in the tool
 response. Its `outputPath` option is refused because that writes a local file.
@@ -193,17 +193,31 @@ live release and `server.apiVersion` is `"1"`. `create_card` returns
 and hash:
 
 ```json
-{ "tool": "plan_changes",
+{
+  "tool": "plan_changes",
   "arguments": {
     "boardId": "b1",
     "commands": [
-      { "commandId": "cg-001", "action": {
-          "type": "ADD_CARD", "newCardId": "card-1",
-          "columnId": "col-1", "title": "Bulk card" } },
-      { "commandId": "cg-002", "action": {
-          "type": "SET_CARD_PRIORITY", "cardId": "card-1", "priority": "high" } }
+      {
+        "commandId": "cg-001",
+        "action": {
+          "type": "ADD_CARD",
+          "newCardId": "card-1",
+          "columnId": "col-1",
+          "title": "Bulk card"
+        }
+      },
+      {
+        "commandId": "cg-002",
+        "action": {
+          "type": "SET_CARD_PRIORITY",
+          "cardId": "card-1",
+          "priority": "high"
+        }
+      }
     ]
-  } }
+  }
+}
 ```
 
 `plan_changes` returns `planHash`, `plan`, `diff`, `warnings`, `conflicts` and
@@ -337,6 +351,12 @@ tool output). They are therefore **off by default**. Enable them with
 it). Setting only `JANOSIK_MCP_FS_ROOT` does not enable filesystem access.
 Symlinks that lead out of the root are refused, only regular files up to
 the attachment size limit are read, and existing files are never overwritten.
+When a root is configured, secure path resolution requires Linux x64 or
+arm64, a kernel with `openat2`, a mounted `/proc`, and `python3` on `PATH`.
+The filesystem tools fail closed if these requirements are unavailable; they
+do not fall back to a racy path check. The configured root and its parent must
+be controlled by the operator and must not be replaceable by other users.
+Without `JANOSIK_MCP_FS_ROOT`, filesystem access is not confined.
 
 ## Out of scope
 

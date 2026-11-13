@@ -73,9 +73,8 @@ PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 
 ### Outgoing email is off by default
 
-With no SMTP transport configured the API runs in **log mode**: verification
-codes and notices are written to the server log instead of being sent, and
-registration auto-verifies — nothing is emailed until you configure a transport
+With no SMTP transport configured the API runs in **log mode** and password
+registration is unavailable. Configure a transport before registering
 (see [Email service](/docs/admin/settings/) and [Runbooks](/docs/runbooks/)).
 For a local sandbox:
 

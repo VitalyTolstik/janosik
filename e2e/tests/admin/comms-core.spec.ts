@@ -86,18 +86,27 @@ test("S15: a segment announcement shows a banner, emails and dismisses", async (
     });
     expect(message.text).toContain(body);
 
+    const dismissed = userSide.page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/announcements/${announcement.id}/dismiss`),
+    );
     await userSide.page
       .getByTestId(`announcement-dismiss-${announcement.id}`)
       .click();
+    await dismissed;
     await expect(banner).toHaveCount(0);
     await userSide.page.reload({ waitUntil: "domcontentloaded" });
     await expect(userSide.page.getByTestId("announcement-banner")).toHaveCount(
       0,
     );
-    const dismissed = await userSide.page.evaluate(() =>
-      localStorage.getItem("janosik.announcements.dismissed"),
-    );
-    expect(dismissed).toContain(announcement.id);
+    // The legacy browser-global key is gone; the reload above proves the
+    // dismissal came back from the server, not from localStorage.
+    expect(
+      await userSide.page.evaluate(() =>
+        localStorage.getItem("janosik.announcements.dismissed"),
+      ),
+    ).toBeNull();
   } finally {
     await userSide.context.close();
   }

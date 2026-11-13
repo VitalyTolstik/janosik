@@ -12,6 +12,7 @@ import {
   API_TOKEN_DEFAULT_TTL_DAYS,
   ApiTokenService,
 } from "./api-token.service";
+import { securityStamp } from "./security-stamp";
 
 const prismaMock = {
   apiToken: {
@@ -28,7 +29,9 @@ const prismaMock = {
   boardMember: {
     findUnique: jest.fn(),
   },
+  user: { findUnique: jest.fn() },
   $executeRaw: jest.fn(),
+  $queryRaw: jest.fn(),
   $transaction: jest.fn(),
 } as unknown as PrismaService & {
   apiToken: Record<
@@ -44,7 +47,9 @@ const prismaMock = {
   agentSession: Record<"updateMany", jest.Mock>;
   card: Record<"updateMany" | "findMany", jest.Mock>;
   boardMember: Record<"findUnique", jest.Mock>;
+  user: Record<"findUnique", jest.Mock>;
   $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 };
 
@@ -102,6 +107,8 @@ describe("ApiTokenService", () => {
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.card.findMany.mockResolvedValue([]);
     prismaMock.$executeRaw.mockResolvedValue(1);
+    prismaMock.$queryRaw.mockResolvedValue([]);
+    prismaMock.user.findUnique.mockResolvedValue(makeUser());
     attentionMock.notifyTokenRevoked.mockResolvedValue(undefined);
     service = new ApiTokenService(
       prismaMock,
@@ -290,16 +297,22 @@ describe("ApiTokenService", () => {
   });
 
   describe("create", () => {
+    const stamp = securityStamp(makeUser());
+
     it("stores the hash and returns the plaintext exactly once", async () => {
       prismaMock.apiToken.create.mockImplementation(
         async ({ data }: { data: Partial<ApiToken> }) =>
           makeToken({ name: data.name, expiresAt: data.expiresAt ?? null }),
       );
 
-      const result = await service.create("user-1", {
-        name: "Deploy",
-        expiresAt: null,
-      });
+      const result = await service.create(
+        "user-1",
+        {
+          name: "Deploy",
+          expiresAt: null,
+        },
+        { stamp },
+      );
 
       expect(result.token.startsWith(API_TOKEN_PREFIX)).toBe(true);
       const stored = prismaMock.apiToken.create.mock.calls[0][0].data;
@@ -320,7 +333,11 @@ describe("ApiTokenService", () => {
       );
       const before = Date.now();
 
-      const result = await service.create("user-1", { name: "Forgetful" });
+      const result = await service.create(
+        "user-1",
+        { name: "Forgetful" },
+        { stamp },
+      );
 
       const ttl = API_TOKEN_DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000;
       expect(result.apiToken.expiresAt).toBeGreaterThanOrEqual(before + ttl);
@@ -333,10 +350,14 @@ describe("ApiTokenService", () => {
       );
       const future = new Date(Date.now() + 86_400_000).toISOString();
 
-      const result = await service.create("user-1", {
-        name: "Scoped",
-        expiresAt: future,
-      });
+      const result = await service.create(
+        "user-1",
+        {
+          name: "Scoped",
+          expiresAt: future,
+        },
+        { stamp },
+      );
 
       expect(result.apiToken.expiresAt).toBe(new Date(future).getTime());
     });
@@ -348,10 +369,10 @@ describe("ApiTokenService", () => {
       ).toISOString();
 
       await expect(
-        service.create("user-1", { name: "Old", expiresAt: past }),
+        service.create("user-1", { name: "Old", expiresAt: past }, { stamp }),
       ).rejects.toBeInstanceOf(BadRequestException);
       await expect(
-        service.create("user-1", { name: "Far", expiresAt: tooFar }),
+        service.create("user-1", { name: "Far", expiresAt: tooFar }, { stamp }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
     });
@@ -361,12 +382,16 @@ describe("ApiTokenService", () => {
         async ({ data }: { data: Partial<ApiToken> }) => makeToken(data),
       );
 
-      const result = await service.create("user-1", {
-        name: "Agent",
-        expiresAt: null,
-        readOnly: true,
-        rateLimitPerMinute: 120,
-      });
+      const result = await service.create(
+        "user-1",
+        {
+          name: "Agent",
+          expiresAt: null,
+          readOnly: true,
+          rateLimitPerMinute: 120,
+        },
+        { stamp },
+      );
 
       expect(result.apiToken.readOnly).toBe(true);
       expect(result.apiToken.rateLimitPerMinute).toBe(120);
@@ -390,7 +415,7 @@ describe("ApiTokenService", () => {
           scopePreset: "reviewer",
           trustedCi: true,
         },
-        { allowTrustedCi: true },
+        { allowTrustedCi: true, stamp },
       );
 
       expect(prismaMock.apiToken.create.mock.calls[0][0].data).toMatchObject({
@@ -405,13 +430,49 @@ describe("ApiTokenService", () => {
       });
     });
 
+    it("rejects an in-flight request after a claim changed the stamp", async () => {
+      const before = makeUser();
+      const after = makeUser({ passwordHash: null });
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      prismaMock.$transaction.mockImplementation(
+        async (fn: (tx: unknown) => Promise<unknown>) => {
+          entered();
+          await gate;
+          return fn(prismaMock);
+        },
+      );
+      prismaMock.user.findUnique.mockResolvedValue(after);
+
+      const pending = service.create(
+        "user-1",
+        { name: "Late", expiresAt: null },
+        { stamp: securityStamp(before) },
+      );
+      await waiting;
+      release();
+
+      await expect(pending).rejects.toThrow("Credentials changed");
+      expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
+    });
+
     it("rejects trustedCi unless the caller is a browser session", async () => {
       await expect(
-        service.create("user-1", {
-          name: "Escalated",
-          expiresAt: null,
-          trustedCi: true,
-        }),
+        service.create(
+          "user-1",
+          {
+            name: "Escalated",
+            expiresAt: null,
+            trustedCi: true,
+          },
+          { stamp },
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
     });
@@ -420,14 +481,22 @@ describe("ApiTokenService", () => {
       prismaMock.boardMember.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.create("user-1", { name: "Scoped", boardId: "board-9" }),
+        service.create(
+          "user-1",
+          { name: "Scoped", boardId: "board-9" },
+          { stamp },
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
     });
 
     it("rejects an out-of-range rate limit", async () => {
       await expect(
-        service.create("user-1", { name: "Fast", rateLimitPerMinute: 0 }),
+        service.create(
+          "user-1",
+          { name: "Fast", rateLimitPerMinute: 0 },
+          { stamp },
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.apiToken.create).not.toHaveBeenCalled();
     });

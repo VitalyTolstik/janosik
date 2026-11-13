@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import type { OAuthProviderDto } from "@janosik/shared";
 import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
@@ -62,17 +64,63 @@ function PasswordInput({
  */
 export function SecuritySection() {
   const { t } = useI18n();
+  const { user, updateUser } = useAuth();
   const toast = useToast();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [providers, setProviders] = useState<OAuthProviderDto[]>([]);
+  const [linking, setLinking] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void api
+      .listOAuthProviders()
+      .then((result) => {
+        if (alive) setProviders(result.providers);
+      })
+      .catch(() => {
+        if (alive) setProviders([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /**
+   * OAuth-only first password: reuse the OAuth proof carried by the session.
+   * Rotation preserves its original `authTime`; older than ten minutes the
+   * server rejects it and the user must sign in with the provider again.
+   */
+  const oauthProofToken = async (): Promise<string | undefined> => {
+    await api.refreshSession().catch(() => null);
+    return api.getAccessToken() ?? undefined;
+  };
+
+  const linkProvider = async (provider: string) => {
+    setLinking(true);
+    setError(null);
+    try {
+      const { redirectUrl } = await api.startOAuthLink(provider, current);
+      window.location.assign(redirectUrl);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError && cause.status === 401
+          ? t("account.security.wrongCurrent")
+          : t("account.security.genericError"),
+      );
+      setLinking(false);
+    }
+  };
 
   const tooShort = next.length > 0 && next.length < 8;
   const mismatch = confirm.length > 0 && confirm !== next;
   const canSubmit =
-    current.length > 0 && next.length >= 8 && confirm === next && !saving;
+    (user?.hasPassword === false || current.length > 0) &&
+    next.length >= 8 &&
+    confirm === next &&
+    !saving;
 
   const validationError = tooShort
     ? t("account.security.tooShort")
@@ -86,16 +134,29 @@ export function SecuritySection() {
     setSaving(true);
     setError(null);
     try {
-      await api.changePassword(current, next);
+      const oauthProof =
+        user?.hasPassword === false ? await oauthProofToken() : undefined;
+      await api.changePassword(current, next, oauthProof);
+      try {
+        updateUser(await api.me());
+      } catch {
+        /* the session may need a fresh sign-in */
+      }
       setCurrent("");
       setNext("");
       setConfirm("");
       toast.success(t("account.security.changed"));
     } catch (cause) {
+      const code =
+        cause instanceof ApiError
+          ? (cause.body as { code?: unknown } | null)?.code
+          : undefined;
       setError(
-        cause instanceof ApiError && cause.status === 401
-          ? t("account.security.wrongCurrent")
-          : t("account.security.genericError"),
+        code === "oauth_proof_required" || code === "oauth_proof_invalid"
+          ? t("account.security.oauthProofFailed")
+          : cause instanceof ApiError && cause.status === 401
+            ? t("account.security.wrongCurrent")
+            : t("account.security.genericError"),
       );
     } finally {
       setSaving(false);
@@ -119,20 +180,22 @@ export function SecuritySection() {
         onSubmit={handleSubmit}
         className="space-y-4 rounded-lg border bg-muted/30 p-4"
       >
-        <div className="space-y-1.5">
-          <label
-            htmlFor="security-current"
-            className="text-xs font-medium text-muted-foreground"
-          >
-            {t("account.security.current")}
-          </label>
-          <PasswordInput
-            id="security-current"
-            value={current}
-            autoComplete="current-password"
-            onChange={setCurrent}
-          />
-        </div>
+        {user?.hasPassword !== false && (
+          <div className="space-y-1.5">
+            <label
+              htmlFor="security-current"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {t("account.security.current")}
+            </label>
+            <PasswordInput
+              id="security-current"
+              value={current}
+              autoComplete="current-password"
+              onChange={setCurrent}
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <label
@@ -173,6 +236,29 @@ export function SecuritySection() {
             {validationError ?? error}
           </p>
         ) : null}
+
+        {user?.hasPassword !== false && providers.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              {t("account.security.oauthLinkHint")}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {providers.map((provider) => (
+                <Button
+                  key={provider.id}
+                  type="button"
+                  variant="outline"
+                  disabled={!current || linking}
+                  onClick={() => void linkProvider(provider.id)}
+                >
+                  {t("account.security.oauthLink", {
+                    provider: provider.label,
+                  })}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] text-muted-foreground">

@@ -46,4 +46,11 @@ export function assertBootSecurity(log: (message: string) => void): void {
         "cookie travels over plain HTTP and can be intercepted. Use HTTPS.",
     );
   }
+  if (env.ALLOW_BOOTSTRAP_USER) {
+    log(
+      "SECURITY WARNING: ALLOW_BOOTSTRAP_USER=true — the first account can " +
+        "be created and auto-verified without email. It is inert once a user " +
+        "exists; set it to false after the first account.",
+    );
+  }
 }

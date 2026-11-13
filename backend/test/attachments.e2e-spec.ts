@@ -426,6 +426,67 @@ describe("Attachments (TASK-47)", () => {
   });
 
   describe("inline media (pasted into bodies, TASK-48)", () => {
+    it("does not delete another member's inline file when deleting a comment", async () => {
+      const uploaded = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(admin.token))
+        .attach("file", png, {
+          filename: "admin-inline.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const id = uploaded.body.id as string;
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(member.token))
+        .send({ text: `see /api/v1/attachments/${id}/content` })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .get(`/api/v1/attachments/${id}/content`)
+        .set(auth(admin.token))
+        .expect(200);
+    });
+
+    it("keeps a shared inline file until the last referencing comment is deleted", async () => {
+      const uploaded = await server()
+        .post(`/api/v1/cards/${cardId}/attachments?inline=1`)
+        .set(auth(member.token))
+        .attach("file", png, {
+          filename: "shared-inline.png",
+          contentType: "image/png",
+        })
+        .expect(201);
+      const id = uploaded.body.id as string;
+      const createComment = () =>
+        server()
+          .post(`/api/v1/cards/${cardId}/comments`)
+          .set(auth(member.token))
+          .send({ text: `see /api/v1/attachments/${id}/content` })
+          .expect(201);
+      const first = await createComment();
+      const second = await createComment();
+      await server()
+        .delete(`/api/v1/comments/${first.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .get(`/api/v1/attachments/${id}/content`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .delete(`/api/v1/comments/${second.body.id as string}`)
+        .set(auth(member.token))
+        .expect(200);
+      await server()
+        .get(`/api/v1/attachments/${id}/content`)
+        .set(auth(member.token))
+        .expect(404);
+    });
+
     it("uploads hidden inline media without the card badge count", async () => {
       const res = await server()
         .post(`/api/v1/cards/${cardId}/attachments?inline=1`)

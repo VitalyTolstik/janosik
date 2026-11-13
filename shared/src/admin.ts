@@ -1478,6 +1478,19 @@ export interface AnnouncementDto {
   requestedLocale: AnnouncementLocale;
   /** `true` → the UI must show the "available only in …" notice. */
   isFallback: boolean;
+  /**
+   * Optimistic version of the announcement row. A dismissal records it, so
+   * an edited announcement (version + 1) is shown again; send it back to
+   * `POST /announcements/:id/dismiss`.
+   */
+  version: number;
+}
+
+/** `POST /announcements/:id/dismiss` answer. */
+export interface AnnouncementDismissResponse {
+  dismissed: true;
+  /** Version recorded as dismissed for the signed-in user. */
+  version: number;
 }
 
 // --- TASK-63: data + compliance --------------------------------------------

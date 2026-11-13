@@ -40,7 +40,7 @@ export function EmailChangeDialog({
 }) {
   const { t } = useI18n();
   const toast = useToast();
-  const { updateUser } = useAuth();
+  const { user, updateUser } = useAuth();
 
   const [step, setStep] = useState<Step>("form");
   const [newEmail, setNewEmail] = useState("");
@@ -180,7 +180,9 @@ export function EmailChangeDialog({
           <DialogTitle>{t("account.email.title")}</DialogTitle>
           {step === "form" ? (
             <DialogDescription>
-              {t("account.email.passwordHint")}
+              {user?.hasPassword === false
+                ? t("account.email.oauthHint")
+                : t("account.email.passwordHint")}
             </DialogDescription>
           ) : (
             <DialogDescription className="flex items-center gap-1.5">
@@ -210,23 +212,25 @@ export function EmailChangeDialog({
                 required
               />
             </div>
-            <div className="space-y-1.5">
-              <label
-                htmlFor="email-change-password"
-                className="text-xs font-medium text-muted-foreground"
-              >
-                {t("account.email.passwordLabel")}
-              </label>
-              <Input
-                id="email-change-password"
-                data-testid="email-change-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-            </div>
+            {user?.hasPassword !== false && (
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="email-change-password"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  {t("account.email.passwordLabel")}
+                </label>
+                <Input
+                  id="email-change-password"
+                  data-testid="email-change-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground">
               {t("account.email.sessionsNote")}
             </p>
@@ -241,7 +245,11 @@ export function EmailChangeDialog({
               <Button
                 type="submit"
                 data-testid="email-change-send"
-                disabled={busy || !newEmail.trim() || !password}
+                disabled={
+                  busy ||
+                  !newEmail.trim() ||
+                  (user?.hasPassword !== false && !password)
+                }
               >
                 {busy
                   ? t("account.email.submitting")

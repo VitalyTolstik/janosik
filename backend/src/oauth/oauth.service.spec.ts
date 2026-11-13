@@ -20,6 +20,7 @@ const prismaMock = {
     create: jest.fn(),
     findFirst: jest.fn(),
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
   },
   refreshToken: { updateMany: jest.fn() },
@@ -27,16 +28,23 @@ const prismaMock = {
   agentSession: { updateMany: jest.fn() },
   card: { findMany: jest.fn(), updateMany: jest.fn() },
   $executeRaw: jest.fn(),
+  $queryRaw: jest.fn(),
+  oAuthIdentity: { findUnique: jest.fn(), upsert: jest.fn() },
   emailVerificationCode: { deleteMany: jest.fn() },
   emailChangeCode: { deleteMany: jest.fn() },
   $transaction: jest.fn(),
 } as unknown as PrismaService & {
-  user: Record<"create" | "findFirst" | "findUnique" | "update", jest.Mock>;
+  user: Record<
+    "create" | "findFirst" | "findUnique" | "findUniqueOrThrow" | "update",
+    jest.Mock
+  >;
   refreshToken: Record<"updateMany", jest.Mock>;
   apiToken: Record<"findMany" | "updateMany", jest.Mock>;
   agentSession: Record<"updateMany", jest.Mock>;
   card: Record<"findMany" | "updateMany", jest.Mock>;
   $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
+  oAuthIdentity: Record<"findUnique" | "upsert", jest.Mock>;
   emailVerificationCode: Record<"deleteMany", jest.Mock>;
   emailChangeCode: Record<"deleteMany", jest.Mock>;
   $transaction: jest.Mock;
@@ -44,7 +52,12 @@ const prismaMock = {
 
 const authMock = {
   startSession: jest.fn(),
-} as unknown as AuthService & { startSession: jest.Mock };
+  assertRegistrationOpen: jest.fn(),
+  verifyOAuthLinkProof: jest.fn(),
+} as unknown as AuthService & {
+  startSession: jest.Mock;
+  verifyOAuthLinkProof: jest.Mock;
+};
 
 const settingsMock = {
   credentials: jest.fn(),
@@ -96,6 +109,10 @@ describe("OAuthService", () => {
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.$executeRaw.mockResolvedValue(1);
+    prismaMock.$queryRaw.mockResolvedValue([]);
+    prismaMock.user.findUniqueOrThrow.mockResolvedValue(makeUser());
+    prismaMock.oAuthIdentity.findUnique.mockResolvedValue(null);
+    prismaMock.oAuthIdentity.upsert.mockResolvedValue({});
     // Interactive transactions run the callback against the same mock.
     prismaMock.$transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock),
@@ -205,6 +222,7 @@ describe("OAuthService", () => {
           passwordHash: null,
           displayName: "Vera",
           emailVerifiedAt: expect.any(Date),
+          oauthIdentities: { create: { provider: "google" } },
         },
       });
       expect(authMock.startSession).toHaveBeenCalledTimes(1);
@@ -247,22 +265,87 @@ describe("OAuthService", () => {
       );
     });
 
-    it("links into a verified account without touching its credentials", async () => {
+    it("does not link an unproven password account by email", async () => {
       const { state } = await start();
       stubGoogleRoundtrip({ email: "user@example.com", email_verified: true });
       prismaMock.user.findFirst.mockResolvedValue(
         makeUser({ emailVerifiedAt: new Date(), passwordHash: "$argon2id$x" }),
       );
 
-      await service.handleCallback("google", "auth-code", state, state);
+      await expect(
+        service.handleCallback("google", "auth-code", state, state),
+      ).rejects.toThrow(ForbiddenException);
 
       expect(prismaMock.user.update).not.toHaveBeenCalled();
       expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
       expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(authMock.startSession).not.toHaveBeenCalled();
+    });
+
+    it("allows a password account with an established provider link", async () => {
+      const { state } = await start();
+      stubGoogleRoundtrip({ email: "user@example.com", email_verified: true });
+      prismaMock.user.findFirst.mockResolvedValue(
+        makeUser({ emailVerifiedAt: new Date(), passwordHash: "$argon2id$x" }),
+      );
+      prismaMock.oAuthIdentity.findUnique.mockResolvedValue({ id: "link" });
+      await service.handleCallback("google", "auth-code", state, state);
       expect(authMock.startSession).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "user-1", passwordHash: "$argon2id$x" }),
+        expect.objectContaining({ id: "user-1" }),
         "oauth",
       );
+    });
+
+    it("does not create an OAuth account when registration is closed", async () => {
+      const { state } = await start();
+      stubGoogleRoundtrip({ email: "new@example.com", email_verified: true });
+      prismaMock.user.findFirst.mockResolvedValue(null);
+      (authMock.assertRegistrationOpen as jest.Mock).mockRejectedValue(
+        new ForbiddenException("closed"),
+      );
+      await expect(
+        service.handleCallback("google", "auth-code", state, state),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+    });
+
+    it("links an existing password account only after explicit proof and matching provider email", async () => {
+      const { state } = await start();
+      const existing = makeUser({
+        emailVerifiedAt: new Date(),
+        passwordHash: "$argon2id$x",
+      });
+      stubGoogleRoundtrip({ email: existing.email, email_verified: true });
+      authMock.verifyOAuthLinkProof.mockResolvedValue(existing);
+      prismaMock.user.findUnique.mockResolvedValue(existing);
+      await service.handleCallback(
+        "google",
+        "auth-code",
+        state,
+        state,
+        "proof",
+      );
+      expect(authMock.verifyOAuthLinkProof).toHaveBeenCalledWith(
+        "proof",
+        state,
+      );
+      expect(prismaMock.oAuthIdentity.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: { userId: existing.id, provider: "google" },
+        }),
+      );
+    });
+
+    it("refuses explicit linking when the provider email differs", async () => {
+      const { state } = await start();
+      stubGoogleRoundtrip({ email: "other@example.com", email_verified: true });
+      authMock.verifyOAuthLinkProof.mockResolvedValue(
+        makeUser({ email: "user@example.com" }),
+      );
+      await expect(
+        service.handleCallback("google", "auth-code", state, state, "proof"),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prismaMock.oAuthIdentity.upsert).not.toHaveBeenCalled();
     });
 
     it("refuses a disabled account", async () => {

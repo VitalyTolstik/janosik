@@ -39,4 +39,16 @@ describe("LoginBackoffService", () => {
     await backoff.reset("a@example.com");
     await backoff.assertNotLocked("a@example.com");
   });
+
+  it("counts simultaneous failures without losing increments", async () => {
+    const backoff = new LoginBackoffService();
+    await Promise.all(
+      Array.from({ length: LOGIN_FREE_ATTEMPTS }, () =>
+        backoff.recordFailure("race@example.com"),
+      ),
+    );
+    await expect(backoff.assertNotLocked("race@example.com")).rejects.toThrow(
+      HttpException,
+    );
+  });
 });

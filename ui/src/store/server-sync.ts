@@ -93,8 +93,14 @@ export class ServerSync {
   /** Insertion-ordered (oldest first) ids this client sent, per board. */
   private readonly sentIds = new Map<string, Set<string>>();
   private disposed = false;
+  private failures = 0;
 
   constructor(private readonly options: ServerSyncOptions) {}
+
+  /** Monotonic marker for detecting rejected writes while preparing an export. */
+  get failureCount(): number {
+    return this.failures;
+  }
 
   /**
    * Queue one command. Resolves when the server has answered — for a quiet
@@ -281,6 +287,7 @@ export class ServerSync {
       const response = await this.options.send(boardId, request);
       return { ok: true, versions: response.versions, seq: response.seq };
     } catch (error) {
+      this.failures += 1;
       return { ok: false, failure: classify(error) };
     }
   }

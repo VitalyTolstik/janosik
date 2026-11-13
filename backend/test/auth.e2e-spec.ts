@@ -85,7 +85,7 @@ describe("Auth API (e2e)", () => {
       avatarColor: null,
       avatarPath: null,
       createdAt: expect.any(Number),
-      // SMTP is unconfigured in the test env — registrations auto-verify.
+      // The e2e harness auto-verifies registrations by default.
       emailVerifiedAt: expect.any(Number),
       // TASK-166: how the session authenticated (password login).
       authMethod: "password",

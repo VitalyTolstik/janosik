@@ -116,7 +116,8 @@ APP_BIND_ADDRESS=127.0.0.1
 ALLOW_REGISTRATION=true
 ```
 
-`PUBLIC_ORIGIN` must match the URL users actually open — it builds OAuth
+`PUBLIC_ORIGIN` must match the URL users actually open — it sets the built-in
+site's canonical, social preview and sitemap URLs and builds OAuth
 callback URLs and drives the Secure-cookie check.
 If converting an installer-created trial, retain its existing secrets and
 `COMPOSE_PROJECT_NAME`. It uses `PORT=3210`; either change `PORT` to `3000`
@@ -182,8 +183,15 @@ database/Redis ports stay internal.
 
 ## 3. First run: account, registration, master panel
 
+Configure SMTP first, or create the master using the CLI in step 3 and set up
+email in its panel before creating a password account.
+
 1. **Create your account.** Open `PUBLIC_ORIGIN/app/`, click **Create account**.
-   The first account is a normal user — there is no auto-admin.
+   The first account is a normal user — there is no auto-admin. On a fresh
+   install without SMTP the local installer sets `ALLOW_BOOTSTRAP_USER=true`:
+   it allows exactly one account, marks it verified, and is inert once any
+   user exists. Set it back to `false` after the first account (or configure
+   SMTP first and leave it off).
 2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and
    `docker compose up -d`. (Or toggle **Feature flags → Open registration** in
    the panel later.) The sign-in screen then hides the register form. A flag
@@ -251,10 +259,11 @@ that matter most:
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials (created on first `up`). |
 | `COOKIE_SECURE` | `true` (compose default) | `Secure` flag on the refresh cookie. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial. A production install served over HTTP with it unset/`true` **refuses to boot**. |
 | `ALLOW_REGISTRATION` | `true` | Open sign-up. Turn off after creating your account. |
+| `ALLOW_BOOTSTRAP_USER` | `false` | One-time bootstrap without SMTP: allows exactly the first account and auto-verifies it. Inert once a user exists; set `false` after setup. The local installer enables it. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.2.0`). |
-| `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Unset = no delivery; registration auto-verifies and production logs omit message contents. |
+| `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Password registration requires email delivery; production logs omit message contents. |
 | `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
 | `MAX_BOARDS_PER_USER` | `0` | Server-mode board cap per account; `0` = unlimited (product default). Local/offline mode keeps its 10-board localStorage guard. |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
@@ -293,7 +302,7 @@ both for the single-origin layout (`UI_BASE=/app/`, `PUBLIC_APP_URL=/app/`).
 
 ## 5. Email (optional)
 
-Without SMTP no mail is sent, and new accounts are automatically verified.
+Without SMTP no mail is sent and password registration is unavailable, except for the one-time `ALLOW_BOOTSTRAP_USER` first account. Configure email in the master panel before opening registration. Existing accounts created under the former automatic-verification policy should be reviewed by the operator; their email addresses were not proved by that policy. To link OAuth to an existing password account, sign in with the password, open Account → Security, and link a provider using the same email address.
 Production logs omit message contents, including codes.
 
 To send real mail, open `PUBLIC_ORIGIN/app/admin` → **Email service**, pick a
@@ -465,6 +474,6 @@ uses stable releases only.
 
 Users with a verified email address and a local password can choose **Forgot password?** on the sign-in screen. When outgoing email is enabled, they receive a single-use recovery code valid for 15 minutes. A new request after the one-minute per-account cooldown replaces the previous code. The response does not disclose whether the account exists. Disabled accounts and OAuth-only accounts cannot use this flow; OAuth users should sign in with their provider.
 
-A successful reset revokes all refresh sessions and personal API keys. Already issued access tokens remain valid until they expire (15 minutes by default). If email is disabled or delivery is unavailable, an instance owner can reset the user's password from the admin panel. Configure and test SMTP in the admin panel before relying on recovery.
+A successful reset revokes refresh sessions and personal API keys and invalidates previously issued user access tokens. If email is disabled or delivery is unavailable, an instance owner can reset the user's password from the admin panel. Configure and test SMTP in the admin panel before relying on recovery.
 
 Password recovery requests, successful and failed confirmations, and rate-limit violations appear in the admin audit log as `user.password_reset_*` events. Events are aggregated by IP and minute; codes and passwords are never recorded. Recovery emails are limited to one per account per minute, and requests are limited to three per IP per hour and confirmations to ten per IP per minute. Redis shares rate limits between instances when configured; otherwise limits are held in process.

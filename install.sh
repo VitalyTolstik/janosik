@@ -54,6 +54,9 @@ COOKIE_SECURE=false
 APP_BIND_ADDRESS=127.0.0.1
 PORT=$install_port
 ALLOW_REGISTRATION=true
+# Allows the very first account on a fresh install without SMTP. It is inert
+# after that account exists; set it to false (or configure SMTP first).
+ALLOW_BOOTSTRAP_USER=true
 EOF
 if [[ -n $release_tag ]]; then
   printf 'JANOSIK_TAG=%s\n' "$release_tag" >> "$env_tmp"
@@ -63,5 +66,7 @@ mv "$env_tmp" .env
 echo "Starting Janosik. The first download may take a few minutes..."
 docker compose up -d --wait --wait-timeout 240
 echo "Janosik is ready: http://localhost:$install_port/app/"
-echo "Create your account, then disable open registration for a shared installation."
+echo "Create the first account (one-time bootstrap without SMTP)."
+echo "Then disable open registration and ALLOW_BOOTSTRAP_USER for a shared installation."
+echo "Create the platform master with: docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email you@example.com"
 echo "Configuration: $install_dir/.env. Stop with: cd $install_dir && docker compose down"

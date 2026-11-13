@@ -15,9 +15,17 @@ vi.mock("@/api/client", () => ({
   api: {
     fetchAttachment: vi.fn(),
   },
+  ApiError: class ApiError extends Error {
+    constructor(
+      public readonly status: number,
+      public readonly body: unknown = null,
+    ) {
+      super(`HTTP ${status}`);
+    }
+  },
 }));
 
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 
 describe("attachmentIdFromUrl", () => {
   it("extracts ids from embedded content URLs (any origin prefix)", () => {
@@ -149,6 +157,36 @@ describe("attachmentImagePreviewHandler", () => {
     expect(svg).not.toContain("⚠");
     vi.unstubAllGlobals();
   });
+
+  it("caches a definitive 404 instead of retrying it", async () => {
+    vi.mocked(api.fetchAttachment).mockRejectedValue(new ApiError(404, null));
+    const src = "/api/v1/attachments/att-definitive-404/content";
+
+    expect(await attachmentImagePreviewHandler(src)).toMatch(
+      /^data:image\/svg/,
+    );
+    expect(await attachmentImagePreviewHandler(src)).toMatch(
+      /^data:image\/svg/,
+    );
+    expect(api.fetchAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a temporary failure instead of caching the placeholder", async () => {
+    vi.mocked(api.fetchAttachment)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(new Blob(["bits"], { type: "image/png" }));
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, { createObjectURL: () => "blob:retry" }),
+    );
+    const src = "/api/v1/attachments/att-retry/content";
+    expect(await attachmentImagePreviewHandler(src)).toMatch(
+      /^data:image\/svg/,
+    );
+    expect(await attachmentImagePreviewHandler(src)).toBe("blob:retry");
+    expect(api.fetchAttachment).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("fullscreen viewer (lightbox)", () => {
@@ -254,6 +292,21 @@ describe("fullscreen viewer (lightbox)", () => {
 
     handleAttachmentImageOpen(imageEvent("blob:never-seen"));
     expect(document.getElementById("attachment-lightbox")).toBeNull();
+  });
+
+  it("falls back to the raw src when the lightbox preview fetch fails", async () => {
+    vi.mocked(api.fetchAttachment).mockRejectedValue(new Error("offline"));
+    const src = "/api/v1/attachments/att-lightbox-fail/content";
+    handleAttachmentImageOpen(imageEvent(src));
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
+    expect(
+      document
+        .getElementById("attachment-lightbox")
+        ?.querySelector("img")
+        ?.getAttribute("src"),
+    ).toBe(src);
   });
 
   it("fetches a fresh blob for an image whose preview never resolved", async () => {
