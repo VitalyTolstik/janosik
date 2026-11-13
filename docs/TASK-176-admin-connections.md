@@ -356,7 +356,9 @@ board-scoped by design. The deliverable is documentation:
 - `site/src/content/docs/docs/admin/index.md` and the RU counterpart gained an
   explicit boundary section: no runs/approvals/policy control and no
   cross-board agent section in `/admin`; `/agents`, board Agent Control and
-  Board Settings → Agents & automation are named as the real surfaces.
+  Board Settings → Agents & automation are named as the real surfaces, and
+  token revocation in Access is described as account administration, not agent
+  control.
 - `site/src/content/docs/{docs,ru/docs}/admin/redesign.md` state that the eight
   hubs are the whole panel and there is deliberately no Agents hub.
 - ADR-166 §2 principle 5 and new §18 record the same boundary and the future

@@ -184,14 +184,19 @@ Agent control lives in the user app, where board roles are enforced:
 - **Board Settings → Agents & automation** owns the policy: destructive mode,
   approval triggers, per-run command and card limits, and approval TTL. Only a
   board ADMIN can read or change it.
-- Token-level pause, **Stop all** and revoke are in **Account → API keys**,
-  not in the board dialog and not in `/admin`.
+- Token-level pause and **Stop all** are token-owner actions in **Account → API
+  keys**, not in the board dialog. A master can still revoke any token in
+  **Access & security → API tokens**; that is account administration, not an
+  approval, run or policy decision.
 
 A master account is not a board account: signing in to `/admin` neither grants
 board membership nor these controls. If the same person needs them, they sign
-in to the user app with their normal account and board role. The panel still
-shows agent-authored cards, comments, commands and audit/activity rows with
-token, session and run attribution; that is evidence for support work, not
+in to the user app with their normal account and board role. An owner can also
+open a short, audited impersonation session as that user; it opens the user app
+under that account and is not a master control surface. Agent-authored cards,
+comments, commands and activity appear in the panel as ordinary rows attributed
+to the token's owner account; token, session and run attribution is in the
+board's Watch/History and card comments. That is evidence for support work, not
 control over the agent. The Demo runner on Settings can start a disposable
 swarm on a throwaway board; that is a platform demo fixture, not a view or
 control of real agent runs, approvals or policy.
@@ -201,9 +206,8 @@ is needed later, it requires a separate task with a master API, an explicit
 permission model and audit of master access. A UI-only section built on the
 existing board-scoped endpoints would bypass board roles and is not acceptable.
 
-See the [agent launch guide](/docs/agent-launch/), [board agent
-controls](/docs/user-guide/boards/#agent-approvals-runs-and-policy) and
-[Account → API keys](/docs/user-guide/account/#pausing-and-stopping-agents).
+See the [agent launch guide](/docs/agent-launch/) and [Account → API
+keys](/docs/user-guide/account/#pausing-and-stopping-agents).
 
 ## Pages in this section
 

@@ -32,7 +32,7 @@ more than density.
 These eight hubs are the whole panel. There is deliberately no Agents hub:
 `/admin` does not manage agent runs, approvals or policy. Those surfaces are
 the global `/agents` page, the board-scoped Agent Control and Board Settings →
-Agents & automation; see [Admin panel](./#agent-control-is-not-part-of-the-admin-panel).
+Agents & automation; see [Admin panel](/docs/admin/#agent-control-is-not-part-of-the-admin-panel).
 
 Detail routes keep their own pages:
 
