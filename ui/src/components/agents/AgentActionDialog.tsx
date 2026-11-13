@@ -16,9 +16,22 @@ import { SelectField } from "@/components/ui/select-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
-import type { AgentSessionRow } from "./agent-model";
 
 export type AgentSessionAction = "pause" | "resume" | "end";
+
+/**
+ * The fields the confirmation dialog needs. `AgentSessionRow` satisfies it,
+ * and the board Live panel can pass a plain session plus its board label
+ * without inventing a full console row.
+ */
+export interface AgentActionTarget {
+  id: string;
+  boardId: string;
+  apiTokenId: string;
+  name: string | null;
+  boardTitle: string;
+  tokenName: string | null;
+}
 
 const END_STATUSES = ["completed", "failed", "cancelled"] as const;
 type EndStatus = (typeof END_STATUSES)[number];
@@ -38,7 +51,7 @@ export function AgentActionDialog({
   onSaved,
 }: {
   action: AgentSessionAction;
-  row: AgentSessionRow;
+  row: AgentActionTarget;
   onClose: () => void;
   onSaved: (session: AgentSessionDto) => void;
 }) {
@@ -167,14 +180,22 @@ export function AgentActionDialog({
           )}
           <label className="block space-y-1">
             <span className="text-xs font-medium text-foreground">
-              {t("agents.action.summary")}
+              {t(
+                action === "end"
+                  ? "agents.action.summaryOrReason"
+                  : "agents.action.summary",
+              )}
             </span>
             <Textarea
               value={summary}
               maxLength={SUMMARY_MAX}
               rows={3}
               onChange={(event) => setSummary(event.target.value)}
-              placeholder={t("agents.action.summaryPlaceholder")}
+              placeholder={t(
+                action === "end"
+                  ? "agents.action.summaryOrReasonPlaceholder"
+                  : "agents.action.summaryPlaceholder",
+              )}
               data-testid="agent-action-summary"
             />
           </label>
@@ -185,6 +206,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
+            className="min-h-11 sm:min-h-9"
           >
             {t("common.cancel")}
           </Button>
@@ -193,6 +215,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
+            className="min-h-11 sm:min-h-9"
           >
             {busy ? t("agents.action.busy") : confirmLabel}
           </Button>

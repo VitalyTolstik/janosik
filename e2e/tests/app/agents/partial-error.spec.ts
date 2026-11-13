@@ -37,7 +37,7 @@ test("keeps last-known sessions and shows a partial error banner", async ({
     await expect(page.getByTestId("agents-page")).toBeVisible();
     await page.getByTestId("agents-section-sessions").click();
     await expect(
-      page.getByTestId("agent-row").filter({ hasText: "Partial agent" }),
+      page.getByTestId(`agent-session-row-${agent.session.id}`),
     ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("agents-error")).toContainText(
       "Some boards are unavailable",
