@@ -18,6 +18,7 @@ import {
 import { Link } from "react-router-dom";
 import type {
   AgentSessionDto,
+  AgentsOverviewApprovalItem,
   ApprovalRequestDto,
   Board,
   BoardMemberDto,
@@ -44,13 +45,10 @@ import { shortId } from "./agent-model";
 
 export type AttentionApprovalFilter = "needs" | "decided" | "all";
 
-export interface AttentionApprovalRow extends ApprovalRequestDto {
-  boardTitle: string;
+export type AttentionApprovalRow = AgentsOverviewApprovalItem & {
   /** Token name when a live session from the same token is known. */
   agentName?: string;
-  /** Card title when the loaded board aggregate has that card. */
-  cardTitle?: string;
-}
+};
 
 type ApprovalStatus = keyof typeof APPROVAL_STATUS_KEYS;
 
@@ -113,7 +111,7 @@ function lengthOfPlan(approval: ApprovalRequestDto): number {
 }
 
 function titleForApproval(
-  approval: ApprovalRequestDto,
+  approval: Pick<AgentsOverviewApprovalItem, "actionType" | "summary">,
   cardTitle: string | null,
   t: Translate,
 ): string {
@@ -370,7 +368,7 @@ export function AttentionApprovalList({
                 : formatDate(row.decidedAt ?? row.expiresAt, lang);
             const cardKindKey =
               row.kind === "destructive"
-                ? row.cardTitle !== undefined
+                ? row.cardTitle !== null
                   ? "destructiveCard"
                   : "destructive"
                 : row.kind;

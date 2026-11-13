@@ -1667,6 +1667,8 @@
   "agents.title": "Agents",
   "agents.subtitle": "Live agent sessions, heartbeat and human control across your boards.",
   "agents.open": "Agents",
+  "agents.pending.stale": "Pending count may be out of date",
+  "agents.pending.unknown": "Pending count unavailable",
   "agents.breadcrumb": "Agents navigation",
   "agents.back": "Back to agents",
   "agents.refresh": "Refresh",
