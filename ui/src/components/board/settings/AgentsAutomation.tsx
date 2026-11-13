@@ -763,21 +763,23 @@ export function AgentsAutomation({
                       disabled ? "cursor-not-allowed" : "cursor-pointer",
                     )}
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={disabled}
-                      onChange={() => policy.toggleAction(action)}
-                      data-testid={`agent-policy-require-${action}`}
-                      aria-label={t(ACTION_KEYS[action])}
-                      className="peer sr-only"
-                    />
-                    <span
-                      aria-hidden
-                      className="agent-check"
-                      data-testid={`agent-policy-check-${action}`}
-                    >
-                      <Check />
+                    <span className="relative inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => policy.toggleAction(action)}
+                        data-testid={`agent-policy-require-${action}`}
+                        aria-label={t(ACTION_KEYS[action])}
+                        className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                      />
+                      <span
+                        aria-hidden
+                        className="agent-check"
+                        data-testid={`agent-policy-check-${action}`}
+                      >
+                        <Check />
+                      </span>
                     </span>
                     <span
                       className={cn(
