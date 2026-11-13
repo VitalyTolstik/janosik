@@ -18,6 +18,7 @@ async function openControl(page: import("@playwright/test").Page) {
   await page.getByTestId("agent-control-trigger").click();
   const dialog = page.getByTestId("agent-control-dialog");
   await expect(dialog).toBeVisible();
+  await page.waitForTimeout(250);
   return dialog;
 }
 
@@ -168,6 +169,7 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
     }
 
     await page.getByTestId("agent-session-end").click();
+    await page.waitForTimeout(250);
     for (const testId of ["agent-action-cancel", "agent-action-confirm"]) {
       const box = await triggerBox(page, testId);
       expect(box.height, testId).toBeGreaterThanOrEqual(44);
@@ -206,6 +208,7 @@ test("390 board settings primary actions stay at 44 px", async ({
   await expect(dialog).toBeVisible();
   await page.getByTestId("board-settings-agents").click();
   await expect(page.getByTestId("agents-automation-footer")).toBeVisible();
+  await page.waitForTimeout(250);
   for (const testId of ["agent-policy-save", "agents-automation-discard"]) {
     const box = await triggerBox(page, testId);
     expect(box.height, testId).toBeGreaterThanOrEqual(44);
@@ -375,10 +378,11 @@ test("status badge contrast clears AA in both themes", async ({
         ];
         for (const tone of ["success", "warning", "danger", "primary"]) {
           const fg = parseHex(root.getPropertyValue(`--agent-tone-${tone}`));
+          const tintColor = parseHex(root.getPropertyValue(`--${tone}`));
           let minimum = Number.POSITIVE_INFINITY;
           for (const base of bases) {
-            for (const alpha of [0.06, 0.1, 0.12]) {
-              const tint = fg.map((value, index) =>
+            for (const alpha of [0.06, 0.1, 0.12, 0.15]) {
+              const tint = tintColor.map((value, index) =>
                 Math.round(value * alpha + base[index] * (1 - alpha)),
               ) as [number, number, number];
               minimum = Math.min(minimum, ratio(fg, tint));

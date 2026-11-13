@@ -178,7 +178,10 @@ export function AgentControlDialog({
         <DialogHeader className="shrink-0 border-b bg-gradient-to-br from-primary/10 via-secondary/5 to-transparent px-4 py-3.5 pr-12">
           <div className="flex flex-wrap items-start gap-3 text-left">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10">
-              <Bot className="h-4 w-4 text-primary" aria-hidden />
+              <Bot
+                className="h-4 w-4 text-[color:var(--agent-tone-primary)]"
+                aria-hidden
+              />
             </span>
             <div className="min-w-0 flex-1">
               <DialogTitle className="font-agent-display text-base font-bold tracking-[-0.025em]">
@@ -309,7 +312,7 @@ export function AgentControlDialog({
                   type="button"
                   onClick={onOpenPolicy}
                   data-testid="agent-open-policy"
-                  className="mt-2 inline-flex min-h-9 items-center gap-1 text-xs text-primary hover:underline"
+                  className="mt-2 inline-flex min-h-9 items-center gap-1 text-xs text-[color:var(--agent-tone-primary)] hover:underline"
                 >
                   <Settings2 className="h-3 w-3" aria-hidden />
                   {t("agentControl.shell.openPolicy")}
@@ -336,7 +339,7 @@ export function AgentControlDialog({
                 <button
                   type="button"
                   onClick={onOpenAllAgents}
-                  className="mt-2 min-h-9 text-xs text-primary hover:underline"
+                  className="mt-2 min-h-9 text-xs text-[color:var(--agent-tone-primary)] hover:underline"
                   data-testid="agent-control-all-agents"
                 >
                   {t("agentControl.allAgents")} ↗
@@ -348,7 +351,7 @@ export function AgentControlDialog({
                 <button
                   type="button"
                   onClick={onOpenAllAgents}
-                  className="min-h-11 text-xs text-primary"
+                  className="min-h-11 text-xs text-[color:var(--agent-tone-primary)]"
                   data-testid="agent-control-all-agents-mobile"
                 >
                   {t("agentControl.allAgents")} ↗
@@ -358,7 +361,7 @@ export function AgentControlDialog({
                 <button
                   type="button"
                   onClick={onOpenPolicy}
-                  className="min-h-11 text-xs text-primary"
+                  className="min-h-11 text-xs text-[color:var(--agent-tone-primary)]"
                   data-testid="agent-open-policy-mobile"
                 >
                   {t("agentControl.shell.openPolicy")}

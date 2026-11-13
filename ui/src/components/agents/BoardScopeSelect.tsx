@@ -168,7 +168,7 @@ export function BoardScopeSelect({
                 ) : null}
                 {selected ? (
                   <Check
-                    className="h-3.5 w-3.5 shrink-0 text-primary"
+                    className="h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
                     aria-hidden
                   />
                 ) : null}

@@ -678,7 +678,7 @@ export function SessionDetail({
                 ? "text-muted-foreground"
                 : row.stale || row.paused
                   ? "text-[color:var(--agent-tone-warning)]"
-                  : "text-primary",
+                  : "text-[color:var(--agent-tone-primary)]",
             )}
             aria-hidden
           />
@@ -760,7 +760,7 @@ export function SessionDetail({
               ) : (
                 <Link
                   to={boardHref}
-                  className="truncate text-primary hover:underline"
+                  className="truncate text-[color:var(--agent-tone-primary)] hover:underline"
                   title={row.cardTitle ?? row.currentCardId}
                 >
                   {row.cardTitle ?? shortId(row.currentCardId)}
@@ -773,7 +773,7 @@ export function SessionDetail({
               ) : (
                 <Link
                   to={runHref}
-                  className="truncate text-primary hover:underline"
+                  className="truncate text-[color:var(--agent-tone-primary)] hover:underline"
                   title={row.currentRunId ?? undefined}
                 >
                   {t("agents.runHash", {

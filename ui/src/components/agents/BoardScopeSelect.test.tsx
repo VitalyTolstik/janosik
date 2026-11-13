@@ -103,4 +103,13 @@ describe("BoardScopeSelect (TASK-179.9)", () => {
     await user.keyboard("{Enter}");
     expect(onChange).toHaveBeenCalledWith("board-1");
   });
+
+  it("does not fire onChange when the current scope is selected again", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { trigger } = renderScope(onChange);
+    await user.click(trigger);
+    await user.click(screen.getByTestId("scope-option-all"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

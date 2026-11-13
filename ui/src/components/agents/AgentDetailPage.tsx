@@ -162,7 +162,7 @@ export function AgentDetailPage() {
 
       <header className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-primary">
+          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-[color:var(--agent-tone-primary)]">
             <Bot className="h-5 w-5" aria-hidden />
           </span>
           <div className="min-w-0">
@@ -422,7 +422,7 @@ function SessionCard({
           ) : (
             <Link
               to={boardHref}
-              className="truncate text-primary hover:underline"
+              className="truncate text-[color:var(--agent-tone-primary)] hover:underline"
               title={row.cardTitle ?? row.currentCardId}
             >
               {row.cardTitle ?? shortId(row.currentCardId)}

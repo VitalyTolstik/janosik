@@ -304,7 +304,7 @@ export function ApprovalsPanel({
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-colors min-h-11 md:min-h-0",
                 filter === value
-                  ? "bg-primary/15 text-primary"
+                  ? "bg-primary/15 text-[color:var(--agent-tone-primary)]"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",
               )}
             >
@@ -481,7 +481,7 @@ export function ApprovalsPanel({
                     </p>
                   ) : null}
                   {detail.status === "consumed" ? (
-                    <p className="rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[11px] text-primary">
+                    <p className="rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-primary)]">
                       {t("agentControl.approvals.consumedHint")}
                     </p>
                   ) : null}
