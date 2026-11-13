@@ -1,4 +1,15 @@
-import { Controller, Get, Logger, Param, Query, Res } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Logger,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
+import { IsString, MaxLength, MinLength } from "class-validator";
 import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
 import type { AuthOAuthProvidersResponse } from "@janosik/shared";
@@ -9,6 +20,19 @@ import { REFRESH_COOKIE } from "@/auth/auth.types";
 import { OAUTH_STATE_COOKIE } from "./oauth.types";
 import { RequestCookie } from "./request-cookie.decorator";
 import { OAuthService } from "./oauth.service";
+import { AuthService } from "@/auth/auth.service";
+import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
+import { SessionOnlyGuard } from "@/auth/auth-principal";
+import { CurrentUser } from "@/auth/current-user.decorator";
+import type { AuthUser } from "@/auth/auth.types";
+
+const OAUTH_LINK_COOKIE = "oauth_link_proof";
+class OAuthLinkDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  password!: string;
+}
 
 /**
  * Browser-redirect endpoints of the OAuth login (TASK-54). Both are full
@@ -21,7 +45,10 @@ import { OAuthService } from "./oauth.service";
 export class OAuthController {
   private readonly logger = new Logger(OAuthController.name);
 
-  constructor(private readonly oauth: OAuthService) {}
+  constructor(
+    private readonly oauth: OAuthService,
+    private readonly auth: AuthService,
+  ) {}
 
   /** Which login buttons the sign-in screen should render. */
   @Get("providers")
@@ -37,6 +64,7 @@ export class OAuthController {
   ): Promise<void> {
     const { redirectUrl, state, maxAgeMs } =
       await this.oauth.startAuthorize(provider);
+    res.clearCookie(OAUTH_LINK_COOKIE, { path: "/api/v1/auth/oauth" });
     res.cookie(OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
       // The provider's top-level GET redirect must carry the cookie back —
@@ -49,6 +77,34 @@ export class OAuthController {
     res.redirect(302, redirectUrl);
   }
 
+  @UseGuards(JwtAuthGuard, SessionOnlyGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post(":provider/link")
+  async startLink(
+    @Param("provider") provider: string,
+    @CurrentUser() user: AuthUser,
+    @Body() body: OAuthLinkDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ redirectUrl: string }> {
+    const { redirectUrl, state, maxAgeMs } =
+      await this.oauth.startAuthorize(provider);
+    const proof = await this.auth.issueOAuthLinkProof(
+      user.id,
+      body.password,
+      state,
+    );
+    const options = {
+      httpOnly: true as const,
+      sameSite: "lax" as const,
+      path: "/api/v1/auth/oauth",
+      secure: cookieSecure(),
+      maxAge: maxAgeMs,
+    };
+    res.cookie(OAUTH_STATE_COOKIE, state, options);
+    res.cookie(OAUTH_LINK_COOKIE, proof, options);
+    return { redirectUrl };
+  }
+
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Get(":provider/callback")
   async callback(
@@ -56,15 +112,18 @@ export class OAuthController {
     @Query("code") code: string | undefined,
     @Query("state") state: string | undefined,
     @RequestCookie(OAUTH_STATE_COOKIE) stateCookie: string | undefined,
+    @RequestCookie(OAUTH_LINK_COOKIE) linkProof: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     res.clearCookie(OAUTH_STATE_COOKIE, { path: "/api/v1/auth/oauth" });
+    res.clearCookie(OAUTH_LINK_COOKIE, { path: "/api/v1/auth/oauth" });
     try {
       const result = await this.oauth.handleCallback(
         provider,
         code,
         state,
         stateCookie,
+        linkProof,
       );
       res.cookie(REFRESH_COOKIE, result.refreshToken, {
         ...this.refreshCookieOptions(),

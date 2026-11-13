@@ -372,6 +372,24 @@ describe("describeError", () => {
 });
 
 describe("JanosikClient.request", () => {
+  it("rejects missing and malformed board sequence headers", async () => {
+    const client = new JanosikClient("http://api.test", "t");
+    for (const header of [null, "", "1.5", "-1", "9007199254740992"]) {
+      stubFetch(
+        () =>
+          new Response("{}", {
+            status: 200,
+            headers: header === null ? {} : { "x-board-seq": header },
+          }),
+      );
+      await expect(client.getBoardWithSeq("b1")).rejects.toThrow(/X-Board-Seq/);
+    }
+    stubFetch(() => new Response("{}", { headers: { "x-board-seq": "0" } }));
+    await expect(client.getBoardWithSeq("b1")).resolves.toMatchObject({
+      seq: 0,
+    });
+  });
+
   it("builds a cursor query", async () => {
     const { calls } = stubFetch(() => json({ items: [], nextCursor: null }));
     const client = new JanosikClient("http://api.test", "t");

@@ -294,12 +294,26 @@ describe("Review hardening (e2e)", () => {
         .send({ currentPassword: PASSWORD, newPassword: `${PASSWORD} 2` })
         .expect(200);
       await server().get("/api/v1/auth/me").set(auth(pat)).expect(401);
-      // Restore for the rest of the suite.
+      // The password change bumped the security stamp; sign in again before
+      // restoring the original password for the rest of the suite.
+      const rotated = await server()
+        .post("/api/v1/auth/login")
+        .send({
+          email: "hardening-owner@example.com",
+          password: `${PASSWORD} 2`,
+        })
+        .expect(200);
+      ownerToken = rotated.body.accessToken as string;
       await server()
         .post("/api/v1/auth/password")
         .set(auth(ownerToken))
         .send({ currentPassword: `${PASSWORD} 2`, newPassword: PASSWORD })
         .expect(200);
+      const restored = await server()
+        .post("/api/v1/auth/login")
+        .send({ email: "hardening-owner@example.com", password: PASSWORD })
+        .expect(200);
+      ownerToken = restored.body.accessToken as string;
     });
 
     it("bounds a token created without expiresAt (default TTL)", async () => {
@@ -349,28 +363,29 @@ describe("Review hardening (e2e)", () => {
     });
 
     it("hides invitations from an unverified account and refuses the accept", async () => {
-      const squatter = await register("hardening-unverified@example.com");
-      await prisma.user.update({
-        where: { id: squatter.id },
-        data: { emailVerifiedAt: null },
-      });
-      await server()
-        .post(`/api/v1/boards/${boardId}/members`)
-        .set(auth(ownerToken))
-        .send({ email: "hardening-unverified@example.com", role: "ADMIN" })
-        .expect(201);
-      const feed = await server()
-        .get("/api/v1/invitations")
-        .set(auth(squatter.token))
-        .expect(200);
-      expect(feed.body).toEqual([]);
-      const row = await prisma.boardMember.findFirstOrThrow({
-        where: { boardId, userId: squatter.id },
-      });
-      await server()
-        .post(`/api/v1/invitations/${row.id}/accept`)
-        .set(auth(squatter.token))
-        .expect(403);
+      process.env.E2E_AUTO_VERIFY = "0";
+      try {
+        const squatter = await register("hardening-unverified@example.com");
+        await server()
+          .post(`/api/v1/boards/${boardId}/members`)
+          .set(auth(ownerToken))
+          .send({ email: "hardening-unverified@example.com", role: "ADMIN" })
+          .expect(201);
+        const feed = await server()
+          .get("/api/v1/invitations")
+          .set(auth(squatter.token))
+          .expect(200);
+        expect(feed.body).toEqual([]);
+        const row = await prisma.boardMember.findFirstOrThrow({
+          where: { boardId, userId: squatter.id },
+        });
+        await server()
+          .post(`/api/v1/invitations/${row.id}/accept`)
+          .set(auth(squatter.token))
+          .expect(403);
+      } finally {
+        process.env.E2E_AUTO_VERIFY = "1";
+      }
     });
   });
 
@@ -583,14 +598,27 @@ describe("Review hardening (e2e)", () => {
     });
 
     it("closes a time-limited VIEWER's stream when the membership expires", async () => {
-      const viewer = await register("hardening-viewer@example.com");
+      const email = "hardening-viewer@example.com";
+      const viewer = await register(email);
+      // A live transport means registration waits for its code; this test
+      // is about membership expiry, so mark the mailbox verified and get a
+      // token with the matching security stamp.
+      await prisma.user.update({
+        where: { id: viewer.id },
+        data: { emailVerifiedAt: new Date() },
+      });
+      const verified = await server()
+        .post("/api/v1/auth/login")
+        .send({ email, password: PASSWORD })
+        .expect(200);
+      const viewerToken = verified.body.accessToken as string;
       await inviteAndAccept(
-        "hardening-viewer@example.com",
-        viewer.token,
+        email,
+        viewerToken,
         "VIEWER",
         new Date(Date.now() + 60_000).toISOString(),
       );
-      const stream = sse(`/boards/${boardId}/events`, viewer.token);
+      const stream = sse(`/boards/${boardId}/events`, viewerToken);
       await new Promise((resolve) => setTimeout(resolve, 800));
       expect(stream.isEnded()).toBe(false);
       await prisma.boardMember.updateMany({

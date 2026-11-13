@@ -54,8 +54,16 @@ function submit(email: string, password: string) {
 }
 
 beforeEach(() => {
-  // Server mode: the client talks to the stubbed fetch below.
+  // Server mode: the client talks to the stubbed fetch below. The default
+  // answers the boot refresh with 401 so it cannot keep the shared auth
+  // queue busy while a test renders and immediately ends.
   vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    if (pathOf(input).endsWith("/auth/refresh")) {
+      return json({ message: "Unauthorized" }, 401);
+    }
+    return json({ providers: [] });
+  });
   api.clearAccessToken();
   api.onAuthLost = null;
 });
