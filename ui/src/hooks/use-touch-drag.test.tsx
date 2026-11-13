@@ -355,6 +355,13 @@ describe("useTouchDrag (TASK-31)", () => {
     act(() => frames.shift()?.call(window, 0));
 
     expect(scroller.scrollTop).toBeGreaterThan(0);
+
+    // A stalled frame (rAF drops to a few fps on a loaded machine) must not
+    // slow the gesture down: the step scales with the elapsed time, while a
+    // normal 60 Hz frame keeps the old 14 px step.
+    act(() => frames.shift()?.call(window, 200));
+    expect(scroller.scrollTop).toBeGreaterThan(100);
+
     release(10, 99);
     expect(onDrop).not.toHaveBeenCalled();
   });
