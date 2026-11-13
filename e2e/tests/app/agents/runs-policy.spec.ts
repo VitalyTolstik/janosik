@@ -196,7 +196,12 @@ test("a run deep link includes the board and survives reload and history back", 
   await expect(page.getByTestId("agent-run-detail")).toBeVisible();
 
   await page.goto(new URL("agents?section=runs", appUrl).href);
+  // Let this document finish its boot refresh and list load before navigating
+  // again: aborting the refresh in flight rotates the cookie server-side and
+  // makes the next document boot anonymous.
+  await expect(page.getByTestId(`agents-run-row-${run.runId}`)).toBeVisible();
   await page.goBack();
+  await expect(page).toHaveURL(deepLink);
   await expect(page.getByTestId("agent-run-detail")).toBeVisible();
 
   // `?run=` without `?board=` is not a supported lookup: show recovery, not a
