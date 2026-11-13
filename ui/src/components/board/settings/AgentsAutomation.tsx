@@ -450,7 +450,7 @@ export function AgentsAutomation({
                 type="button"
                 onClick={onOpenLiveControls}
                 data-testid="agent-policy-open-live"
-                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
               >
                 {t("board.settings.agents.openLive")}
                 <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
