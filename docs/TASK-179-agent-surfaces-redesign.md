@@ -351,6 +351,13 @@ Also fix the reproduced prototype bugs:
 Update `design/agent-surfaces-prototype/README.md` and screenshots; validate
 ADMIN/MEMBER/mobile; then mark the visual DoD reproducible.
 
+**Prototype sync status (2026-11-13):** the tracked prototype is synced with
+this section and §3/§11; the forbidden demo actions are gone, per-board roles
+and scope-correct/stale counts are implemented, and `README.md` plus the
+validation screenshots were regenerated at 1440/1024/390. The visual DoD is
+reproducible from `design/agent-surfaces-prototype/index.html`; the rest of
+TASK-179 remains planned.
+
 ## 5. Control contract (expanded)
 
 | Control | Target | Permission | Key state/test |
