@@ -59,8 +59,12 @@ const DEFAULT_TOLERANCE = 8;
 const CLICK_SUPPRESS_MS = 400;
 /** Pointer distance from a scroll container edge that starts auto-scroll. */
 const AUTO_SCROLL_EDGE = 48;
-/** Maximum auto-scroll step per animation frame, in CSS pixels. */
+/** Maximum auto-scroll step per 60 Hz frame, in CSS pixels. */
 const AUTO_SCROLL_MAX_STEP = 14;
+/** Longest frame delta auto-scroll compensates for, in milliseconds. A
+ *  stalled animation frame (busy main thread, background tab) must not slow
+ *  the gesture down: the scroll speed stays px-per-time, not px-per-frame. */
+const AUTO_SCROLL_MAX_FRAME_MS = 250;
 
 /** Nearest scrollable ancestor (or self) on `axis`, or the document scroller. */
 function scrollParentFor(
@@ -340,12 +344,24 @@ export function useTouchDrag({
       if (typeof window.requestAnimationFrame !== "function") return;
       if (session.frame !== null) return;
       if (!session.scrollX && !session.scrollY) return;
-      const step = () => {
+      // Scale the per-frame step by the time actually elapsed since the last
+      // frame. On a loaded machine rAF can drop to a few frames per second;
+      // scrolling a fixed 14 px per callback then crawls (the TASK-31 far-row
+      // gesture needs hundreds of pixels). A normal 60 Hz frame keeps exactly
+      // the old 14 px step, so the feel is unchanged.
+      let lastFrame: number | null = null;
+      const step = (time: number) => {
         if (sessionRef.current !== session || !session.active) return;
         if (!session.scrollX && !session.scrollY) {
           session.frame = null;
           return;
         }
+        const elapsed =
+          lastFrame === null
+            ? 1000 / 60
+            : Math.min(Math.max(time - lastFrame, 0), AUTO_SCROLL_MAX_FRAME_MS);
+        lastFrame = time;
+        const scale = elapsed / (1000 / 60);
         for (const axis of ["y", "x"] as const) {
           const container = axis === "y" ? session.scrollY : session.scrollX;
           if (!container) continue;
@@ -355,10 +371,15 @@ export function useTouchDrag({
             axis === "y" ? session.y : session.x,
           );
           if (delta === 0) continue;
+          // Keep at least 1 px per frame (with the original sign): on a
+          // high-refresh display scale can be below 0.5, and rounding the
+          // smallest edge step to zero would freeze auto-scroll forever.
+          const distance =
+            Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta) * scale));
           if (axis === "y") {
-            container.scrollTop += delta;
+            container.scrollTop += distance;
           } else {
-            container.scrollLeft += delta;
+            container.scrollLeft += distance;
           }
         }
         setOver(targetKeyOf(resolveTarget(session.x, session.y)));
