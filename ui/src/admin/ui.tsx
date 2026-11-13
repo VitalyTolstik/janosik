@@ -545,6 +545,56 @@ export function Pagination({
   );
 }
 
+/**
+ * Footer of a windowed detail list (TASK-176.3): the exact `N of M` count and
+ * an explicit `Load more` action. The total is a server count, never the
+ * number of loaded rows, so the same footer works for comments, sessions and
+ * the merged timeline. Wraps on narrow screens without widening the table.
+ */
+export function ListWindowFooter({
+  shown,
+  total,
+  hasMore,
+  loading = false,
+  onLoadMore,
+  testId,
+}: {
+  shown: number;
+  total: number;
+  hasMore: boolean;
+  loading?: boolean;
+  onLoadMore: () => void;
+  testId: string;
+}) {
+  const t = useAdminT();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5">
+      <span
+        className="text-[11px] tabular-nums text-muted-foreground"
+        data-testid={`${testId}-count`}
+        aria-live="polite"
+      >
+        {t("admin.common.ofTotal", { shown, total })}
+      </span>
+      {hasMore ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs"
+          disabled={loading}
+          data-testid={`${testId}-more`}
+          onClick={onLoadMore}
+        >
+          {loading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          ) : null}
+          {t("admin.common.loadMore")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ConfirmDialog({
   open,
   title,

@@ -15,6 +15,7 @@ import type {
   AdminColumnRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  AdminDetailWindowDto,
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
@@ -25,8 +26,16 @@ import type {
   AdminUserDetailDto,
   AdminUserRowDto,
 } from "@janosik/shared";
-import { ADMIN_PAGE_LIMITS, readBoardWorkflow } from "@janosik/shared";
+import {
+  ADMIN_DETAIL_LIMITS,
+  ADMIN_PAGE_LIMITS,
+  readBoardWorkflow,
+} from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import type {
+  AdminCardDetailQueryDto,
+  AdminUserDetailQueryDto,
+} from "./dto/admin-detail-query.dto";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { AdminService } from "./admin.service";
 import { CommsService } from "./comms.service";
@@ -49,6 +58,52 @@ function window(query: AdminListQueryDto): { limit: number; offset: number } {
     ADMIN_PAGE_LIMITS.max,
   );
   return { limit, offset: Math.max(query.offset ?? 0, 0) };
+}
+
+/** Clamped window of a detail tab (TASK-176.3). */
+function detailWindow(
+  query: { limit?: number; offset?: number },
+  defaultLimit: number,
+): { limit: number; offset: number } {
+  const limit = Math.min(
+    Math.max(query.limit ?? defaultLimit, ADMIN_PAGE_LIMITS.min),
+    ADMIN_DETAIL_LIMITS.max,
+  );
+  const offset = Math.min(
+    Math.max(query.offset ?? 0, 0),
+    ADMIN_DETAIL_LIMITS.maxOffset,
+  );
+  return { limit, offset };
+}
+
+/** Honest `N of M` window: `total` is never the length of this response. */
+function windowOf(
+  offset: number,
+  limit: number,
+  total: number,
+  loaded: number,
+  includeDeleted: boolean,
+  anchor: string | null = null,
+): AdminDetailWindowDto {
+  return {
+    offset,
+    limit,
+    total,
+    // The offset is capped (TASK-176.3): stop offering `Load more` at the
+    // cap instead of sending an offset the query DTO would reject.
+    hasMore:
+      offset + limit < ADMIN_DETAIL_LIMITS.maxOffset && offset + loaded < total,
+    includeDeleted,
+    anchor,
+  };
+}
+
+/** Where the window around an anchored row starts. */
+function centredOffset(index: number, limit: number): number {
+  return Math.min(
+    Math.max(index - Math.floor(limit / 2), 0),
+    ADMIN_DETAIL_LIMITS.maxOffset,
+  );
 }
 
 const MS = (value: Date | null): number | null =>
@@ -1066,8 +1121,17 @@ export class AdminEntitiesService {
 
   // --------------------------------------------------------------- details
 
-  /** `GET /admin/users/:id` — the full user graph. */
-  async userDetail(userId: string): Promise<AdminUserDetailDto> {
+  /**
+   * `GET /admin/users/:id/detail` — the full user graph, windowed (TASK-176.3).
+   * Every tab list is a page: its `windows.<tab>` carries the exact server
+   * total, so the UI never presents a sample as a complete list. The
+   * moderation tabs default to live rows; `includeDeleted` adds the hidden
+   * ones without letting them push live rows out of the window.
+   */
+  async userDetail(
+    userId: string,
+    query: AdminUserDetailQueryDto = {},
+  ): Promise<AdminUserDetailDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -1081,23 +1145,76 @@ export class AdminEntitiesService {
     });
     if (!user) throw new NotFoundException("User not found");
 
-    const createdIds = await this.prisma.command.findMany({
-      where: { actorId: userId, type: { in: ["ADD_CARD", "DUPLICATE_CARD"] } },
-      select: { payload: true },
-      orderBy: { seq: "desc" },
-      take: 500,
-    });
-    const cardIds = [
-      ...new Set(
-        createdIds
-          .map((row) => (row.payload as Record<string, unknown>).newCardId)
-          .filter((value): value is string => typeof value === "string"),
-      ),
-    ];
+    const section = query.section;
+    const includeDeleted = query.includeDeleted === true;
+    const { limit, offset } = detailWindow(query, ADMIN_DETAIL_LIMITS.user);
+    const now = new Date();
+    const createCommands = {
+      actorId: userId,
+      type: { in: ["ADD_CARD", "DUPLICATE_CARD"] },
+    } satisfies Prisma.CommandWhereInput;
+    const wants = (key: string) => section === undefined || section === key;
+
+    const [
+      membershipsTotal,
+      createCommandsTotal,
+      cardsAssigned,
+      commentsLive,
+      commentsDeleted,
+      attachmentsLive,
+      attachmentsDeleted,
+      sessionsLive,
+      sessionsHidden,
+      tokensLive,
+      tokensHidden,
+      commandCount,
+      activityTotal,
+      boardCount,
+    ] = await this.prisma.$transaction([
+      this.prisma.boardMember.count({ where: { userId } }),
+      this.prisma.command.count({ where: createCommands }),
+      this.prisma.card.count({
+        where: { assigneeId: userId, deletedAt: null },
+      }),
+      this.prisma.comment.count({
+        where: { authorId: userId, deletedAt: null },
+      }),
+      this.prisma.comment.count({
+        where: { authorId: userId, deletedAt: { not: null } },
+      }),
+      this.prisma.attachment.count({
+        where: { uploadedById: userId, deletedAt: null },
+      }),
+      this.prisma.attachment.count({
+        where: { uploadedById: userId, deletedAt: { not: null } },
+      }),
+      this.prisma.refreshToken.count({
+        where: { userId, revokedAt: null, expiresAt: { gt: now } },
+      }),
+      this.prisma.refreshToken.count({
+        where: {
+          userId,
+          OR: [{ revokedAt: { not: null } }, { expiresAt: { lte: now } }],
+        },
+      }),
+      this.prisma.apiToken.count({ where: { userId, revokedAt: null } }),
+      this.prisma.apiToken.count({
+        where: { userId, revokedAt: { not: null } },
+      }),
+      this.prisma.command.count({ where: { actorId: userId } }),
+      this.prisma.activity.count({ where: { actorId: userId } }),
+      this.prisma.boardMember.count({
+        where: {
+          userId,
+          acceptedAt: { not: null },
+          board: { deletedAt: null },
+        },
+      }),
+    ]);
 
     const [
       memberships,
-      createdCards,
+      createCommandPage,
       assignedCards,
       comments,
       attachments,
@@ -1105,98 +1222,131 @@ export class AdminEntitiesService {
       tokens,
       recentCommands,
       recentActivity,
-      boardCount,
-      cardsAssigned,
-      commentCount,
-      attachmentCount,
-      sessionCount,
-      tokenCount,
-      commandCount,
-    ] = await this.prisma.$transaction([
-      this.prisma.boardMember.findMany({
-        where: { userId },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-        select: {
-          id: true,
-          role: true,
-          acceptedAt: true,
-          expiresAt: true,
-          createdAt: true,
-          boardId: true,
-          invitedById: true,
-          board: { select: { title: true, deletedAt: true } },
-          invitedBy: { select: { email: true } },
-        },
-      }),
-      this.prisma.card.findMany({
-        where: { id: { in: cardIds } },
-        select: CARD_ROW_SELECT,
-        orderBy: { updatedAt: "desc" },
-        take: 100,
-      }),
-      this.prisma.card.findMany({
-        where: { assigneeId: userId, deletedAt: null },
-        select: CARD_ROW_SELECT,
-        orderBy: { updatedAt: "desc" },
-        take: 100,
-      }),
-      this.prisma.comment.findMany({
-        where: { authorId: userId },
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: COMMENT_SELECT,
-      }),
-      this.prisma.attachment.findMany({
-        where: { uploadedById: userId },
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: ATTACHMENT_SELECT,
-      }),
-      this.prisma.refreshToken.findMany({
-        where: { userId },
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: SESSION_SELECT,
-      }),
-      this.prisma.apiToken.findMany({
-        where: { userId },
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: TOKEN_SELECT,
-      }),
-      this.prisma.command.findMany({
-        where: { actorId: userId },
-        orderBy: { seq: "desc" },
-        take: 25,
-        select: COMMAND_SELECT,
-      }),
-      this.prisma.activity.findMany({
-        where: { actorId: userId },
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: ACTIVITY_SELECT,
-      }),
-      this.prisma.boardMember.count({
-        where: { userId, acceptedAt: { not: null } },
-      }),
-      this.prisma.card.count({
-        where: { assigneeId: userId, deletedAt: null },
-      }),
-      this.prisma.comment.count({
-        where: { authorId: userId, deletedAt: null },
-      }),
-      this.prisma.attachment.count({
-        where: { uploadedById: userId, deletedAt: null },
-      }),
-      this.prisma.refreshToken.count({
-        where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
-      }),
-      this.prisma.apiToken.count({
-        where: { userId, revokedAt: null },
-      }),
-      this.prisma.command.count({ where: { actorId: userId } }),
+    ] = await Promise.all([
+      wants("memberships")
+        ? this.prisma.boardMember.findMany({
+            where: { userId },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+            select: {
+              id: true,
+              role: true,
+              acceptedAt: true,
+              expiresAt: true,
+              createdAt: true,
+              boardId: true,
+              invitedById: true,
+              board: { select: { title: true, deletedAt: true } },
+              invitedBy: { select: { email: true } },
+            },
+          })
+        : Promise.resolve([]),
+      wants("cards")
+        ? this.prisma.command.findMany({
+            where: createCommands,
+            orderBy: { seq: "desc" },
+            skip: offset,
+            take: limit,
+            select: { payload: true },
+          })
+        : Promise.resolve([]),
+      wants("assignedCards")
+        ? this.prisma.card.findMany({
+            where: { assigneeId: userId, deletedAt: null },
+            select: CARD_ROW_SELECT,
+            orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+          })
+        : Promise.resolve([]),
+      wants("comments")
+        ? this.prisma.comment.findMany({
+            where: {
+              authorId: userId,
+              ...(includeDeleted ? {} : { deletedAt: null }),
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+            select: COMMENT_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("attachments")
+        ? this.prisma.attachment.findMany({
+            where: {
+              uploadedById: userId,
+              ...(includeDeleted ? {} : { deletedAt: null }),
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+            select: ATTACHMENT_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("sessions")
+        ? this.prisma.refreshToken.findMany({
+            where: includeDeleted
+              ? { userId }
+              : { userId, revokedAt: null, expiresAt: { gt: now } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+            select: SESSION_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("tokens")
+        ? this.prisma.apiToken.findMany({
+            where: includeDeleted ? { userId } : { userId, revokedAt: null },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+            select: TOKEN_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("commands")
+        ? this.prisma.command.findMany({
+            where: { actorId: userId },
+            orderBy: [{ seq: "desc" }],
+            skip: offset,
+            take: limit,
+            select: COMMAND_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("activity")
+        ? this.prisma.activity.findMany({
+            where: { actorId: userId },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: offset,
+            take: limit,
+            select: ACTIVITY_SELECT,
+          })
+        : Promise.resolve([]),
     ]);
+
+    // Created cards are a window over the user's create commands: the total
+    // is the exact number of recorded creates, not the length of a card page.
+    const createdIds = [
+      ...new Set(
+        createCommandPage
+          .map((row) => (row.payload as Record<string, unknown>).newCardId)
+          .filter((value): value is string => typeof value === "string"),
+      ),
+    ];
+    const createdRows =
+      createdIds.length === 0
+        ? []
+        : await this.prisma.card.findMany({
+            where: { id: { in: createdIds } },
+            select: CARD_ROW_SELECT,
+          });
+    const createdById = new Map(
+      createdRows.map((row) => [row.id, row] as const),
+    );
+    const createdCards = createdIds.flatMap((id) => {
+      const row = createdById.get(id);
+      return row ? [toCardRow(row)] : [];
+    });
 
     const userRow: AdminUserRowDto = {
       id: user.id,
@@ -1206,18 +1356,94 @@ export class AdminEntitiesService {
       disabledAt: MS(user.disabledAt),
       emailVerifiedAt: MS(user.emailVerifiedAt),
     };
+    const commentsTotal = commentsLive + (includeDeleted ? commentsDeleted : 0);
+    const attachmentsTotal =
+      attachmentsLive + (includeDeleted ? attachmentsDeleted : 0);
+    const sessionsTotal = sessionsLive + (includeDeleted ? sessionsHidden : 0);
+    const tokensTotal = tokensLive + (includeDeleted ? tokensHidden : 0);
 
     return {
       user: userRow,
       counters: {
         boards: boardCount,
-        cardsCreated: createdCards.length,
+        cardsCreated: createCommandsTotal,
         cardsAssigned,
-        comments: commentCount,
-        attachments: attachmentCount,
-        sessions: sessionCount,
-        tokens: tokenCount,
+        comments: commentsLive,
+        attachments: attachmentsLive,
+        sessions: sessionsLive,
+        tokens: tokensLive,
         commands: commandCount,
+      },
+      windows: {
+        memberships: windowOf(
+          offset,
+          limit,
+          membershipsTotal,
+          memberships.length,
+          false,
+        ),
+        cards: windowOf(
+          offset,
+          limit,
+          createCommandsTotal,
+          createdCards.length,
+          false,
+        ),
+        assignedCards: windowOf(
+          offset,
+          limit,
+          cardsAssigned,
+          assignedCards.length,
+          false,
+        ),
+        comments: windowOf(
+          offset,
+          limit,
+          commentsTotal,
+          comments.length,
+          includeDeleted,
+        ),
+        attachments: windowOf(
+          offset,
+          limit,
+          attachmentsTotal,
+          attachments.length,
+          includeDeleted,
+        ),
+        sessions: windowOf(
+          offset,
+          limit,
+          sessionsTotal,
+          sessions.length,
+          includeDeleted,
+        ),
+        tokens: windowOf(
+          offset,
+          limit,
+          tokensTotal,
+          tokens.length,
+          includeDeleted,
+        ),
+        commands: windowOf(
+          offset,
+          limit,
+          commandCount,
+          recentCommands.length,
+          false,
+        ),
+        activity: windowOf(
+          offset,
+          limit,
+          activityTotal,
+          recentActivity.length,
+          false,
+        ),
+      },
+      hidden: {
+        comments: commentsDeleted,
+        attachments: attachmentsDeleted,
+        sessions: sessionsHidden,
+        tokens: tokensHidden,
       },
       memberships: memberships.map((membership) => ({
         id: membership.id,
@@ -1230,7 +1456,7 @@ export class AdminEntitiesService {
         invitedByEmail: membership.invitedBy?.email ?? null,
         createdAt: membership.createdAt.getTime(),
       })),
-      createdCards: createdCards.map(toCardRow),
+      createdCards,
       assignedCards: assignedCards.map(toCardRow),
       comments: comments.map(toCommentRow),
       attachments: attachments.map(toAttachmentRow),
@@ -1241,8 +1467,16 @@ export class AdminEntitiesService {
     };
   }
 
-  /** `GET /admin/cards/:id` — the full card graph. */
-  async cardDetail(cardId: string): Promise<AdminCardDetailDto> {
+  /**
+   * `GET /admin/cards/:id/detail` — the full card graph with windowed
+   * comments, attachments and timeline (TASK-176.3). Soft-deleted rows are
+   * excluded by default; `includeDeleted` adds them and an `anchor` centres
+   * the window on the comment/attachment a search result pointed at.
+   */
+  async cardDetail(
+    cardId: string,
+    query: AdminCardDetailQueryDto = {},
+  ): Promise<AdminCardDetailDto> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
       select: {
@@ -1317,29 +1551,22 @@ export class AdminEntitiesService {
           },
         },
         comments: {
-          orderBy: { createdAt: "desc" },
-          take: 50,
-          select: {
-            id: true,
-            text: true,
-            createdAt: true,
-            updatedAt: true,
-            editedAt: true,
-            deletedAt: true,
-            cardId: true,
-            authorId: true,
-            card: { select: { title: true } },
-            author: { select: { email: true } },
-          },
-        },
-        attachments: {
-          orderBy: { createdAt: "desc" },
-          take: 50,
-          select: ATTACHMENT_SELECT,
+          where: { deletedAt: null },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
         },
       },
     });
     if (!card) throw new NotFoundException("Card not found");
+
+    const section = query.section;
+    const includeDeleted = query.includeDeleted === true;
+    const { limit, offset: requestedOffset } = detailWindow(
+      query,
+      ADMIN_DETAIL_LIMITS.card,
+    );
+    const wants = (key: string) => section === undefined || section === key;
+    const cardTouch = `card:${cardId}`;
 
     // `Card` carries no creator column — derive it from the command log:
     // the oldest ADD_CARD / DUPLICATE_CARD command whose payload names this
@@ -1381,19 +1608,132 @@ export class AdminEntitiesService {
         )?.email ?? null)
       : null;
 
-    const [activity, commands] = await this.prisma.$transaction([
-      this.prisma.activity.findMany({
-        where: { cardId },
-        orderBy: { createdAt: "desc" },
-        take: 30,
-        select: ACTIVITY_SELECT,
+    const [
+      commentsLive,
+      commentsDeleted,
+      attachmentsLive,
+      attachmentsDeleted,
+      activityTotal,
+      commandTotal,
+    ] = await this.prisma.$transaction([
+      this.prisma.comment.count({ where: { cardId, deletedAt: null } }),
+      this.prisma.comment.count({
+        where: { cardId, deletedAt: { not: null } },
       }),
-      this.prisma.command.findMany({
-        where: { touches: { has: `card:${cardId}` } },
-        orderBy: { seq: "desc" },
-        take: 30,
-        select: COMMAND_SELECT,
+      this.prisma.attachment.count({ where: { cardId, deletedAt: null } }),
+      this.prisma.attachment.count({
+        where: { cardId, deletedAt: { not: null } },
       }),
+      this.prisma.activity.count({ where: { cardId } }),
+      this.prisma.command.count({ where: { touches: { has: cardTouch } } }),
+    ]);
+
+    // A search result may point at a soft-deleted row, so the anchor lookup
+    // ignores the live filter and the anchored section includes deleted rows.
+    let anchorSection: "comments" | "attachments" | null = null;
+    let anchorId: string | null = null;
+    let commentsOffset = requestedOffset;
+    let attachmentsOffset = requestedOffset;
+    if (query.anchor) {
+      const commentAnchor = await this.prisma.comment.findFirst({
+        where: { id: query.anchor, cardId },
+        select: { createdAt: true },
+      });
+      if (commentAnchor) {
+        anchorSection = "comments";
+        anchorId = query.anchor;
+        const before = await this.prisma.comment.count({
+          where: {
+            cardId,
+            OR: [
+              { createdAt: { gt: commentAnchor.createdAt } },
+              {
+                createdAt: commentAnchor.createdAt,
+                id: { gt: query.anchor },
+              },
+            ],
+          },
+        });
+        commentsOffset = centredOffset(before, limit);
+      } else {
+        const attachmentAnchor = await this.prisma.attachment.findFirst({
+          where: { id: query.anchor, cardId },
+          select: { createdAt: true },
+        });
+        if (attachmentAnchor) {
+          anchorSection = "attachments";
+          anchorId = query.anchor;
+          const before = await this.prisma.attachment.count({
+            where: {
+              cardId,
+              OR: [
+                { createdAt: { gt: attachmentAnchor.createdAt } },
+                {
+                  createdAt: attachmentAnchor.createdAt,
+                  id: { gt: query.anchor },
+                },
+              ],
+            },
+          });
+          attachmentsOffset = centredOffset(before, limit);
+        }
+      }
+    }
+    const includeDeletedComments =
+      includeDeleted || anchorSection === "comments";
+    const includeDeletedAttachments =
+      includeDeleted || anchorSection === "attachments";
+
+    const [comments, attachments] = await Promise.all([
+      wants("comments")
+        ? this.prisma.comment.findMany({
+            where: {
+              cardId,
+              ...(includeDeletedComments ? {} : { deletedAt: null }),
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: commentsOffset,
+            take: limit,
+            select: COMMENT_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("attachments")
+        ? this.prisma.attachment.findMany({
+            where: {
+              cardId,
+              ...(includeDeletedAttachments ? {} : { deletedAt: null }),
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip: attachmentsOffset,
+            take: limit,
+            select: ATTACHMENT_SELECT,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // The merged timeline is windowed over both sources (Activity rows and
+    // commands whose `touches` include the card); the total is their exact
+    // sum, so the UI can say `50 of N` instead of silently slicing.
+    const timelineTake = requestedOffset + limit;
+    const [activity, commands] = await Promise.all([
+      wants("timeline")
+        ? this.prisma.activity.findMany({
+            where: { cardId },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: timelineTake,
+            select: ACTIVITY_SELECT,
+          })
+        : Promise.resolve([]),
+      wants("timeline")
+        ? this.prisma.command.findMany({
+            where: { touches: { has: cardTouch } },
+            // Same ordering as the merged list, so an offset never skips a
+            // row that the merge would have placed on the previous page.
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: timelineTake,
+            select: COMMAND_SELECT,
+          })
+        : Promise.resolve([]),
     ]);
 
     const timeline = [
@@ -1416,8 +1756,13 @@ export class AdminEntitiesService {
         createdAt: entry.createdAt.getTime(),
       })),
     ]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 50);
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+      .slice(requestedOffset, requestedOffset + limit);
+    const timelineTotal = activityTotal + commandTotal;
+    const commentsTotal =
+      commentsLive + (includeDeletedComments ? commentsDeleted : 0);
+    const attachmentsTotal =
+      attachmentsLive + (includeDeletedAttachments ? attachmentsDeleted : 0);
 
     return {
       card: {
@@ -1427,9 +1772,7 @@ export class AdminEntitiesService {
         boardTitle: card.column.board.title,
         columnId: card.columnId,
         columnTitle: card.column.title,
-        commentIds: card.comments
-          .filter((comment) => !comment.deletedAt)
-          .map((comment) => comment.id),
+        commentIds: card.comments.map((comment) => comment.id),
         createdAt: card.createdAt.getTime(),
         updatedAt: card.updatedAt.getTime(),
         archivedAt: MS(card.archivedAt),
@@ -1481,8 +1824,37 @@ export class AdminEntitiesService {
         deletedAt: MS(link.deletedAt),
         createdAt: link.createdAt.getTime(),
       })),
-      comments: card.comments.map(toCommentRow),
-      attachments: card.attachments.map(toAttachmentRow),
+      windows: {
+        comments: windowOf(
+          commentsOffset,
+          limit,
+          commentsTotal,
+          comments.length,
+          includeDeletedComments,
+          anchorSection === "comments" ? anchorId : null,
+        ),
+        attachments: windowOf(
+          attachmentsOffset,
+          limit,
+          attachmentsTotal,
+          attachments.length,
+          includeDeletedAttachments,
+          anchorSection === "attachments" ? anchorId : null,
+        ),
+        timeline: windowOf(
+          requestedOffset,
+          limit,
+          timelineTotal,
+          timeline.length,
+          false,
+        ),
+      },
+      hidden: {
+        comments: commentsDeleted,
+        attachments: attachmentsDeleted,
+      },
+      comments: comments.map(toCommentRow),
+      attachments: attachments.map(toAttachmentRow),
       timeline,
       createdBy,
     };
@@ -1765,6 +2137,7 @@ type SessionJoin = {
   id: string;
   createdAt: Date;
   expiresAt: Date;
+  revokedAt: Date | null;
   userId: string;
   ip: string | null;
   userAgent: string | null;
@@ -1778,6 +2151,7 @@ function toSessionRow(session: SessionJoin): AdminSessionRowDto {
     userEmail: session.user.email,
     createdAt: session.createdAt.getTime(),
     expiresAt: session.expiresAt.getTime(),
+    revokedAt: MS(session.revokedAt),
     ip: session.ip,
     userAgent: session.userAgent,
   };
@@ -1787,6 +2161,7 @@ const SESSION_SELECT = {
   id: true,
   createdAt: true,
   expiresAt: true,
+  revokedAt: true,
   userId: true,
   ip: true,
   userAgent: true,

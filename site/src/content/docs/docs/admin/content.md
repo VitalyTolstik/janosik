@@ -195,10 +195,24 @@ dash for cards imported before the command log.
   links with a down-left arrow, each with a type badge and a `Deleted` badge
   when applicable. Types are `blocks`, `relates_to` and `duplicates`.
 - Attachments table: File (thumbnail, name, download), Size, Uploaded by,
-  Created.
+  Created, Status.
 - Comments table: Comment, Author, Created, Status.
 - Timeline, a merged feed of activity rows and commands, each with a type
   badge, the actor email, the details as JSON and the time.
+
+Comments, attachments and the timeline are windows, not full lists. Each
+block footer reads `50 of N` and offers `Load more` while `N` is larger. The
+comment total is the exact live comment count (`Card.commentIds`); the
+attachment total counts the live attachment rows shown in the block, including
+files embedded in the description (the card-face `attachmentCount` badge counts
+non-inline files only); the timeline total is the exact sum of activity rows
+and commands that touch the card. Comments and attachments show live rows by default;
+`Show deleted (N)` adds soft-deleted rows. When a search result points at a specific comment or
+attachment, the link uses `?comment=<id>` or `?attachment=<id>`; the card
+detail centres that block on the row, highlights it and offers
+`Show from the start`. A deleted anchor still opens the row because the
+anchored block includes deleted rows. A block window stops at 5,000 rows; for
+deeper history use the searchable Commands and Activity lists with the card id.
 
 ## Columns
 

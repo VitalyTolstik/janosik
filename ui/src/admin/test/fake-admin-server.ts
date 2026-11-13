@@ -9,6 +9,7 @@ import type {
   BoardAction,
   BoardAggregate,
   AdminActivityRowDto,
+  AdminAttachmentRowDto,
   AdminAuditRowDto,
   AdminBoardRowDto,
   AdminCardRowDto,
@@ -67,6 +68,7 @@ export interface FakeAdminState {
   sessions: AdminSessionRowDto[];
   tokens: AdminTokenRowDto[];
   comments: AdminCommentRowDto[];
+  attachments: AdminAttachmentRowDto[];
   activity: AdminActivityRowDto[];
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
@@ -85,6 +87,7 @@ export function emptyAdminState(): FakeAdminState {
     sessions: [],
     tokens: [],
     comments: [],
+    attachments: [],
     activity: [],
     contentBoard: null,
   };
@@ -137,6 +140,7 @@ export function adminSession(
     userEmail: "member@example.com",
     createdAt: now,
     expiresAt: now + 86_400_000,
+    revokedAt: null,
     ip: "203.0.113.7",
     userAgent: "Mozilla/5.0",
     ...overrides,
@@ -173,6 +177,28 @@ export function adminComment(
     updatedAt: now,
     editedAt: null,
     deletedAt: null,
+    ...overrides,
+  };
+}
+
+export function adminAttachment(
+  overrides: Partial<AdminAttachmentRowDto> = {},
+): AdminAttachmentRowDto {
+  return {
+    id: "attachment-1",
+    cardId: "card-1",
+    cardTitle: "Moderate me",
+    boardId: "b-1",
+    boardTitle: "Roadmap",
+    fileName: "file.png",
+    storedName: "stored-file.png",
+    mimeType: "image/png",
+    sizeBytes: 128,
+    uploadedById: "u-1",
+    uploadedByEmail: "member@example.com",
+    transcodeStatus: "none",
+    deletedAt: null,
+    createdAt: now,
     ...overrides,
   };
 }
@@ -1536,6 +1562,7 @@ export class FakeAdminServer {
         boards: this.state.boards,
         cards: this.state.cards,
         comments: this.state.comments,
+        attachments: this.state.attachments,
         sessions: this.state.sessions,
         tokens: this.state.tokens,
         commands: this.state.commands,
@@ -1549,55 +1576,13 @@ export class FakeAdminServer {
     if (userDetail && method === "GET") {
       const user = this.state.users.find((item) => item.id === userDetail[1]);
       if (!user) return this.json({ message: "User not found" }, 404);
-      return this.json({
-        user,
-        counters: {
-          boards: 0,
-          cardsCreated: 0,
-          cardsAssigned: 0,
-          comments: 0,
-          attachments: 0,
-          sessions: 0,
-          tokens: 0,
-          commands: 0,
-        },
-        memberships: [],
-        createdCards: [],
-        assignedCards: [],
-        comments: [],
-        attachments: [],
-        sessions: [],
-        tokens: [],
-        recentCommands: [],
-        recentActivity: [],
-      });
+      return this.json(this.userDetail(user, url));
     }
     const cardDetail = path.match(/^\/admin\/cards\/([^/]+)\/detail$/);
     if (cardDetail && method === "GET") {
       const card = this.state.cards.find((item) => item.id === cardDetail[1]);
       if (!card) return this.json({ message: "Card not found" }, 404);
-      return this.json({
-        card: {
-          ...card,
-          description: null,
-          dueDate: null,
-          priority: null,
-          assigneeDisplayName: null,
-          coverType: null,
-          coverValue: null,
-          version: 0,
-          attachmentCount: 0,
-          lastActorEmail: null,
-        },
-        labels: [],
-        checklists: [],
-        linksOut: [],
-        linksIn: [],
-        comments: [],
-        attachments: [],
-        timeline: [],
-        createdBy: null,
-      });
+      return this.json(this.cardDetail(card, url));
     }
     const boardMeta = path.match(/^\/admin\/boards\/([^/]+)\/meta$/);
     if (boardMeta && method === "GET") {
@@ -1668,6 +1653,258 @@ export class FakeAdminServer {
         date: `2026-09-${String(index + 1).padStart(2, "0")}`,
         count: index % 2,
       })),
+    };
+  }
+
+  /** Mirror of the paged `/admin/cards/:id/detail` contract (TASK-176.3). */
+  private cardDetail(card: AdminCardRowDto, url: URL) {
+    const section = url.searchParams.get("section");
+    const requestedOffset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 50);
+    const includeDeleted = url.searchParams.get("includeDeleted") === "true";
+    const anchor = url.searchParams.get("anchor");
+    const wants = (key: string) => section === null || section === key;
+
+    const newest = <T extends { createdAt: number; id: string }>(rows: T[]) =>
+      [...rows].sort(
+        (a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id),
+      );
+    const comments = newest(
+      this.state.comments.filter((comment) => comment.cardId === card.id),
+    );
+    const liveComments = comments.filter(
+      (comment) => comment.deletedAt === null,
+    );
+    const attachments = newest(
+      this.state.attachments.filter((file) => file.cardId === card.id),
+    );
+    const liveAttachments = attachments.filter(
+      (file) => file.deletedAt === null,
+    );
+    const activity = this.state.activity.filter(
+      (entry) => entry.cardId === card.id,
+    );
+    const timeline = [...activity]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((entry) => ({
+        id: entry.id,
+        kind: "activity" as const,
+        type: entry.type,
+        actorId: entry.actorId,
+        actorEmail: entry.actorEmail,
+        details: entry.details,
+        createdAt: entry.createdAt,
+      }));
+
+    const anchorComment =
+      anchor === null
+        ? undefined
+        : comments.find((comment) => comment.id === anchor);
+    const anchorAttachment =
+      anchor === null
+        ? undefined
+        : attachments.find((file) => file.id === anchor);
+    const includeDeletedComments =
+      includeDeleted || anchorComment !== undefined;
+    const includeDeletedAttachments =
+      includeDeleted || anchorAttachment !== undefined;
+    const visibleComments = includeDeletedComments ? comments : liveComments;
+    const visibleAttachments = includeDeletedAttachments
+      ? attachments
+      : liveAttachments;
+    const centre = (index: number) =>
+      Math.max(0, index - Math.floor(limit / 2));
+    const commentsOffset =
+      anchorComment === undefined
+        ? requestedOffset
+        : centre(visibleComments.indexOf(anchorComment));
+    const attachmentsOffset =
+      anchorAttachment === undefined
+        ? requestedOffset
+        : centre(visibleAttachments.indexOf(anchorAttachment));
+    const slice = <T>(items: T[], start: number) =>
+      items.slice(start, start + limit);
+    const win = (
+      offset: number,
+      total: number,
+      loaded: number,
+      included: boolean,
+      anchorId: string | null = null,
+    ) => ({
+      offset,
+      limit,
+      total,
+      hasMore: offset + loaded < total,
+      includeDeleted: included,
+      anchor: anchorId,
+    });
+
+    return {
+      card: {
+        ...card,
+        description: null,
+        dueDate: null,
+        priority: null,
+        assigneeDisplayName: null,
+        coverType: null,
+        coverValue: null,
+        version: 0,
+        attachmentCount: liveAttachments.length,
+        lastActorEmail: null,
+        commentIds: liveComments.map((comment) => comment.id),
+      },
+      labels: [],
+      checklists: [],
+      linksOut: [],
+      linksIn: [],
+      windows: {
+        comments: win(
+          commentsOffset,
+          visibleComments.length,
+          wants("comments") ? slice(visibleComments, commentsOffset).length : 0,
+          includeDeletedComments,
+          anchorComment?.id ?? null,
+        ),
+        attachments: win(
+          attachmentsOffset,
+          visibleAttachments.length,
+          wants("attachments")
+            ? slice(visibleAttachments, attachmentsOffset).length
+            : 0,
+          includeDeletedAttachments,
+          anchorAttachment?.id ?? null,
+        ),
+        timeline: win(
+          requestedOffset,
+          timeline.length,
+          wants("timeline") ? slice(timeline, requestedOffset).length : 0,
+          false,
+        ),
+      },
+      hidden: {
+        comments: comments.length - liveComments.length,
+        attachments: attachments.length - liveAttachments.length,
+      },
+      comments: wants("comments") ? slice(visibleComments, commentsOffset) : [],
+      attachments: wants("attachments")
+        ? slice(visibleAttachments, attachmentsOffset)
+        : [],
+      timeline: wants("timeline") ? slice(timeline, requestedOffset) : [],
+      createdBy: null,
+    };
+  }
+
+  /** Mirror of the paged `/admin/users/:id/detail` contract (TASK-176.3). */
+  private userDetail(user: AdminUserRowDto, url: URL) {
+    const section = url.searchParams.get("section");
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 25);
+    const includeDeleted = url.searchParams.get("includeDeleted") === "true";
+    const window = (
+      total: number,
+      loaded: number,
+      included = false,
+      anchor: string | null = null,
+    ) => ({
+      offset,
+      limit,
+      total,
+      hasMore: offset + loaded < total,
+      includeDeleted: included,
+      anchor,
+    });
+
+    const newest = <T extends { createdAt: number; id: string }>(rows: T[]) =>
+      [...rows].sort(
+        (a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id),
+      );
+    const comments = newest(
+      this.state.comments.filter((comment) => comment.authorId === user.id),
+    );
+    const liveComments = comments.filter(
+      (comment) => comment.deletedAt === null,
+    );
+    const sessions = newest(
+      this.state.sessions.filter((session) => session.userId === user.id),
+    );
+    const liveSessions = sessions.filter(
+      (session) => session.revokedAt === null && session.expiresAt > now,
+    );
+    const tokens = newest(
+      this.state.tokens.filter((token) => token.userId === user.id),
+    );
+    const liveTokens = tokens.filter((token) => token.revokedAt === null);
+    const commands = [...this.state.commands]
+      .filter((command) => command.actorId === user.id)
+      .sort((a, b) => b.seq - a.seq);
+    const activity = newest(
+      this.state.activity.filter((entry) => entry.actorId === user.id),
+    );
+    const createdCards = this.state.cards;
+    const assignedCards = this.state.cards.filter(
+      (card) => card.assigneeId === user.id,
+    );
+    const wants = (key: string) => section === null || section === key;
+    const slice = <T>(items: T[]) =>
+      wants(section ?? "") ? items.slice(offset, offset + limit) : ([] as T[]);
+
+    const visibleComments = includeDeleted ? comments : liveComments;
+    const visibleSessions = includeDeleted ? sessions : liveSessions;
+    const visibleTokens = includeDeleted ? tokens : liveTokens;
+
+    return {
+      user,
+      counters: {
+        boards: 0,
+        cardsCreated: createdCards.length,
+        cardsAssigned: assignedCards.length,
+        comments: liveComments.length,
+        attachments: 0,
+        sessions: liveSessions.length,
+        tokens: liveTokens.length,
+        commands: commands.length,
+      },
+      windows: {
+        memberships: window(0, 0),
+        cards: window(createdCards.length, slice(createdCards).length),
+        assignedCards: window(
+          assignedCards.length,
+          slice(assignedCards).length,
+        ),
+        comments: window(
+          visibleComments.length,
+          slice(visibleComments).length,
+          includeDeleted,
+        ),
+        attachments: window(0, 0, includeDeleted),
+        sessions: window(
+          visibleSessions.length,
+          slice(visibleSessions).length,
+          includeDeleted,
+        ),
+        tokens: window(
+          visibleTokens.length,
+          slice(visibleTokens).length,
+          includeDeleted,
+        ),
+        commands: window(commands.length, slice(commands).length),
+        activity: window(activity.length, slice(activity).length),
+      },
+      hidden: {
+        comments: comments.length - liveComments.length,
+        attachments: 0,
+        sessions: sessions.length - liveSessions.length,
+        tokens: tokens.length - liveTokens.length,
+      },
+      memberships: [],
+      createdCards: slice(createdCards),
+      assignedCards: slice(assignedCards),
+      comments: slice(visibleComments),
+      attachments: [],
+      sessions: slice(visibleSessions),
+      tokens: slice(visibleTokens),
+      recentCommands: slice(commands),
+      recentActivity: slice(activity),
     };
   }
 

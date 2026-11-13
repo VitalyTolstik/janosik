@@ -204,6 +204,8 @@ export interface AdminSessionRowDto {
   createdAt: number;
   /** Unix ms. */
   expiresAt: number;
+  /** Unix ms; `null` while the session is not revoked (TASK-176.3). */
+  revokedAt: number | null;
   /** Session provenance (TASK-65); `null` for sessions minted before capture. */
   ip: string | null;
   userAgent: string | null;
@@ -628,6 +630,98 @@ export const ADMIN_PASSWORD_MAX = 100;
 /** `GET /admin/*` page size bounds. */
 export const ADMIN_PAGE_LIMITS = { min: 1, max: 100, default: 50 } as const;
 
+/**
+ * Page windows of the detail tabs (TASK-176.3). The list is a window, never
+ * the whole table: every response carries the exact total next to it.
+ */
+export const ADMIN_DETAIL_LIMITS = {
+  user: 25,
+  card: 50,
+  max: 100,
+  maxOffset: 5_000,
+} as const;
+
+/** Paged lists of `GET /admin/users/:id/detail`. */
+export const ADMIN_USER_DETAIL_SECTIONS = [
+  "memberships",
+  "cards",
+  "assignedCards",
+  "comments",
+  "attachments",
+  "sessions",
+  "tokens",
+  "commands",
+  "activity",
+] as const;
+
+export type AdminUserDetailSection =
+  (typeof ADMIN_USER_DETAIL_SECTIONS)[number];
+
+/** Paged lists of `GET /admin/cards/:id/detail`. */
+export const ADMIN_CARD_DETAIL_SECTIONS = [
+  "comments",
+  "attachments",
+  "timeline",
+] as const;
+
+export type AdminCardDetailSection =
+  (typeof ADMIN_CARD_DETAIL_SECTIONS)[number];
+
+/**
+ * One window of a detail tab. `total` is an exact server-side count for the
+ * current filter — never the number of rows in this response.
+ */
+export interface AdminDetailWindowDto {
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  /**
+   * Whether this window includes soft-deleted comments/attachments or
+   * revoked/expired sessions/tokens.
+   */
+  includeDeleted: boolean;
+  /** The anchor row the window was centred on, when one was requested. */
+  anchor: string | null;
+}
+
+/** Rows hidden by the live-only default of a user-detail tab. */
+export interface AdminUserDetailHiddenDto {
+  /** Soft-deleted comments. */
+  comments: number;
+  /** Soft-deleted attachments. */
+  attachments: number;
+  /** Revoked or expired refresh sessions. */
+  sessions: number;
+  /** Revoked API tokens. */
+  tokens: number;
+}
+
+/** Query of `GET /admin/users/:id/detail`. */
+export interface AdminUserDetailQuery {
+  /** Window one tab; omit for the first window of every tab. */
+  section?: AdminUserDetailSection;
+  limit?: number;
+  offset?: number;
+  /** Include deleted comments/attachments and revoked/expired sessions/tokens. */
+  includeDeleted?: boolean;
+}
+
+/** Query of `GET /admin/cards/:id/detail`. */
+export interface AdminCardDetailQuery {
+  /** Window one section; omit for the first window of every section. */
+  section?: AdminCardDetailSection;
+  limit?: number;
+  offset?: number;
+  /** Include soft-deleted comments and attachments. */
+  includeDeleted?: boolean;
+  /**
+   * Comment or attachment id to centre the window on (TASK-176.5 link from
+   * global search). The anchored section automatically includes deleted rows.
+   */
+  anchor?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Admin v2 (TASK-48): full Prisma coverage — every model browsable, every
 // relation one click away, one generic listing endpoint, entity details and
@@ -862,6 +956,12 @@ export interface AdminUserMembershipDto {
  */
 export interface AdminUserDetailDto {
   user: AdminUserRowDto;
+  /**
+   * Exact counters (TASK-176.3): no counter is a page length. `boards`
+   * counts accepted memberships; `cardsCreated` counts the ADD_CARD /
+   * DUPLICATE_CARD commands in the retained command log; `comments`,
+   * `attachments`, `sessions` and `tokens` count live/active rows only.
+   */
   counters: {
     boards: number;
     cardsCreated: number;
@@ -873,13 +973,25 @@ export interface AdminUserDetailDto {
     tokens: number;
     commands: number;
   };
+  /** Exact totals and the window each tab list currently represents. */
+  windows: Record<AdminUserDetailSection, AdminDetailWindowDto>;
+  /** Rows excluded by the live-only default of the moderation tabs. */
+  hidden: AdminUserDetailHiddenDto;
   memberships: AdminUserMembershipDto[];
+  /**
+   * Cards derived from the user's create commands, newest command first.
+   * The tab is a window over that command log, not a materialised list.
+   */
   createdCards: AdminCardRowDto[];
   /** Cards assigned to the user (TASK-49), live rows only. */
   assignedCards: AdminCardRowDto[];
+  /** Live comments by default; `includeDeleted` adds soft-deleted rows. */
   comments: AdminCommentRowDto[];
+  /** Live attachments by default; `includeDeleted` adds soft-deleted rows. */
   attachments: AdminAttachmentRowDto[];
+  /** Active sessions by default; `includeDeleted` adds revoked/expired rows. */
   sessions: AdminSessionRowDto[];
+  /** Active tokens by default; `includeDeleted` adds revoked rows. */
   tokens: AdminTokenRowDto[];
   recentCommands: AdminCommandRowDto[];
   recentActivity: AdminActivityRowDto[];
@@ -934,6 +1046,21 @@ export interface AdminCardDetailDto {
   checklists: AdminCardChecklistDto[];
   linksOut: AdminCardLinkEndDto[];
   linksIn: AdminCardLinkEndDto[];
+  /**
+   * Exact totals and the window each section currently represents. The
+   * default comment total matches live `commentIds`; `includeDeleted` adds
+   * deleted rows. The attachment total counts the live attachment rows in the
+   * block (inline description files included), while `card.attachmentCount`
+   * is the card-face badge for non-inline files.
+   */
+  windows: Record<AdminCardDetailSection, AdminDetailWindowDto>;
+  /** Rows excluded by the live-only default. */
+  hidden: {
+    /** Soft-deleted comments. */
+    comments: number;
+    /** Soft-deleted attachments. */
+    attachments: number;
+  };
   comments: AdminCommentRowDto[];
   attachments: AdminAttachmentRowDto[];
   timeline: Array<{
