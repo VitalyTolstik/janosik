@@ -898,7 +898,7 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className="min-h-11 flex-1 border-danger/44 bg-danger/5 text-danger hover:bg-danger/10 hover:text-danger md:min-h-8"
+                className="min-h-11 flex-1 border-danger/44 bg-danger/5 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 hover:text-[color:var(--agent-tone-danger)] md:min-h-8"
                 data-testid="agents-session-end"
                 onClick={() => setAction("end")}
               >

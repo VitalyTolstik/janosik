@@ -291,57 +291,59 @@ test("status badge contrast clears AA in both themes", async ({
       const badge = page.locator('[data-testid^="agent-status-"]').first();
       await expect(badge).toBeVisible();
       const ratio = await badge.evaluate((node) => {
-        const parse = (color: string): [number, number, number, number] => {
-          const match = color.match(/rgba?\(([^)]+)\)/);
-          if (match === null) return [0, 0, 0, 1];
-          const parts = match[1]
-            .split(/[ ,/]+/)
-            .filter(Boolean)
-            .map(Number);
-          return [parts[0], parts[1], parts[2], parts[3] ?? 1];
-        };
-        const composite = (
-          fg: [number, number, number, number],
-          bg: [number, number, number, number],
-        ): [number, number, number, number] => {
-          const alpha = fg[3];
-          return [
-            fg[0] * alpha + bg[0] * (1 - alpha),
-            fg[1] * alpha + bg[1] * (1 - alpha),
-            fg[2] * alpha + bg[2] * (1 - alpha),
-            1,
-          ];
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d");
+        if (context === null) throw new Error("2d canvas unavailable");
+        const pixel = (color: string): [number, number, number] => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+          return [r, g, b];
         };
         const channel = (value: number): number => {
           const x = value / 255;
           return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
         };
-        const luminance = (color: [number, number, number, number]): number =>
-          0.2126 * channel(color[0]) +
-          0.7152 * channel(color[1]) +
-          0.0722 * channel(color[2]);
-        const foreground = parse(getComputedStyle(node).color);
-        const layers: Array<[number, number, number, number]> = [];
+        const luminance = ([r, g, b]: [number, number, number]): number =>
+          0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+
+        // Paint every ancestor background outermost → innermost onto one
+        // canvas pixel. Canvas understands oklab()/color-mix() output, unlike
+        // a hand-written rgb() parser.
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, 1, 1);
+        const layers: string[] = [];
         for (
           let element: Element | null = node;
           element !== null;
           element = element.parentElement
         ) {
-          const color = parse(getComputedStyle(element).backgroundColor);
-          if (color[3] > 0) layers.push(color);
+          const color = getComputedStyle(element).backgroundColor;
+          if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") {
+            layers.push(color);
+          }
         }
-        let background: [number, number, number, number] = [255, 255, 255, 1];
-        for (const layer of layers.reverse()) {
-          background = composite(layer, background);
+        for (const color of layers.reverse()) {
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
         }
+        const background = [...context.getImageData(0, 0, 1, 1).data].slice(
+          0,
+          3,
+        ) as [number, number, number];
+        const foreground = pixel(getComputedStyle(node).color);
         const a = luminance(foreground);
         const b = luminance(background);
         return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
       });
       expect(ratio, theme).toBeGreaterThanOrEqual(4.5);
 
-      // The palette itself must clear AA for every status tone on the real
-      // surface; the rendered badge above only proves the `ok` tone.
+      // The palette itself must clear AA on the real 6/10/12% status tints
+      // over both the surface and the page background — measuring only the
+      // bare surface missed the warning/danger chips before the fix.
       const toneRatios = await page.evaluate(() => {
         const root = getComputedStyle(document.documentElement);
         const parseHex = (value: string): [number, number, number] => {
@@ -358,13 +360,31 @@ test("status badge contrast clears AA in both themes", async ({
         };
         const luminance = ([r, g, b]: [number, number, number]): number =>
           0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-        const surface = parseHex(root.getPropertyValue("--surface"));
+        const ratio = (
+          foreground: [number, number, number],
+          background: [number, number, number],
+        ): number => {
+          const a = luminance(foreground);
+          const b = luminance(background);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        };
         const result: Record<string, number> = {};
+        const bases = [
+          parseHex(root.getPropertyValue("--surface")),
+          parseHex(root.getPropertyValue("--background")),
+        ];
         for (const tone of ["success", "warning", "danger", "primary"]) {
           const fg = parseHex(root.getPropertyValue(`--agent-tone-${tone}`));
-          const a = luminance(fg);
-          const b = luminance(surface);
-          result[tone] = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          let minimum = Number.POSITIVE_INFINITY;
+          for (const base of bases) {
+            for (const alpha of [0.06, 0.1, 0.12]) {
+              const tint = fg.map((value, index) =>
+                Math.round(value * alpha + base[index] * (1 - alpha)),
+              ) as [number, number, number];
+              minimum = Math.min(minimum, ratio(fg, tint));
+            }
+          }
+          result[tone] = minimum;
         }
         return result;
       });

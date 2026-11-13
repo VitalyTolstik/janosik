@@ -621,7 +621,7 @@ export function AttentionApprovalDetail({
   const toneClasses = {
     warn: "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-warning)]",
     ok: "border-success/30 bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-success)]",
-    bad: "border-danger/35 bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-danger",
+    bad: "border-danger/35 bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-danger)]",
     muted:
       "border-border bg-muted/40 text-muted-foreground [&_svg]:text-muted-foreground",
   } as const;
@@ -695,7 +695,10 @@ export function AttentionApprovalDetail({
                 data-testid="agents-approval-impact"
               >
                 <p className="flex items-center gap-1.5 text-[11px] font-[650] text-foreground">
-                  <AlertTriangle className="h-3 w-3 text-danger" aria-hidden />
+                  <AlertTriangle
+                    className="h-3 w-3 text-[color:var(--agent-tone-danger)]"
+                    aria-hidden
+                  />
                   {destructiveCard
                     ? t("agents.approvals.destructiveCardTitle")
                     : t("agents.approvals.destructiveTitle")}
@@ -797,7 +800,7 @@ export function AttentionApprovalDetail({
                     className={cn(
                       "mt-0.5 block text-[11px] leading-[1.4] font-semibold break-words",
                       detail.risk === "high" || detail.kind === "destructive"
-                        ? "text-danger"
+                        ? "text-[color:var(--agent-tone-danger)]"
                         : detail.risk === "medium"
                           ? "text-[color:var(--agent-tone-warning)]"
                           : "text-foreground",

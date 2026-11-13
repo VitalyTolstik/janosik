@@ -867,7 +867,7 @@ export function RunDetail({
                           : t("agents.runs.resolveConflictFirst")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="border-danger/50 text-danger hover:bg-danger/10 max-md:min-h-11"
+                      className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 max-md:min-h-11"
                     >
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                       {conflicts.length > 0
@@ -912,7 +912,7 @@ export function RunDetail({
             <p
               role="alert"
               data-testid="agent-run-action-error"
-              className="mt-2 rounded-md border border-danger/40 bg-danger/10 p-2 text-[11px] text-danger"
+              className="mt-2 rounded-md border border-danger/40 bg-danger/10 p-2 text-[11px] text-[color:var(--agent-tone-danger)]"
             >
               {actionError}
             </p>
@@ -1060,7 +1060,10 @@ export function RunDetail({
         <DialogContent className="sm:max-w-md" data-testid="run-revert-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-danger" aria-hidden />
+              <AlertTriangle
+                className="h-4 w-4 text-[color:var(--agent-tone-danger)]"
+                aria-hidden
+              />
               {t("agents.runs.confirmTitle")}
             </DialogTitle>
             <DialogDescription>
@@ -1140,7 +1143,8 @@ function Banner({
       data-testid={testId}
       className={cn(
         "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45] [&_svg]:mt-px [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
-        tone === "bad" && "border-danger/35 bg-danger/6 [&_svg]:text-danger",
+        tone === "bad" &&
+          "border-danger/35 bg-danger/6 [&_svg]:text-[color:var(--agent-tone-danger)]",
         tone === "warn" &&
           "border-warning/35 bg-warning/6 [&_svg]:text-[color:var(--agent-tone-warning)]",
         tone === "info" &&

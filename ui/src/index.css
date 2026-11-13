@@ -124,11 +124,12 @@ html[lang="ru"] .font-agent-display {
 }
 
 html.light {
-  /* Deeper Tailwind-700 shades clear 4.5:1 on the light surface. */
-  --agent-tone-success: #047857; /* 5.02:1 */
-  --agent-tone-warning: #b45309; /* 4.60:1 */
-  --agent-tone-danger: #b91c1c; /* 5.93:1 */
-  --agent-tone-primary: #1d4ed8; /* 6.14:1 */
+  /* Deeper shades clear 4.5:1 on the 6–12% status tints, not only on the
+     bare surface. */
+  --agent-tone-success: #047857; /* 4.62:1 on success/10 */
+  --agent-tone-warning: #92400e; /* 5.86:1 on warning/10 */
+  --agent-tone-danger: #b91c1c; /* 5.30:1 on danger/10 */
+  --agent-tone-primary: #1d4ed8; /* 5.57:1 on primary/10 */
 }
 
 @media (prefers-reduced-motion: reduce) {

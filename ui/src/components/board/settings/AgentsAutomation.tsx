@@ -173,7 +173,7 @@ function PolicyNumberField({
       {invalid ? (
         <span
           id={errorId}
-          className="mt-1 block text-[11px] leading-[1.4] text-danger"
+          className="mt-1 block text-[11px] leading-[1.4] text-[color:var(--agent-tone-danger)]"
         >
           {error}
         </span>
@@ -267,7 +267,7 @@ export function AgentsAutomation({
   if (policy.status === "error" || policy.draft === null) {
     return (
       <div className="space-y-2 p-4" data-testid="agent-policy-load-error">
-        <p className="text-xs text-danger">
+        <p className="text-xs text-[color:var(--agent-tone-danger)]">
           {t("agentControl.policy.loadError")}
         </p>
         <button
@@ -530,7 +530,7 @@ export function AgentsAutomation({
           <p
             role="alert"
             data-testid="agent-policy-error"
-            className="mb-3 rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger"
+            className="mb-3 rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-[color:var(--agent-tone-danger)]"
           >
             {inlineError}
           </p>

@@ -1164,7 +1164,7 @@ export function AgentsPage() {
               className={cn(
                 "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                 state.rows.length === 0
-                  ? "border-danger/40 bg-danger/10 text-danger"
+                  ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
                   : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
               )}
               data-testid="agents-error"
@@ -1174,7 +1174,7 @@ export function AgentsPage() {
                 className={cn(
                   "mt-px h-3.5 w-3.5 shrink-0",
                   state.rows.length === 0
-                    ? "text-danger"
+                    ? "text-[color:var(--agent-tone-danger)]"
                     : "text-[color:var(--agent-tone-warning)]",
                 )}
                 aria-hidden
