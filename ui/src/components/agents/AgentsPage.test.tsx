@@ -402,6 +402,9 @@ describe("AgentsPage", () => {
     });
     expect(rollback.className).toContain("text-muted-foreground");
     expect(rollback.className).toContain("text-[11px]");
+    expect(rollback.getAttribute("href")).toMatch(
+      /\/docs\/user-guide\/agents\/#rollback-and-run-recovery$/,
+    );
   });
 
   it("reads run filters from the URL, sends them to the API and clears them", async () => {

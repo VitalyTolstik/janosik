@@ -83,7 +83,7 @@ import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
-import { docsUrl } from "@/utils/docs-url";
+import { agentRollbackDocsUrl, docsUrl } from "@/utils/docs-url";
 import { effectiveApprovalStatus } from "@/utils/approval";
 
 type Section = "attention" | "sessions" | "runs";
@@ -1314,7 +1314,7 @@ export function AgentsPage() {
                           className={`${SMALL_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
                         >
                           <a
-                            href={docsUrl(lang)}
+                            href={agentRollbackDocsUrl(lang)}
                             target="_blank"
                             rel="noreferrer"
                           >

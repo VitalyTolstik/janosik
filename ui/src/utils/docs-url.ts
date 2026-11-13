@@ -23,6 +23,36 @@ export function docsUrl(lang: string): string {
   return `${siteBase()}${lang === "ru" ? "ru/docs/" : "docs/"}`;
 }
 
+/**
+ * A specific docs page, with an optional anchor. Docs routes are localised
+ * under the same root as `docsUrl`, so the caller passes the relative page
+ * (`user-guide/agents/`) once and both languages resolve correctly.
+ */
+export function docsPageUrl(
+  lang: string,
+  page: string,
+  anchor?: string,
+): string {
+  const path = page.replace(/^\/+|\/+$/g, "");
+  const suffix = path === "" ? "" : `${path}/`;
+  return `${docsUrl(lang)}${suffix}${anchor === undefined ? "" : `#${anchor}`}`;
+}
+
+/**
+ * The "How rollback works" target in the localized agents guide. Starlight
+ * derives heading ids from the localized title, so the anchor differs between
+ * English and Russian even though both sections are the same content.
+ */
+export function agentRollbackDocsUrl(lang: string): string {
+  return docsPageUrl(
+    lang,
+    "user-guide/agents/",
+    lang === "ru"
+      ? "откат-и-восстановление-запусков"
+      : "rollback-and-run-recovery",
+  );
+}
+
 /** Marketing home, preserving the app's current language when a site exists. */
 export function siteHomeUrl(lang: string): string | null {
   if (!import.meta.env.VITE_SITE_URL && !APP_BASE.endsWith("app/")) {

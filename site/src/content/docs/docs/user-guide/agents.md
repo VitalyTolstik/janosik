@@ -77,6 +77,24 @@ commands or operations, the plan hash and TTL, and the decision record.
   or an expired retention window can block it. The UI does not promise a
   guaranteed recovery and does not fabricate a before/after diff.
 
+### Rollback and run recovery
+
+Rollback reverses an applied run by creating a new **revert** run; it never
+rewrites history in place. The UI previews the inverse commands before an
+ADMIN confirms.
+
+- Only an `applied` run can be reverted, and only by a signed-in board ADMIN.
+  A MEMBER can inspect the run and preview the rollback but cannot apply it.
+- Later edits can turn a command into a conflict. A missing preimage or an
+  expired retention window also blocks the revert. The preview names the
+  blocked command; there is no “force” rollback.
+- If the preview reports a conflict, resolve the later edit first or leave the
+  run as applied.
+- The revert is recorded as its own run with its own status, so the history
+  stays append-only and the original run is marked `reverted`.
+- Preimages are visible to a board ADMIN in the browser session. A PAT or a
+  MEMBER sees the timeline, commands and conflicts, but not the before-state.
+
 ### Sessions and human control
 
 Session rows show the board, token/agent name, lifecycle status, heartbeat,
