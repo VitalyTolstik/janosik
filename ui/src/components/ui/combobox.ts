@@ -215,7 +215,7 @@ export function useCombobox({
       role: "combobox" as const,
       "aria-haspopup": "listbox" as const,
       "aria-expanded": open,
-      "aria-controls": listboxId,
+      "aria-controls": open ? listboxId : undefined,
       "aria-activedescendant":
         open && activeIndex >= 0
           ? `${listboxId}-option-${activeIndex}`

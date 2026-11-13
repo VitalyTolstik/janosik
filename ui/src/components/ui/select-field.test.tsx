@@ -33,6 +33,7 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(trigger).not.toHaveAttribute("aria-activedescendant");
+    expect(trigger).not.toHaveAttribute("aria-controls");
     expect(document.querySelector("select")).toBeNull();
 
     await user.click(trigger);
@@ -147,5 +148,30 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(option.className).toContain("min-h-9");
     expect(option.className).toContain("max-md:min-h-11");
     expect(option).toHaveAttribute("role", "option");
+  });
+
+  it("selects with Space and closes on Tab", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SelectField
+        value="alpha"
+        options={OPTIONS}
+        onChange={onChange}
+        ariaLabel="Pick a value"
+        testId="picker"
+      />,
+    );
+    const trigger = screen.getByTestId("picker");
+    await user.click(trigger);
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard(" ");
+    expect(onChange).toHaveBeenCalledWith("beta");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await user.tab();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 });

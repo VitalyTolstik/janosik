@@ -128,7 +128,7 @@ function LiveSessionRow({
           {session.stale ? (
             <span
               data-testid="agent-session-no-heartbeat"
-              className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[11px] font-[650] text-warning"
+              className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[11px] font-[650] text-[color:var(--agent-tone-warning)]"
             >
               {t("agentControl.live.noHeartbeatChip")}
             </span>
@@ -158,7 +158,7 @@ function LiveSessionRow({
           </span>
         </div>
         {session.pausedReason ? (
-          <p className="mt-0.5 text-[11px] text-warning">
+          <p className="mt-0.5 text-[11px] text-[color:var(--agent-tone-warning)]">
             {t("agentControl.pause.reasonValue")}: {session.pausedReason}
           </p>
         ) : null}
@@ -264,8 +264,8 @@ function BoardPauseDialog({
             className={cn(
               "mb-1 grid h-8 w-8 place-items-center rounded-lg border",
               pause
-                ? "border-warning/30 bg-warning/10 text-warning"
-                : "border-success/30 bg-success/10 text-success",
+                ? "border-warning/30 bg-warning/10 text-[color:var(--agent-tone-warning)]"
+                : "border-success/30 bg-success/10 text-[color:var(--agent-tone-success)]",
             )}
           >
             {pause ? (
@@ -385,8 +385,8 @@ function BoardPauseCard({
         className={cn(
           "grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] border",
           paused
-            ? "border-warning/24 bg-warning/10 text-warning"
-            : "border-success/24 bg-success/10 text-success",
+            ? "border-warning/24 bg-warning/10 text-[color:var(--agent-tone-warning)]"
+            : "border-success/24 bg-success/10 text-[color:var(--agent-tone-success)]",
         )}
       >
         {paused ? (
@@ -692,13 +692,17 @@ export function PausePanel({
         ) : null}
         {sessionsError ? (
           <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">
-            <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
+            <AlertTriangle
+              className="h-5 w-5 text-[color:var(--agent-tone-warning)]"
+              aria-hidden
+            />
             <p>{t("agentControl.sessions.loadError")}</p>
             <Button
               type="button"
               size="sm"
               variant="outline"
               onClick={() => setRevision((value) => value + 1)}
+              className="max-md:min-h-11"
             >
               {t("agentControl.retry")}
             </Button>

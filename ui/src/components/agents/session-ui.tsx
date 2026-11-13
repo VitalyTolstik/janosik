@@ -98,7 +98,9 @@ export function HeartbeatText({
       data-stale={session.stale ? "true" : "false"}
       className={cn(
         "inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap",
-        session.stale ? "text-warning" : "text-muted-foreground",
+        session.stale
+          ? "text-[color:var(--agent-tone-warning)]"
+          : "text-muted-foreground",
         className,
       )}
     >
@@ -254,7 +256,7 @@ function SessionGroupHeader({
         </span>
       ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
-        <span className="rounded-[4px] border border-warning/26 bg-warning/12 px-1 py-px text-[11px] font-[650] text-warning">
+        <span className="rounded-[4px] border border-warning/26 bg-warning/12 px-1 py-px text-[11px] font-[650] text-[color:var(--agent-tone-warning)]">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
@@ -271,7 +273,7 @@ function SessionGroupHeader({
           : ""}
       </span>
       {staleBoard ? (
-        <span className="text-[11px] text-warning">
+        <span className="text-[11px] text-[color:var(--agent-tone-warning)]">
           {t("agents.shell.staleData")}
         </span>
       ) : null}
@@ -295,7 +297,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-1.5 py-1 text-[11px] font-[650] tracking-[0.05em] text-muted-foreground/76 uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_120px_96px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_120px_96px] min-[1181px]:gap-2.5"
+      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-1.5 py-1 text-[11px] font-[650] tracking-[0.05em] text-muted-foreground uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_120px_96px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_120px_96px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -486,7 +488,7 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.05em] text-muted-foreground/78 uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.05em] text-muted-foreground uppercase">
         {label}
       </span>
       <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">
@@ -675,7 +677,7 @@ export function SessionDetail({
               terminal
                 ? "text-muted-foreground"
                 : row.stale || row.paused
-                  ? "text-warning"
+                  ? "text-[color:var(--agent-tone-warning)]"
                   : "text-primary",
             )}
             aria-hidden
@@ -700,7 +702,7 @@ export function SessionDetail({
             />
           ) : null}
           {staleBoardIds.includes(row.boardId) ? (
-            <span className="text-[11px] text-warning">
+            <span className="text-[11px] text-[color:var(--agent-tone-warning)]">
               {t("agents.shell.staleData")}
             </span>
           ) : null}
@@ -709,7 +711,7 @@ export function SessionDetail({
         {row.pausedReason ? (
           <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-warning/34 bg-warning/6 px-2.5 py-2 text-[11px] leading-[1.45]">
             <Pause
-              className="mt-px h-3.5 w-3.5 shrink-0 text-warning"
+              className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
               aria-hidden
             />
             <span>
@@ -836,12 +838,12 @@ export function SessionDetail({
         >
           {terminal ? (
             <ShieldCheck
-              className="mt-0.5 h-[11px] w-[11px] shrink-0 text-success"
+              className="mt-0.5 h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
               aria-hidden
             />
           ) : canControl ? (
             <ShieldCheck
-              className="mt-0.5 h-[11px] w-[11px] shrink-0 text-success"
+              className="mt-0.5 h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
               aria-hidden
             />
           ) : (

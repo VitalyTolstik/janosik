@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardAccess, useBoardState } from "@/store/BoardContext";
@@ -42,6 +43,7 @@ export function AgentControlDialog({
   onCloseAutoFocus?: (event: Event) => void;
 }) {
   const { t } = useI18n();
+  const verticalRail = useMediaQuery("(min-width: 768px)");
   const { role } = useBoardAccess();
   const { board } = useBoardState();
   const live = useBoardLive();
@@ -199,8 +201,8 @@ export function AgentControlDialog({
                 className={cn(
                   "inline-flex h-[22px] items-center gap-1 rounded-full border px-2 text-[11px] font-[600] whitespace-nowrap",
                   boardPaused
-                    ? "border-warning/34 bg-warning/6 text-warning"
-                    : "border-success/34 bg-success/6 text-success",
+                    ? "border-warning/34 bg-warning/6 text-[color:var(--agent-tone-warning)]"
+                    : "border-success/34 bg-success/6 text-[color:var(--agent-tone-success)]",
                 )}
               >
                 <span
@@ -220,7 +222,7 @@ export function AgentControlDialog({
                 pending === null ? null : pending > 0 ? (
                   <span
                     data-testid="agent-control-header-pending"
-                    className="inline-flex h-[22px] items-center gap-1 rounded-full border border-warning/34 bg-warning/6 px-2 text-[11px] font-[600] whitespace-nowrap text-warning"
+                    className="inline-flex h-[22px] items-center gap-1 rounded-full border border-warning/34 bg-warning/6 px-2 text-[11px] font-[600] whitespace-nowrap text-[color:var(--agent-tone-warning)]"
                   >
                     <Inbox className="h-3 w-3" aria-hidden />
                     {pending > 99
@@ -261,7 +263,7 @@ export function AgentControlDialog({
             <div
               role="tablist"
               aria-label={t("agentControl.title")}
-              aria-orientation="vertical"
+              aria-orientation={verticalRail ? "vertical" : "horizontal"}
               className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
             >
               {tabs.map(({ id, label, icon: Icon, testId, count }) => (
@@ -287,7 +289,7 @@ export function AgentControlDialog({
                   {count !== undefined && count > 0 ? (
                     <span
                       data-testid={`agent-${id}-count`}
-                      className="ml-auto inline-grid h-[17px] min-w-[17px] place-items-center rounded bg-warning/12 px-1 text-[11px] font-[650] tabular-nums text-warning"
+                      className="ml-auto inline-grid h-[17px] min-w-[17px] place-items-center rounded bg-warning/12 px-1 text-[11px] font-[650] tabular-nums text-[color:var(--agent-tone-warning)]"
                     >
                       {count > 99 ? "99+" : count}
                     </span>

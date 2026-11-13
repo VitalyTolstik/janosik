@@ -101,7 +101,7 @@ export function RunKindChip({ kind }: { kind: AgentRunKind }) {
 export function RunConflictChip({ count }: { count: number }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center gap-1 rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-warning">
+    <span className="inline-flex h-[21px] items-center gap-1 rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
       <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
       {t("agents.runs.conflictChip", { count })}
     </span>
@@ -767,7 +767,7 @@ export function RunDetail({
               </p>
             ) : previewError !== null ? (
               <div
-                className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-warning"
+                className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-[color:var(--agent-tone-warning)]"
                 role="alert"
                 data-testid={
                   previewExpired
@@ -801,12 +801,12 @@ export function RunDetail({
                 >
                   {preview.canRevert ? (
                     <Check
-                      className="mt-px h-3 w-3 shrink-0 text-success"
+                      className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-success)]"
                       aria-hidden
                     />
                   ) : (
                     <AlertTriangle
-                      className="mt-px h-3 w-3 shrink-0 text-warning"
+                      className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-warning)]"
                       aria-hidden
                     />
                   )}
@@ -824,7 +824,7 @@ export function RunDetail({
                     {conflicts.map((conflict) => (
                       <li
                         key={conflict.touch}
-                        className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-warning"
+                        className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]"
                       >
                         <span className="font-mono">{conflict.touch}</span> ·{" "}
                         {conflict.reason} · {conflict.expectedVersion} →{" "}
@@ -888,7 +888,7 @@ export function RunDetail({
               className="flex items-start gap-1.5 text-[11px] text-muted-foreground"
             >
               <Check
-                className="mt-px h-3 w-3 shrink-0 text-success"
+                className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-success)]"
                 aria-hidden
               />
               {t("agentControl.runs.alreadyReverted")}
@@ -955,7 +955,10 @@ export function RunDetail({
               className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground max-md:h-11 max-md:w-11"
             >
               {hashCopied ? (
-                <Check className="h-3 w-3 text-success" aria-hidden />
+                <Check
+                  className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                  aria-hidden
+                />
               ) : (
                 <Copy className="h-3 w-3 opacity-70" aria-hidden />
               )}
@@ -1006,7 +1009,10 @@ export function RunDetail({
             className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
             {linkCopied ? (
-              <Check className="h-3 w-3 text-success" aria-hidden />
+              <Check
+                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                aria-hidden
+              />
             ) : (
               <Link2 className="h-3 w-3" aria-hidden />
             )}
@@ -1038,7 +1044,10 @@ export function RunDetail({
             className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
           >
             {linkCopied ? (
-              <Check className="h-3 w-3 text-success" aria-hidden />
+              <Check
+                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                aria-hidden
+              />
             ) : (
               <Link2 className="h-3 w-3" aria-hidden />
             )}
@@ -1073,11 +1082,11 @@ export function RunDetail({
               />
             </div>
             <p>{t("agents.runs.confirmImpact")}</p>
-            <p className="rounded-[5px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-warning">
+            <p className="rounded-[5px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[color:var(--agent-tone-warning)]">
               {t("agents.runs.confirmConditional")}
             </p>
             {conflicts.length > 0 ? (
-              <p className="text-warning">
+              <p className="text-[color:var(--agent-tone-warning)]">
                 {t("agents.runs.confirmConflicts", { count: conflicts.length })}
               </p>
             ) : null}
@@ -1133,7 +1142,7 @@ function Banner({
         "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45] [&_svg]:mt-px [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
         tone === "bad" && "border-danger/35 bg-danger/6 [&_svg]:text-danger",
         tone === "warn" &&
-          "border-warning/35 bg-warning/6 [&_svg]:text-warning",
+          "border-warning/35 bg-warning/6 [&_svg]:text-[color:var(--agent-tone-warning)]",
         tone === "info" &&
           "border-primary/30 bg-primary/6 [&_svg]:text-primary",
       )}
@@ -1189,7 +1198,7 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground/78 uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
         {label}
       </span>
       <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">

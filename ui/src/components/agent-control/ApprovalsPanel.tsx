@@ -302,7 +302,7 @@ export function ApprovalsPanel({
               aria-pressed={filter === value}
               onClick={() => setFilter(value)}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors min-h-11 md:min-h-0",
                 filter === value
                   ? "bg-primary/15 text-primary"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -342,6 +342,7 @@ export function ApprovalsPanel({
                 size="sm"
                 variant="outline"
                 onClick={() => setRevision((value) => value + 1)}
+                className="max-md:min-h-11"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                 {t("agentControl.retry")}
@@ -470,12 +471,12 @@ export function ApprovalsPanel({
                     </div>
                   </div>
                   {!admin ? (
-                    <p className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
+                    <p className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]">
                       {t("agentControl.approvals.readOnly")}
                     </p>
                   ) : null}
                   {detail.status === "approved" ? (
-                    <p className="rounded-md border border-success/30 bg-success/10 px-2 py-1.5 text-[11px] text-success">
+                    <p className="rounded-md border border-success/30 bg-success/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-success)]">
                       {t("agentControl.approvals.approvedHint")}
                     </p>
                   ) : null}

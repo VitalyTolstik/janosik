@@ -148,6 +148,13 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
       expect(box!.height).toBeGreaterThanOrEqual(44);
     }
 
+    for (const filter of await dialog
+      .locator('[data-testid^="approval-filter-"]')
+      .all()) {
+      const box = await filter.boundingBox();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+
     await dialog.getByTestId("agent-pause-tab").click();
     for (const testId of [
       "agent-live-refresh",
@@ -159,6 +166,13 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
       expect(box.height, testId).toBeGreaterThanOrEqual(44);
       expect(box.width, testId).toBeGreaterThanOrEqual(44);
     }
+
+    await page.getByTestId("agent-session-end").click();
+    for (const testId of ["agent-action-cancel", "agent-action-confirm"]) {
+      const box = await triggerBox(page, testId);
+      expect(box.height, testId).toBeGreaterThanOrEqual(44);
+    }
+    await page.getByTestId("agent-action-cancel").click();
 
     // Focus stays inside the modal while tabbing.
     for (let index = 0; index < 12; index += 1) {
@@ -179,6 +193,27 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
   } finally {
     await agent.dispose();
   }
+});
+
+test("390 board settings primary actions stay at 44 px", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await board.open(page);
+  await page.getByTestId("board-settings-trigger").click();
+  const dialog = page.getByTestId("board-settings-dialog");
+  await expect(dialog).toBeVisible();
+  await page.getByTestId("board-settings-agents").click();
+  await expect(page.getByTestId("agents-automation-footer")).toBeVisible();
+  for (const testId of ["agent-policy-save", "agents-automation-discard"]) {
+    const box = await triggerBox(page, testId);
+    expect(box.height, testId).toBeGreaterThanOrEqual(44);
+  }
+  const close = await triggerBox(page, "workflow-close");
+  expect(close.width).toBeGreaterThanOrEqual(44);
+  expect(close.height).toBeGreaterThanOrEqual(44);
+  await expect(dialog).toBeVisible();
 });
 
 test("no horizontal overflow at 1440/1024/390", async ({ page, board }) => {
@@ -210,10 +245,14 @@ test("reduced motion stops the refresh spinner", async ({ page, board }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await board.open(page);
   await openAgents(page);
-  const animation = await page
-    .getByTestId("agents-refresh")
-    .locator("svg")
-    .evaluate((node) => getComputedStyle(node).animationName);
+  const animation = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.className = "animate-spin";
+    document.body.append(probe);
+    const name = getComputedStyle(probe).animationName;
+    probe.remove();
+    return name;
+  });
   expect(animation).toBe("none");
 });
 
@@ -240,10 +279,14 @@ test("status badge contrast clears AA in both themes", async ({
 
     for (const theme of ["dark", "light"] as const) {
       await page.evaluate((mode) => {
-        localStorage.setItem("vortex-theme", mode);
+        localStorage.removeItem("vortex-theme");
+        localStorage.setItem("janosik-theme", mode);
       }, theme);
       await page.reload();
       await expect(page.getByTestId("agents-page")).toBeVisible();
+      await expect(page.locator("html")).toHaveClass(
+        new RegExp(`(^|\\s)${theme}(\\s|$)`),
+      );
       await page.getByTestId("agents-section-sessions").click();
       const badge = page.locator('[data-testid^="agent-status-"]').first();
       await expect(badge).toBeVisible();
@@ -296,10 +339,64 @@ test("status badge contrast clears AA in both themes", async ({
         return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
       });
       expect(ratio, theme).toBeGreaterThanOrEqual(4.5);
+
+      // The palette itself must clear AA for every status tone on the real
+      // surface; the rendered badge above only proves the `ok` tone.
+      const toneRatios = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const parseHex = (value: string): [number, number, number] => {
+          const hex = value.trim().replace("#", "");
+          return [
+            parseInt(hex.slice(0, 2), 16),
+            parseInt(hex.slice(2, 4), 16),
+            parseInt(hex.slice(4, 6), 16),
+          ];
+        };
+        const channel = (value: number): number => {
+          const x = value / 255;
+          return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: [number, number, number]): number =>
+          0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+        const surface = parseHex(root.getPropertyValue("--surface"));
+        const result: Record<string, number> = {};
+        for (const tone of ["success", "warning", "danger", "primary"]) {
+          const fg = parseHex(root.getPropertyValue(`--agent-tone-${tone}`));
+          const a = luminance(fg);
+          const b = luminance(surface);
+          result[tone] = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        }
+        return result;
+      });
+      for (const [tone, toneRatio] of Object.entries(toneRatios)) {
+        expect(toneRatio, `${theme} ${tone}`).toBeGreaterThanOrEqual(4.5);
+      }
     }
   } finally {
     await agent.dispose();
   }
+});
+
+test("a combobox inside the modal is clickable and Escape closes only the listbox", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await board.open(page);
+  const dialog = await openControl(page);
+  await dialog.getByTestId("agent-runs-tab").click();
+  const trigger = page.getByTestId("run-filter-status");
+  await trigger.click();
+  await expect(page.getByTestId("run-filter-status-listbox")).toBeVisible();
+  await page.getByTestId("run-filter-status-option-applied").click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(dialog).toBeVisible();
+
+  await trigger.click();
+  await expect(page.getByTestId("run-filter-status-listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("run-filter-status-listbox")).toBeHidden();
+  await expect(dialog).toBeVisible();
 });
 
 test("Russian headings use the body stack, English keeps Space Grotesk", async ({

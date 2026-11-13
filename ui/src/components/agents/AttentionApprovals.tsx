@@ -330,7 +330,7 @@ export function AttentionApprovalList({
               aria-pressed={filter === value}
               onClick={() => onFilterChange(value)}
               className={cn(
-                "inline-flex items-center gap-1 text-[11px] transition-colors",
+                "inline-flex min-h-11 items-center gap-1 text-[11px] transition-colors md:min-h-0",
                 filter === value
                   ? "font-semibold text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -397,7 +397,7 @@ export function AttentionApprovalList({
                     className="flex w-full flex-col text-left"
                   >
                     <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="font-[650] uppercase tracking-[0.06em] text-warning">
+                      <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--agent-tone-warning)]">
                         {t(`agents.approvals.eyebrow.${effective}`)}
                       </span>
                       <span className="text-border">·</span>
@@ -442,7 +442,7 @@ export function AttentionApprovalList({
                     >
                       {t("agents.approvals.reject")}
                     </Button>
-                    <code className="ml-auto truncate font-mono text-[11px] text-muted-foreground/75">
+                    <code className="ml-auto truncate font-mono text-[11px] text-muted-foreground">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
                       })}
@@ -619,8 +619,8 @@ export function AttentionApprovalDetail({
   };
 
   const toneClasses = {
-    warn: "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-warning",
-    ok: "border-success/30 bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-success",
+    warn: "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-warning)]",
+    ok: "border-success/30 bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-success)]",
     bad: "border-danger/35 bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-danger",
     muted:
       "border-border bg-muted/40 text-muted-foreground [&_svg]:text-muted-foreground",
@@ -799,7 +799,7 @@ export function AttentionApprovalDetail({
                       detail.risk === "high" || detail.kind === "destructive"
                         ? "text-danger"
                         : detail.risk === "medium"
-                          ? "text-warning"
+                          ? "text-[color:var(--agent-tone-warning)]"
                           : "text-foreground",
                     )}
                   >
@@ -830,7 +830,10 @@ export function AttentionApprovalDetail({
                   data-testid="approval-copy-hash"
                 >
                   {hashCopied ? (
-                    <Check className="h-3 w-3 text-success" aria-hidden />
+                    <Check
+                      className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                      aria-hidden
+                    />
                   ) : (
                     <Copy className="h-3 w-3 opacity-70" aria-hidden />
                   )}

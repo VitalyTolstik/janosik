@@ -80,7 +80,7 @@ export function AgentAttribution({
               title={`${chip.label}: ${chip.value}`}
             >
               {compact ? null : (
-                <span className="font-sans text-muted-foreground/70">
+                <span className="font-sans text-muted-foreground">
                   {chip.label}
                 </span>
               )}

@@ -51,7 +51,8 @@ const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
 
 const RISK_CLASS: Record<ApprovalRisk, string> = {
   low: "border-border bg-muted text-muted-foreground",
-  medium: "border-warning/40 bg-warning/10 text-warning",
+  medium:
+    "border-warning/40 bg-warning/10 text-[color:var(--agent-tone-warning)]",
   high: "border-danger/40 bg-danger/10 text-danger",
 };
 
@@ -233,7 +234,10 @@ export function ApprovalHash({
           data-testid="approval-copy-hash"
         >
           {copied ? (
-            <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+            <Check
+              className="h-3.5 w-3.5 text-[color:var(--agent-tone-success)]"
+              aria-hidden
+            />
           ) : (
             <Copy className="h-3.5 w-3.5" aria-hidden />
           )}
@@ -330,7 +334,10 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
           data-testid="approval-copy-link"
         >
           {copied ? (
-            <Check className="h-2.5 w-2.5 text-success" aria-hidden />
+            <Check
+              className="h-2.5 w-2.5 text-[color:var(--agent-tone-success)]"
+              aria-hidden
+            />
           ) : (
             <Link2 className="h-2.5 w-2.5" aria-hidden />
           )}
@@ -487,7 +494,7 @@ export function ApprovalDecisionForm({
     <>
       <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
         <ShieldCheck
-          className="mt-px h-[11px] w-[11px] shrink-0 text-success"
+          className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
           aria-hidden
         />
         <span>
@@ -529,7 +536,7 @@ export function ApprovalDecisionForm({
           hideClose
         >
           <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-warning">
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--agent-tone-warning)]">
               <ShieldCheck className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <div className="min-w-0">
@@ -656,9 +663,18 @@ export function ApprovalDetailError({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
-      <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
+      <AlertTriangle
+        className="h-5 w-5 text-[color:var(--agent-tone-warning)]"
+        aria-hidden
+      />
       <p>{t("agentControl.approvals.detailError")}</p>
-      <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={onRetry}
+        className="max-md:min-h-11"
+      >
         {t("agentControl.retry")}
       </Button>
     </div>

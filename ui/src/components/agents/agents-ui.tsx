@@ -88,9 +88,7 @@ export function AgentLastSeen({
       title={exact}
       data-testid="agent-last-seen"
     >
-      {prefix ? (
-        <span className="text-muted-foreground/70">{prefix}</span>
-      ) : null}
+      {prefix ? <span className="text-muted-foreground">{prefix}</span> : null}
       <span className="truncate">
         {/* eslint-disable-next-line react-hooks/purity -- relative time is refreshed on purpose */}
         {formatRelative(at, lang, Date.now(), hour12)}
