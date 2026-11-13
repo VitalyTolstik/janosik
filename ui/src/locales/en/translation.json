@@ -1373,6 +1373,7 @@
   "board.settings.agents.adminsOnly": "board admins only",
   "board.settings.agents.lastSavedBy": "Last saved by {{name}} · {{time}}",
   "board.settings.agents.neverSaved": "Never saved · safe defaults apply",
+  "board.settings.agents.saveDetailsUnavailable": "Last save details unavailable",
   "board.settings.agents.unknownAdmin": "a board admin",
   "board.settings.agents.defaultsStatus": "Safe defaults",
   "board.settings.agents.serverAtVersion": "Server is at v{{version}}; reload to continue",

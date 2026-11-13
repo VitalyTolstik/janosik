@@ -669,6 +669,22 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(footer).toHaveTextContent("Never saved · safe defaults apply");
   });
 
+  it("does not claim safe defaults when a custom policy has no Activity row", async () => {
+    const custom = policy({ approvalTtlMinutes: 90 });
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(
+      state({ policy: custom, effective: custom, version: 2 }),
+    );
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+
+    const footer = screen.getByTestId("agents-automation-footer");
+    expect(footer).toHaveTextContent("All changes saved");
+    expect(footer).toHaveTextContent("Last save details unavailable");
+    expect(footer).not.toHaveTextContent("Never saved");
+    expect(footer).not.toHaveTextContent("safe defaults apply");
+  });
+
   it("uses the mobile-safe layout and a single scroll region", async () => {
     vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
 

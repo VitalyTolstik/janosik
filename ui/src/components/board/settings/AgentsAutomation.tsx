@@ -323,6 +323,11 @@ export function AgentsAutomation({
       : null;
   const lastSavedAt = state?.lastSavedAt ?? null;
   const lastSavedBy = state?.lastSavedBy ?? null;
+  // Activity rows are retention-swept, so a missing row is only proof of a
+  // never-saved board when the authoritative policy is still the untouched
+  // default. A stored policy or a bumped version gets a neutral fallback
+  // instead of a false "safe defaults apply".
+  const neverSaved = state?.policy === null && (state?.version ?? 0) <= 1;
   const footerStatus = policy.saving
     ? t("board.settings.agents.saving")
     : conflict
@@ -331,7 +336,7 @@ export function AgentsAutomation({
         ? t("agentControl.error.generic")
         : policy.dirty
           ? t("board.settings.agents.unsaved")
-          : lastSavedAt === null && policy.usingDefaults
+          : neverSaved
             ? t("board.settings.agents.defaultsStatus")
             : t("board.settings.agents.saved");
   const footerTone = policy.saving
@@ -345,12 +350,14 @@ export function AgentsAutomation({
         : "bg-success";
   const secondaryStatus = conflict
     ? t("board.settings.agents.serverAtVersion", { version: conflictVersion })
-    : lastSavedAt === null
-      ? t("board.settings.agents.neverSaved")
-      : t("board.settings.agents.lastSavedBy", {
+    : lastSavedAt !== null
+      ? t("board.settings.agents.lastSavedBy", {
           name: lastSavedBy ?? t("board.settings.agents.unknownAdmin"),
           time: formatRelative(lastSavedAt, lang),
-        });
+        })
+      : neverSaved
+        ? t("board.settings.agents.neverSaved")
+        : t("board.settings.agents.saveDetailsUnavailable");
   const resetDisabled = policy.saving || policy.usingDefaults;
 
   const save = async () => {

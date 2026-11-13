@@ -1387,6 +1387,7 @@
   "board.settings.agents.adminsOnly": "только администраторы доски",
   "board.settings.agents.lastSavedBy": "Последнее сохранение: {{name}} · {{time}}",
   "board.settings.agents.neverSaved": "Ещё не сохранялось · действуют безопасные значения",
+  "board.settings.agents.saveDetailsUnavailable": "Данные о последнем сохранении недоступны",
   "board.settings.agents.unknownAdmin": "администратор доски",
   "board.settings.agents.defaultsStatus": "Безопасные значения",
   "board.settings.agents.serverAtVersion": "Сервер на версии {{version}}; перезагрузите, чтобы продолжить",
