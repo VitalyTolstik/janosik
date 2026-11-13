@@ -32,9 +32,11 @@ function rewriteBuildOrigin(text: string, origin: string): string {
 }
 
 function containsBuildOrigin(text: string): boolean {
-  return text.replace(URL_CANDIDATE, (candidate) =>
-    isBuildOrigin(candidate) ? "" : candidate,
-  ).length < text.length;
+  return (
+    text.replace(URL_CANDIDATE, (candidate) =>
+      isBuildOrigin(candidate) ? "" : candidate,
+    ).length < text.length
+  );
 }
 
 /** Materialize the built site's URLs for this installation, leaving its image read-only. */

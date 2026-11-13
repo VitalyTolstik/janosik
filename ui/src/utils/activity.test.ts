@@ -89,15 +89,11 @@ describe("sentenceFor", () => {
   it("reads checklist done changes as checked or unchecked", () => {
     const checked = {
       ...entry("SET_CHECKLIST_ITEM_DONE"),
-      changes: [
-        { field: "checklistItemDone", from: "false", to: "true" },
-      ],
+      changes: [{ field: "checklistItemDone", from: "false", to: "true" }],
     } as ActivityFeedEntry;
     const unchecked = {
       ...entry("SET_CHECKLIST_ITEM_DONE"),
-      changes: [
-        { field: "checklistItemDone", from: "true", to: "false" },
-      ],
+      changes: [{ field: "checklistItemDone", from: "true", to: "false" }],
     } as ActivityFeedEntry;
 
     expect(sentenceFor(checked, "en", false).key).toBe(
