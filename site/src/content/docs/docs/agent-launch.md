@@ -31,7 +31,7 @@ description: Prepare an agent, exercise human controls and check launch readines
    command runs, not every REST action or attachment blob. Use a tested
    database and uploads backup for disaster recovery.
 
-See [board controls](/docs/user-guide/boards/#agent-approvals-runs-and-policy),
+See [board controls](/docs/user-guide/boards/#agent-control-and-policy),
 [API keys](/docs/user-guide/account/) and [Agents](/docs/user-guide/agents/).
 
 ## Agent developer: exercise the contract

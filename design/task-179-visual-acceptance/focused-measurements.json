@@ -1,0 +1,19 @@
+{
+  "wordmark": {
+    "rect": [46, 21, 50, 14],
+    "fontFamily": "\"Space Grotesk\", ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+    "fontSize": "14px",
+    "fontWeight": "700",
+    "lineHeight": "14px"
+  },
+  "live": {
+    "card": [14, 234, 362, 147],
+    "copy": [62, 245, 302, 67],
+    "actions": [26, 326, 338, 44]
+  },
+  "runFooter": {
+    "footer": [1089, 815, 351, 85],
+    "helper": [1103, 824, 323, 32],
+    "actions": [1103, 864, 323, 28]
+  }
+}

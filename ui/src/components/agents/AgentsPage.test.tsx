@@ -1020,13 +1020,48 @@ describe("AgentsPage", () => {
     expect(rows[0]).toHaveTextContent("Docs pass");
   });
 
-  it("keeps ?q= and ?time= filters from a shared URL", async () => {
+  it("normalises a token-filter change to the canonical ?agent=", async () => {
+    renderPage("/agents?section=sessions");
+    await screen.findByTestId("agents-session-list");
+
+    await userEvent.click(screen.getByTestId("agents-filter-token"));
+    await userEvent.click(
+      screen.getByTestId("agents-filter-token-option-token-2"),
+    );
+
+    await waitFor(() => {
+      const search = screen.getByTestId("location").textContent ?? "";
+      expect(search).toContain("agent=token-2");
+      expect(search).not.toContain("token=token-2");
+    });
+  });
+
+  it("keeps ?q= and applies the ?time= window from a shared URL", async () => {
+    const monthAgo = Date.now() - 30 * 24 * 60 * 60_000;
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-1"
+          ? [
+              session(),
+              session({
+                id: "session-old",
+                name: "Nightly archive",
+                lastHeartbeatAt: monthAgo,
+                startedAt: monthAgo,
+              }),
+            ]
+          : [],
+      ),
+    );
     renderPage("/agents?section=sessions&q=Nightly&time=24h");
 
     expect(await screen.findByTestId("agents-search")).toHaveValue("Nightly");
     expect(
       await screen.findByTestId("agent-session-row-session-1"),
     ).toBeVisible();
+    // `session-old` matches the search text but falls outside the 24h
+    // heartbeat window, so it proves the time filter is applied.
+    expect(screen.queryByTestId("agent-session-row-session-old")).toBeNull();
     expect(screen.queryByTestId("agent-session-row-session-3")).toBeNull();
   });
 

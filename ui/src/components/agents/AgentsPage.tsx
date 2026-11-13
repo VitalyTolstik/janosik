@@ -149,8 +149,10 @@ export function AgentsPage() {
           const next = { ...readAgentFilter(search), ...patch };
           setOrDelete(search, "board", next.board, "all");
           if ("token" in patch) {
-            setOrDelete(search, "token", next.token, "all");
-            search.delete("agent");
+            // `?agent=` is canonical; the old `?token=` spelling stays readable
+            // but a filter change normalises the URL to the new name.
+            setOrDelete(search, "agent", next.token, "all");
+            search.delete("token");
             search.delete("session");
           }
           setOrDelete(search, "status", next.status, "all");
@@ -299,7 +301,7 @@ export function AgentsPage() {
       const search = new URLSearchParams(current);
       setOrDelete(search, "section", value, "attention");
       // Section switches close a detail selection, but board/token filters
-      // stay in the URL: `?agent=` is the old name of the token filter.
+      // stay in the URL: `agent`/`token` both name the token filter.
       for (const key of ["session", "approval", "run"]) search.delete(key);
       // Normalise values that belong to the other section so the URL never
       // claims a filter the visible list is not applying.

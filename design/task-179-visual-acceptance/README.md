@@ -19,8 +19,14 @@ the spec, the spec wins (see
   captures. The real backend contract is exercised by the browser e2e suites in
   CI.
 - Computed styles and bounding boxes were read from the live app and from the
-  tracked prototype (`measurements.json` in this folder). Screenshots are
-  full-viewport captures (`page.screenshot`, animations disabled).
+  tracked prototype (`measurements.json` and `prototype-measurements.json` in
+  this folder). `focused-measurements.json` records the three elements the
+  reviewer called out: the wordmark face, the 390 Live card and the 1440 run
+  footer. Screenshots are full-viewport captures (`page.screenshot`,
+  animations disabled).
+- The wordmark exists only in the global `/agents` header; a board route uses
+  the icon-only `BrandMark`, so the face change cannot leak into the board
+  header.
 
 ## States
 
@@ -42,7 +48,7 @@ where the value is static). `app` = this branch, measured in Chromium.
 
 | # | Element | Mockup | App | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Brand wordmark | Space Grotesk 14 px / 700 / 14 px, `-0.02em` | Space Grotesk 14 px / 700 / 14 px, `-0.02em` | **match** (fixed in this PR — it had fallen back to the body stack) |
+| 1 | Brand wordmark | Space Grotesk 14 px / 700 / 14 px, `-0.02em` | Space Grotesk 14 px / 700 / 14 px, `-0.02em`; measured 50×14 at (46, 21) in `focused-measurements.json` | **match** (fixed in this PR — it had fallen back to the body stack; only the global header renders it) |
 | 2 | Rail title `Agents` | Space Grotesk 17 px / 700 / 19.55 px, `-0.025em` | Space Grotesk 17 px / 700 / 19.55 px | match |
 | 3 | Rail subtitle | 11 px / 400 / 15.95 px, muted `#93a4bd`, max 19ch | same | match |
 | 4 | Rail tab | 34 px high, 12 px / 550 / 17.4 px, radius 6, padding 0 8 | same, selected border + 2 px primary inset | match |
@@ -59,8 +65,8 @@ where the value is static). `app` = this branch, measured in Chromium.
 | 15 | Modal header | title 16 px / 700 Space Grotesk, 32 px bot tile, 22 px status chips | same | match |
 | 16 | Modal rail | 206 px wide, tabs 38 px, 12 px / 550 | same | match |
 | 17 | Modal footer | 50 px desktop, 56 px mobile, helper left / actions right | same | match |
-| 18 | Live status card | icon + text + actions; mobile wraps actions below the copy | same after this PR’s mobile rule | **fixed**: actions previously squeezed the copy into a 13 px column at 390 |
-| 19 | Run detail footer | helper on its own line, action row below | same after this PR | **fixed**: at 352 px the one-row footer crushed the helper into a 70 px column at 1440 |
+| 18 | Live status card | icon + text + actions; mobile wraps actions below the copy | same after this PR’s mobile rule; 390 measured card 362×147, copy 302×67, actions 338×44 below it (`focused-measurements.json`) | **fixed**: actions previously squeezed the copy into a 13 px column at 390 |
+| 19 | Run detail footer | helper on its own line, action row below | same after this PR; 1440 measured helper 323×32 and action row 323×28 below it (`focused-measurements.json`) | **fixed**: at 352 px the one-row footer crushed the helper into a 70 px column at 1440 |
 | 20 | Settings dialog | 1040×756 at 1440, radius 11 | 1040×756, radius 11 | match |
 | 21 | Settings title / rail | 17 px / 700 display; rail 194 px, tabs 38 px | same | match |
 | 22 | Settings columns | destructive radio cards + 2-column limits, full-width trigger grid, sticky footer | same; extra policy trigger rows are data-driven (`requireApprovalFor` is 8 actions) | match |

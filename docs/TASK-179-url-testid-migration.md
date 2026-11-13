@@ -81,7 +81,7 @@ automation). They must keep their meaning:
 | `agents-section-attention` / `-sessions` / `-runs` | `/agents` | Rail tabs. |
 | `agents-approval-card` / `agents-approval-detail` / `agents-approvals` | `/agents` Attention | Global approval list/detail. |
 | `agent-run-list` / `agent-run-detail` / `agent-run-*` | modal + `/agents` Runs | One run component family; filter, detail, retry, copy, preview and revert ids are shared by both surfaces. |
-| `agent-session-list` / `agent-session-row-<id>` / `agents-session-row-<id>` | token detail / `/agents` Sessions | Session list and row ids. |
+| `agent-session-list` / `agent-session-row-<id>` | token detail, modal Live and `/agents` Sessions | Session list and the shared row id (`session-ui.tsx`, `PausePanel.tsx`). |
 | `board-settings-dialog` / `board-settings-agents` | Board Settings | Settings shell and the Agents & automation rail entry. |
 | `agent-policy-*` | Board Settings | Policy fields and actions keep their TASK-166 ids. |
 
