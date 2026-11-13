@@ -9,6 +9,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  ArrowUpRight,
   Bot,
   ChevronRight,
   Folder,
@@ -87,6 +88,16 @@ import { effectiveApprovalStatus } from "@/utils/approval";
 
 type Section = "attention" | "sessions" | "runs";
 const SECTIONS = ["attention", "sessions", "runs"] as const;
+
+/** Toolbar select trigger, matching the prototype `.select` control. */
+const TOOLBAR_SELECT_CLASS =
+  "min-h-11 w-auto min-w-0 gap-[6px] rounded-[5px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-[11px] max-md:gap-1 max-md:px-[5px] md:h-7 md:min-h-7";
+
+/** Prototype `.btn-sm`: 28 px high, 11 px / 650, 6 px radius. */
+const SMALL_BUTTON_CLASS =
+  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-[11px] leading-none font-[650]";
+const SMALL_OUTLINE_CLASS = `${SMALL_BUTTON_CLASS} !bg-[color-mix(in_oklab,var(--surface)_65%,transparent)]`;
+const SMALL_PRIMARY_CLASS = `${SMALL_BUTTON_CLASS} !bg-[var(--agent-primary-strong)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)]`;
 
 export function AgentsPage() {
   const { t, lang } = useI18n();
@@ -692,8 +703,8 @@ export function AgentsPage() {
       className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
-      <aside className="flex shrink-0 flex-col border-b border-border bg-card/40 px-[10px] pb-3 pt-4 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px]">
-        <div className="hidden px-1 pb-3 md:block">
+      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
+        <div className="hidden px-1.5 pb-3 md:block">
           <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}
           </h1>
@@ -705,7 +716,7 @@ export function AgentsPage() {
           role="tablist"
           aria-label={t("agents.title")}
           aria-orientation={verticalRail ? "vertical" : "horizontal"}
-          className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
+          className="flex gap-[3px] overflow-x-auto md:flex-col md:gap-0.5 md:overflow-visible"
         >
           {SECTIONS.map((item) => {
             const Icon =
@@ -734,12 +745,15 @@ export function AgentsPage() {
                 onClick={() => setSection(item)}
                 data-testid={`agents-section-${item}`}
                 className={cn(
-                  "flex min-h-11 flex-1 items-center gap-2 rounded-md border border-transparent px-2 text-left font-agent-surface text-[12px] font-[550] leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[34px] md:flex-none",
+                  "flex min-h-11 items-center gap-2 rounded-[6px] border border-transparent px-2 text-left font-agent-surface text-[12px] font-[550] leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[34px] md:flex-none max-md:min-h-11 max-md:flex-none max-md:gap-2 max-md:rounded-[5px] max-md:text-[11px]",
                   section === item &&
-                    "border-border bg-surface text-foreground shadow-[inset_2px_0_0_var(--primary)]",
+                    "border-border bg-surface text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-surface",
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                <Icon
+                  className="h-3.5 w-3.5 shrink-0 max-md:h-3 max-md:w-3"
+                  aria-hidden
+                />
                 {t(`agents.shell.${item}`)}
                 {count !== null && count > 0 ? (
                   <span
@@ -770,8 +784,8 @@ export function AgentsPage() {
             );
           })}
         </nav>
-        <div className="mt-4 hidden border-t border-border pt-3 md:block">
-          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+        <div className="mt-[18px] hidden md:block">
+          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-[650] uppercase tracking-[0.07em] text-muted-foreground">
             <span>{t("agents.shell.boards")}</span>
             <span>
               {isAttentionAdmin
@@ -796,9 +810,9 @@ export function AgentsPage() {
                   }
                   aria-pressed={filter.board === board.value}
                   className={cn(
-                    "flex min-h-8 w-full items-center gap-[7px] rounded-md border border-transparent px-2 text-left font-agent-surface text-[11.5px] font-normal leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground",
+                    "flex min-h-8 w-full items-center gap-[7px] rounded-[6px] border border-transparent px-2 text-left font-agent-surface text-[11.5px] font-normal leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground",
                     filter.board === board.value &&
-                      "border-border/60 bg-hover/60 text-foreground",
+                      "border-[color:color-mix(in_oklab,var(--border)_72%,transparent)] bg-[color-mix(in_oklab,var(--hover)_64%,transparent)] text-foreground",
                   )}
                   title={board.label}
                 >
@@ -814,7 +828,7 @@ export function AgentsPage() {
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
                   {count !== null && count > 0 ? (
                     <span
-                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[11px] font-semibold tabular-nums text-[color:var(--agent-tone-warning)]"
+                      className="inline-grid h-4 min-w-4 place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-[11px] font-[650] tabular-nums text-[color:var(--agent-tone-warning)]"
                       data-state={pending.stale ? "stale" : "fresh"}
                       title={
                         pending.stale ? t("agents.pending.stale") : undefined
@@ -833,9 +847,10 @@ export function AgentsPage() {
           <button
             type="button"
             onClick={openTokens}
-            className="mt-2 min-h-9 text-[11px] font-semibold text-foreground hover:underline"
+            className="mt-2 inline-flex min-h-9 items-center gap-[5px] text-[11px] font-semibold text-foreground hover:underline"
           >
-            {t("agents.shell.manageTokens")} ↗
+            {t("agents.shell.manageTokens")}
+            <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
           </button>
         </div>
       </aside>
@@ -845,13 +860,13 @@ export function AgentsPage() {
         aria-labelledby={`agents-tab-${section}`}
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
-        <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px]">
-          <header className="mb-4 flex items-start justify-between gap-3">
+        <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
+          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px]">
             <div className="min-w-0">
-              <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em]">
+              <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em] max-md:text-[17px]">
                 {t(`agents.shell.${section}`)}
               </h2>
-              <p className="mt-[3px] text-[11.5px] leading-[1.45] text-muted-foreground">
+              <p className="mt-[3px] text-[11.5px] leading-[1.45] text-muted-foreground max-md:text-[11px]">
                 {section === "attention"
                   ? t("agents.shell.tagline")
                   : section === "sessions"
@@ -859,9 +874,9 @@ export function AgentsPage() {
                     : t("agents.shell.runsDescription")}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-[7px]">
               <span
-                className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+                className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:inline-flex"
                 data-testid="agents-updated"
                 data-state={
                   state.error || offline
@@ -908,11 +923,11 @@ export function AgentsPage() {
                   state.refreshing || (section === "runs" && runs.loading)
                 }
                 data-testid="agents-refresh"
-                className="min-h-11 md:h-7 md:min-h-7"
+                className="h-7 min-h-0 gap-[6px] rounded-[6px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:h-11 max-md:min-h-11"
               >
                 <RefreshCw
                   className={cn(
-                    "h-3.5 w-3.5",
+                    "!h-[13px] !w-[13px]",
                     state.refreshing && "animate-spin",
                   )}
                   aria-hidden
@@ -928,7 +943,7 @@ export function AgentsPage() {
                   size="sm"
                   onClick={openTokens}
                   data-testid="agents-manage-tokens"
-                  className="min-h-11 px-2 text-[11px] font-[650] md:h-7 md:min-h-7"
+                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] max-md:h-11 max-md:min-h-11"
                 >
                   {t("agents.shell.manageTokens")}
                 </Button>
@@ -938,7 +953,7 @@ export function AgentsPage() {
                   type="button"
                   onClick={clearRunFilters}
                   data-testid="agents-runs-clear-all"
-                  className="inline-flex min-h-7 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:hidden min-[1061px]:max-[1279px]:hidden"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
                 >
                   {t("agents.runs.clearAll")}
                 </button>
@@ -964,7 +979,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 rounded-md border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] pr-2 pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
+                    className="min-h-11 rounded-[6px] border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] py-0 pr-[9px] pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -975,7 +990,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.token")}
                   testId="agents-filter-token"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
                   value={filter.status}
@@ -986,7 +1001,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.status")}
                   testId="agents-filter-status"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
                 <BoardScopeSelect
                   value={filter.board}
@@ -998,7 +1013,7 @@ export function AgentsPage() {
                   ariaLabel={t("agents.filters.board")}
                   testId="agents-filter-board"
                   variant="filter"
-                  className="w-auto min-w-[108px]"
+                  className="w-auto min-w-0"
                   counts={pending.counts}
                   totalCount={pendingAll}
                   stale={pending.stale}
@@ -1015,7 +1030,7 @@ export function AgentsPage() {
                   ariaLabel={t("agentControl.runs.filter.status")}
                   testId="agents-run-filter-status"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[104px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
                   value={runFilter.kind}
@@ -1026,7 +1041,7 @@ export function AgentsPage() {
                   ariaLabel={t("agentControl.runs.filter.kind")}
                   testId="agents-run-filter-kind"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
                   value={runFilter.time}
@@ -1037,7 +1052,7 @@ export function AgentsPage() {
                   ariaLabel={t("agentControl.runs.filter.time")}
                   testId="agents-run-filter-time"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[92px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
                   value={runFilter.token}
@@ -1046,7 +1061,7 @@ export function AgentsPage() {
                   ariaLabel={t("agentControl.runs.filter.token")}
                   testId="agents-run-filter-token"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[104px] max-w-[160px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
                   value={runFilter.session}
@@ -1055,30 +1070,8 @@ export function AgentsPage() {
                   ariaLabel={t("agentControl.runs.filter.session")}
                   testId="agents-run-filter-session"
                   chevronClassName="h-[11px] w-[11px]"
-                  className="min-h-11 w-auto min-w-[104px] max-w-[160px] text-[11px] md:h-7 md:min-h-7"
+                  className={TOOLBAR_SELECT_CLASS}
                 />
-                <BoardScopeSelect
-                  value={runFilter.board}
-                  boards={state.boards.map((board) => ({
-                    id: board.id,
-                    title: board.title,
-                  }))}
-                  onChange={(board) => setRunFilter({ board })}
-                  ariaLabel={t("agents.filters.board")}
-                  testId="agents-run-filter-board"
-                  variant="filter"
-                  className="w-auto min-w-[108px]"
-                  counts={pending.counts}
-                  totalCount={pendingAll}
-                />
-                <button
-                  type="button"
-                  onClick={clearRunFilters}
-                  data-testid="agents-runs-clear-mobile"
-                  className="hidden min-h-11 items-center rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:inline-flex"
-                >
-                  {t("agents.runs.clearAll")}
-                </button>
                 <span
                   className="ml-auto text-[11px] text-muted-foreground"
                   data-testid="agents-runs-total"
@@ -1092,23 +1085,26 @@ export function AgentsPage() {
               </>
             )}
           </div>
-          {section === "sessions" ? (
+          {section === "sessions" &&
+          (state.loading || state.rows.length > 0) ? (
             <>
-              <div
-                data-testid="agents-sessions-heartbeat-note"
-                className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
-              >
-                <Info
-                  className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
-                  aria-hidden
-                />
-                <span>
-                  <strong className="font-[650] text-foreground">
-                    {t("agents.heartbeat.noteTitle")}
-                  </strong>{" "}
-                  {t("agents.heartbeat.noteBody")}
-                </span>
-              </div>
+              {displayed.length > 0 ? (
+                <div
+                  data-testid="agents-sessions-heartbeat-note"
+                  className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
+                >
+                  <Info
+                    className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
+                    aria-hidden
+                  />
+                  <span>
+                    <strong className="font-[650] text-foreground">
+                      {t("agents.heartbeat.noteTitle")}
+                    </strong>{" "}
+                    {t("agents.heartbeat.noteBody")}
+                  </span>
+                </div>
+              ) : null}
               <div
                 className="my-1 mb-2 flex flex-wrap items-center gap-2"
                 data-testid="agents-session-group-toggle"
@@ -1244,7 +1240,7 @@ export function AgentsPage() {
                 action={
                   <Button
                     variant="outline"
-                    className="max-md:min-h-11"
+                    className={SMALL_OUTLINE_CLASS}
                     onClick={() =>
                       section === "runs"
                         ? setRunFilter({ board: "all" })
@@ -1284,7 +1280,7 @@ export function AgentsPage() {
                     <Button
                       variant="outline"
                       onClick={runs.reload}
-                      className="max-md:min-h-11"
+                      className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
                     >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       {t("agents.retry")}
@@ -1306,14 +1302,14 @@ export function AgentsPage() {
                           variant="outline"
                           onClick={clearRunFilters}
                           data-testid="agents-runs-empty-clear"
-                          className="max-md:min-h-11"
+                          className={SMALL_OUTLINE_CLASS}
                         >
                           {t("agents.clearFilters")}
                         </Button>
                         <Button
                           variant="ghost"
                           asChild
-                          className="max-md:min-h-11"
+                          className={`${SMALL_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
                         >
                           <a
                             href={docsUrl(lang)}
@@ -1340,7 +1336,7 @@ export function AgentsPage() {
                         variant="outline"
                         size="sm"
                         onClick={runs.reload}
-                        className="max-md:min-h-11"
+                        className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
                       >
                         {t("agents.retry")}
                       </Button>
@@ -1378,7 +1374,7 @@ export function AgentsPage() {
                         data-testid="agents-runs-more"
                         disabled={runs.loadingMore}
                         onClick={() => void runs.loadMore()}
-                        className="max-md:min-h-11"
+                        className={`${SMALL_BUTTON_CLASS} max-md:h-11 max-md:min-h-11`}
                       >
                         {runs.loadingMore ? (
                           <RefreshCw
@@ -1492,7 +1488,7 @@ export function AgentsPage() {
       <aside
         data-testid="agents-detail-panel"
         className={cn(
-          "hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
+          "hidden shrink-0 flex-col border-l border-border bg-[color-mix(in_oklab,var(--surface)_48%,var(--background))] min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
           ((section === "attention" &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
@@ -1526,18 +1522,19 @@ export function AgentsPage() {
               onPreview={noteRunConflicts}
               onOpenSession={openRunSession}
             />
+          ) : state.rows.length === 0 ? (
+            <SessionDetail
+              row={undefined}
+              missingId={null}
+              now={now}
+              isAgentToken={state.isAgentToken}
+              staleBoardIds={state.staleBoardIds}
+              onClose={closeSession}
+              onSaved={state.replaceSession}
+              onOpenTokens={openTokens}
+            />
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
-              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
-                <History className="h-[18px] w-[18px]" aria-hidden />
-              </span>
-              <p className="text-[13px] font-semibold text-foreground">
-                {t("agents.runs.selectTitle")}
-              </p>
-              <p className="max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
-                {t("agents.runs.selectBody")}
-              </p>
-            </div>
+            <GenericDetailEmpty />
           )
         ) : section === "attention" &&
           isAttentionAdmin &&
@@ -1570,35 +1567,19 @@ export function AgentsPage() {
             onSaved={state.replaceSession}
             onOpenTokens={openTokens}
           />
+        ) : state.rows.length === 0 ? (
+          <SessionDetail
+            row={undefined}
+            missingId={null}
+            now={now}
+            isAgentToken={state.isAgentToken}
+            staleBoardIds={state.staleBoardIds}
+            onClose={closeSession}
+            onSaved={state.replaceSession}
+            onOpenTokens={openTokens}
+          />
         ) : (
-          <>
-            <header className="border-b border-border px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                {t("agents.shell.detailEyebrow")}
-              </p>
-              <h2 className="mt-0.5 text-[13px] font-semibold">
-                {t("agents.shell.noSelection")}
-              </h2>
-            </header>
-            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
-              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
-                <KeyRound className="h-[18px] w-[18px]" aria-hidden />
-              </span>
-              <p className="text-[13px] font-semibold text-foreground">
-                {t("agents.shell.noSessionsToInspect")}
-              </p>
-              <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
-                {t("agents.shell.noSessionsBody")}
-              </p>
-              <Button
-                size="sm"
-                onClick={openTokens}
-                className="mt-1 max-md:min-h-11"
-              >
-                {t("agents.shell.createKey")}
-              </Button>
-            </div>
-          </>
+          <GenericDetailEmpty />
         )}
       </aside>
     </main>
@@ -1662,7 +1643,7 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
   const { t } = useI18n();
   return (
     <div
-      className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-success/30 bg-success/5 px-[11px] py-[9px]"
+      className="mt-0.5 flex flex-wrap items-center gap-2.5 rounded-lg border border-[color:color-mix(in_oklab,var(--success)_28%,var(--border))] bg-success/5 px-[11px] py-[9px]"
       data-testid="agents-attention-clear"
     >
       <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] border border-success/25 bg-success/10 text-[color:var(--agent-tone-success)]">
@@ -1678,7 +1659,7 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
         variant="ghost"
         size="sm"
         onClick={onViewSessions}
-        className="h-7 min-h-0 px-2.5 text-[11px] font-[650] max-md:min-h-11"
+        className={`${SMALL_BUTTON_CLASS} px-[9px]`}
       >
         {t("agents.shell.viewSessions")}
         <ChevronRight className="h-[13px] w-[13px]" aria-hidden />
@@ -1700,7 +1681,7 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
           variant="outline"
           onClick={onRetry}
           data-testid="agents-load-error-retry"
-          className="max-md:min-h-11"
+          className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {t("agents.retry")}
@@ -1723,7 +1704,7 @@ function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
           variant="outline"
           onClick={onClear}
           data-testid="agents-runs-clear-filters"
-          className="max-md:min-h-11"
+          className={SMALL_OUTLINE_CLASS}
         >
           {t("agents.clearFilters")}
         </Button>
@@ -1745,7 +1726,7 @@ function FilteredEmpty({ onClear }: { onClear: () => void }) {
           variant="outline"
           onClick={onClear}
           data-testid="agents-clear-filters"
-          className="max-md:min-h-11"
+          className={SMALL_OUTLINE_CLASS}
         >
           {t("agents.clearFilters")}
         </Button>
@@ -1770,10 +1751,10 @@ function SessionsEmpty({
       body={t("agents.empty.body")}
       action={
         <>
-          <Button onClick={onOpenTokens} className="max-md:min-h-11">
+          <Button onClick={onOpenTokens} className={SMALL_PRIMARY_CLASS}>
             {t("agents.shell.createKey")}
           </Button>
-          <Button variant="outline" asChild className="max-md:min-h-11">
+          <Button variant="outline" asChild className={SMALL_OUTLINE_CLASS}>
             <a href={docsUrl(lang)} target="_blank" rel="noreferrer">
               {t("agents.shell.readDocs")}
             </a>
@@ -1874,6 +1855,35 @@ function AgentRow({
   );
 }
 
+function GenericDetailEmpty() {
+  const { t } = useI18n();
+  return (
+    <>
+      <header className="flex shrink-0 items-start gap-2 border-b border-border px-3.5 pt-3 pb-2">
+        <div className="min-w-0">
+          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+            {t("agents.shell.detailEyebrow")}
+          </p>
+          <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em]">
+            {t("agents.shell.nothingSelected")}
+          </h2>
+        </div>
+      </header>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-7 text-center">
+        <span className="mb-0.5 grid h-[34px] w-[34px] place-items-center rounded-lg border border-border bg-surface text-muted-foreground">
+          <Inbox className="h-[18px] w-[18px]" aria-hidden />
+        </span>
+        <p className="m-0 text-[12px] leading-[1.45] font-[650] text-foreground">
+          {t("agents.shell.selectItem")}
+        </p>
+        <p className="m-0 max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+          {t("agents.shell.selectItemBody")}
+        </p>
+      </div>
+    </>
+  );
+}
+
 function EmptyState({
   testId,
   title,
@@ -1892,15 +1902,17 @@ function EmptyState({
       className="flex min-h-[240px] flex-col items-center justify-center gap-2.5 px-6 py-8 text-center"
       data-testid={testId}
     >
-      <span className="mb-0.5 grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+      <span className="mb-0.5 grid h-[38px] w-[38px] place-items-center rounded-[9px] border border-border bg-surface text-muted-foreground">
         {icon ?? <Bot className="h-[18px] w-[18px]" aria-hidden />}
       </span>
-      <p className="text-[13px] font-semibold text-foreground">{title}</p>
+      <p className="text-[13px] leading-[1.45] font-[650] text-foreground">
+        {title}
+      </p>
       <p className="max-w-[42ch] text-[11.5px] leading-[1.55] text-muted-foreground">
         {body}
       </p>
       {action ? (
-        <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-[7px]">
           {action}
         </div>
       ) : null}

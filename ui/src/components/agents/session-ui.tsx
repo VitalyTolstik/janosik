@@ -515,12 +515,17 @@ function SectionHead({
   );
 }
 
+const DETAIL_BUTTON_CLASS =
+  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-[11px] leading-none font-[650]";
+
 function DetailEmpty({
   missingId,
   onClose,
+  onOpenTokens,
 }: {
   missingId: string | null;
   onClose: () => void;
+  onOpenTokens: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -535,7 +540,7 @@ function DetailEmpty({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
             {t("agents.shell.detailEyebrow")}
           </p>
           <h2
@@ -550,29 +555,43 @@ function DetailEmpty({
           </h2>
         </div>
       </header>
-      <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
-        <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-7 text-center">
+        <span className="mb-0.5 grid h-[34px] w-[34px] place-items-center rounded-lg border border-border bg-surface text-muted-foreground">
           {missingId === null ? (
             <KeyRound className="h-[18px] w-[18px]" aria-hidden />
           ) : (
             <AlertTriangle className="h-[18px] w-[18px]" aria-hidden />
           )}
         </span>
-        <p className="text-[13px] font-semibold text-foreground">
+        <p className="m-0 text-[12px] leading-[1.45] font-[650] text-foreground">
           {missingId === null
             ? t("agents.shell.noSessionsToInspect")
             : t("agents.detail.missingTitle")}
         </p>
-        <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
+        <p className="m-0 max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
           {missingId === null
             ? t("agents.shell.noSessionsBody")
             : t("agents.detail.missingBody")}
         </p>
-        {missingId !== null ? (
-          <Button variant="outline" size="sm" onClick={onClose}>
+        {missingId === null ? (
+          <Button
+            onClick={onOpenTokens}
+            data-testid="agents-detail-create-key"
+            className={`${DETAIL_BUTTON_CLASS} !bg-[var(--agent-primary-strong)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)]`}
+          >
+            {t("agents.shell.createKey")}
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            data-testid="agents-clear-selection"
+            className={`${DETAIL_BUTTON_CLASS} !bg-[color-mix(in_oklab,var(--surface)_65%,transparent)]`}
+          >
             {t("agents.detail.clearSelection")}
           </Button>
-        ) : null}
+        )}
       </div>
     </>
   );
@@ -601,7 +620,13 @@ export function SessionDetail({
   const [action, setAction] = useState<AgentSessionAction | null>(null);
 
   if (row === undefined) {
-    return <DetailEmpty missingId={missingId} onClose={onClose} />;
+    return (
+      <DetailEmpty
+        missingId={missingId}
+        onClose={onClose}
+        onOpenTokens={onOpenTokens}
+      />
+    );
   }
 
   const terminal = isTerminalStatus(row.status);
@@ -653,7 +678,7 @@ export function SessionDetail({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
             {t("agents.detail.sessionEyebrow", { board: row.boardTitle })}
           </p>
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">

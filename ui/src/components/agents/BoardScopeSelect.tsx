@@ -82,13 +82,13 @@ export function BoardScopeSelect({
           {...combobox.triggerProps}
           data-testid={testId}
           className={cn(
-            "inline-flex max-w-full min-w-0 items-center justify-between gap-1.5 rounded-md text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            "inline-flex max-w-full min-w-0 items-center justify-between gap-1.5 rounded-[6px] text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             variant === "header"
-              ? "h-[30px] px-2 font-agent-surface text-[13px] font-semibold leading-[1.2] hover:bg-hover max-md:min-h-11"
-              : "min-h-11 border border-border bg-card px-2 text-[11px] hover:bg-hover md:h-7 md:min-h-7",
+              ? "h-[30px] border border-transparent px-2 font-agent-surface text-[13px] font-semibold leading-[1.2] hover:border-[color:var(--border-soft)] hover:bg-hover max-md:min-h-11"
+              : "min-h-11 gap-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,transparent)] px-2 text-[11px] text-muted-foreground hover:bg-hover hover:text-foreground md:h-7 md:min-h-7",
             variant === "filter" &&
               value !== "all" &&
-              "border-primary/40 bg-primary/10 text-foreground",
+              "border-[color:color-mix(in_oklab,var(--primary)_36%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] text-foreground",
             className,
           )}
         >

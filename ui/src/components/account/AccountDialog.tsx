@@ -120,6 +120,7 @@ export function AccountDialog({
                 color={user.avatarColor}
                 avatarPath={user.avatarPath}
                 size="sm"
+                className={compact ? "h-[26px] w-[26px]" : undefined}
               />
               <span
                 className={cn(

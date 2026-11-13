@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -23,6 +24,16 @@ export default defineConfig({
   // `UI_API_PROXY` lets a secondary checkout (E2E against a disposable stack)
   // point its dev server at another backend without touching :3000.
   server: {
+    // Parallel worktrees share one `node_modules` through a symlink. Vite
+    // otherwise refuses to serve the real font files from that checkout
+    // (`/@fs/...`: outside the allow list), so headings silently fall back to
+    // the body stack. Allow the resolved store as well as this checkout.
+    fs: {
+      allow: [
+        path.resolve(import.meta.dirname, ".."),
+        fs.realpathSync(path.resolve(import.meta.dirname, "../node_modules")),
+      ],
+    },
     proxy: {
       "/api": process.env.UI_API_PROXY ?? "http://localhost:3000",
     },
