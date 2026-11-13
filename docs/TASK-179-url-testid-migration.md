@@ -31,9 +31,10 @@ Rules:
 - `?approval=` and `?run=` **require `?board=`**. There is no global lookup
   endpoint yet, so the UI must never guess the board. The recovery copy is
   shared: “Approval and run links must include a board.”
-- Filters are additive and survive section switches (`?token/`?agent/`?board`/
-  `?status`/`?time`/`?q`), except values that belong to the other section:
-  switching from Runs to Sessions drops run-only `kind`/status/time semantics.
+- Filters are additive and survive section switches (`?token`, `?agent`,
+  `?board`, `?status`, `?time`, `?q`), except values that belong to the other
+  section: switching from Runs to Sessions drops run-only `kind`/status/time
+  semantics.
 - A section switch closes `session`, `approval` and `run`; a board change closes
   `approval`, `run` and `session` so no detail outlives its scope.
 - Unknown `?board=` keeps the message + recovery action; it does not silently
