@@ -56,6 +56,11 @@ describe("admin list query state", () => {
     expect(state.filters).toEqual(EMPTY_ADMIN_LIST_FILTERS);
   });
 
+  it("clamps an oversized offset to the first page", () => {
+    const state = readAdminListQuery(new URLSearchParams("offset=1000001"));
+    expect(state.offset).toBe(0);
+  });
+
   it("ignores status and period when the list has no such tabs", () => {
     const state = readAdminListQuery(
       new URLSearchParams("status=deleted&period=24h"),

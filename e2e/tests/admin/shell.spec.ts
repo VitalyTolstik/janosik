@@ -331,7 +331,9 @@ test("NAV-7: browser Back and Forward move between list and details", async ({
   await loginAsMaster(page, ownerCredentials());
   await page.goto(adminPath("users"), { waitUntil: "domcontentloaded" });
   await searchAdminList(page, "users", targetUser.email);
-  await page.getByTestId(`admin-user-row-${targetUser.id}`).click();
+  // Click the email link rather than bare row geometry so the test does not
+  // depend on where Playwright's centre point lands.
+  await page.getByTestId(`admin-user-email-${targetUser.id}`).click();
   await expect(page).toHaveURL(detailUrl);
 
   await page.goto(adminPath("boards"), { waitUntil: "domcontentloaded" });

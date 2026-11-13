@@ -174,8 +174,8 @@ excludes them and `status=deleted` selects them. The Comments and Files
 counters link with `status=active`, matching their live-row definition. The
 Cards counter includes archived cards but excludes deleted ones, so its linked
 list can show archived rows in addition to the count; the Cards counter and
-the Commands/Events counters stay unfiltered by status. The status tabs and
-filter chips are the documented way to narrow any of these lists.
+the Cards counter and the Commands/Events counters stay unfiltered by status.
+The status tabs (where the list has them) and filter chips narrow these lists.
 
 The dashboard is described here; the user, board and content listings are on
 their own pages: see [users and masters](/docs/admin/people/) and

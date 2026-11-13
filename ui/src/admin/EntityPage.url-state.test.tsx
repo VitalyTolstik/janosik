@@ -237,6 +237,41 @@ describe("admin list URL state", () => {
     expect(screen.getByTestId("location-probe")).toHaveTextContent("period=7d");
   });
 
+  it("clears bulk selection when the filter changes via history", async () => {
+    const server = new FakeAdminServer(stateWithTwoBoards());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards?tab=cards");
+
+    await screen.findByTestId("admin-card-row-card-1");
+    fireEvent.click(
+      screen.getByRole("button", { name: t("admin.boards.filter.archived") }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("location-probe")).toHaveTextContent(
+        "status=archived",
+      );
+    });
+    fireEvent.click(screen.getByTestId("test-back"));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-probe")).not.toHaveTextContent(
+        "status=archived",
+      );
+    });
+
+    fireEvent.click(await screen.findByTestId("admin-select-card-1"));
+    expect(await screen.findByTestId("admin-bulk-delete")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("test-forward"));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-probe")).toHaveTextContent(
+        "status=archived",
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("admin-bulk-delete")).toBeNull();
+    });
+  });
+
   it("keeps a cell link from being stolen by the row link", async () => {
     const server = new FakeAdminServer(stateWithTwoBoards());
     vi.stubGlobal("fetch", server.fetchImpl);
