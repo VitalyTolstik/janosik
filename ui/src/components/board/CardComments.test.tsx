@@ -580,6 +580,38 @@ describe("CardComments", () => {
     expect(await screen.findByText("Stored")).toBeInTheDocument();
   });
 
+  it("saves with Ctrl+Enter and disables Save for blank, unchanged and over-limit text", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Keyboard edit" })]);
+    renderComments(server);
+    await screen.findByText("Keyboard edit");
+
+    fireEvent.click(screen.getByTestId("comment-edit"));
+    const row = screen.getByTestId("comment");
+    const input = await within(row).findByTestId("comment-input");
+    const save = screen.getByTestId("comment-edit-save");
+    // Open with the stored text: there is nothing to save yet.
+    expect(save).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "   " } });
+    expect(save).toBeDisabled();
+    fireEvent.change(input, {
+      target: { value: "x".repeat(LIMITS.comment + 1) },
+    });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Saved with the keyboard" } });
+    expect(save).toBeEnabled();
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("comment")).toHaveTextContent(
+        "Saved with the keyboard",
+      );
+      expect(screen.queryByTestId("comment-edit-save")).toBeNull();
+    });
+  });
+
   it("updates an edited comment from a second tab through comment_updated", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [

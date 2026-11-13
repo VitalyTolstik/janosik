@@ -45,6 +45,8 @@ interface CommentComposerEditorProps {
   onSubmit: () => void;
   /** Escape cancels (inline comment editing, TASK-176.2). */
   onCancel?: () => void;
+  /** Focus the editable surface on mount (inline edit opens ready to type). */
+  autoFocus?: boolean;
   placeholder?: string;
 }
 
@@ -63,7 +65,7 @@ export const CommentComposerEditor = forwardRef<
   CommentComposerEditorHandle,
   CommentComposerEditorProps
 >(function CommentComposerEditor(
-  { cardId, value, onChange, onSubmit, onCancel, placeholder },
+  { cardId, value, onChange, onSubmit, onCancel, autoFocus, placeholder },
   ref,
 ) {
   const { lang, t } = useI18n();
@@ -79,6 +81,10 @@ export const CommentComposerEditor = forwardRef<
     }),
     [],
   );
+
+  useEffect(() => {
+    if (autoFocus) methodsRef.current?.focus();
+  }, [autoFocus]);
 
   // Capture phase: the editor's own paste handlers must not see the files.
   const onPasteCapture = (event: ReactClipboardEvent) => {

@@ -583,9 +583,22 @@ function CommentRow({
   const [draft, setDraft] = useState(comment.text);
   const [saving, setSaving] = useState(false);
   const [editorNonce, setEditorNonce] = useState(0);
+  const editButtonRef = useRef<HTMLButtonElement | null>(null);
+  const wasEditingRef = useRef(false);
 
+  // Return focus to the Edit button when the inline editor closes, so a
+  // keyboard edit does not drop focus to the dialog body (DoD §17).
+  useEffect(() => {
+    if (wasEditingRef.current && !editing) editButtonRef.current?.focus();
+    wasEditingRef.current = editing;
+  }, [editing]);
+
+  const unchanged = draft.trim() === comment.text.trim();
   const canSave =
-    !saving && draft.trim().length > 0 && draft.trim().length <= LIMITS.comment;
+    !saving &&
+    !unchanged &&
+    draft.trim().length > 0 &&
+    draft.trim().length <= LIMITS.comment;
 
   const startEdit = () => {
     if (!own || readOnly || pending) return;
@@ -622,6 +635,7 @@ function CommentRow({
     <li
       className={`group flex items-start gap-2.5 text-sm ${pending ? "opacity-60" : ""}`}
       data-testid="comment"
+      data-comment-id={comment.id}
       data-pending={pending ? "true" : undefined}
     >
       <button
@@ -686,6 +700,7 @@ function CommentRow({
           {own && !readOnly && !pending && !editing ? (
             <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
               <button
+                ref={editButtonRef}
                 type="button"
                 aria-label={t("comment.edit")}
                 data-testid="comment-edit"
@@ -730,6 +745,7 @@ function CommentRow({
                   }}
                   onSubmit={() => void saveEdit()}
                   onCancel={cancelEdit}
+                  autoFocus
                   placeholder={t("comment.placeholder")}
                 />
               </Suspense>

@@ -290,9 +290,17 @@ export class CommentsService {
     const updated = await this.boardWrite.run(
       boardId,
       async (tx) => {
-        const row = await tx.comment.update({
-          where: { id: comment.id },
+        // `deletedAt: null` makes the write conditional: a comment that was
+        // soft-deleted after the pre-read is a 404, never an edit on a tombstone.
+        const written = await tx.comment.updateMany({
+          where: { id: comment.id, deletedAt: null },
           data: { text, editedAt: new Date() },
+        });
+        if (written.count === 0) {
+          throw new NotFoundException("Comment not found");
+        }
+        const row = await tx.comment.findUniqueOrThrow({
+          where: { id: comment.id },
         });
         await reconcileDescriptionAttachments(tx, boardId, comment.text, text);
         // Inline pasted media lives outside `reconcileDescriptionAttachments`
@@ -300,19 +308,9 @@ export class CommentsService {
         // from this comment are unlinked explicitly — like a delete does for
         // the whole body.
         const beforeIds = inlineAttachmentIds(comment.text);
-        const afterIds = new Set(inlineAttachmentIds(text));
+        const afterIds = inlineAttachmentIds(text);
         const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
-        if (removedIds.length > 0) {
-          await tx.attachment.updateMany({
-            where: {
-              id: { in: removedIds },
-              boardId,
-              isInline: true,
-              deletedAt: null,
-            },
-            data: { deletedAt: new Date() },
-          });
-        }
+        await this.unlinkInlineAttachmentIds(tx, boardId, removedIds);
         const activity = await tx.activity.create({
           data: {
             boardId,
@@ -506,10 +504,20 @@ export class CommentsService {
     boardId: string,
     text: string,
   ): Promise<void> {
-    const ids = [...inlineAttachmentIds(text)];
+    await this.unlinkInlineAttachmentIds(tx, boardId, [
+      ...inlineAttachmentIds(text),
+    ]);
+  }
+
+  /** Soft-delete the given inline blobs, board-scoped (TASK-81). */
+  private async unlinkInlineAttachmentIds(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    ids: readonly string[],
+  ): Promise<void> {
     if (ids.length === 0) return;
     await tx.attachment.updateMany({
-      where: { id: { in: ids }, boardId, isInline: true, deletedAt: null },
+      where: { id: { in: [...ids] }, boardId, isInline: true, deletedAt: null },
       data: { deletedAt: new Date() },
     });
   }

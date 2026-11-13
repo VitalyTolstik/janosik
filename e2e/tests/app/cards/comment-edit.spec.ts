@@ -7,9 +7,11 @@ import { appUrl } from "@/helpers/urls.js";
 
 test.describe.configure({ timeout: 60_000 });
 
-/** A comment row of the open card, located by its text. */
-function commentRow(page: Page, text: string) {
-  return cardDialog(page).getByTestId("comment").filter({ hasText: text });
+/** A comment row of the open card, located by its stable id. */
+function commentRow(page: Page, commentId: string) {
+  return cardDialog(page).locator(
+    `[data-testid="comment"][data-comment-id="${commentId}"]`,
+  );
 }
 
 test("edits an own comment in place and shows the edited marker", async ({
@@ -26,7 +28,7 @@ test("edits an own comment in place and shows the edited marker", async ({
 
   await board.open(page);
   await openCard(page, "Edit me");
-  const row = commentRow(page, "First draft");
+  const row = commentRow(page, commentId);
   await expect(row).toBeVisible();
 
   await row.hover();
@@ -72,7 +74,7 @@ test("another user cannot edit someone else's comment", async ({
 
   const partnerPage = partnerBrowser.page;
   await openCard(partnerPage, "Not yours");
-  const row = commentRow(partnerPage, "Owner only");
+  const row = commentRow(partnerPage, commentId);
   await expect(row).toBeVisible();
   await row.hover();
   // The foreign comment offers neither Edit nor Delete.
@@ -102,10 +104,11 @@ test("a second tab sees the edit live without a reload", async ({
     data: { text: "Before the edit" },
   });
   expect(created.status()).toBe(201);
+  const commentId = ((await created.json()) as { id: string }).id;
 
   await board.open(page);
   await openCard(page, "Live edit");
-  await expect(commentRow(page, "Before the edit")).toBeVisible();
+  await expect(commentRow(page, commentId)).toBeVisible();
   await markAlive(page);
 
   const second = await context.newPage();
@@ -116,7 +119,7 @@ test("a second tab sees the edit live without a reload", async ({
     ).toBeVisible();
     await openCard(second, "Live edit");
 
-    const secondRow = commentRow(second, "Before the edit");
+    const secondRow = commentRow(second, commentId);
     await secondRow.hover();
     await secondRow.getByTestId("comment-edit").click();
     const editor = secondRow.locator('[contenteditable="true"]');
@@ -127,8 +130,10 @@ test("a second tab sees the edit live without a reload", async ({
     await second.close();
   }
 
-  const firstRow = commentRow(page, "Edited from the second tab");
-  await expect(firstRow).toBeVisible({ timeout: 15_000 });
+  const firstRow = commentRow(page, commentId);
+  await expect(firstRow).toContainText("Edited from the second tab", {
+    timeout: 15_000,
+  });
   await expect(firstRow.getByTestId("comment-edited")).toBeVisible();
   await expectStillAlive(page);
   await closeCardDialog(page);
