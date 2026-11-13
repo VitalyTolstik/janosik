@@ -403,7 +403,7 @@ export function AgentsAutomation({
             disabled={resetDisabled}
             data-testid="agent-policy-reset"
             title={
-              policy.usingDefaults
+              draftIsDefaults
                 ? t("board.settings.agents.resetDisabledHint")
                 : t("board.settings.agents.resetHint")
             }

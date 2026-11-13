@@ -35,11 +35,6 @@ export interface PolicySaveError {
 
 export type PolicySaveOutcome = "saved" | "conflict" | "error" | "invalid";
 
-export interface PolicyResetOutcome {
-  kind: "saved" | "conflict" | "error";
-  version?: number;
-}
-
 interface PolicySession {
   state: BoardAgentPolicyStateDto;
   /** The server policy the user first loaded; conflicts stay relative to it. */
@@ -78,7 +73,6 @@ export interface UsePolicyDraftResult {
   save: () => Promise<PolicySaveOutcome>;
   discard: () => void;
   resetDraft: () => void;
-  reset: () => Promise<PolicyResetOutcome>;
 }
 
 function policyFromState(state: BoardAgentPolicyStateDto): BoardAgentPolicy {
@@ -420,71 +414,6 @@ export function usePolicyDraft({
     setError(null);
   }, [applySession]);
 
-  const reset = useCallback(async (): Promise<PolicyResetOutcome> => {
-    const current = sessionRef.current;
-    if (
-      current === null ||
-      boardId === undefined ||
-      saving ||
-      savingRef.current
-    ) {
-      return { kind: "error" };
-    }
-    savingRef.current = true;
-    setSaving(true);
-    setError(null);
-    try {
-      const next = await api.updateBoardAgentPolicy(boardId, {
-        policy: null,
-        version: current.state.version,
-      });
-      applyServerState(next);
-      return { kind: "saved" };
-    } catch (resetError) {
-      if (!isVersionConflict(resetError)) {
-        setError(errorOf(resetError));
-        return { kind: "error" };
-      }
-
-      let fetched: BoardAgentPolicyStateDto;
-      try {
-        fetched = await api.getBoardAgentPolicy(boardId);
-      } catch (reloadError) {
-        setError(errorOf(reloadError));
-        return { kind: "error" };
-      }
-      const active = sessionRef.current;
-      if (active === null) {
-        setError({ kind: "generic" });
-        return { kind: "error" };
-      }
-      const latest = policyFromState(fetched);
-      // A reset is a whole-policy operation, but the draft must still be
-      // merged so cancelling the second confirmation cannot send a stale
-      // draft with the new version.
-      const merged = mergePolicyDraft({
-        base: active.base,
-        previous: active.lastSynced,
-        latest,
-        draft: active.draft,
-        localFields: active.localFields,
-      });
-      applySession({
-        state: fetched,
-        base: active.base,
-        lastSynced: latest,
-        draft: merged.draft,
-        localFields: merged.localFields,
-        conflicts: merged.conflicts,
-      });
-      setError({ kind: "conflict", version: fetched.version });
-      return { kind: "conflict", version: fetched.version };
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  }, [applyServerState, applySession, boardId, saving]);
-
   const validation =
     session === null ? null : validatePolicyDraft(session.draft);
   const canSave =
@@ -514,6 +443,5 @@ export function usePolicyDraft({
     save,
     discard,
     resetDraft,
-    reset,
   };
 }
