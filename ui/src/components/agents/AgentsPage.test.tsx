@@ -492,6 +492,21 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("keeps rollback read-only on a board where the caller is a member", async () => {
+    const memberRun = run({ id: "run-2", boardId: "board-2" });
+    hoisted.listRuns.mockResolvedValue([memberRun]);
+    hoisted.getRun.mockResolvedValue(
+      runDetail({ id: "run-2", boardId: "board-2" }),
+    );
+    renderPage("/agents?section=runs&board=board-2&run=run-2");
+
+    expect(await screen.findByTestId("agent-run-detail")).toBeVisible();
+    expect(screen.getByTestId("agent-run-admin-only-note")).toBeVisible();
+    expect(screen.queryByTestId("agent-run-revert-apply")).toBeNull();
+    expect(screen.queryByTestId("agent-run-preimages")).toBeNull();
+    expect(screen.queryByTestId("agent-run-diff")).toBeNull();
+  });
+
   it("shows the unknown-board recovery for a revoked run board", async () => {
     hoisted.listAgentSessions.mockImplementation((boardId: string) =>
       boardId === "board-1"

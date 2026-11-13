@@ -280,6 +280,16 @@ export function AgentsPage() {
       // Section switches close a detail selection, but board/token filters
       // stay in the URL: `?agent=` is the old name of the token filter.
       for (const key of ["session", "approval", "run"]) search.delete(key);
+      // Normalise values that belong to the other section so the URL never
+      // claims a filter the visible list is not applying.
+      if (value === "runs") {
+        writeRunFilter(search, readRunFilter(search));
+      } else {
+        const next = readAgentFilter(search);
+        setOrDelete(search, "status", next.status, "all");
+        setOrDelete(search, "time", next.time, "any");
+        search.delete("kind");
+      }
       return search;
     });
   };
@@ -484,14 +494,25 @@ export function AgentsPage() {
     selectedRunId === null
       ? undefined
       : runs.rows.find((run) => run.id === selectedRunId);
+  // The desktop master-detail opens the newest run until the URL pins one;
+  // mobile keeps the list until a row is tapped.
+  const autoRunRow =
+    section === "runs" && selectedRunId === null ? runs.rows[0] : undefined;
+  const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
+  const runDetailBoardId =
+    selectedRunId !== null
+      ? runFilter.board
+      : (autoRunRow?.boardId ?? runFilter.board);
   const runBoardRole =
-    state.boards.find((board) => board.id === runFilter.board)?.role ??
-    selectedRunRow?.boardRole;
+    state.boards.find((board) => board.id === runDetailBoardId)?.role ??
+    selectedRunRow?.boardRole ??
+    autoRunRow?.boardRole;
   const runBoardTitle =
     selectedRunRow?.boardTitle ??
-    state.boards.find((board) => board.id === runFilter.board)?.title ??
-    runFilter.board;
-  const runBoard = loadedBoards.find((board) => board.id === runFilter.board);
+    autoRunRow?.boardTitle ??
+    state.boards.find((board) => board.id === runDetailBoardId)?.title ??
+    runDetailBoardId;
+  const runBoard = loadedBoards.find((board) => board.id === runDetailBoardId);
   const runTokenNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const token of state.tokens) names.set(token.id, token.name);
@@ -565,9 +586,9 @@ export function AgentsPage() {
     selectedSession !== null && sessionDetailRow === undefined;
   const sessionSheetOpen = section === "sessions" && selectedSession !== null;
   const runBoardKnown =
-    runFilter.board !== "all" &&
-    state.boards.some((board) => board.id === runFilter.board) &&
-    !runs.revokedBoardIds.includes(runFilter.board);
+    runDetailBoardId !== "all" &&
+    state.boards.some((board) => board.id === runDetailBoardId) &&
+    !runs.revokedBoardIds.includes(runDetailBoardId);
   const runSheetOpen =
     section === "runs" && selectedRunId !== null && runBoardKnown;
   const boardOptions = [
@@ -1285,7 +1306,7 @@ export function AgentsPage() {
                       role="alert"
                       data-testid="agents-runs-stale"
                     >
-                      <span>{t("agents.error.stale")}</span>
+                      <span>{t("agents.runs.stale")}</span>
                       <Button variant="outline" size="sm" onClick={runs.reload}>
                         {t("agents.retry")}
                       </Button>
@@ -1293,7 +1314,7 @@ export function AgentsPage() {
                   ) : null}
                   <RunList
                     rows={runs.rows}
-                    selectedId={selectedRunId}
+                    selectedId={runDetailRunId}
                     onSelect={openRun}
                     now={now}
                     variant="global"
@@ -1314,7 +1335,7 @@ export function AgentsPage() {
                     <span data-testid="agents-runs-footer-total">
                       {runs.hasMore
                         ? t("agents.runs.totalMore", { count: runs.total })
-                        : t("agents.runs.shown", { count: runs.total })}
+                        : t("agents.runs.footerCount", { count: runs.total })}
                     </span>
                     {runs.hasMore ? (
                       <Button
@@ -1447,10 +1468,10 @@ export function AgentsPage() {
         aria-label={t("agents.shell.details")}
       >
         {section === "runs" ? (
-          selectedRunId !== null && runBoardKnown ? (
+          runDetailRunId !== null && runBoardKnown ? (
             <RunDetail
-              boardId={runFilter.board}
-              runId={selectedRunId}
+              boardId={runDetailBoardId}
+              runId={runDetailRunId}
               role={runBoardRole}
               boardTitle={runBoardTitle}
               board={runBoard}

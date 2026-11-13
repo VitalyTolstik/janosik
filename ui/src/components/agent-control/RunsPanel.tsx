@@ -338,7 +338,7 @@ export function RunsPanel({ role }: { role: Role }) {
                   className="m-2 flex flex-wrap items-center gap-2 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
                 >
                   <span className="min-w-0 flex-1">
-                    {t("agents.error.stale")}
+                    {t("agents.runs.stale")}
                   </span>
                   <Button size="sm" variant="outline" onClick={runs.reload}>
                     {t("agentControl.retry")}
@@ -367,7 +367,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 >
                   {runs.hasMore
                     ? t("agents.runs.totalMore", { count: runs.total })
-                    : t("agents.runs.total", { count: runs.total })}
+                    : t("agents.runs.shown", { count: runs.total })}
                 </span>
                 {runs.hasMore ? (
                   <Button

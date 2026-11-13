@@ -360,7 +360,6 @@ export function RunDetail({
     setDetailError(null);
     setPreview(null);
     setPreviewError(null);
-    setActionError(null);
     void (async () => {
       try {
         const loaded = await api.getRun(boardId, runId);
@@ -380,6 +379,15 @@ export function RunDetail({
     // single place that seeds both panes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId, runId, revision]);
+
+  // A different run starts with a clean action error; retries of the same run
+  // keep the last rollback failure visible.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on a different run
+    setActionError(null);
+    setHashCopied(false);
+    setLinkCopied(false);
+  }, [boardId, runId]);
 
   // A committed rollback from this or another tab refreshes the detail and
   // its conflict preview; the list hook refreshes independently.
@@ -726,7 +734,7 @@ export function RunDetail({
                         />
                         <DiffBox
                           label={t("agents.runs.after")}
-                          value={afterLabel(command.action, preimage)}
+                          value={afterLabel(command.action, preimage, t)}
                         />
                       </div>
                     ) : null}
@@ -1014,6 +1022,38 @@ export function RunDetail({
           </p>
         ) : null}
       </div>
+
+      {variant === "global" ? (
+        <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-surface/80 px-3.5 py-2 text-[11px] leading-[1.45] text-muted-foreground">
+          <Info className="h-3 w-3 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {admin
+              ? t("agents.runs.footerAdmin")
+              : t("agents.runs.footerMember")}
+          </span>
+          <Link
+            to={routes.board(boardId)}
+            data-testid="agent-run-footer-open-board"
+            className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+          >
+            <Folder className="h-3 w-3" aria-hidden />
+            {t("agents.runs.openBoard")}
+          </Link>
+          <button
+            type="button"
+            onClick={() => void copyLink()}
+            data-testid="agent-run-footer-copy-link"
+            className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+          >
+            {linkCopied ? (
+              <Check className="h-3 w-3 text-success" aria-hidden />
+            ) : (
+              <Link2 className="h-3 w-3" aria-hidden />
+            )}
+            {t("agents.runs.copyLink")}
+          </button>
+        </footer>
+      ) : null}
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="sm:max-w-md" data-testid="run-revert-dialog">
@@ -1308,17 +1348,21 @@ function preimageLabel(preimage: unknown): string | null {
   return null;
 }
 
-function afterLabel(action: BoardAction, preimage: unknown): string {
+function afterLabel(
+  action: BoardAction,
+  preimage: unknown,
+  t: Translate,
+): string {
   const type = action.type;
   if (type.startsWith("ADD_") || type.startsWith("CREATE_")) {
-    return "Created";
+    return t("agents.runs.after.created");
   }
   if (type.startsWith("DELETE_") || type.startsWith("ARCHIVE_")) {
-    return "Deleted";
+    return t("agents.runs.after.deleted");
   }
-  if (type.startsWith("MOVE_")) return "Moved";
-  if (type.startsWith("RENAME_")) return "Renamed";
-  if (type.startsWith("UPDATE_")) return "Updated";
+  if (type.startsWith("MOVE_")) return t("agents.runs.after.moved");
+  if (type.startsWith("RENAME_")) return t("agents.runs.after.renamed");
+  if (type.startsWith("UPDATE_")) return t("agents.runs.after.updated");
   const entity = entityIdOf(action);
   if (entity !== null) {
     const record =
@@ -1339,7 +1383,7 @@ function afterLabel(action: BoardAction, preimage: unknown): string {
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function startOfDay(timestamp: number): number {
