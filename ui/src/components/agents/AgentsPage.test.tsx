@@ -1,8 +1,15 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSessionDto, BoardSummary } from "@janosik/shared";
+import type {
+  AgentSessionDto,
+  BoardAction,
+  BoardSummary,
+  RevertPreviewDto,
+  RunDetailDto,
+  RunSummaryDto,
+} from "@janosik/shared";
 
 import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
@@ -22,6 +29,9 @@ const hoisted = vi.hoisted(() => ({
   getBoard: vi.fn(),
   listMembers: vi.fn(),
   listRuns: vi.fn(),
+  getRun: vi.fn(),
+  previewRunRevert: vi.fn(),
+  revertRun: vi.fn(),
 }));
 
 vi.mock("@/api/client", () => {
@@ -56,6 +66,9 @@ vi.mock("@/api/client", () => {
       getBoard: hoisted.getBoard,
       listMembers: hoisted.listMembers,
       listRuns: hoisted.listRuns,
+      getRun: hoisted.getRun,
+      previewRunRevert: hoisted.previewRunRevert,
+      revertRun: hoisted.revertRun,
     },
   };
 });
@@ -150,12 +163,80 @@ function approval(
   };
 }
 
+function run(overrides: Partial<RunSummaryDto> = {}): RunSummaryDto {
+  return {
+    id: "run-1",
+    boardId: "board-1",
+    apiTokenId: "token-1",
+    agentSessionId: "session-1",
+    actorId: "user-1",
+    kind: "batch",
+    status: "applied",
+    clientRunId: "client-1",
+    planHash: "a".repeat(64),
+    approvalId: null,
+    commandCount: 2,
+    firstSeq: 1,
+    lastSeq: 2,
+    revertsRunId: null,
+    createdAt: Date.now() - 60_000,
+    appliedAt: Date.now() - 59_000,
+    revertedAt: null,
+    ...overrides,
+  };
+}
+
+function runDetail(overrides: Partial<RunSummaryDto> = {}): RunDetailDto {
+  return {
+    run: run(overrides),
+    commands: [
+      {
+        seq: 1,
+        action: {
+          type: "DELETE_CARD",
+          boardId: "board-1",
+          cardId: "card-1",
+          at: 1,
+        } as unknown as BoardAction,
+        actorId: "user-1",
+        actorType: "agent",
+        commandId: "command-1",
+        touches: ["card:card-1"],
+        runId: "run-1",
+        agentName: "QA agent",
+      },
+    ],
+    preimages: {
+      "command-1": { schemaVersion: 1, entities: [] },
+    },
+  };
+}
+
+function revertPreview(
+  overrides: Partial<RevertPreviewDto> = {},
+): RevertPreviewDto {
+  return {
+    dryRun: true,
+    run: run(),
+    conflicts: [],
+    canRevert: true,
+    diff: { "card:card-1": { title: "Card claim visibility" } },
+    ...overrides,
+  };
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{location.search}</span>;
+}
+
 function renderPage(path = "/agents") {
   return render(
     <I18nProvider>
       <ToastProvider>
         <MemoryRouter initialEntries={[path]}>
           <AgentsPage />
+          <LocationProbe />
         </MemoryRouter>
       </ToastProvider>
     </I18nProvider>,
@@ -205,6 +286,9 @@ beforeEach(() => {
     },
   ]);
   hoisted.listRuns.mockResolvedValue([]);
+  hoisted.getRun.mockResolvedValue(runDetail());
+  hoisted.previewRunRevert.mockResolvedValue(revertPreview());
+  hoisted.revertRun.mockResolvedValue(runDetail({ status: "reverted" }));
   hoisted.listAgentSessions.mockImplementation((boardId: string) =>
     Promise.resolve(
       boardId === "board-1"
@@ -285,6 +369,156 @@ describe("AgentsPage", () => {
       "No runs yet",
     );
     expect(screen.getByTestId("agents-runs-clear-all")).toBeInTheDocument();
+  });
+
+  it("reads run filters from the URL, sends them to the API and clears them", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage(
+      "/agents?section=runs&board=board-1&status=applied&kind=batch&time=24h&agent=token-1&session=session-1",
+    );
+
+    expect(
+      await screen.findByTestId("agents-run-row-run-1"),
+    ).toBeInTheDocument();
+    expect(hoisted.listRuns).toHaveBeenCalledWith(
+      "board-1",
+      expect.objectContaining({
+        status: "applied",
+        kind: "batch",
+        apiTokenId: "token-1",
+        agentSessionId: "session-1",
+        from: expect.any(Number),
+      }),
+    );
+    expect(screen.getByTestId("agents-run-filter-status")).toHaveTextContent(
+      "Applied",
+    );
+    expect(screen.getByTestId("agents-run-filter-kind")).toHaveTextContent(
+      "Batch",
+    );
+    expect(screen.getByTestId("agents-run-filter-time")).toHaveTextContent(
+      "Last 24 hours",
+    );
+    expect(screen.getByTestId("agents-run-filter-token")).toHaveTextContent(
+      "QA agent",
+    );
+    expect(screen.getByTestId("agents-run-filter-session")).toHaveTextContent(
+      "Nightly triage",
+    );
+    expect(screen.getByTestId("agents-run-filter-board")).toHaveTextContent(
+      "Launch",
+    );
+    const initialUrl = new URLSearchParams(
+      screen.getByTestId("location").textContent ?? "",
+    );
+    expect(initialUrl.get("section")).toBe("runs");
+    expect(initialUrl.get("board")).toBe("board-1");
+    expect(initialUrl.get("status")).toBe("applied");
+    expect(initialUrl.get("agent")).toBe("token-1");
+
+    await userEvent.click(screen.getByTestId("agents-runs-clear-all"));
+    await waitFor(() => {
+      const last = hoisted.listRuns.mock.calls.at(-1)?.[1] as
+        Record<string, unknown> | undefined;
+      expect(last).not.toHaveProperty("status");
+      expect(last).not.toHaveProperty("kind");
+      expect(last).not.toHaveProperty("from");
+      expect(last).not.toHaveProperty("apiTokenId");
+      expect(last).not.toHaveProperty("agentSessionId");
+      const cleared = new URLSearchParams(
+        screen.getByTestId("location").textContent ?? "",
+      );
+      expect(cleared.get("status")).toBeNull();
+      expect(cleared.get("kind")).toBeNull();
+      expect(cleared.get("time")).toBeNull();
+      expect(cleared.get("agent")).toBeNull();
+      expect(cleared.get("session")).toBeNull();
+      expect(cleared.get("board")).toBe("board-1");
+    });
+  });
+
+  it("shows a loaded total and appends the next runs page", async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) =>
+      run({
+        id: `run-${index}`,
+        createdAt: Date.now() - index * 1000,
+        appliedAt: Date.now() - index * 1000,
+      }),
+    );
+    hoisted.listRuns.mockImplementation(
+      (boardId: string, query?: { cursor?: string }) =>
+        boardId !== "board-1"
+          ? Promise.resolve([])
+          : Promise.resolve(
+              query?.cursor === undefined
+                ? firstPage
+                : [run({ id: "run-old", createdAt: 1, appliedAt: 1 })],
+            ),
+    );
+    renderPage("/agents?section=runs");
+
+    const total = await screen.findByTestId("agents-runs-total");
+    await waitFor(() => expect(total).toHaveTextContent("50 runs"));
+    expect(total).toHaveAttribute("data-has-more", "true");
+    await userEvent.click(screen.getByTestId("agents-runs-more"));
+
+    await waitFor(() => expect(total).toHaveTextContent("51 runs"));
+    expect(hoisted.listRuns).toHaveBeenLastCalledWith(
+      "board-1",
+      expect.objectContaining({ cursor: "run-49" }),
+    );
+  });
+
+  it("opens a board-scoped run deep link and copies a link with ?board=", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    expect(await screen.findByTestId("agent-run-detail")).toBeVisible();
+    expect(hoisted.getRun).toHaveBeenCalledWith("board-1", "run-1");
+    expect(screen.getByTestId("agent-run-copy-link")).toHaveAttribute(
+      "data-copy-url",
+      "/agents?section=runs&board=board-1&run=run-1",
+    );
+    await userEvent.click(screen.getByTestId("agent-run-open-session"));
+    expect(
+      await screen.findByTestId("agents-session-detail-hint"),
+    ).toBeVisible();
+  });
+
+  it("requires a board for a run deep link", async () => {
+    renderPage("/agents?section=runs&run=run-1");
+    expect(await screen.findByTestId("agents-missing-scope")).toHaveTextContent(
+      "Approval and run links must include a board.",
+    );
+  });
+
+  it("shows the unknown-board recovery for a revoked run board", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? Promise.reject({ status: 403 })
+        : Promise.resolve([]),
+    );
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    expect(await screen.findByTestId("agents-unknown-board")).toBeVisible();
+    expect(screen.queryByTestId("agent-run-detail")).toBeNull();
+  });
+
+  it("links an approval run and session with ?board=", async () => {
+    const row = approval({ runId: "run-1" });
+    hoisted.listApprovals.mockResolvedValue([row]);
+    hoisted.getApproval.mockResolvedValue(row);
+    renderPage("/agents?section=attention&board=board-1&approval=approval-1");
+
+    expect(await screen.findByTestId("approval-run-link")).toHaveAttribute(
+      "href",
+      "/agents?board=board-1&section=runs&run=run-1",
+    );
+    expect(await screen.findByTestId("approval-session-link")).toHaveAttribute(
+      "href",
+      "/agents?board=board-1&section=sessions&session=session-1",
+    );
   });
 
   it("shows pending approvals in the rail and board scope", async () => {

@@ -1,7 +1,9 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  AgentSessionDto,
   Board,
   BoardAction,
   RevertPreviewDto,
@@ -9,7 +11,7 @@ import type {
   RunSummaryDto,
 } from "@janosik/shared";
 
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { RunsPanel } from "@/components/agent-control/RunsPanel";
 import { ToastProvider } from "@/components/Toast";
 import { I18nProvider } from "@/i18n";
@@ -63,12 +65,46 @@ const RUN: RunSummaryDto = {
   firstSeq: 5,
   lastSeq: 5,
   revertsRunId: null,
-  createdAt: Date.UTC(2026, 10, 11, 10, 0, 0),
-  appliedAt: Date.UTC(2026, 10, 11, 10, 0, 1),
+  createdAt: Date.now() - 60_000,
+  appliedAt: Date.now() - 59_000,
   revertedAt: null,
 };
 
-function detail(preimages: Record<string, unknown> = {}): RunDetailDto {
+function run(overrides: Partial<RunSummaryDto> = {}): RunSummaryDto {
+  return { ...RUN, ...overrides };
+}
+
+function session(overrides: Partial<AgentSessionDto> = {}): AgentSessionDto {
+  return {
+    id: "session-1",
+    userId: "user-1",
+    apiTokenId: "token-1",
+    boardId: "board-1",
+    name: "Nightly triage",
+    clientName: "mcp",
+    model: "gpt-5",
+    status: "active",
+    currentCardId: null,
+    currentRunId: null,
+    startedAt: 1,
+    lastHeartbeatAt: 2,
+    stale: false,
+    paused: false,
+    pausedAt: null,
+    pausedBy: null,
+    pausedReason: null,
+    pauseScope: null,
+    endedAt: null,
+    endReason: null,
+    summary: null,
+    ...overrides,
+  };
+}
+
+function detail(
+  preimages: Record<string, unknown> = {},
+  overrides: Partial<RunDetailDto> = {},
+): RunDetailDto {
   return {
     run: RUN,
     commands: [
@@ -91,6 +127,7 @@ function detail(preimages: Record<string, unknown> = {}): RunDetailDto {
       },
     ],
     preimages,
+    ...overrides,
   };
 }
 
@@ -111,9 +148,11 @@ function renderPanel() {
   return render(
     <I18nProvider>
       <ToastProvider>
-        <BoardLiveProvider live={live}>
-          <RunsPanel role={mocks.role} />
-        </BoardLiveProvider>
+        <MemoryRouter>
+          <BoardLiveProvider live={live}>
+            <RunsPanel role={mocks.role} />
+          </BoardLiveProvider>
+        </MemoryRouter>
       </ToastProvider>
     </I18nProvider>,
   );
@@ -123,9 +162,25 @@ function mockHappyPath(detailValue = detail()) {
   vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
   vi.spyOn(api, "getRun").mockResolvedValue(detailValue);
   vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+  vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+    session({ name: "Nightly triage" }),
+  ]);
+  vi.spyOn(api, "listTokens").mockResolvedValue([
+    {
+      id: "token-1",
+      name: "QA agent",
+      scopePreset: "worker",
+      boardId: null,
+      readOnly: false,
+      trustedCi: false,
+      expiresAt: null,
+      createdAt: 1,
+      lastUsedAt: null,
+    },
+  ] as never);
 }
 
-describe("RunsPanel (TASK-166.15)", () => {
+describe("RunsPanel (TASK-179.5)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
     vi.restoreAllMocks();
@@ -138,7 +193,7 @@ describe("RunsPanel (TASK-166.15)", () => {
     vi.restoreAllMocks();
   });
 
-  it("lists a run, auto-previews it and applies a confirmed rollback", async () => {
+  it("lists a run, names token/session filters and applies a danger-confirmed rollback", async () => {
     const preimages = {
       "cmd-1": { schemaVersion: 1, entities: [{ touch: "card:card-1" }] },
     };
@@ -151,12 +206,12 @@ describe("RunsPanel (TASK-166.15)", () => {
 
     const row = await screen.findByTestId(`agent-run-row-${RUN.id}`);
     expect(row).toHaveAttribute("data-status", "applied");
-    expect(within(row).getByText("Batch")).toBeInTheDocument();
+    expect(within(row).getByText(/Batch run/)).toBeInTheDocument();
 
     const panel = await screen.findByTestId("agent-run-detail");
     expect(within(panel).getByText("DELETE_CARD")).toBeInTheDocument();
     expect(within(panel).getByText("Release notes")).toBeInTheDocument();
-    expect(panel).toHaveTextContent(RUN.planHash ?? "");
+    expect(panel).toHaveTextContent((RUN.planHash ?? "").slice(0, 34));
     expect(
       await screen.findByTestId("agent-run-preimages"),
     ).toBeInTheDocument();
@@ -165,8 +220,23 @@ describe("RunsPanel (TASK-166.15)", () => {
       "true",
     );
 
+    // Named comboboxes: the token comes from the caller's own token list and
+    // the session from the board session list, never a raw UUID input.
+    await userEvent.click(screen.getByTestId("run-filter-token"));
+    expect(
+      screen.getByTestId("run-filter-token-option-token-1"),
+    ).toHaveTextContent("QA agent");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByTestId("run-filter-session"));
+    expect(
+      screen.getByTestId("run-filter-session-option-session-1"),
+    ).toHaveTextContent("Nightly triage");
+    await userEvent.keyboard("{Escape}");
+
     await userEvent.click(screen.getByTestId("agent-run-revert-apply"));
-    expect(await screen.findByTestId("run-revert-dialog")).toBeInTheDocument();
+    const dialog = await screen.findByTestId("run-revert-dialog");
+    expect(dialog).toHaveTextContent("This is a destructive");
+    expect(dialog).toHaveTextContent("1");
     await userEvent.click(screen.getByTestId("run-revert-confirm"));
 
     await waitFor(() =>
@@ -183,7 +253,7 @@ describe("RunsPanel (TASK-166.15)", () => {
     await waitFor(() => expect(api.listRuns).toHaveBeenCalledTimes(2));
   });
 
-  it("shows conflicts and keeps the apply action away from a non-admin", async () => {
+  it("previews conflicts for a member without apply, diff or pre-images", async () => {
     mocks.role = "MEMBER";
     vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
     vi.spyOn(api, "getRun").mockResolvedValue(detail());
@@ -201,6 +271,8 @@ describe("RunsPanel (TASK-166.15)", () => {
         ],
       }),
     );
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
 
     renderPanel();
 
@@ -218,6 +290,11 @@ describe("RunsPanel (TASK-166.15)", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("agent-run-preimages")).toBeNull();
+    expect(screen.queryByTestId("agent-run-diff")).toBeNull();
+    expect(screen.getByTestId("agent-run-admin-only-note")).toHaveTextContent(
+      "Pre-images, diffs and the plan hash",
+    );
+    expect(screen.queryByTestId("agent-run-plan-hash")).toBeNull();
   });
 
   it("shows loading, error and empty states, and retries the list", async () => {
@@ -225,24 +302,28 @@ describe("RunsPanel (TASK-166.15)", () => {
       .spyOn(api, "listRuns")
       .mockRejectedValueOnce(new Error("down"))
       .mockResolvedValueOnce([]);
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
 
     renderPanel();
     expect(
       await screen.findByText("Could not load the run history"),
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await userEvent.click(screen.getByTestId("agent-runs-retry"));
 
     expect(await screen.findByText("No agent runs yet")).toBeInTheDocument();
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it("refetches the list on a run.reverted SSE frame", async () => {
+  it("refetches the list and detail on a run.reverted SSE frame", async () => {
     mockHappyPath();
     const list = vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    const get = vi.spyOn(api, "getRun").mockResolvedValue(detail());
 
     renderPanel();
     await screen.findByTestId(`agent-run-row-${RUN.id}`);
     expect(list).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
 
     act(() => {
       live.agentControl.publishRun({
@@ -255,5 +336,119 @@ describe("RunsPanel (TASK-166.15)", () => {
     });
 
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  });
+
+  it("drives the server query from status, kind and time filters and clears them", async () => {
+    mockHappyPath();
+    const list = vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+
+    renderPanel();
+    await screen.findByTestId(`agent-run-row-${RUN.id}`);
+
+    await userEvent.click(screen.getByTestId("run-filter-status"));
+    await userEvent.click(
+      screen.getByTestId("run-filter-status-option-failed"),
+    );
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(
+        "board-1",
+        expect.objectContaining({ status: "failed" }),
+      ),
+    );
+
+    await userEvent.click(screen.getByTestId("run-filter-kind"));
+    await userEvent.click(screen.getByTestId("run-filter-kind-option-plan"));
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(
+        "board-1",
+        expect.objectContaining({ kind: "plan" }),
+      ),
+    );
+
+    await userEvent.click(screen.getByTestId("run-filter-time"));
+    await userEvent.click(screen.getByTestId("run-filter-time-option-24h"));
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(
+        "board-1",
+        expect.objectContaining({ from: expect.any(Number) }),
+      ),
+    );
+
+    await userEvent.click(screen.getByTestId("agent-runs-clear-filters"));
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(
+        "board-1",
+        expect.not.objectContaining({
+          status: expect.anything(),
+          kind: expect.anything(),
+          from: expect.anything(),
+        }),
+      ),
+    );
+  });
+
+  it("shows a total and appends the next page with Load more", async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) =>
+      run({
+        id: `run-${index}`,
+        createdAt: Date.now() - index * 1000,
+        appliedAt: Date.now() - index * 1000,
+      }),
+    );
+    const list = vi
+      .spyOn(api, "listRuns")
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce([
+        run({ id: "run-old", createdAt: 1, appliedAt: 1 }),
+      ]);
+    vi.spyOn(api, "getRun").mockResolvedValue(detail());
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+
+    renderPanel();
+    const total = await screen.findByTestId("agent-runs-total");
+    expect(total).toHaveTextContent("50 runs");
+    expect(total).toHaveAttribute("data-has-more", "true");
+    await userEvent.click(screen.getByTestId("agent-runs-more"));
+
+    await waitFor(() => expect(total).toHaveTextContent("51 runs"));
+    expect(list).toHaveBeenLastCalledWith(
+      "board-1",
+      expect.objectContaining({ cursor: "run-49" }),
+    );
+  });
+
+  it("retries a failed detail request", async () => {
+    vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    vi.spyOn(api, "getRun")
+      .mockRejectedValueOnce(new ApiError(500, { message: "down" }))
+      .mockResolvedValueOnce(detail());
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+
+    renderPanel();
+    expect(await screen.findByTestId("agent-run-detail-error")).toBeVisible();
+    await userEvent.click(screen.getByTestId("agent-run-detail-retry"));
+    expect(await screen.findByTestId("agent-run-detail")).toBeVisible();
+  });
+
+  it("reports a retention-expired run and keeps apply disabled", async () => {
+    vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    vi.spyOn(api, "getRun").mockResolvedValue(detail());
+    vi.spyOn(api, "previewRunRevert").mockRejectedValue(
+      new ApiError(409, { code: "run_expired", message: "expired" }),
+    );
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+
+    renderPanel();
+    expect(await screen.findByTestId("agent-run-expired")).toHaveTextContent(
+      "removed by retention",
+    );
+    expect(screen.queryByTestId("agent-run-revert-apply")).toBeNull();
+    expect(screen.getByTestId("agent-run-expired-preview")).toBeVisible();
   });
 });
