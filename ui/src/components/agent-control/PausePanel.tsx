@@ -128,7 +128,7 @@ function LiveSessionRow({
           {session.stale ? (
             <span
               data-testid="agent-session-no-heartbeat"
-              className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[9.5px] font-[650] text-warning"
+              className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[11px] font-[650] text-warning"
             >
               {t("agentControl.live.noHeartbeatChip")}
             </span>
@@ -142,7 +142,7 @@ function LiveSessionRow({
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[9.5px] text-muted-foreground">
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
           <HeartbeatText session={session} now={now} />
           <span aria-hidden>·</span>
           <span className="truncate">
@@ -158,12 +158,12 @@ function LiveSessionRow({
           </span>
         </div>
         {session.pausedReason ? (
-          <p className="mt-0.5 text-[9.5px] text-warning">
+          <p className="mt-0.5 text-[11px] text-warning">
             {t("agentControl.pause.reasonValue")}: {session.pausedReason}
           </p>
         ) : null}
         {pausedByOtherScope ? (
-          <p className="mt-0.5 text-[9.5px] text-muted-foreground">
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
             {t("agentControl.live.pausedByScope", {
               scope: t(SCOPE_KEYS[session.pauseScope ?? "board"]),
             })}
@@ -172,13 +172,13 @@ function LiveSessionRow({
       </div>
 
       <div className="min-w-0 max-[760px]:col-start-1 max-[760px]:row-start-2">
-        <b className="block truncate text-[10.5px] font-[550] leading-[1.35]">
+        <b className="block truncate text-[11px] font-[550] leading-[1.35]">
           {session.currentCardId === null
             ? t("agentControl.live.noCurrentCard")
             : (cardTitles.get(session.currentCardId) ??
               shortId(session.currentCardId))}
         </b>
-        <span className="mt-px block truncate text-[9.5px] text-muted-foreground">
+        <span className="mt-px block truncate text-[11px] text-muted-foreground">
           {session.currentRunId === null
             ? t("agentControl.live.noCurrentRun")
             : t("agents.runHash", { id: runNumber(session.currentRunId) })}
@@ -195,7 +195,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-resume"
                 onClick={() => onAction("resume", session)}
-                className="h-11 min-h-11 px-2 text-[10px] min-[761px]:h-[26px] min-[761px]:min-h-[26px]"
+                className="h-11 min-h-11 px-2 text-[11px] min-[761px]:h-[26px] min-[761px]:min-h-[26px]"
               >
                 <CirclePlay className="h-3.5 w-3.5" aria-hidden />
                 {t("agentControl.pause.resume")}
@@ -207,7 +207,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-pause"
                 onClick={() => onAction("pause", session)}
-                className="h-11 min-h-11 px-2 text-[10px] min-[761px]:h-[26px] min-[761px]:min-h-[26px]"
+                className="h-11 min-h-11 px-2 text-[11px] min-[761px]:h-[26px] min-[761px]:min-h-[26px]"
               >
                 <CirclePause className="h-3.5 w-3.5" aria-hidden />
                 {t("agentControl.pause.pause")}
@@ -401,7 +401,7 @@ function BoardPauseCard({
             ? t("agentControl.live.boardPausedTitle")
             : t("agentControl.live.boardAllowedTitle")}
         </b>
-        <p className="mt-0.5 text-[10.5px] leading-[1.5] text-muted-foreground">
+        <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
           {paused
             ? t("agentControl.live.boardPausedBody", {
                 when:
@@ -443,7 +443,7 @@ function BoardPauseCard({
             </Button>
           )
         ) : (
-          <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] text-muted-foreground">
+          <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[11px] font-[600] text-muted-foreground">
             {t("agentControl.live.readOnly")}
           </span>
         )}
@@ -668,7 +668,7 @@ export function PausePanel({
         <h3 className="m-0 mr-auto text-[12.5px] font-[650]">
           {t("agentControl.shell.live")}
         </h3>
-        <span className="text-[10.5px] text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground">
           {t("agentControl.live.summary", {
             count: sessions?.length ?? 0,
             tokens: groups.length,
@@ -686,7 +686,7 @@ export function PausePanel({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {sessions === null && !sessionsError ? (
           <SessionSkeleton label={t("agentControl.sessions.loading")} />
         ) : null}
@@ -734,13 +734,13 @@ export function PausePanel({
                       <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] border border-border bg-surface text-muted-foreground">
                         <Bot className="h-3 w-3" aria-hidden />
                       </span>
-                      <b className="min-w-0 truncate text-[10.5px] font-[650]">
+                      <b className="min-w-0 truncate text-[11px] font-[650]">
                         {group.name}
                       </b>
-                      <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[9px] text-muted-foreground">
+                      <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
                         {shortId(group.tokenId, 12)}
                       </span>
-                      <span className="text-[9.5px] text-muted-foreground">
+                      <span className="text-[11px] text-muted-foreground">
                         {t("agentControl.live.groupLive", {
                           count: group.rows.filter(
                             (row) =>
@@ -778,7 +778,7 @@ export function PausePanel({
                 ))}
 
                 {!admin ? (
-                  <div className="mt-2 flex items-start gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-[10.5px] text-muted-foreground">
+                  <div className="mt-2 flex items-start gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
                     <ShieldCheck
                       className="mt-px h-3 w-3 shrink-0"
                       aria-hidden
@@ -793,19 +793,19 @@ export function PausePanel({
 
         <p
           data-testid="pause-semantics"
-          className="mt-2.5 text-[10.5px] leading-[1.5] text-muted-foreground"
+          className="mt-2.5 text-[11px] leading-[1.5] text-muted-foreground"
         >
           {t("agentControl.live.claims")}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
-          <p className="min-w-0 flex-1 text-[10px] leading-[1.45] text-muted-foreground">
+          <p className="min-w-0 flex-1 text-[11px] leading-[1.45] text-muted-foreground">
             {t("agentControl.live.tokenHint")}
           </p>
           <button
             type="button"
             data-testid="agent-live-manage-tokens"
             onClick={openTokens}
-            className="inline-flex min-h-11 items-center gap-1 text-[10.5px] font-[600] text-foreground hover:underline min-[761px]:min-h-7"
+            className="inline-flex min-h-11 items-center gap-1 text-[11px] font-[600] text-foreground hover:underline min-[761px]:min-h-7"
           >
             {t("agents.shell.manageTokens")} ↗
           </button>

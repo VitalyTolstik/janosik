@@ -97,6 +97,61 @@ body.janosik-touch-dragging {
 }
 
 /* ---------------------------------------------------------------------------
+ * Agent surfaces (TASK-179.9)
+ *
+ * `font-agent-display` is the Space Grotesk display face for Latin headings.
+ * Space Grotesk ships no Cyrillic glyphs, so a Russian UI falls back to the
+ * body stack instead of letting the browser mix two faces inside one word.
+ *
+ * Status tones are mixed toward the foreground just enough to clear WCAG AA
+ * at 11 px in both themes (pure `--warning`/`--success` fail on the light
+ * surface; pure `--danger`/`--primary` are marginal on the dark surface).
+ * ------------------------------------------------------------------------- */
+.font-agent-display {
+  font-family: var(--font-display);
+}
+
+html[lang="ru"] .font-agent-display {
+  font-family: var(--font-agent-surface);
+}
+
+:root {
+  /* AA-checked status text on the dark surface (#172033 at 6–10% tint). */
+  --agent-tone-success: #10b981; /* 6.41:1 */
+  --agent-tone-warning: #f59e0b; /* 7.57:1 */
+  --agent-tone-danger: #f87171; /* 5.88:1 */
+  --agent-tone-primary: #60a5fa; /* 6.40:1 */
+}
+
+html.light {
+  /* Deeper Tailwind-700 shades clear 4.5:1 on the light surface. */
+  --agent-tone-success: #047857; /* 5.02:1 */
+  --agent-tone-warning: #b45309; /* 4.60:1 */
+  --agent-tone-danger: #b91c1c; /* 5.93:1 */
+  --agent-tone-primary: #1d4ed8; /* 6.14:1 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation: none !important;
+  }
+  [data-state="open"],
+  [data-state="closed"] {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Base styles
  * ------------------------------------------------------------------------- */
 

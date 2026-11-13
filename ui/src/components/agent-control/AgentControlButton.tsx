@@ -64,7 +64,7 @@ export function AgentControlButton({
           aria-label={label}
           data-testid={admin ? "agent-control-trigger" : "agent-runs-trigger"}
           onClick={(event) => onOpen(event.currentTarget)}
-          className="relative"
+          className="relative max-md:h-11 max-md:w-11"
         >
           <LazyAnimatedIcon name="bot" size={20} aria-hidden />
           {admin && pendingCount !== null && pendingCount > 0 ? (
@@ -72,7 +72,7 @@ export function AgentControlButton({
               data-testid="agent-control-pending-count"
               data-state={pending.stale ? "stale" : "fresh"}
               title={pending.stale ? t("agents.pending.stale") : undefined}
-              className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger px-1 text-[10px] font-semibold leading-4 text-white"
+              className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger px-1 text-[11px] font-semibold leading-4 text-white"
             >
               {pendingCount > 99 ? "99+" : pendingCount}
             </span>

@@ -64,7 +64,7 @@ const DialogContent = React.forwardRef<
           {hideClose ? null : (
             <DialogPrimitive.Close
               className={cn(
-                "absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none data-[state=open]:bg-hover",
+                "absolute right-2 top-2 grid h-11 w-11 place-items-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none data-[state=open]:bg-hover md:right-4 md:top-4 md:h-8 md:w-8",
                 closeClassName,
               )}
             >

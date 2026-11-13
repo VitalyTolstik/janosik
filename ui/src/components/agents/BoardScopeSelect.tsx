@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, ChevronDown, Folder } from "lucide-react";
 
+import { useCombobox } from "@/components/ui/combobox";
 import {
   Popover,
   PopoverContent,
@@ -18,8 +19,9 @@ interface BoardScopeBoard {
 /**
  * Board-scope combobox for the global agents header and the page toolbar.
  * The prototype uses one custom listbox for both: colored board dots, an
- * opaque surface and a short scope note. The selected value stays in
- * `?board=`; this component only reports the choice.
+ * opaque surface, keyboard navigation with `aria-activedescendant` and a
+ * short scope note. The selected value stays in `?board=`; this component
+ * only reports the choice.
  */
 export function BoardScopeSelect({
   value,
@@ -49,6 +51,7 @@ export function BoardScopeSelect({
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const options = [
     { value: "all", label: t("agents.filters.allBoards") },
     ...boards.map((board) => ({ value: board.id, label: board.title })),
@@ -58,21 +61,28 @@ export function BoardScopeSelect({
   ];
   const current =
     options.find((option) => option.value === value) ?? options[0];
+  const combobox = useCombobox({
+    options,
+    value,
+    open,
+    onOpenChange: setOpen,
+    onSelect: onChange,
+    triggerRef,
+  });
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          role="combobox"
-          aria-haspopup="listbox"
-          aria-expanded={open}
+          ref={triggerRef}
           aria-label={ariaLabel}
+          {...combobox.triggerProps}
           data-testid={testId}
           className={cn(
             "inline-flex max-w-full min-w-0 items-center justify-between gap-1.5 rounded-md text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             variant === "header"
-              ? "h-[30px] px-2 font-agent-surface text-[13px] font-semibold leading-[1.2] hover:bg-hover"
+              ? "h-[30px] px-2 font-agent-surface text-[13px] font-semibold leading-[1.2] hover:bg-hover max-md:min-h-11"
               : "min-h-11 border border-border bg-card px-2 text-[11px] hover:bg-hover md:h-7 md:min-h-7",
             variant === "filter" &&
               value !== "all" &&
@@ -99,30 +109,34 @@ export function BoardScopeSelect({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[280px] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border bg-popover p-1 shadow-xl"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        aria-label={ariaLabel}
+        data-testid={`${testId}-popover`}
+        style={{ pointerEvents: "auto" }}
+        className="z-[70] w-[280px] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl outline-none"
       >
         <div
-          role="listbox"
+          {...combobox.listboxProps}
           aria-label={ariaLabel}
-          className="max-h-80 overflow-y-auto"
+          data-testid={`${testId}-listbox`}
+          className="max-h-80 overflow-y-auto overscroll-contain"
         >
-          {options.map((option) => {
+          {options.map((option, index) => {
             const count =
               option.value === "all" ? totalCount : counts?.[option.value];
+            const active = index === combobox.activeIndex;
+            const selected = option.value === value;
             return (
               <button
                 key={option.value}
                 type="button"
-                role="option"
-                aria-selected={option.value === value}
+                {...combobox.getOptionProps(index, option)}
                 data-testid={`${testId}-option-${option.value}`}
-                onClick={() => {
-                  setOpen(false);
-                  if (option.value !== value) onChange(option.value);
-                }}
+                onClick={() => combobox.choose(index)}
                 className={cn(
                   "flex min-h-9 w-full items-center gap-2 rounded-[5px] border border-transparent px-2.5 py-1.5 text-left text-[12px] leading-[1.3] text-foreground hover:bg-hover max-md:min-h-11",
-                  option.value === value &&
+                  active && "bg-hover",
+                  selected &&
                     "border-primary/30 bg-primary/10 hover:bg-primary/10",
                 )}
               >
@@ -150,7 +164,7 @@ export function BoardScopeSelect({
                     {count > 99 ? "99+" : count}
                   </span>
                 ) : null}
-                {option.value === value ? (
+                {selected ? (
                   <Check
                     className="h-3.5 w-3.5 shrink-0 text-primary"
                     aria-hidden

@@ -46,6 +46,7 @@ import { formatDate, formatDateOnly, useI18n } from "@/i18n";
 import { useBoardLive } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
+import { StatusBadge, type StatusTone } from "./status-badge";
 import {
   RUN_KIND_KEYS,
   RUN_STATUS_KEYS,
@@ -60,16 +61,10 @@ import {
 
 type Role = BoardRole | undefined;
 
-const STATUS_CLASS: Record<AgentRunStatus, string> = {
-  applied: "border-success/32 bg-success/6 text-success",
-  reverted: "border-border bg-hover text-muted-foreground",
-  failed: "border-danger/32 bg-danger/6 text-danger",
-};
-
-const STATUS_DOT: Record<AgentRunStatus, string> = {
-  applied: "bg-success",
-  reverted: "bg-muted-foreground",
-  failed: "bg-danger",
+const STATUS_TONE: Record<AgentRunStatus, StatusTone> = {
+  applied: "ok",
+  reverted: "muted",
+  failed: "bad",
 };
 
 /** One shared run status badge: dot + label, vertically centred. */
@@ -84,24 +79,13 @@ export function RunStatusBadge({
 }) {
   const { t } = useI18n();
   return (
-    <span
-      data-testid={testId}
-      data-status={status}
-      className={cn(
-        "inline-flex h-[22px] max-w-full items-center justify-center gap-1.5 rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
-        STATUS_CLASS[status],
-        className,
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "h-[5px] w-[5px] shrink-0 rounded-full",
-          STATUS_DOT[status],
-        )}
-      />
-      <span className="min-w-0 truncate">{t(RUN_STATUS_KEYS[status])}</span>
-    </span>
+    <StatusBadge
+      label={t(RUN_STATUS_KEYS[status])}
+      tone={STATUS_TONE[status]}
+      status={status}
+      testId={testId}
+      className={className}
+    />
   );
 }
 
@@ -276,7 +260,7 @@ export function RunList({
                           >
                             {clockLabel(runTime(run), today, lang, t)}
                           </time>
-                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[10.5px] text-muted-foreground max-[760px]:hidden">
+                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden">
                             {shortId(run.id)}
                           </span>
                         </span>
@@ -713,10 +697,10 @@ export function RunDetail({
                     className="rounded-md border border-border bg-background/30 px-2 py-1.5"
                   >
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[18px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[10.5px] font-semibold">
+                      <span className="inline-flex h-[18px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold">
                         #{command.seq}
                       </span>
-                      <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[10.5px]">
+                      <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[11px]">
                         {command.action.type}
                       </code>
                       <span className="min-w-0 truncate">
@@ -754,7 +738,7 @@ export function RunDetail({
                           <ChevronRight className="h-2.5 w-2.5" aria-hidden />
                           {t("agentControl.runs.preimage")}
                         </summary>
-                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[10.5px]">
+                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
                           {JSON.stringify(preimage, null, 2)}
                         </pre>
                       </details>
@@ -797,7 +781,7 @@ export function RunDetail({
                   variant="outline"
                   onClick={() => void requestPreview()}
                   disabled={previewing}
-                  className="min-h-9"
+                  className="min-h-9 max-md:min-h-11"
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                   {t("agentControl.runs.refreshPreview")}
@@ -854,7 +838,7 @@ export function RunDetail({
                     <summary className="cursor-pointer text-[11px] text-muted-foreground">
                       {t("agentControl.runs.diff")}
                     </summary>
-                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[10.5px]">
+                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
                       {JSON.stringify(preview.diff, null, 2)}
                     </pre>
                   </details>
@@ -946,7 +930,7 @@ export function RunDetail({
                 count: Object.keys(detail.preimages).length,
               })}
             </p>
-            <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[10.5px]">
+            <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
               {JSON.stringify(detail.preimages, null, 2)}
             </pre>
           </Section>

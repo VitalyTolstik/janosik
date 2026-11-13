@@ -692,7 +692,7 @@ export function AgentsPage() {
     >
       <aside className="flex shrink-0 flex-col border-b border-border bg-card/40 px-[10px] pb-3 pt-4 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px]">
         <div className="hidden px-1 pb-3 md:block">
-          <h1 className="font-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
+          <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}
           </h1>
           <p className="mt-[3px] max-w-[19ch] text-[11px] leading-[1.45] text-muted-foreground">
@@ -702,7 +702,8 @@ export function AgentsPage() {
         <nav
           role="tablist"
           aria-label={t("agents.title")}
-          className="flex gap-1 md:flex-col"
+          aria-orientation="vertical"
+          className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
         >
           {SECTIONS.map((item) => {
             const Icon =
@@ -752,7 +753,7 @@ export function AgentsPage() {
                         : undefined
                     }
                     className={cn(
-                      "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[10.5px] font-semibold tabular-nums",
+                      "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[11px] font-semibold tabular-nums",
                       item === "attention"
                         ? "border border-warning/30 bg-warning/10 text-warning"
                         : section === item
@@ -768,7 +769,7 @@ export function AgentsPage() {
           })}
         </nav>
         <div className="mt-4 hidden border-t border-border pt-3 md:block">
-          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[10.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
             <span>{t("agents.shell.boards")}</span>
             <span>
               {isAttentionAdmin
@@ -811,7 +812,7 @@ export function AgentsPage() {
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
                   {count !== null && count > 0 ? (
                     <span
-                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[10px] font-semibold tabular-nums text-warning"
+                      className="inline-grid h-4 min-w-4 place-items-center rounded border border-warning/25 bg-warning/10 px-1 text-[11px] font-semibold tabular-nums text-warning"
                       data-state={pending.stale ? "stale" : "fresh"}
                       title={
                         pending.stale ? t("agents.pending.stale") : undefined
@@ -825,7 +826,7 @@ export function AgentsPage() {
             })}
           </div>
         </div>
-        <div className="mt-auto hidden border-t border-border px-2 pt-3 text-[10.5px] leading-[1.5] text-muted-foreground md:block">
+        <div className="mt-auto hidden border-t border-border px-2 pt-3 text-[11px] leading-[1.5] text-muted-foreground md:block">
           <p>{t("agents.shell.tokenHint")}</p>
           <button
             type="button"
@@ -845,7 +846,7 @@ export function AgentsPage() {
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px]">
           <header className="mb-4 flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="font-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em]">
+              <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em]">
                 {t(`agents.shell.${section}`)}
               </h2>
               <p className="mt-[3px] text-[11.5px] leading-[1.45] text-muted-foreground">
@@ -1110,7 +1111,7 @@ export function AgentsPage() {
                 className="my-1 mb-2 flex flex-wrap items-center gap-2"
                 data-testid="agents-session-group-toggle"
               >
-                <span className="text-[10.5px] font-[650] tracking-[0.06em] text-muted-foreground uppercase">
+                <span className="text-[11px] font-[650] tracking-[0.06em] text-muted-foreground uppercase">
                   {t("agents.groups.groupBy")}
                 </span>
                 <div
@@ -1124,7 +1125,7 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "board"}
                     onClick={() => setGroupMode("board")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[10.5px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
                       groupMode === "board" &&
                         "bg-hover text-foreground shadow-sm",
                     )}
@@ -1138,7 +1139,7 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "token"}
                     onClick={() => setGroupMode("token")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[10.5px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
                       groupMode === "token" &&
                         "bg-hover text-foreground shadow-sm",
                     )}
@@ -1147,7 +1148,7 @@ export function AgentsPage() {
                     {t("agents.groups.token")}
                   </button>
                 </div>
-                <span className="ml-auto text-[10.5px] text-muted-foreground">
+                <span className="ml-auto text-[11px] text-muted-foreground">
                   {t("agents.groups.summary", {
                     count: displayed.length,
                     live: displayed.filter(isLiveSession).length,
@@ -1209,7 +1210,7 @@ export function AgentsPage() {
               <button
                 type="button"
                 onClick={pending.reload}
-                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium"
+                className="min-h-9 rounded-sm border border-current/40 px-2 font-medium max-md:min-h-11"
               >
                 {t("agents.retry")}
               </button>
@@ -1239,6 +1240,7 @@ export function AgentsPage() {
                 action={
                   <Button
                     variant="outline"
+                    className="max-md:min-h-11"
                     onClick={() =>
                       section === "runs"
                         ? setRunFilter({ board: "all" })
@@ -1304,7 +1306,11 @@ export function AgentsPage() {
                         >
                           {t("agents.clearFilters")}
                         </Button>
-                        <Button variant="ghost" asChild>
+                        <Button
+                          variant="ghost"
+                          asChild
+                          className="max-md:min-h-11"
+                        >
                           <a
                             href={docsUrl(lang)}
                             target="_blank"
@@ -1488,7 +1494,7 @@ export function AgentsPage() {
             approvalBoardId !== null) ||
             sessionSheetOpen ||
             runSheetOpen) &&
-            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[760px]:w-full",
+            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >
@@ -1563,7 +1569,7 @@ export function AgentsPage() {
         ) : (
           <>
             <header className="border-b border-border px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {t("agents.shell.detailEyebrow")}
               </p>
               <h2 className="mt-0.5 text-[13px] font-semibold">
@@ -1580,7 +1586,11 @@ export function AgentsPage() {
               <p className="max-w-[30ch] text-[11.5px] leading-[1.55] text-muted-foreground">
                 {t("agents.shell.noSessionsBody")}
               </p>
-              <Button size="sm" onClick={openTokens} className="mt-1">
+              <Button
+                size="sm"
+                onClick={openTokens}
+                className="mt-1 max-md:min-h-11"
+              >
                 {t("agents.shell.createKey")}
               </Button>
             </div>
@@ -1656,7 +1666,7 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[11.5px] font-[650]">{t("agents.shell.allClear")}</p>
-        <p className="text-[10.5px] leading-[1.45] text-muted-foreground">
+        <p className="text-[11px] leading-[1.45] text-muted-foreground">
           {t("agents.shell.allClearBody")}
         </p>
       </div>
@@ -1664,7 +1674,7 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
         variant="ghost"
         size="sm"
         onClick={onViewSessions}
-        className="h-7 min-h-0 px-2.5 text-[11px] font-[650]"
+        className="h-7 min-h-0 px-2.5 text-[11px] font-[650] max-md:min-h-11"
       >
         {t("agents.shell.viewSessions")}
         <ChevronRight className="h-[13px] w-[13px]" aria-hidden />
@@ -1686,6 +1696,7 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
           variant="outline"
           onClick={onRetry}
           data-testid="agents-load-error-retry"
+          className="max-md:min-h-11"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {t("agents.retry")}
@@ -1730,6 +1741,7 @@ function FilteredEmpty({ onClear }: { onClear: () => void }) {
           variant="outline"
           onClick={onClear}
           data-testid="agents-clear-filters"
+          className="max-md:min-h-11"
         >
           {t("agents.clearFilters")}
         </Button>
@@ -1754,8 +1766,10 @@ function SessionsEmpty({
       body={t("agents.empty.body")}
       action={
         <>
-          <Button onClick={onOpenTokens}>{t("agents.shell.createKey")}</Button>
-          <Button variant="outline" asChild>
+          <Button onClick={onOpenTokens} className="max-md:min-h-11">
+            {t("agents.shell.createKey")}
+          </Button>
+          <Button variant="outline" asChild className="max-md:min-h-11">
             <a href={docsUrl(lang)} target="_blank" rel="noreferrer">
               {t("agents.shell.readDocs")}
             </a>

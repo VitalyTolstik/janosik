@@ -281,7 +281,7 @@ export function Header() {
                 title={
                   pendingApprovals.stale ? t("agents.pending.stale") : undefined
                 }
-                className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-[10.5px] font-bold leading-none tabular-nums text-[#1b1305]"
+                className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-[11px] font-bold leading-none tabular-nums text-[#1b1305]"
               >
                 {pendingBadge > 99 ? "99+" : pendingBadge}
               </span>
@@ -345,8 +345,12 @@ export function Header() {
                 <DialogDescription
                   className="flex items-center gap-2"
                   role="status"
+                  data-testid="agent-control-fallback"
                 >
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  <Loader2
+                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden
+                  />
                   {t("common.loading")}
                 </DialogDescription>
               </DialogContent>

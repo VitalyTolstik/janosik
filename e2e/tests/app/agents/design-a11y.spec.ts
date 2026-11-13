@@ -1,0 +1,326 @@
+import { test, expect } from "@/fixtures/board.js";
+import { createAgentSession } from "@/helpers/agents.js";
+import { appUrl } from "@/helpers/urls.js";
+
+/**
+ * TASK-179.9 visual/a11y acceptance: custom combobox keyboard model, one
+ * status badge with a centred mark, 44 px mobile actions, the 1024 sheet
+ * starting below the real board header, focus trap/return, reduced motion,
+ * no horizontal overflow and the Russian body-stack heading.
+ */
+
+async function openAgents(page: import("@playwright/test").Page) {
+  await page.goto(new URL("agents", appUrl).href);
+  await expect(page.getByTestId("agents-page")).toBeVisible();
+}
+
+async function openControl(page: import("@playwright/test").Page) {
+  await page.getByTestId("agent-control-trigger").click();
+  const dialog = page.getByTestId("agent-control-dialog");
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function triggerBox(
+  page: import("@playwright/test").Page,
+  testId: string,
+) {
+  const box = await page.getByTestId(testId).boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+}
+
+test("board-scope combobox follows the ARIA keyboard model", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  await openAgents(page);
+  const scope = page.getByTestId("agents-header-scope");
+  await scope.focus();
+
+  await page.keyboard.press("ArrowDown");
+  await expect(scope).toHaveAttribute("aria-expanded", "true");
+  const listbox = page.getByTestId("agents-header-scope-listbox");
+  await expect(listbox).toBeVisible();
+  const listboxBg = await listbox.evaluate(
+    (node) => getComputedStyle(node).backgroundColor,
+  );
+  expect(listboxBg).not.toContain("rgba(0, 0, 0, 0)");
+
+  const firstActive = await scope.getAttribute("aria-activedescendant");
+  expect(firstActive).toBeTruthy();
+  await page.keyboard.press("End");
+  const lastActive = await scope.getAttribute("aria-activedescendant");
+  expect(lastActive).toBeTruthy();
+  expect(lastActive).not.toBe(firstActive);
+  await page.keyboard.press("Home");
+  expect(await scope.getAttribute("aria-activedescendant")).toBe(firstActive);
+
+  await page.keyboard.press("Escape");
+  await expect(scope).toHaveAttribute("aria-expanded", "false");
+  await expect(scope).toBeFocused();
+});
+
+test("one status badge keeps the mark and label on the same centre", async ({
+  page,
+  board,
+  playwright,
+  testIp,
+}) => {
+  const column = await board.column("Todo");
+  const card = await board.card(column, "Badge probe");
+  const agent = await createAgentSession(playwright, board, testIp, {
+    tokenName: "Badge agent",
+    sessionName: "Badge session",
+    currentCardId: card,
+  });
+  try {
+    await board.open(page);
+    await openAgents(page);
+    await page.getByTestId("agents-section-sessions").click();
+    const row = page.getByTestId(`agent-session-row-${agent.session.id}`);
+    await expect(row).toBeVisible();
+    const badge = row.locator('[data-testid^="agent-status-"]').first();
+    const metrics = await badge.evaluate((node) => {
+      const mark = node.querySelector("[aria-hidden]");
+      const label = node.lastElementChild;
+      const rowRect = node.getBoundingClientRect();
+      const markRect = mark?.getBoundingClientRect();
+      const labelRect = label?.getBoundingClientRect();
+      return {
+        height: rowRect.height,
+        rowCenter: rowRect.top + rowRect.height / 2,
+        markCenter: markRect ? markRect.top + markRect.height / 2 : null,
+        labelCenter: labelRect ? labelRect.top + labelRect.height / 2 : null,
+      };
+    });
+    expect(metrics.height).toBe(22);
+    expect(metrics.markCenter).not.toBeNull();
+    expect(metrics.labelCenter).not.toBeNull();
+    expect(Math.abs(metrics.markCenter! - metrics.rowCenter)).toBeLessThan(1);
+    expect(Math.abs(metrics.labelCenter! - metrics.rowCenter)).toBeLessThan(1);
+  } finally {
+    await agent.dispose();
+  }
+});
+
+test("1024 sheet starts below the real board header", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await board.open(page);
+  const header = await page.locator("header").first().boundingBox();
+  expect(header).not.toBeNull();
+  const dialog = await openControl(page);
+  const box = await dialog.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 1);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(768);
+  expect(box!.width).toBeLessThanOrEqual(1024);
+});
+
+test("390 keeps every primary action at 44 px and traps/returns focus", async ({
+  page,
+  board,
+  playwright,
+  testIp,
+}) => {
+  const column = await board.column("Todo");
+  const card = await board.card(column, "Touch target probe");
+  const agent = await createAgentSession(playwright, board, testIp, {
+    tokenName: "Touch agent",
+    sessionName: "Touch session",
+    currentCardId: card,
+  });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await board.open(page);
+    const dialog = await openControl(page);
+    const close = dialog.getByRole("button", { name: "Close" }).first();
+    const closeBox = await close.boundingBox();
+    expect(closeBox!.width).toBeGreaterThanOrEqual(44);
+    expect(closeBox!.height).toBeGreaterThanOrEqual(44);
+
+    for (const tab of await dialog.getByRole("tab").all()) {
+      const box = await tab.boundingBox();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+
+    await dialog.getByTestId("agent-pause-tab").click();
+    for (const testId of [
+      "agent-live-refresh",
+      "board-pause",
+      "agent-session-pause",
+      "agent-session-end",
+    ]) {
+      const box = await triggerBox(page, testId);
+      expect(box.height, testId).toBeGreaterThanOrEqual(44);
+      expect(box.width, testId).toBeGreaterThanOrEqual(44);
+    }
+
+    // Focus stays inside the modal while tabbing.
+    for (let index = 0; index < 12; index += 1) {
+      await page.keyboard.press("Tab");
+      const inside = await page.evaluate(() => {
+        const active = document.activeElement;
+        const modal = document.querySelector(
+          '[data-testid="agent-control-dialog"]',
+        );
+        return active !== null && modal !== null && modal.contains(active);
+      });
+      expect(inside).toBe(true);
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId("agent-control-trigger")).toBeFocused();
+  } finally {
+    await agent.dispose();
+  }
+});
+
+test("no horizontal overflow at 1440/1024/390", async ({ page, board }) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await board.open(page);
+    await openAgents(page);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    const refresh = await triggerBox(page, "agents-refresh");
+    if (viewport.width === 390) {
+      expect(refresh.height).toBeGreaterThanOrEqual(44);
+    }
+    const scope = await triggerBox(page, "agents-filter-board");
+    if (viewport.width === 390) {
+      expect(scope.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
+
+test("reduced motion stops the refresh spinner", async ({ page, board }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await board.open(page);
+  await openAgents(page);
+  const animation = await page
+    .getByTestId("agents-refresh")
+    .locator("svg")
+    .evaluate((node) => getComputedStyle(node).animationName);
+  expect(animation).toBe("none");
+});
+
+test("status badge contrast clears AA in both themes", async ({
+  page,
+  board,
+  playwright,
+  testIp,
+}) => {
+  const column = await board.column("Todo");
+  const card = await board.card(column, "Contrast probe");
+  const agent = await createAgentSession(playwright, board, testIp, {
+    tokenName: "Contrast agent",
+    sessionName: "Contrast session",
+    currentCardId: card,
+  });
+  try {
+    await board.open(page);
+    await openAgents(page);
+    await page.getByTestId("agents-section-sessions").click();
+    await expect(
+      page.getByTestId(`agent-session-row-${agent.session.id}`),
+    ).toBeVisible();
+
+    for (const theme of ["dark", "light"] as const) {
+      await page.evaluate((mode) => {
+        localStorage.setItem("vortex-theme", mode);
+      }, theme);
+      await page.reload();
+      await expect(page.getByTestId("agents-page")).toBeVisible();
+      await page.getByTestId("agents-section-sessions").click();
+      const badge = page.locator('[data-testid^="agent-status-"]').first();
+      await expect(badge).toBeVisible();
+      const ratio = await badge.evaluate((node) => {
+        const parse = (color: string): [number, number, number, number] => {
+          const match = color.match(/rgba?\(([^)]+)\)/);
+          if (match === null) return [0, 0, 0, 1];
+          const parts = match[1]
+            .split(/[ ,/]+/)
+            .filter(Boolean)
+            .map(Number);
+          return [parts[0], parts[1], parts[2], parts[3] ?? 1];
+        };
+        const composite = (
+          fg: [number, number, number, number],
+          bg: [number, number, number, number],
+        ): [number, number, number, number] => {
+          const alpha = fg[3];
+          return [
+            fg[0] * alpha + bg[0] * (1 - alpha),
+            fg[1] * alpha + bg[1] * (1 - alpha),
+            fg[2] * alpha + bg[2] * (1 - alpha),
+            1,
+          ];
+        };
+        const channel = (value: number): number => {
+          const x = value / 255;
+          return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = (color: [number, number, number, number]): number =>
+          0.2126 * channel(color[0]) +
+          0.7152 * channel(color[1]) +
+          0.0722 * channel(color[2]);
+        const foreground = parse(getComputedStyle(node).color);
+        const layers: Array<[number, number, number, number]> = [];
+        for (
+          let element: Element | null = node;
+          element !== null;
+          element = element.parentElement
+        ) {
+          const color = parse(getComputedStyle(element).backgroundColor);
+          if (color[3] > 0) layers.push(color);
+        }
+        let background: [number, number, number, number] = [255, 255, 255, 1];
+        for (const layer of layers.reverse()) {
+          background = composite(layer, background);
+        }
+        const a = luminance(foreground);
+        const b = luminance(background);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      });
+      expect(ratio, theme).toBeGreaterThanOrEqual(4.5);
+    }
+  } finally {
+    await agent.dispose();
+  }
+});
+
+test("Russian headings use the body stack, English keeps Space Grotesk", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  await openAgents(page);
+  const english = await page
+    .locator(".font-agent-display")
+    .first()
+    .evaluate((node) => getComputedStyle(node).fontFamily);
+  expect(english).toContain("Space Grotesk");
+
+  await page.addInitScript(() => localStorage.setItem("janosik-lang", "ru"));
+  await page.reload();
+  await expect(page.getByTestId("agents-page")).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+  const russian = await page
+    .locator(".font-agent-display")
+    .first()
+    .evaluate((node) => getComputedStyle(node).fontFamily);
+  expect(russian).not.toContain("Space Grotesk");
+});
