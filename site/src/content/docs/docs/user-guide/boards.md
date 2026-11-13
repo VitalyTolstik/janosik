@@ -141,47 +141,53 @@ Press `J` and `K` to move a highlight down and up through the visible cards,
 `E` or Enter to open the highlighted card, `N` to add a card to the
 highlighted column and `C` to add a column. Escape clears the cursor.
 
-## Agent approvals, runs and policy
+## Agent control and policy
 
-A board ADMIN sees an **Agent control** button in the header (the bot icon with
-a pending-count badge). A MEMBER or VIEWER sees an **Agent runs** button that
-opens the same dialog on the read-only runs tab. The dialog has four tabs:
+A board ADMIN sees one **Agent control** button in the header (the bot icon
+with a pending-count badge). A MEMBER or VIEWER sees the same dialog through
+the read-only **Agent runs** entry. The modal is board-scoped and has three
+tabs:
 
-- **Approvals** — the queue of plans agents asked a human to authorize. Select
-  a request to see its summary, risk, board/card context, requesting token and
-  session, exact commands or operations, plan hash, TTL and decision/audit
-  fields. `Approve` or `Reject` sends the plan hash the server requires and an
-  optional comment; approval only authorizes the exact plan, the agent still
-  has to repeat the same call with the approval id. A request that passes its
-  expiry is marked `expired` and cannot be decided. `Consumed` means the plan
-  was applied and the authorization cannot be used again. Approve, reject and
-  the whole queue are available only to a signed-in board ADMIN; an API key
-  cannot decide its own request.
-- **Pause & sessions** — `Pause agents` stops every API key writing to the
-  board. In-flight requests finish; new writes are refused with
-  `403 agent_paused` and are not queued or retried. Reads, heartbeat and
-  end-session stay available, and a pause never releases claims. The same tab
-  lists active agent sessions and lets you pause or resume one session with a
-  reason. A session paused by a board or token pause shows that scope instead;
-  resume the board or the token to release it.
-- **Runs & rollback** — agent batches, plans and single destructive calls,
-  newest first. Filter by status (`applied`, `reverted`, `failed`), kind,
-  token, agent session or time. Select a run to see its timeline, command list
-  with attribution, sequence range, plan/approval hash and, for a signed-in
-  board ADMIN, the stored pre-images and diff. `Revert run` first runs a
-  conflict check; any later change to an affected entity refuses the whole
-  revert and lists the conflicts. Applying a revert is board-ADMIN
-  browser-session only, asks for confirmation and records a separate audit
-  run. A lapsed retention window reports `run_expired`; a reverted run cannot
-  be reverted again.
-- **Policy & limits** — the effective agent limits for this board: destructive
-  mode (`Require approval` or `Hard deny`), the fixed list of actions that
-  always need approval, board-ADMIN approvers, maximum commands/cards per run
-  and the approval TTL. Saving is a compare-and-swap: if another tab changed
-  the policy first, reload and try again. `Reset to defaults` removes the
-  stored policy and restores approval mode, 100 commands, 50 cards and a
-  60-minute TTL. The tab also shows whether board-wide agent pause is active.
-  Only a signed-in board ADMIN can read or change the policy; API keys cannot.
+- **Inbox** — the approval queue for this board. Each request shows its human
+  summary, risk, board/card context, requesting token and session, exact
+  commands or operations, plan hash, TTL and decision record. `Approve`
+  requires confirming the exact plan hash; approval authorizes only that plan,
+  and the agent still has to repeat the same call with the approval id.
+  `Reject` requires a reason in the UI. Expired and consumed requests cannot be
+  decided. The whole inbox is ADMIN-only; an API key cannot decide its own
+  request.
+- **Live** — `Pause agents` stops every API key writing to the board.
+  In-flight requests finish; new writes are refused with `403 agent_paused` and
+  are not queued or retried. Reads, heartbeat and end-session stay available,
+  and a pause never releases claims. The tab lists live sessions and lets an
+  ADMIN pause, resume or end one session with a reason; ending releases claims.
+  A session paused by a board or token pause shows that scope instead, and you
+  clear it at that scope. There is no Stop token or Stop all here: the only
+  token path is **Manage tokens** → Account → API keys.
+- **Runs** — agent batches, plans and single destructive calls, newest first.
+  Filter by status, kind, token, session or time. Select a run to see its
+  timeline, command list with attribution, sequence range, plan/approval hash
+  and, for a signed-in board ADMIN, stored preimages and diff. `Revert run`
+  first checks conflicts; a later change to an affected entity refuses the
+  whole revert and lists the conflicts. Applying a revert is board-ADMIN
+  browser-session only, asks for confirmation and records a separate audit run.
+  A lapsed retention window reports `run_expired`; a reverted run cannot be
+  reverted again.
+
+Policy is configured in **Board Settings → Agents & automation** (the gear is
+ADMIN-only). The section holds destructive mode (`Require approval` or `Hard
+deny`), the approval triggers, maximum commands/cards per run, approval TTL and
+the fixed ADMIN approver role. Non-destructive triggers are editable;
+destructive ones are disabled and marked “covered by destructive mode”. Saving
+is a compare-and-swap: if another admin changed the policy first, **Reload**
+keeps your draft and only fields you actually changed are merged; a same-field
+conflict asks for an explicit choice. `Reset to defaults` restores approval
+mode, 100 commands, 50 cards and a 60-minute TTL and is disabled when the
+policy is already default.
+
+The global `/agents` page covers the same approvals, sessions and runs across
+boards, with Attention, search, board scope and URL/deep links. See
+[Agents](/docs/user-guide/agents/) for the full contract and permissions.
 
 Token-level pause, `Stop all` and kill (revoke) are in [Account → API
 keys](/docs/user-guide/account/#pausing-and-stopping-agents).

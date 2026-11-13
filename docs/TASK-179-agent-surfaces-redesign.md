@@ -316,12 +316,22 @@ Three clear layers:
   `/agents/:tokenId`; add `?session/?agent/?approval/?run`; testid aliases
   for `agent-control-trigger`, `agent-runs-trigger`, `agent-control-dialog`,
   `agent-approvals-tab`, `agent-policy-tab`, `agent-run-*`.
+  → [`TASK-179-url-testid-migration.md`](TASK-179-url-testid-migration.md).
+  `?agent=` is canonical and `?token=` remains a working alias;
+  `?approval/?run` require `?board=`; `/agents/:tokenId` is preserved;
+  `agent-policy-tab` is the one intentional removal (replaced by
+  `agent-open-policy` + `board-settings-agents`).
 - Remove old duplicate entry/route code; do not delete working deep links.
 - EN/RU docs: `/agents`, modal Inbox/Live/Runs, Board Settings → Agents &
   automation, permissions, URL/deep links.
+  → [`site/.../user-guide/agents.md`](../site/src/content/docs/docs/user-guide/agents.md)
+  and its RU counterpart.
 - CHANGELOG; ROADMAP status.
 - Test matrix (see §7); visual acceptance with tracked prototype.
 - No weakened tests; per-PR tests, not all at the end.
+- **Status (2026-11-13):** shipped in PR #269; migration table, EN/RU docs,
+  CHANGELOG, ROADMAP and the 1440/1024/390 visual acceptance are in place.
+  Evidence: [`design/task-179-visual-acceptance/README.md`](../design/task-179-visual-acceptance/README.md).
 
 ### 179.12 — Sync the prototype and close the independent review (P1)
 

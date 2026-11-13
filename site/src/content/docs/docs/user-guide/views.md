@@ -110,38 +110,25 @@ The share audit records link creation, revocation and deletion. Updating link
 settings, refreshing a snapshot and automatic expiry are not recorded as share
 audit events; it is not a complete log of the link lifecycle.
 
-## Agents console
+## Agents
 
-The `Agents` button in the header opens a console for every agent session you
-can see across your boards. An agent is a personal API token acting through
-MCP or REST; its session is the board-scoped work context with a heartbeat and
-an optional current card and run.
+The `Agents` entry opens the global `/agents` control room: Attention for
+pending approvals and stale sessions, Sessions grouped by board, and Runs with
+filters, detail and conditional rollback. On a board, the single Bot button
+opens the board-scoped Agent Control modal (Inbox / Live / Runs); policy lives
+in Board Settings → Agents & automation.
 
-- **List**: sessions are grouped by agent token, so two keys of the same
-  account stay distinct. Each row shows the boards, live/total session count,
-  heartbeat (last seen), stale and paused badges, the current card or run, and
-  the latest session name.
-- **Filters**: narrow by board, agent token, status (live, stale, active, idle,
-  waiting approval, completed, failed, cancelled) or last-seen window. The
-  search box matches the agent, session, client, model, board or card; the
-  filter lives in the URL, so a reload or a shared link keeps it.
-- **Detail**: open an agent to see every session with its status, start/end
-  time, heartbeat, current card and run, pause reason and summary. `Open board`
-  jumps to the board or the exact card.
-- **Human control**: a board ADMIN can pause a session with an optional reason,
-  resume it, or end it with a final status and summary. Pausing refuses new
-  writes for that session while already-started requests finish; ending is
-  final for the session and releases the cards it holds. A MEMBER or VIEWER sees
-  the same evidence read-only, and an agent token cannot drive the control
-  plane. A token-level or board-level pause is shown as a badge and cannot be
-  cleared from the session control.
-- **Live updates**: session start, pause, resume and end arrive over the
-  existing board SSE stream; the affected board refreshes without a full page
-  reload. A slow poll reconciles a tab that slept through a frame.
+The global page keeps board scope, search, section and selection in the URL,
+supports `?session=`, `?agent=`, `?approval=` and `?run=` deep links (the last
+two require `?board=`), and preserves the pre-179 `?token/`?status/`?time/`?q`
+spellings. `/agents/:tokenId` remains a canonical token → sessions deep link.
+A MEMBER or VIEWER sees no approval requests at all and gets Live/Runs
+read-only; the same evidence is available without a 403/Retry trap.
 
-Watch and card History show the same identity: an agent row carries the token
-name, and its commands and comments show the token, session and run ids next to
-the human owner. Human attribution is unchanged.
+See [Agents](/docs/user-guide/agents/) for the full surface, permissions and
+URL contract. Watch and card History still show the same identity: an agent row
+carries the token name, and its commands and comments show the token, session
+and run ids next to the human owner.
 
 ## Card density
 

@@ -13,9 +13,10 @@ description: Prepare an agent, exercise human controls and check launch readines
    bypasses approval for eligible destructive actions and should be reserved
    for explicitly trusted automation. Existing non-read-only keys migrated
    from before TASK-166 retain admin scope and Trusted CI; review them.
-3. Open the board's **Agent control → Policy & limits**. Review destructive
-   mode, per-run limits and approval TTL. Hard deny also blocks Trusted CI.
-   Inspect sessions in **Agents** and attribution in Watch.
+3. Open **Board Settings → Agents & automation**. Review destructive mode,
+   per-run limits, approval triggers and TTL. Hard deny also blocks Trusted CI.
+   Inspect sessions in the board **Agent control → Live** or the global
+   **Agents** page, and attribution in Watch.
 4. On a disposable board, request a destructive plan from the agent. In
    **Approvals**, inspect the exact commands, risk, hash and expiry; approve or
    reject as appropriate. Approval authorizes the plan; the agent must apply
@@ -31,7 +32,7 @@ description: Prepare an agent, exercise human controls and check launch readines
    database and uploads backup for disaster recovery.
 
 See [board controls](/docs/user-guide/boards/#agent-approvals-runs-and-policy),
-[API keys](/docs/user-guide/account/) and [Agents console](/docs/user-guide/views/).
+[API keys](/docs/user-guide/account/) and [Agents](/docs/user-guide/agents/).
 
 ## Agent developer: exercise the contract
 

@@ -15,6 +15,12 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- The agent surfaces now have three layers: the global
+  [Agents](/docs/user-guide/agents/) control room (Attention / Sessions /
+  Runs), a board-scoped Agent Control modal (Inbox / Live / Runs) and policy in
+  Board Settings → Agents & automation. URL state, deep links and the testid
+  migration are documented; MEMBER/VIEWER get read-only Live/Runs and no
+  approval requests.
 - Agent control adds scoped keys, sessions, human approvals, pause, plans and
   run inspection/rollback. Follow the [launch guide](/docs/agent-launch/).
 - New keys default to worker without Trusted CI; legacy non-read-only keys
