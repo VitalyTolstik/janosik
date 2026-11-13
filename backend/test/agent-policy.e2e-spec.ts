@@ -130,6 +130,8 @@ describe("Board agent policy (e2e)", () => {
     expect(state.version).toBe(1);
     expect(state.paused).toBe(false);
     expect(state.effective).toEqual(DEFAULT_BOARD_AGENT_POLICY);
+    expect(state.lastSavedBy).toBeNull();
+    expect(state.lastSavedAt).toBeNull();
   });
 
   it("rejects unknown fields and values outside the ADR ranges", async () => {
@@ -173,6 +175,8 @@ describe("Board agent policy (e2e)", () => {
     });
     expect(state.version).toBe(2);
     expect(state.effective.maxCommandsPerRun).toBe(25);
+    expect(state.lastSavedBy).toBe("Owner");
+    expect(typeof state.lastSavedAt).toBe("number");
 
     const activity = await prisma.activity.findFirst({
       where: { boardId, type: "agent_policy_changed" },
