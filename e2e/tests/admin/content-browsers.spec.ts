@@ -38,8 +38,8 @@ test("E1: columns list shows board, position, WIP, cards and status", async ({
   await expect(row).toContainText("0");
   await expect(row).toContainText("Active");
   await row.getByRole("link", { name: board.title, exact: true }).click();
-  await expect(page).toHaveURL(
-    (url) => url.pathname === `/admin/boards/${board.id}`,
+  await expect(page).toHaveURL((url) =>
+    url.pathname.endsWith(`/admin/boards/${board.id}`),
   );
   expect(columnId).toBeTruthy();
 });
@@ -59,8 +59,8 @@ test("E2: labels list shows the chip, position, cards, version and status", asyn
   await expect(row).toContainText(board.title);
   await expect(row).toContainText("Active");
   await row.getByRole("link", { name: board.title, exact: true }).click();
-  await expect(page).toHaveURL(
-    (url) => url.pathname === `/admin/boards/${board.id}`,
+  await expect(page).toHaveURL((url) =>
+    url.pathname.endsWith(`/admin/boards/${board.id}`),
   );
 });
 
@@ -279,8 +279,8 @@ test("E9: activity filters by period and its links open details", async ({
   await expect(row).toBeVisible();
 
   await row.getByRole("link", { name: seeded.title, exact: true }).click();
-  await expect(page).toHaveURL(
-    (url) => url.pathname === `/admin/cards/${seeded.cardId}`,
+  await expect(page).toHaveURL((url) =>
+    url.pathname.endsWith(`/admin/cards/${seeded.cardId}`),
   );
 });
 

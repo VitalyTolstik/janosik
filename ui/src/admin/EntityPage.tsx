@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import type {
@@ -53,6 +53,15 @@ export type { EntityAction } from "./row-actions";
  */
 const ADMIN_BULK_LIMIT = 500;
 
+/** Stable empty set for a selection that belongs to an older result set. */
+const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+
+interface BulkSelection {
+  /** Search/status/period/page-size/filter signature the ids belong to. */
+  scope: string;
+  ids: Set<string>;
+}
+
 export interface EntityColumn<T> {
   label: string;
   render: (row: T) => ReactNode;
@@ -99,9 +108,29 @@ export function EntityPage<E extends AdminEntity>({
     },
   );
   const toast = useToast();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
   const bulkEnabled = config.bulk === true;
+
+  /**
+   * A result-set change invalidates the selection, including one that arrived
+   * via the URL (browser back/forward, a shared link). The ids are tagged with
+   * the scope they were picked in, so stale ids are ignored immediately
+   * instead of being cleared by a racing effect; offset/reload keep the same
+   * scope, exactly as the 176.1 contract says.
+   */
+  const selectionScopeKey = [
+    list.effectiveSearch,
+    list.status,
+    list.period,
+    list.limit,
+    adminFiltersKey(list.filters),
+  ].join("|");
+  const [selection, setSelection] = useState<BulkSelection>(() => ({
+    scope: selectionScopeKey,
+    ids: new Set(),
+  }));
+  const selected =
+    selection.scope === selectionScopeKey ? selection.ids : EMPTY_SELECTION;
   const visibleIds = list.items
     .map((row) => rowId(row))
     .filter((id): id is string => id !== null);
@@ -111,21 +140,21 @@ export function EntityPage<E extends AdminEntity>({
     visibleIds.length > 0 &&
     visibleIds.every((id) => selected.has(id));
 
-  /**
-   * A result-set change clears the selection, including one that arrived via
-   * the URL (browser back/forward, a shared link). Offset/reload keep it,
-   * exactly as the 176.1 contract says (TASK-176.5 review).
-   */
-  const selectionScopeKey = [
-    list.effectiveSearch,
-    list.status,
-    list.period,
-    list.limit,
-    adminFiltersKey(list.filters),
-  ].join("|");
-  useEffect(() => {
-    setSelected(new Set());
-  }, [selectionScopeKey]);
+  /** Apply a change to the ids of the current scope only. */
+  const updateSelection = (update: (current: Set<string>) => Set<string>) => {
+    setSelection((current) => {
+      const base =
+        current.scope === selectionScopeKey ? current.ids : EMPTY_SELECTION;
+      return {
+        scope: selectionScopeKey,
+        ids: update(new Set(base)),
+      };
+    });
+  };
+
+  const clearSelection = () => {
+    setSelection({ scope: selectionScopeKey, ids: new Set() });
+  };
 
   /**
    * The selection contract (TASK-176.1): it survives pagination but not a
@@ -133,12 +162,12 @@ export function EntityPage<E extends AdminEntity>({
    * use the same saved set, so a filter must not leave hidden rows selected.
    */
   const withSelectionReset = (apply: () => void) => {
-    setSelected(new Set());
+    clearSelection();
     apply();
   };
 
   const toggleRow = (id: string) => {
-    setSelected((current) => {
+    updateSelection((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -147,7 +176,7 @@ export function EntityPage<E extends AdminEntity>({
   };
 
   const toggleAll = () => {
-    setSelected((current) => {
+    updateSelection((current) => {
       if (allSelected) {
         const next = new Set(current);
         for (const id of visibleIds) next.delete(id);
@@ -191,10 +220,10 @@ export function EntityPage<E extends AdminEntity>({
       const failed = (result.failed ?? []).filter((id) => sent.has(id));
       if (failed.length > 0) {
         toast.error(t("admin.bulk.partial", { count: failed.length }));
-        setSelected(new Set(failed));
+        setSelection({ scope: selectionScopeKey, ids: new Set(failed) });
       } else {
         toast.success(label);
-        setSelected(new Set());
+        clearSelection();
       }
       list.reload();
     } catch {
@@ -379,7 +408,7 @@ export function EntityPage<E extends AdminEntity>({
                   size="sm"
                   variant="ghost"
                   className="ml-auto h-7 px-2 text-xs"
-                  onClick={() => setSelected(new Set())}
+                  onClick={() => clearSelection()}
                 >
                   {t("admin.bulk.clear")}
                 </Button>

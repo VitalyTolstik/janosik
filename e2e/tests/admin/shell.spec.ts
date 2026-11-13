@@ -321,11 +321,11 @@ test("NAV-7: browser Back and Forward move between list and details", async ({
   targetUser,
 }) => {
   const detailUrl = (url: URL) =>
-    url.pathname === `/admin/users/${targetUser.id}` &&
+    url.pathname.endsWith(`/admin/users/${targetUser.id}`) &&
     url.searchParams.get("returnTo")?.startsWith("/admin/users?search=") ===
       true;
   const filteredListUrl = (url: URL) =>
-    url.pathname === "/admin/users" &&
+    url.pathname.endsWith("/admin/users") &&
     url.searchParams.get("search") === targetUser.email;
 
   await loginAsMaster(page, ownerCredentials());

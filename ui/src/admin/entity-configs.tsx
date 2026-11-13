@@ -416,9 +416,9 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             render: (column) => (
               <EntityLink
                 to={adminCardsHref({ columnId: column.id })}
-                className="font-normal text-foreground"
+                className="max-w-[14rem] font-normal text-foreground"
               >
-                <span title={column.title}>{truncate(column.title, 30)}</span>
+                {column.title}
               </EntityLink>
             ),
           },

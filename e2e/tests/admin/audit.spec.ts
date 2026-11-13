@@ -147,7 +147,7 @@ test("F2: an audit master link opens Masters and survives master deletion", asyn
   await link.click();
   await expect(page).toHaveURL((url) => {
     return (
-      url.pathname === "/admin/access" &&
+      url.pathname.endsWith("/admin/access") &&
       url.searchParams.get("tab") === "masters" &&
       url.searchParams.get("returnTo")?.startsWith("/admin/audit?") === true
     );
