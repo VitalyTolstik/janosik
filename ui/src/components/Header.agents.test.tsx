@@ -168,6 +168,7 @@ describe("agent entry points in the header", () => {
     expect(wordmark.className).not.toContain("font-display");
     expect(wordmark.className).not.toContain("font-agent-display");
     expect(container.querySelector("svg.lucide-chevron-right")).toBeNull();
+    expect(screen.getByTestId("account-trigger")).toBeInTheDocument();
   });
 
   it("offers agents from the account panel", async () => {

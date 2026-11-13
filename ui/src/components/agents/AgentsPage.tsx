@@ -703,7 +703,7 @@ export function AgentsPage() {
       className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
-      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-3.5 pb-3 md:w-[208px] md:border-r md:border-b-0 md:pt-3.5 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
+      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
         <div className="hidden px-1.5 pb-3 md:block">
           <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}

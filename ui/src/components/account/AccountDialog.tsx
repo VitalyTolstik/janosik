@@ -111,7 +111,7 @@ export function AccountDialog({
               size="sm"
               data-testid="account-trigger"
               aria-label={t("account.aria")}
-              className={cn("gap-2 px-1.5 sm:px-2", compact && "max-sm:hidden")}
+              className="gap-2 px-1.5 sm:px-2"
             >
               <UserAvatar
                 userId={user.id}

@@ -29,8 +29,8 @@ renders at 11 px.
 | Header breadcrumb | `chevron-right` + `Agents` 12/500 | `Agents` 12/500, no chevron (item 6) | Match (intentional removal) |
 | “Global view” badge | 23 px, 11/400, `padding: 0 7px`, gap 5, radius 5, primary 7 % fill / 24 % border | Same | Match |
 | Header actions | Search, bell, Agents pill (30 px, 11.5/600, icon 15, radius 6, primary 7 %), 26 px avatar | Same; avatar 26 px | Match |
-| Rail | 222 px wide, `padding: 14px 10px 12px`, surface 58 % | Same; height fills the 900 px frame | Match |
-| Rail title “Agents” | Space Grotesk 17/700, lh 1.15, tracking −0.025 em; x = 16, y = 14 from rail top | Same | Match |
+| Rail | 222 px wide, `padding: 16px 10px 12px` (prototype 14 top; +2 px keeps the rail and page headings on one line, asserted by browser-e2e), surface 58 % | Same; height fills the 900 px frame | Match (2 px heading alignment) |
+| Rail title “Agents” | Space Grotesk 17/700, lh 1.15, tracking −0.025 em; x = 16, y = 16 from rail top | Same | Match (2 px heading alignment) |
 | Rail tagline | 11/400, lh 1.45, `max-width: 19ch` | Same | Match |
 | Rail tabs | 34 px high, 12/550, gap 8, `padding: 0 8px`, icon 14, radius 6; selected = surface + border + inset 2 px primary | Same | Match |
 | “Boards / Pending” label | 11/650, uppercase, tracking 0.07 em, `padding: 0 8px 5px` | Same | Match |
@@ -72,7 +72,7 @@ renders at 11 px.
 
 | Element | Mockup | App | Status |
 | --- | --- | --- | --- |
-| Header | 61 px (52 min + 8 px padding), wordmark/crumb/global hidden, bell + Agents + account hidden on mobile | 56 px (app-wide `min-h-14`; item 7); wordmark/crumb/global hidden; bell + “Agents” label; account hidden | Match (intentional height) |
+| Header | 61 px (52 min + 8 px padding), wordmark/crumb/global hidden, bell + Agents; account trigger hidden in the prototype | 56 px (app-wide `min-h-14`; item 7); wordmark/crumb/global hidden; bell + “Agents” label; account trigger retained with a 26 px avatar so mobile users keep account access | Match (intentional height; account access retained) |
 | Header board scope | 44 px, 13/600, radius 6 | 44 px, 13/600, radius 6 | Match |
 | Header Agents pill | 44 px, bot icon + label | 44 px, bot icon + label | Match |
 | Rail row | 57 px, `padding: 6px 9px`; tabs 44 px, 11/550, icon 12, radius 5, natural width | Same | Match |
@@ -97,3 +97,9 @@ renders at 11 px.
   the board scope (items 11, 12).
 - Header uses one height (`min-h-14` / `sm:h-14`) on `/agents` and board routes;
   the breadcrumb chevron is gone and the wordmark uses the app body stack.
+- The compact account trigger stays visible at 390 px (26 px avatar). The
+  prototype hides it, but removing it removed account access and broke the
+  mobile shell e2e; it is a functional control, so it is retained.
+- The rail top padding is 16 px instead of the prototype's 14 px so the rail
+  heading and the page heading share one top line (`agents-console.spec.ts`
+  asserts ≤1 px); the 2 px delta is the only rail deviation.
