@@ -575,7 +575,7 @@ export function CardDetailPage() {
       detail.windows.attachments.total + detail.hidden.attachments > 0 ||
       anchorParamSection === "attachments" ? (
         <Panel
-          className="overflow-hidden"
+          className="shrink-0 overflow-hidden"
           data-testid="admin-card-detail-attachments"
         >
           {anchorNote("attachments")}
@@ -660,7 +660,7 @@ export function CardDetailPage() {
       detail.windows.comments.total + detail.hidden.comments > 0 ||
       anchorParamSection === "comments" ? (
         <Panel
-          className="overflow-hidden"
+          className="shrink-0 overflow-hidden"
           data-testid="admin-card-detail-comments"
         >
           {anchorNote("comments")}
