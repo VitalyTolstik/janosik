@@ -65,6 +65,22 @@ export function useCombobox({
     }
   }, [activeIndex, open]);
 
+  // Escape belongs to the listbox while it is open, even if the Dialog focus
+  // trap moved focus out of the trigger. Capture at the document so the
+  // Dialog's own Escape handler never sees an open combobox.
+  useEffect(() => {
+    if (!open) return;
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onOpenChange(false);
+      triggerRef?.current?.focus();
+    };
+    document.addEventListener("keydown", onEscape, true);
+    return () => document.removeEventListener("keydown", onEscape, true);
+  }, [onOpenChange, open, triggerRef]);
+
   const enabledAt = (index: number): boolean =>
     options[index] !== undefined && options[index].disabled !== true;
 

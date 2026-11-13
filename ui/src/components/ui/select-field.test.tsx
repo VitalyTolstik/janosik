@@ -132,6 +132,37 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(outer).not.toHaveBeenCalled();
   });
 
+  it("keeps the listbox open when a dialog-like focus trap moves focus, and Escape still closes only it", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <div>
+        <SelectField
+          value="alpha"
+          options={OPTIONS}
+          onChange={onChange}
+          ariaLabel="Pick a value"
+          testId="picker"
+        />
+        <button type="button">Outside focus target</button>
+      </div>,
+    );
+
+    const trigger = screen.getByTestId("picker");
+    await user.click(trigger);
+    expect(screen.getByTestId("picker-listbox")).toBeInTheDocument();
+
+    screen.getByRole("button", { name: "Outside focus target" }).focus();
+    // A Dialog focus trap may do this immediately after the portalled listbox
+    // opens; it must not be treated as a dismissal.
+    expect(screen.getByTestId("picker-listbox")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("picker-listbox")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("keeps 36 px desktop rows and 44 px mobile rows", async () => {
     const user = userEvent.setup();
     render(
