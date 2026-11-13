@@ -15,6 +15,7 @@ import { AgentControlButton } from "@/components/agent-control/AgentControlButto
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { overviewItem, overviewResponse } from "@/test/agents-overview";
 import {
   BoardLiveProvider,
   createBoardLive,
@@ -293,10 +294,12 @@ describe("agent control (TASK-166.14)", () => {
 
   it("gives a member the read-only runs entry instead of the admin trigger", () => {
     mocks.role = "MEMBER";
+    const overview = vi.spyOn(api, "agentsOverview");
     renderButton();
 
     expect(screen.queryByTestId("agent-control-trigger")).toBeNull();
     expect(screen.getByTestId("agent-runs-trigger")).toBeInTheDocument();
+    expect(overview).not.toHaveBeenCalled();
   });
 
   it("hides approvals from a member and opens Live read-only", async () => {
@@ -358,11 +361,27 @@ describe("agent control (TASK-166.14)", () => {
     );
   });
 
-  it("shows and refreshes the pending badge from the queue", async () => {
-    const list = vi
-      .spyOn(api, "listApprovals")
-      .mockResolvedValueOnce([approval()])
-      .mockResolvedValueOnce([approval(), approval({ id: "approval-2" })]);
+  it("shows and refreshes the pending badge from the overview count", async () => {
+    const overview = vi
+      .spyOn(api, "agentsOverview")
+      .mockResolvedValueOnce(
+        overviewResponse([overviewItem()], {
+          boardId: "board-1",
+          boards: [{ id: "board-1", title: "Launch board", role: "ADMIN" }],
+          pendingByBoard: { "board-1": 1 },
+          pendingTotal: 1,
+          totalApprovals: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        overviewResponse([overviewItem()], {
+          boardId: "board-1",
+          boards: [{ id: "board-1", title: "Launch board", role: "ADMIN" }],
+          pendingByBoard: { "board-1": 2 },
+          pendingTotal: 2,
+          totalApprovals: 2,
+        }),
+      );
 
     renderButton();
     expect(
@@ -383,7 +402,26 @@ describe("agent control (TASK-166.14)", () => {
         screen.getByTestId("agent-control-pending-count"),
       ).toHaveTextContent("2"),
     );
-    expect(list).toHaveBeenCalledTimes(2);
+    expect(overview).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders 99+ on the board trigger for a large exact count", async () => {
+    const listApprovals = vi.spyOn(api, "listApprovals");
+    vi.spyOn(api, "agentsOverview").mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boardId: "board-1",
+        boards: [{ id: "board-1", title: "Launch board", role: "ADMIN" }],
+        pendingByBoard: { "board-1": 150 },
+        pendingTotal: 150,
+        totalApprovals: 150,
+      }),
+    );
+
+    renderButton();
+    expect(
+      await screen.findByTestId("agent-control-pending-count"),
+    ).toHaveTextContent("99+");
+    expect(listApprovals).not.toHaveBeenCalled();
   });
 
   it("pauses and resumes a board and a session with a reason", async () => {

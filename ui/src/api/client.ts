@@ -2,6 +2,8 @@ import type {
   ActivityFeedPage,
   AgentSessionDto,
   AgentStopAllPauseDto,
+  AgentsOverviewQuery,
+  AgentsOverviewResponse,
   AnnouncementDto,
   ApprovalDecisionRequest,
   ApprovalListQuery,
@@ -1131,6 +1133,31 @@ export class ApiClient {
     return this.request<ActivityFeedPage>(
       `/boards/${encodeURIComponent(boardId)}/activity${pageQuery(cursor, limit)}`,
     );
+  }
+
+  /**
+   * `GET /agents/overview` — session-only read-only aggregation (TASK-179.10).
+   * The `/agents` control room uses one call for scope-correct counts and
+   * rows. A PAT is refused with `403 pat_forbidden`; callers must render that
+   * as unknown, never as a zero count.
+   */
+  agentsOverview(
+    query: AgentsOverviewQuery = {},
+  ): Promise<AgentsOverviewResponse> {
+    const params = new URLSearchParams();
+    if (query.section !== undefined) params.set("section", query.section);
+    if (query.boardId !== undefined) params.set("boardId", query.boardId);
+    if (query.q !== undefined) params.set("q", query.q);
+    if (query.status !== undefined) params.set("status", String(query.status));
+    if (query.kind !== undefined) params.set("kind", String(query.kind));
+    if (query.tokenId !== undefined) params.set("tokenId", query.tokenId);
+    if (query.sessionId !== undefined) params.set("sessionId", query.sessionId);
+    if (query.from !== undefined) params.set("from", String(query.from));
+    if (query.to !== undefined) params.set("to", String(query.to));
+    if (query.cursor !== undefined) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.toString() === "" ? "" : `?${params.toString()}`;
+    return this.request<AgentsOverviewResponse>(`/agents/overview${suffix}`);
   }
 
   /** `GET /boards/:id/agent-sessions` — any board member (TASK-166.1). */

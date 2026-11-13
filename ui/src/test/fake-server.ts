@@ -120,6 +120,8 @@ export class FakeServer {
   role: BoardRole = "ADMIN";
   /** Per-board role overrides (mixed-role switcher lists, TASK-36.2). */
   readonly roles = new Map<string, BoardRole>();
+  /** Exact pending approvals returned by `GET /agents/overview` (TASK-179.8). */
+  readonly pendingApprovals = new Map<string, number>();
   /** Pending invitations of the signed-in user (`GET /invitations`). */
   readonly invitations: BoardInvitationDto[] = [];
   /** Roster every newly opened events stream reports (TASK-36). */
@@ -631,6 +633,77 @@ export class FakeServer {
         pausedAt: now,
         pausedBy: paused ? this.account.id : null,
         affected,
+      });
+    }
+    if (path === "/api/v1/agents/overview" && method === "GET") {
+      // TASK-179.10/179.8: one read-only, session-only aggregation. The fake
+      // returns exact counts and no rows; the header only exercises counts.
+      const section = searchParams.get("section") ?? "approvals";
+      const boardId = searchParams.get("boardId");
+      const summaries = [...this.boards.values()]
+        .filter(
+          (board) =>
+            !this.revoked.has(board.id) && board.archivedAt === undefined,
+        )
+        .map((board) => this.toSummary(board));
+      const scoped =
+        boardId === null
+          ? summaries
+          : summaries.filter((board) => board.id === boardId);
+      if (boardId !== null && scoped.length === 0) {
+        return json(404, { message: "Board not found" });
+      }
+      const canViewApprovals = scoped.some((board) => board.role === "ADMIN");
+      if (section === "approvals" && !canViewApprovals) {
+        return json(403, {
+          code: "board_admin_only",
+          message: "Board admin only",
+        });
+      }
+      const pendingOn = (id: string): number =>
+        this.pendingApprovals.get(id) ?? 0;
+      const pending = scoped
+        .filter((board) => board.role === "ADMIN")
+        .reduce((sum, board) => sum + pendingOn(board.id), 0);
+      const selected = boardId === null ? null : (scoped[0] ?? null);
+      return json(200, {
+        section,
+        scope: {
+          boardId,
+          boardTitle: selected?.title ?? null,
+          role: selected?.role ?? null,
+          canViewApprovals,
+        },
+        items: [],
+        nextCursor: null,
+        total: 0,
+        counts: {
+          boards: summaries.map((board) => ({
+            id: board.id,
+            title: board.title,
+            role: board.role,
+            pendingApprovals:
+              board.role === "ADMIN" ? pendingOn(board.id) : null,
+          })),
+          approvals: { pending, decided: 0, total: pending },
+          sessions: {
+            total: 0,
+            live: 0,
+            active: 0,
+            idle: 0,
+            waiting: 0,
+            stale: 0,
+            paused: 0,
+          },
+          runs: { total: 0, applied: 0, reverted: 0, failed: 0 },
+        },
+        facets: {
+          tokens: [],
+          sessions: [],
+          tokensTruncated: false,
+          sessionsTruncated: false,
+        },
+        refreshedAt: Date.now(),
       });
     }
     if (path === "/api/v1/boards" && method === "GET") {
