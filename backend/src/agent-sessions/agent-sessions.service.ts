@@ -42,7 +42,7 @@ const ALL_STATUSES = new Set<AgentSessionStatus>([
 ]);
 
 /** Why a session is paused (overlay; the DB stores each level separately). */
-interface PauseContext {
+export interface PauseContext {
   tokenPaused: boolean;
   boardPausedAt: Date | null;
 }
