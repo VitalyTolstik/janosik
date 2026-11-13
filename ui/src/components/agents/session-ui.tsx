@@ -283,7 +283,13 @@ function SessionGroupHeader({
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
-      <span className="text-[10px] text-muted-foreground">
+      <span
+        data-testid={`agents-group-meta-${group.key}`}
+        className={cn(
+          "text-[10px] text-muted-foreground",
+          mode === "board" && "ml-auto",
+        )}
+      >
         {t("agents.groups.sessions", { count })}
         {stale > 0
           ? ` · ${t("agents.groups.noHeartbeat", { count: stale })}`

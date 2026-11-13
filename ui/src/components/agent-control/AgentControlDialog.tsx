@@ -46,43 +46,75 @@ export function AgentControlDialog({
   const { board } = useBoardState();
   const live = useBoardLive();
   const boardId = board?.id;
-  const [pending, setPending] = useState(0);
-  const [approvalRevision, setApprovalRevision] = useState(0);
+  // `null` means unknown: loading or failed. A failed count must never render
+  // as a truthful zero ("No pending") or disappear a real queue behind a
+  // misleading badge.
+  const [pending, setPending] = useState<number | null>(null);
+  const [liveCount, setLiveCount] = useState<number | null>(null);
+  const [runsCount, setRunsCount] = useState<number | null>(null);
+  const [countRevision, setCountRevision] = useState(0);
   const [tab, setTab] = useState<AgentControlTab>(
     role !== "ADMIN" && initialTab === "approvals" ? "pause" : initialTab,
   );
 
-  useEffect(
-    () =>
-      live.agentControl.subscribeApproval(() =>
-        setApprovalRevision((value) => value + 1),
-      ),
-    [live],
-  );
   useEffect(() => {
-    // The Inbox panel owns the queue request while it is visible; fetching
-    // the same list twice on open would race two consumers and waste a call.
-    if (
-      role !== "ADMIN" ||
-      boardId === undefined ||
-      !isApiEnabled() ||
-      tab === "approvals"
-    ) {
+    const unsubscribers = [
+      live.agentControl.subscribeApproval(() =>
+        setCountRevision((value) => value + 1),
+      ),
+      live.agentControl.subscribeAgent(() =>
+        setCountRevision((value) => value + 1),
+      ),
+      live.agentControl.subscribeRun(() =>
+        setCountRevision((value) => value + 1),
+      ),
+    ];
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    };
+  }, [live]);
+
+  useEffect(() => {
+    if (boardId === undefined || !isApiEnabled()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset counters when the route leaves a board
+      setPending(null);
+      setLiveCount(null);
+      setRunsCount(null);
       return;
     }
     let alive = true;
+    if (role === "ADMIN") {
+      void api
+        .listApprovals(boardId, { status: "pending", limit: 100 })
+        .then((rows) => {
+          if (alive) setPending(rows.length);
+        })
+        .catch(() => {
+          if (alive) setPending(null);
+        });
+    } else {
+      setPending(null);
+    }
     void api
-      .listApprovals(boardId, { status: "pending", limit: 100 })
+      .listAgentSessions(boardId, true)
       .then((rows) => {
-        if (alive) setPending(rows.length);
+        if (alive) setLiveCount(rows.length);
       })
       .catch(() => {
-        /* the header chip is an affordance; hide it on failure */
+        if (alive) setLiveCount(null);
+      });
+    void api
+      .listRuns(boardId, { limit: 100 })
+      .then((rows) => {
+        if (alive) setRunsCount(rows.length);
+      })
+      .catch(() => {
+        if (alive) setRunsCount(null);
       });
     return () => {
       alive = false;
     };
-  }, [approvalRevision, boardId, role, tab]);
+  }, [boardId, countRevision, role]);
 
   const livePause = live.agentControl.getBoardPause(boardId);
   const boardPaused =
@@ -97,7 +129,7 @@ export function AgentControlDialog({
             label: t("agentControl.shell.inbox"),
             icon: Inbox,
             testId: "agent-approvals-tab",
-            count: pending,
+            count: pending ?? undefined,
           },
         ]
       : []),
@@ -106,14 +138,14 @@ export function AgentControlDialog({
       label: t("agentControl.shell.live"),
       icon: Activity,
       testId: "agent-pause-tab",
-      count: undefined,
+      count: liveCount ?? undefined,
     },
     {
       id: "runs" as const,
       label: t("agentControl.shell.runs"),
       icon: History,
       testId: "agent-runs-tab",
-      count: undefined,
+      count: runsCount ?? undefined,
     },
   ];
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -185,25 +217,23 @@ export function AgentControlDialog({
                 )}
               </span>
               {role === "ADMIN" ? (
-                tab !== "approvals" ? (
-                  pending > 0 ? (
-                    <span
-                      data-testid="agent-control-header-pending"
-                      className="inline-flex h-[22px] items-center gap-1 rounded-full border border-warning/34 bg-warning/6 px-2 text-[10px] font-[600] whitespace-nowrap text-warning"
-                    >
-                      <Inbox className="h-3 w-3" aria-hidden />
-                      {pending > 99
-                        ? "99+"
-                        : t("agentControl.header.waiting", {
-                            count: pending,
-                          })}
-                    </span>
-                  ) : (
-                    <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] whitespace-nowrap text-muted-foreground">
-                      {t("agentControl.header.noPending")}
-                    </span>
-                  )
-                ) : null
+                pending === null ? null : pending > 0 ? (
+                  <span
+                    data-testid="agent-control-header-pending"
+                    className="inline-flex h-[22px] items-center gap-1 rounded-full border border-warning/34 bg-warning/6 px-2 text-[10px] font-[600] whitespace-nowrap text-warning"
+                  >
+                    <Inbox className="h-3 w-3" aria-hidden />
+                    {pending > 99
+                      ? "99+"
+                      : t("agentControl.header.waiting", {
+                          count: pending,
+                        })}
+                  </span>
+                ) : (
+                  <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] whitespace-nowrap text-muted-foreground">
+                    {t("agentControl.header.noPending")}
+                  </span>
+                )
               ) : (
                 <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[10px] font-[600] whitespace-nowrap text-muted-foreground">
                   {t("agentControl.header.readOnly")}
@@ -254,7 +284,10 @@ export function AgentControlDialog({
                   <Icon className="h-4 w-4 shrink-0" aria-hidden />
                   {label}
                   {count !== undefined && count > 0 ? (
-                    <span className="ml-auto inline-grid h-[17px] min-w-[17px] place-items-center rounded bg-warning/12 px-1 text-[10px] font-[650] tabular-nums text-warning">
+                    <span
+                      data-testid={`agent-${id}-count`}
+                      className="ml-auto inline-grid h-[17px] min-w-[17px] place-items-center rounded bg-warning/12 px-1 text-[10px] font-[650] tabular-nums text-warning"
+                    >
                       {count > 99 ? "99+" : count}
                     </span>
                   ) : null}

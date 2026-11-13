@@ -436,6 +436,14 @@ describe("AgentsPage", () => {
     expect(
       screen.getByTestId("agents-board-group-board-2"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agents-group-meta-board-1").className).toContain(
+      "ml-auto",
+    );
+    const banner = screen.getByTestId("agents-sessions-heartbeat-note");
+    const toggle = screen.getByTestId("agents-session-group-toggle");
+    expect(
+      banner.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("filters by status from the URL without a round-trip", async () => {
@@ -799,6 +807,9 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agents-session-pause").className).toContain(
       "min-h-11",
     );
+    const drawer = screen.getByTestId("agents-detail-panel");
+    expect(drawer.className).toContain("max-[1060px]:w-[min(372px,100%)]");
+    expect(drawer.className).not.toContain("max-[1060px]:inset-0");
     await userEvent.click(screen.getByTestId("agents-session-detail-back"));
     expect(screen.queryByTestId("agents-session-sheet-scrim")).toBeNull();
     expect(

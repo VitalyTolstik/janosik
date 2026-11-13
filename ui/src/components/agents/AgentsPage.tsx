@@ -491,7 +491,7 @@ export function AgentsPage() {
 
   return (
     <main
-      className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface md:flex-row md:overflow-hidden"
+      className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
       <aside className="flex shrink-0 flex-col border-b border-border bg-card/40 px-[10px] pb-3 pt-4 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px]">
@@ -815,6 +815,21 @@ export function AgentsPage() {
           {section === "sessions" ? (
             <>
               <div
+                data-testid="agents-sessions-heartbeat-note"
+                className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
+              >
+                <Info
+                  className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+                  aria-hidden
+                />
+                <span>
+                  <strong className="font-[650] text-foreground">
+                    {t("agents.heartbeat.noteTitle")}
+                  </strong>{" "}
+                  {t("agents.heartbeat.noteBody")}
+                </span>
+              </div>
+              <div
                 className="my-1 mb-2 flex flex-wrap items-center gap-2"
                 data-testid="agents-session-group-toggle"
               >
@@ -860,21 +875,6 @@ export function AgentsPage() {
                     count: displayed.length,
                     live: displayed.filter(isLiveSession).length,
                   })}
-                </span>
-              </div>
-              <div
-                data-testid="agents-sessions-heartbeat-note"
-                className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
-              >
-                <Info
-                  className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
-                  aria-hidden
-                />
-                <span>
-                  <strong className="font-[650] text-foreground">
-                    {t("agents.heartbeat.noteTitle")}
-                  </strong>{" "}
-                  {t("agents.heartbeat.noteBody")}
                 </span>
               </div>
             </>
@@ -1165,17 +1165,18 @@ export function AgentsPage() {
           aria-label={t("agents.detail.back")}
           data-testid="agents-session-sheet-scrim"
           onClick={closeSession}
-          className="fixed inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
       <aside
+        data-testid="agents-detail-panel"
         className={cn(
           "hidden shrink-0 flex-col border-l border-border bg-card/30 min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
           ((section === "attention" &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
             sessionSheetOpen) &&
-            "max-[1060px]:fixed max-[1060px]:inset-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-full max-[1060px]:border-l-0 max-[1060px]:bg-background",
+            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >

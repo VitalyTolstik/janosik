@@ -183,6 +183,7 @@ describe("agent control (TASK-166.14)", () => {
     vi.spyOn(api, "listTokens").mockResolvedValue([]);
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
     vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    vi.spyOn(api, "listRuns").mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -319,7 +320,8 @@ describe("agent control (TASK-166.14)", () => {
     const list = vi
       .spyOn(api, "listApprovals")
       .mockRejectedValueOnce(new Error("down"))
-      .mockResolvedValueOnce([]);
+      .mockRejectedValueOnce(new Error("down"))
+      .mockResolvedValue([]);
 
     renderDialog();
     expect(
@@ -328,7 +330,9 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("No pending approvals")).toBeInTheDocument();
-    expect(list).toHaveBeenCalledTimes(2);
+    // One request from the Inbox panel, one from the rail/header counter,
+    // plus the manual retry.
+    expect(list).toHaveBeenCalledTimes(3);
   });
 
   it("refetches the queue on an approval SSE frame without a reload", async () => {
@@ -338,7 +342,7 @@ describe("agent control (TASK-166.14)", () => {
 
     renderDialog();
     await screen.findByTestId("approval-queue");
-    expect(list).toHaveBeenCalledTimes(1);
+    const initialCalls = list.mock.calls.length;
 
     act(() => {
       live.agentControl.publishApproval({
@@ -349,7 +353,9 @@ describe("agent control (TASK-166.14)", () => {
       });
     });
 
-    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() =>
+      expect(list.mock.calls.length).toBeGreaterThan(initialCalls),
+    );
   });
 
   it("shows and refreshes the pending badge from the queue", async () => {
@@ -536,6 +542,39 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       screen.queryByTestId("agent-live-token-settings-token-2"),
     ).toBeNull();
+  });
+
+  it("shows Inbox, Live and Runs counts on the rail before leaving Inbox", async () => {
+    vi.spyOn(api, "listApprovals").mockResolvedValue([approval()]);
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+      session(),
+      session({ id: "session-2" }),
+    ]);
+    vi.spyOn(api, "listRuns").mockResolvedValue(
+      Array.from({ length: 5 }, (_, index) => ({
+        id: `run-${index}`,
+      })) as never,
+    );
+
+    renderDialog();
+
+    expect(
+      await screen.findByTestId("agent-approvals-count"),
+    ).toHaveTextContent("1");
+    expect(screen.getByTestId("agent-pause-count")).toHaveTextContent("2");
+    expect(screen.getByTestId("agent-runs-count")).toHaveTextContent("5");
+  });
+
+  it("hides the pending chip and rail count when approvals fail", async () => {
+    vi.spyOn(api, "listApprovals").mockRejectedValue(new Error("down"));
+
+    renderDialog();
+    expect(
+      await screen.findByText("Could not load the approval queue"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-control-header-pending")).toBeNull();
+    expect(screen.queryByTestId("agent-approvals-count")).toBeNull();
+    expect(screen.queryByText("No pending")).toBeNull();
   });
 
   it("keeps board pause controls and the token link when sessions fail to load", async () => {
