@@ -13,7 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of samples presented as complete lists. `cardsCreated` counts the
   retained `ADD_CARD` / `DUPLICATE_CARD` command log exactly; comment,
   attachment, session and token tabs default to live/active rows and expose
-  deleted/revoked rows through an explicit `All (N)` filter. Card comments,
+  deleted/revoked rows through explicit `Show deleted` / `Show inactive` /
+  `Show revoked` controls labelled with the hidden-row count. Card comments,
   attachments and the merged timeline no longer slice silently, and
   `?comment=<id>` / `?attachment=<id>` centres and highlights the row a global
   search result points at. EN/RU admin docs state the real limits and counter

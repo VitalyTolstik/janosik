@@ -162,7 +162,8 @@ cards show the active, archived or deleted status.
 Comments and attachments show live rows by default; `Show deleted (N)`
 includes soft-deleted rows. Sessions show active sessions by default;
 `Show inactive (N)` adds revoked and expired ones. API tokens show active
-tokens by default; `Show revoked (N)` adds revoked ones. A tab whose live page
+tokens by default; `Show revoked (N)` adds revoked ones. `N` is the number of
+hidden rows that the control will add, not the new total. A tab whose live page
 is empty still exposes the matching control when hidden rows exist, so
 deleted/revoked rows can never hide the live ones. Empty tabs show a short
 empty state. A tab window stops at 5,000 rows; for deeper history use the

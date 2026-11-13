@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
 import { ADMIN_DETAIL_LIMITS } from "@janosik/shared";
@@ -78,10 +78,18 @@ function mergeSection(
   section: AdminCardDetailSection,
   append: boolean,
 ): AdminCardDetailDto {
+  const pageWindow = page.windows[section];
+  // `Load more` requests the next page without re-sending the anchor (the
+  // server would centre again). Keep the marker so the highlighted row and
+  // the "linked from search" note survive appending.
+  const mergedWindow =
+    append && pageWindow.anchor === null
+      ? { ...pageWindow, anchor: previous.windows[section].anchor }
+      : pageWindow;
   const next: AdminCardDetailDto = {
     ...previous,
     hidden: page.hidden,
-    windows: { ...previous.windows, [section]: page.windows[section] },
+    windows: { ...previous.windows, [section]: mergedWindow },
   };
   switch (section) {
     case "comments":
@@ -122,6 +130,7 @@ export function CardDetailPage() {
 
   const [reloadKey, setReloadKey] = useState(0);
   const [dismissedAnchor, setDismissedAnchor] = useState<string | null>(null);
+  const scrolledAnchor = useRef<string | null>(null);
   const [searchParams] = useSearchParams();
   const commentAnchor = searchParams.get("comment");
   const attachmentAnchor = searchParams.get("attachment");
@@ -152,6 +161,17 @@ export function CardDetailPage() {
       active = false;
     };
   }, [cardId, reloadKey, anchor]);
+
+  // A centred window can put the highlighted row below the 24rem table
+  // viewport. Scroll it into view once per anchor, not on every page append.
+  useEffect(() => {
+    if (anchor === null || anchorDismissed) return;
+    if (scrolledAnchor.current === anchor) return;
+    const row = document.querySelector('[data-anchor="true"]');
+    if (row === null) return;
+    scrolledAnchor.current = anchor;
+    row.scrollIntoView?.({ block: "center" });
+  }, [detail, anchor, anchorDismissed]);
 
   /** Refresh one section window; `Load more` appends, a filter resets. */
   const loadSection = async (
@@ -224,10 +244,7 @@ export function CardDetailPage() {
   const moderationFilter = (section: "comments" | "attachments") => {
     const window = detail.windows[section];
     const hidden = detail.hidden[section];
-    const allTotal = window.includeDeleted
-      ? window.total
-      : window.total + hidden;
-    if (allTotal === 0) return null;
+    if (hidden === 0 && !window.includeDeleted) return null;
     return (
       <div
         className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2"
@@ -239,16 +256,19 @@ export function CardDetailPage() {
             { value: "live", label: t("admin.common.live") },
             {
               value: "all",
-              label: `${t("admin.common.showDeleted")} (${allTotal})`,
+              label: `${t("admin.common.showDeleted")} (${hidden})`,
             },
           ]}
-          onChange={(value) =>
+          onChange={(value) => {
+            // Changing the population invalidates the centred slice; drop
+            // the anchor marker instead of claiming the row disappeared.
+            if (anchor !== null) setDismissedAnchor(anchor);
             void loadSection(section, {
               offset: 0,
               includeDeleted: value === "all",
               append: false,
-            })
-          }
+            });
+          }}
         />
       </div>
     );

@@ -94,6 +94,29 @@ function stateWithCardGraph(): FakeAdminState {
   return state;
 }
 
+function stateWithLongThread(): FakeAdminState {
+  const state = stateWithCardGraph();
+  const now = Date.UTC(2026, 0, 1);
+  state.comments = [
+    ...Array.from({ length: 120 }, (_, index) =>
+      adminComment({
+        id: `long-live-${index}`,
+        text: `Long live ${index}`,
+        createdAt: now + index,
+      }),
+    ),
+    ...Array.from({ length: 10 }, (_, index) =>
+      adminComment({
+        id: `long-deleted-${index}`,
+        text: `Long deleted ${index}`,
+        createdAt: now + 200 + index,
+        deletedAt: now + 500,
+      }),
+    ),
+  ];
+  return state;
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
   adminApi.clearAccessToken();
@@ -153,10 +176,10 @@ describe("CardDetailPage windows", () => {
     ).toHaveTextContent("50 of 60");
     expect(screen.queryByText("Deleted comment 0")).toBeNull();
     expect(screen.queryByText("deleted-0.png")).toBeNull();
-    expect(screen.getByText("Live comment 0")).toBeTruthy();
-    expect(screen.getByText("live-0.png")).toBeTruthy();
+    expect(screen.getByText("Live comment 59")).toBeTruthy();
+    expect(screen.getByText("live-54.png")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show deleted (70)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show deleted (10)" }));
     await waitFor(() => {
       expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
         "50 of 70",
@@ -170,7 +193,7 @@ describe("CardDetailPage windows", () => {
     });
     expect(await screen.findByText("Deleted comment 0")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show deleted (60)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show deleted (5)" }));
     await waitFor(() => {
       expect(
         screen.getByTestId("admin-card-attachments-count"),
@@ -193,7 +216,7 @@ describe("CardDetailPage windows", () => {
     const note = await screen.findByTestId("admin-card-anchor-comments");
     expect(note).toHaveTextContent("Showing the page around the row");
     expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
-      "36 of 70",
+      "50 of 70",
     );
     const anchored = document.querySelectorAll(
       '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
@@ -202,7 +225,7 @@ describe("CardDetailPage windows", () => {
     expect(anchored[0]).toHaveTextContent("Live comment 59");
   });
 
-  it("finds a soft-deleted comment anchor and says when it is missing", async () => {
+  it("finds a soft-deleted comment anchor", async () => {
     const server = new FakeAdminServer(stateWithCardGraph());
     vi.stubGlobal("fetch", server.fetchImpl);
     renderCard("card-1", "?comment=comment-deleted-0");
@@ -215,5 +238,45 @@ describe("CardDetailPage windows", () => {
         '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
       ),
     ).toHaveTextContent("Deleted comment 0");
+  });
+
+  it("reports a genuinely missing anchor", async () => {
+    const server = new FakeAdminServer(stateWithCardGraph());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard("card-1", "?comment=comment-does-not-exist");
+
+    expect(
+      await screen.findByTestId("admin-card-anchor-missing-comments"),
+    ).toHaveTextContent("The linked row is not available in this view.");
+    expect(screen.queryByTestId("admin-card-anchor-comments")).toBeNull();
+  });
+
+  it("keeps the anchor and its highlight when loading the next page", async () => {
+    const server = new FakeAdminServer(stateWithLongThread());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard("card-1", "?comment=long-live-80");
+
+    expect(
+      await screen.findByTestId("admin-card-anchor-comments"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
+      "50 of 130",
+    );
+
+    fireEvent.click(screen.getByTestId("admin-card-comments-more"));
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
+        "100 of 130",
+      );
+    });
+    expect(screen.getByTestId("admin-card-anchor-comments")).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-anchor-missing-comments"),
+    ).toBeNull();
+    expect(
+      document.querySelector(
+        '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
+      ),
+    ).toHaveTextContent("Long live 80");
   });
 });

@@ -486,10 +486,7 @@ export function UserDetailPage() {
   ) => {
     const window = detail.windows[section];
     const hidden = detail.hidden[section];
-    const allTotal = window.includeDeleted
-      ? window.total
-      : window.total + hidden;
-    if (allTotal === 0) return null;
+    if (hidden === 0 && !window.includeDeleted) return null;
     const liveLabel =
       section === "sessions" || section === "tokens"
         ? t("admin.common.active")
@@ -511,7 +508,7 @@ export function UserDetailPage() {
             { value: "live", label: liveLabel },
             {
               value: "all",
-              label: `${allLabel} (${allTotal})`,
+              label: `${allLabel} (${hidden})`,
             },
           ]}
           onChange={(value) =>

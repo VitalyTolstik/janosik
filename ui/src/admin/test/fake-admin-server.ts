@@ -1664,14 +1664,18 @@ export class FakeAdminServer {
     const anchor = url.searchParams.get("anchor");
     const wants = (key: string) => section === null || section === key;
 
-    const comments = this.state.comments.filter(
-      (comment) => comment.cardId === card.id,
+    const newest = <T extends { createdAt: number; id: string }>(rows: T[]) =>
+      [...rows].sort(
+        (a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id),
+      );
+    const comments = newest(
+      this.state.comments.filter((comment) => comment.cardId === card.id),
     );
     const liveComments = comments.filter(
       (comment) => comment.deletedAt === null,
     );
-    const attachments = this.state.attachments.filter(
-      (file) => file.cardId === card.id,
+    const attachments = newest(
+      this.state.attachments.filter((file) => file.cardId === card.id),
     );
     const liveAttachments = attachments.filter(
       (file) => file.deletedAt === null,
@@ -1809,27 +1813,31 @@ export class FakeAdminServer {
       anchor,
     });
 
-    const comments = this.state.comments.filter(
-      (comment) => comment.authorId === user.id,
+    const newest = <T extends { createdAt: number; id: string }>(rows: T[]) =>
+      [...rows].sort(
+        (a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id),
+      );
+    const comments = newest(
+      this.state.comments.filter((comment) => comment.authorId === user.id),
     );
     const liveComments = comments.filter(
       (comment) => comment.deletedAt === null,
     );
-    const sessions = this.state.sessions.filter(
-      (session) => session.userId === user.id,
+    const sessions = newest(
+      this.state.sessions.filter((session) => session.userId === user.id),
     );
     const liveSessions = sessions.filter(
       (session) => session.revokedAt === null && session.expiresAt > now,
     );
-    const tokens = this.state.tokens.filter(
-      (token) => token.userId === user.id,
+    const tokens = newest(
+      this.state.tokens.filter((token) => token.userId === user.id),
     );
     const liveTokens = tokens.filter((token) => token.revokedAt === null);
-    const commands = this.state.commands.filter(
-      (command) => command.actorId === user.id,
-    );
-    const activity = this.state.activity.filter(
-      (entry) => entry.actorId === user.id,
+    const commands = [...this.state.commands]
+      .filter((command) => command.actorId === user.id)
+      .sort((a, b) => b.seq - a.seq);
+    const activity = newest(
+      this.state.activity.filter((entry) => entry.actorId === user.id),
     );
     const createdCards = this.state.cards;
     const assignedCards = this.state.cards.filter(

@@ -69,6 +69,19 @@ describe("Admin detail windows (e2e)", () => {
         acceptedAt: at(0),
       },
     });
+    // A deleted board is still visible in the Memberships tab, but the
+    // Boards counter follows the documented "live boards only" definition.
+    const deletedBoard = await prisma.board.create({
+      data: { title: "Deleted windows board", deletedAt: at(1) },
+    });
+    await prisma.boardMember.create({
+      data: {
+        boardId: deletedBoard.id,
+        userId,
+        role: "MEMBER",
+        acceptedAt: at(1),
+      },
+    });
     const column = await prisma.column.create({
       data: { id: "window-column", boardId, title: "Backlog", position: 0 },
     });
@@ -247,7 +260,13 @@ describe("Admin detail windows (e2e)", () => {
       }),
     ).toBe(true);
 
-    expect(body.windows.memberships.total).toBe(1);
+    expect(body.windows.memberships.total).toBe(2);
+    expect(
+      body.memberships.some(
+        (membership: { boardDeletedAt: number | null }) =>
+          membership.boardDeletedAt !== null,
+      ),
+    ).toBe(true);
     expect(body.windows.sessions).toMatchObject({ total: 25, hasMore: false });
     expect(
       body.sessions.every(

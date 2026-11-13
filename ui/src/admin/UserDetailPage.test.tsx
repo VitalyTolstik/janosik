@@ -148,7 +148,7 @@ describe("UserDetailPage windows", () => {
     expect(screen.getByText("Live comment 0")).toBeTruthy();
     expect(screen.queryByText("Deleted comment 0")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show deleted (52)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show deleted (27)" }));
     expect(
       await screen.findByTestId("admin-user-comments-count"),
     ).toHaveTextContent("25 of 52");
@@ -173,7 +173,7 @@ describe("UserDetailPage windows", () => {
     ).toHaveTextContent("25 of 25");
     expect(screen.queryByText("Revoked")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show inactive (30)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show inactive (5)" }));
     await waitFor(() => {
       expect(screen.getByTestId("admin-user-sessions-count")).toHaveTextContent(
         "25 of 30",

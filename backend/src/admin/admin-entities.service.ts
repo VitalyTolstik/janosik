@@ -1202,7 +1202,11 @@ export class AdminEntitiesService {
       this.prisma.command.count({ where: { actorId: userId } }),
       this.prisma.activity.count({ where: { actorId: userId } }),
       this.prisma.boardMember.count({
-        where: { userId, acceptedAt: { not: null } },
+        where: {
+          userId,
+          acceptedAt: { not: null },
+          board: { deletedAt: null },
+        },
       }),
     ]);
 
@@ -1220,7 +1224,7 @@ export class AdminEntitiesService {
       wants("memberships")
         ? this.prisma.boardMember.findMany({
             where: { userId },
-            orderBy: { createdAt: "desc" },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             skip: offset,
             take: limit,
             select: {
@@ -1249,7 +1253,7 @@ export class AdminEntitiesService {
         ? this.prisma.card.findMany({
             where: { assigneeId: userId, deletedAt: null },
             select: CARD_ROW_SELECT,
-            orderBy: { updatedAt: "desc" },
+            orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
             skip: offset,
             take: limit,
           })
