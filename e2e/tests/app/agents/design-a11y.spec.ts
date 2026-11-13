@@ -344,9 +344,9 @@ test("status badge contrast clears AA in both themes", async ({
       });
       expect(ratio, theme).toBeGreaterThanOrEqual(4.5);
 
-      // The palette itself must clear AA on the real 6/10/12% status tints
-      // over both the surface and the page background — measuring only the
-      // bare surface missed the warning/danger chips before the fix.
+      // The palette itself must clear AA on the real 6/10/12/15% status
+      // tints over both the surface and the page background — measuring only
+      // the bare surface missed the warning/danger chips before the fix.
       const toneRatios = await page.evaluate(() => {
         const root = getComputedStyle(document.documentElement);
         const parseHex = (value: string): [number, number, number] => {

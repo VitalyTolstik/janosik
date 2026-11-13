@@ -118,20 +118,21 @@ html[lang="ru"] .font-agent-display {
 }
 
 :root {
-  /* AA-checked status text on the dark surface (#172033, 6–15% tints). */
-  --agent-tone-success: #10b981; /* 6.41:1 on surface */
-  --agent-tone-warning: #f59e0b; /* 7.57:1 on surface */
-  --agent-tone-danger: #f87171; /* 5.13:1 on danger/10 */
-  --agent-tone-primary: #60a5fa; /* 5.43:1 on primary/10 */
+  /* AA-checked status text on the dark surface (#172033); the worst case is
+     ≥4.75:1 on the 6–15% status tints. */
+  --agent-tone-success: #10b981;
+  --agent-tone-warning: #f59e0b;
+  --agent-tone-danger: #f87171;
+  --agent-tone-primary: #60a5fa;
 }
 
 html.light {
-  /* Deeper shades clear 4.5:1 on the 6–12% status tints, not only on the
-     bare surface. */
-  --agent-tone-success: #065f46; /* 6.03:1 on success/10 */
-  --agent-tone-warning: #92400e; /* 5.86:1 on warning/10 */
-  --agent-tone-danger: #b91c1c; /* 5.30:1 on danger/10 */
-  --agent-tone-primary: #1d4ed8; /* 5.57:1 on primary/10 */
+  /* Deeper shades clear 4.5:1 on the 6–15% status tints over both `--surface`
+     and `--background`, not only on a bare surface. */
+  --agent-tone-success: #065f46;
+  --agent-tone-warning: #92400e;
+  --agent-tone-danger: #b91c1c;
+  --agent-tone-primary: #1d4ed8;
 }
 
 @media (prefers-reduced-motion: reduce) {
