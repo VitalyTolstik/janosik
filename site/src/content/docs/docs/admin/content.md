@@ -321,8 +321,9 @@ The page has a search box, status tabs, pagination and bulk selection.
 Row actions:
 
 - `Delete file` (when the row is live): soft-deletes the attachment. The
-  confirm dialog warns that the file is removed from storage. The row then
-  shows `Restore`, and the retention purge later reclaims the blob.
+  confirm dialog explains that the file is hidden from the card and can be
+  restored. The row then shows `Restore`, and the retention purge later
+  reclaims the blob.
 - `Restore` (when the row is deleted): clears `deletedAt`, so the file streams
   again.
 

@@ -382,15 +382,18 @@ describe("CardDetailPage identity links and per-row moderation", () => {
   });
 
   it("keeps an anchored comment window after deleting its row", async () => {
-    const server = new FakeAdminServer(stateWithCardGraph());
+    const server = new FakeAdminServer(stateWithLongThread());
     vi.stubGlobal("fetch", server.fetchImpl);
-    renderCard("card-1", "?comment=comment-live-59");
+    renderCard("card-1", "?comment=long-live-80");
 
     expect(
       await screen.findByTestId("admin-card-anchor-comments"),
     ).toBeTruthy();
+    expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
+      "50 of 130",
+    );
     fireEvent.pointerDown(
-      screen.getByTestId("admin-card-comment-actions-comment-live-59"),
+      screen.getByTestId("admin-card-comment-actions-long-live-80"),
       { button: 0 },
     );
     fireEvent.click(await screen.findByText("Delete"));
@@ -402,15 +405,20 @@ describe("CardDetailPage identity links and per-row moderation", () => {
         server.requests.some(
           (request) =>
             request.method === "DELETE" &&
-            request.path === "/admin/comments/comment-live-59",
+            request.path === "/admin/comments/long-live-80",
         ),
       ).toBe(true);
     });
     expect(screen.getByTestId("admin-card-anchor-comments")).toBeTruthy();
+    // The anchor had a centred offset (24), not offset 0: the refresh must
+    // keep that window instead of jumping to the first page.
+    expect(screen.getByTestId("admin-card-comments-count")).toHaveTextContent(
+      "50 of 130",
+    );
     const anchored = document.querySelector(
       '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
     );
-    expect(anchored).toHaveTextContent("Live comment 59");
+    expect(anchored).toHaveTextContent("Long live 80");
     expect(within(anchored as HTMLElement).getByText("Deleted")).toBeTruthy();
     expect(
       screen.queryByTestId("admin-card-anchor-missing-comments"),
