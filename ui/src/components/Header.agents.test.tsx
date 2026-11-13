@@ -157,6 +157,19 @@ describe("agent entry points in the header", () => {
     },
   );
 
+  it("keeps the app-wide header height and font on /agents", async () => {
+    const { container } = renderHeader("/agents", new FakeServer([board]));
+    const header = container.querySelector("header");
+    expect(await screen.findByTestId("agents-trigger")).toBeInTheDocument();
+    expect(header?.className).toContain("min-h-14");
+    expect(header?.className).toContain("sm:h-14");
+    expect(header?.className).not.toContain("h-[52px]");
+    const wordmark = screen.getByTestId("agents-wordmark");
+    expect(wordmark.className).not.toContain("font-display");
+    expect(wordmark.className).not.toContain("font-agent-display");
+    expect(container.querySelector("svg.lucide-chevron-right")).toBeNull();
+  });
+
   it("offers agents from the account panel", async () => {
     renderHeader("/board/board-1", new FakeServer([board]));
     await userEvent.click(await screen.findByTestId("account-trigger"));

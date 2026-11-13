@@ -111,7 +111,7 @@ export function AccountDialog({
               size="sm"
               data-testid="account-trigger"
               aria-label={t("account.aria")}
-              className="gap-2 px-1.5 sm:px-2"
+              className={cn("gap-2 px-1.5 sm:px-2", compact && "max-sm:hidden")}
             >
               <UserAvatar
                 userId={user.id}
@@ -120,6 +120,7 @@ export function AccountDialog({
                 color={user.avatarColor}
                 avatarPath={user.avatarPath}
                 size="sm"
+                className={compact ? "h-[26px] w-[26px]" : undefined}
               />
               <span
                 className={cn(

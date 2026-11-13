@@ -1,5 +1,5 @@
 import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
-import { ChevronRight, Info, Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
@@ -119,7 +119,7 @@ export function Header() {
       className={cn(
         "sticky top-0 z-40 flex min-h-14 shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-14 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0",
         isAgentsRoute &&
-          "min-h-[52px] flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-[52px] sm:px-[14px]",
+          "min-h-14 flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-14 sm:px-[14px]",
       )}
     >
       <div
@@ -136,7 +136,10 @@ export function Header() {
             className="flex shrink-0 items-center gap-2 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <BrandMark size="compact" />
-            <span className="hidden font-display text-[14px] font-bold leading-none tracking-[-0.02em] sm:inline">
+            <span
+              data-testid="agents-wordmark"
+              className="hidden text-[14px] font-bold leading-none tracking-[-0.02em] sm:inline"
+            >
               Janosik
             </span>
           </Link>
@@ -187,16 +190,10 @@ export function Header() {
                 stale={pendingApprovals.stale}
               />
             </div>
-            <span
-              aria-hidden
-              className="hidden text-muted-foreground sm:inline-flex"
-            >
-              <ChevronRight className="h-3 w-3" />
-            </span>
             <span className="hidden font-agent-surface text-[12px] font-medium leading-[1.45] text-foreground sm:inline">
               {t("agents.open")}
             </span>
-            <span className="hidden items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] text-primary lg:inline-flex">
+            <span className="hidden h-[23px] items-center gap-[5px] rounded-[5px] border border-[color:color-mix(in_oklab,var(--primary)_24%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-[7px] text-[11px] text-[color:color-mix(in_oklab,var(--primary)_78%,var(--foreground))] lg:inline-flex">
               <Info className="h-3 w-3" aria-hidden />
               {t("agents.shell.globalView")}
             </span>
@@ -270,10 +267,10 @@ export function Header() {
                 ? t("agents.pending.unknown")
                 : undefined
             }
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 font-agent-surface text-[11.5px] font-semibold leading-[1.45] text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[30px]"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-[6px] border border-[color:color-mix(in_oklab,var(--primary)_26%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-2 font-agent-surface text-[11.5px] font-semibold leading-[1.45] text-foreground hover:bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[30px]"
           >
             <LazyAnimatedIcon name="bot" size={15} aria-hidden />
-            <span className="hidden sm:inline">{t("agents.open")}</span>
+            <span className="inline">{t("agents.open")}</span>
             {pendingBadge !== null && pendingBadge > 0 ? (
               <span
                 data-testid="agents-pending-count"
