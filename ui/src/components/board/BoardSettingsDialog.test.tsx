@@ -59,8 +59,10 @@ vi.mock("@/components/agents/use-pending-approvals", () => ({
 vi.mock("@/components/board/settings/AgentsAutomationSettings", () => ({
   AgentsAutomationSettings: ({
     onDirtyChange,
+    onOpenLiveControls,
   }: {
     onDirtyChange?: (dirty: boolean) => void;
+    onOpenLiveControls?: () => void;
   }) => (
     <div data-testid="agents-automation-stub">
       <button
@@ -70,15 +72,26 @@ vi.mock("@/components/board/settings/AgentsAutomationSettings", () => ({
       >
         Edit policy
       </button>
+      <button
+        type="button"
+        data-testid="agents-open-live"
+        onClick={() => onOpenLiveControls?.()}
+      >
+        Open live controls
+      </button>
     </div>
   ),
 }));
 
-function renderDialog() {
+function renderDialog(options: { onOpenLiveControls?: () => void } = {}) {
   const onOpenChange = vi.fn();
   render(
     <I18nProvider>
-      <BoardSettingsDialog open onOpenChange={onOpenChange} />
+      <BoardSettingsDialog
+        open
+        onOpenChange={onOpenChange}
+        onOpenLiveControls={options.onOpenLiveControls}
+      />
     </I18nProvider>,
   );
   return { onOpenChange };
@@ -321,6 +334,33 @@ describe("BoardSettingsDialog shell", () => {
     mocks.pendingCount = 3;
     renderDialog();
     expect(screen.getByTestId("board-settings-agents")).toHaveTextContent("3");
+  });
+
+  it("opens Agent Control on Live without touching the board route", () => {
+    const onOpenLiveControls = vi.fn();
+    const { onOpenChange } = renderDialog({ onOpenLiveControls });
+
+    fireEvent.click(screen.getByTestId("board-settings-agents"));
+    fireEvent.click(screen.getByTestId("agents-open-live"));
+
+    expect(onOpenLiveControls).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("guards unsaved settings before opening Agent Control on Live", () => {
+    const onOpenLiveControls = vi.fn();
+    const { onOpenChange } = renderDialog({ onOpenLiveControls });
+
+    makePolicyDirty();
+    fireEvent.click(screen.getByTestId("agents-open-live"));
+
+    expect(onOpenLiveControls).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByText("Discard unsaved settings?")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(onOpenLiveControls).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("keeps the mobile frame and a single scroll region", () => {

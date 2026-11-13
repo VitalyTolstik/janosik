@@ -128,14 +128,14 @@ export function BoardSettingsShell({
       <DialogContent
         hideClose
         className={cn(
-          "h-[min(47.25rem,calc(100dvh-4.75rem))] max-h-[calc(100dvh-4.75rem)] w-[calc(100vw-2rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[56px] md:bottom-auto",
+          "h-[min(47.25rem,calc(100dvh-4.75rem))] max-h-[calc(100dvh-4.75rem)] w-[calc(100vw-1.75rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[56px] md:bottom-auto",
           "max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0! max-md:pb-[env(safe-area-inset-bottom)]",
         )}
         data-testid="board-settings-dialog"
       >
-        <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-3 pl-4 pr-3.5 pt-3.5 max-md:flex-wrap max-md:px-2.5 max-md:pb-2 max-md:pt-2.5 max-md:pr-[58px]">
+        <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-3 pl-4 pr-3.5 pt-3.5 max-md:flex-wrap max-md:px-2.5 max-md:pb-[9px] max-md:pr-[52px] max-md:pt-2.5">
           <div className="min-w-0 flex-1">
-            <p className="m-0 mb-0.5 text-[11px] font-[650] uppercase leading-[1.4] tracking-[0.08em] text-muted-foreground">
+            <p className="m-0 mb-0.5 text-[11px] font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground">
               {t("board.settings.title")}
             </p>
             <DialogTitle className="m-0 font-agent-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
@@ -178,15 +178,15 @@ export function BoardSettingsShell({
           data-testid="board-settings-body"
         >
           <aside
-            className="shrink-0 border-b border-border bg-[color-mix(in_oklab,var(--background)_22%,var(--popover))] p-2 md:flex md:w-[194px] md:flex-col md:border-b-0 md:border-r md:p-[12px_9px]"
+            className="shrink-0 border-b border-border bg-[color-mix(in_oklab,var(--background)_22%,var(--popover))] p-[5px_8px] max-md:min-h-[46px] md:flex md:w-[194px] md:flex-col md:border-b-0 md:border-r md:p-[12px_9px]"
             data-testid="board-settings-rail"
           >
-            <p className="hidden px-2 pb-[7px] text-[11px] font-[650] uppercase tracking-[0.08em] text-muted-foreground md:block">
+            <p className="hidden px-2 pb-[7px] text-[11px] font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground md:block">
               {t("board.settings.shell.settings")}
             </p>
             <nav
               aria-label={t("board.settings.title")}
-              className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
+              className="flex gap-0 overflow-x-auto md:flex-col md:gap-1 md:overflow-visible"
               role="tablist"
               aria-orientation={verticalRail ? "vertical" : "horizontal"}
             >
@@ -209,9 +209,9 @@ export function BoardSettingsShell({
                     onKeyDown={(event) => moveSection(event, index)}
                     data-testid={`board-settings-${entry.id}`}
                     className={cn(
-                      "flex min-h-11 w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-[6px] border border-transparent px-2 text-left text-[12px] font-[550] leading-[1.45] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none md:min-h-[38px] md:w-full md:whitespace-normal",
+                      "flex min-h-9 w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-[6px] border border-transparent px-[9px] text-left text-[11px] font-[550] leading-[1.45] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none md:min-h-[38px] md:w-full md:whitespace-normal md:px-2 md:text-[12px]",
                       active &&
-                        "border-border bg-popover text-foreground shadow-[inset_2px_0_0_var(--primary)]",
+                        "border-border bg-popover text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-popover",
                     )}
                   >
                     <Icon className="h-3.5 w-3.5" aria-hidden />
