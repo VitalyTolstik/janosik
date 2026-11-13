@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { History, Info, Loader2, RefreshCw } from "lucide-react";
+import { ArrowUpRight, History, Info, Loader2, RefreshCw } from "lucide-react";
 import type {
   AgentSessionDto,
   BoardRole,
@@ -185,14 +185,70 @@ export function RunsPanel({ role }: { role: Role }) {
     );
   }
 
+  const foot = (
+    <footer className="ac-foot">
+      <span className="ac-foot-note">
+        <Info className="icon" aria-hidden="true" />
+        {role === "ADMIN"
+          ? t("agentControl.runs.footerAdmin")
+          : t("agentControl.runs.footerMember")}
+      </span>
+      <div className="ac-foot-actions">
+        {board === undefined ? null : (
+          <Link
+            to={`${routes.agents}?${new URLSearchParams({
+              section: "runs",
+              board: board.id,
+            }).toString()}`}
+            data-testid="agent-runs-open-all"
+            className="btn btn-outline btn-sm"
+          >
+            {t("agents.runs.openAll")}
+            <ArrowUpRight className="icon" aria-hidden="true" />
+          </Link>
+        )}
+      </div>
+    </footer>
+  );
+
+  const noRunsAtAll =
+    !runs.loading &&
+    !runs.error &&
+    runs.rows.length === 0 &&
+    !hasRunFilter(filter);
+
+  if (noRunsAtAll) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-testid="agent-runs-panel"
+      >
+        <div className="ac-toolbar">
+          <h3>{t("agents.shell.runs")}</h3>
+          <span className="meta">{t("agentControl.runs.emptyMeta")}</span>
+        </div>
+        <div className="ac-panel-scroll">
+          <div className="empty-state" data-testid="agent-runs-empty">
+            <span className="empty-icon">
+              <History className="icon" aria-hidden="true" />
+            </span>
+            <h3>{t("agentControl.runs.emptyTitle")}</h3>
+            <p>{t("agentControl.runs.emptyBody")}</p>
+          </div>
+        </div>
+        {foot}
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex h-full min-h-0 flex-col"
       data-testid="agent-runs-panel"
     >
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2.5 py-[7px]">
-        <h3 className="text-[13px] font-[650]">{t("agents.shell.runs")}</h3>
-        <span className="text-[11px] text-muted-foreground">
+      <div className="ac-toolbar">
+        <h3>{t("agents.shell.runs")}</h3>
+        <span className="meta">
           {runs.loading
             ? t("agentControl.runs.loading")
             : t("agents.runs.boardHistory", {
@@ -205,10 +261,11 @@ export function RunsPanel({ role }: { role: Role }) {
           disabled={runs.loading}
           aria-label={t("agents.runs.refresh")}
           data-testid="agent-runs-refresh"
-          className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground md:h-7 md:w-7"
+          className="icon-btn-sm"
+          style={{ marginLeft: "auto" }}
         >
           <RefreshCw
-            className={cn("h-3.5 w-3.5", runs.loading && "animate-spin")}
+            className={cn("icon", runs.loading && "animate-spin")}
             aria-hidden
           />
         </button>
@@ -452,26 +509,7 @@ export function RunsPanel({ role }: { role: Role }) {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-3 py-2 text-[11px] leading-[1.45] text-muted-foreground">
-        <Info className="h-3 w-3 shrink-0" aria-hidden />
-        <span className="min-w-0 flex-1">
-          {role === "ADMIN"
-            ? t("agents.runs.footerAdmin")
-            : t("agents.runs.footerMember")}
-        </span>
-        {board === undefined ? null : (
-          <Link
-            to={`${routes.agents}?${new URLSearchParams({
-              section: "runs",
-              board: board.id,
-            }).toString()}`}
-            data-testid="agent-runs-open-all"
-            className="inline-flex min-h-11 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover md:min-h-7"
-          >
-            {t("agents.runs.openAll")} ↗
-          </Link>
-        )}
-      </div>
+      {foot}
     </div>
   );
 }

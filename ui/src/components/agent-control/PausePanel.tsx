@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
+  ArrowUpRight,
   Bot,
   CirclePause,
   CirclePlay,
+  KeyRound,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -354,13 +357,14 @@ function BoardPauseDialog({
   );
 }
 
-function BoardPauseCard({
+function LiveStatusCard({
   paused,
   pausedAt,
   pauseReason,
   admin,
   onPause,
   onResume,
+  onManageTokens,
 }: {
   paused: boolean;
   pausedAt: number | null;
@@ -368,40 +372,29 @@ function BoardPauseCard({
   admin: boolean;
   onPause: () => void;
   onResume: () => void;
+  onManageTokens: () => void;
 }) {
   const { t, lang } = useI18n();
   return (
     <section
-      data-testid="board-pause-status"
+      className={cn("live-status-card", paused && "is-paused")}
+      data-testid="live-status-card"
       data-paused={paused ? "true" : "false"}
-      className={cn(
-        "flex flex-wrap items-start gap-2.5 rounded-lg border px-2.5 py-2.5",
-        paused
-          ? "border-warning/34 bg-warning/5"
-          : "border-success/30 bg-success/5",
-      )}
     >
-      <span
-        className={cn(
-          "grid h-[27px] w-[27px] shrink-0 place-items-center rounded-[7px] border",
-          paused
-            ? "border-warning/24 bg-warning/10 text-[color:var(--agent-tone-warning)]"
-            : "border-success/24 bg-success/10 text-[color:var(--agent-tone-success)]",
-        )}
-      >
+      <span className="live-icon">
         {paused ? (
-          <CirclePause className="h-3.5 w-3.5" aria-hidden />
+          <CirclePause className="icon" aria-hidden="true" />
         ) : (
-          <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+          <Activity className="icon" aria-hidden="true" />
         )}
       </span>
-      <div className="min-w-0 flex-1">
-        <b className="block text-[11.5px] font-[650] leading-[1.35]">
+      <div className="live-status-main">
+        <b>
           {paused
             ? t("agentControl.live.boardPausedTitle")
             : t("agentControl.live.boardAllowedTitle")}
         </b>
-        <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
+        <p>
           {paused
             ? t("agentControl.live.boardPausedBody", {
                 when:
@@ -415,38 +408,42 @@ function BoardPauseCard({
             : t("agentControl.live.boardAllowedBody")}
         </p>
       </div>
-      <div className="ml-auto flex flex-none flex-wrap items-center justify-end gap-1.5">
+      <div className="live-status-actions">
         {admin ? (
           paused ? (
-            <Button
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              data-testid="board-resume"
+              className="btn btn-outline btn-sm"
+              data-testid="live-status-resume"
               onClick={onResume}
-              className="min-h-11 min-[761px]:h-7 min-[761px]:min-h-7"
             >
-              <CirclePlay className="h-3.5 w-3.5" aria-hidden />
+              <CirclePlay className="icon" aria-hidden="true" />
               {t("agentControl.pause.resumeAgents")}
-            </Button>
+            </button>
           ) : (
-            <Button
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              data-testid="board-pause"
+              className="btn btn-danger-outline btn-sm"
+              data-testid="live-status-pause"
               onClick={onPause}
-              className="min-h-11 border-danger/44 bg-danger/5 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 hover:text-[color:var(--agent-tone-danger)] min-[761px]:h-7 min-[761px]:min-h-7"
             >
-              <CirclePause className="h-3.5 w-3.5" aria-hidden />
+              <CirclePause className="icon" aria-hidden="true" />
               {t("agentControl.pause.pauseAgents")}
-            </Button>
+            </button>
           )
         ) : (
-          <span className="inline-flex h-[22px] items-center rounded-full border border-border px-2 text-[11px] font-[600] text-muted-foreground">
-            {t("agentControl.live.readOnly")}
-          </span>
+          <span className="chip">{t("agentControl.live.readOnly")}</span>
         )}
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          data-testid="agent-live-manage-tokens"
+          onClick={onManageTokens}
+        >
+          <KeyRound className="icon" aria-hidden="true" />
+          {t("agents.shell.manageTokens")}
+          <ArrowUpRight className="icon" aria-hidden="true" />
+        </button>
       </div>
     </section>
   );
@@ -664,29 +661,32 @@ export function PausePanel({
       className="flex h-full min-h-0 flex-col"
       data-testid="agent-live-panel"
     >
-      <div className="flex min-h-[46px] flex-none flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
-        <h3 className="m-0 mr-auto text-[12.5px] font-[650]">
-          {t("agentControl.shell.live")}
-        </h3>
-        <span className="text-[11px] text-muted-foreground">
-          {t("agentControl.live.summary", {
-            count: sessions?.length ?? 0,
-            tokens: groups.length,
-            stale: staleCount,
-          })}
+      <div className="ac-toolbar">
+        <h3>{t("agentControl.shell.live")}</h3>
+        <span className="meta">
+          {sessions !== null && sessions.length > 0
+            ? t("agentControl.live.summary", {
+                count: sessions.length,
+                tokens: groups.length,
+                stale: staleCount,
+              })
+            : t("agentControl.live.summaryZero")}
         </span>
-        <button
-          type="button"
-          data-testid="agent-live-refresh"
-          aria-label={t("agentControl.live.refresh")}
-          onClick={() => setRevision((value) => value + 1)}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:h-6 min-[761px]:w-6"
-        >
-          <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
-        </button>
+        {sessions !== null && sessions.length > 0 ? (
+          <button
+            type="button"
+            data-testid="agent-live-refresh"
+            aria-label={t("agentControl.live.refresh")}
+            onClick={() => setRevision((value) => value + 1)}
+            className="icon-btn-sm"
+            style={{ marginLeft: "auto" }}
+          >
+            <RefreshCw className="icon" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="ac-panel-scroll">
         {sessions === null && !sessionsError ? (
           <SessionSkeleton label={t("agentControl.sessions.loading")} />
         ) : null}
@@ -708,113 +708,150 @@ export function PausePanel({
             </Button>
           </div>
         ) : null}
-        <BoardPauseCard
-          paused={paused}
-          pausedAt={pausedAt}
-          pauseReason={pauseReason}
-          admin={admin}
-          onPause={() => {
-            setBoardError(null);
-            setBoardDialog("pause");
-          }}
-          onResume={() => {
-            setBoardError(null);
-            setBoardDialog("resume");
-          }}
-        />
 
-        {sessions !== null && !sessionsError ? (
-          <>
-            {sessions.length === 0 ? (
-              <div className="mt-2 flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">
-                <Bot className="h-6 w-6 opacity-60" aria-hidden />
-                <p>{t("agentControl.live.empty")}</p>
-              </div>
-            ) : (
-              <>
-                {groups.map((group) => (
-                  <section key={group.tokenId} className="mt-2.5">
-                    <div className="flex flex-wrap items-center gap-1.5 border-b border-border-soft py-1.5">
-                      <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] border border-border bg-surface text-muted-foreground">
-                        <Bot className="h-3 w-3" aria-hidden />
-                      </span>
-                      <b className="min-w-0 truncate text-[11px] font-[650]">
-                        {group.name}
-                      </b>
-                      <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
-                        {shortId(group.tokenId, 12)}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {t("agentControl.live.groupLive", {
-                          count: group.rows.filter(
-                            (row) =>
-                              !isTerminalStatus(row.status) && !row.paused,
-                          ).length,
-                        })}
-                        {group.rows.some((row) => row.paused)
-                          ? ` · ${t("agentControl.live.groupPaused", {
-                              count: group.rows.filter((row) => row.paused)
-                                .length,
-                            })}`
-                          : ""}
-                      </span>
-                      <span className="ml-auto">
-                        <TokenSettingsLink
-                          isOwn={ownTokenIds.has(group.tokenId)}
-                          onOpen={openTokens}
-                          testId={`agent-live-token-settings-${group.tokenId}`}
-                        />
-                      </span>
-                    </div>
-                    {group.rows.map((session) => (
-                      <LiveSessionRow
-                        key={session.id}
-                        session={session}
-                        admin={admin}
-                        now={now}
-                        cardTitles={cardTitles}
-                        onAction={(nextAction, row) =>
-                          setAction({ action: nextAction, session: row })
-                        }
-                      />
-                    ))}
-                  </section>
-                ))}
-
-                {!admin ? (
-                  <div className="mt-2 flex items-start gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
-                    <ShieldCheck
-                      className="mt-px h-3 w-3 shrink-0"
-                      aria-hidden
-                    />
-                    {t("agentControl.live.readOnlyNote")}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </>
+        {sessions !== null && !sessionsError && sessions.length === 0 ? (
+          <div className="empty-state" data-testid="agent-live-empty">
+            <span className="empty-icon">
+              <Activity className="icon" aria-hidden="true" />
+            </span>
+            <h3>{t("agentControl.live.emptyTitle")}</h3>
+            <p>{t("agentControl.live.emptyBody")}</p>
+          </div>
         ) : null}
 
-        <p
-          data-testid="pause-semantics"
-          className="mt-2.5 text-[11px] leading-[1.5] text-muted-foreground"
-        >
-          {t("agentControl.live.claims")}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
-          <p className="min-w-0 flex-1 text-[11px] leading-[1.45] text-muted-foreground">
-            {t("agentControl.live.tokenHint")}
-          </p>
-          <button
-            type="button"
-            data-testid="agent-live-manage-tokens"
-            onClick={openTokens}
-            className="inline-flex min-h-11 items-center gap-1 text-[11px] font-[600] text-foreground hover:underline min-[761px]:min-h-7"
-          >
-            {t("agents.shell.manageTokens")} ↗
-          </button>
-        </div>
+        {sessions !== null && !sessionsError && sessions.length > 0 ? (
+          <>
+            <LiveStatusCard
+              paused={paused}
+              pausedAt={pausedAt}
+              pauseReason={pauseReason}
+              admin={admin}
+              onPause={() => {
+                setBoardError(null);
+                setBoardDialog("pause");
+              }}
+              onResume={() => {
+                setBoardError(null);
+                setBoardDialog("resume");
+              }}
+              onManageTokens={openTokens}
+            />
+
+            {groups.map((group) => (
+              <section key={group.tokenId} className="mt-2.5">
+                <div className="flex flex-wrap items-center gap-1.5 border-b border-border-soft py-1.5">
+                  <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] border border-border bg-surface text-muted-foreground">
+                    <Bot className="h-3 w-3" aria-hidden />
+                  </span>
+                  <b className="min-w-0 truncate text-[11px] font-[650]">
+                    {group.name}
+                  </b>
+                  <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
+                    {shortId(group.tokenId, 12)}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {t("agentControl.live.groupLive", {
+                      count: group.rows.filter(
+                        (row) => !isTerminalStatus(row.status) && !row.paused,
+                      ).length,
+                    })}
+                    {group.rows.some((row) => row.paused)
+                      ? ` · ${t("agentControl.live.groupPaused", {
+                          count: group.rows.filter((row) => row.paused).length,
+                        })}`
+                      : ""}
+                  </span>
+                  <span className="ml-auto">
+                    <TokenSettingsLink
+                      isOwn={ownTokenIds.has(group.tokenId)}
+                      onOpen={openTokens}
+                      testId={`agent-live-token-settings-${group.tokenId}`}
+                    />
+                  </span>
+                </div>
+                {group.rows.map((session) => (
+                  <LiveSessionRow
+                    key={session.id}
+                    session={session}
+                    admin={admin}
+                    now={now}
+                    cardTitles={cardTitles}
+                    onAction={(nextAction, row) =>
+                      setAction({ action: nextAction, session: row })
+                    }
+                  />
+                ))}
+              </section>
+            ))}
+
+            {!admin ? (
+              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
+                <ShieldCheck className="mt-px h-3 w-3 shrink-0" aria-hidden />
+                {t("agentControl.live.readOnlyNote")}
+              </div>
+            ) : null}
+
+            <p
+              data-testid="pause-semantics"
+              className="mt-[9px] mb-0 text-[11px] leading-[1.5] text-muted-foreground"
+            >
+              {t("agentControl.live.claims")}
+            </p>
+          </>
+        ) : null}
       </div>
+
+      <footer
+        className="ac-foot"
+        data-testid="board-pause-status"
+        data-paused={paused ? "true" : "false"}
+      >
+        <span className="ac-foot-note">
+          <ShieldCheck className="icon" aria-hidden="true" />
+          {t(
+            admin
+              ? "agentControl.live.pauseFooter"
+              : "agentControl.live.memberFooter",
+          )}
+          {sessions !== null &&
+          sessions.length === 0 &&
+          paused &&
+          pauseReason !== null
+            ? ` · ${pauseReason}`
+            : ""}
+        </span>
+        <div className="ac-foot-actions">
+          {admin ? (
+            paused ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                data-testid="board-resume"
+                onClick={() => {
+                  setBoardError(null);
+                  setBoardDialog("resume");
+                }}
+              >
+                <CirclePlay className="icon" aria-hidden="true" />
+                {t("agentControl.pause.resumeAgents")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                data-testid="board-pause"
+                onClick={() => {
+                  setBoardError(null);
+                  setBoardDialog("pause");
+                }}
+              >
+                <CirclePause className="icon" aria-hidden="true" />
+                {t("agentControl.pause.pauseAgents")}
+              </button>
+            )
+          ) : null}
+        </div>
+      </footer>
 
       {boardDialog !== null ? (
         <BoardPauseDialog

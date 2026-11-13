@@ -94,6 +94,11 @@ export function SelectField<T extends string>({
       <PopoverContent
         align="start"
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // A Dialog's focus trap can move focus back into the dialog right
+        // after the portalled listbox opens. That is not an intentional
+        // dismissal: keep the listbox open; Escape and outside clicks still
+        // close it through their own handlers.
+        onFocusOutside={(event) => event.preventDefault()}
         {...combobox.listboxProps}
         aria-label={ariaLabel}
         data-testid={`${testId}-listbox`}

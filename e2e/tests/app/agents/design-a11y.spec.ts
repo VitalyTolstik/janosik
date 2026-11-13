@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { test, expect } from "@/fixtures/board.js";
 import { createAgentSession } from "@/helpers/agents.js";
 import { appUrl } from "@/helpers/urls.js";
@@ -159,7 +161,7 @@ test("390 keeps every primary action at 44 px and traps/returns focus", async ({
     await dialog.getByTestId("agent-pause-tab").click();
     for (const testId of [
       "agent-live-refresh",
-      "board-pause",
+      "live-status-pause",
       "agent-session-pause",
       "agent-session-end",
     ]) {
@@ -416,7 +418,43 @@ test("status badge contrast clears AA in both themes", async ({
 test("a combobox inside the modal is clickable and Escape closes only the listbox", async ({
   page,
   board,
+  playwright,
+  testIp,
 }) => {
+  // Runs filters intentionally do not render when the board has no runs at
+  // all, so this fixture needs one real applied run before the toolbar exists.
+  const column = await board.column("Todo");
+  const agent = await createAgentSession(playwright, board, testIp, {
+    tokenName: "Combobox agent",
+    sessionName: "Combobox session",
+  });
+  try {
+    const run = await agent.api.post(
+      `/api/v1/boards/${board.id}/commands/batch`,
+      {
+        headers: { "X-Agent-Session": agent.session.id },
+        data: {
+          commands: [
+            {
+              commandId: randomUUID(),
+              action: {
+                type: "ADD_CARD",
+                boardId: board.id,
+                columnId: column,
+                newCardId: randomUUID(),
+                title: "Combobox run",
+                at: Date.now(),
+              },
+            },
+          ],
+        },
+      },
+    );
+    expect(run.status(), await run.text()).toBe(200);
+  } finally {
+    await agent.dispose();
+  }
+
   await page.setViewportSize({ width: 390, height: 844 });
   await board.open(page);
   const dialog = await openControl(page);
