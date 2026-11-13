@@ -1148,7 +1148,7 @@ function Banner({
         tone === "warn" &&
           "border-warning/35 bg-warning/6 [&_svg]:text-[color:var(--agent-tone-warning)]",
         tone === "info" &&
-          "border-primary/30 bg-primary/6 [&_svg]:text-primary",
+          "border-primary/30 bg-primary/6 [&_svg]:text-[color:var(--agent-tone-primary)]",
       )}
     >
       {icon}

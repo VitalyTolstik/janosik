@@ -388,7 +388,7 @@ export function AgentsAutomation({
 
         <div className="mb-3 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
           <Info
-            className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+            className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
             aria-hidden
           />
           <span className="min-w-0">
@@ -746,7 +746,7 @@ export function AgentsAutomation({
                       {t("board.settings.agents.covered")}
                     </span>
                   ) : showKeys ? (
-                    <code className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground/70">
+                    <code className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
                       {action}
                     </code>
                   ) : null}
@@ -806,7 +806,7 @@ export function AgentsAutomation({
           >
             {footerStatus}
           </span>
-          <span className="truncate border-l border-border pl-2.5 text-muted-foreground/75 max-md:hidden">
+          <span className="truncate border-l border-border pl-2.5 text-muted-foreground max-md:hidden">
             {secondaryStatus}
           </span>
         </div>

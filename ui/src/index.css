@@ -103,9 +103,11 @@ body.janosik-touch-dragging {
  * Space Grotesk ships no Cyrillic glyphs, so a Russian UI falls back to the
  * body stack instead of letting the browser mix two faces inside one word.
  *
- * Status tones are mixed toward the foreground just enough to clear WCAG AA
- * at 11 px in both themes (pure `--warning`/`--success` fail on the light
- * surface; pure `--danger`/`--primary` are marginal on the dark surface).
+ * Status tones are explicit, AA-checked shades for 11 px text on the real
+ * 6–15% status tints in both themes. They deliberately do not reuse the raw
+ * `--warning`/`--success`/`--danger`/`--primary` values: `--warning` and
+ * `--success` fail on the light surface, `--danger`/`--primary` are marginal
+ * on the dark surface, and every chip adds its own 6–15% tint under the text.
  * ------------------------------------------------------------------------- */
 .font-agent-display {
   font-family: var(--font-display);
@@ -116,17 +118,17 @@ html[lang="ru"] .font-agent-display {
 }
 
 :root {
-  /* AA-checked status text on the dark surface (#172033 at 6–10% tint). */
-  --agent-tone-success: #10b981; /* 6.41:1 */
-  --agent-tone-warning: #f59e0b; /* 7.57:1 */
-  --agent-tone-danger: #f87171; /* 5.88:1 */
-  --agent-tone-primary: #60a5fa; /* 6.40:1 */
+  /* AA-checked status text on the dark surface (#172033, 6–15% tints). */
+  --agent-tone-success: #10b981; /* 6.41:1 on surface */
+  --agent-tone-warning: #f59e0b; /* 7.57:1 on surface */
+  --agent-tone-danger: #f87171; /* 5.13:1 on danger/10 */
+  --agent-tone-primary: #60a5fa; /* 5.43:1 on primary/10 */
 }
 
 html.light {
   /* Deeper shades clear 4.5:1 on the 6–12% status tints, not only on the
      bare surface. */
-  --agent-tone-success: #047857; /* 4.62:1 on success/10 */
+  --agent-tone-success: #065f46; /* 6.03:1 on success/10 */
   --agent-tone-warning: #92400e; /* 5.86:1 on warning/10 */
   --agent-tone-danger: #b91c1c; /* 5.30:1 on danger/10 */
   --agent-tone-primary: #1d4ed8; /* 5.57:1 on primary/10 */

@@ -759,7 +759,7 @@ export function AgentsPage() {
                       item === "attention"
                         ? "border border-warning/30 bg-warning/10 text-[color:var(--agent-tone-warning)]"
                         : section === item
-                          ? "bg-primary/15 text-primary"
+                          ? "bg-primary/15 text-[color:var(--agent-tone-primary)]"
                           : "bg-hover text-muted-foreground",
                     )}
                   >
@@ -1099,7 +1099,7 @@ export function AgentsPage() {
                 className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
               >
                 <Info
-                  className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+                  className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
                   aria-hidden
                 />
                 <span>
@@ -1645,7 +1645,7 @@ function MemberAttentionBanner() {
       data-testid="agents-member-note"
       role="status"
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10 text-[color:var(--agent-tone-primary)]">
         <Info className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <p className="min-w-0 pt-0.5 text-[11.5px] leading-[1.55] text-muted-foreground">
@@ -1813,7 +1813,7 @@ function AgentRow({
         className="grid min-w-0 gap-2 border-b border-border/70 px-2 py-3 transition-colors hover:bg-hover sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
       >
         <div className="flex min-w-0 items-start gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border bg-card text-primary">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border bg-card text-[color:var(--agent-tone-primary)]">
             <Bot className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0">
