@@ -10,9 +10,7 @@ import { MailerService } from "@/mailer/mailer.service";
  * (see `registration-verification.e2e-spec.ts`).
  */
 if (process.env.NODE_ENV === "test") {
-  jest
-    .spyOn(MailerService.prototype, "enabled", "get")
-    .mockReturnValue(true);
+  jest.spyOn(MailerService.prototype, "enabled", "get").mockReturnValue(true);
 }
 
 /**
