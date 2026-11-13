@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  CheckCircle2,
-  ClipboardList,
+  Inbox,
   Info,
   RefreshCw,
+  Search,
+  ShieldCheck,
 } from "lucide-react";
 import type { ApprovalRequestDto, BoardRole } from "@janosik/shared";
 
@@ -118,6 +119,7 @@ export function ApprovalsPanel({
   const { board } = useBoardState();
   const live = useBoardLive();
   const [filter, setFilter] = useState<ApprovalFilter>("needs");
+  const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ApprovalRequestDto[] | null>(null);
   const [listError, setListError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -195,18 +197,35 @@ export function ApprovalsPanel({
     }
     return { needs, decided: queue.length - needs, all: queue.length };
   }, [now, queue]);
-  const filtered = useMemo(
-    () =>
-      queue.filter((row) => {
-        const pending =
-          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
-        if (filter === "needs") return pending;
-        if (filter === "decided") return !pending;
-        return true;
-      }),
-    [filter, now, queue],
-  );
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return queue.filter((row) => {
+      const pending =
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
+      if (filter === "needs" && !pending) return false;
+      if (filter === "decided" && pending) return false;
+      if (needle === "") return true;
+      const card =
+        row.cardId === null ? undefined : board?.cards[row.cardId]?.title;
+      const haystack = [
+        row.summary,
+        row.requestedByTokenId,
+        row.agentSessionId ?? "",
+        row.cardId ?? "",
+        card ?? "",
+        row.kind,
+        row.actionType,
+        row.planHash,
+        row.runId ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [board?.cards, filter, now, queue, search]);
   const loadingList = rows === null && !listError;
+  const detailEmpty =
+    !listError && selectedId === null && !loadingList && filtered.length === 0;
   const effectiveStatus =
     detail === null
       ? undefined
@@ -277,16 +296,25 @@ export function ApprovalsPanel({
     return member?.displayName ?? member?.email ?? userId;
   };
 
+  const headLeft =
+    filter === "needs"
+      ? t("agentControl.approvals.listHeadNeeds")
+      : filter === "decided"
+        ? t("agentControl.approvals.listHeadDecided")
+        : t("agents.approvals.title");
+  const headRight =
+    filter === "decided"
+      ? t("agentControl.approvals.listHeadDecidedRight")
+      : t("agentControl.approvals.listHeadExpires");
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-        <h3 className="mr-1 hidden text-[11.5px] font-[650] md:block">
-          {t("agents.approvals.title")}
-        </h3>
+      <div className="ac-toolbar">
+        <h3>{t("agents.approvals.title")}</h3>
         <div
           role="group"
           aria-label={t("agentControl.approvals.filterLabel")}
-          className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1"
+          className="seg"
         >
           {(
             [
@@ -301,34 +329,42 @@ export function ApprovalsPanel({
               data-testid={`approval-filter-${value}`}
               aria-pressed={filter === value}
               onClick={() => setFilter(value)}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors min-h-11 md:min-h-0",
-                filter === value
-                  ? "bg-primary/15 text-[color:var(--agent-tone-primary)]"
-                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
-              )}
+              className={cn("chip", filter === value && "primary")}
             >
               {t(key)}
-              {rows !== null ? (
-                <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[11px] tabular-nums">
-                  {counts[countKey]}
-                </span>
-              ) : null}
+              <b className="tabular-nums">{counts[countKey]}</b>
             </button>
           ))}
         </div>
-        <span className="ml-auto text-[11px] text-muted-foreground max-md:hidden">
-          {t("agentControl.approvals.decideHint")}
-        </span>
+        <div className="input-wrap ac-search">
+          <Search className="icon" aria-hidden="true" />
+          <input
+            className="input"
+            data-testid="approval-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("agentControl.approvals.searchPlaceholder")}
+            aria-label={t("agentControl.approvals.searchLabel")}
+          />
+        </div>
+        <button
+          type="button"
+          className="icon-btn-sm"
+          data-testid="approval-refresh"
+          aria-label={t("agentControl.approvals.refresh")}
+          onClick={() => setRevision((value) => value + 1)}
+        >
+          <RefreshCw className="icon" aria-hidden="true" />
+        </button>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(15rem,19rem)_1fr]">
-        <div
-          className={cn(
-            "min-h-0 overflow-y-auto border-b md:border-b-0 md:border-r",
-            mobileDetailOpen && "max-md:hidden",
-          )}
-        >
+      <div className={cn("ac-split", mobileDetailOpen && "is-detail-open")}>
+        <div className="ac-list">
+          <div className="ac-list-head">
+            <span>{headLeft}</span>
+            <span>{headRight}</span>
+          </div>
           {loadingList ? (
             <div className="p-3">
               <QueueSkeleton />
@@ -350,15 +386,33 @@ export function ApprovalsPanel({
             </div>
           ) : null}
           {!loadingList && !listError && filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 p-6 text-center text-xs text-muted-foreground">
-              <CheckCircle2 className="h-6 w-6 text-success/70" aria-hidden />
-              <p>
+            <div
+              className="empty-state"
+              style={{ minHeight: 220 }}
+              data-testid="approval-empty"
+            >
+              <span className="empty-icon">
+                <Inbox className="icon" aria-hidden="true" />
+              </span>
+              <h3>
                 {filter === "needs"
                   ? t("agentControl.approvals.emptyPending")
-                  : filter === "decided"
-                    ? t("agentControl.approvals.emptyDecided")
-                    : t("agentControl.approvals.emptyAll")}
+                  : t("agentControl.approvals.emptyOther")}
+              </h3>
+              <p>
+                {filter === "needs"
+                  ? t("agentControl.approvals.emptyPendingBody")
+                  : t("agentControl.approvals.emptyOtherBody")}
               </p>
+              <div className="empty-actions">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setFilter("all")}
+                >
+                  {t("agentControl.approvals.viewAll")}
+                </button>
+              </div>
             </div>
           ) : null}
           {filtered.length > 0 ? (
@@ -421,14 +475,8 @@ export function ApprovalsPanel({
           ) : null}
         </div>
 
-        <div
-          className={cn(
-            "flex min-h-0 flex-col",
-            !mobileDetailOpen && "max-md:hidden",
-          )}
-          data-testid="approval-detail"
-        >
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="ac-detail" data-testid="approval-detail">
+          <div className={cn("ac-detail-scroll", detailEmpty && "is-empty")}>
             {detailError ? (
               <ApprovalDetailError onRetry={() => setRevision((v) => v + 1)} />
             ) : null}
@@ -576,8 +624,11 @@ export function ApprovalsPanel({
             selectedId === null &&
             !loadingList &&
             filtered.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-muted-foreground">
-                <ClipboardList className="h-6 w-6 opacity-60" aria-hidden />
+              <div className="detail-empty" data-testid="approval-detail-empty">
+                <span className="empty-icon">
+                  <Inbox className="icon" aria-hidden="true" />
+                </span>
+                <h3>{t("agentControl.approvals.selectTitle")}</h3>
                 <p>{t("agentControl.approvals.selectHint")}</p>
               </div>
             ) : null}
@@ -607,14 +658,23 @@ export function ApprovalsPanel({
           ) : null}
         </div>
       </div>
-      {!mobileDetailOpen ? (
-        <div className="shrink-0 border-t border-border bg-popover px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[11px] text-muted-foreground md:hidden">
-          <span className="flex items-center gap-2">
-            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {t("agentControl.approvals.selectHint")}
+
+      <footer className="ac-foot">
+        <span className="ac-foot-note">
+          <ShieldCheck className="icon" aria-hidden="true" />
+          {detail !== null && effectiveStatus === "pending"
+            ? t("agentControl.approvals.footerPending", {
+                hash: `${detail.planHash.slice(0, 10)}…`,
+              })
+            : t("agentControl.approvals.footerEmpty")}
+        </span>
+        {detail !== null && effectiveStatus === "pending" ? (
+          <span className="ac-foot-mobile-hint">
+            <Info className="icon" aria-hidden="true" />
+            {t("agentControl.approvals.mobileHint")}
           </span>
-        </div>
-      ) : null}
+        ) : null}
+      </footer>
     </div>
   );
 }

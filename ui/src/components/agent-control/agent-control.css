@@ -1,0 +1,1174 @@
+/* Agent control (TASK-179) — board-scoped modal.
+ *
+ * The visual contract is design/agent-surfaces-prototype/index.html. Values
+ * below mirror the prototype's computed styles (including the 11 px type
+ * floor) so the board surface and the design study stay in lockstep. Keep
+ * this file scoped to `.agent-control-surface`; it must not leak into the
+ * rest of the app.
+ */
+
+.agent-control-surface {
+  --ac-primary-strong: #2563eb;
+  --ac-shadow-lg:
+    0 28px 80px -32px rgb(0 0 0 / 0.78), 0 2px 8px rgb(0 0 0 / 0.22);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+
+html.light .agent-control-surface {
+  --ac-primary-strong: #1d4ed8;
+  --ac-shadow-lg:
+    0 28px 80px -36px rgb(15 23 42 / 0.28), 0 2px 8px rgb(15 23 42 / 0.06);
+}
+
+.agent-control-surface button,
+.agent-control-surface input {
+  font-family: inherit;
+}
+
+.agent-control-surface.ac-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  top: 56px;
+  bottom: auto;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  width: min(1120px, calc(100vw - 28px));
+  height: min(760px, calc(100dvh - 76px));
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: var(--ac-shadow-lg);
+}
+
+/* Header ------------------------------------------------------------------ */
+.agent-control-surface .ac-head {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 14px 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--primary) 5%, var(--surface)),
+    var(--surface)
+  );
+}
+
+.agent-control-surface .ac-head .bot-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: color-mix(in oklab, var(--primary) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--primary) 30%, var(--border));
+  color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+}
+
+.agent-control-surface .ac-head .bot-tile .icon {
+  width: 17px;
+  height: 17px;
+}
+
+.agent-control-surface .ac-title-wrap {
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-control-surface .ac-title {
+  margin: 0;
+  font-family:
+    "Space Grotesk",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+
+.agent-control-surface .ac-description {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  max-width: 66ch;
+}
+
+.agent-control-surface .ac-head-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 46%;
+}
+
+.agent-control-surface .ac-head-chip {
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.agent-control-surface .ac-head-chip.ok {
+  color: var(--success);
+  border-color: color-mix(in oklab, var(--success) 34%, var(--border));
+  background: color-mix(in oklab, var(--success) 6%, transparent);
+}
+
+.agent-control-surface .ac-head-chip.warn {
+  color: var(--warning);
+  border-color: color-mix(in oklab, var(--warning) 36%, var(--border));
+  background: color-mix(in oklab, var(--warning) 6%, transparent);
+}
+
+.agent-control-surface .ac-head-chip.muted {
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .ac-head-chip .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.agent-control-surface .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted-foreground);
+}
+
+.agent-control-surface .status-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--success) 14%, transparent);
+}
+
+.agent-control-surface .status-dot.warn {
+  background: var(--warning);
+  box-shadow: 0 0 0 2.5px color-mix(in oklab, var(--warning) 14%, transparent);
+}
+
+.agent-control-surface .ac-head-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+}
+
+.agent-control-surface .ac-head-link:hover {
+  color: var(--foreground);
+}
+
+.agent-control-surface .ac-head-link .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.agent-control-surface .ac-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  flex: none;
+  border: 1px solid transparent;
+  background: none;
+}
+
+.agent-control-surface .ac-close:hover {
+  background: var(--hover);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.agent-control-surface .ac-close .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Body / rail ------------------------------------------------------------- */
+.agent-control-surface .ac-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  /* The shared footer is rendered by the active panel but spans the whole
+     modal, exactly like the prototype's footer below .ac-body. */
+  padding-bottom: 50px;
+}
+
+.agent-control-surface .ac-rail {
+  width: 206px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  padding: 12px 9px 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: color-mix(in oklab, var(--background) 24%, var(--surface));
+}
+
+.agent-control-surface .ac-rail-label {
+  padding: 0 8px 7px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .ac-rail-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-control-surface .ac-rail-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 550;
+  text-align: left;
+  background: transparent;
+}
+
+.agent-control-surface .ac-rail-tab .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.agent-control-surface .ac-rail-tab:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+
+.agent-control-surface .ac-rail-tab[aria-selected="true"] {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--foreground);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.agent-control-surface .ac-rail-tab .count-badge,
+.agent-control-surface .ac-rail-tab .rail-count {
+  margin-left: auto;
+}
+
+.agent-control-surface .count-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--warning);
+  color: #1b1305;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--warning) 20%, transparent);
+}
+
+.agent-control-surface .rail-count {
+  height: 17px;
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--muted-foreground);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.agent-control-surface .ac-rail-tab[aria-selected="true"] .rail-count {
+  background: color-mix(in oklab, var(--primary) 15%, transparent);
+  color: var(--primary);
+}
+
+.agent-control-surface .ac-rail-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 8px;
+}
+
+.agent-control-surface .ac-rail-note {
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .ac-rail-note strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.agent-control-surface .ac-rail-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  text-align: left;
+  width: 100%;
+  background: none;
+  border: 0;
+}
+
+.agent-control-surface .ac-rail-link:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+
+.agent-control-surface .ac-rail-link .icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.agent-control-surface .ac-rail-footer {
+  margin-top: auto;
+  padding: 10px 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.agent-control-surface .ac-rail-footer b {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 2px;
+}
+
+.agent-control-surface .ac-rail-footer p {
+  margin: 0 0 7px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+/* Content / toolbar ------------------------------------------------------- */
+.agent-control-surface .ac-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.agent-control-surface .ac-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  min-height: 46px;
+}
+
+.agent-control-surface .ac-toolbar h3 {
+  margin: 0 auto 0 0;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.agent-control-surface .ac-toolbar .meta {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .ac-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+}
+
+.agent-control-surface .ac-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.agent-control-surface .ac-list {
+  width: 316px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
+}
+
+.agent-control-surface .ac-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-control-surface .ac-list-head span:last-child {
+  margin-left: auto;
+}
+
+.agent-control-surface .ac-detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in oklab, var(--surface) 66%, var(--background));
+}
+
+.agent-control-surface .ac-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+}
+
+.agent-control-surface .ac-detail-scroll.is-empty {
+  padding: 0;
+  display: flex;
+}
+
+/* Empty, detail empty, buttons ------------------------------------------- */
+.agent-control-surface .empty-state {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 24px;
+  gap: 10px;
+}
+
+.agent-control-surface .empty-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .empty-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.agent-control-surface .empty-state h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.agent-control-surface .empty-state p {
+  margin: 0;
+  max-width: 42ch;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.agent-control-surface .detail-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  height: 100%;
+  padding: 28px;
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .detail-empty .empty-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.agent-control-surface .detail-empty h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--foreground);
+}
+
+.agent-control-surface .detail-empty p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 30ch;
+}
+
+.agent-control-surface .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  background: transparent;
+  text-align: center;
+  color: var(--foreground);
+}
+
+.agent-control-surface .btn .icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.agent-control-surface .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.agent-control-surface .btn-primary {
+  background: var(--ac-primary-strong);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+}
+
+.agent-control-surface .btn-outline {
+  border-color: var(--border);
+  background: color-mix(in oklab, var(--surface) 65%, transparent);
+  color: var(--foreground);
+}
+
+.agent-control-surface .btn-outline:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: color-mix(in oklab, var(--muted-foreground) 30%, var(--border));
+}
+
+.agent-control-surface .btn-danger-outline {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 44%, var(--border));
+  background: color-mix(in oklab, var(--danger) 5%, transparent);
+}
+
+.agent-control-surface .btn-danger-outline:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+}
+
+.agent-control-surface .btn-ghost {
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.agent-control-surface .btn-ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--foreground);
+}
+
+.agent-control-surface .btn-sm {
+  height: 28px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.agent-control-surface .icon-btn-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  background: none;
+  border: 0;
+}
+
+.agent-control-surface .icon-btn-sm:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+
+.agent-control-surface .icon-btn-sm .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Segmented filter, chips, search ---------------------------------------- */
+.agent-control-surface .seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--card) 70%, transparent);
+  border-radius: 8px;
+}
+
+.agent-control-surface .seg button {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  background: transparent;
+}
+
+.agent-control-surface .seg button:hover {
+  color: var(--foreground);
+  background: var(--hover);
+}
+
+.agent-control-surface .seg button[aria-pressed="true"] {
+  color: var(--foreground);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--muted-foreground) 20%, transparent);
+}
+
+.agent-control-surface .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  background: color-mix(in oklab, var(--surface) 65%, transparent);
+}
+
+.agent-control-surface .chip.primary {
+  color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+  border-color: color-mix(in oklab, var(--primary) 34%, var(--border));
+  background: color-mix(in oklab, var(--primary) 7%, transparent);
+}
+
+.agent-control-surface.ac-modal .seg .chip {
+  height: 21px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.agent-control-surface.ac-modal .seg .chip:not(.primary) {
+  background: color-mix(in oklab, var(--surface) 65%, transparent);
+}
+
+.agent-control-surface.ac-modal .seg .chip.primary {
+  border-color: color-mix(in oklab, var(--primary) 34%, var(--border));
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--muted-foreground) 20%, transparent);
+}
+
+.agent-control-surface .ac-search {
+  margin-left: auto;
+  max-width: 180px;
+}
+
+.agent-control-surface .input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.agent-control-surface .input-wrap > .icon {
+  position: absolute;
+  left: 8px;
+  width: 13px;
+  height: 13px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.agent-control-surface .input {
+  height: 30px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--background) 38%, var(--surface));
+  padding: 0 9px;
+  font-size: 11.5px;
+  color: var(--foreground);
+  min-width: 0;
+}
+
+.agent-control-surface .input::placeholder {
+  color: color-mix(in oklab, var(--muted-foreground) 78%, transparent);
+}
+
+.agent-control-surface .input:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--primary) 60%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 13%, transparent);
+}
+
+.agent-control-surface .input-wrap .input {
+  padding-left: 27px;
+}
+
+/* Footer ------------------------------------------------------------------ */
+.agent-control-surface .ac-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 9px 12px;
+  background: color-mix(in oklab, var(--surface) 82%, var(--background));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+}
+
+.agent-control-surface .ac-foot .ac-foot-note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.agent-control-surface .ac-foot .ac-foot-note .icon {
+  width: 11px;
+  height: 11px;
+  margin-top: 2px;
+  flex: none;
+  color: var(--success);
+}
+
+.agent-control-surface .ac-foot .ac-foot-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.agent-control-surface .ac-foot-mobile-hint {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  min-width: 0;
+}
+
+.agent-control-surface .ac-foot-mobile-hint .icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--primary);
+}
+
+/* Live status card (non-empty state) ------------------------------------- */
+.agent-control-surface .live-status-card {
+  border: 1px solid color-mix(in oklab, var(--success) 30%, var(--border));
+  background: color-mix(in oklab, var(--success) 5%, transparent);
+  border-radius: 8px;
+  padding: 10px 11px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.agent-control-surface .live-status-card.is-paused {
+  border-color: color-mix(in oklab, var(--warning) 34%, var(--border));
+  background: color-mix(in oklab, var(--warning) 5%, transparent);
+}
+
+.agent-control-surface .live-status-card .live-icon {
+  width: 27px;
+  height: 27px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: color-mix(in oklab, var(--success) 10%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in oklab, var(--success) 24%, var(--border));
+}
+
+.agent-control-surface .live-status-card.is-paused .live-icon {
+  background: color-mix(in oklab, var(--warning) 10%, transparent);
+  color: var(--warning);
+  border-color: color-mix(in oklab, var(--warning) 24%, var(--border));
+}
+
+.agent-control-surface .live-status-card .live-icon .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.agent-control-surface .live-status-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-control-surface .live-status-main b {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.agent-control-surface .live-status-main p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.agent-control-surface .live-status-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Responsive ------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .agent-control-surface.ac-modal {
+    width: calc(100vw - 22px);
+    height: min(722px, calc(100dvh - 70px));
+  }
+}
+
+@media (max-width: 900px) {
+  .agent-control-surface .ac-rail {
+    width: 176px;
+  }
+
+  .agent-control-surface .ac-list {
+    width: 286px;
+  }
+
+  .agent-control-surface .ac-head {
+    padding: 12px 12px 10px 13px;
+  }
+
+  .agent-control-surface .ac-head-right {
+    max-width: 50%;
+  }
+
+  .agent-control-surface .ac-head-link {
+    display: none;
+  }
+
+  .agent-control-surface .ac-toolbar {
+    padding: 7px 10px;
+  }
+
+  .agent-control-surface .ac-foot {
+    padding: 8px 10px;
+  }
+}
+
+@media (max-width: 760px) {
+  .agent-control-surface.ac-modal {
+    top: 0;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .agent-control-surface .ac-head {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px 52px 8px 9px;
+  }
+
+  .agent-control-surface .ac-head .bot-tile {
+    width: 28px;
+    height: 28px;
+  }
+
+  .agent-control-surface .ac-title {
+    font-size: 15px;
+    line-height: 1.25;
+  }
+
+  .agent-control-surface .ac-description {
+    font-size: 10px;
+    max-width: 44ch;
+  }
+
+  .agent-control-surface .ac-head-right {
+    max-width: none;
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 38px;
+  }
+
+  .agent-control-surface .ac-head-chip {
+    height: 20px;
+  }
+
+  .agent-control-surface .ac-close {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 44px;
+    height: 44px;
+    background: var(--surface);
+    z-index: 3;
+  }
+
+  .agent-control-surface .ac-body {
+    flex-direction: column;
+    padding-bottom: 56px;
+  }
+
+  .agent-control-surface .ac-rail {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 5px 8px;
+    flex-direction: row;
+    align-items: center;
+    min-height: 48px;
+    overflow-x: auto;
+    flex: none;
+  }
+
+  .agent-control-surface .ac-rail-label,
+  .agent-control-surface .ac-rail-divider,
+  .agent-control-surface .ac-rail-note,
+  .agent-control-surface .ac-rail-footer,
+  .agent-control-surface .ac-rail-link {
+    display: none;
+  }
+
+  .agent-control-surface .ac-rail-tabs {
+    flex-direction: row;
+    gap: 3px;
+    align-items: center;
+  }
+
+  .agent-control-surface .ac-rail-tab {
+    min-height: 44px;
+    padding: 0 9px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .agent-control-surface .ac-rail-tab .icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .agent-control-surface .ac-rail-tab .count-badge,
+  .agent-control-surface .ac-rail-tab .rail-count {
+    height: 15px;
+    min-width: 15px;
+    font-size: 9.5px;
+  }
+
+  .agent-control-surface .ac-content {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .agent-control-surface .ac-split {
+    position: relative;
+  }
+
+  .agent-control-surface .ac-list {
+    width: 100%;
+    border-right: 0;
+  }
+
+  .agent-control-surface .ac-detail {
+    display: none;
+  }
+
+  .agent-control-surface .ac-split.is-detail-open .ac-list {
+    display: none;
+  }
+
+  .agent-control-surface .ac-split.is-detail-open .ac-detail {
+    display: flex;
+    flex: 1;
+  }
+
+  .agent-control-surface .ac-toolbar {
+    min-height: 44px;
+    padding: 6px 9px;
+  }
+
+  .agent-control-surface .ac-toolbar h3 {
+    font-size: 11.5px;
+  }
+
+  .agent-control-surface .ac-toolbar .meta {
+    display: none;
+  }
+
+  .agent-control-surface .ac-toolbar .icon-btn-sm {
+    width: 44px;
+    height: 44px;
+  }
+
+  .agent-control-surface .ac-toolbar .seg .chip {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .agent-control-surface .live-status-actions .btn {
+    min-height: 44px;
+  }
+
+  .agent-control-surface .ac-foot {
+    min-height: 56px;
+    padding: 8px 9px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+
+  .agent-control-surface .ac-foot .ac-foot-note {
+    font-size: 11px;
+    max-width: 100%;
+  }
+
+  .agent-control-surface .ac-foot-mobile-hint {
+    display: none;
+  }
+
+  .agent-control-surface .ac-foot .ac-foot-note,
+  .agent-control-surface .ac-foot .ac-foot-actions {
+    display: none;
+  }
+
+  .agent-control-surface .ac-foot-mobile-hint {
+    display: flex;
+  }
+
+  .agent-control-surface .ac-foot .ac-foot-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .agent-control-surface .ac-foot .ac-foot-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .agent-control-surface .ac-list-head {
+    position: static;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-control-surface .ac-description {
+    max-width: 36ch;
+  }
+
+  .agent-control-surface.ac-modal .ac-toolbar .seg button {
+    padding: 0 6px;
+    font-size: 10px;
+  }
+}
