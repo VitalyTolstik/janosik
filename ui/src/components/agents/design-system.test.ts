@@ -66,6 +66,9 @@ describe("agent design system (TASK-179.9)", () => {
     expect(agentControlCss).toContain(".ac-description");
     expect(agentControlCss).toContain("font-size: 11px");
     expect(agentControlCss).toContain("line-height: 1.45");
+    expect(agentControlCss).toContain(
+      'html[lang="ru"] .agent-control-surface .ac-title',
+    );
   });
 
   it("defines AA status tones for both themes", () => {
