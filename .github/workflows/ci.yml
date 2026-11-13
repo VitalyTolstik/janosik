@@ -180,7 +180,10 @@ jobs:
 
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The app/site/docs suite alone takes ~23 min on a loaded runner, then the
+    # email-disabled pass reuses a fresh stack. 30 min left no headroom and the
+    # job was cancelled during cleanup after every test had passed.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
