@@ -18,10 +18,12 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
+import { ADMIN_DETAIL_LIMITS } from "@janosik/shared";
 import type {
   AdminActivityRowDto,
   AdminCommandRowDto,
   AdminUserDetailDto,
+  AdminUserDetailSection,
 } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,8 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  FilterTabs,
+  ListWindowFooter,
   PageHeader,
   Panel,
   Table,
@@ -163,6 +167,84 @@ function SummaryTile({ label, value }: { label: string; value: number }) {
   );
 }
 
+/** Merge one refreshed tab without dropping the other tabs' windows. */
+function mergeSection(
+  previous: AdminUserDetailDto,
+  page: AdminUserDetailDto,
+  section: AdminUserDetailSection,
+  append: boolean,
+): AdminUserDetailDto {
+  const next: AdminUserDetailDto = {
+    ...previous,
+    counters: page.counters,
+    hidden: page.hidden,
+    windows: { ...previous.windows, [section]: page.windows[section] },
+  };
+  switch (section) {
+    case "memberships":
+      return {
+        ...next,
+        memberships: append
+          ? [...previous.memberships, ...page.memberships]
+          : page.memberships,
+      };
+    case "cards":
+      return {
+        ...next,
+        createdCards: append
+          ? [...previous.createdCards, ...page.createdCards]
+          : page.createdCards,
+      };
+    case "assignedCards":
+      return {
+        ...next,
+        assignedCards: append
+          ? [...previous.assignedCards, ...page.assignedCards]
+          : page.assignedCards,
+      };
+    case "comments":
+      return {
+        ...next,
+        comments: append
+          ? [...previous.comments, ...page.comments]
+          : page.comments,
+      };
+    case "attachments":
+      return {
+        ...next,
+        attachments: append
+          ? [...previous.attachments, ...page.attachments]
+          : page.attachments,
+      };
+    case "sessions":
+      return {
+        ...next,
+        sessions: append
+          ? [...previous.sessions, ...page.sessions]
+          : page.sessions,
+      };
+    case "tokens":
+      return {
+        ...next,
+        tokens: append ? [...previous.tokens, ...page.tokens] : page.tokens,
+      };
+    case "commands":
+      return {
+        ...next,
+        recentCommands: append
+          ? [...previous.recentCommands, ...page.recentCommands]
+          : page.recentCommands,
+      };
+    case "activity":
+      return {
+        ...next,
+        recentActivity: append
+          ? [...previous.recentActivity, ...page.recentActivity]
+          : page.recentActivity,
+      };
+  }
+}
+
 export function UserDetailPage() {
   const { userId = "" } = useParams();
   const t = useAdminT();
@@ -195,10 +277,41 @@ export function UserDetailPage() {
   >(null);
 
   const [reloadKey, setReloadKey] = useState(0);
+  const [sectionLoading, setSectionLoading] =
+    useState<AdminUserDetailSection | null>(null);
 
   const load = () => {
     setError(false);
     setReloadKey((key) => key + 1);
+  };
+
+  /**
+   * Refresh one tab window. `Load more` appends; a filter change reloads the
+   * tab from offset 0. The server owns the exact total, so the footer stays
+   * honest even while another tab is being paged.
+   */
+  const loadSection = async (
+    section: AdminUserDetailSection,
+    params: { offset: number; includeDeleted?: boolean; append: boolean },
+  ) => {
+    setSectionLoading(section);
+    try {
+      const page = await adminApi.userDetail(userId, {
+        section,
+        offset: params.offset,
+        limit: ADMIN_DETAIL_LIMITS.user,
+        ...(params.includeDeleted ? { includeDeleted: true } : {}),
+      });
+      setDetail((previous) =>
+        previous === null
+          ? page
+          : mergeSection(previous, page, section, params.append),
+      );
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setSectionLoading(null);
+    }
   };
 
   useEffect(() => {
@@ -304,49 +417,114 @@ export function UserDetailPage() {
     {
       key: "memberships",
       label: t("admin.userDetail.tab.memberships"),
-      count: detail.memberships.length,
+      count: detail.windows.memberships.total,
     },
     {
       key: "cards",
       label: t("admin.userDetail.tab.cards"),
-      count: detail.createdCards.length,
+      count: detail.windows.cards.total,
     },
     {
       key: "assignedCards",
       label: t("admin.userDetail.tab.assignedCards"),
-      count: detail.assignedCards.length,
+      count: detail.windows.assignedCards.total,
     },
     {
       key: "comments",
       label: t("admin.userDetail.tab.comments"),
-      count: detail.comments.length,
+      count: detail.windows.comments.total,
     },
     {
       key: "attachments",
       label: t("admin.userDetail.tab.attachments"),
-      count: detail.attachments.length,
+      count: detail.windows.attachments.total,
     },
     {
       key: "sessions",
       label: t("admin.userDetail.tab.sessions"),
-      count: detail.sessions.length,
+      count: detail.windows.sessions.total,
     },
     {
       key: "tokens",
       label: t("admin.userDetail.tab.tokens"),
-      count: detail.tokens.length,
+      count: detail.windows.tokens.total,
     },
     {
       key: "commands",
       label: t("admin.userDetail.tab.commands"),
-      count: detail.recentCommands.length,
+      count: detail.windows.commands.total,
     },
     {
       key: "activity",
       label: t("admin.userDetail.tab.activity"),
-      count: detail.recentActivity.length,
+      count: detail.windows.activity.total,
     },
   ];
+
+  const footer = (section: AdminUserDetailSection, shown: number) => {
+    const window = detail.windows[section];
+    return (
+      <ListWindowFooter
+        shown={shown}
+        total={window.total}
+        hasMore={window.hasMore}
+        loading={sectionLoading === section}
+        onLoadMore={() =>
+          void loadSection(section, {
+            offset: window.offset + window.limit,
+            includeDeleted: window.includeDeleted,
+            append: true,
+          })
+        }
+        testId={`admin-user-${section}`}
+      />
+    );
+  };
+
+  const moderationFilter = (
+    section: "comments" | "attachments" | "sessions" | "tokens",
+  ) => {
+    const window = detail.windows[section];
+    const hidden = detail.hidden[section];
+    const allTotal = window.includeDeleted
+      ? window.total
+      : window.total + hidden;
+    if (allTotal === 0) return null;
+    const liveLabel =
+      section === "sessions" || section === "tokens"
+        ? t("admin.common.active")
+        : t("admin.common.live");
+    const allLabel =
+      section === "sessions"
+        ? t("admin.common.showInactive")
+        : section === "tokens"
+          ? t("admin.common.showRevoked")
+          : t("admin.common.showDeleted");
+    return (
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2"
+        data-testid={`admin-user-filter-${section}`}
+      >
+        <FilterTabs<"live" | "all">
+          value={window.includeDeleted ? "all" : "live"}
+          options={[
+            { value: "live", label: liveLabel },
+            {
+              value: "all",
+              label: `${allLabel} (${allTotal})`,
+            },
+          ]}
+          onChange={(value) =>
+            void loadSection(section, {
+              offset: 0,
+              includeDeleted: value === "all",
+              append: false,
+            })
+          }
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
@@ -762,389 +940,483 @@ export function UserDetailPage() {
         ) : null}
 
         {tab === "memberships" ? (
-          <Table maxHeight="40rem">
-            <thead>
-              <tr>
-                <Th>{t("admin.userDetail.col.board")}</Th>
-                <Th>{t("admin.userDetail.col.role")}</Th>
-                <Th>{t("admin.userDetail.col.accepted")}</Th>
-                <Th>{t("admin.userDetail.col.expires")}</Th>
-                <Th>{t("admin.userDetail.col.invitedBy")}</Th>
-                <Th>{t("admin.userDetail.col.created")}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.memberships.map((membership) => (
-                <tr key={membership.id}>
-                  <Td>
-                    <EntityLink to={boardHref(membership.boardId)}>
-                      {membership.boardTitle}
-                    </EntityLink>
-                    {membership.boardDeletedAt !== null ? (
-                      <Badge variant="danger">
-                        {t("admin.status.deleted")}
-                      </Badge>
-                    ) : null}
-                  </Td>
-                  <Td>
-                    <RoleBadge role={membership.role} />
-                  </Td>
-                  <Td>
-                    {membership.acceptedAt === null ? (
-                      <Badge variant="warning">
-                        {t("admin.status.pending")}
-                      </Badge>
-                    ) : (
-                      <DateCell value={membership.acceptedAt} />
-                    )}
-                  </Td>
-                  <Td>
-                    <DateCell value={membership.expiresAt} />
-                  </Td>
-                  <Td>
-                    <TextCell
-                      value={membership.invitedByEmail}
-                      maxWidth="12rem"
-                    />
-                  </Td>
-                  <Td>
-                    <DateCell value={membership.createdAt} />
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : null}
-
-        {tab === "cards" ? (
-          detail.createdCards.length === 0 ? (
-            <EmptyState message={t("admin.userDetail.noCards")} />
-          ) : (
+          <>
+            <p className="px-3 pt-2 text-[10px] leading-4 text-muted-foreground">
+              {t("admin.userDetail.membershipsNote")}
+            </p>
             <Table maxHeight="40rem">
               <thead>
                 <tr>
-                  <Th>{t("admin.cards.column.title")}</Th>
-                  <Th>{t("admin.cards.column.board")}</Th>
-                  <Th>{t("admin.cards.column.columnRef")}</Th>
-                  <Th>{t("admin.cards.column.updated")}</Th>
-                  <Th>{t("admin.cards.column.status")}</Th>
+                  <Th>{t("admin.userDetail.col.board")}</Th>
+                  <Th>{t("admin.userDetail.col.role")}</Th>
+                  <Th>{t("admin.userDetail.col.accepted")}</Th>
+                  <Th>{t("admin.userDetail.col.expires")}</Th>
+                  <Th>{t("admin.userDetail.col.invitedBy")}</Th>
+                  <Th>{t("admin.userDetail.col.created")}</Th>
                 </tr>
               </thead>
               <tbody>
-                {detail.createdCards.map((card) => (
-                  <tr key={card.id}>
+                {detail.memberships.map((membership) => (
+                  <tr key={membership.id}>
                     <Td>
-                      <EntityLink to={cardHref(card.id)}>
-                        {card.title}
+                      <EntityLink to={boardHref(membership.boardId)}>
+                        {membership.boardTitle}
                       </EntityLink>
+                      {membership.boardDeletedAt !== null ? (
+                        <Badge variant="danger">
+                          {t("admin.status.deleted")}
+                        </Badge>
+                      ) : null}
                     </Td>
                     <Td>
-                      <EntityLink to={boardHref(card.boardId)}>
-                        {card.boardTitle}
-                      </EntityLink>
+                      <RoleBadge role={membership.role} />
                     </Td>
                     <Td>
-                      <TextCell value={card.columnTitle} maxWidth="10rem" />
+                      {membership.acceptedAt === null ? (
+                        <Badge variant="warning">
+                          {t("admin.status.pending")}
+                        </Badge>
+                      ) : (
+                        <DateCell value={membership.acceptedAt} />
+                      )}
                     </Td>
                     <Td>
-                      <DateCell value={card.updatedAt} />
+                      <DateCell value={membership.expiresAt} />
                     </Td>
                     <Td>
-                      <StatusBadge
-                        deletedAt={card.deletedAt}
-                        archivedAt={card.archivedAt}
-                        labels={{
-                          active: t("admin.status.active"),
-                          archived: t("admin.status.archived"),
-                          deleted: t("admin.status.deleted"),
-                        }}
+                      <TextCell
+                        value={membership.invitedByEmail}
+                        maxWidth="12rem"
                       />
+                    </Td>
+                    <Td>
+                      <DateCell value={membership.createdAt} />
                     </Td>
                   </tr>
                 ))}
               </tbody>
             </Table>
+            {detail.windows.memberships.total > 0
+              ? footer("memberships", detail.memberships.length)
+              : null}
+          </>
+        ) : null}
+
+        {tab === "cards" ? (
+          detail.createdCards.length === 0 &&
+          detail.windows.cards.total === 0 ? (
+            <EmptyState message={t("admin.userDetail.noCards")} />
+          ) : (
+            <>
+              <p className="px-3 pt-2 text-[10px] leading-4 text-muted-foreground">
+                {t("admin.userDetail.cardsDerived")}
+              </p>
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.cards.column.title")}</Th>
+                    <Th>{t("admin.cards.column.board")}</Th>
+                    <Th>{t("admin.cards.column.columnRef")}</Th>
+                    <Th>{t("admin.cards.column.updated")}</Th>
+                    <Th>{t("admin.cards.column.status")}</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.createdCards.map((card) => (
+                    <tr key={card.id}>
+                      <Td>
+                        <EntityLink to={cardHref(card.id)}>
+                          {card.title}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <EntityLink to={boardHref(card.boardId)}>
+                          {card.boardTitle}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <TextCell value={card.columnTitle} maxWidth="10rem" />
+                      </Td>
+                      <Td>
+                        <DateCell value={card.updatedAt} />
+                      </Td>
+                      <Td>
+                        <StatusBadge
+                          deletedAt={card.deletedAt}
+                          archivedAt={card.archivedAt}
+                          labels={{
+                            active: t("admin.status.active"),
+                            archived: t("admin.status.archived"),
+                            deleted: t("admin.status.deleted"),
+                          }}
+                        />
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              {footer("cards", detail.createdCards.length)}
+            </>
           )
         ) : null}
 
         {tab === "assignedCards" ? (
-          detail.assignedCards.length === 0 ? (
+          detail.assignedCards.length === 0 &&
+          detail.windows.assignedCards.total === 0 ? (
             <EmptyState message={t("admin.userDetail.noAssignedCards")} />
           ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.cards.column.title")}</Th>
-                  <Th>{t("admin.cards.column.board")}</Th>
-                  <Th>{t("admin.cards.column.columnRef")}</Th>
-                  <Th>{t("admin.cards.column.updated")}</Th>
-                  <Th>{t("admin.cards.column.status")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.assignedCards.map((card) => (
-                  <tr key={card.id}>
-                    <Td>
-                      <EntityLink to={cardHref(card.id)}>
-                        {card.title}
-                      </EntityLink>
-                    </Td>
-                    <Td>
-                      <EntityLink to={boardHref(card.boardId)}>
-                        {card.boardTitle}
-                      </EntityLink>
-                    </Td>
-                    <Td>
-                      <TextCell value={card.columnTitle} maxWidth="10rem" />
-                    </Td>
-                    <Td>
-                      <DateCell value={card.updatedAt} />
-                    </Td>
-                    <Td>
-                      <StatusBadge
-                        deletedAt={card.deletedAt}
-                        archivedAt={card.archivedAt}
-                        labels={{
-                          active: t("admin.status.active"),
-                          archived: t("admin.status.archived"),
-                          deleted: t("admin.status.deleted"),
-                        }}
-                      />
-                    </Td>
+            <>
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.cards.column.title")}</Th>
+                    <Th>{t("admin.cards.column.board")}</Th>
+                    <Th>{t("admin.cards.column.columnRef")}</Th>
+                    <Th>{t("admin.cards.column.updated")}</Th>
+                    <Th>{t("admin.cards.column.status")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {detail.assignedCards.map((card) => (
+                    <tr key={card.id}>
+                      <Td>
+                        <EntityLink to={cardHref(card.id)}>
+                          {card.title}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <EntityLink to={boardHref(card.boardId)}>
+                          {card.boardTitle}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <TextCell value={card.columnTitle} maxWidth="10rem" />
+                      </Td>
+                      <Td>
+                        <DateCell value={card.updatedAt} />
+                      </Td>
+                      <Td>
+                        <StatusBadge
+                          deletedAt={card.deletedAt}
+                          archivedAt={card.archivedAt}
+                          labels={{
+                            active: t("admin.status.active"),
+                            archived: t("admin.status.archived"),
+                            deleted: t("admin.status.deleted"),
+                          }}
+                        />
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              {footer("assignedCards", detail.assignedCards.length)}
+            </>
           )
         ) : null}
 
         {tab === "comments" ? (
-          detail.comments.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.comments.column.text")}</Th>
-                  <Th>{t("admin.comments.column.card")}</Th>
-                  <Th>{t("admin.comments.column.created")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.comments.map((comment) => (
-                  <tr key={comment.id}>
-                    <Td className="max-w-[26rem]">
-                      <TextCell value={comment.text} maxWidth="26rem" />
-                    </Td>
-                    <Td>
-                      <EntityLink to={cardHref(comment.cardId)}>
-                        {comment.cardTitle}
-                      </EntityLink>
-                    </Td>
-                    <Td>
-                      <DateCell value={comment.createdAt} />
-                    </Td>
+          <>
+            {moderationFilter("comments")}
+            {detail.comments.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.comments.column.text")}</Th>
+                    <Th>{t("admin.comments.column.card")}</Th>
+                    <Th>{t("admin.comments.column.created")}</Th>
+                    <Th>{t("admin.comments.column.status")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
-          )
+                </thead>
+                <tbody>
+                  {detail.comments.map((comment) => (
+                    <tr key={comment.id}>
+                      <Td className="max-w-[26rem]">
+                        <TextCell value={comment.text} maxWidth="26rem" />
+                      </Td>
+                      <Td>
+                        <EntityLink to={cardHref(comment.cardId)}>
+                          {comment.cardTitle}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <DateCell value={comment.createdAt} />
+                      </Td>
+                      <Td>
+                        {comment.deletedAt !== null ? (
+                          <Badge variant="danger">
+                            {t("admin.status.deleted")}
+                          </Badge>
+                        ) : (
+                          <Badge variant="success">
+                            {t("admin.status.active")}
+                          </Badge>
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+            {detail.windows.comments.total + detail.hidden.comments > 0
+              ? footer("comments", detail.comments.length)
+              : null}
+          </>
         ) : null}
 
         {tab === "attachments" ? (
-          detail.attachments.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.attachments.column.file")}</Th>
-                  <Th>{t("admin.attachments.column.card")}</Th>
-                  <Th>{t("admin.attachments.column.size")}</Th>
-                  <Th>{t("admin.attachments.column.created")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.attachments.map((file) => (
-                  <tr key={file.id}>
-                    <Td>
-                      <TextCell value={file.fileName} maxWidth="16rem" />
-                    </Td>
-                    <Td>
-                      <EntityLink to={cardHref(file.cardId)}>
-                        {file.cardTitle}
-                      </EntityLink>
-                    </Td>
-                    <Td>
-                      <span className="tabular-nums">{file.sizeBytes}</span>
-                    </Td>
-                    <Td>
-                      <DateCell value={file.createdAt} />
-                    </Td>
+          <>
+            {moderationFilter("attachments")}
+            {detail.attachments.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.attachments.column.file")}</Th>
+                    <Th>{t("admin.attachments.column.card")}</Th>
+                    <Th>{t("admin.attachments.column.size")}</Th>
+                    <Th>{t("admin.attachments.column.created")}</Th>
+                    <Th>{t("admin.attachments.column.status")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
-          )
+                </thead>
+                <tbody>
+                  {detail.attachments.map((file) => (
+                    <tr key={file.id}>
+                      <Td>
+                        <TextCell value={file.fileName} maxWidth="16rem" />
+                      </Td>
+                      <Td>
+                        <EntityLink to={cardHref(file.cardId)}>
+                          {file.cardTitle}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <span className="tabular-nums">{file.sizeBytes}</span>
+                      </Td>
+                      <Td>
+                        <DateCell value={file.createdAt} />
+                      </Td>
+                      <Td>
+                        {file.deletedAt !== null ? (
+                          <Badge variant="danger">
+                            {t("admin.status.deleted")}
+                          </Badge>
+                        ) : (
+                          <Badge variant="success">
+                            {t("admin.status.active")}
+                          </Badge>
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+            {detail.windows.attachments.total + detail.hidden.attachments > 0
+              ? footer("attachments", detail.attachments.length)
+              : null}
+          </>
         ) : null}
 
         {tab === "sessions" ? (
-          detail.sessions.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.sessions.column.created")}</Th>
-                  <Th>{t("admin.sessions.column.expires")}</Th>
-                  <Th>{t("admin.sessions.column.id")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.sessions.map((session) => (
-                  <tr key={session.id}>
-                    <Td>
-                      <DateCell value={session.createdAt} />
-                    </Td>
-                    <Td>
-                      <DateCell value={session.expiresAt} />
-                    </Td>
-                    <Td>
-                      <IdCell id={session.id} />
-                    </Td>
+          <>
+            {moderationFilter("sessions")}
+            {detail.sessions.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.sessions.column.created")}</Th>
+                    <Th>{t("admin.sessions.column.expires")}</Th>
+                    <Th>{t("admin.sessions.column.id")}</Th>
+                    <Th>{t("admin.common.status")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
-          )
+                </thead>
+                <tbody>
+                  {detail.sessions.map((session) => {
+                    const expired = session.expiresAt <= Date.now();
+                    return (
+                      <tr key={session.id}>
+                        <Td>
+                          <DateCell value={session.createdAt} />
+                        </Td>
+                        <Td>
+                          <DateCell value={session.expiresAt} />
+                        </Td>
+                        <Td>
+                          <IdCell id={session.id} />
+                        </Td>
+                        <Td>
+                          {session.revokedAt !== null ? (
+                            <Badge variant="danger">
+                              {t("admin.status.revoked")}
+                            </Badge>
+                          ) : expired ? (
+                            <Badge variant="warning">
+                              {t("admin.status.expired")}
+                            </Badge>
+                          ) : (
+                            <Badge variant="success">
+                              {t("admin.status.active")}
+                            </Badge>
+                          )}
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            )}
+            {detail.windows.sessions.total + detail.hidden.sessions > 0
+              ? footer("sessions", detail.sessions.length)
+              : null}
+          </>
         ) : null}
 
         {tab === "tokens" ? (
-          detail.tokens.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.tokens.column.name")}</Th>
-                  <Th>{t("admin.tokens.column.created")}</Th>
-                  <Th>{t("admin.tokens.column.lastUsed")}</Th>
-                  <Th>{t("admin.tokens.column.expires")}</Th>
-                  <Th>{t("admin.tokens.column.status")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.tokens.map((token) => (
-                  <tr key={token.id}>
-                    <Td>
-                      <TextCell value={token.name} maxWidth="12rem" />
-                    </Td>
-                    <Td>
-                      <DateCell value={token.createdAt} />
-                    </Td>
-                    <Td>
-                      <DateCell value={token.lastUsedAt} />
-                    </Td>
-                    <Td>
-                      <DateCell value={token.expiresAt} />
-                    </Td>
-                    <Td>
-                      <StatusBadge
-                        deletedAt={token.revokedAt}
-                        labels={{
-                          active: t("admin.status.active"),
-                          deleted: t("admin.status.revoked"),
-                        }}
-                      />
-                    </Td>
+          <>
+            {moderationFilter("tokens")}
+            {detail.tokens.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.tokens.column.name")}</Th>
+                    <Th>{t("admin.tokens.column.created")}</Th>
+                    <Th>{t("admin.tokens.column.lastUsed")}</Th>
+                    <Th>{t("admin.tokens.column.expires")}</Th>
+                    <Th>{t("admin.tokens.column.status")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
-          )
+                </thead>
+                <tbody>
+                  {detail.tokens.map((token) => (
+                    <tr key={token.id}>
+                      <Td>
+                        <TextCell value={token.name} maxWidth="12rem" />
+                      </Td>
+                      <Td>
+                        <DateCell value={token.createdAt} />
+                      </Td>
+                      <Td>
+                        <DateCell value={token.lastUsedAt} />
+                      </Td>
+                      <Td>
+                        <DateCell value={token.expiresAt} />
+                      </Td>
+                      <Td>
+                        <StatusBadge
+                          deletedAt={token.revokedAt}
+                          labels={{
+                            active: t("admin.status.active"),
+                            deleted: t("admin.status.revoked"),
+                          }}
+                        />
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+            {detail.windows.tokens.total + detail.hidden.tokens > 0
+              ? footer("tokens", detail.tokens.length)
+              : null}
+          </>
         ) : null}
 
         {tab === "commands" ? (
-          detail.recentCommands.length === 0 ? (
+          detail.recentCommands.length === 0 &&
+          detail.windows.commands.total === 0 ? (
             <EmptyState />
           ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.commands.column.type")}</Th>
-                  <Th>{t("admin.commands.column.board")}</Th>
-                  <Th>{t("admin.commands.column.seq")}</Th>
-                  <Th>{t("admin.commands.column.created")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.recentCommands.map((command: AdminCommandRowDto) => (
-                  <tr key={command.id}>
-                    <Td>
-                      <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                        {command.type}
-                      </span>
-                    </Td>
-                    <Td>
-                      <EntityLink to={boardHref(command.boardId)}>
-                        {command.boardTitle}
-                      </EntityLink>
-                    </Td>
-                    <Td>
-                      <span className="tabular-nums">{command.seq}</span>
-                    </Td>
-                    <Td>
-                      <DateCell value={command.createdAt} />
-                    </Td>
+            <>
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.commands.column.type")}</Th>
+                    <Th>{t("admin.commands.column.board")}</Th>
+                    <Th>{t("admin.commands.column.seq")}</Th>
+                    <Th>{t("admin.commands.column.created")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {detail.recentCommands.map((command: AdminCommandRowDto) => (
+                    <tr key={command.id}>
+                      <Td>
+                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                          {command.type}
+                        </span>
+                      </Td>
+                      <Td>
+                        <EntityLink to={boardHref(command.boardId)}>
+                          {command.boardTitle}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <span className="tabular-nums">{command.seq}</span>
+                      </Td>
+                      <Td>
+                        <DateCell value={command.createdAt} />
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              {footer("commands", detail.recentCommands.length)}
+            </>
           )
         ) : null}
 
         {tab === "activity" ? (
-          detail.recentActivity.length === 0 ? (
+          detail.recentActivity.length === 0 &&
+          detail.windows.activity.total === 0 ? (
             <EmptyState />
           ) : (
-            <Table maxHeight="40rem">
-              <thead>
-                <tr>
-                  <Th>{t("admin.activity.column.type")}</Th>
-                  <Th>{t("admin.activity.column.board")}</Th>
-                  <Th>{t("admin.activity.column.card")}</Th>
-                  <Th>{t("admin.activity.column.created")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.recentActivity.map((entry: AdminActivityRowDto) => (
-                  <tr key={entry.id}>
-                    <Td>
-                      <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                        {entry.type}
-                      </span>
-                    </Td>
-                    <Td>
-                      <EntityLink to={boardHref(entry.boardId)}>
-                        {entry.boardTitle}
-                      </EntityLink>
-                    </Td>
-                    <Td>
-                      {entry.cardId ? (
-                        <EntityLink to={cardHref(entry.cardId)}>
-                          {entry.cardTitle ?? entry.cardId.slice(0, 8)}
-                        </EntityLink>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </Td>
-                    <Td>
-                      <DateCell value={entry.createdAt} />
-                    </Td>
+            <>
+              <Table maxHeight="40rem">
+                <thead>
+                  <tr>
+                    <Th>{t("admin.activity.column.type")}</Th>
+                    <Th>{t("admin.activity.column.board")}</Th>
+                    <Th>{t("admin.activity.column.card")}</Th>
+                    <Th>{t("admin.activity.column.created")}</Th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {detail.recentActivity.map((entry: AdminActivityRowDto) => (
+                    <tr key={entry.id}>
+                      <Td>
+                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                          {entry.type}
+                        </span>
+                      </Td>
+                      <Td>
+                        <EntityLink to={boardHref(entry.boardId)}>
+                          {entry.boardTitle}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        {entry.cardId ? (
+                          <EntityLink to={cardHref(entry.cardId)}>
+                            {entry.cardTitle ?? entry.cardId.slice(0, 8)}
+                          </EntityLink>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <DateCell value={entry.createdAt} />
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              {footer("activity", detail.recentActivity.length)}
+            </>
           )
         ) : null}
       </Panel>

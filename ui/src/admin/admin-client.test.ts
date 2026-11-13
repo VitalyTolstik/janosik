@@ -188,6 +188,29 @@ describe("AdminApiClient", () => {
     expect(calls[1].url).not.toContain("status=");
   });
 
+  it("builds paged detail queries for the windowed tabs (TASK-176.3)", async () => {
+    const { api, calls } = client(() => json({}));
+    await api.userDetail("u-1", {
+      section: "comments",
+      offset: 25,
+      limit: 25,
+      includeDeleted: true,
+    });
+    const userUrl = new URL(calls[0].url);
+    expect(userUrl.pathname).toBe("/api/v1/admin/users/u-1/detail");
+    expect(userUrl.searchParams.get("section")).toBe("comments");
+    expect(userUrl.searchParams.get("offset")).toBe("25");
+    expect(userUrl.searchParams.get("limit")).toBe("25");
+    expect(userUrl.searchParams.get("includeDeleted")).toBe("true");
+
+    await api.cardDetail("c-1", { section: "comments", anchor: "cm-1" });
+    const cardUrl = new URL(calls[1].url);
+    expect(cardUrl.pathname).toBe("/api/v1/admin/cards/c-1/detail");
+    expect(cardUrl.searchParams.get("section")).toBe("comments");
+    expect(cardUrl.searchParams.get("anchor")).toBe("cm-1");
+    expect(cardUrl.searchParams.has("includeDeleted")).toBe(false);
+  });
+
   it("covers every admin endpoint path and method", async () => {
     const { api, calls } = client((call) => {
       if (call.url.endsWith("/admin/users"))
