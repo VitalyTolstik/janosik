@@ -400,9 +400,9 @@ export function AgentsAutomation({
           </button>
         </header>
 
-        <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
+        <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
           <Info
-            className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
+            className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
             aria-hidden
           />
           <span className="min-w-0">
@@ -821,7 +821,9 @@ export function AgentsAutomation({
             aria-hidden
             className={cn(
               "h-1.5 w-1.5 shrink-0 rounded-full",
-              policy.usingDefaults ? "bg-success" : "bg-muted-foreground",
+              policy.usingDefaults
+                ? "bg-success shadow-[0_0_0_2.5px_color-mix(in_oklab,var(--success)_14%,transparent)]"
+                : "bg-muted-foreground",
             )}
           />
           <span>
