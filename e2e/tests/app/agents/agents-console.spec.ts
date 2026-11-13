@@ -240,6 +240,55 @@ test("surfaces a failed session request and retries it", async ({
   await expect(page.getByTestId("agents-empty")).toBeVisible();
 });
 
+test("keeps the /agents/:tokenId deep link and the legacy ?token= filter", async ({
+  page,
+  board,
+  playwright,
+  testIp,
+}) => {
+  const column = await board.column("Todo");
+  const card = await board.card(column, "Legacy deep link card");
+  const agent = await createAgentSession(playwright, board, testIp, {
+    tokenName: "Legacy link agent",
+    sessionName: "Legacy link session",
+    currentCardId: card,
+  });
+  try {
+    const tokens = await board.api.get("/api/v1/users/me/tokens");
+    expect(tokens.status()).toBe(200);
+    const rows = (await tokens.json()) as Array<{ id: string; name: string }>;
+    const tokenId = rows.find((row) => row.name === "Legacy link agent")?.id;
+    expect(tokenId).toBeTruthy();
+
+    await board.open(page);
+    // The token detail page is a canonical deep link and must not fall into
+    // the generic 404 now that /agents owns master-detail.
+    await page.goto(new URL(`agents/${tokenId}`, appUrl).href);
+    await expect(page.getByTestId("agent-detail-page")).toBeVisible();
+    await expect(page.getByTestId("agent-detail-name")).toHaveText(
+      "Legacy link agent",
+    );
+    await expect(page.getByTestId("agent-session-list")).toContainText(
+      "Legacy link session",
+    );
+
+    // The pre-179 ?token= spelling still filters the sessions list and shows
+    // the canonical token label.
+    await page.goto(
+      new URL(`agents?section=sessions&token=${tokenId}`, appUrl).href,
+    );
+    await expect(page.getByTestId("agents-page")).toBeVisible();
+    await expect(
+      page.getByTestId(`agent-session-row-${agent.session.id}`),
+    ).toBeVisible();
+    await expect(page.getByTestId("agents-filter-token")).toContainText(
+      "Legacy link agent",
+    );
+  } finally {
+    await agent.dispose();
+  }
+});
+
 test("attributes an agent command in Watch with its token and session", async ({
   page,
   board,

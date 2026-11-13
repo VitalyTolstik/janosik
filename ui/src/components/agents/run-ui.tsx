@@ -1022,37 +1022,41 @@ export function RunDetail({
       </div>
 
       {variant === "global" ? (
-        <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-surface/80 px-3.5 py-2 text-[11px] leading-[1.45] text-muted-foreground">
-          <Info className="h-3 w-3 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1">
-            {admin
-              ? t("agents.runs.footerAdmin")
-              : t("agents.runs.footerMember")}
-          </span>
-          <Link
-            to={routes.board(boardId)}
-            data-testid="agent-run-footer-open-board"
-            className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
-          >
-            <Folder className="h-3 w-3" aria-hidden />
-            {t("agents.runs.openBoard")}
-          </Link>
-          <button
-            type="button"
-            onClick={() => void copyLink()}
-            data-testid="agent-run-footer-copy-link"
-            className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
-          >
-            {linkCopied ? (
-              <Check
-                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
-                aria-hidden
-              />
-            ) : (
-              <Link2 className="h-3 w-3" aria-hidden />
-            )}
-            {t("agents.runs.copyLink")}
-          </button>
+        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface/80 px-3.5 py-2 text-[11px] leading-[1.45] text-muted-foreground">
+          <p className="m-0 flex items-start gap-1.5">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0">
+              {admin
+                ? t("agents.runs.footerAdmin")
+                : t("agents.runs.footerMember")}
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={routes.board(boardId)}
+              data-testid="agent-run-footer-open-board"
+              className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+            >
+              <Folder className="h-3 w-3" aria-hidden />
+              {t("agents.runs.openBoard")}
+            </Link>
+            <button
+              type="button"
+              onClick={() => void copyLink()}
+              data-testid="agent-run-footer-copy-link"
+              className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+            >
+              {linkCopied ? (
+                <Check
+                  className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                  aria-hidden
+                />
+              ) : (
+                <Link2 className="h-3 w-3" aria-hidden />
+              )}
+              {t("agents.runs.copyLink")}
+            </button>
+          </div>
         </footer>
       ) : null}
 

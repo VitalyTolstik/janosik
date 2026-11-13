@@ -138,7 +138,7 @@ export function Header() {
             <BrandMark size="compact" />
             <span
               data-testid="agents-wordmark"
-              className="hidden text-[14px] font-bold leading-none tracking-[-0.02em] sm:inline"
+              className="hidden font-agent-display text-[14px] font-bold leading-none tracking-[-0.02em] sm:inline"
             >
               Janosik
             </span>

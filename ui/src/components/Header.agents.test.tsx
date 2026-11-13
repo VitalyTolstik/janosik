@@ -165,8 +165,10 @@ describe("agent entry points in the header", () => {
     expect(header?.className).toContain("sm:h-14");
     expect(header?.className).not.toContain("h-[52px]");
     const wordmark = screen.getByTestId("agents-wordmark");
-    expect(wordmark.className).not.toContain("font-display");
-    expect(wordmark.className).not.toContain("font-agent-display");
+    // The tracked prototype uses the Space Grotesk display face for the
+    // Latin wordmark; only Cyrillic headings fall back to the body stack.
+    expect(wordmark.className).toContain("font-agent-display");
+    expect(wordmark.className).not.toContain("font-display ");
     expect(container.querySelector("svg.lucide-chevron-right")).toBeNull();
     expect(screen.getByTestId("account-trigger")).toBeInTheDocument();
   });

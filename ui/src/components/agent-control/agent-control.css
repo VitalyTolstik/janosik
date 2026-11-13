@@ -1117,6 +1117,17 @@ html[lang="ru"] .agent-control-surface .ac-title {
     min-height: 44px;
   }
 
+  .agent-control-surface .live-status-card {
+    flex-wrap: wrap;
+  }
+
+  .agent-control-surface .live-status-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 5px;
+  }
+
   .agent-control-surface .live-status-actions .btn {
     min-height: 44px;
   }

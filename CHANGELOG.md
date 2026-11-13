@@ -18,6 +18,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   future cross-board oversight needs a separate task with a master API,
   permission model and audit. No code, UI or API changes.
 
+- TASK-179 agent surfaces redesign: the global `/agents` control room now has
+  Attention / Sessions / Runs with board scope, search, freshness and
+  per-board partial-error retention; the board header has one Bot entry that
+  opens a board-scoped Agent Control modal with Inbox / Live / Runs (no Policy
+  tab), and policy lives in Board Settings → Agents & automation with
+  destructive mode, approval triggers, limits, TTL, dirty/discard and
+  field-level CAS reload. Pending counts are scope-correct (`99+`) and
+  MEMBER/VIEWER never request approvals; Live and Runs are read-only for them.
+  URL state keeps `?token/?status/?time/?q` and adds
+  `?section/?session/?agent/?approval/?run` (`approval`/`run` require
+  `?board=`), while `/agents/:tokenId` remains a canonical token → sessions
+  deep link. Testids for the board modal, `/agents`, runs and the Board
+  Settings rail are documented in
+  [`docs/TASK-179-url-testid-migration.md`](docs/TASK-179-url-testid-migration.md);
+  EN/RU docs cover the new surfaces, permissions and deep links. Unit, browser
+  and mobile coverage was extended without weakening existing expectations.
+
 - TASK-176.5 + TASK-176.6 admin URL state and addressable filters: every
   admin entity list keeps `search/status/period/limit/offset` in the URL and
   restores it on load and browser back/forward, preserving the hub `tab`. Row

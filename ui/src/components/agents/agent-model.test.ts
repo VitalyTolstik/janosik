@@ -142,6 +142,33 @@ describe("agent session filters", () => {
     ).toEqual(EMPTY_AGENT_FILTER);
   });
 
+  it("keeps the legacy ?token= alias and prefers the canonical ?agent=", () => {
+    expect(readAgentFilter(new URLSearchParams("token=legacy-token"))).toEqual({
+      ...EMPTY_AGENT_FILTER,
+      token: "legacy-token",
+    });
+    expect(
+      readAgentFilter(new URLSearchParams("agent=canonical&token=legacy")),
+    ).toEqual({
+      ...EMPTY_AGENT_FILTER,
+      token: "canonical",
+    });
+    // The whole pre-179 filter contract stays readable from one URL.
+    expect(
+      readAgentFilter(
+        new URLSearchParams(
+          "board=b-1&agent=a-1&status=failed&time=30d&q=night",
+        ),
+      ),
+    ).toEqual({
+      board: "b-1",
+      token: "a-1",
+      status: "failed",
+      time: "30d",
+      query: "night",
+    });
+  });
+
   it("reads the board-first/token grouping switch and preserves the default", () => {
     expect(readAgentGroup(new URLSearchParams())).toBe("board");
     expect(readAgentGroup(new URLSearchParams("group=board"))).toBe("board");
