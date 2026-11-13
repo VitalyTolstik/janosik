@@ -72,12 +72,16 @@ export function useAdminList<T>(
   const [result, setResult] = useState<ListResult<T> | null>(null);
 
   useEffect(() => {
+    // Do not schedule a reset for the initial (empty) search or for a value
+    // that has already been committed: a fast page click right after mount
+    // must keep its offset instead of being pulled back to page 1.
+    if (rawSearch === search) return;
     const timer = setTimeout(() => {
       setSearch(rawSearch);
       setOffset(0);
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [rawSearch]);
+  }, [rawSearch, search]);
 
   const requestKey = `${search}|${status}|${period}|${limit}|${offset}|${reloadKey}`;
 
