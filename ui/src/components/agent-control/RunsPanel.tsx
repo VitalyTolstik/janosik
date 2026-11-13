@@ -289,6 +289,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 variant="outline"
                 onClick={runs.reload}
                 data-testid="agent-runs-retry"
+                className="max-md:min-h-11"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                 {t("agentControl.retry")}
@@ -304,14 +305,18 @@ export function RunsPanel({ role }: { role: Role }) {
                   className="h-6 w-6 text-muted-foreground/60"
                   aria-hidden
                 />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] font-medium text-foreground">
                   {t("agents.runs.noMatch")}
+                </p>
+                <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+                  {t("agents.runs.noMatchBody")}
                 </p>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={clearFilters}
                   data-testid="agent-runs-empty-clear"
+                  className="max-md:min-h-11"
                 >
                   {t("agents.clearFilters")}
                 </Button>
@@ -325,8 +330,11 @@ export function RunsPanel({ role }: { role: Role }) {
                   className="h-6 w-6 text-muted-foreground/60"
                   aria-hidden
                 />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] font-medium text-foreground">
                   {t("agentControl.runs.empty")}
+                </p>
+                <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+                  {t("agents.runs.emptyBody")}
                 </p>
               </div>
             )
@@ -340,7 +348,12 @@ export function RunsPanel({ role }: { role: Role }) {
                   <span className="min-w-0 flex-1">
                     {t("agents.runs.stale")}
                   </span>
-                  <Button size="sm" variant="outline" onClick={runs.reload}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={runs.reload}
+                    className="max-md:min-h-11"
+                  >
                     {t("agentControl.retry")}
                   </Button>
                 </div>
@@ -376,6 +389,7 @@ export function RunsPanel({ role }: { role: Role }) {
                     data-testid="agent-runs-more"
                     disabled={runs.loadingMore}
                     onClick={() => void runs.loadMore()}
+                    className="max-md:min-h-11"
                   >
                     {runs.loadingMore ? (
                       <Loader2
@@ -441,7 +455,7 @@ export function RunsPanel({ role }: { role: Role }) {
               board: board.id,
             }).toString()}`}
             data-testid="agent-runs-open-all"
-            className="inline-flex min-h-9 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover md:min-h-7"
+            className="inline-flex min-h-11 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover md:min-h-7"
           >
             {t("agents.runs.openAll")} ↗
           </Link>

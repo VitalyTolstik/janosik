@@ -64,6 +64,7 @@ import { RunDetail, RunList } from "./run-ui";
 import {
   hasRunFilter,
   readRunFilter,
+  runBoardRole as roleForRunBoard,
   runFilterOptions,
   writeRunFilter,
   type AgentRunFilter,
@@ -230,6 +231,11 @@ export function AgentsPage() {
           next.set("session", sessionId);
           next.delete("run");
           next.delete("approval");
+          // The caller comes from the Runs section: its status/kind/time are
+          // run filters, not session filters.
+          next.delete("status");
+          next.delete("kind");
+          next.delete("time");
           return next;
         },
         { replace: true },
@@ -284,6 +290,12 @@ export function AgentsPage() {
       // claims a filter the visible list is not applying.
       if (value === "runs") {
         writeRunFilter(search, readRunFilter(search));
+      } else if (section === "runs") {
+        // Run status/kind/time values are not session filters; `failed`
+        // overlaps by name but means a failed run, not a failed session.
+        search.delete("status");
+        search.delete("kind");
+        search.delete("time");
       } else {
         const next = readAgentFilter(search);
         setOrDelete(search, "status", next.status, "all");
@@ -504,7 +516,7 @@ export function AgentsPage() {
       ? runFilter.board
       : (autoRunRow?.boardId ?? runFilter.board);
   const runBoardRole =
-    state.boards.find((board) => board.id === runDetailBoardId)?.role ??
+    roleForRunBoard(state.boards, runDetailBoardId) ??
     selectedRunRow?.boardRole ??
     autoRunRow?.boardRole;
   const runBoardTitle =
@@ -1259,9 +1271,13 @@ export function AgentsPage() {
                   testId="agents-runs-error"
                   icon={<AlertTriangle className="h-[18px] w-[18px]" />}
                   title={t("agents.runs.loadError")}
-                  body={t("agents.error.stale")}
+                  body={t("agents.runs.stale")}
                   action={
-                    <Button variant="outline" onClick={runs.reload}>
+                    <Button
+                      variant="outline"
+                      onClick={runs.reload}
+                      className="max-md:min-h-11"
+                    >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       {t("agents.retry")}
                     </Button>
@@ -1282,6 +1298,7 @@ export function AgentsPage() {
                           variant="outline"
                           onClick={clearRunFilters}
                           data-testid="agents-runs-empty-clear"
+                          className="max-md:min-h-11"
                         >
                           {t("agents.clearFilters")}
                         </Button>
@@ -1307,7 +1324,12 @@ export function AgentsPage() {
                       data-testid="agents-runs-stale"
                     >
                       <span>{t("agents.runs.stale")}</span>
-                      <Button variant="outline" size="sm" onClick={runs.reload}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={runs.reload}
+                        className="max-md:min-h-11"
+                      >
                         {t("agents.retry")}
                       </Button>
                     </div>
@@ -1344,6 +1366,7 @@ export function AgentsPage() {
                         data-testid="agents-runs-more"
                         disabled={runs.loadingMore}
                         onClick={() => void runs.loadMore()}
+                        className="max-md:min-h-11"
                       >
                         {runs.loadingMore ? (
                           <RefreshCw
@@ -1686,6 +1709,7 @@ function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
           variant="outline"
           onClick={onClear}
           data-testid="agents-runs-clear-filters"
+          className="max-md:min-h-11"
         >
           {t("agents.clearFilters")}
         </Button>

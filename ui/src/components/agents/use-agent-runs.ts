@@ -198,16 +198,27 @@ export function useAgentRuns(
     setLoadingMore(true);
     const request = generation.current;
     try {
-      const results = await Promise.all(
-        pending.map(async ([boardId, page]) => {
+      const results: Array<{
+        boardId: string;
+        rows: AgentRunRow[];
+        cursor: string | null;
+      } | null> = new Array(pending.length);
+      let index = 0;
+      async function worker(): Promise<void> {
+        while (index < pending.length) {
+          const current = index++;
+          const [boardId, page] = pending[current];
           const board = scopedBoards.find((entry) => entry.id === boardId);
-          if (board === undefined) return null;
+          if (board === undefined) {
+            results[current] = null;
+            continue;
+          }
           try {
             const rows = await api.listRuns(
               boardId,
               queryFor(page.cursor ?? undefined),
             );
-            return {
+            results[current] = {
               boardId,
               rows: rows.map((run) => decorate(run, board)),
               cursor:
@@ -216,9 +227,12 @@ export function useAgentRuns(
                   : null,
             };
           } catch {
-            return null;
+            results[current] = null;
           }
-        }),
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(2, pending.length) }, () => worker()),
       );
       if (request !== generation.current) return;
       const rowsById = new Map<string, AgentRunRow>(
@@ -226,8 +240,12 @@ export function useAgentRuns(
           page.rows.map((row) => [row.id, row] as const),
         ),
       );
+      let failed = false;
       for (const result of results) {
-        if (result === null) continue;
+        if (result === null) {
+          failed = true;
+          continue;
+        }
         const existing = pages.get(result.boardId);
         if (existing === undefined) continue;
         const mergedRows = [...existing.rows, ...result.rows];
@@ -243,13 +261,15 @@ export function useAgentRuns(
         key: filterKey,
         rows,
         hasMore: [...pages.values()].some((page) => page.cursor !== null),
-        error: current?.error ?? false,
+        error: failed || (current?.error ?? false),
         errorBoardIds: current?.errorBoardIds ?? [],
         revokedBoardIds: current?.revokedBoardIds ?? [],
         lastLoadedAt: current?.lastLoadedAt ?? null,
       }));
     } finally {
-      if (request === generation.current) setLoadingMore(false);
+      // A reload/SSE may bump the generation while this request is in flight.
+      // The stale rows are ignored, but the control must never stay disabled.
+      setLoadingMore(false);
     }
   }, [enabled, filterKey, loadingMore, queryFor, scopedBoards]);
 

@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
-import { formatDate, formatDateOnly, formatRelative, useI18n } from "@/i18n";
+import { formatDate, formatDateOnly, useI18n } from "@/i18n";
 import { useBoardLive } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
@@ -214,7 +214,7 @@ export function RunList({
                               {t("agents.runs.commandCount", {
                                 count: run.commandCount,
                               })}{" "}
-                              · {formatRelative(runTime(run), lang, now)}
+                              · {clockLabel(runTime(run), today, lang, t)}
                             </span>
                           </span>
                           <span className="flex shrink-0 flex-col items-end gap-1">
@@ -276,7 +276,7 @@ export function RunList({
                           >
                             {clockLabel(runTime(run), today, lang, t)}
                           </time>
-                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[10.5px] text-muted-foreground">
+                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[10.5px] text-muted-foreground max-[760px]:hidden">
                             {shortId(run.id)}
                           </span>
                         </span>
@@ -424,11 +424,15 @@ export function RunDetail({
         dryRun: false,
         commandId: createCommandId(),
       });
-      setDetail(updated);
+      // The explicit revert route can return the new audit run (or a replay
+      // of it). The pane is pinned to the original run, so never adopt that
+      // detail here: refetch the original id and let the server report
+      // `reverted`. `onChanged` refreshes the list.
       setPreview(null);
       setPreviewError(null);
       setConfirmOpen(false);
       toast.success(t("agentControl.runs.revertedToast"));
+      setRevision((value) => value + 1);
       onChanged?.(updated);
     } catch (error) {
       setActionError(runErrorText(error, t));
@@ -661,6 +665,7 @@ export function RunDetail({
         <Section
           title={t("agentControl.runs.timeline")}
           icon={<Clock aria-hidden />}
+          testId="agent-run-timeline"
         >
           <ul className="space-y-0">
             <TimelineItem
@@ -668,11 +673,13 @@ export function RunDetail({
               label={t("agentControl.runs.created")}
               value={formatDate(run.createdAt, lang, true)}
             />
-            <TimelineItem
-              tone="applied"
-              label={t("agentControl.runs.applied")}
-              value={formatDate(run.appliedAt, lang, true)}
-            />
+            {run.status !== "failed" ? (
+              <TimelineItem
+                tone="applied"
+                label={t("agentControl.runs.applied")}
+                value={formatDate(run.appliedAt, lang, true)}
+              />
+            ) : null}
             {run.revertedAt !== null ? (
               <TimelineItem
                 tone="reverted"
@@ -902,6 +909,14 @@ export function RunDetail({
               />
               {t("agentControl.runs.alreadyReverted")}
             </p>
+          ) : run.kind === "revert" ? (
+            <p
+              data-testid="agent-run-revert-run-note"
+              className="flex items-start gap-1.5 text-[11px] text-muted-foreground"
+            >
+              <CircleSlash className="mt-px h-3 w-3 shrink-0" aria-hidden />
+              {t("agents.runs.revertRunNoRollback")}
+            </p>
           ) : (
             <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
               <CircleSlash className="mt-px h-3 w-3 shrink-0" aria-hidden />
@@ -1014,13 +1029,6 @@ export function RunDetail({
             {t("agents.runs.copyLink")}
           </button>
         </div>
-
-        {run.kind === "revert" ? (
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
-            <Info className="mt-px h-3 w-3 shrink-0" aria-hidden />
-            {t("agentControl.runs.revertRunHint")}
-          </p>
-        ) : null}
       </div>
 
       {variant === "global" ? (

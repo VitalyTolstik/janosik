@@ -438,7 +438,7 @@ describe("AgentsPage", () => {
   });
 
   it("shows a loaded total and appends the next runs page", async () => {
-    const firstPage = Array.from({ length: 50 }, (_, index) =>
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -458,14 +458,14 @@ describe("AgentsPage", () => {
     renderPage("/agents?section=runs");
 
     const total = await screen.findByTestId("agents-runs-total");
-    await waitFor(() => expect(total).toHaveTextContent("50 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("100 runs"));
     expect(total).toHaveAttribute("data-has-more", "true");
     await userEvent.click(screen.getByTestId("agents-runs-more"));
 
-    await waitFor(() => expect(total).toHaveTextContent("51 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("101 runs"));
     expect(hoisted.listRuns).toHaveBeenLastCalledWith(
       "board-1",
-      expect.objectContaining({ cursor: "run-49" }),
+      expect.objectContaining({ cursor: "run-99" }),
     );
   });
 

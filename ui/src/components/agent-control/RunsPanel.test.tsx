@@ -131,6 +131,31 @@ function detail(
   };
 }
 
+function revertedDetail(preimages: Record<string, unknown> = {}): RunDetailDto {
+  return detail(preimages, {
+    run: {
+      ...RUN,
+      status: "reverted",
+      revertedAt: Date.now(),
+    },
+  });
+}
+
+function revertRunDetail(
+  preimages: Record<string, unknown> = {},
+): RunDetailDto {
+  return detail(preimages, {
+    run: {
+      ...RUN,
+      id: "revert-1",
+      kind: "revert",
+      status: "applied",
+      revertsRunId: RUN.id,
+      revertedAt: null,
+    },
+  });
+}
+
 function preview(overrides: Partial<RevertPreviewDto> = {}): RevertPreviewDto {
   return {
     dryRun: true,
@@ -197,10 +222,31 @@ describe("RunsPanel (TASK-179.5)", () => {
     const preimages = {
       "cmd-1": { schemaVersion: 1, entities: [{ touch: "card:card-1" }] },
     };
-    mockHappyPath(detail(preimages));
+    vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    const get = vi
+      .spyOn(api, "getRun")
+      .mockResolvedValueOnce(detail(preimages))
+      .mockResolvedValue(revertedDetail(preimages));
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+      session({ name: "Nightly triage" }),
+    ]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([
+      {
+        id: "token-1",
+        name: "QA agent",
+        scopePreset: "worker",
+        boardId: null,
+        readOnly: false,
+        trustedCi: false,
+        expiresAt: null,
+        createdAt: 1,
+        lastUsedAt: null,
+      },
+    ] as never);
     const revert = vi
       .spyOn(api, "revertRun")
-      .mockResolvedValue(detail(preimages));
+      .mockResolvedValue(revertRunDetail(preimages));
 
     renderPanel();
 
@@ -250,6 +296,14 @@ describe("RunsPanel (TASK-179.5)", () => {
       ),
     );
     expect(await screen.findByText("Run reverted")).toBeInTheDocument();
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    // The apply response is the audit revert run; the pane stays pinned to
+    // the original run and refetches it, so the badge must flip to Reverted.
+    expect(screen.getByTestId("agent-run-status")).toHaveAttribute(
+      "data-status",
+      "reverted",
+    );
+    expect(screen.getByTestId("agent-run-reverted-at")).toBeVisible();
     await waitFor(() => expect(api.listRuns).toHaveBeenCalledTimes(2));
   });
 
@@ -292,7 +346,7 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(screen.queryByTestId("agent-run-preimages")).toBeNull();
     expect(screen.queryByTestId("agent-run-diff")).toBeNull();
     expect(screen.getByTestId("agent-run-admin-only-note")).toHaveTextContent(
-      "Pre-images, diffs and the plan hash",
+      "Pre-images and diffs",
     );
     expect(screen.queryByTestId("agent-run-plan-hash")).toBeNull();
   });
@@ -389,7 +443,7 @@ describe("RunsPanel (TASK-179.5)", () => {
   });
 
   it("shows a total and appends the next page with Load more", async () => {
-    const firstPage = Array.from({ length: 50 }, (_, index) =>
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -409,15 +463,57 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     renderPanel();
     const total = await screen.findByTestId("agent-runs-total");
-    expect(total).toHaveTextContent("50 runs");
+    expect(total).toHaveTextContent("100 runs");
     expect(total).toHaveAttribute("data-has-more", "true");
     await userEvent.click(screen.getByTestId("agent-runs-more"));
 
-    await waitFor(() => expect(total).toHaveTextContent("51 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("101 runs"));
     expect(list).toHaveBeenLastCalledWith(
       "board-1",
-      expect.objectContaining({ cursor: "run-49" }),
+      expect.objectContaining({ cursor: "run-99" }),
     );
+  });
+
+  it("does not leave Load more disabled when a reload races the page request", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      run({
+        id: `run-${index}`,
+        createdAt: Date.now() - index * 1000,
+        appliedAt: Date.now() - index * 1000,
+      }),
+    );
+    let resolvePage: (rows: RunSummaryDto[]) => void = () => undefined;
+    const page = new Promise<RunSummaryDto[]>((resolve) => {
+      resolvePage = resolve;
+    });
+    const list = vi
+      .spyOn(api, "listRuns")
+      .mockImplementation((_board, query) =>
+        query?.cursor === undefined ? Promise.resolve(firstPage) : page,
+      );
+    vi.spyOn(api, "getRun").mockResolvedValue(detail());
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+
+    renderPanel();
+    const more = await screen.findByTestId("agent-runs-more");
+    await userEvent.click(more);
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      live.agentControl.publishRun({
+        type: "run",
+        op: "reverted",
+        runId: RUN.id,
+        revertRunId: "revert-1",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+
+    resolvePage([]);
+    await waitFor(() => expect(more).not.toBeDisabled());
   });
 
   it("retries a failed detail request", async () => {
