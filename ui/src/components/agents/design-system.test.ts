@@ -61,6 +61,7 @@ describe("agent design system (TASK-179.9)", () => {
     expect(indexCss).toContain("--agent-tone-warning");
     expect(indexCss).toContain("--agent-tone-danger");
     expect(indexCss).toContain("--agent-tone-primary");
+    expect(indexCss).toContain("--agent-primary-strong");
     expect(indexCss).toContain("html.light");
   });
 

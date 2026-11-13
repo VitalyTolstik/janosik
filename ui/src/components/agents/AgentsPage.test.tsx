@@ -385,6 +385,23 @@ describe("AgentsPage", () => {
       "No runs yet",
     );
     expect(screen.getByTestId("agents-runs-clear-all")).toBeInTheDocument();
+    expect(screen.getByTestId("agents-runs-clear-all").className).toContain(
+      "h-7",
+    );
+    expect(screen.getByTestId("agents-runs-clear-all").className).toContain(
+      "font-[650]",
+    );
+    expect(screen.getByTestId("agents-runs-empty-clear").className).toContain(
+      "h-7",
+    );
+    expect(screen.getByTestId("agents-runs-empty-clear").className).toContain(
+      "text-[11px]",
+    );
+    const rollback = screen.getByRole("link", {
+      name: "How rollback works",
+    });
+    expect(rollback.className).toContain("text-muted-foreground");
+    expect(rollback.className).toContain("text-[11px]");
   });
 
   it("reads run filters from the URL, sends them to the API and clears them", async () => {
@@ -421,9 +438,9 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agents-run-filter-session")).toHaveTextContent(
       "Nightly triage",
     );
-    expect(screen.getByTestId("agents-run-filter-board")).toHaveTextContent(
-      "Launch",
-    );
+    expect(
+      screen.queryByTestId("agents-run-filter-board"),
+    ).not.toBeInTheDocument();
     const initialUrl = new URLSearchParams(
       screen.getByTestId("location").textContent ?? "",
     );
@@ -1005,6 +1022,32 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agents-empty")).toHaveTextContent(
       "No agent sessions yet",
     );
+    expect(screen.queryByTestId("agents-sessions-heartbeat-note")).toBeNull();
+    expect(screen.queryByTestId("agents-session-group-toggle")).toBeNull();
+    expect(screen.getByText("No agent sessions yet").className).toContain(
+      "font-[650]",
+    );
+    expect(
+      screen.getByText("No agent sessions yet").previousElementSibling
+        ?.className,
+    ).toContain("h-[38px]");
+    expect(screen.getByTestId("agents-detail-create-key")).toBeInTheDocument();
+    expect(screen.getByTestId("agents-detail-create-key").className).toContain(
+      "agent-primary-strong",
+    );
+  });
+
+  it("does not resurrect a deleted session from a deep link", async () => {
+    renderPage("/agents?section=sessions&session=cmwdw8dnb00cyidjoyper0ppj");
+
+    const missing = await screen.findByTestId("agents-session-detail-missing");
+    expect(missing).toHaveTextContent("Session unavailable");
+    expect(
+      screen.getByText(
+        "This session is no longer in the current scope. Clear the selection and choose another session.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("agents-clear-selection")).toBeInTheDocument();
   });
 
   it("surfaces a failure and retries it", async () => {
