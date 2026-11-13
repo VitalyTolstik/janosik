@@ -254,7 +254,7 @@ export function createdFromMs(
 }
 
 /**
- * Local-day range [start, start + 1 day) for an exact "YYYY-MM-DD" date,
+ * Local-day range [start, next local midnight) for an exact "YYYY-MM-DD" date,
  * or null when the string is not a valid date. Parsed as local calendar
  * parts (not UTC) so a chosen day never shifts across time zones.
  */
@@ -271,7 +271,9 @@ export function createdDayRange(createdOn: string): [number, number] | null {
     start.getDate() !== Number(d)
   )
     return null;
-  return [start.getTime(), start.getTime() + DAY_MS];
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return [start.getTime(), end.getTime()];
 }
 
 /** Whether a single card passes the `due` deadline facet. */
@@ -363,7 +365,7 @@ export function matchesCardFilter(
   }
 
   const hasSelected =
-    filter.labelMatch === "all"
+    filter.labelMatch === "all" && filter.labelIds.length > 0
       ? filter.labelIds.every((id) => card.labelIds.includes(id))
       : card.labelIds.some((id) => filter.labelIds.includes(id));
   if (filter.noLabel) return card.labelIds.length === 0 || hasSelected;

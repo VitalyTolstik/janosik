@@ -28,7 +28,7 @@ fi
 (cd "$JANOSIK_INSTALL_DIR" && SMTP_HOST=smtp.example.test SMTP_PORT=2525 SETTINGS_SECRET=test-secret ALLOW_PUBLIC_SHARES=false docker compose config --format json) | python3 -c '
 import json, sys
 env = json.load(sys.stdin)["services"]["app"]["environment"]
-expected = {"SMTP_HOST":"smtp.example.test", "SMTP_PORT":"2525", "SETTINGS_SECRET":"test-secret", "ALLOW_PUBLIC_SHARES":"false"}
+expected = {"SMTP_HOST":"smtp.example.test", "SMTP_PORT":"2525", "SETTINGS_SECRET":"test-secret", "ALLOW_PUBLIC_SHARES":"false", "ALLOW_BOOTSTRAP_USER":"true"}
 assert all(str(env[key]) == value for key, value in expected.items())
 print("Compose optional settings: OK")
 '

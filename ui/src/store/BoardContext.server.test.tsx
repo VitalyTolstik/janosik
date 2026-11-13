@@ -1137,6 +1137,25 @@ describe("BoardProvider server-mode failures and board management", () => {
 });
 
 describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
+  it("keeps a queued optimistic edit and its undo history during a board refresh", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("quiet-edit"));
+    expect(screen.getByTestId("card-title").textContent).toBe("Mine");
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
+    fireEvent.click(screen.getByTestId("refresh-boards"));
+    await waitFor(() =>
+      expect(
+        server.requests.filter((request) => request.path === "/api/v1/boards"),
+      ).toHaveLength(2),
+    );
+    expect(screen.getByTestId("card-title").textContent).toBe("Mine");
+    expect(screen.getByTestId("can-undo").textContent).toBe("true");
+  });
+
   async function waitStream(server: FakeServer, boardId = "b-1") {
     await waitFor(() =>
       expect(

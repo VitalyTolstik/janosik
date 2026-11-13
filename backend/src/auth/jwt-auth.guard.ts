@@ -88,6 +88,7 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
           via: "jwt",
           impersonatedBy,
           authMethod: authMethodOf(raw),
+          stamp: stampOf(raw),
         };
         // TASK-147 (B3): an impersonation token is a full user token, so the
         // read-only rule is enforced here — every user-contour route,
@@ -209,6 +210,12 @@ function impersonatorOf(token: string | undefined): string | null {
 /** TASK-166: the OAuth marker of an already-verified access token. */
 function authMethodOf(token: string | undefined): "password" | "oauth" {
   return claimsOf(token)?.authMethod === "oauth" ? "oauth" : "password";
+}
+
+/** `securityStamp` of an already-verified access token, when present. */
+function stampOf(token: string | undefined): string | undefined {
+  const stamp = claimsOf(token)?.stamp;
+  return typeof stamp === "string" ? stamp : undefined;
 }
 
 function claimsOf(token: string | undefined): Record<string, unknown> | null {

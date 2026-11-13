@@ -51,6 +51,7 @@ module.exports = {
     {
       displayName: "e2e",
       testMatch: ["<rootDir>/test/**/*.e2e-spec.ts"],
+      setupFilesAfterEnv: ["<rootDir>/test/setup-e2e.ts"],
       transform: tsJest,
       transformIgnorePatterns,
       ...mapper,

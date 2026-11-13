@@ -9,6 +9,7 @@ import { MAX_IMPORT_BYTES } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
+import { securityStamp } from "@/auth/security-stamp";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -86,10 +87,19 @@ describe("Limits & data safety (e2e)", () => {
       },
     });
     const accessToken = await jwt.signAsync(
-      { sub: user.id, authMethod: "password" },
+      { sub: user.id, authMethod: "password", stamp: securityStamp(user) },
       { audience: USER_JWT_AUDIENCE },
     );
     return { token: accessToken, userId: user.id };
+  }
+
+  /** Re-sign after a credential change (the stamp is part of the token). */
+  async function freshAccessToken(id: string): Promise<string> {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id } });
+    return jwt.signAsync(
+      { sub: user.id, authMethod: "password", stamp: securityStamp(user) },
+      { audience: USER_JWT_AUDIENCE },
+    );
   }
 
   async function createBoardWith(
@@ -852,7 +862,7 @@ describe("Limits & data safety (e2e)", () => {
       });
       const oauthOnly = await server()
         .get("/api/v1/auth/me")
-        .set(auth(token))
+        .set(auth(await freshAccessToken(userId)))
         .expect(200);
       expect(oauthOnly.body).toMatchObject({
         hasPassword: false,
@@ -865,14 +875,23 @@ describe("Limits & data safety (e2e)", () => {
         where: { id: userId },
         data: { passwordHash: null },
       });
+      const current = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
       const proof = await jwt.signAsync(
-        { sub: userId, authMethod: "oauth" },
+        {
+          sub: userId,
+          authMethod: "oauth",
+          authTime: Date.now(),
+          stamp: securityStamp(current),
+        },
         { audience: USER_JWT_AUDIENCE },
       );
+      const oauthToken = await freshAccessToken(userId);
 
       const codeRes = await server()
         .post("/api/v1/users/me/delete/request-code")
-        .set(auth(token))
+        .set(auth(oauthToken))
         .send({ oauthProof: proof })
         .expect(200);
       expect(codeRes.body.queued).toBe(true);
@@ -883,7 +902,7 @@ describe("Limits & data safety (e2e)", () => {
 
       await server()
         .delete("/api/v1/users/me")
-        .set(auth(token))
+        .set(auth(oauthToken))
         .send({
           confirmEmail: EMAIL,
           oauthProof: proof,
@@ -899,10 +918,14 @@ describe("Limits & data safety (e2e)", () => {
         where: { id: userId },
         data: { passwordHash: null },
       });
+      const current = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      const oauthToken = await freshAccessToken(userId);
       const wrong = await server()
         .post("/api/v1/users/me/delete/request-code")
-        .set(auth(token))
-        .send({ oauthProof: token })
+        .set(auth(oauthToken))
+        .send({ oauthProof: oauthToken })
         .expect(401);
       expect(wrong.body.code).toBe("oauth_proof_invalid");
 
@@ -910,13 +933,14 @@ describe("Limits & data safety (e2e)", () => {
         {
           sub: userId,
           authMethod: "oauth",
-          iat: Math.floor(Date.now() / 1000) - 11 * 60,
+          authTime: Date.now() - 11 * 60_000,
+          stamp: securityStamp(current),
         },
-        { audience: USER_JWT_AUDIENCE, noTimestamp: true } as never,
+        { audience: USER_JWT_AUDIENCE },
       );
       const res = await server()
         .post("/api/v1/users/me/delete/request-code")
-        .set(auth(token))
+        .set(auth(oauthToken))
         .send({ oauthProof: stale })
         .expect(401);
       expect(res.body.code).toBe("oauth_proof_invalid");

@@ -1,5 +1,6 @@
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import { AccountDeletionService } from "./account-deletion.service";
+import { ConflictException } from "@nestjs/common";
 
 function makePrisma() {
   return {
@@ -28,6 +29,55 @@ function makePrisma() {
 }
 
 describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
+  it("does not erase an account re-enabled after the sweep selected it", async () => {
+    const deleteUser = jest.fn();
+    const tx = {
+      $queryRaw: jest.fn(),
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ disabledAt: null }),
+        delete: deleteUser,
+      },
+      securityAuditLog: {
+        findFirst: jest.fn().mockResolvedValue({ createdAt: new Date(0) }),
+      },
+    };
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ id: "user-1" }) },
+      attachment: { findMany: jest.fn().mockResolvedValue([]) },
+      dataExport: { findMany: jest.fn().mockResolvedValue([]) },
+      apiToken: { findMany: jest.fn().mockResolvedValue([]) },
+      boardMember: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: async (fn: (client: typeof tx) => Promise<unknown>) =>
+        fn(tx),
+    };
+    const service = new AccountDeletionService(
+      prisma as unknown as PrismaService,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.deleteAccount("user-1", {}, new Date()),
+    ).resolves.toBeNull();
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("does not delete a board that gains a member under the lock", async () => {
+    const prisma = makePrisma();
+    const boards = {
+      deleteBoard: jest
+        .fn()
+        .mockRejectedValue(new ConflictException("Board is no longer empty")),
+    };
+    const service = new AccountDeletionService(
+      prisma,
+      {} as never,
+      boards as never,
+    );
+    await expect(
+      service.cleanupOrphanBoards("user-1", ["board-1"]),
+    ).resolves.toBe(0);
+    expect(prisma.securityAuditLog.create).not.toHaveBeenCalled();
+  });
   it("writes board.cleanup_failed after two failed inline attempts", async () => {
     const prisma = makePrisma();
     const boards = {
@@ -87,6 +137,9 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       "board-1",
       "user-1",
       expect.objectContaining({ actorType: "human" }),
+      undefined,
+      false,
+      true,
     );
     expect(prisma.securityAuditLog.deleteMany).toHaveBeenCalled();
     expect(prisma.securityAuditLog.create).toHaveBeenCalledWith(
