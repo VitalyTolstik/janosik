@@ -85,7 +85,7 @@ export function BoardContentPage() {
         );
       })
       .catch(() => setState("error"));
-  }, [boardId]);
+  }, [boardId, setSelectedColumnId]);
 
   useEffect(() => {
     load();
@@ -133,7 +133,7 @@ export function BoardContentPage() {
         setBusy(false);
       }
     },
-    [boardId, t, toast],
+    [boardId, t, toast, setSelectedColumnId],
   );
 
   if (state === "loading") return <BoardEditorSkeleton />;
