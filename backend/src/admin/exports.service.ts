@@ -257,11 +257,13 @@ export class ExportsService {
       where: { id: exportId },
     });
     if (!row || row.status !== "pending") return;
+    let uncommittedPath: string | undefined;
     try {
       const bundle = await this.admin.buildUserBundle(row.userId);
       await this.storage.ensureDirs();
       const storedName = `export-${randomUUID()}.json`;
       const absPath = this.storage.attachmentPath(storedName);
+      uncommittedPath = absPath;
       const text = JSON.stringify(bundle.data, null, 2);
       const bytes = Buffer.byteLength(text, "utf8");
       assertExportBundleSize(bytes);
@@ -277,6 +279,7 @@ export class ExportsService {
           filename: bundle.filename,
         },
       });
+      uncommittedPath = undefined;
       await this.cleanupOtherReady(row.userId, exportId, row.createdAt).catch(
         (error) => {
           this.logger.warn(
@@ -287,6 +290,8 @@ export class ExportsService {
         },
       );
     } catch (error) {
+      if (uncommittedPath)
+        await this.storage.remove(uncommittedPath).catch(() => undefined);
       const nonRetryable = error instanceof PayloadTooLargeException;
       const willRetry =
         !nonRetryable &&

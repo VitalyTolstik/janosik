@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import type { Prisma } from "@prisma/client";
 import { verify as argonVerify } from "argon2";
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import type {
@@ -14,21 +15,22 @@ import type {
   DeleteAccountResponse,
   UserDataExportDto,
 } from "@janosik/shared";
-import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { ExportsService } from "@/admin/exports.service";
 import { MailQueueService } from "@/mailer/mail-queue.service";
 import { accountDeletionCodeEmail } from "@/mailer/templates";
 import type { MailLocale } from "@/mailer/mail.types";
-import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
+import { securityStamp } from "@/auth/security-stamp";
+import {
+  assertOAuthProofMatchesUser,
+  verifyOAuthProofToken,
+} from "@/auth/oauth-proof";
 import { AccountDeletionService } from "./account-deletion.service";
 
 /** ADR §12.5: the deletion email code lives 10 minutes, one-time. */
 const DELETE_CODE_TTL_MS = 10 * 60 * 1000;
 const DELETE_CODE_MAX_ATTEMPTS = 5;
-/** The OAuth proof must be a fresh OAuth-issued access token. */
-const OAUTH_PROOF_MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
  * TASK-166 self-service data rights (ADR §12.5), browser-JWT only:
@@ -68,6 +70,22 @@ export class AccountDataService {
   ): Promise<UserDataExportDto> {
     const row = await this.ownExport(userId, exportId);
     return toExportDto(row);
+  }
+
+  async latestExport(userId: string): Promise<UserDataExportDto | null> {
+    const where = { userId, expiresAt: { gt: new Date() } };
+    const row =
+      (await this.prisma.dataExport.findFirst({
+        where: { ...where, status: { in: ["pending", "ready"] } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      })) ??
+      (await this.prisma.dataExport.findFirst({
+        where,
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      }));
+    return row ? this.exportStatus(userId, row.id) : null;
   }
 
   /** Absolute path + filename of a ready export belonging to `userId`. */
@@ -132,39 +150,60 @@ export class AccountDataService {
   async deleteAccount(
     userId: string,
     dto: DeleteAccountRequest,
+    stamp: string | undefined,
   ): Promise<DeleteAccountResponse> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
-    if (
-      dto.confirmEmail.trim().toLowerCase() !== user.email.trim().toLowerCase()
-    ) {
-      throw new BadRequestException({
-        message: "Type the account email to confirm",
-        field: "confirmEmail",
-      });
+    if (!stamp) {
+      throw new UnauthorizedException("Credentials changed; sign in again");
     }
-
-    if (user.passwordHash !== null) {
-      if (!dto.password) {
+    // Signature/freshness first; the credential version is compared with
+    // the row under the lock below.
+    const proof = dto.oauthProof
+      ? await verifyOAuthProofToken(this.jwt, dto.oauthProof)
+      : undefined;
+    const { deleteAfter } = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user || user.disabledAt !== null || securityStamp(user) !== stamp) {
+        throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      if (
+        dto.confirmEmail.trim().toLowerCase() !==
+        user.email.trim().toLowerCase()
+      ) {
         throw new BadRequestException({
-          message: "Current password is required",
-          field: "password",
+          message: "Type the account email to confirm",
+          field: "confirmEmail",
         });
       }
-      const valid = await argonVerify(user.passwordHash, dto.password);
-      if (!valid) {
-        throw new UnauthorizedException("Current password is incorrect");
-      }
-    } else {
-      await this.verifyOauthProof(dto.oauthProof, userId);
-      await this.consumeDeletionCode(userId, dto.emailCode);
-    }
 
-    const { deleteAfter } = await this.accountDeletion.schedule(
-      userId,
-      userId,
-      { actorType: "human" },
-    );
+      if (user.passwordHash !== null) {
+        if (!dto.password) {
+          throw new BadRequestException({
+            message: "Current password is required",
+            field: "password",
+          });
+        }
+        // Verify the hash read under the lock: a concurrent reset/change
+        // cannot slip in between the check and the schedule.
+        const valid = await argonVerify(user.passwordHash, dto.password);
+        if (!valid) {
+          throw new UnauthorizedException("Current password is incorrect");
+        }
+      } else {
+        if (!proof) {
+          throw new UnauthorizedException({
+            message: "OAuth re-authentication is required",
+            code: "oauth_proof_required",
+          });
+        }
+        assertOAuthProofMatchesUser(proof, user);
+        await this.consumeDeletionCode(tx, userId, dto.emailCode);
+      }
+
+      return this.accountDeletion.scheduleInTransaction(tx, userId, userId, {
+        actorType: "human",
+      });
+    });
     return { status: "scheduled", deleteAfter: deleteAfter.getTime() };
   }
 
@@ -176,44 +215,19 @@ export class AccountDataService {
     proof: string | undefined,
     userId: string,
   ): Promise<void> {
-    if (!proof) {
-      throw new UnauthorizedException({
-        message: "OAuth re-authentication is required",
-        code: "oauth_proof_required",
-      });
-    }
-    let payload: {
-      sub?: unknown;
-      authMethod?: unknown;
-      iat?: unknown;
-    };
-    try {
-      payload = await this.jwt.verifyAsync(proof, {
-        secret: env.JWT_SECRET,
-        audience: USER_JWT_AUDIENCE,
-      });
-    } catch {
+    const claims = await verifyOAuthProofToken(this.jwt, proof);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
       throw new UnauthorizedException({
         message: "OAuth proof is invalid or expired",
         code: "oauth_proof_invalid",
       });
     }
-    const issuedAt =
-      typeof payload.iat === "number" ? payload.iat * 1000 : Number.NaN;
-    if (
-      payload.sub !== userId ||
-      payload.authMethod !== "oauth" ||
-      !Number.isFinite(issuedAt) ||
-      Date.now() - issuedAt > OAUTH_PROOF_MAX_AGE_MS
-    ) {
-      throw new UnauthorizedException({
-        message: "OAuth proof is invalid or expired",
-        code: "oauth_proof_invalid",
-      });
-    }
+    assertOAuthProofMatchesUser(claims, user);
   }
 
   private async consumeDeletionCode(
+    tx: Prisma.TransactionClient,
     userId: string,
     code: string | undefined,
   ): Promise<void> {
@@ -223,35 +237,40 @@ export class AccountDataService {
         field: "emailCode",
       });
     }
-    const stored = await this.prisma.emailVerificationCode.findFirst({
+    const stored = await tx.emailVerificationCode.findFirst({
       where: { userId, consumedAt: null },
       orderBy: { createdAt: "desc" },
     });
     if (!stored || stored.expiresAt.getTime() <= Date.now()) {
       throw new BadRequestException("No pending account-deletion code");
     }
+    const reserved = await tx.emailVerificationCode.updateMany({
+      where: {
+        id: stored.id,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: DELETE_CODE_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (reserved.count !== 1)
+      throw new BadRequestException("No pending account-deletion code");
     const presented = this.codeHash(userId, code);
     const matches =
       presented.length === stored.codeHash.length &&
       timingSafeEqual(Buffer.from(presented), Buffer.from(stored.codeHash));
     if (!matches) {
-      const attempts = stored.attempts + 1;
-      if (attempts >= DELETE_CODE_MAX_ATTEMPTS) {
-        await this.prisma.emailVerificationCode.deleteMany({
-          where: { userId },
-        });
-      } else {
-        await this.prisma.emailVerificationCode.update({
-          where: { id: stored.id },
-          data: { attempts },
-        });
-      }
+      await tx.emailVerificationCode.deleteMany({
+        where: { id: stored.id, attempts: { gte: DELETE_CODE_MAX_ATTEMPTS } },
+      });
       throw new BadRequestException("Invalid verification code");
     }
-    await this.prisma.emailVerificationCode.update({
-      where: { id: stored.id },
+    const consumed = await tx.emailVerificationCode.updateMany({
+      where: { id: stored.id, consumedAt: null, expiresAt: { gt: new Date() } },
       data: { consumedAt: new Date() },
     });
+    if (consumed.count !== 1)
+      throw new BadRequestException("No pending account-deletion code");
   }
 
   private async ownExport(

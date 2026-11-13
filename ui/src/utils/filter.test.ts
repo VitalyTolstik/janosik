@@ -11,6 +11,7 @@ import {
   isFilterActive,
   matchesCardFilter,
   readFilterParams,
+  resolveFilterChange,
   searchBoards,
   splitHighlight,
   writeFilterParams,
@@ -18,6 +19,26 @@ import {
 } from "@/utils/filter";
 
 const NOW = new Date("2025-06-15T12:00:00").getTime();
+
+describe("resolveFilterChange", () => {
+  it("passes a complete filter through unchanged", () => {
+    const next = { ...EMPTY_FILTER, due: "overdue" as const };
+    expect(resolveFilterChange(next, EMPTY_FILTER)).toBe(next);
+  });
+
+  it("applies a reducer to the latest filter", () => {
+    const current = { ...EMPTY_FILTER, blocked: true };
+    expect(
+      resolveFilterChange(
+        (latest) => ({
+          ...latest,
+          labelIds: ["l1"],
+        }),
+        current,
+      ),
+    ).toEqual({ ...current, labelIds: ["l1"] });
+  });
+});
 
 function card(
   id: string,
@@ -232,6 +253,18 @@ describe("matchesCardFilter", () => {
         NOW,
       ),
     ).toBe(true);
+  });
+
+  it("matches only unlabeled cards when noLabel is selected alone in ALL mode", () => {
+    const filter = {
+      ...EMPTY_FILTER,
+      labelMatch: "all" as const,
+      noLabel: true,
+    };
+    expect(matchesCardFilter(card("empty", "T", []), filter, NOW)).toBe(true);
+    expect(matchesCardFilter(card("labeled", "T", ["a"]), filter, NOW)).toBe(
+      false,
+    );
   });
 
   it("keeps noLabel OR-ed with all-match labels", () => {

@@ -509,8 +509,10 @@ export class JanosikClient {
       raw: true,
     });
     const board = (await response.json()) as BoardAggregate;
-    const seq = Number(response.headers.get("x-board-seq"));
-    if (!Number.isInteger(seq)) {
+    const seqHeader = response.headers.get("x-board-seq");
+    const seq =
+      seqHeader !== null && /^\d+$/.test(seqHeader) ? Number(seqHeader) : NaN;
+    if (!Number.isSafeInteger(seq)) {
       throw new Error(
         "The instance did not report the board's version (X-Board-Seq). " +
           "Upgrade the Janosik server.",

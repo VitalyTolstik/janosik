@@ -159,6 +159,57 @@ test("run history previews and reverts a PAT batch from the UI", async ({
   );
 });
 
+test("a run deep link includes the board and survives reload and history back", async ({
+  board,
+  page,
+  playwright,
+  testIp,
+}) => {
+  const todo = await board.column("Todo");
+  const agent = await createAgentToken(board, playwright, testIp);
+  const created = await agent.pat.post(
+    `/api/v1/boards/${board.id}/commands/batch`,
+    {
+      data: {
+        commands: [addCardCommand(board.id, todo, "Deep link card")],
+      },
+    },
+  );
+  expect(created.status(), await created.text()).toBe(200);
+  const run = (await created.json()) as { runId: string };
+
+  const deepLink = new URL(
+    `agents?section=runs&board=${board.id}&run=${run.runId}`,
+    appUrl,
+  ).href;
+  // This test opens the global route directly, so sign in as the board owner
+  // first instead of relying on the board modal's own navigation.
+  await board.open(page);
+  await page.goto(deepLink);
+  await expect(page.getByTestId("agent-run-detail")).toBeVisible();
+  await expect(page.getByTestId("agent-run-copy-link")).toHaveAttribute(
+    "data-copy-url",
+    `/agents?section=runs&board=${board.id}&run=${run.runId}`,
+  );
+
+  await page.reload();
+  await expect(page.getByTestId("agent-run-detail")).toBeVisible();
+
+  await page.goto(new URL("agents?section=runs", appUrl).href);
+  // Let this document finish its boot refresh and list load before navigating
+  // again: aborting the refresh in flight rotates the cookie server-side and
+  // makes the next document boot anonymous.
+  await expect(page.getByTestId(`agents-run-row-${run.runId}`)).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(deepLink);
+  await expect(page.getByTestId("agent-run-detail")).toBeVisible();
+
+  // `?run=` without `?board=` is not a supported lookup: show recovery, not a
+  // page that pretends to know the board.
+  await page.goto(new URL(`agents?section=runs&run=${run.runId}`, appUrl).href);
+  await expect(page.getByTestId("agents-missing-scope")).toBeVisible();
+});
+
 test("an empty board explains that there are no runs yet", async ({
   board,
   page,
@@ -328,6 +379,11 @@ test("a member reads run history and previews conflicts but cannot apply", async
     await expect(memberPage.getByTestId("agent-run-revert-apply")).toHaveCount(
       0,
     );
+    await expect(
+      memberPage.getByTestId("agent-run-admin-only-note"),
+    ).toBeVisible();
+    await expect(memberPage.getByTestId("agent-run-preimages")).toHaveCount(0);
+    await expect(memberPage.getByTestId("agent-run-diff")).toHaveCount(0);
     await expect(memberPage.getByTestId("agent-policy-tab")).toHaveCount(0);
   } finally {
     await context.close();

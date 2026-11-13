@@ -226,6 +226,14 @@ export const env = cleanEnv(process.env, {
     desc: "Allow anyone to create an account; off = sign-up is refused",
     default: true,
   }),
+  // Fresh-install bootstrap without SMTP. It only works while the User table
+  // is empty, and the first account is auto-verified because there is no
+  // mailbox transport to confirm it. Inert as soon as one user exists; a
+  // shared install must keep it `false`.
+  ALLOW_BOOTSTRAP_USER: bool({
+    desc: "Allow the first account to be created and auto-verified without SMTP; inert after the first user",
+    default: false,
+  }),
   // Cookie `Secure` attribute (TASK-38a, §7.8). Empty = derived: `true` in
   // production, `false` elsewhere, so dev/e2e keep working over plain HTTP.
   // A production install served over HTTP must set this to `false`

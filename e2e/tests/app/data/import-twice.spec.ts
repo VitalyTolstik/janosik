@@ -26,8 +26,11 @@ test("importing the same file twice creates two independent boards", async ({
   );
   await chooseImportFile(page, importable.file);
   expect((await secondImport).status()).toBe(201);
+  // Both imports finish back-to-back and each leaves a success toast for
+  // 4.5 s, so two "Board imported" statuses can be on screen at once. Assert
+  // the newest one instead of letting strict mode resolve a duplicate.
   await expect(
-    page.getByRole("status").filter({ hasText: "Board imported" }),
+    page.getByRole("status").filter({ hasText: "Board imported" }).last(),
   ).toBeVisible();
 
   await expect

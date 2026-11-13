@@ -31,6 +31,7 @@ export function BoardScopeSelect({
   className,
   counts,
   totalCount,
+  stale = false,
 }: {
   value: string;
   boards: readonly BoardScopeBoard[];
@@ -39,10 +40,12 @@ export function BoardScopeSelect({
   testId: string;
   variant: "header" | "filter";
   className?: string;
-  /** Pending approvals per board; absent boards stay without a number. */
-  counts?: Readonly<Record<string, number>>;
-  /** Pending approvals across all boards, for the “All boards” row. */
-  totalCount?: number;
+  /** Pending approvals per board; `null`/absent boards stay without a number. */
+  counts?: Readonly<Record<string, number | null>>;
+  /** Pending approvals across all ADMIN boards, for the “All boards” row. */
+  totalCount?: number | null;
+  /** Last-known counts after a failed refresh; never shown as a fresh zero. */
+  stale?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -139,7 +142,11 @@ export function BoardScopeSelect({
                 )}
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 {typeof count === "number" && count > 0 ? (
-                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  <span
+                    className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+                    data-state={stale ? "stale" : "fresh"}
+                    title={stale ? t("agents.pending.stale") : undefined}
+                  >
                     {count > 99 ? "99+" : count}
                   </span>
                 ) : null}

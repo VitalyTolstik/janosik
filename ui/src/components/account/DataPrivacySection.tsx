@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Database, Download, ShieldAlert, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
@@ -30,6 +30,40 @@ export function DataPrivacySection() {
   const [sendingCode, setSendingCode] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const exportKey = user ? `janosik:account-export:${user.id}` : null;
+  // Bumped whenever a newer export starts; a slow initial lookup must not
+  // replace the row the user just requested.
+  const exportEpoch = useRef(0);
+
+  useEffect(() => {
+    if (!exportKey) return;
+    let alive = true;
+    const epoch = ++exportEpoch.current;
+    let id: string | null = null;
+    try {
+      id = localStorage.getItem(exportKey);
+    } catch {
+      /* unavailable storage */
+    }
+    const lookup = id
+      ? api.accountExportStatus(id).catch(() => api.latestAccountExport())
+      : api.latestAccountExport();
+    void lookup
+      .then((row) => {
+        if (alive && epoch === exportEpoch.current && row) {
+          setExportRow(row);
+          try {
+            localStorage.setItem(exportKey, row.id);
+          } catch {
+            /* unavailable storage */
+          }
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [exportKey]);
 
   const deletionMethod =
     user?.deletionMethod ??
@@ -43,8 +77,12 @@ export function DataPrivacySection() {
     : password.length > 0;
   const canDelete = emailMatches && proofReady && !deleting;
 
-  /** A fresh access token is the OAuth proof; refresh before every proof use. */
-  const freshAccessToken = async (): Promise<string | undefined> => {
+  /**
+   * Reuse the OAuth proof carried by the session (rotation preserves its
+   * original `authTime`); older than ten minutes the server asks the user to
+   * re-authenticate with the provider.
+   */
+  const oauthProofToken = async (): Promise<string | undefined> => {
     try {
       await api.refreshSession();
     } catch {
@@ -58,11 +96,13 @@ export function DataPrivacySection() {
   useEffect(() => {
     if (exportRow?.status !== "pending") return;
     let alive = true;
+    const exportId = exportRow.id;
     const timer = setInterval(() => {
       void api
-        .accountExportStatus(exportRow.id)
+        .accountExportStatus(exportId)
         .then((row) => {
-          if (alive) setExportRow(row);
+          // A stale poll must not replace a newer export started meanwhile.
+          if (alive && row.id === exportId) setExportRow(row);
         })
         .catch(() => undefined);
     }, 3000);
@@ -73,13 +113,52 @@ export function DataPrivacySection() {
   }, [exportRow]);
 
   const requestExport = async () => {
+    const epoch = ++exportEpoch.current;
     setExporting(true);
     setError(null);
     try {
-      setExportRow(await api.requestAccountExport());
+      const row = await api.requestAccountExport();
+      if (epoch !== exportEpoch.current) return;
+      if (exportKey) {
+        try {
+          localStorage.setItem(exportKey, row.id);
+        } catch {
+          /* unavailable storage */
+        }
+      }
+      setExportRow(row);
       toast.success(t("account.data.exportRequested"));
     } catch (cause) {
-      setError(exportError(cause, t));
+      const body =
+        cause instanceof ApiError
+          ? (cause.body as {
+              exportId?: unknown;
+              details?: { exportId?: unknown };
+            } | null)
+          : null;
+      const found = body?.exportId ?? body?.details?.exportId;
+      const id =
+        cause instanceof ApiError &&
+        cause.status === 409 &&
+        typeof found === "string"
+          ? found
+          : null;
+      if (id) {
+        try {
+          const row = await api.accountExportStatus(id);
+          if (epoch !== exportEpoch.current) return;
+          if (exportKey) {
+            try {
+              localStorage.setItem(exportKey, id);
+            } catch {
+              /* unavailable storage */
+            }
+          }
+          setExportRow(row);
+        } catch {
+          setError(exportError(cause, t));
+        }
+      } else setError(exportError(cause, t));
     } finally {
       setExporting(false);
     }
@@ -100,7 +179,7 @@ export function DataPrivacySection() {
     setError(null);
     try {
       await api.requestAccountDeletionCode({
-        oauthProof: await freshAccessToken(),
+        oauthProof: await oauthProofToken(),
       });
       setCodeSent(true);
       toast.success(t("account.data.codeSent"));
@@ -121,7 +200,7 @@ export function DataPrivacySection() {
         confirmEmail: confirmEmail.trim(),
         ...(emailCodeFlow
           ? {
-              oauthProof: await freshAccessToken(),
+              oauthProof: await oauthProofToken(),
               emailCode: emailCode.trim(),
             }
           : { password }),

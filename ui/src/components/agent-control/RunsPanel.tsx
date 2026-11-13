@@ -1,927 +1,481 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Bot,
-  Clock,
-  FileClock,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
-  ShieldCheck,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { History, Info, Loader2, RefreshCw } from "lucide-react";
 import type {
-  AgentRunKind,
-  AgentRunStatus,
-  Board,
-  BoardAction,
-  RunDetailDto,
+  AgentSessionDto,
+  BoardRole,
   RunSummaryDto,
-  RevertPreviewDto,
+  UserTokenDto,
 } from "@janosik/shared";
-import { AGENT_RUN_KINDS, AGENT_RUN_STATUSES } from "@janosik/shared";
 
-import { api, ApiError, isApiEnabled } from "@/api/client";
+import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { SelectField } from "@/components/ui/select-field";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
-import { useToast } from "@/components/Toast";
-import { formatDate, formatRelative, useI18n } from "@/i18n";
-import type { MessageKey } from "@/i18n/i18n";
-import { useBoardLive } from "@/store/board-live";
+import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
+import { routes } from "@/routes";
 import { useBoardState } from "@/store/BoardContext";
-import { createId } from "@/utils/id";
+import {
+  EMPTY_RUN_FILTER,
+  hasRunFilter,
+  runFilterOptions,
+  type AgentRunFilter,
+  type RunBoardScope,
+  type RunKindFilter,
+  type RunStatusFilter,
+  type RunTimeFilter,
+} from "../agents/run-model";
+import { RunDetail, RunList } from "../agents/run-ui";
+import { useAgentRuns } from "../agents/use-agent-runs";
 
-type Role = "ADMIN" | "MEMBER" | "VIEWER" | undefined;
-type StatusFilter = "all" | AgentRunStatus;
-type KindFilter = "all" | AgentRunKind;
-type TimeRange = "all" | "24h" | "7d" | "30d";
-type Translate = ReturnType<typeof useI18n>["t"];
+type Role = BoardRole | undefined;
 
-const STATUS_KEYS: Record<AgentRunStatus, MessageKey> = {
-  applied: "agentControl.runs.status.applied",
-  reverted: "agentControl.runs.status.reverted",
-  failed: "agentControl.runs.status.failed",
-};
-
-const KIND_KEYS: Record<AgentRunKind, MessageKey> = {
-  batch: "agentControl.runs.kind.batch",
-  plan: "agentControl.runs.kind.plan",
-  single: "agentControl.runs.kind.single",
-  revert: "agentControl.runs.kind.revert",
-};
-
-const STATUS_CLASS: Record<AgentRunStatus, string> = {
-  applied: "border-success/40 bg-success/10 text-success",
-  reverted: "border-primary/40 bg-primary/10 text-primary",
-  failed: "border-danger/40 bg-danger/10 text-danger",
-};
-
-const RANGE_MS: Record<Exclude<TimeRange, "all">, number> = {
-  "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
-  "30d": 30 * 24 * 60 * 60 * 1000,
-};
-
-function errorCodeOf(error: unknown): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  const body = error.body;
-  if (body === null || typeof body !== "object") return undefined;
-  const code = (body as { code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
-}
-
-function conflictCount(error: unknown): number | null {
-  if (!(error instanceof ApiError)) return null;
-  const body = error.body;
-  if (body === null || typeof body !== "object") return null;
-  const details = (body as { details?: unknown }).details;
-  if (details === null || typeof details !== "object") return null;
-  const conflicts = (details as { conflicts?: unknown }).conflicts;
-  return Array.isArray(conflicts) ? conflicts.length : null;
-}
-
-function runError(error: unknown, t: Translate): string {
-  if (error instanceof ApiError && error.offline) {
-    return t("agentControl.error.offline");
-  }
-  switch (errorCodeOf(error)) {
-    case "pat_forbidden":
-      return t("agentControl.runs.error.patForbidden");
-    case "run_conflict": {
-      const count = conflictCount(error);
-      return count === null
-        ? t("agentControl.runs.error.conflict")
-        : t("agentControl.runs.error.conflictCount", { count });
-    }
-    case "run_expired":
-      return t("agentControl.runs.error.expired");
-    case "scope_denied":
-      return t("agentControl.runs.error.adminOnly");
-    default:
-      break;
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return t("agentControl.error.forbidden");
-  }
-  return t("agentControl.error.generic");
-}
-
-function entityIdOf(action: BoardAction): {
-  field: string;
-  id: string;
-} | null {
-  const record = action as unknown as Record<string, unknown>;
-  const fields = [
-    "cardId",
-    "newCardId",
-    "columnId",
-    "newColumnId",
-    "labelId",
-    "newLabelId",
-    "checklistId",
-    "newChecklistId",
-    "itemId",
-    "newItemId",
-  ];
-  for (const field of fields) {
-    const value = record[field];
-    if (typeof value === "string" && value !== "") return { field, id: value };
-  }
-  return null;
-}
-
-/** A short human sentence for a run command row. */
-function actionSummary(action: BoardAction, board: Board | undefined): string {
-  const entity = entityIdOf(action);
-  if (entity === null) {
-    const title = (action as unknown as { title?: unknown }).title;
-    return typeof title === "string" ? title : "";
-  }
-  if (entity.field.toLowerCase().includes("card")) {
-    return board?.cards[entity.id]?.title ?? entity.id;
-  }
-  if (entity.field.toLowerCase().includes("column")) {
-    return (
-      board?.columns.find((column) => column.id === entity.id)?.title ??
-      entity.id
-    );
-  }
-  if (entity.field.toLowerCase().includes("label")) {
-    return (
-      board?.labels.find((label) => label.id === entity.id)?.name ?? entity.id
-    );
-  }
-  return entity.id;
-}
-
-function runTime(run: RunSummaryDto): number {
-  return run.appliedAt || run.createdAt;
-}
-
+/**
+ * Board-scoped Runs tab (TASK-179.5). The surface is shared with `/agents`:
+ * the same status/kind/time/token/session filters, list and detail. Preview is
+ * available to every member; applying a rollback remains board-ADMIN only.
+ */
 export function RunsPanel({ role }: { role: Role }) {
-  const { t, lang } = useI18n();
-  const toast = useToast();
+  const { t } = useI18n();
   const { board } = useBoardState();
-  const live = useBoardLive();
   const boardId = board?.id;
-  const admin = role === "ADMIN";
-
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [kind, setKind] = useState<KindFilter>("all");
-  const [range, setRange] = useState<TimeRange>("all");
-  const [tokenInput, setTokenInput] = useState("");
-  const [sessionInput, setSessionInput] = useState("");
-  const [tokenFilter, setTokenFilter] = useState("");
-  const [sessionFilter, setSessionFilter] = useState("");
-  const [runs, setRuns] = useState<RunSummaryDto[] | null>(null);
-  const [listError, setListError] = useState(false);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const boardTitle = board?.title;
+  const [filter, setFilter] = useState<AgentRunFilter>(EMPTY_RUN_FILTER);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<RunDetailDto | null>(null);
-  const [detailError, setDetailError] = useState(false);
-  const [preview, setPreview] = useState<RevertPreviewDto | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [reverting, setReverting] = useState(false);
-
-  // Debounce the free-text token/session filters so typing does not fire one
-  // request (and one skeleton) per keystroke.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setTokenFilter(tokenInput.trim());
-      setSessionFilter(sessionInput.trim());
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [tokenInput, sessionInput]);
-
-  // A committed human rollback arrives as `run.reverted`; the list and the
-  // open detail refetch without a reload.
-  useEffect(
-    () => live.agentControl.subscribeRun(() => setRevision((v) => v + 1)),
-    [live],
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [conflicts, setConflicts] = useState<Map<string, number>>(
+    () => new Map(),
   );
 
-  const query = useCallback(
-    (nextCursor?: string) => {
-      const from = range === "all" ? undefined : Date.now() - RANGE_MS[range];
-      return {
-        ...(status === "all" ? {} : { status }),
-        ...(kind === "all" ? {} : { kind }),
-        ...(tokenFilter === "" ? {} : { apiTokenId: tokenFilter }),
-        ...(sessionFilter === "" ? {} : { agentSessionId: sessionFilter }),
-        ...(from === undefined ? {} : { from }),
-        limit: 50,
-        ...(nextCursor === undefined ? {} : { cursor: nextCursor }),
-      };
-    },
-    [status, kind, range, tokenFilter, sessionFilter],
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
+  const [tokens, setTokens] = useState<UserTokenDto[]>([]);
+
+  const scope = useMemo<RunBoardScope[]>(
+    () =>
+      boardId === undefined
+        ? []
+        : [
+            {
+              id: boardId,
+              title: boardTitle ?? boardId,
+              role: role ?? "VIEWER",
+            },
+          ],
+    [boardId, boardTitle, role],
   );
 
   useEffect(() => {
     if (boardId === undefined || !isApiEnabled()) return;
     let alive = true;
-    setListError(false);
-    setRuns(null);
-    setCursor(null);
-    void api
-      .listRuns(boardId, query())
-      .then((rows) => {
-        if (!alive) return;
-        setRuns(rows);
-        setSelectedId((current) =>
-          current !== null && rows.some((row) => row.id === current)
-            ? current
-            : (rows[0]?.id ?? null),
-        );
-      })
-      .catch(() => {
-        if (!alive) return;
-        setListError(true);
-        setRuns([]);
-      });
+    void Promise.all([
+      api.listAgentSessions(boardId).catch(() => [] as AgentSessionDto[]),
+      api.listTokens().catch(() => [] as UserTokenDto[]),
+    ]).then(([nextSessions, nextTokens]) => {
+      if (!alive) return;
+      setSessions(nextSessions);
+      setTokens(nextTokens);
+    });
     return () => {
       alive = false;
     };
-  }, [boardId, query, revision]);
+  }, [boardId]);
 
-  useEffect(() => {
-    if (boardId === undefined || selectedId === null || !isApiEnabled()) {
-      setDetail(null);
-      return;
-    }
-    let alive = true;
-    setDetail(null);
-    setDetailError(false);
-    setPreview(null);
-    setPreviewError(null);
-    setActionError(null);
-    void (async () => {
-      try {
-        const loaded = await api.getRun(boardId, selectedId);
-        if (!alive) return;
-        setDetail(loaded);
-        if (loaded.run.status === "applied" && loaded.run.kind !== "revert") {
-          await loadPreview(boardId, selectedId, alive);
-        }
-      } catch {
-        if (alive) setDetailError(true);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-    // `loadPreview` is stable for one board/run pair; the effect is the
-    // single place that seeds both panes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardId, selectedId, revision]);
-
-  async function loadPreview(
-    targetBoard: string,
-    runId: string,
-    alive = true,
-  ): Promise<void> {
-    setPreviewing(true);
-    setPreviewError(null);
-    try {
-      const result = await api.previewRunRevert(targetBoard, runId);
-      if (alive) setPreview(result);
-    } catch (error) {
-      if (alive) setPreviewError(runError(error, t));
-    } finally {
-      if (alive) setPreviewing(false);
-    }
-  }
-
-  const loadMore = async () => {
-    if (boardId === undefined || cursor === null || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const rows = await api.listRuns(boardId, query(cursor));
-      setRuns((current) => [...(current ?? []), ...rows]);
-      setCursor(rows.length === 50 ? rows[rows.length - 1].id : null);
-    } catch {
-      setListError(true);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
-  // The list response does not say whether more rows exist; a full page is a
-  // good enough cursor until the next request returns a short page.
-  useEffect(() => {
-    if (runs !== null && runs.length > 0) {
-      setCursor((current) =>
-        current === null && runs.length === 50
-          ? runs[runs.length - 1].id
-          : current,
+  const runs = useAgentRuns(scope, {
+    enabled: board !== undefined && isApiEnabled(),
+    filter,
+  });
+  const options = useMemo(() => runFilterOptions(t), [t]);
+  const tokenNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const token of tokens) names.set(token.id, token.name);
+    for (const session of sessions) {
+      if (names.has(session.apiTokenId)) continue;
+      names.set(
+        session.apiTokenId,
+        session.name ?? session.clientName ?? shortId(session.apiTokenId),
       );
     }
-  }, [runs]);
+    return names;
+  }, [sessions, tokens]);
+  const sessionNames = useMemo(
+    () =>
+      new Map(
+        sessions.map((session) => [
+          session.id,
+          session.name ?? shortId(session.id),
+        ]),
+      ),
+    [sessions],
+  );
+  const tokenLabel = (tokenId: string | null): string =>
+    tokenId === null
+      ? t("agentControl.runs.noToken")
+      : (tokenNames.get(tokenId) ?? shortId(tokenId));
+  const sessionLabel = (sessionId: string | null): string =>
+    sessionId === null
+      ? t("agentControl.runs.noSession")
+      : (sessionNames.get(sessionId) ?? shortId(sessionId));
+  const tokenOptions = useMemo(
+    () => [
+      { value: "all", label: t("agents.filters.allTokens") },
+      ...[...tokenNames.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(filter.token !== "all" && !tokenNames.has(filter.token)
+        ? [{ value: filter.token, label: shortId(filter.token) }]
+        : []),
+    ],
+    [filter.token, t, tokenNames],
+  );
+  const sessionOptions = useMemo(
+    () => [
+      { value: "all", label: t("agents.shell.allSessions") },
+      ...[...sessionNames.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(filter.session !== "all" && !sessionNames.has(filter.session)
+        ? [{ value: filter.session, label: shortId(filter.session) }]
+        : []),
+    ],
+    [filter.session, sessionNames, t],
+  );
 
-  const revert = async () => {
-    if (boardId === undefined || selectedId === null || reverting) return;
-    setReverting(true);
-    setActionError(null);
-    try {
-      await api.revertRun(boardId, selectedId, {
-        dryRun: false,
-        commandId: createId(),
-      });
-      toast.success(t("agentControl.runs.revertedToast"));
-      setConfirmOpen(false);
-      setPreview(null);
-      setRevision((value) => value + 1);
-    } catch (error) {
-      setActionError(runError(error, t));
-      setConfirmOpen(false);
-    } finally {
-      setReverting(false);
-    }
+  const patch = (next: Partial<AgentRunFilter>) => {
+    setFilter((current) => ({ ...current, ...next }));
+    setSelectedId(null);
+    setMobileDetailOpen(false);
   };
-
-  const statusOptions = useMemo(
-    () => [
-      { value: "all" as const, label: t("agentControl.runs.filter.all") },
-      ...AGENT_RUN_STATUSES.map((value) => ({
-        value,
-        label: t(STATUS_KEYS[value]),
-      })),
-    ],
-    [t],
-  );
-  const kindOptions = useMemo(
-    () => [
-      { value: "all" as const, label: t("agentControl.runs.filter.all") },
-      ...AGENT_RUN_KINDS.map((value) => ({
-        value,
-        label: t(KIND_KEYS[value]),
-      })),
-    ],
-    [t],
-  );
-  const rangeOptions = useMemo(
-    () => [
-      { value: "all" as const, label: t("agentControl.runs.filter.anyTime") },
-      { value: "24h" as const, label: t("agentControl.runs.filter.last24h") },
-      { value: "7d" as const, label: t("agentControl.runs.filter.last7d") },
-      { value: "30d" as const, label: t("agentControl.runs.filter.last30d") },
-    ],
-    [t],
-  );
+  const clearFilters = () => {
+    setFilter(EMPTY_RUN_FILTER);
+    setSelectedId(null);
+    setMobileDetailOpen(false);
+  };
+  // Pin the open run when a refresh prepends a newer row (for example the
+  // revert run created by `run.reverted`). Only fall back to the newest row
+  // when the selected one is gone: a filter change or a revoked board.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pin the open run across list refreshes
+    setSelectedId((current) =>
+      current !== null && runs.rows.some((row) => row.id === current)
+        ? current
+        : (runs.rows[0]?.id ?? null),
+    );
+  }, [runs.rows]);
+  const selected: RunSummaryDto | null =
+    runs.rows.find((row) => row.id === selectedId) ?? runs.rows[0] ?? null;
+  const noteConflicts = (runId: string, count: number) => {
+    setConflicts((current) => {
+      const next = new Map(current);
+      next.set(runId, count);
+      return next;
+    });
+  };
 
   if (!isApiEnabled()) {
     return (
-      <p className="p-4 text-xs text-muted-foreground">
+      <p className="p-4 text-[11px] text-muted-foreground">
         {t("agentControl.runs.offline")}
       </p>
     );
   }
-
-  const conflicts = preview?.conflicts ?? [];
 
   return (
     <div
       className="flex h-full min-h-0 flex-col"
       data-testid="agent-runs-panel"
     >
-      <div className="flex shrink-0 flex-wrap items-end gap-2 border-b px-4 py-2">
-        <label className="min-w-28 flex-1 space-y-1 text-[11px] text-muted-foreground">
-          <span>{t("agentControl.runs.filter.status")}</span>
-          <SelectField
-            value={status}
-            options={statusOptions}
-            onChange={setStatus}
-            ariaLabel={t("agentControl.runs.filter.status")}
-            testId="run-filter-status"
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-2.5 py-[7px]">
+        <h3 className="text-[13px] font-[650]">{t("agents.shell.runs")}</h3>
+        <span className="text-[11px] text-muted-foreground">
+          {runs.loading
+            ? t("agentControl.runs.loading")
+            : t("agents.runs.boardHistory", {
+                count: runs.total,
+              })}
+        </span>
+        <button
+          type="button"
+          onClick={runs.reload}
+          disabled={runs.loading}
+          aria-label={t("agents.runs.refresh")}
+          data-testid="agent-runs-refresh"
+          className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground md:h-7 md:w-7"
+        >
+          <RefreshCw
+            className={cn("h-3.5 w-3.5", runs.loading && "animate-spin")}
+            aria-hidden
           />
-        </label>
-        <label className="min-w-28 flex-1 space-y-1 text-[11px] text-muted-foreground">
-          <span>{t("agentControl.runs.filter.kind")}</span>
-          <SelectField
-            value={kind}
-            options={kindOptions}
-            onChange={setKind}
-            ariaLabel={t("agentControl.runs.filter.kind")}
-            testId="run-filter-kind"
-          />
-        </label>
-        <label className="min-w-28 flex-1 space-y-1 text-[11px] text-muted-foreground">
-          <span>{t("agentControl.runs.filter.time")}</span>
-          <SelectField
-            value={range}
-            options={rangeOptions}
-            onChange={setRange}
-            ariaLabel={t("agentControl.runs.filter.time")}
-            testId="run-filter-time"
-          />
-        </label>
-        <label className="min-w-32 flex-1 space-y-1 text-[11px] text-muted-foreground">
-          <span>{t("agentControl.runs.filter.token")}</span>
-          <input
-            data-testid="run-filter-token"
-            value={tokenInput}
-            onChange={(event) => setTokenInput(event.target.value)}
-            placeholder={t("agentControl.runs.filter.tokenPlaceholder")}
-            className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
-          />
-        </label>
-        <label className="min-w-32 flex-1 space-y-1 text-[11px] text-muted-foreground">
-          <span>{t("agentControl.runs.filter.session")}</span>
-          <input
-            data-testid="run-filter-session"
-            value={sessionInput}
-            onChange={(event) => setSessionInput(event.target.value)}
-            placeholder={t("agentControl.runs.filter.sessionPlaceholder")}
-            className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
-          />
-        </label>
+        </button>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(10rem,40%)_1fr] md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] md:grid-rows-1">
-        <div className="min-h-0 overflow-y-auto border-b md:border-b-0 md:border-r">
-          {listError ? (
-            <div className="space-y-2 p-4">
-              <p className="text-xs text-danger">
-                {t("agentControl.runs.loadError")}
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setRevision((value) => value + 1)}
-              >
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                {t("agentControl.retry")}
-              </Button>
-            </div>
-          ) : runs === null ? (
+      <div className="flex shrink-0 flex-wrap items-center gap-[5px] border-b border-border px-2.5 py-[7px]">
+        <SelectField
+          value={filter.status}
+          options={options.status}
+          onChange={(value) => patch({ status: value as RunStatusFilter })}
+          ariaLabel={t("agentControl.runs.filter.status")}
+          testId="run-filter-status"
+          className="h-11 w-auto min-w-[104px] text-[11px] md:h-[26px] md:min-h-[26px]"
+        />
+        <SelectField
+          value={filter.kind}
+          options={options.kind}
+          onChange={(value) => patch({ kind: value as RunKindFilter })}
+          ariaLabel={t("agentControl.runs.filter.kind")}
+          testId="run-filter-kind"
+          className="h-11 w-auto min-w-[96px] text-[11px] md:h-[26px] md:min-h-[26px]"
+        />
+        <SelectField
+          value={filter.time}
+          options={options.time}
+          onChange={(value) => patch({ time: value as RunTimeFilter })}
+          ariaLabel={t("agentControl.runs.filter.time")}
+          testId="run-filter-time"
+          className="h-11 w-auto min-w-[92px] text-[11px] md:h-[26px] md:min-h-[26px]"
+        />
+        <SelectField
+          value={filter.token}
+          options={tokenOptions}
+          onChange={(value) => patch({ token: value })}
+          ariaLabel={t("agentControl.runs.filter.token")}
+          testId="run-filter-token"
+          className="h-11 w-auto min-w-[104px] max-w-[148px] text-[11px] md:h-[26px] md:min-h-[26px]"
+        />
+        <SelectField
+          value={filter.session}
+          options={sessionOptions}
+          onChange={(value) => patch({ session: value })}
+          ariaLabel={t("agentControl.runs.filter.session")}
+          testId="run-filter-session"
+          className="h-11 w-auto min-w-[104px] max-w-[148px] text-[11px] md:h-[26px] md:min-h-[26px]"
+        />
+        <button
+          type="button"
+          onClick={clearFilters}
+          data-testid="agent-runs-clear-filters"
+          className="inline-flex min-h-11 items-center rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[26px]"
+        >
+          {t("agents.runs.clearAll")}
+        </button>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
+        <div
+          data-testid="agent-run-list"
+          className={cn(
+            "min-h-0 w-full overflow-y-auto border-border md:w-[286px] md:flex-none md:border-r",
+            mobileDetailOpen && "hidden md:block",
+          )}
+        >
+          {runs.loading ? (
             <SkeletonRegion
               label={t("agentControl.runs.loading")}
               testId="agent-runs-skeleton"
             >
               <div className="space-y-2 p-3" aria-hidden="true">
-                {Array.from({ length: 4 }, (_, index) => (
+                {Array.from({ length: 5 }, (_, index) => (
                   <div
                     key={index}
-                    className="space-y-1.5 rounded-lg border p-2"
+                    className="space-y-1.5 rounded-md border border-border/60 p-2"
                   >
-                    <Skeleton width={120} height={12} />
+                    <Skeleton width={130} height={11} />
                     <Skeleton width={180} height={10} />
                   </div>
                 ))}
               </div>
             </SkeletonRegion>
-          ) : runs.length === 0 ? (
-            <div
-              className="flex flex-col items-center gap-2 p-6 text-center"
-              data-testid="agent-runs-empty"
-            >
-              <FileClock
-                className="h-6 w-6 text-muted-foreground/60"
-                aria-hidden
-              />
-              <p className="text-xs text-muted-foreground">
-                {t("agentControl.runs.empty")}
+          ) : runs.error && runs.rows.length === 0 ? (
+            <div className="space-y-2 p-4" data-testid="agent-runs-error">
+              <p className="text-[11px] text-danger">
+                {t("agentControl.runs.loadError")}
               </p>
-            </div>
-          ) : (
-            <ul className="divide-y" data-testid="agent-run-list">
-              {runs.map((run) => (
-                <li key={run.id}>
-                  <button
-                    type="button"
-                    data-testid={`agent-run-row-${run.id}`}
-                    data-status={run.status}
-                    aria-current={selectedId === run.id}
-                    onClick={() => setSelectedId(run.id)}
-                    className={
-                      selectedId === run.id
-                        ? "w-full space-y-1 bg-primary/10 px-3 py-2 text-left"
-                        : "w-full space-y-1 px-3 py-2 text-left hover:bg-hover"
-                    }
-                  >
-                    <span className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        {run.id.slice(0, 10)}…
-                      </span>
-                      <span
-                        className={`rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${STATUS_CLASS[run.status]}`}
-                      >
-                        {t(STATUS_KEYS[run.status])}
-                      </span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        {t(KIND_KEYS[run.kind])}
-                      </span>
-                    </span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      {t("agentControl.runs.rowMeta", {
-                        commands: run.commandCount,
-                        time: formatRelative(runTime(run), lang),
-                      })}
-                    </span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
-                      {run.apiTokenId ?? t("agentControl.runs.noToken")} ·{" "}
-                      {run.agentSessionId ?? t("agentControl.runs.noSession")}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {cursor !== null && runs !== null && runs.length > 0 ? (
-            <div className="p-3">
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full"
-                disabled={loadingMore}
-                data-testid="agent-runs-more"
-                onClick={() => void loadMore()}
+                onClick={runs.reload}
+                data-testid="agent-runs-retry"
+                className="max-md:min-h-11"
               >
-                {loadingMore ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                ) : (
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-                )}
-                {t("agentControl.runs.loadMore")}
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                {t("agentControl.retry")}
               </Button>
             </div>
-          ) : null}
-        </div>
-
-        <div className="min-h-0 overflow-y-auto">
-          {selectedId === null ? (
-            <p className="p-4 text-xs text-muted-foreground">
-              {t("agentControl.runs.selectHint")}
-            </p>
-          ) : detailError ? (
-            <p className="p-4 text-xs text-danger">
-              {t("agentControl.runs.detailError")}
-            </p>
-          ) : detail === null ? (
-            <SkeletonRegion
-              label={t("agentControl.runs.detailLoading")}
-              testId="agent-run-detail-skeleton"
-            >
-              <div className="space-y-2 p-4" aria-hidden="true">
-                <Skeleton width={200} height={14} />
-                <Skeleton width={280} height={10} />
-                <Skeleton width={240} height={10} />
-              </div>
-            </SkeletonRegion>
-          ) : (
-            <div className="space-y-4 p-4" data-testid="agent-run-detail">
-              <header className="space-y-1">
-                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-                  <Bot className="h-4 w-4 text-primary" aria-hidden />
-                  <span className="font-mono text-xs">{detail.run.id}</span>
-                  <span
-                    data-testid="agent-run-status"
-                    data-status={detail.run.status}
-                    className={`rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${STATUS_CLASS[detail.run.status]}`}
-                  >
-                    {t(STATUS_KEYS[detail.run.status])}
-                  </span>
-                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {t(KIND_KEYS[detail.run.kind])}
-                  </span>
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {t("agentControl.runs.detailMeta", {
-                    commands: detail.run.commandCount,
-                    first: detail.run.firstSeq ?? "—",
-                    last: detail.run.lastSeq ?? "—",
-                  })}
-                </p>
-              </header>
-
-              <section className="space-y-1.5" data-testid="agent-run-timeline">
-                <h4 className="flex items-center gap-1.5 text-xs font-semibold">
-                  <Clock className="h-3.5 w-3.5 text-primary" aria-hidden />
-                  {t("agentControl.runs.timeline")}
-                </h4>
-                <ul className="space-y-1 text-[11px] text-muted-foreground">
-                  <li>
-                    {t("agentControl.runs.created")}:{" "}
-                    {formatDate(detail.run.createdAt, lang, true)}
-                  </li>
-                  <li>
-                    {t("agentControl.runs.applied")}:{" "}
-                    {formatDate(detail.run.appliedAt, lang, true)}
-                  </li>
-                  {detail.run.revertedAt !== null ? (
-                    <li data-testid="agent-run-reverted-at">
-                      {t("agentControl.runs.reverted")}:{" "}
-                      {formatDate(detail.run.revertedAt, lang, true)}
-                    </li>
-                  ) : null}
-                  {detail.run.revertsRunId !== null ? (
-                    <li>
-                      {t("agentControl.runs.revertsRun")}:{" "}
-                      <span className="font-mono">
-                        {detail.run.revertsRunId}
-                      </span>
-                    </li>
-                  ) : null}
-                </ul>
-              </section>
-
-              <section className="grid gap-2 text-[11px] sm:grid-cols-2">
-                <div className="rounded-md border p-2">
-                  <p className="text-muted-foreground">
-                    {t("agentControl.runs.attribution")}
-                  </p>
-                  <p className="font-mono break-all">{detail.run.actorId}</p>
-                  <p className="font-mono break-all text-muted-foreground">
-                    {t("agentControl.runs.token")}:{" "}
-                    {detail.run.apiTokenId ?? "—"}
-                  </p>
-                  <p className="font-mono break-all text-muted-foreground">
-                    {t("agentControl.runs.session")}:{" "}
-                    {detail.run.agentSessionId ?? "—"}
-                  </p>
-                </div>
-                <div className="rounded-md border p-2">
-                  <p className="text-muted-foreground">
-                    {t("agentControl.runs.authorization")}
-                  </p>
-                  <p className="font-mono break-all">
-                    {t("agentControl.runs.planHash")}:{" "}
-                    {detail.run.planHash ?? "—"}
-                  </p>
-                  <p className="font-mono break-all text-muted-foreground">
-                    {t("agentControl.runs.approval")}:{" "}
-                    {detail.run.approvalId ?? "—"}
-                  </p>
-                  <p className="font-mono break-all text-muted-foreground">
-                    {t("agentControl.runs.clientRunId")}:{" "}
-                    {detail.run.clientRunId ?? "—"}
-                  </p>
-                </div>
-              </section>
-
-              {actionError !== null ? (
-                <p
-                  role="alert"
-                  data-testid="agent-run-action-error"
-                  className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger"
-                >
-                  {actionError}
-                </p>
-              ) : null}
-
-              <section className="space-y-2" data-testid="agent-run-commands">
-                <h4 className="text-xs font-semibold">
-                  {t("agentControl.runs.commands", {
-                    count: detail.commands.length,
-                  })}
-                </h4>
-                {detail.commands.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground">
-                    {t("agentControl.runs.noCommands")}
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {detail.commands.map((command) => {
-                      const preimage =
-                        detail.preimages[command.commandId ?? ""];
-                      return (
-                        <li
-                          key={command.seq}
-                          data-testid={`agent-run-command-${command.seq}`}
-                          className="space-y-1 rounded-md border p-2 text-[11px]"
-                        >
-                          <p className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-mono text-muted-foreground">
-                              #{command.seq}
-                            </span>
-                            <code className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
-                              {command.action.type}
-                            </code>
-                            <span className="truncate text-muted-foreground">
-                              {actionSummary(command.action, board)}
-                            </span>
-                          </p>
-                          <p className="truncate text-[10px] text-muted-foreground">
-                            {command.actorType === "agent"
-                              ? t("agentControl.runs.actorAgent")
-                              : t("agentControl.runs.actorHuman")}{" "}
-                            · {command.agentName ?? command.actorId}
-                            {command.apiTokenId !== undefined
-                              ? ` · ${t("agentControl.runs.token")} ${command.apiTokenId}`
-                              : ""}
-                            {command.agentSessionId !== undefined
-                              ? ` · ${t("agentControl.runs.session")} ${command.agentSessionId}`
-                              : ""}
-                          </p>
-                          {preimage !== undefined ? (
-                            <details data-testid="agent-run-preimage">
-                              <summary className="cursor-pointer text-[10px] text-muted-foreground">
-                                {t("agentControl.runs.preimage")}
-                              </summary>
-                              <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[10px]">
-                                {JSON.stringify(preimage, null, 2)}
-                              </pre>
-                            </details>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
-
-              <section
-                className="space-y-2 rounded-md border p-2"
-                data-testid="agent-run-revert"
+          ) : runs.rows.length === 0 ? (
+            hasRunFilter(filter) ? (
+              <div
+                className="flex flex-col items-center gap-2 px-4 py-10 text-center"
+                data-testid="agent-runs-filtered-empty"
               >
-                <h4 className="flex items-center gap-1.5 text-xs font-semibold">
-                  <RotateCcw className="h-3.5 w-3.5 text-primary" aria-hidden />
-                  {t("agentControl.runs.rollback")}
-                </h4>
-                <p className="text-[11px] text-muted-foreground">
-                  {t("agentControl.runs.rollbackHint")}
+                <History
+                  className="h-6 w-6 text-muted-foreground/60"
+                  aria-hidden
+                />
+                <p className="text-[11px] font-medium text-foreground">
+                  {t("agents.runs.noMatch")}
                 </p>
-                {previewing ? (
-                  <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                    {t("agentControl.runs.previewing")}
-                  </p>
-                ) : previewError !== null ? (
-                  <p className="text-[11px] text-danger" role="alert">
-                    {previewError}
-                  </p>
-                ) : preview !== null ? (
-                  <div className="space-y-2 text-[11px]">
-                    <p
-                      data-testid="agent-run-can-revert"
-                      data-can-revert={preview.canRevert ? "true" : "false"}
-                      className={
-                        preview.canRevert ? "text-success" : "text-warning"
-                      }
-                    >
-                      {preview.canRevert
-                        ? t("agentControl.runs.canRevert")
-                        : t("agentControl.runs.cannotRevert")}
-                    </p>
-                    {conflicts.length > 0 ? (
-                      <ul
-                        data-testid="agent-run-conflicts"
-                        className="space-y-1"
-                      >
-                        {conflicts.map((conflict) => (
-                          <li
-                            key={conflict.touch}
-                            className="rounded border border-warning/40 bg-warning/10 p-1.5 text-warning"
-                          >
-                            <span className="font-mono">{conflict.touch}</span>{" "}
-                            · {conflict.reason} · {conflict.expectedVersion} →{" "}
-                            {conflict.currentVersion}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {preview.diff !== undefined ? (
-                      <details data-testid="agent-run-diff">
-                        <summary className="cursor-pointer text-muted-foreground">
-                          {t("agentControl.runs.diff")}
-                        </summary>
-                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[10px]">
-                          {JSON.stringify(preview.diff, null, 2)}
-                        </pre>
-                      </details>
-                    ) : null}
-                    {detail.run.status === "applied" &&
-                    detail.run.kind !== "revert" ? (
-                      admin ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          data-testid="agent-run-revert-apply"
-                          disabled={!preview.canRevert || reverting}
-                          onClick={() => setConfirmOpen(true)}
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-                          {t("agentControl.runs.revert")}
-                        </Button>
-                      ) : (
-                        <p className="text-muted-foreground">
-                          {t("agentControl.runs.adminOnly")}
-                        </p>
-                      )
-                    ) : null}
-                  </div>
-                ) : null}
-                {detail.run.status === "reverted" ? (
-                  <p
-                    data-testid="agent-run-already-reverted"
-                    className="text-[11px] text-muted-foreground"
+                <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+                  {t("agents.runs.noMatchBody")}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={clearFilters}
+                  data-testid="agent-runs-empty-clear"
+                  className="max-md:min-h-11"
+                >
+                  {t("agents.clearFilters")}
+                </Button>
+              </div>
+            ) : (
+              <div
+                className="flex flex-col items-center gap-2 px-4 py-10 text-center"
+                data-testid="agent-runs-empty"
+              >
+                <History
+                  className="h-6 w-6 text-muted-foreground/60"
+                  aria-hidden
+                />
+                <p className="text-[11px] font-medium text-foreground">
+                  {t("agentControl.runs.empty")}
+                </p>
+                <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+                  {t("agents.runs.emptyBody")}
+                </p>
+              </div>
+            )
+          ) : (
+            <>
+              {runs.error ? (
+                <div
+                  role="alert"
+                  className="m-2 flex flex-wrap items-center gap-2 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
+                >
+                  <span className="min-w-0 flex-1">
+                    {t("agents.runs.stale")}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={runs.reload}
+                    className="max-md:min-h-11"
                   >
-                    {t("agentControl.runs.alreadyReverted")}
-                  </p>
-                ) : null}
-                {detail.run.status === "applied" &&
-                detail.run.kind !== "revert" ? (
+                    {t("agentControl.retry")}
+                  </Button>
+                </div>
+              ) : null}
+              <RunList
+                rows={runs.rows}
+                selectedId={selected?.id ?? null}
+                onSelect={(run) => {
+                  setSelectedId(run.id);
+                  setMobileDetailOpen(true);
+                }}
+                now={now}
+                variant="board"
+                testIdPrefix="agent-run"
+                listTestId="agent-run-rows"
+                tokenLabel={tokenLabel}
+                conflicts={conflicts}
+              />
+              <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
+                <span
+                  data-testid="agent-runs-total"
+                  data-total={runs.total}
+                  data-has-more={runs.hasMore ? "true" : "false"}
+                >
+                  {runs.hasMore
+                    ? t("agents.runs.totalMore", { count: runs.total })
+                    : t("agents.runs.shown", { count: runs.total })}
+                </span>
+                {runs.hasMore ? (
                   <Button
                     size="sm"
                     variant="ghost"
-                    data-testid="agent-run-preview"
-                    disabled={previewing}
-                    onClick={() =>
-                      void loadPreview(detail.run.boardId, detail.run.id)
-                    }
+                    data-testid="agent-runs-more"
+                    disabled={runs.loadingMore}
+                    onClick={() => void runs.loadMore()}
+                    className="max-md:min-h-11"
                   >
-                    <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                    {t("agentControl.runs.refreshPreview")}
+                    {runs.loadingMore ? (
+                      <Loader2
+                        className="h-3.5 w-3.5 animate-spin"
+                        aria-hidden
+                      />
+                    ) : null}
+                    {t("agentControl.runs.loadMore")}
                   </Button>
                 ) : null}
-              </section>
+              </div>
+            </>
+          )}
+        </div>
 
-              {Object.keys(detail.preimages).length > 0 ? (
-                <section
-                  className="space-y-1"
-                  data-testid="agent-run-preimages"
-                >
-                  <h4 className="flex items-center gap-1.5 text-xs font-semibold">
-                    <ShieldCheck
-                      className="h-3.5 w-3.5 text-primary"
-                      aria-hidden
-                    />
-                    {t("agentControl.runs.preimagesTitle")}
-                  </h4>
-                  <p className="text-[11px] text-muted-foreground">
-                    {t("agentControl.runs.preimagesHint")}
-                  </p>
-                  <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[10px]">
-                    {JSON.stringify(detail.preimages, null, 2)}
-                  </pre>
-                </section>
-              ) : null}
-
-              {detail.run.kind === "revert" ? (
-                <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                  {t("agentControl.runs.revertRunHint")}
-                </p>
-              ) : null}
+        <div
+          className={cn(
+            "min-h-0 min-w-0 flex-1 flex-col",
+            mobileDetailOpen ? "flex" : "hidden md:flex",
+          )}
+        >
+          {selected === null ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+                <History className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <p className="text-[13px] font-semibold text-foreground">
+                {t("agents.runs.selectTitle")}
+              </p>
+              <p className="max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+                {t("agents.runs.selectBody")}
+              </p>
             </div>
+          ) : (
+            <RunDetail
+              boardId={selected.boardId}
+              runId={selected.id}
+              role={role}
+              boardTitle={board?.title ?? selected.boardId}
+              board={board}
+              variant="board"
+              tokenLabel={tokenLabel}
+              sessionLabel={sessionLabel}
+              onClose={() => setMobileDetailOpen(false)}
+              onChanged={() => runs.reload()}
+              onPreview={noteConflicts}
+            />
           )}
         </div>
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-md" data-testid="run-revert-dialog">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RotateCcw className="h-4 w-4 text-warning" aria-hidden />
-              {t("agentControl.runs.confirmTitle")}
-            </DialogTitle>
-            <DialogDescription>
-              {t("agentControl.runs.confirmDescription", {
-                id: selectedId ?? "",
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-xs text-muted-foreground">
-            {t("agentControl.runs.confirmSemantics")}
-          </p>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={reverting}
-              onClick={() => setConfirmOpen(false)}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="button"
-              data-testid="run-revert-confirm"
-              disabled={reverting}
-              onClick={() => void revert()}
-            >
-              {reverting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : (
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-              )}
-              {t("agentControl.runs.revert")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-3 py-2 text-[11px] leading-[1.45] text-muted-foreground">
+        <Info className="h-3 w-3 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1">
+          {role === "ADMIN"
+            ? t("agents.runs.footerAdmin")
+            : t("agents.runs.footerMember")}
+        </span>
+        {board === undefined ? null : (
+          <Link
+            to={`${routes.agents}?${new URLSearchParams({
+              section: "runs",
+              board: board.id,
+            }).toString()}`}
+            data-testid="agent-runs-open-all"
+            className="inline-flex min-h-11 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover md:min-h-7"
+          >
+            {t("agents.runs.openAll")} ↗
+          </Link>
+        )}
+      </div>
     </div>
   );
+}
+
+function shortId(id: string, length = 8): string {
+  return id.length > length ? `${id.slice(0, length)}…` : id;
 }

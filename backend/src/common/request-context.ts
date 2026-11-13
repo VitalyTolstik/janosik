@@ -2,17 +2,42 @@ import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
 import { env } from "@/config/env";
+import type { Role } from "@prisma/client";
 
 /**
  * Per-request trace context (TASK-153). An incident report carries the
  * `X-Request-Id` from the response; slow-query warnings and error logs add
  * the same id, so the whole request can be followed through the log.
  */
-const storage = new AsyncLocalStorage<string>();
+interface RequestContext {
+  id: string;
+  boardWrite?: {
+    boardId: string;
+    userId: string;
+    membershipId: string;
+    role: Role;
+  };
+}
+const storage = new AsyncLocalStorage<RequestContext>();
 
 /** The id of the request currently being handled, if any. */
 export function currentRequestId(): string | undefined {
-  return storage.getStore();
+  return storage.getStore()?.id;
+}
+
+/** Capture the role authorized by the guard for revalidation under the lock. */
+export function setBoardWriteContext(
+  boardId: string,
+  userId: string,
+  membershipId: string,
+  role: Role,
+): void {
+  const context = storage.getStore();
+  if (context) context.boardWrite = { boardId, userId, membershipId, role };
+}
+
+export function currentBoardWriteContext(): RequestContext["boardWrite"] {
+  return storage.getStore()?.boardWrite;
 }
 
 /** Header used both to accept a caller's id (proxy/tracing) and to echo it. */
@@ -34,5 +59,5 @@ export function requestContext(
       ? incoming
       : randomUUID();
   res.setHeader(REQUEST_ID_HEADER, id);
-  storage.run(id, next);
+  storage.run({ id }, next);
 }

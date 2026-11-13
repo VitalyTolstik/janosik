@@ -440,29 +440,58 @@ export class AdminService {
         throw new ConflictException("Email is already registered");
       }
       data.email = emailChanged;
-    }
-    if (
-      emailChanged !== null ||
-      dto.disabled === true ||
-      dto.emailVerified === false
-    ) {
-      await this.prisma.passwordResetToken.deleteMany({ where: { userId } });
+      if (dto.emailVerified === undefined) data.emailVerifiedAt = null;
     }
     const updated =
       Object.keys(data).length > 0
-        ? await this.prisma.user.update({ where: { id: userId }, data })
+        ? await this.prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+            if (
+              emailChanged !== null ||
+              dto.disabled === true ||
+              dto.emailVerified === false
+            ) {
+              await tx.passwordResetToken.deleteMany({ where: { userId } });
+            }
+            if (emailChanged !== null) {
+              // Any code minted for the old address must die with it; the
+              // email-change code is scoped to the user, not the address.
+              await tx.emailVerificationCode.deleteMany({ where: { userId } });
+              await tx.emailChangeCode.deleteMany({ where: { userId } });
+              // Revoke refresh sessions in the same transaction: a failed
+              // follow-up call must not leave a live session behind.
+              // Personal API tokens are independent credentials and are
+              // deliberately not revoked here — the panel has a separate
+              // explicit action for them.
+              await tx.refreshToken.updateMany({
+                where: { userId, revokedAt: null },
+                data: { revokedAt: new Date() },
+              });
+            }
+            return tx.user.update({ where: { id: userId }, data });
+          })
         : user;
 
     // Moving the sign-in address is a security action of its own (TASK-51):
-    // the old address must stop working everywhere immediately, so every
-    // session is revoked and both the audit log and the old inbox hear
-    // about it.
+    // the old address must stop working everywhere immediately. Sessions
+    // were revoked atomically above; only the audit and the old inbox
+    // notice remain best-effort follow-ups.
     if (emailChanged !== null) {
-      await this.revokeUserSessions(userId, admin, { silent: true });
       await this.audit(admin, "user.email_changed", "user", userId, {
         from: user.email,
         to: emailChanged,
       });
+      // The master cannot prove ownership of the new mailbox; send a fresh
+      // confirmation code there so the user can pass the verification gate.
+      if (updated.emailVerifiedAt === null) {
+        await this.auth
+          .resendEmailVerification(userId, "en")
+          .catch((error: unknown) =>
+            this.logger.warn(
+              `Verification email for ${emailChanged} failed: ${String(error)}`,
+            ),
+          );
+      }
       const notice = emailChangedNoticeEmail(emailChanged, "en");
       await this.mailer
         .send({ to: user.email, ...notice })
@@ -535,9 +564,12 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException("User not found");
     }
-    const revoked = await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    const revoked = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      return tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
     if (options.silent !== true) {
       await this.audit(admin, "user.sessions_revoked", "user", userId, {

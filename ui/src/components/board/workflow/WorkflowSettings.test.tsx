@@ -5,12 +5,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoardWorkflow, Card, Column } from "@janosik/shared";
 
 import { WorkflowSettings } from "@/components/board/workflow/WorkflowSettings";
 import type { WorkflowSave } from "@/components/board/workflow/useWorkflowDraft";
 import { I18nProvider } from "@/i18n";
+
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
 const columns: Column[] = [
   { id: "ideas", title: "Ideas", cardIds: [], createdAt: 1 },
@@ -77,13 +79,14 @@ function renderEditor(
     value?: BoardWorkflow;
     saveResult?: boolean;
     canEdit?: boolean;
+    columns?: Column[];
   } = {},
 ) {
   const onSave = vi.fn<WorkflowSave>(() => options.saveResult ?? true);
   render(
     <I18nProvider>
       <WorkflowSettings
-        columns={columns}
+        columns={options.columns ?? columns}
         cards={cards}
         workflow={options.value ?? workflow}
         canEdit={options.canEdit ?? true}
@@ -98,6 +101,13 @@ function renderEditor(
 describe("WorkflowSettings rail", () => {
   beforeEach(() => {
     localStorage.clear();
+    // jsdom has no layout, so scrollIntoView is absent. The rail calls it to
+    // keep the selected tab reachable; every test gets a fresh spy.
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   });
 
   it("opens the busiest source column and its first forward rule", () => {
@@ -133,6 +143,66 @@ describe("WorkflowSettings rail", () => {
     expect(document.activeElement).toBe(
       screen.getByTestId("workflow-rail-done"),
     );
+  });
+
+  it("keeps the last of many columns reachable with End and Arrow", () => {
+    const manyColumns: Column[] = [
+      ...columns,
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `extra-${index}`,
+        title: `Extra ${index}`,
+        cardIds: [],
+        createdAt: 1,
+      })),
+    ];
+    renderEditor({ columns: manyColumns });
+    const scrollIntoView = vi.mocked(HTMLElement.prototype.scrollIntoView);
+    scrollIntoView.mockClear();
+
+    const first = screen.getByTestId("workflow-rail-ideas");
+    first.focus();
+    fireEvent.keyDown(first, { key: "End" });
+    const last = screen.getByTestId(
+      `workflow-rail-${manyColumns[manyColumns.length - 1]?.id}`,
+    );
+    expect(last).toHaveAttribute("aria-selected", "true");
+    expect(document.activeElement).toBe(last);
+    expect(scrollIntoView).toHaveBeenLastCalledWith({
+      inline: "nearest",
+      block: "nearest",
+    });
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(last);
+
+    scrollIntoView.mockClear();
+    fireEvent.keyDown(last, { key: "ArrowLeft" });
+    const penultimate = screen.getByTestId(
+      `workflow-rail-${manyColumns[manyColumns.length - 2]?.id}`,
+    );
+    expect(penultimate).toHaveAttribute("aria-selected", "true");
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      inline: "nearest",
+      block: "nearest",
+    });
+
+    scrollIntoView.mockClear();
+    fireEvent.keyDown(penultimate, { key: "ArrowRight" });
+    expect(last).toHaveAttribute("aria-selected", "true");
+    expect(document.activeElement).toBe(last);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      inline: "nearest",
+      block: "nearest",
+    });
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(last);
+
+    scrollIntoView.mockClear();
+    fireEvent.keyDown(last, { key: "Home" });
+    expect(first).toHaveAttribute("aria-selected", "true");
+    expect(document.activeElement).toBe(first);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      inline: "nearest",
+      block: "nearest",
+    });
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(first);
   });
 
   it("toggles a rule from its row switch and saves the disabled edge", () => {

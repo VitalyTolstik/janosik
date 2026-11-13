@@ -26,8 +26,9 @@ import {
   filterCardIds,
   isFilterActive,
   readFilterParams,
+  resolveFilterChange,
   writeFilterParams,
-  type CardFilter,
+  type FilterChange,
 } from "@/utils/filter";
 
 const VIEW_STORAGE_KEY = "janosik-board-view";
@@ -68,8 +69,20 @@ export function BoardSection() {
   // keystroke; the open-card param (`?card=`) is preserved by the serializer.
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = useMemo(() => readFilterParams(searchParams), [searchParams]);
+  // The URL is the source of truth, but the router applies it in a transition:
+  // until that render lands, `filter` above is stale. Two quick facet picks
+  // (or a facet pick followed by typing) would otherwise compute from the
+  // same old prop and the later write would silently drop the earlier facet.
+  // This ref holds the last filter written or observed, so every update
+  // composes on top of it.
+  const filterRef = useRef(filter);
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
   const setFilter = useCallback(
-    (next: CardFilter) => {
+    (change: FilterChange) => {
+      const next = resolveFilterChange(change, filterRef.current);
+      filterRef.current = next;
       setSearchParams((current) => writeFilterParams(next, current), {
         replace: true,
       });

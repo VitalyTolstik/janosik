@@ -207,7 +207,10 @@ export function ApiTokensSection() {
     try {
       await navigator.clipboard.writeText(token);
     } catch {
-      copyFallback(token);
+      if (!copyFallback(token)) {
+        toast.error(t("account.tokens.copyFailed"));
+        return;
+      }
     }
     setCopied(true);
     toast.success(t("account.tokens.copied"));
@@ -1059,7 +1062,7 @@ function PauseReasonDialogBody({
 }
 
 /** Clipboard fallback for browsers/contexts without the async API. */
-function copyFallback(text: string): void {
+function copyFallback(text: string): boolean {
   try {
     const area = document.createElement("textarea");
     area.value = text;
@@ -1068,9 +1071,10 @@ function copyFallback(text: string): void {
     area.style.opacity = "0";
     document.body.appendChild(area);
     area.select();
-    document.execCommand("copy");
+    const copied = document.execCommand("copy");
     document.body.removeChild(area);
+    return copied;
   } catch {
-    /* no clipboard at all — the reveal box still lets the user copy manually */
+    return false;
   }
 }

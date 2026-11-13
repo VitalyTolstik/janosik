@@ -78,33 +78,45 @@ export class InvitationsService {
       );
     }
     const invitation = await this.findPending(userId, invitationId);
-    if (
-      invitation.expiresAt !== null &&
-      invitation.expiresAt.getTime() <= Date.now()
-    ) {
-      // A time-limited VIEWER invite past its deadline cannot be accepted;
-      // drop it so the bell stops offering a dead action.
-      await this.prisma.boardMember.delete({ where: { id: invitation.id } });
-      throw new ConflictException("Invitation has expired");
-    }
-    await this.boardWrite.run(invitation.boardId, async (tx) => {
-      await tx.boardMember.update({
-        where: { id: invitation.id },
-        data: { acceptedAt: new Date() },
-      });
-      await tx.activity.create({
-        data: {
-          boardId: invitation.boardId,
-          type: "member_invite_accepted",
-          actorId: userId,
-          actorType: attribution.actorType,
-          apiTokenId: attribution.apiTokenId,
-          agentSessionId: attribution.agentSessionId,
-          agentName: attribution.agentName,
-          details: { userId, role: invitation.role },
-        },
-      });
-    });
+    const accepted = await this.boardWrite.run(
+      invitation.boardId,
+      async (tx) => {
+        const current = await tx.boardMember.findFirst({
+          where: {
+            id: invitation.id,
+            userId,
+            acceptedAt: null,
+            board: { deletedAt: null },
+          },
+        });
+        if (!current) throw new NotFoundException("Invitation not found");
+        if (
+          current.expiresAt !== null &&
+          current.expiresAt.getTime() <= Date.now()
+        ) {
+          await tx.boardMember.delete({ where: { id: current.id } });
+          return false;
+        }
+        await tx.boardMember.update({
+          where: { id: invitation.id },
+          data: { acceptedAt: new Date() },
+        });
+        await tx.activity.create({
+          data: {
+            boardId: invitation.boardId,
+            type: "member_invite_accepted",
+            actorId: userId,
+            actorType: attribution.actorType,
+            apiTokenId: attribution.apiTokenId,
+            agentSessionId: attribution.agentSessionId,
+            agentName: attribution.agentName,
+            details: { userId, role: current.role },
+          },
+        });
+        return true;
+      },
+    );
+    if (!accepted) throw new ConflictException("Invitation has expired");
     // The board's open member lists refresh right away: the invitee is a
     // member from this moment (TASK-36).
     this.realtime.publish(invitation.boardId, {
@@ -123,6 +135,15 @@ export class InvitationsService {
   ): Promise<void> {
     const invitation = await this.findPending(userId, invitationId);
     await this.boardWrite.run(invitation.boardId, async (tx) => {
+      const current = await tx.boardMember.findFirst({
+        where: {
+          id: invitation.id,
+          userId,
+          acceptedAt: null,
+          board: { deletedAt: null },
+        },
+      });
+      if (!current) throw new NotFoundException("Invitation not found");
       await tx.boardMember.delete({ where: { id: invitation.id } });
       await tx.activity.create({
         data: {
@@ -133,7 +154,7 @@ export class InvitationsService {
           apiTokenId: attribution.apiTokenId,
           agentSessionId: attribution.agentSessionId,
           agentName: attribution.agentName,
-          details: { userId, role: invitation.role },
+          details: { userId, role: current.role },
         },
       });
     });

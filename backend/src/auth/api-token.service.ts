@@ -28,6 +28,7 @@ import { AttentionService } from "@/notifications/attention.service";
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
+import { securityStamp } from "./security-stamp";
 import { revokeApiTokens } from "./token-revocation";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -204,6 +205,8 @@ export class ApiTokenService {
        * caller forgets to put the route behind `SessionOnlyGuard`.
        */
       allowTrustedCi?: boolean;
+      /** `securityStamp` of the caller's verified access token. */
+      stamp?: string;
     } = {},
   ): Promise<CreateUserTokenResponse> {
     if (dto.trustedCi === true && options.allowTrustedCi !== true) {
@@ -212,20 +215,36 @@ export class ApiTokenService {
         code: "pat_forbidden",
       });
     }
+    if (!options.stamp) {
+      throw new UnauthorizedException("Credentials changed; sign in again");
+    }
     const token = this.generate();
     const scope = await this.resolveScope(userId, dto);
-    const created = await this.prisma.apiToken.create({
-      data: {
-        userId,
-        name: dto.name,
-        tokenHash: this.hashToken(token),
-        expiresAt: this.resolveExpiresAt(dto.expiresAt),
-        // TASK-166: immutable after creation (D11). There is deliberately no
-        // scope-editing endpoint; a different scope means a new token.
-        scopePreset: dto.scopePreset ?? "worker",
-        trustedCi: dto.trustedCi === true,
-        ...scope,
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      // A request that passed the guard before a password reset or OAuth
+      // claim must not mint a long-lived key after the credentials changed.
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: userId } });
+      if (
+        !current ||
+        current.disabledAt !== null ||
+        securityStamp(current) !== options.stamp
+      ) {
+        throw new UnauthorizedException("Credentials changed; sign in again");
+      }
+      return tx.apiToken.create({
+        data: {
+          userId,
+          name: dto.name,
+          tokenHash: this.hashToken(token),
+          expiresAt: this.resolveExpiresAt(dto.expiresAt),
+          // TASK-166: immutable after creation (D11). There is deliberately no
+          // scope-editing endpoint; a different scope means a new token.
+          scopePreset: dto.scopePreset ?? "worker",
+          trustedCi: dto.trustedCi === true,
+          ...scope,
+        },
+      });
     });
     // The plaintext leaves the server exactly here, exactly once.
     await this.securityAudit.record({

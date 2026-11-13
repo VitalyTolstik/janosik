@@ -74,7 +74,33 @@ export class LoginBackoffService implements OnModuleDestroy {
   async recordFailure(email: string): Promise<void> {
     const key = this.key(email);
     const now = Date.now();
-    const previous = await this.read(key);
+    if (this.redis !== null) {
+      try {
+        await this.redis.eval(
+          `
+          local raw = redis.call('GET', KEYS[1])
+          local previous = raw and cjson.decode(raw) or { failures = 0 }
+          local failures = previous.failures + 1
+          local over = failures - tonumber(ARGV[2]) + 1
+          local untilTime = 0
+          if over > 0 then untilTime = tonumber(ARGV[1]) + math.min(tonumber(ARGV[4]), tonumber(ARGV[3]) * 2 ^ (over - 1)) end
+          redis.call('SET', KEYS[1], cjson.encode({failures=failures, lockedUntil=untilTime, expiresAt=tonumber(ARGV[1])+tonumber(ARGV[5])}), 'PX', ARGV[5])
+        `,
+          1,
+          key,
+          now,
+          LOGIN_FREE_ATTEMPTS,
+          LOGIN_BASE_LOCK_MS,
+          LOGIN_MAX_LOCK_MS,
+          FAILURE_WINDOW_MS,
+        );
+        return;
+      } catch (error) {
+        this.warn(error);
+      }
+    }
+    const existing = this.memory.get(key);
+    const previous = existing && existing.expiresAt > now ? existing : null;
     const failures = (previous?.failures ?? 0) + 1;
     // The LOGIN_FREE_ATTEMPTS-th failure starts the first lock.
     const over = failures - LOGIN_FREE_ATTEMPTS + 1;
@@ -83,7 +109,9 @@ export class LoginBackoffService implements OnModuleDestroy {
         ? now +
           Math.min(LOGIN_MAX_LOCK_MS, LOGIN_BASE_LOCK_MS * 2 ** (over - 1))
         : 0;
-    await this.write(key, {
+    if (this.memory.size >= MEMORY_MAX) this.prune();
+    this.memory.delete(key);
+    this.memory.set(key, {
       failures,
       lockedUntil,
       expiresAt: now + FAILURE_WINDOW_MS,
@@ -117,25 +145,6 @@ export class LoginBackoffService implements OnModuleDestroy {
       return null;
     }
     return state;
-  }
-
-  private async write(key: string, state: FailureState): Promise<void> {
-    if (this.redis !== null) {
-      try {
-        await this.redis.set(
-          key,
-          JSON.stringify(state),
-          "PX",
-          FAILURE_WINDOW_MS,
-        );
-        return;
-      } catch (error) {
-        this.warn(error);
-      }
-    }
-    if (this.memory.size >= MEMORY_MAX) this.prune();
-    this.memory.delete(key);
-    this.memory.set(key, state);
   }
 
   /** Drop expired entries; if still full, the oldest ones. */
