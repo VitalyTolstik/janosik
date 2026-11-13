@@ -60,12 +60,25 @@ import {
   type AttentionApprovalRow,
 } from "./AttentionApprovals";
 import { BoardScopeSelect } from "./BoardScopeSelect";
+import { RunDetail, RunList } from "./run-ui";
+import {
+  hasRunFilter,
+  readRunFilter,
+  runBoardRole as roleForRunBoard,
+  runFilterOptions,
+  writeRunFilter,
+  type AgentRunFilter,
+  type RunKindFilter,
+  type RunStatusFilter,
+  type RunTimeFilter,
+} from "./run-model";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select-field";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
-import { formatRelative, useI18n } from "@/i18n";
+import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
+import { useBoard } from "@/store/BoardContext";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
 import { docsUrl } from "@/utils/docs-url";
@@ -78,7 +91,9 @@ export function AgentsPage() {
   const { t, lang } = useI18n();
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
+  const { boards: loadedBoards } = useBoard();
   const filter = useMemo(() => readAgentFilter(params), [params]);
+  const runFilter = useMemo(() => readRunFilter(params), [params]);
   const groupMode = readAgentGroup(params);
   const sectionParam = params.get("section");
   const section: Section = SECTIONS.includes(sectionParam as Section)
@@ -87,6 +102,10 @@ export function AgentsPage() {
   const [now, setNow] = useState(() => Date.now());
   const [offline, setOffline] = useState(() => !navigator.onLine);
   const [approvalIntent, setApprovalIntent] = useState<"reject" | null>(null);
+  const [runConflicts, setRunConflicts] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  const [autoRunId, setAutoRunId] = useState<string | null>(null);
 
   useEffect(() => {
     const previous = document.title;
@@ -138,6 +157,94 @@ export function AgentsPage() {
     },
     [setParams],
   );
+  const setRunFilter = useCallback(
+    (patch: Partial<AgentRunFilter>) => {
+      setParams(
+        (current) => {
+          const search = new URLSearchParams(current);
+          const next = { ...readRunFilter(search), ...patch };
+          writeRunFilter(search, next);
+          search.set("section", "runs");
+          search.delete("run");
+          search.delete("approval");
+          if ("board" in patch) search.delete("session");
+          return search;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const clearRunFilters = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        for (const key of [
+          "agent",
+          "token",
+          "status",
+          "kind",
+          "time",
+          "session",
+          "q",
+          "run",
+          "approval",
+        ]) {
+          next.delete(key);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+  const openRun = useCallback(
+    (run: { id: string; boardId: string }) => {
+      setAutoRunId(run.id);
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "runs");
+          next.set("board", run.boardId);
+          next.set("run", run.id);
+          next.delete("approval");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const closeRun = useCallback(() => {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("run");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
+  const openRunSession = useCallback(
+    (sessionId: string) => {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("section", "sessions");
+          next.set("session", sessionId);
+          next.delete("run");
+          next.delete("approval");
+          // The caller comes from the Runs section: its status/kind/time are
+          // run filters, not session filters.
+          next.delete("status");
+          next.delete("kind");
+          next.delete("time");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
   const setGroupMode = (mode: "board" | "token") => {
     setParams(
       (current) => {
@@ -181,6 +288,22 @@ export function AgentsPage() {
       // Section switches close a detail selection, but board/token filters
       // stay in the URL: `?agent=` is the old name of the token filter.
       for (const key of ["session", "approval", "run"]) search.delete(key);
+      // Normalise values that belong to the other section so the URL never
+      // claims a filter the visible list is not applying.
+      if (value === "runs") {
+        writeRunFilter(search, readRunFilter(search));
+      } else if (section === "runs") {
+        // Run status/kind/time values are not session filters; `failed`
+        // overlaps by name but means a failed run, not a failed session.
+        search.delete("status");
+        search.delete("kind");
+        search.delete("time");
+      } else {
+        const next = readAgentFilter(search);
+        setOrDelete(search, "status", next.status, "all");
+        setOrDelete(search, "time", next.time, "any");
+        search.delete("kind");
+      }
       return search;
     });
   };
@@ -262,7 +385,23 @@ export function AgentsPage() {
     boards: state.boards,
     enabled: !state.isAgentToken,
   });
-  const runs = useAgentRuns(state.boards, section === "runs");
+  const runs = useAgentRuns(state.boards, {
+    enabled: section === "runs",
+    filter: runFilter,
+  });
+  // The master-detail opens the newest run until the URL pins one. Remember
+  // which run that was so a refresh that prepends the new `revert` audit run
+  // does not steal the open pane. A filter/no-rows change falls back again.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- remember the auto-opened run across list refreshes
+    setAutoRunId((current) =>
+      section !== "runs"
+        ? null
+        : current !== null && runs.rows.some((row) => row.id === current)
+          ? current
+          : (runs.rows[0]?.id ?? null),
+    );
+  }, [section, runs.rows]);
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
   const approvalAgentNames = useMemo(() => {
@@ -342,7 +481,58 @@ export function AgentsPage() {
 
   const selectedSession = params.get("session");
   const selectedApprovalId = params.get("approval");
+  const selectedRunId = params.get("run");
   const approvalBoardId = params.get("board");
+  const selectedRunRow =
+    selectedRunId === null
+      ? undefined
+      : runs.rows.find((run) => run.id === selectedRunId);
+  // The desktop master-detail opens the newest run until the URL pins one;
+  // mobile keeps the list until a row is tapped.
+  const autoRunRow =
+    section === "runs" && selectedRunId === null
+      ? (runs.rows.find((row) => row.id === autoRunId) ?? runs.rows[0])
+      : undefined;
+  const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
+  const runDetailBoardId =
+    selectedRunId !== null
+      ? runFilter.board
+      : (autoRunRow?.boardId ?? runFilter.board);
+  const runBoardRole =
+    roleForRunBoard(state.boards, runDetailBoardId) ??
+    selectedRunRow?.boardRole ??
+    autoRunRow?.boardRole;
+  const runBoardTitle =
+    selectedRunRow?.boardTitle ??
+    autoRunRow?.boardTitle ??
+    state.boards.find((board) => board.id === runDetailBoardId)?.title ??
+    runDetailBoardId;
+  const runBoard = loadedBoards.find((board) => board.id === runDetailBoardId);
+  const runTokenNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const token of state.tokens) names.set(token.id, token.name);
+    for (const row of state.rows) {
+      if (names.has(row.apiTokenId)) continue;
+      names.set(row.apiTokenId, agentLabel(row));
+    }
+    for (const row of runs.rows) {
+      if (row.apiTokenId === null || names.has(row.apiTokenId)) continue;
+      names.set(row.apiTokenId, shortId(row.apiTokenId));
+    }
+    return names;
+  }, [runs.rows, state.rows, state.tokens]);
+  const runSessionNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const row of state.rows) {
+      names.set(row.id, row.name ?? shortId(row.id));
+    }
+    for (const row of runs.rows) {
+      if (row.agentSessionId === null || names.has(row.agentSessionId))
+        continue;
+      names.set(row.agentSessionId, shortId(row.agentSessionId));
+    }
+    return names;
+  }, [runs.rows, state.rows]);
   const selectedApprovalBase =
     selectedApprovalId === null
       ? undefined
@@ -390,6 +580,12 @@ export function AgentsPage() {
   const sessionMissing =
     selectedSession !== null && sessionDetailRow === undefined;
   const sessionSheetOpen = section === "sessions" && selectedSession !== null;
+  const runBoardKnown =
+    runDetailBoardId !== "all" &&
+    state.boards.some((board) => board.id === runDetailBoardId) &&
+    !runs.revokedBoardIds.includes(runDetailBoardId);
+  const runSheetOpen =
+    section === "runs" && selectedRunId !== null && runBoardKnown;
   const boardOptions = [
     { value: "all", label: t("agents.filters.allBoards") },
     ...state.boards.map((board) => ({ value: board.id, label: board.title })),
@@ -423,6 +619,38 @@ export function AgentsPage() {
             ? t("agents.filters.stale")
             : t(`agents.status.${value}`),
   }));
+  const runOptions = useMemo(() => runFilterOptions(t), [t]);
+  const runTokenOptions = useMemo(
+    () => [
+      { value: "all", label: t("agents.filters.allTokens") },
+      ...[...runTokenNames.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(runFilter.token !== "all" && !runTokenNames.has(runFilter.token)
+        ? [{ value: runFilter.token, label: shortId(runFilter.token) }]
+        : []),
+    ],
+    [runFilter.token, runTokenNames, t],
+  );
+  const runSessionOptions = useMemo(
+    () => [
+      { value: "all", label: t("agents.shell.allSessions") },
+      ...[...runSessionNames.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      ...(runFilter.session !== "all" && !runSessionNames.has(runFilter.session)
+        ? [{ value: runFilter.session, label: shortId(runFilter.session) }]
+        : []),
+    ],
+    [runFilter.session, runSessionNames, t],
+  );
+  const noteRunConflicts = useCallback((runId: string, count: number) => {
+    setRunConflicts((current) => {
+      const next = new Map(current);
+      next.set(runId, count);
+      return next;
+    });
+  }, []);
   const filteredActive =
     filter.token !== "all" ||
     filter.status !== "all" ||
@@ -441,7 +669,8 @@ export function AgentsPage() {
     !state.loading &&
     (!state.error || state.errorStatus === 403 || state.errorStatus === 404) &&
     filter.board !== "all" &&
-    !state.boards.some((board) => board.id === filter.board);
+    (!state.boards.some((board) => board.id === filter.board) ||
+      (section === "runs" && runs.revokedBoardIds.includes(filter.board)));
   const missingScope =
     filter.board === "all" && (params.has("approval") || params.has("run"));
   const openTokens = () =>
@@ -557,7 +786,11 @@ export function AgentsPage() {
                 <button
                   key={board.value}
                   type="button"
-                  onClick={() => setFilter({ board: board.value })}
+                  onClick={() =>
+                    section === "runs"
+                      ? setRunFilter({ board: board.value })
+                      : setFilter({ board: board.value })
+                  }
                   aria-pressed={filter.board === board.value}
                   className={cn(
                     "flex min-h-8 w-full items-center gap-[7px] rounded-md border border-transparent px-2 text-left font-agent-surface text-[11.5px] font-normal leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -700,7 +933,7 @@ export function AgentsPage() {
               {section === "runs" ? (
                 <button
                   type="button"
-                  onClick={clearFilters}
+                  onClick={clearRunFilters}
                   data-testid="agents-runs-clear-all"
                   className="inline-flex min-h-7 items-center rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:hidden min-[1061px]:max-[1279px]:hidden"
                 >
@@ -770,29 +1003,88 @@ export function AgentsPage() {
               </>
             ) : (
               <>
-                {[
-                  t("agents.filters.allStatuses"),
-                  t("agents.shell.allKinds"),
-                  t("agents.filters.anyTime"),
-                  t("agents.filters.allTokens"),
-                  t("agents.shell.allSessions"),
-                ].map((label) => (
-                  <SelectField
-                    key={label}
-                    value="all"
-                    options={[{ value: "all", label }]}
-                    onChange={() => {}}
-                    disabled
-                    ariaLabel={label}
-                    testId={`agents-runs-filter-${label}`}
-                    chevronClassName="h-[11px] w-[11px]"
-                    className="min-h-11 w-auto min-w-[104px] text-xs md:h-7 md:min-h-7"
-                  />
-                ))}
-                <span className="ml-auto text-[10.5px] text-muted-foreground">
-                  {t("agents.runs.shown", {
-                    count: runs.loading ? 0 : runs.rows.length,
-                  })}
+                <SelectField
+                  value={runFilter.status}
+                  options={runOptions.status}
+                  onChange={(status) =>
+                    setRunFilter({ status: status as RunStatusFilter })
+                  }
+                  ariaLabel={t("agentControl.runs.filter.status")}
+                  testId="agents-run-filter-status"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[104px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.kind}
+                  options={runOptions.kind}
+                  onChange={(kind) =>
+                    setRunFilter({ kind: kind as RunKindFilter })
+                  }
+                  ariaLabel={t("agentControl.runs.filter.kind")}
+                  testId="agents-run-filter-kind"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[96px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.time}
+                  options={runOptions.time}
+                  onChange={(time) =>
+                    setRunFilter({ time: time as RunTimeFilter })
+                  }
+                  ariaLabel={t("agentControl.runs.filter.time")}
+                  testId="agents-run-filter-time"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[92px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.token}
+                  options={runTokenOptions}
+                  onChange={(token) => setRunFilter({ token })}
+                  ariaLabel={t("agentControl.runs.filter.token")}
+                  testId="agents-run-filter-token"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[104px] max-w-[160px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <SelectField
+                  value={runFilter.session}
+                  options={runSessionOptions}
+                  onChange={(session) => setRunFilter({ session })}
+                  ariaLabel={t("agentControl.runs.filter.session")}
+                  testId="agents-run-filter-session"
+                  chevronClassName="h-[11px] w-[11px]"
+                  className="min-h-11 w-auto min-w-[104px] max-w-[160px] text-[11px] md:h-7 md:min-h-7"
+                />
+                <BoardScopeSelect
+                  value={runFilter.board}
+                  boards={state.boards.map((board) => ({
+                    id: board.id,
+                    title: board.title,
+                  }))}
+                  onChange={(board) => setRunFilter({ board })}
+                  ariaLabel={t("agents.filters.board")}
+                  testId="agents-run-filter-board"
+                  variant="filter"
+                  className="w-auto min-w-[108px]"
+                  counts={pending.counts}
+                  totalCount={pendingAll}
+                />
+                <button
+                  type="button"
+                  onClick={clearRunFilters}
+                  data-testid="agents-runs-clear-mobile"
+                  className="hidden min-h-11 items-center rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-hover hover:text-foreground max-[639px]:inline-flex"
+                >
+                  {t("agents.runs.clearAll")}
+                </button>
+                <span
+                  className="ml-auto text-[11px] text-muted-foreground"
+                  data-testid="agents-runs-total"
+                  data-total={runs.total}
+                  data-has-more={runs.hasMore ? "true" : "false"}
+                >
+                  {runs.hasMore
+                    ? t("agents.runs.totalMore", { count: runs.total })
+                    : t("agents.runs.shown", { count: runs.total })}
                 </span>
               </>
             )}
@@ -947,7 +1239,11 @@ export function AgentsPage() {
                 action={
                   <Button
                     variant="outline"
-                    onClick={() => setFilter({ board: "all" })}
+                    onClick={() =>
+                      section === "runs"
+                        ? setRunFilter({ board: "all" })
+                        : setFilter({ board: "all" })
+                    }
                   >
                     {t("agents.shell.allBoards")}
                   </Button>
@@ -977,92 +1273,113 @@ export function AgentsPage() {
                   testId="agents-runs-error"
                   icon={<AlertTriangle className="h-[18px] w-[18px]" />}
                   title={t("agents.runs.loadError")}
-                  body={t("agents.error.stale")}
+                  body={t("agents.runs.stale")}
                   action={
-                    <Button variant="outline" onClick={runs.reload}>
+                    <Button
+                      variant="outline"
+                      onClick={runs.reload}
+                      className="max-md:min-h-11"
+                    >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       {t("agents.retry")}
                     </Button>
                   }
                 />
               ) : runs.rows.length === 0 ? (
-                <EmptyState
-                  testId="agents-runs-empty"
-                  icon={<History className="h-[18px] w-[18px]" />}
-                  title={t("agents.runs.emptyTitle")}
-                  body={t("agents.runs.emptyBody")}
-                  action={
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={clearFilters}
-                        data-testid="agents-runs-empty-clear"
-                      >
-                        {t("agents.clearFilters")}
-                      </Button>
-                      <Button variant="ghost" asChild>
-                        <a
-                          href={docsUrl(lang)}
-                          target="_blank"
-                          rel="noreferrer"
+                hasRunFilter(runFilter) ? (
+                  <RunFilteredEmpty onClear={clearRunFilters} />
+                ) : (
+                  <EmptyState
+                    testId="agents-runs-empty"
+                    icon={<History className="h-[18px] w-[18px]" />}
+                    title={t("agents.runs.emptyTitle")}
+                    body={t("agents.runs.emptyBody")}
+                    action={
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={clearRunFilters}
+                          data-testid="agents-runs-empty-clear"
+                          className="max-md:min-h-11"
                         >
-                          {t("agents.runs.howRollback")}
-                        </a>
-                      </Button>
-                    </>
-                  }
-                />
+                          {t("agents.clearFilters")}
+                        </Button>
+                        <Button variant="ghost" asChild>
+                          <a
+                            href={docsUrl(lang)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t("agents.runs.howRollback")}
+                          </a>
+                        </Button>
+                      </>
+                    }
+                  />
+                )
               ) : (
                 <>
                   {runs.error ? (
                     <div
-                      className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+                      className="mb-2.5 flex flex-wrap items-center gap-3 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
                       role="alert"
+                      data-testid="agents-runs-stale"
                     >
-                      <span>{t("agents.error.stale")}</span>
-                      <Button variant="outline" size="sm" onClick={runs.reload}>
+                      <span>{t("agents.runs.stale")}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={runs.reload}
+                        className="max-md:min-h-11"
+                      >
                         {t("agents.retry")}
                       </Button>
                     </div>
                   ) : null}
-                  <ul
-                    data-testid="agents-runs-list"
-                    className="divide-y divide-border border-y border-border"
-                  >
-                    {runs.rows.map((run) => (
-                      <li
-                        key={run.id}
-                        className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2 text-xs"
+                  <RunList
+                    rows={runs.rows}
+                    selectedId={runDetailRunId}
+                    onSelect={openRun}
+                    now={now}
+                    variant="global"
+                    testIdPrefix="agents-run"
+                    listTestId="agents-runs-list"
+                    boardTitle={(run) =>
+                      state.boards.find((board) => board.id === run.boardId)
+                        ?.title ?? run.boardId
+                    }
+                    tokenLabel={(tokenId) =>
+                      tokenId === null
+                        ? t("agentControl.runs.noToken")
+                        : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+                    }
+                    conflicts={runConflicts}
+                  />
+                  <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-[11px] text-muted-foreground">
+                    <span data-testid="agents-runs-footer-total">
+                      {runs.hasMore
+                        ? t("agents.runs.totalMore", { count: runs.total })
+                        : t("agents.runs.footerCount", { count: runs.total })}
+                    </span>
+                    {runs.hasMore ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid="agents-runs-more"
+                        disabled={runs.loadingMore}
+                        onClick={() => void runs.loadMore()}
+                        className="max-md:min-h-11"
                       >
-                        <span className="font-medium">
-                          {t(`agentControl.runs.kind.${run.kind}`)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {run.boardTitle}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {t("agentControl.runs.commands", {
-                            count: run.commandCount,
-                          })}
-                        </span>
-                        <span
-                          className={cn(
-                            "ml-auto rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
-                            run.status === "applied"
-                              ? "border-success/40 bg-success/10 text-success"
-                              : run.status === "reverted"
-                                ? "border-primary/40 bg-primary/10 text-primary"
-                                : "border-danger/40 bg-danger/10 text-danger",
-                          )}
-                        >
-                          {t(`agentControl.runs.status.${run.status}`)}
-                        </span>
-                        <time className="text-muted-foreground">
-                          {formatRelative(run.createdAt, lang)}
-                        </time>
-                      </li>
-                    ))}
-                  </ul>
+                        {runs.loadingMore ? (
+                          <RefreshCw
+                            className="h-3.5 w-3.5 animate-spin"
+                            aria-hidden
+                          />
+                        ) : null}
+                        {t("agentControl.runs.loadMore")}
+                      </Button>
+                    ) : null}
+                  </div>
                 </>
               )
             ) : section === "attention" ? (
@@ -1153,6 +1470,15 @@ export function AgentsPage() {
           className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
+      {runSheetOpen ? (
+        <button
+          type="button"
+          aria-label={t("agents.runs.backToList")}
+          data-testid="agents-run-sheet-scrim"
+          onClick={closeRun}
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+        />
+      ) : null}
       <aside
         data-testid="agents-detail-panel"
         className={cn(
@@ -1160,15 +1486,53 @@ export function AgentsPage() {
           ((section === "attention" &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
-            sessionSheetOpen) &&
+            sessionSheetOpen ||
+            runSheetOpen) &&
             "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >
-        {section === "attention" &&
-        isAttentionAdmin &&
-        selectedApprovalId !== null &&
-        approvalBoardId !== null ? (
+        {section === "runs" ? (
+          runDetailRunId !== null && runBoardKnown ? (
+            <RunDetail
+              boardId={runDetailBoardId}
+              runId={runDetailRunId}
+              role={runBoardRole}
+              boardTitle={runBoardTitle}
+              board={runBoard}
+              variant="global"
+              tokenLabel={(tokenId) =>
+                tokenId === null
+                  ? t("agentControl.runs.noToken")
+                  : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+              }
+              sessionLabel={(sessionId) =>
+                sessionId === null
+                  ? t("agentControl.runs.noSession")
+                  : (runSessionNames.get(sessionId) ?? shortId(sessionId))
+              }
+              onClose={closeRun}
+              onChanged={() => runs.reload()}
+              onPreview={noteRunConflicts}
+              onOpenSession={openRunSession}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-5 py-8 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
+                <History className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <p className="text-[13px] font-semibold text-foreground">
+                {t("agents.runs.selectTitle")}
+              </p>
+              <p className="max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+                {t("agents.runs.selectBody")}
+              </p>
+            </div>
+          )
+        ) : section === "attention" &&
+          isAttentionAdmin &&
+          selectedApprovalId !== null &&
+          approvalBoardId !== null ? (
           <AttentionApprovalDetail
             boardId={approvalBoardId}
             approvalId={selectedApprovalId}
@@ -1325,6 +1689,28 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {t("agents.retry")}
+        </Button>
+      }
+    />
+  );
+}
+
+function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
+  const { t } = useI18n();
+  return (
+    <EmptyState
+      testId="agents-runs-filtered-empty"
+      icon={<Search className="h-[18px] w-[18px]" />}
+      title={t("agents.runs.noMatch")}
+      body={t("agents.runs.noMatchBody")}
+      action={
+        <Button
+          variant="outline"
+          onClick={onClear}
+          data-testid="agents-runs-clear-filters"
+          className="max-md:min-h-11"
+        >
+          {t("agents.clearFilters")}
         </Button>
       }
     />
