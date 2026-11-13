@@ -139,7 +139,7 @@ function buildLines(
           ? `${comment.text.slice(0, 90)}…`
           : comment.text,
       secondary: comment.authorEmail,
-      href: cardHref(comment.cardId),
+      href: `${cardHref(comment.cardId)}?comment=${encodeURIComponent(comment.id)}`,
       badge: comment.deletedAt !== null ? "deleted" : null,
     });
   }
@@ -150,7 +150,7 @@ function buildLines(
       group: groupLabels.attachments,
       label: file.fileName,
       secondary: file.cardTitle,
-      href: cardHref(file.cardId),
+      href: `${cardHref(file.cardId)}?attachment=${encodeURIComponent(file.id)}`,
       badge: file.deletedAt !== null ? "deleted" : null,
     });
   }

@@ -5,6 +5,7 @@ import type {
   AdminBoardDetailDto,
   AdminBoardRowDto,
   AdminCardDetailDto,
+  AdminCardDetailQuery,
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
@@ -61,6 +62,7 @@ import type {
   AdminUpdateMasterRequest,
   AdminUpdateUserRequest,
   AdminUserDetailDto,
+  AdminUserDetailQuery,
   AdminUserDto,
   AdminUserRowDto,
   BoardAggregate,
@@ -216,15 +218,21 @@ export class AdminApiClient {
     );
   }
 
-  userDetail(userId: string): Promise<AdminUserDetailDto> {
+  userDetail(
+    userId: string,
+    params: AdminUserDetailQuery = {},
+  ): Promise<AdminUserDetailDto> {
     return this.request<AdminUserDetailDto>(
-      `/admin/users/${encodeURIComponent(userId)}/detail`,
+      `/admin/users/${encodeURIComponent(userId)}/detail${this.detailQuery(params)}`,
     );
   }
 
-  cardDetail(cardId: string): Promise<AdminCardDetailDto> {
+  cardDetail(
+    cardId: string,
+    params: AdminCardDetailQuery = {},
+  ): Promise<AdminCardDetailDto> {
     return this.request<AdminCardDetailDto>(
-      `/admin/cards/${encodeURIComponent(cardId)}/detail`,
+      `/admin/cards/${encodeURIComponent(cardId)}/detail${this.detailQuery(params)}`,
     );
   }
 
@@ -848,6 +856,23 @@ export class AdminApiClient {
       method: "PUT",
       body,
     });
+  }
+
+  /** Query of the paged detail tabs (TASK-176.3). */
+  private detailQuery(
+    params: AdminUserDetailQuery | AdminCardDetailQuery,
+  ): string {
+    const search = new URLSearchParams();
+    if (params.section) search.set("section", params.section);
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    if (params.offset !== undefined)
+      search.set("offset", String(params.offset));
+    if (params.includeDeleted === true) search.set("includeDeleted", "true");
+    if ("anchor" in params && params.anchor) {
+      search.set("anchor", params.anchor);
+    }
+    const value = search.toString();
+    return value === "" ? "" : `?${value}`;
   }
 
   private query(params: AdminListParams): string {

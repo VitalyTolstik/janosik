@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.3 honest admin detail counters: user and card detail tabs are now
+  server-side windows with exact totals (`25 of N` / `50 of N`, `Load more`)
+  instead of samples presented as complete lists. `cardsCreated` counts the
+  retained `ADD_CARD` / `DUPLICATE_CARD` command log exactly; comment,
+  attachment, session and token tabs default to live/active rows and expose
+  deleted/revoked rows through explicit `Show deleted` / `Show inactive` /
+  `Show revoked` controls labelled with the hidden-row count. Card comments,
+  attachments and the merged timeline no longer slice silently, and
+  `?comment=<id>` / `?attachment=<id>` centres and highlights the row a global
+  search result points at. EN/RU admin docs state the real limits and counter
+  definitions; backend e2e and UI tests cover >100 cards, >25 comments,
+  >25 sessions, >50 attachments and deleted rows.
 - TASK-176.2 author-only comment editing: the card thread now has an inline
   `Edit` action on the caller's own comments (authors only — other members,
   viewers and masters cannot edit someone else's text). `PATCH

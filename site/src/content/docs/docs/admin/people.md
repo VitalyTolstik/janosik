@@ -118,38 +118,56 @@ badge. The actions menu repeats the full action set.
 
 ### Counter cards
 
-Eight counters are shown:
+Eight counters are shown. Every counter is an exact server-side count, never
+the length of the visible page:
 
 | Counter | Meaning |
 | --- | --- |
-| Boards | boards the user is a member of |
-| Cards created | cards derived from the command log as created by the user |
+| Boards | accepted board memberships; pending invitations and deleted boards are not counted |
+| Cards created | `ADD_CARD` / `DUPLICATE_CARD` commands authored by the user in the retained command log |
 | Cards assigned | live cards where the user is the assignee |
-| Comments | comments authored |
-| Attachments | files uploaded |
-| Sessions | refresh sessions |
-| API tokens | personal tokens |
-| Commands | commands authored |
+| Comments | live (not soft-deleted) comments authored by the user |
+| Attachments | live (not soft-deleted) files uploaded by the user |
+| Sessions | active refresh sessions (not revoked and not expired) |
+| API tokens | active personal tokens (not revoked) |
+| Commands | all commands authored by the user |
+
+`Cards created` has no creator column to read: it is derived from the command
+log, exact for the retained log, and the Created cards tab pages that same log.
 
 ### Tabs
 
-The detail page has nine tabs, each with a count.
+The detail page has nine tabs. Every tab is a window over an exact total: its
+footer reads `N of M` and offers `Load more` while `M` is larger. The tab badge
+is the total for the current filter, never the number of loaded rows.
 
 | Tab | Columns |
 | --- | --- |
 | Memberships | Board, Role, Accepted, Expires, Invited by, Joined |
 | Created cards | Card, Board, Column, Updated, Status |
 | Assigned cards | Card, Board, Column, Updated, Status |
-| Comments | Comment, Card, Created |
-| Attachments | File, Card, Size, Created |
-| Sessions | Started, Expires, Session |
+| Comments | Comment, Card, Created, Status |
+| Attachments | File, Card, Size, Created, Status |
+| Sessions | Started, Expires, Session, Status |
 | API tokens | Token, Created, Last used, Expires, Status |
 | Commands | Action, Board, Seq, When |
 | Activity | Event, Board, Card, When |
 
 Memberships show a `Deleted` badge when the board is deleted and a `Pending`
-badge until the invitation is accepted. Created cards and assigned cards show
-the active, archived or deleted status. Empty tabs show a short empty state.
+badge until the invitation is accepted. The tab includes pending invitations
+and memberships of deleted boards, which is why its total can be larger than
+the Boards counter (accepted memberships only). Created cards and assigned
+cards show the active, archived or deleted status.
+
+Comments and attachments show live rows by default; `Show deleted (N)`
+includes soft-deleted rows. Sessions show active sessions by default;
+`Show inactive (N)` adds revoked and expired ones. API tokens show active
+tokens by default; `Show revoked (N)` adds revoked ones. `N` is the number of
+hidden rows that the control will add, not the new total. A tab whose live page
+is empty still exposes the matching control when hidden rows exist, so
+deleted/revoked rows can never hide the live ones. Empty tabs show a short
+empty state. A tab window stops at 5,000 rows; for deeper history use the
+searchable Commands and Activity lists, which accept the user id.
 
 ## Masters
 

@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
-import type { AdminCardDetailDto } from "@janosik/shared";
+import { ADMIN_DETAIL_LIMITS } from "@janosik/shared";
+import type {
+  AdminCardDetailDto,
+  AdminCardDetailSection,
+} from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +35,8 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  FilterTabs,
+  ListWindowFooter,
   PageHeader,
   Panel,
   Table,
@@ -65,6 +71,51 @@ function MetaItem({
   );
 }
 
+/** Merge one refreshed section without dropping the other windows. */
+function mergeSection(
+  previous: AdminCardDetailDto,
+  page: AdminCardDetailDto,
+  section: AdminCardDetailSection,
+  append: boolean,
+): AdminCardDetailDto {
+  const pageWindow = page.windows[section];
+  // `Load more` requests the next page without re-sending the anchor (the
+  // server would centre again). Keep the marker so the highlighted row and
+  // the "linked from search" note survive appending.
+  const mergedWindow =
+    append && pageWindow.anchor === null
+      ? { ...pageWindow, anchor: previous.windows[section].anchor }
+      : pageWindow;
+  const next: AdminCardDetailDto = {
+    ...previous,
+    hidden: page.hidden,
+    windows: { ...previous.windows, [section]: mergedWindow },
+  };
+  switch (section) {
+    case "comments":
+      return {
+        ...next,
+        comments: append
+          ? [...previous.comments, ...page.comments]
+          : page.comments,
+      };
+    case "attachments":
+      return {
+        ...next,
+        attachments: append
+          ? [...previous.attachments, ...page.attachments]
+          : page.attachments,
+      };
+    case "timeline":
+      return {
+        ...next,
+        timeline: append
+          ? [...previous.timeline, ...page.timeline]
+          : page.timeline,
+      };
+  }
+}
+
 export function CardDetailPage() {
   const { cardId = "" } = useParams();
   const t = useAdminT();
@@ -74,8 +125,22 @@ export function CardDetailPage() {
   const [detail, setDetail] = useState<AdminCardDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sectionLoading, setSectionLoading] =
+    useState<AdminCardDetailSection | null>(null);
 
   const [reloadKey, setReloadKey] = useState(0);
+  const [dismissedAnchor, setDismissedAnchor] = useState<string | null>(null);
+  const scrolledAnchor = useRef<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const commentAnchor = searchParams.get("comment");
+  const attachmentAnchor = searchParams.get("attachment");
+  const anchor = commentAnchor ?? attachmentAnchor;
+  const anchorDismissed = anchor !== null && dismissedAnchor === anchor;
+  const anchorParamSection: AdminCardDetailSection | null = commentAnchor
+    ? "comments"
+    : attachmentAnchor
+      ? "attachments"
+      : null;
 
   const load = () => {
     setError(false);
@@ -85,7 +150,7 @@ export function CardDetailPage() {
   useEffect(() => {
     let active = true;
     adminApi
-      .cardDetail(cardId)
+      .cardDetail(cardId, anchor ? { anchor } : {})
       .then((page) => {
         if (active) setDetail(page);
       })
@@ -95,7 +160,52 @@ export function CardDetailPage() {
     return () => {
       active = false;
     };
-  }, [cardId, reloadKey]);
+  }, [cardId, reloadKey, anchor]);
+
+  // A centred window can put the highlighted row below the 24rem table
+  // viewport. Scroll it into view once per anchor, not on every page append.
+  useEffect(() => {
+    if (anchor === null || anchorDismissed) return;
+    if (scrolledAnchor.current === anchor) return;
+    const row = document.querySelector('[data-anchor="true"]');
+    if (row === null) return;
+    scrolledAnchor.current = anchor;
+    row.scrollIntoView?.({ block: "center" });
+  }, [detail, anchor, anchorDismissed]);
+
+  /** Refresh one section window; `Load more` appends, a filter resets. */
+  const loadSection = async (
+    section: AdminCardDetailSection,
+    params: { offset: number; includeDeleted?: boolean; append: boolean },
+  ) => {
+    setSectionLoading(section);
+    try {
+      const page = await adminApi.cardDetail(cardId, {
+        section,
+        offset: params.offset,
+        limit: ADMIN_DETAIL_LIMITS.card,
+        ...(params.includeDeleted ? { includeDeleted: true } : {}),
+      });
+      setDetail((previous) =>
+        previous === null
+          ? page
+          : mergeSection(previous, page, section, params.append),
+      );
+    } catch {
+      toast.error(t("admin.common.actionFailed"));
+    } finally {
+      setSectionLoading(null);
+    }
+  };
+
+  const clearAnchor = (section: AdminCardDetailSection) => {
+    if (anchor !== null) setDismissedAnchor(anchor);
+    void loadSection(section, {
+      offset: 0,
+      includeDeleted: detail?.windows[section].includeDeleted,
+      append: false,
+    });
+  };
 
   if (error) {
     return (
@@ -110,6 +220,93 @@ export function CardDetailPage() {
 
   const { card } = detail;
   const reload = load;
+
+  const footer = (section: AdminCardDetailSection, shown: number) => {
+    const window = detail.windows[section];
+    return (
+      <ListWindowFooter
+        shown={shown}
+        total={window.total}
+        hasMore={window.hasMore}
+        loading={sectionLoading === section}
+        onLoadMore={() =>
+          void loadSection(section, {
+            offset: window.offset + window.limit,
+            includeDeleted: window.includeDeleted,
+            append: true,
+          })
+        }
+        testId={`admin-card-${section}`}
+      />
+    );
+  };
+
+  const moderationFilter = (section: "comments" | "attachments") => {
+    const window = detail.windows[section];
+    const hidden = detail.hidden[section];
+    if (hidden === 0 && !window.includeDeleted) return null;
+    return (
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2"
+        data-testid={`admin-card-filter-${section}`}
+      >
+        <FilterTabs<"live" | "all">
+          value={window.includeDeleted ? "all" : "live"}
+          options={[
+            { value: "live", label: t("admin.common.live") },
+            {
+              value: "all",
+              label: `${t("admin.common.showDeleted")} (${hidden})`,
+            },
+          ]}
+          onChange={(value) => {
+            // Changing the population invalidates the centred slice; drop
+            // the anchor marker instead of claiming the row disappeared.
+            if (anchor !== null) setDismissedAnchor(anchor);
+            void loadSection(section, {
+              offset: 0,
+              includeDeleted: value === "all",
+              append: false,
+            });
+          }}
+        />
+      </div>
+    );
+  };
+
+  const anchorNote = (section: AdminCardDetailSection) => {
+    const window = detail.windows[section];
+    if (anchorDismissed) return null;
+    if (window.anchor !== null) {
+      return (
+        <div
+          className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-[11px] text-muted-foreground"
+          data-testid={`admin-card-anchor-${section}`}
+        >
+          <span>{t("admin.common.anchorHint")}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[11px]"
+            onClick={() => clearAnchor(section)}
+          >
+            {t("admin.common.showFromStart")}
+          </Button>
+        </div>
+      );
+    }
+    if (anchorParamSection === section) {
+      return (
+        <p
+          className="border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-[11px] text-muted-foreground"
+          data-testid={`admin-card-anchor-missing-${section}`}
+        >
+          {t("admin.common.anchorMissing")}
+        </p>
+      );
+    }
+    return null;
+  };
 
   const run = async (label: string, action: () => Promise<unknown>) => {
     try {
@@ -374,103 +571,163 @@ export function CardDetailPage() {
         </Panel>
       ) : null}
 
-      {detail.attachments.length > 0 ? (
-        <div data-testid="admin-card-detail-attachments">
-          <Table maxHeight="20rem">
-            <thead>
-              <tr>
-                <Th>{t("admin.attachments.column.file")}</Th>
-                <Th>{t("admin.attachments.column.size")}</Th>
-                <Th>{t("admin.attachments.column.uploader")}</Th>
-                <Th>{t("admin.attachments.column.created")}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.attachments.map((file) => (
-                <tr key={file.id}>
-                  <Td>
-                    <span className="inline-flex items-center gap-2">
-                      <AttachmentThumb
-                        attachmentId={file.id}
-                        mimeType={file.mimeType}
-                        fileName={file.fileName}
-                      />
-                      {file.fileName}
-                      <AttachmentDownloadButton
-                        attachmentId={file.id}
-                        fileName={file.fileName}
-                      />
-                    </span>
-                  </Td>
-                  <Td>
-                    <SizeCell bytes={file.sizeBytes} />
-                  </Td>
-                  <Td>
-                    <EntityLink
-                      to={userHref(file.uploadedById)}
-                      copyValue={file.uploadedByEmail}
-                    >
-                      {file.uploadedByEmail}
-                    </EntityLink>
-                  </Td>
-                  <Td>
-                    <DateCell value={file.createdAt} />
-                  </Td>
+      {detail.attachments.length > 0 ||
+      detail.windows.attachments.total + detail.hidden.attachments > 0 ||
+      anchorParamSection === "attachments" ? (
+        <Panel
+          className="shrink-0 overflow-hidden"
+          data-testid="admin-card-detail-attachments"
+        >
+          {anchorNote("attachments")}
+          {moderationFilter("attachments")}
+          {detail.attachments.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <Table maxHeight="20rem">
+              <thead>
+                <tr>
+                  <Th>{t("admin.attachments.column.file")}</Th>
+                  <Th>{t("admin.attachments.column.size")}</Th>
+                  <Th>{t("admin.attachments.column.uploader")}</Th>
+                  <Th>{t("admin.attachments.column.created")}</Th>
+                  <Th>{t("admin.attachments.column.status")}</Th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
+              </thead>
+              <tbody>
+                {detail.attachments.map((file) => {
+                  const anchored =
+                    !anchorDismissed &&
+                    detail.windows.attachments.anchor === file.id;
+                  return (
+                    <tr
+                      key={file.id}
+                      data-anchor={anchored ? "true" : undefined}
+                      aria-current={anchored ? "true" : undefined}
+                      className={anchored ? "bg-warning/10" : undefined}
+                    >
+                      <Td>
+                        <span className="inline-flex items-center gap-2">
+                          <AttachmentThumb
+                            attachmentId={file.id}
+                            mimeType={file.mimeType}
+                            fileName={file.fileName}
+                          />
+                          {file.fileName}
+                          <AttachmentDownloadButton
+                            attachmentId={file.id}
+                            fileName={file.fileName}
+                          />
+                        </span>
+                      </Td>
+                      <Td>
+                        <SizeCell bytes={file.sizeBytes} />
+                      </Td>
+                      <Td>
+                        <EntityLink
+                          to={userHref(file.uploadedById)}
+                          copyValue={file.uploadedByEmail}
+                        >
+                          {file.uploadedByEmail}
+                        </EntityLink>
+                      </Td>
+                      <Td>
+                        <DateCell value={file.createdAt} />
+                      </Td>
+                      <Td>
+                        {file.deletedAt !== null ? (
+                          <Badge variant="danger">
+                            {t("admin.status.deleted")}
+                          </Badge>
+                        ) : (
+                          <Badge variant="success">
+                            {t("admin.status.active")}
+                          </Badge>
+                        )}
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+          {detail.windows.attachments.total + detail.hidden.attachments > 0
+            ? footer("attachments", detail.attachments.length)
+            : null}
+        </Panel>
       ) : null}
 
-      {detail.comments.length > 0 ? (
-        <div data-testid="admin-card-detail-comments">
-          <Table maxHeight="24rem">
-            <thead>
-              <tr>
-                <Th>{t("admin.comments.column.text")}</Th>
-                <Th>{t("admin.comments.column.author")}</Th>
-                <Th>{t("admin.comments.column.created")}</Th>
-                <Th>{t("admin.comments.column.status")}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.comments.map((comment) => (
-                <tr key={comment.id}>
-                  <Td className="max-w-[30rem] whitespace-normal">
-                    {comment.text}
-                    {comment.editedAt != null ? (
-                      <span
-                        data-testid="admin-comment-edited"
-                        className="ml-2 inline-flex align-middle"
-                        title={formatDate(comment.editedAt, lang, hour12)}
-                      >
-                        <Badge variant="neutral">
-                          {t("admin.comments.edited")}
-                        </Badge>
-                      </span>
-                    ) : null}
-                  </Td>
-                  <Td>{comment.authorEmail}</Td>
-                  <Td>
-                    <DateCell value={comment.createdAt} />
-                  </Td>
-                  <Td>
-                    {comment.deletedAt !== null ? (
-                      <Badge variant="danger">
-                        {t("admin.status.deleted")}
-                      </Badge>
-                    ) : (
-                      <Badge variant="success">
-                        {t("admin.status.active")}
-                      </Badge>
-                    )}
-                  </Td>
+      {detail.comments.length > 0 ||
+      detail.windows.comments.total + detail.hidden.comments > 0 ||
+      anchorParamSection === "comments" ? (
+        <Panel
+          className="shrink-0 overflow-hidden"
+          data-testid="admin-card-detail-comments"
+        >
+          {anchorNote("comments")}
+          {moderationFilter("comments")}
+          {detail.comments.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <Table maxHeight="24rem">
+              <thead>
+                <tr>
+                  <Th>{t("admin.comments.column.text")}</Th>
+                  <Th>{t("admin.comments.column.author")}</Th>
+                  <Th>{t("admin.comments.column.created")}</Th>
+                  <Th>{t("admin.comments.column.status")}</Th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
+              </thead>
+              <tbody>
+                {detail.comments.map((comment) => {
+                  const anchored =
+                    !anchorDismissed &&
+                    detail.windows.comments.anchor === comment.id;
+                  return (
+                    <tr
+                      key={comment.id}
+                      data-anchor={anchored ? "true" : undefined}
+                      aria-current={anchored ? "true" : undefined}
+                      className={anchored ? "bg-warning/10" : undefined}
+                    >
+                      <Td className="max-w-[30rem] whitespace-normal">
+                        {comment.text}
+                        {comment.editedAt !== null ? (
+                          <span
+                            data-testid="admin-comment-edited"
+                            className="ml-2 inline-flex align-middle"
+                            title={formatDate(comment.editedAt, lang, hour12)}
+                          >
+                            <Badge variant="neutral">
+                              {t("admin.comments.edited")}
+                            </Badge>
+                          </span>
+                        ) : null}
+                      </Td>
+                      <Td>{comment.authorEmail}</Td>
+                      <Td>
+                        <DateCell value={comment.createdAt} />
+                      </Td>
+                      <Td>
+                        {comment.deletedAt !== null ? (
+                          <Badge variant="danger">
+                            {t("admin.status.deleted")}
+                          </Badge>
+                        ) : (
+                          <Badge variant="success">
+                            {t("admin.status.active")}
+                          </Badge>
+                        )}
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+          {detail.windows.comments.total + detail.hidden.comments > 0
+            ? footer("comments", detail.comments.length)
+            : null}
+        </Panel>
       ) : null}
 
       <Panel className="p-3" data-testid="admin-card-detail-timeline">
@@ -506,6 +763,9 @@ export function CardDetailPage() {
             ))}
           </ul>
         )}
+        {detail.windows.timeline.total > 0
+          ? footer("timeline", detail.timeline.length)
+          : null}
       </Panel>
 
       <ConfirmDialog

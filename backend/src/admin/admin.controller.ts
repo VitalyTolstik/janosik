@@ -103,6 +103,10 @@ import { AdminCreateUserDto } from "./dto/admin-create-user.dto";
 import { AdminDemoStartDto } from "./dto/admin-demo-start.dto";
 import { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 import { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import {
+  AdminCardDetailQueryDto,
+  AdminUserDetailQueryDto,
+} from "./dto/admin-detail-query.dto";
 import { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
 import { AdminUpdateThrottleSettingsDto } from "./dto/admin-update-throttle-settings.dto";
@@ -191,13 +195,19 @@ export class AdminController {
   }
 
   @Get("users/:id/detail")
-  userDetail(@Param("id") id: string): Promise<AdminUserDetailDto> {
-    return this.entities.userDetail(id);
+  userDetail(
+    @Param("id") id: string,
+    @Query() query: AdminUserDetailQueryDto,
+  ): Promise<AdminUserDetailDto> {
+    return this.entities.userDetail(id, query);
   }
 
   @Get("cards/:id/detail")
-  cardDetail(@Param("id") id: string): Promise<AdminCardDetailDto> {
-    return this.entities.cardDetail(id);
+  cardDetail(
+    @Param("id") id: string,
+    @Query() query: AdminCardDetailQueryDto,
+  ): Promise<AdminCardDetailDto> {
+    return this.entities.cardDetail(id, query);
   }
 
   @Get("boards/:id/meta")
