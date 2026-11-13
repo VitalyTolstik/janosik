@@ -77,6 +77,22 @@ export interface CardFilter {
   hasLinks: boolean;
 }
 
+/**
+ * A filter update: either the complete next filter or a reducer over the
+ * latest one. The reducer form keeps rapid facet picks from overwriting each
+ * other — the URL update is a router transition, so the `filter` prop can
+ * still describe an older state when the next click arrives.
+ */
+export type FilterChange = CardFilter | ((current: CardFilter) => CardFilter);
+
+/** Resolve a {@link FilterChange} against the latest filter. */
+export function resolveFilterChange(
+  change: FilterChange,
+  current: CardFilter,
+): CardFilter {
+  return typeof change === "function" ? change(current) : change;
+}
+
 export const EMPTY_FILTER: CardFilter = {
   query: "",
   labelIds: [],

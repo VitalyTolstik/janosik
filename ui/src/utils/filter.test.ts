@@ -11,6 +11,7 @@ import {
   isFilterActive,
   matchesCardFilter,
   readFilterParams,
+  resolveFilterChange,
   searchBoards,
   splitHighlight,
   writeFilterParams,
@@ -18,6 +19,26 @@ import {
 } from "@/utils/filter";
 
 const NOW = new Date("2025-06-15T12:00:00").getTime();
+
+describe("resolveFilterChange", () => {
+  it("passes a complete filter through unchanged", () => {
+    const next = { ...EMPTY_FILTER, due: "overdue" as const };
+    expect(resolveFilterChange(next, EMPTY_FILTER)).toBe(next);
+  });
+
+  it("applies a reducer to the latest filter", () => {
+    const current = { ...EMPTY_FILTER, blocked: true };
+    expect(
+      resolveFilterChange(
+        (latest) => ({
+          ...latest,
+          labelIds: ["l1"],
+        }),
+        current,
+      ),
+    ).toEqual({ ...current, labelIds: ["l1"] });
+  });
+});
 
 function card(
   id: string,
