@@ -294,6 +294,21 @@ describe("fullscreen viewer (lightbox)", () => {
     expect(document.getElementById("attachment-lightbox")).toBeNull();
   });
 
+  it("falls back to the raw src when the lightbox preview fetch fails", async () => {
+    vi.mocked(api.fetchAttachment).mockRejectedValue(new Error("offline"));
+    const src = "/api/v1/attachments/att-lightbox-fail/content";
+    handleAttachmentImageOpen(imageEvent(src));
+    await vi.waitFor(() => {
+      expect(document.getElementById("attachment-lightbox")).not.toBeNull();
+    });
+    expect(
+      document
+        .getElementById("attachment-lightbox")
+        ?.querySelector("img")
+        ?.getAttribute("src"),
+    ).toBe(src);
+  });
+
   it("fetches a fresh blob for an image whose preview never resolved", async () => {
     vi.mocked(api.fetchAttachment).mockResolvedValue(
       new Blob(["y".repeat(9)], { type: "image/png" }),
