@@ -329,7 +329,7 @@ Three clear layers:
 - CHANGELOG; ROADMAP status.
 - Test matrix (see §7); visual acceptance with tracked prototype.
 - No weakened tests; per-PR tests, not all at the end.
-- **Status (2026-11-13):** shipped in PR #269; migration table, EN/RU docs,
+- **Status (2026-11-13):** shipped in PR #270; migration table, EN/RU docs,
   CHANGELOG, ROADMAP and the 1440/1024/390 visual acceptance are in place.
   Evidence: [`design/task-179-visual-acceptance/README.md`](../design/task-179-visual-acceptance/README.md).
 
