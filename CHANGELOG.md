@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.2 author-only comment editing: the card thread now has an inline
+  `Edit` action on the caller's own comments (authors only — other members,
+  viewers and masters cannot edit someone else's text). `PATCH
+  /comments/:commentId` validates the same text limits as create, keeps
+  `kind`, attribution and `createdAt`, stamps `editedAt`, reconciles inline
+  media and records a `comment_updated` activity row and SSE frame. The UI
+  edits in place with Save/Cancel, Ctrl/Cmd+Enter and Escape, shows a
+  localized `edited` marker with a timestamp tooltip, and updates a second
+  tab without a reload; the admin card detail shows the marker but offers no
+  edit control. The migration adds nullable `Comment.editedAt`. EN/RU user
+  guide, REST/OpenAPI docs and tests (backend e2e, UI unit, browser) updated.
 - Board settings workflow redesign («Рельс доски»): the dialog is now one
   surface with a dialog header, a horizontal column rail (accent, card count,
   rule count), a per-column rule list with Allow/switch states, a 316 px

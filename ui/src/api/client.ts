@@ -1135,6 +1135,17 @@ export class ApiClient {
     );
   }
 
+  /**
+   * Edits the caller's own comment (TASK-176.2). Only the author may edit;
+   * the server answers 403 otherwise and 404 for a deleted comment.
+   */
+  updateComment(commentId: string, text: string): Promise<CommentDto> {
+    return this.request<CommentDto>(
+      `/comments/${encodeURIComponent(commentId)}`,
+      { method: "PATCH", body: { text } },
+    );
+  }
+
   /** Live attachments of one card, newest-first (TASK-47). */
   listAttachments(cardId: string): Promise<AttachmentDto[]> {
     return this.request<AttachmentDto[]>(

@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -30,11 +31,12 @@ import {
 } from "@/common/idempotency.service";
 import { CommentsService } from "./comments.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
+import { UpdateCommentDto } from "./dto/update-comment.dto";
 
 /**
- * Card comments (§7.4, TASK-28): write/read/delete. `CardAccessGuard`
+ * Card comments (§7.4, TASK-28): write/read/edit/delete. `CardAccessGuard`
  * resolves the card's board and enforces membership; writing is
- * ADMIN/MEMBER (VIEWER reads), deletion is the author's own comment.
+ * ADMIN/MEMBER (VIEWER reads), editing and deletion belong to the author.
  */
 @Controller()
 export class CommentsController {
@@ -96,6 +98,25 @@ export class CommentsController {
     @Query("kind") kind?: string,
   ): Promise<CommentPage> {
     return this.comments.list(cardId, cursor, limit, kind);
+  }
+
+  @UseGuards(CardAccessGuard)
+  @BoardRoles(Role.ADMIN, Role.MEMBER)
+  @Patch("comments/:commentId")
+  async update(
+    @Param("commentId") commentId: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @Body() dto: UpdateCommentDto,
+  ): Promise<CommentDto> {
+    return this.comments.update(
+      commentId,
+      user.id,
+      dto,
+      requestAttribution(principal, session?.id),
+      principal,
+    );
   }
 
   @UseGuards(CardAccessGuard)

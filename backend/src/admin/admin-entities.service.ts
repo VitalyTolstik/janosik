@@ -942,6 +942,7 @@ export class AdminEntitiesService {
             text: true,
             createdAt: true,
             updatedAt: true,
+            editedAt: true,
             deletedAt: true,
             cardId: true,
             authorId: true,
@@ -1030,6 +1031,7 @@ export class AdminEntitiesService {
         text: comment.text,
         createdAt: comment.createdAt.getTime(),
         updatedAt: comment.updatedAt.getTime(),
+        editedAt: MS(comment.editedAt),
         deletedAt: MS(comment.deletedAt),
       })),
       attachments: attachments.map((file) => ({
@@ -1322,6 +1324,7 @@ export class AdminEntitiesService {
             text: true,
             createdAt: true,
             updatedAt: true,
+            editedAt: true,
             deletedAt: true,
             cardId: true,
             authorId: true,
@@ -1671,6 +1674,7 @@ type CommentJoin = {
   text: string;
   createdAt: Date;
   updatedAt: Date;
+  editedAt: Date | null;
   deletedAt: Date | null;
   cardId: string;
   authorId: string;
@@ -1688,6 +1692,7 @@ function toCommentRow(comment: CommentJoin): AdminCommentRowDto {
     text: comment.text,
     createdAt: comment.createdAt.getTime(),
     updatedAt: comment.updatedAt.getTime(),
+    editedAt: MS(comment.editedAt),
     deletedAt: MS(comment.deletedAt),
   };
 }
@@ -1697,6 +1702,7 @@ const COMMENT_SELECT = {
   text: true,
   createdAt: true,
   updatedAt: true,
+  editedAt: true,
   deletedAt: true,
   cardId: true,
   authorId: true,

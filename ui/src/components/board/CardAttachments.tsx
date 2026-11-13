@@ -201,6 +201,7 @@ export function CardAttachments({
         event.boardId !== boardId ||
         (event.kind !== "comment_deleted" &&
           event.kind !== "comment_added" &&
+          event.kind !== "comment_updated" &&
           event.cardId &&
           event.cardId !== cardId)
       )
@@ -210,6 +211,7 @@ export function CardAttachments({
         event.kind === "attachment_deleted" ||
         event.kind === "comment_added" ||
         event.kind === "comment_deleted" ||
+        event.kind === "comment_updated" ||
         // TASK-50: the background encode swapped the blob — re-read the
         // row for the new size/mime/status (the content URL is unchanged).
         event.kind === "attachment_updated"
