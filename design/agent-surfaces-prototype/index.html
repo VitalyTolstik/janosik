@@ -2679,10 +2679,12 @@ function getComboData(key) {
   }
   if (key === 'agentFilter') {
     const values = ['all', ...allAgents()];
+    const options = values.map((v) => ({ value: v, label: v === 'all' ? 'All agents' : v }));
+    const selected = options.find((option) => option.value === state.agentFilter) || options[0];
     return {
       label: 'Agent filter', value: state.agentFilter,
-      currentLabel: state.agentFilter === 'all' ? 'All agents' : state.agentFilter,
-      options: values.map((v) => ({ value: v, label: v === 'all' ? 'All agents' : v })),
+      currentLabel: selected.label,
+      options,
     };
   }
   if (key === 'statusFilter') {
@@ -2717,18 +2719,22 @@ function getComboData(key) {
   }
   if (key === 'runToken' || key === 'acRunToken') {
     const token = (key === 'acRunToken' ? state.acRunToken : state.runToken) || 'all';
+    const options = [['all', 'All agents'], ...allTokens().map((t) => [t, t])].map(([value, label]) => ({ value, label }));
+    const selected = options.find((option) => option.value === token) || options[0];
     return {
       label: 'Agent or token', value: token,
-      currentLabel: token === 'all' ? 'All agents' : token,
-      options: [['all', 'All agents'], ...allTokens().map((t) => [t, t])].map(([value, label]) => ({ value, label })),
+      currentLabel: selected.label,
+      options,
     };
   }
   if (key === 'runSession' || key === 'acRunSession') {
     const sessionName = (key === 'acRunSession' ? state.acRunSession : state.runSession) || 'all';
+    const options = [['all', 'All sessions'], ...allRunSessions().map((s) => [s, s])].map(([value, label]) => ({ value, label }));
+    const selected = options.find((option) => option.value === sessionName) || options[0];
     return {
       label: 'Session', value: sessionName,
-      currentLabel: sessionName === 'all' ? 'All sessions' : sessionName,
-      options: [['all', 'All sessions'], ...allRunSessions().map((s) => [s, s])].map(([value, label]) => ({ value, label })),
+      currentLabel: selected.label,
+      options,
     };
   }
   if (key === 'demoState') {
@@ -3026,6 +3032,51 @@ function rememberScroll() {
   });
 }
 
+function svgIconNode(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `#i-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+function textSpan(text) {
+  const span = document.createElement('span');
+  span.textContent = text == null ? '' : String(text);
+  return span;
+}
+
+function setValueById(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value == null ? '' : String(value);
+}
+
+function setBoundText(name, text) {
+  const el = document.querySelector(`[data-bind="${name}"]`);
+  if (el) el.textContent = text == null ? '' : String(text);
+}
+
+function hydrateDynamicText() {
+  setValueById('agents-search', state.search);
+  setValueById('ac-search', state.acSearch);
+  setValueById('controls-search', state.controlsSearch);
+  setValueById('reject-reason', state.rejectReason);
+  setValueById('limit-commands', state.policy.limits.commands);
+  setValueById('limit-cards', state.policy.limits.cards);
+  setValueById('limit-ttl', state.policy.limits.ttl);
+  setBoundText('live-pause-reason', state.boardPauseReason ? ' · ' + state.boardPauseReason : '');
+  setBoundText('policy-pause-reason', state.boardPauseReason || 'Board writes are paused');
+  setBoundText('effective-limits', `${Math.min(state.policy.limits.commands, 100)} commands · ${Math.min(state.policy.limits.cards, 50)} cards · ${state.policy.limits.ttl} min TTL`);
+  setBoundText('controls-empty-query', state.controlsSearch ? `“${state.controlsSearch}”` : '');
+}
+
+function hydrateDialogText() {
+  const reason = document.querySelector('[data-bind="discard-agent-reason"]');
+  if (reason) reason.textContent = `“${state.rejectReason || 'No reason yet'}”`;
+}
+
 function renderStage() {
   rememberScroll();
   const focus = captureFocus();
@@ -3045,6 +3096,7 @@ function renderStage() {
     host.innerHTML = renderControls();
   }
   restoreScroll();
+  hydrateDynamicText();
   restoreFocus(focus);
   syncChrome();
   renderDialog();
@@ -3104,7 +3156,8 @@ function syncChrome() {
   document.getElementById('section-kicker').textContent = meta.kicker;
   document.getElementById('section-title').textContent = meta.title;
   document.getElementById('section-description').textContent = meta.description;
-  document.getElementById('stage-path').innerHTML = `${icon(state.section === 'evidence' ? 'file-diff' : state.section === 'controls' ? 'list-checks' : state.section === 'settings' ? 'settings' : state.section === 'control' ? 'bot' : 'bot')}<span>${esc(path)}</span>`;
+  const stageIconName = state.section === 'evidence' ? 'file-diff' : state.section === 'controls' ? 'list-checks' : state.section === 'settings' ? 'settings' : 'bot';
+  document.getElementById('stage-path').replaceChildren(svgIconNode(stageIconName), textSpan(path));
   const frame = document.getElementById('device-frame');
   const widths = { desktop: 1440, tablet: 1024, mobile: 390 };
   const heights = { desktop: '1440 × 900', tablet: '1024 × 768', mobile: '390 × 844' };
@@ -3116,9 +3169,9 @@ function syncChrome() {
     : heights[state.device];
   const url = document.getElementById('device-url');
   if (state.compare === 'before' && ['agents', 'control', 'settings'].includes(state.section)) {
-    url.innerHTML = `${icon('lock')}<span>evidence · audited build c6688f3 · ${state.device}</span>`;
+    url.replaceChildren(svgIconNode('lock'), textSpan(`evidence · audited build c6688f3 · ${state.device}`));
   } else {
-    url.innerHTML = `${icon('lock')}<span>${esc(path)}</span>`;
+    url.replaceChildren(svgIconNode('lock'), textSpan(path));
   }
   const live = document.getElementById('stage-live');
   const isBefore = state.compare === 'before' && ['agents', 'control', 'settings'].includes(state.section);
@@ -3128,7 +3181,9 @@ function syncChrome() {
       ? `Board scope · ${boardName(state.sceneBoard)}`
       : meta.side;
   live.classList.toggle('is-evidence', isBefore);
-  live.innerHTML = `<i aria-hidden="true"></i><span>${isBefore ? 'Screenshot evidence' : esc(side)}</span>`;
+  const liveDot = document.createElement('i');
+  liveDot.setAttribute('aria-hidden', 'true');
+  live.replaceChildren(liveDot, textSpan(isBefore ? 'Screenshot evidence' : side));
 
   const compareButtons = document.querySelectorAll('[data-action="compare"]');
   const compareDisabled = !['agents', 'control', 'settings'].includes(state.section);
@@ -3390,7 +3445,7 @@ function renderControls() {
   return `
     <div class="controls-wrap" style="padding:12px">
       <div class="controls-toolbar">
-        <div class="input-wrap">${icon('search')}<input class="input" id="controls-search" data-action="controls-search" type="search" placeholder="Filter controls, behaviour, permissions, tests…" value="${esc(state.controlsSearch)}" aria-label="Filter controls table"></div>
+        <div class="input-wrap">${icon('search')}<input class="input" id="controls-search" data-action="controls-search" type="search" placeholder="Filter controls, behaviour, permissions, tests…" aria-label="Filter controls table"></div>
         <span class="count">${q ? groups.reduce((n, g) => n + g.rows.length, 0) : total} of ${total} controls</span>
         <button type="button" class="btn btn-outline" data-action="expand-all">Expand all</button>
         <button type="button" class="btn btn-ghost" data-action="collapse-all">Collapse all</button>
@@ -3419,7 +3474,7 @@ function renderControls() {
               </tbody>
             </table>
           </div>
-        </details>`).join('') : `<div class="control-group controls-empty">No controls match “${esc(state.controlsSearch)}”. <button type="button" class="btn btn-ghost btn-sm" data-action="clear-controls">Clear search</button></div>`}
+        </details>`).join('') : `<div class="control-group controls-empty">No controls match <span data-bind="controls-empty-query"></span>. <button type="button" class="btn btn-ghost btn-sm" data-action="clear-controls">Clear search</button></div>`}
       <p class="meta" style="margin:0">Rows are design recommendations from the two reports. They are not shipped application behaviour. The prototype demonstrates the interaction model with synthetic data.</p>
     </div>`;
 }
@@ -3477,7 +3532,7 @@ function agentsToolbar({ showHeartbeat = true } = {}) {
   const hasFilters = state.boardFilter !== 'all' || state.search.trim() || state.agentFilter !== 'all' || state.statusFilter !== 'all';
   return `
     <div class="agents-toolbar">
-      <div class="input-wrap">${icon('search')}<input class="input" id="agents-search" data-action="agents-search" type="search" placeholder="Search agents or cards…" value="${esc(state.search)}" aria-label="Search agents"></div>
+      <div class="input-wrap">${icon('search')}<input class="input" id="agents-search" data-action="agents-search" type="search" placeholder="Search agents or cards…" aria-label="Search agents"></div>
       ${comboTrigger('agentFilter', 'agents-agent-filter', 'select cselect-trigger', 'Agent filter')}
       ${comboTrigger('statusFilter', 'agents-status-filter', 'select cselect-trigger', 'Status filter')}
       <button type="button" class="filter-chip cselect-trigger ${state.boardFilter !== 'all' ? 'is-active' : ''}" id="board-filter-trigger" data-action="combo-open" data-combo-key="board" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Board scope: ${esc(scopeLabel())}">
@@ -4023,7 +4078,7 @@ function rejectForm(target = 'agents') {
   return `
     <div class="reject-form">
       <label for="reject-reason">Reason for rejection <span class="muted">(required)</span></label>
-      <textarea id="reject-reason" data-action="reject-reason" placeholder="Two cards are still being edited. Archive only after the migration.">${esc(state.rejectReason)}</textarea>
+      <textarea id="reject-reason" data-action="reject-reason" placeholder="Two cards are still being edited. Archive only after the migration."></textarea>
       <div class="reject-actions">
         <button type="button" class="btn btn-ghost btn-sm" data-action="reject-cancel">Cancel</button>
         <button type="button" class="btn btn-danger btn-sm" data-action="reject-submit" ${disabled ? 'disabled' : ''}>Reject approval</button>
@@ -4307,7 +4362,7 @@ function renderInboxPanel() {
         ${filterBtn('decided', 'Decided', counts.decided)}
         ${filterBtn('all', 'All', counts.all)}
       </div>
-      <div class="input-wrap" style="margin-left:auto;max-width:180px">${icon('search')}<input class="input" id="ac-search" data-action="ac-search" type="search" placeholder="Search approvals…" value="${esc(state.acSearch)}" aria-label="Search approvals"></div>
+      <div class="input-wrap" style="margin-left:auto;max-width:180px">${icon('search')}<input class="input" id="ac-search" data-action="ac-search" type="search" placeholder="Search approvals…" aria-label="Search approvals"></div>
       <button type="button" class="icon-btn-sm" data-action="ac-refresh" aria-label="Refresh approvals">${icon('refresh')}</button>
     </div>
     <div class="ac-split">${list}${detail}</div>`;
@@ -4327,7 +4382,7 @@ function renderLivePanel() {
       <span class="live-icon">${icon(state.boardPaused ? 'pause' : 'activity')}</span>
       <div class="live-status-main">
         <b>${state.boardPaused ? 'Agent writes are paused' : 'Agent writes are allowed'}</b>
-        <p>${state.boardPaused ? `Paused ${state.boardPauseBy ? 'by ' + esc(state.boardPauseBy) : 'on this board'}${state.boardPauseReason ? ' · ' + esc(state.boardPauseReason) : ''}. In-flight commands finish; new writes get <span class="mono">403 agent_paused</span>; claims stay.` : 'Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends.'}</p>
+        <p>${state.boardPaused ? `Paused ${state.boardPauseBy ? 'by ' + esc(state.boardPauseBy) : 'on this board'}<span data-bind="live-pause-reason"></span>. In-flight commands finish; new writes get <span class="mono">403 agent_paused</span>; claims stay.` : 'Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends.'}</p>
       </div>
       <div class="live-status-actions">
         ${boardAdmin ? (state.boardPaused
@@ -4582,7 +4637,7 @@ function renderPolicySettings(dirty) {
       <div class="status-strip">
         <span class="status-dot ${state.boardPaused ? 'warn' : 'ok'}"></span>
         <b>${state.boardPaused ? 'Agents paused' : 'Agents running'}</b>
-        <span class="meta">${state.boardPaused ? esc(state.boardPauseReason || 'Board writes are paused') : 'Board pause off'}</span>
+        <span class="meta">${state.boardPaused ? '<span data-bind="policy-pause-reason"></span>' : 'Board pause off'}</span>
         <button type="button" class="strip-link" data-action="open-control-live">Open live controls ${icon('arrow-up-right')}</button>
         <span class="policy-meta">Policy v${state.policyVersion} · board admins only</span>
       </div>
@@ -4605,9 +4660,9 @@ function renderPolicySettings(dirty) {
         <section class="bs-section">
           <div class="bs-section-head"><h3>Approval limits</h3><p>The server takes the lower of the global hard limit and this policy.</p></div>
           <div class="limits-grid">
-            <div class="field"><label for="limit-commands">Commands / run</label><div class="number-field"><input id="limit-commands" type="number" min="1" max="100" step="1" value="${p.limits.commands}" data-limit="commands" inputmode="numeric"><span class="suffix">max 100</span></div></div>
-            <div class="field"><label for="limit-cards">Cards / run</label><div class="number-field"><input id="limit-cards" type="number" min="1" max="50" step="1" value="${p.limits.cards}" data-limit="cards" inputmode="numeric"><span class="suffix">max 50</span></div></div>
-            <div class="field"><label for="limit-ttl">Approval TTL</label><div class="number-field"><input id="limit-ttl" type="number" min="5" max="240" step="5" value="${p.limits.ttl}" data-limit="ttl" inputmode="numeric"><span class="suffix">min</span></div></div>
+            <div class="field"><label for="limit-commands">Commands / run</label><div class="number-field"><input id="limit-commands" type="number" min="1" max="100" step="1" data-limit="commands" inputmode="numeric"><span class="suffix">max 100</span></div></div>
+            <div class="field"><label for="limit-cards">Cards / run</label><div class="number-field"><input id="limit-cards" type="number" min="1" max="50" step="1" data-limit="cards" inputmode="numeric"><span class="suffix">max 50</span></div></div>
+            <div class="field"><label for="limit-ttl">Approval TTL</label><div class="number-field"><input id="limit-ttl" type="number" min="5" max="240" step="5" data-limit="ttl" inputmode="numeric"><span class="suffix">min</span></div></div>
           </div>
           <div class="field" style="margin-top:9px">
             <label for="approver-roles-trigger">Approver roles</label>
@@ -4632,7 +4687,7 @@ function renderPolicySettings(dirty) {
         </div>
       </section>
       <div class="policy-meta" style="margin-top:12px;padding-top:9px;border-top:1px solid var(--border)">
-        <span class="status-dot ok"></span><span>Safe defaults are active where unset</span><span class="sep" style="width:1px;height:11px;background:var(--border)"></span><span>Effective: ${Math.min(p.limits.commands, 100)} commands · ${Math.min(p.limits.cards, 50)} cards · ${p.limits.ttl} min TTL</span>
+        <span class="status-dot ok"></span><span>Safe defaults are active where unset</span><span class="sep" style="width:1px;height:11px;background:var(--border)"></span><span>Effective: <span data-bind="effective-limits"></span></span>
       </div>
     </div>`;
 }
@@ -4728,7 +4783,7 @@ function dialogMeta(action, payload) {
       return {
         icon: 'alert', title: 'Discard this rejection?',
         description: 'The reason you started typing will be lost. The approval remains pending.',
-        body: `<div class="dialog-impact">“${esc(state.rejectReason || 'No reason yet')}”</div>`,
+        body: `<div class="dialog-impact" data-bind="discard-agent-reason"></div>`,
         confirm: 'Discard draft', tone: 'danger',
       };
     case 'create-key':
@@ -4747,7 +4802,7 @@ function dialogMeta(action, payload) {
       };
     case 'token-info':
       return {
-        icon: 'key', title: `Your token · ${payload?.token || ''}`,
+        icon: 'key', title: `Your token · ${SELF_TOKEN}`,
         description: 'Token settings are available to the token owner in Account → API keys. Board Live never pauses or stops a token.',
         body: `<div class="dialog-impact">This link is shown only for your own token. Other members' tokens stay read-only and expose no settings action.</div>`,
         confirm: 'Open Account → API keys', tone: 'primary',
@@ -4773,14 +4828,39 @@ function renderDialog() {
   const { action, payload } = state.dialog;
   if (action === 'lightbox') {
     root.className = 'dialog-root is-open';
-    root.innerHTML = `
-      <div class="dialog-scrim" data-action="dialog-cancel"></div>
-      <div class="lightbox" role="dialog" aria-modal="true" aria-label="${esc(payload.title)}">
-        <div class="lightbox-head"><h2>${esc(payload.title)}</h2><span class="chip warn">Evidence</span><button type="button" class="icon-button" data-action="dialog-cancel" aria-label="Close image">${icon('x')}</button></div>
-        <div class="lightbox-body"><img src="${esc(payload.src)}" alt="${esc(payload.title)}"></div>
-        <div class="lightbox-caption">${esc(payload.caption || '')}</div>
-      </div>`;
-    requestAnimationFrame(() => root.querySelector('.lightbox-head [data-action="dialog-cancel"]')?.focus({ preventScroll: true }));
+    const scrim = document.createElement('div');
+    scrim.className = 'dialog-scrim';
+    scrim.dataset.action = 'dialog-cancel';
+    const box = document.createElement('div');
+    box.className = 'lightbox';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', payload.title || 'Evidence image');
+    const head = document.createElement('div');
+    head.className = 'lightbox-head';
+    const title = document.createElement('h2');
+    title.textContent = payload.title || '';
+    const chip = textSpan('Evidence');
+    chip.className = 'chip warn';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'icon-button';
+    close.dataset.action = 'dialog-cancel';
+    close.setAttribute('aria-label', 'Close image');
+    close.appendChild(svgIconNode('x'));
+    head.append(title, chip, close);
+    const body = document.createElement('div');
+    body.className = 'lightbox-body';
+    const img = document.createElement('img');
+    img.src = payload.src || '';
+    img.alt = payload.title || '';
+    body.appendChild(img);
+    const caption = document.createElement('div');
+    caption.className = 'lightbox-caption';
+    caption.textContent = payload.caption || '';
+    box.append(head, body, caption);
+    root.replaceChildren(scrim, box);
+    requestAnimationFrame(() => close.focus({ preventScroll: true }));
     return;
   }
   const meta = dialogMeta(action, payload);
@@ -4798,6 +4878,7 @@ function renderDialog() {
         <button type="button" class="btn ${meta.tone === 'danger' ? 'btn-danger' : 'btn-primary'} btn-sm" data-action="dialog-confirm">${esc(meta.confirm)}</button>
       </div>
     </div>`;
+  hydrateDialogText();
   requestAnimationFrame(() => {
     const textarea = root.querySelector('#dialog-reason');
     (textarea || root.querySelector('.dialog-foot [data-action="dialog-cancel"]'))?.focus({ preventScroll: true });
