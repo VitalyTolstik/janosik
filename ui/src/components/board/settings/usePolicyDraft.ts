@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_BOARD_AGENT_POLICY } from "@janosik/shared";
 import type {
   BoardAgentPolicy,
   BoardAgentPolicyAction,
@@ -33,11 +34,6 @@ export interface PolicySaveError {
 }
 
 export type PolicySaveOutcome = "saved" | "conflict" | "error" | "invalid";
-
-export interface PolicyResetOutcome {
-  kind: "saved" | "conflict" | "error";
-  version?: number;
-}
 
 interface PolicySession {
   state: BoardAgentPolicyStateDto;
@@ -76,7 +72,7 @@ export interface UsePolicyDraftResult {
   resolveConflict: (field: PolicyField, choice: "mine" | "server") => void;
   save: () => Promise<PolicySaveOutcome>;
   discard: () => void;
-  reset: () => Promise<PolicyResetOutcome>;
+  resetDraft: () => void;
 }
 
 function policyFromState(state: BoardAgentPolicyStateDto): BoardAgentPolicy {
@@ -309,7 +305,9 @@ export function usePolicyDraft({
       if (policy === null) return "invalid";
       try {
         const next = await api.updateBoardAgentPolicy(boardId, {
-          policy,
+          // Saving the untouched defaults is the reset wire shape: it keeps
+          // `policy: null` instead of persisting an identical explicit JSON.
+          policy: isDefaultPolicy(policy) ? null : policy,
           version,
         });
         applyServerState(next);
@@ -398,70 +396,23 @@ export function usePolicyDraft({
     setError(null);
   }, [applySession]);
 
-  const reset = useCallback(async (): Promise<PolicyResetOutcome> => {
+  /**
+   * The prototype's Reset… only replaces the draft; the footer Save is what
+   * sends `policy: null`. This keeps the confirmation copy truthful and lets
+   * the admin discard the reset with the regular discard path.
+   */
+  const resetDraft = useCallback(() => {
     const current = sessionRef.current;
-    if (
-      current === null ||
-      boardId === undefined ||
-      saving ||
-      savingRef.current
-    ) {
-      return { kind: "error" };
-    }
-    savingRef.current = true;
-    setSaving(true);
+    if (current === null) return;
+    const draft = draftOf(DEFAULT_BOARD_AGENT_POLICY);
+    applySession({
+      ...current,
+      draft,
+      localFields: localPolicyFields(draft, policyFromState(current.state)),
+      conflicts: [],
+    });
     setError(null);
-    try {
-      const next = await api.updateBoardAgentPolicy(boardId, {
-        policy: null,
-        version: current.state.version,
-      });
-      applyServerState(next);
-      return { kind: "saved" };
-    } catch (resetError) {
-      if (!isVersionConflict(resetError)) {
-        setError(errorOf(resetError));
-        return { kind: "error" };
-      }
-
-      let fetched: BoardAgentPolicyStateDto;
-      try {
-        fetched = await api.getBoardAgentPolicy(boardId);
-      } catch (reloadError) {
-        setError(errorOf(reloadError));
-        return { kind: "error" };
-      }
-      const active = sessionRef.current;
-      if (active === null) {
-        setError({ kind: "generic" });
-        return { kind: "error" };
-      }
-      const latest = policyFromState(fetched);
-      // A reset is a whole-policy operation, but the draft must still be
-      // merged so cancelling the second confirmation cannot send a stale
-      // draft with the new version.
-      const merged = mergePolicyDraft({
-        base: active.base,
-        previous: active.lastSynced,
-        latest,
-        draft: active.draft,
-        localFields: active.localFields,
-      });
-      applySession({
-        state: fetched,
-        base: active.base,
-        lastSynced: latest,
-        draft: merged.draft,
-        localFields: merged.localFields,
-        conflicts: merged.conflicts,
-      });
-      setError({ kind: "conflict", version: fetched.version });
-      return { kind: "conflict", version: fetched.version };
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  }, [applyServerState, applySession, boardId, saving]);
+  }, [applySession]);
 
   const validation =
     session === null ? null : validatePolicyDraft(session.draft);
@@ -491,6 +442,6 @@ export function usePolicyDraft({
     resolveConflict,
     save,
     discard,
-    reset,
+    resetDraft,
   };
 }

@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Info,
+  Lock,
   RefreshCw,
   RotateCcw,
   Terminal,
@@ -12,19 +13,22 @@ import {
 import type { BoardAgentPolicyAction, BoardRole } from "@janosik/shared";
 
 import { isApiEnabled } from "@/api/client";
-import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
-import { useI18n } from "@/i18n";
+import { formatRelative, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
+import { PolicyResetDialog } from "./PolicyResetDialog";
 import {
+  DESTRUCTIVE_POLICY_ACTIONS,
   EDITABLE_POLICY_ACTIONS,
   POLICY_LIMITS,
   POLICY_TRIGGER_ORDER,
+  isDefaultPolicy,
   isDestructivePolicyAction,
+  policyOfDraft,
   type PolicyField,
   type PolicyFieldValue,
 } from "./policy-model";
@@ -200,7 +204,7 @@ export function AgentsAutomation({
   onDirtyChange?: (dirty: boolean) => void;
   onOpenLiveControls?: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const { board } = useBoardState();
   const live = useBoardLive();
@@ -212,9 +216,6 @@ export function AgentsAutomation({
   });
   const [showKeys, setShowKeys] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetConflictVersion, setResetConflictVersion] = useState<
-    number | null
-  >(null);
   const destructiveSectionRef = useRef<HTMLElement | null>(null);
   const destructiveInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -308,6 +309,10 @@ export function AgentsAutomation({
   const activeTriggerCount = EDITABLE_POLICY_ACTIONS.filter((action) =>
     draft.requireApprovalFor.includes(action),
   ).length;
+  const destructiveModeLabel =
+    draft.destructive === "approval"
+      ? t("agentControl.policy.destructiveApproval")
+      : t("agentControl.policy.destructiveDeny");
   const conflict =
     policy.conflicts.length > 0 || policy.error?.kind === "conflict";
   const conflictVersion = policy.error?.version ?? policy.version ?? 0;
@@ -315,6 +320,13 @@ export function AgentsAutomation({
     policy.error !== null && policy.error.kind !== "conflict"
       ? errorText(policy.error, t)
       : null;
+  const lastSavedAt = state?.lastSavedAt ?? null;
+  const lastSavedBy = state?.lastSavedBy ?? null;
+  // Activity rows are retention-swept, so a missing row is only proof of a
+  // never-saved board when the authoritative policy is still the untouched
+  // default. A stored policy or a bumped version gets a neutral fallback
+  // instead of a false "safe defaults apply".
+  const neverSaved = state?.policy === null && (state?.version ?? 0) <= 1;
   const footerStatus = policy.saving
     ? t("board.settings.agents.saving")
     : conflict
@@ -323,7 +335,9 @@ export function AgentsAutomation({
         ? t("agentControl.error.generic")
         : policy.dirty
           ? t("board.settings.agents.unsaved")
-          : t("board.settings.agents.saved");
+          : neverSaved
+            ? t("board.settings.agents.defaultsStatus")
+            : t("board.settings.agents.saved");
   const footerTone = policy.saving
     ? "bg-primary"
     : policy.error !== null || conflict
@@ -335,8 +349,17 @@ export function AgentsAutomation({
         : "bg-success";
   const secondaryStatus = conflict
     ? t("board.settings.agents.serverAtVersion", { version: conflictVersion })
-    : t("board.settings.agents.footerHint");
-  const resetDisabled = policy.saving || policy.usingDefaults;
+    : lastSavedAt !== null
+      ? t("board.settings.agents.lastSavedBy", {
+          name: lastSavedBy ?? t("board.settings.agents.unknownAdmin"),
+          time: formatRelative(lastSavedAt, lang),
+        })
+      : neverSaved
+        ? t("board.settings.agents.neverSaved")
+        : t("board.settings.agents.saveDetailsUnavailable");
+  const draftPolicy = policyOfDraft(draft);
+  const draftIsDefaults = draftPolicy !== null && isDefaultPolicy(draftPolicy);
+  const resetDisabled = policy.saving || draftIsDefaults;
 
   const save = async () => {
     const outcome = await policy.save();
@@ -347,22 +370,13 @@ export function AgentsAutomation({
 
   const requestReset = () => {
     if (resetDisabled) return;
-    setResetConflictVersion(null);
     setResetOpen(true);
   };
 
-  const confirmReset = async () => {
+  const confirmReset = () => {
     setResetOpen(false);
-    const outcome = await policy.reset();
-    if (outcome.kind === "saved") {
-      setResetConflictVersion(null);
-      toast.success(t("agentControl.policy.resetToast"));
-      return;
-    }
-    if (outcome.kind === "conflict") {
-      setResetConflictVersion(outcome.version ?? null);
-      setResetOpen(true);
-    }
+    policy.resetDraft();
+    toast.success(t("agentControl.policy.resetDraftToast"));
   };
 
   return (
@@ -389,7 +403,7 @@ export function AgentsAutomation({
             disabled={resetDisabled}
             data-testid="agent-policy-reset"
             title={
-              policy.usingDefaults
+              draftIsDefaults
                 ? t("board.settings.agents.resetDisabledHint")
                 : t("board.settings.agents.resetHint")
             }
@@ -740,34 +754,95 @@ export function AgentsAutomation({
             </button>
           </div>
           <div
+            role="note"
+            data-testid="agent-policy-triggers-guide"
+            className="mb-2 flex flex-wrap items-start gap-2 rounded-[7px] border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]"
+          >
+            <Info
+              className="mt-px h-3.5 w-3.5 shrink-0 text-primary"
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <b className="font-[650] text-foreground">
+                {t("board.settings.agents.triggersGuideTitle", {
+                  count: DESTRUCTIVE_POLICY_ACTIONS.length,
+                })}
+              </b>{" "}
+              <span className="text-muted-foreground">
+                {t("board.settings.agents.triggersGuideBody", {
+                  count: EDITABLE_POLICY_ACTIONS.length,
+                })}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={focusDestructiveMode}
+              data-testid="agent-policy-change-destructive"
+              className="inline-flex min-h-7 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[5px] border border-border bg-popover px-2 text-[11px] font-[650] leading-[1.45] text-foreground transition-colors hover:border-primary/50 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-md:min-h-11 max-md:basis-full"
+            >
+              {t("board.settings.agents.changeDestructiveMode")}
+              <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
+            </button>
+          </div>
+          <div
             className="grid grid-cols-1 gap-x-4 sm:grid-cols-2"
             data-testid="agent-policy-require-list"
           >
             {POLICY_TRIGGER_ORDER.map((action) => {
               const covered = isDestructivePolicyAction(action);
+              if (covered) {
+                return (
+                  <div
+                    key={action}
+                    className="flex min-h-7 items-center gap-[7px] border-b border-[color-mix(in_oklab,var(--border)_62%,transparent)] py-1 text-[11px] leading-[1.45] last:border-b-0 max-md:min-h-11"
+                    data-testid={`agent-policy-require-row-${action}`}
+                    data-covered="true"
+                  >
+                    <Lock
+                      className="h-[13px] w-[13px] shrink-0 text-muted-foreground/70"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate text-foreground">
+                      {t(ACTION_KEYS[action])}
+                    </span>
+                    <span
+                      className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] leading-[1.45] text-muted-foreground"
+                      data-testid={`agent-policy-covered-status-${action}`}
+                      data-mode={draft.destructive}
+                      title={t("board.settings.agents.coveredByMode", {
+                        mode: destructiveModeLabel,
+                      })}
+                    >
+                      {t("board.settings.agents.coveredStatus", {
+                        mode: destructiveModeLabel,
+                      })}
+                    </span>
+                  </div>
+                );
+              }
               const checked = draft.requireApprovalFor.includes(action);
-              const disabled = covered || policy.saving;
               return (
                 <div
                   key={action}
                   className={cn(
                     "agent-check-row flex min-h-7 items-center gap-[7px] border-b border-[color-mix(in_oklab,var(--border)_62%,transparent)] py-1 text-[11px] leading-[1.45] last:border-b-0 max-md:min-h-11",
-                    covered ? "text-muted-foreground" : "text-foreground",
-                    disabled && "is-disabled",
+                    "text-foreground",
+                    policy.saving && "is-disabled",
                   )}
                   data-testid={`agent-policy-require-row-${action}`}
+                  data-covered="false"
                 >
                   <label
                     className={cn(
                       "flex min-w-0 flex-1 items-center gap-[7px]",
-                      disabled ? "cursor-not-allowed" : "cursor-pointer",
+                      policy.saving ? "cursor-not-allowed" : "cursor-pointer",
                     )}
                   >
                     <span className="relative inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center">
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={disabled}
+                        disabled={policy.saving}
                         onChange={() => policy.toggleAction(action)}
                         data-testid={`agent-policy-require-${action}`}
                         aria-label={t(ACTION_KEYS[action])}
@@ -781,30 +856,11 @@ export function AgentsAutomation({
                         <Check />
                       </span>
                     </span>
-                    <span
-                      className={cn(
-                        "min-w-0 truncate",
-                        covered &&
-                          "line-through decoration-muted-foreground/40",
-                      )}
-                    >
+                    <span className="min-w-0 truncate">
                       {t(ACTION_KEYS[action])}
                     </span>
                   </label>
-                  {covered ? (
-                    <button
-                      type="button"
-                      onClick={focusDestructiveMode}
-                      data-testid={`agent-policy-covered-${action}`}
-                      aria-label={t("board.settings.agents.coveredAction", {
-                        action: t(ACTION_KEYS[action]),
-                      })}
-                      title={t("board.settings.agents.coveredHint")}
-                      className="ml-auto shrink-0 cursor-pointer whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-[11px] leading-[1.45] text-muted-foreground hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {t("board.settings.agents.covered")}
-                    </button>
-                  ) : showKeys ? (
+                  {showKeys ? (
                     <code className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
                       {action}
                     </code>
@@ -848,7 +904,7 @@ export function AgentsAutomation({
         data-testid="agents-automation-footer"
         className="flex min-h-12 shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-[9px] max-md:flex-col max-md:items-stretch max-md:gap-2.5 max-md:px-2.5 max-md:pb-[max(8px,env(safe-area-inset-bottom))] max-md:pt-2"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] leading-[1.45] text-muted-foreground max-md:w-full">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] leading-[1.45] text-muted-foreground max-md:w-full max-md:flex-wrap">
           <span
             aria-hidden
             className={cn(
@@ -867,8 +923,11 @@ export function AgentsAutomation({
           >
             {footerStatus}
           </span>
-          <span aria-hidden className="h-3 w-px shrink-0 bg-border" />
-          <span className="truncate text-muted-foreground">
+          <span
+            aria-hidden
+            className="h-3 w-px shrink-0 bg-border max-md:hidden"
+          />
+          <span className="truncate text-muted-foreground max-md:basis-full max-md:whitespace-normal max-md:overflow-visible">
             {secondaryStatus}
           </span>
         </div>
@@ -896,29 +955,14 @@ export function AgentsAutomation({
         </div>
       </footer>
 
-      <ConfirmDialog
+      <PolicyResetDialog
         open={resetOpen}
-        onOpenChange={(open) => {
-          setResetOpen(open);
-          if (!open) setResetConflictVersion(null);
-        }}
-        title={
-          resetConflictVersion === null
-            ? t("agentControl.policy.resetTitle")
-            : t("board.settings.agents.resetConflictTitle")
-        }
-        description={
-          resetConflictVersion === null
-            ? policy.dirty
-              ? t("board.settings.agents.resetDirtyDescription")
-              : t("agentControl.policy.resetDescription")
-            : t("board.settings.agents.resetConflictDescription", {
-                version: resetConflictVersion,
-              })
-        }
+        onOpenChange={setResetOpen}
+        title={t("agentControl.policy.resetTitle")}
+        description={t("agentControl.policy.resetDescription")}
+        impact={t("agentControl.policy.resetImpact")}
         confirmLabel={t("agentControl.policy.reset")}
-        destructive
-        onConfirm={() => void confirmReset()}
+        onConfirm={confirmReset}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +11,7 @@ import {
 
 import { api, ApiError } from "@/api/client";
 import { AgentsAutomation } from "@/components/board/settings/AgentsAutomation";
+import { DESTRUCTIVE_POLICY_ACTIONS } from "@/components/board/settings/policy-model";
 import { ToastProvider } from "@/components/Toast";
 import { I18nProvider } from "@/i18n";
 
@@ -52,6 +53,8 @@ function state(
     pausedAt: null,
     pausedBy: null,
     pauseReason: null,
+    lastSavedBy: null,
+    lastSavedAt: null,
     ...overrides,
   };
 }
@@ -440,46 +443,68 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     });
   });
 
-  it("asks for a second confirmation when reset conflicts with a newer policy", async () => {
-    const custom = policy({ approvalTtlMinutes: 90 });
-    const initial = state({ policy: custom, effective: custom, version: 1 });
-    const newer = policy({ approvalTtlMinutes: 120 });
-    const latest = state({ policy: newer, effective: newer, version: 2 });
-    vi.spyOn(api, "getBoardAgentPolicy")
-      .mockResolvedValueOnce(initial)
-      .mockResolvedValue(latest);
+  it("resets only the draft and saves defaults with the next Save", async () => {
+    const custom = policy({ destructive: "deny", approvalTtlMinutes: 90 });
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(
+      state({ policy: custom, effective: custom }),
+    );
     const update = vi
       .spyOn(api, "updateBoardAgentPolicy")
-      .mockRejectedValueOnce(versionConflict(2))
-      .mockResolvedValueOnce(state({ version: 3 }));
+      .mockResolvedValue(state({ version: 2 }));
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+    await userEvent.click(screen.getByTestId("agent-policy-reset"));
+    await userEvent.click(screen.getByRole("button", { name: "Reset policy" }));
+
+    expect(update).not.toHaveBeenCalled();
+    expect(screen.getByTestId("agents-automation-dirty")).toHaveTextContent(
+      "Unsaved changes",
+    );
+    expect(
+      screen.getByTestId("agent-policy-destructive-option-approval"),
+    ).toBeChecked();
+    expect(screen.getByTestId("agent-policy-max-commands")).toHaveValue("100");
+    expect(screen.getByTestId("agent-policy-save")).not.toBeDisabled();
+    expect(
+      await screen.findByText("Draft reset to safe defaults. Save to apply."),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("agent-policy-save"));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0][1]).toEqual({ policy: null, version: 1 });
+  });
+
+  it("uses the prototype reset confirmation copy and impact strip", async () => {
+    const custom = policy({ approvalTtlMinutes: 90 });
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(
+      state({ policy: custom, effective: custom }),
+    );
 
     renderPanel();
     await screen.findByTestId("agent-policy-panel");
     await userEvent.click(screen.getByTestId("agent-policy-reset"));
 
+    const dialog = await screen.findByTestId("agent-policy-reset-dialog");
     expect(
-      await screen.findByText("Reset the agent policy?"),
-    ).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Reset to defaults" }),
+      within(dialog).getByText("Reset policy to safe defaults?"),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(
+        "This replaces the current draft with the default destructive gate, limits and triggers. You still need to save.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByTestId("agent-policy-reset-impact"),
+    ).toHaveTextContent(
+      "Default: require approval for destructive actions · 100 commands / 50 cards / 60 min.",
     );
-
     expect(
-      await screen.findByText("Policy changed. Reset anyway?"),
+      within(dialog).getByRole("button", { name: "Cancel" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/The policy changed in another tab \(now version 2\)/),
+      within(dialog).getByRole("button", { name: "Reset policy" }),
     ).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Reset to defaults" }),
-    );
-
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
-    expect(update.mock.calls[1][1]).toEqual({ policy: null, version: 2 });
-    expect(
-      await screen.findByText("Agent policy reset to defaults"),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("agent-policy-reset")).toBeDisabled();
   });
 
   it("shows loading, error and retry states", async () => {
@@ -529,7 +554,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
 
     expect(screen.getByText("Block completely")).toBeInTheDocument();
     expect(
-      screen.getByText(/Click one to change the mode/),
+      screen.getByText(/There are no individual destructive checkboxes/),
     ).toBeInTheDocument();
     expect(screen.getByTestId("agent-policy-version")).toHaveTextContent(
       "Policy v1",
@@ -542,11 +567,28 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     ).toHaveTextContent("Safe defaults are active where unset");
   });
 
-  it("draws checked, unchecked and disabled triggers with one checkbox style", async () => {
+  it("shows one neutral covered status for all destructive triggers", async () => {
     vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
 
     renderPanel();
     await screen.findByTestId("agent-policy-panel");
+
+    // The stored policy includes some destructive actions and omits others.
+    // The UI must not reflect that split: every destructive row is covered by
+    // the mode and has no checkbox of its own.
+    const statuses = screen.getAllByTestId(/^agent-policy-covered-status-/);
+    expect(statuses).toHaveLength(DESTRUCTIVE_POLICY_ACTIONS.length);
+    for (const status of statuses) {
+      expect(status).toHaveTextContent("Covered · Require approval");
+      expect(status).toHaveAttribute("data-mode", "approval");
+    }
+    for (const action of DESTRUCTIVE_POLICY_ACTIONS) {
+      const row = screen.getByTestId(`agent-policy-require-row-${action}`);
+      expect(row).toHaveAttribute("data-covered", "true");
+      expect(within(row).queryByRole("checkbox")).toBeNull();
+      expect(row.querySelector(".line-through")).toBeNull();
+      expect(screen.queryByTestId(`agent-policy-require-${action}`)).toBeNull();
+    }
 
     const editable = screen.getByTestId("agent-policy-require-move_to_done");
     expect(editable).not.toBeChecked();
@@ -558,48 +600,83 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(checkedEditable).toBeChecked();
     expect(checkedEditable).not.toBeDisabled();
 
-    const checkedCovered = screen.getByTestId(
-      "agent-policy-require-delete_board",
+    await userEvent.click(
+      screen.getByTestId("agent-policy-destructive-option-deny"),
     );
-    expect(checkedCovered).toBeChecked();
-    expect(checkedCovered).toBeDisabled();
-    expect(
-      screen.getByTestId("agent-policy-require-row-delete_board").className,
-    ).toContain("is-disabled");
-
-    const uncheckedCovered = screen.getByTestId(
-      "agent-policy-require-delete_card",
-    );
-    expect(uncheckedCovered).not.toBeChecked();
-    expect(uncheckedCovered).toBeDisabled();
-
-    for (const action of [
-      "move_to_done",
-      "workflow.update",
-      "delete_board",
-      "delete_card",
-    ]) {
-      expect(
-        screen.getByTestId(`agent-policy-check-${action}`).className,
-      ).toContain("agent-check");
-      expect(
-        screen.getByTestId(`agent-policy-require-${action}`).className,
-      ).toContain("peer");
+    for (const status of screen.getAllByTestId(
+      /^agent-policy-covered-status-/,
+    )) {
+      expect(status).toHaveTextContent("Covered · Block completely");
+      expect(status).toHaveAttribute("data-mode", "deny");
     }
+    expect(
+      screen.getByTestId("agent-policy-require-workflow.update"),
+    ).toBeChecked();
   });
 
-  it("jumps from a covered trigger to the destructive mode switch", async () => {
+  it("explains the trigger model and jumps to the destructive mode switch", async () => {
     vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
 
     renderPanel();
     await screen.findByTestId("agent-policy-panel");
 
+    const guide = screen.getByTestId("agent-policy-triggers-guide");
+    expect(guide).toHaveTextContent(
+      "Destructive actions controls all 15 destructive triggers.",
+    );
+    expect(guide).toHaveTextContent(
+      "The 2 independent triggers below can be toggled individually.",
+    );
+
     await userEvent.click(
-      screen.getByTestId("agent-policy-covered-delete_card"),
+      screen.getByTestId("agent-policy-change-destructive"),
     );
     expect(
       screen.getByTestId("agent-policy-destructive-option-approval"),
     ).toHaveFocus();
+  });
+
+  it("shows who last saved the policy and when", async () => {
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(
+      state({
+        lastSavedBy: "Audit Admin",
+        lastSavedAt: Date.now() - 3 * 60_000,
+      }),
+    );
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+
+    expect(screen.getByTestId("agents-automation-footer")).toHaveTextContent(
+      /Last saved by Audit Admin · 3 minutes ago/,
+    );
+  });
+
+  it("shows a never-saved footer for untouched safe defaults", async () => {
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(state());
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+
+    const footer = screen.getByTestId("agents-automation-footer");
+    expect(footer).toHaveTextContent("Safe defaults");
+    expect(footer).toHaveTextContent("Never saved · safe defaults apply");
+  });
+
+  it("does not claim safe defaults when a custom policy has no Activity row", async () => {
+    const custom = policy({ approvalTtlMinutes: 90 });
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(
+      state({ policy: custom, effective: custom, version: 2 }),
+    );
+
+    renderPanel();
+    await screen.findByTestId("agent-policy-panel");
+
+    const footer = screen.getByTestId("agents-automation-footer");
+    expect(footer).toHaveTextContent("All changes saved");
+    expect(footer).toHaveTextContent("Last save details unavailable");
+    expect(footer).not.toHaveTextContent("Never saved");
+    expect(footer).not.toHaveTextContent("safe defaults apply");
   });
 
   it("uses the mobile-safe layout and a single scroll region", async () => {

@@ -205,6 +205,51 @@ describe("WorkflowSettings rail", () => {
     expect(scrollIntoView.mock.instances.at(-1)).toBe(first);
   });
 
+  it("maps a vertical wheel to horizontal scroll only while the rail overflows", () => {
+    const manyColumns: Column[] = [
+      ...columns,
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `wheel-${index}`,
+        title: `Wheel ${index}`,
+        cardIds: [],
+        createdAt: 1,
+      })),
+    ];
+    renderEditor({ columns: manyColumns });
+    const rail = screen.getByTestId("workflow-rail");
+    let scrollLeft = 0;
+    Object.defineProperty(rail, "clientWidth", {
+      configurable: true,
+      value: 320,
+    });
+    Object.defineProperty(rail, "scrollWidth", {
+      configurable: true,
+      value: 960,
+    });
+    Object.defineProperty(rail, "scrollLeft", {
+      configurable: true,
+      get: () => scrollLeft,
+      set: (value: number) => {
+        scrollLeft = value;
+      },
+    });
+
+    expect(fireEvent.wheel(rail, { deltaY: 120 })).toBe(false);
+    expect(scrollLeft).toBe(120);
+
+    scrollLeft = 640;
+    expect(fireEvent.wheel(rail, { deltaY: 120 })).toBe(true);
+    expect(scrollLeft).toBe(640);
+
+    Object.defineProperty(rail, "scrollWidth", {
+      configurable: true,
+      value: 320,
+    });
+    scrollLeft = 0;
+    expect(fireEvent.wheel(rail, { deltaY: 120 })).toBe(true);
+    expect(scrollLeft).toBe(0);
+  });
+
   it("toggles a rule from its row switch and saves the disabled edge", () => {
     const onSave = renderEditor();
     const toggle = screen.getByTestId("workflow-row-switch-review");

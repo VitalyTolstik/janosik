@@ -327,6 +327,32 @@ html.light {
     display: none;
   }
 
+  /* Workflow column rail: an overflowing rail keeps a visible, draggable
+   * scrollbar instead of hiding the only affordance that more columns exist.
+   * Vertical wheel maps to horizontal scroll in ColumnRail.tsx. */
+  .column-rail-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--muted-foreground) 42%,
+        transparent
+      )
+      transparent;
+  }
+  .column-rail-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+  .column-rail-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .column-rail-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted-foreground) 42%, transparent);
+  }
+  .column-rail-scroll::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 62%, transparent);
+  }
+
   /* -----------------------------------------------------------------------
    * Board background presets — applied to the board <main> so the backdrop
    * sits behind the column strip. Patterns (dots / grid) are flat-color + a

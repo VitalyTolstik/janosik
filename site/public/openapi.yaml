@@ -3269,7 +3269,17 @@ components:
     BoardAgentPolicyState:
       type: object
       required:
-        [policy, effective, version, paused, pausedAt, pausedBy, pauseReason]
+        [
+          policy,
+          effective,
+          version,
+          paused,
+          pausedAt,
+          pausedBy,
+          pauseReason,
+          lastSavedBy,
+          lastSavedAt,
+        ]
       properties:
         policy:
           oneOf:
@@ -3289,6 +3299,12 @@ components:
           type: [string, "null"]
         pauseReason:
           type: [string, "null"]
+        lastSavedBy:
+          type: [string, "null"]
+          description: Display name of the admin who last saved the policy.
+        lastSavedAt:
+          type: [integer, "null"]
+          description: Unix ms of the latest `agent_policy_changed` Activity row.
     UpdateAgentPolicyRequest:
       type: object
       required: [policy, version]

@@ -100,16 +100,26 @@ export class BoardsService {
    * request.
    */
   async getAgentPolicy(boardId: string): Promise<BoardAgentPolicyStateDto> {
-    const board = await this.prisma.board.findFirst({
-      where: { id: boardId, deletedAt: null },
-      select: {
-        agentPolicy: true,
-        agentPolicyVersion: true,
-        agentsPausedAt: true,
-        agentsPausedBy: true,
-        agentsPauseReason: true,
-      },
-    });
+    const [board, lastSaved] = await Promise.all([
+      this.prisma.board.findFirst({
+        where: { id: boardId, deletedAt: null },
+        select: {
+          agentPolicy: true,
+          agentPolicyVersion: true,
+          agentsPausedAt: true,
+          agentsPausedBy: true,
+          agentsPauseReason: true,
+        },
+      }),
+      this.prisma.activity.findFirst({
+        where: { boardId, type: "agent_policy_changed" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          createdAt: true,
+          actor: { select: { displayName: true, email: true } },
+        },
+      }),
+    ]);
     if (board === null) throw new NotFoundException("Board not found");
     const checked =
       board.agentPolicy === null
@@ -124,6 +134,9 @@ export class BoardsService {
       pausedAt: board.agentsPausedAt?.getTime() ?? null,
       pausedBy: board.agentsPausedBy,
       pauseReason: board.agentsPauseReason,
+      lastSavedBy:
+        lastSaved?.actor.displayName ?? lastSaved?.actor.email ?? null,
+      lastSavedAt: lastSaved?.createdAt.getTime() ?? null,
     };
   }
 

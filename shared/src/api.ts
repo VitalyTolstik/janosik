@@ -746,6 +746,13 @@ export interface BoardAgentPolicyStateDto {
   pausedAt: number | null;
   pausedBy: string | null;
   pauseReason: string | null;
+  /**
+   * Who last saved the policy and when, from the latest
+   * `agent_policy_changed` Activity row. `null` on a board that has never
+   * saved a policy and still uses the safe defaults.
+   */
+  lastSavedBy: string | null;
+  lastSavedAt: number | null;
 }
 
 /**
