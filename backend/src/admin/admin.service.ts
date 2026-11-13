@@ -481,6 +481,17 @@ export class AdminService {
         from: user.email,
         to: emailChanged,
       });
+      // The master cannot prove ownership of the new mailbox; send a fresh
+      // confirmation code there so the user can pass the verification gate.
+      if (updated.emailVerifiedAt === null) {
+        await this.auth
+          .resendEmailVerification(userId, "en")
+          .catch((error: unknown) =>
+            this.logger.warn(
+              `Verification email for ${emailChanged} failed: ${String(error)}`,
+            ),
+          );
+      }
       const notice = emailChangedNoticeEmail(emailChanged, "en");
       await this.mailer
         .send({ to: user.email, ...notice })
