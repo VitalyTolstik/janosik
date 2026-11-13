@@ -478,6 +478,7 @@
   "agentControl.policy.resetImpact": "По умолчанию: требовать согласование для разрушительных действий · 100 команд / 50 карточек / 60 мин.",
   "agentControl.policy.savedToast": "Политика агентов сохранена",
   "agentControl.policy.resetToast": "Политика агентов сброшена к умолчаниям",
+  "agentControl.policy.resetDraftToast": "Черновик сброшен к безопасным значениям. Сохраните, чтобы применить.",
   "agentControl.policy.usingDefaults": "Действует политика по умолчанию",
   "agentControl.policy.customPolicy": "Своя политика",
   "agentControl.policy.conflict": "Политику изменили в другой вкладке. Перезагрузите и повторите.",

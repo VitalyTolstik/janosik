@@ -443,42 +443,36 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     });
   });
 
-  it("asks for a second confirmation when reset conflicts with a newer policy", async () => {
-    const custom = policy({ approvalTtlMinutes: 90 });
-    const initial = state({ policy: custom, effective: custom, version: 1 });
-    const newer = policy({ approvalTtlMinutes: 120 });
-    const latest = state({ policy: newer, effective: newer, version: 2 });
-    vi.spyOn(api, "getBoardAgentPolicy")
-      .mockResolvedValueOnce(initial)
-      .mockResolvedValue(latest);
+  it("resets only the draft and saves defaults with the next Save", async () => {
+    const custom = policy({ destructive: "deny", approvalTtlMinutes: 90 });
+    vi.spyOn(api, "getBoardAgentPolicy").mockResolvedValue(
+      state({ policy: custom, effective: custom }),
+    );
     const update = vi
       .spyOn(api, "updateBoardAgentPolicy")
-      .mockRejectedValueOnce(versionConflict(2))
-      .mockResolvedValueOnce(state({ version: 3 }));
+      .mockResolvedValue(state({ version: 2 }));
 
     renderPanel();
     await screen.findByTestId("agent-policy-panel");
     await userEvent.click(screen.getByTestId("agent-policy-reset"));
-
-    expect(
-      await screen.findByText("Reset policy to safe defaults?"),
-    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Reset policy" }));
 
+    expect(update).not.toHaveBeenCalled();
+    expect(screen.getByTestId("agents-automation-dirty")).toHaveTextContent(
+      "Unsaved changes",
+    );
     expect(
-      await screen.findByText("Policy changed. Reset anyway?"),
-    ).toBeInTheDocument();
+      screen.getByTestId("agent-policy-destructive-option-approval"),
+    ).toBeChecked();
+    expect(screen.getByTestId("agent-policy-max-commands")).toHaveValue("100");
+    expect(screen.getByTestId("agent-policy-save")).not.toBeDisabled();
     expect(
-      screen.getByText(/The policy changed in another tab \(now version 2\)/),
+      await screen.findByText("Draft reset to safe defaults. Save to apply."),
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Reset policy" }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
-    expect(update.mock.calls[1][1]).toEqual({ policy: null, version: 2 });
-    expect(
-      await screen.findByText("Agent policy reset to defaults"),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("agent-policy-reset")).toBeDisabled();
+    await userEvent.click(screen.getByTestId("agent-policy-save"));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0][1]).toEqual({ policy: null, version: 1 });
   });
 
   it("uses the prototype reset confirmation copy and impact strip", async () => {

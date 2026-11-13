@@ -478,6 +478,7 @@
   "agentControl.policy.resetImpact": "Default: require approval for destructive actions · 100 commands / 50 cards / 60 min.",
   "agentControl.policy.savedToast": "Agent policy saved",
   "agentControl.policy.resetToast": "Agent policy reset to defaults",
+  "agentControl.policy.resetDraftToast": "Draft reset to safe defaults. Save to apply.",
   "agentControl.policy.usingDefaults": "Using default policy",
   "agentControl.policy.customPolicy": "Custom policy",
   "agentControl.policy.conflict": "The policy changed in another tab. Reload and try again.",

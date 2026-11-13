@@ -26,7 +26,9 @@ import {
   EDITABLE_POLICY_ACTIONS,
   POLICY_LIMITS,
   POLICY_TRIGGER_ORDER,
+  isDefaultPolicy,
   isDestructivePolicyAction,
+  policyOfDraft,
   type PolicyField,
   type PolicyFieldValue,
 } from "./policy-model";
@@ -214,9 +216,6 @@ export function AgentsAutomation({
   });
   const [showKeys, setShowKeys] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetConflictVersion, setResetConflictVersion] = useState<
-    number | null
-  >(null);
   const destructiveSectionRef = useRef<HTMLElement | null>(null);
   const destructiveInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -358,7 +357,9 @@ export function AgentsAutomation({
       : neverSaved
         ? t("board.settings.agents.neverSaved")
         : t("board.settings.agents.saveDetailsUnavailable");
-  const resetDisabled = policy.saving || policy.usingDefaults;
+  const draftPolicy = policyOfDraft(draft);
+  const draftIsDefaults = draftPolicy !== null && isDefaultPolicy(draftPolicy);
+  const resetDisabled = policy.saving || draftIsDefaults;
 
   const save = async () => {
     const outcome = await policy.save();
@@ -369,22 +370,13 @@ export function AgentsAutomation({
 
   const requestReset = () => {
     if (resetDisabled) return;
-    setResetConflictVersion(null);
     setResetOpen(true);
   };
 
-  const confirmReset = async () => {
+  const confirmReset = () => {
     setResetOpen(false);
-    const outcome = await policy.reset();
-    if (outcome.kind === "saved") {
-      setResetConflictVersion(null);
-      toast.success(t("agentControl.policy.resetToast"));
-      return;
-    }
-    if (outcome.kind === "conflict") {
-      setResetConflictVersion(outcome.version ?? null);
-      setResetOpen(true);
-    }
+    policy.resetDraft();
+    toast.success(t("agentControl.policy.resetDraftToast"));
   };
 
   return (
@@ -965,27 +957,12 @@ export function AgentsAutomation({
 
       <PolicyResetDialog
         open={resetOpen}
-        onOpenChange={(open) => {
-          setResetOpen(open);
-          if (!open) setResetConflictVersion(null);
-        }}
-        title={
-          resetConflictVersion === null
-            ? t("agentControl.policy.resetTitle")
-            : t("board.settings.agents.resetConflictTitle")
-        }
-        description={
-          resetConflictVersion === null
-            ? policy.dirty
-              ? t("board.settings.agents.resetDirtyDescription")
-              : t("agentControl.policy.resetDescription")
-            : t("board.settings.agents.resetConflictDescription", {
-                version: resetConflictVersion,
-              })
-        }
+        onOpenChange={setResetOpen}
+        title={t("agentControl.policy.resetTitle")}
+        description={t("agentControl.policy.resetDescription")}
         impact={t("agentControl.policy.resetImpact")}
         confirmLabel={t("agentControl.policy.reset")}
-        onConfirm={() => void confirmReset()}
+        onConfirm={confirmReset}
       />
     </div>
   );

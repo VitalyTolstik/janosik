@@ -307,12 +307,17 @@ test("policy edit, stale-version CAS and reset work from the dashboard", async (
     code: "pat_forbidden",
   });
 
-  // Reset sends policy:null and still increments the version.
+  // Reset replaces the draft; Save sends policy:null and increments the
+  // version.
   await page.getByTestId("agent-policy-reset").click();
   const resetDialog = page.getByRole("dialog", {
-    name: "Reset the agent policy?",
+    name: "Reset policy to safe defaults?",
   });
-  await resetDialog.getByRole("button", { name: "Reset to defaults" }).click();
+  await resetDialog.getByRole("button", { name: "Reset policy" }).click();
+  await expect(page.getByTestId("agents-automation-dirty")).toContainText(
+    "Unsaved changes",
+  );
+  await page.getByTestId("agent-policy-save").click();
   await expect(page.getByTestId("agent-policy-version")).toContainText(
     "Policy v3",
   );

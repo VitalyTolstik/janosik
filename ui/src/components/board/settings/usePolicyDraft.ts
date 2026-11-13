@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_BOARD_AGENT_POLICY } from "@janosik/shared";
 import type {
   BoardAgentPolicy,
   BoardAgentPolicyAction,
@@ -76,6 +77,7 @@ export interface UsePolicyDraftResult {
   resolveConflict: (field: PolicyField, choice: "mine" | "server") => void;
   save: () => Promise<PolicySaveOutcome>;
   discard: () => void;
+  resetDraft: () => void;
   reset: () => Promise<PolicyResetOutcome>;
 }
 
@@ -309,7 +311,9 @@ export function usePolicyDraft({
       if (policy === null) return "invalid";
       try {
         const next = await api.updateBoardAgentPolicy(boardId, {
-          policy,
+          // Saving the untouched defaults is the reset wire shape: it keeps
+          // `policy: null` instead of persisting an identical explicit JSON.
+          policy: isDefaultPolicy(policy) ? null : policy,
           version,
         });
         applyServerState(next);
@@ -393,6 +397,24 @@ export function usePolicyDraft({
       lastSynced: latest,
       draft: draftOf(latest),
       localFields: [],
+      conflicts: [],
+    });
+    setError(null);
+  }, [applySession]);
+
+  /**
+   * The prototype's Reset… only replaces the draft; the footer Save is what
+   * sends `policy: null`. This keeps the confirmation copy truthful and lets
+   * the admin discard the reset with the regular discard path.
+   */
+  const resetDraft = useCallback(() => {
+    const current = sessionRef.current;
+    if (current === null) return;
+    const draft = draftOf(DEFAULT_BOARD_AGENT_POLICY);
+    applySession({
+      ...current,
+      draft,
+      localFields: localPolicyFields(draft, policyFromState(current.state)),
       conflicts: [],
     });
     setError(null);
@@ -491,6 +513,7 @@ export function usePolicyDraft({
     resolveConflict,
     save,
     discard,
+    resetDraft,
     reset,
   };
 }
