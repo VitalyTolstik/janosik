@@ -57,7 +57,7 @@ export function AgentAttribution({
     <span
       data-testid="agent-attribution"
       className={cn(
-        "inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground",
+        "inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground",
         className,
       )}
     >
@@ -80,7 +80,7 @@ export function AgentAttribution({
               title={`${chip.label}: ${chip.value}`}
             >
               {compact ? null : (
-                <span className="font-sans text-muted-foreground/70">
+                <span className="font-sans text-muted-foreground">
                   {chip.label}
                 </span>
               )}

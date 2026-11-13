@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AgentSessionDto } from "@janosik/shared";
 
@@ -57,10 +57,31 @@ export function AgentActionDialog({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const [reason, setReason] = useState("");
   const [summary, setSummary] = useState("");
   const [status, setStatus] = useState<EndStatus>("completed");
   const [busy, setBusy] = useState(false);
+
+  // The dialog is mounted/unmounted by the parent action state, so restore
+  // focus explicitly: a nested Dialog inside the Agent Control modal loses
+  // the browser's default return target when the whole content unmounts.
+  useEffect(() => {
+    const active = document.activeElement;
+    returnFocusRef.current = active instanceof HTMLElement ? active : null;
+    return () => {
+      const target = returnFocusRef.current;
+      if (target === null) return;
+      window.setTimeout(() => {
+        if (
+          target.isConnected &&
+          target.closest('[aria-hidden="true"]') === null
+        ) {
+          target.focus();
+        }
+      }, 0);
+    };
+  }, []);
 
   const title =
     action === "pause"

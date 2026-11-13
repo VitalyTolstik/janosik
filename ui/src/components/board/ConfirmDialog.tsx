@@ -51,11 +51,16 @@ export function ConfirmDialog({
           ) : null}
         </DialogHeader>
         <DialogFooter className="mt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            className="max-md:min-h-11"
+            onClick={() => onOpenChange(false)}
+          >
             {t("common.cancel")}
           </Button>
           <Button
             variant={destructive ? "destructive" : "default"}
+            className="max-md:min-h-11"
             onClick={handleConfirm}
           >
             {confirmLabel}

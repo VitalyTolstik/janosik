@@ -31,27 +31,29 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
+import { StatusBadge, type StatusTone } from "@/components/agents/status-badge";
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import { APPROVAL_RISK_KEYS, APPROVAL_STATUS_KEYS } from "@/utils/approval";
 
 const RELATED_CLASS =
-  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground";
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:min-h-11";
 
-const STATUS_CLASS: Record<ApprovalStatus, string> = {
-  pending: "border-warning/40 bg-warning/10 text-warning",
-  approved: "border-success/40 bg-success/10 text-success",
-  rejected: "border-danger/40 bg-danger/10 text-danger",
-  expired: "border-border bg-muted text-muted-foreground",
-  cancelled: "border-border bg-muted text-muted-foreground",
-  consumed: "border-primary/40 bg-primary/10 text-primary",
+const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
+  pending: "warn",
+  approved: "ok",
+  rejected: "bad",
+  expired: "muted",
+  cancelled: "muted",
+  consumed: "primary",
 };
 
 const RISK_CLASS: Record<ApprovalRisk, string> = {
   low: "border-border bg-muted text-muted-foreground",
-  medium: "border-warning/40 bg-warning/10 text-warning",
-  high: "border-danger/40 bg-danger/10 text-danger",
+  medium:
+    "border-warning/40 bg-warning/10 text-[color:var(--agent-tone-warning)]",
+  high: "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]",
 };
 
 function approvalStatusLabel(
@@ -70,16 +72,12 @@ export function ApprovalStatusBadge({
 }) {
   const { t } = useI18n();
   return (
-    <span
-      data-testid={testId}
-      data-status={status}
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        STATUS_CLASS[status],
-      )}
-    >
-      {approvalStatusLabel(t, status)}
-    </span>
+    <StatusBadge
+      label={approvalStatusLabel(t, status)}
+      tone={APPROVAL_STATUS_TONE[status]}
+      status={status}
+      testId={testId}
+    />
   );
 }
 
@@ -124,7 +122,7 @@ export function ApprovalPlanBlock({
           {title ?? t("agentControl.approvals.plan")}
         </h4>
         {countLabel !== undefined ? (
-          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
             {countLabel}
           </span>
         ) : null}
@@ -143,12 +141,12 @@ export function ApprovalPlanBlock({
               className="rounded-md border bg-muted/30 p-2"
             >
               <p className="flex items-center gap-1.5 text-[11px] font-medium">
-                <span className="rounded bg-background px-1 text-[10px] text-muted-foreground">
+                <span className="rounded bg-background px-1 text-[11px] text-muted-foreground">
                   {index + 1}
                 </span>
                 {String(command.action.type)}
               </p>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
                 {JSON.stringify(command.action, null, 2)}
               </pre>
             </li>
@@ -164,7 +162,7 @@ export function ApprovalPlanBlock({
               className="rounded-md border bg-muted/30 p-2"
             >
               <p className="text-[11px] font-medium">{operation.op}</p>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
                 {JSON.stringify(
                   { target: operation.target, body: operation.body },
                   null,
@@ -214,7 +212,7 @@ export function ApprovalHash({
           {title ?? t("agentControl.approvals.planHash")}
         </h4>
         {badge !== undefined ? (
-          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
             {badge}
           </span>
         ) : null}
@@ -230,13 +228,16 @@ export function ApprovalHash({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-7 w-7 shrink-0 max-md:h-11 max-md:w-11"
           onClick={copy}
           aria-label={t("agentControl.approvals.copyHash")}
           data-testid="approval-copy-hash"
         >
           {copied ? (
-            <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+            <Check
+              className="h-3.5 w-3.5 text-[color:var(--agent-tone-success)]"
+              aria-hidden
+            />
           ) : (
             <Copy className="h-3.5 w-3.5" aria-hidden />
           )}
@@ -333,7 +334,10 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
           data-testid="approval-copy-link"
         >
           {copied ? (
-            <Check className="h-2.5 w-2.5 text-success" aria-hidden />
+            <Check
+              className="h-2.5 w-2.5 text-[color:var(--agent-tone-success)]"
+              aria-hidden
+            />
           ) : (
             <Link2 className="h-2.5 w-2.5" aria-hidden />
           )}
@@ -361,7 +365,7 @@ export function ApprovalLinks({ approval }: { approval: ApprovalRequestDto }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-[11px] leading-[1.5] text-muted-foreground">
-            <code className="block rounded-md border border-border bg-muted/30 p-2 font-mono text-[10px] break-all">
+            <code className="block rounded-md border border-border bg-muted/30 p-2 font-mono text-[11px] break-all">
               {approval.requestedByTokenId}
             </code>
             <p className="rounded-md border border-danger/30 bg-danger/5 p-2.5">
@@ -439,7 +443,7 @@ export function ApprovalDecisionForm({
       <form noValidate onSubmit={submitReject} className="space-y-1.5">
         <label
           htmlFor="approval-comment"
-          className="block text-[10.5px] font-semibold text-foreground"
+          className="block text-[11px] font-semibold text-foreground"
         >
           {t("agents.approvals.rejectReason")}{" "}
           <span className="font-normal text-muted-foreground">
@@ -464,7 +468,7 @@ export function ApprovalDecisionForm({
             variant="ghost"
             onClick={resetReject}
             disabled={submitting}
-            className="h-7 min-h-0 px-2 text-[11px] text-muted-foreground"
+            className="h-7 min-h-0 px-2 text-[11px] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -474,7 +478,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="h-7 min-h-0 px-2.5 text-[11px] font-[650]"
+            className="h-7 min-h-0 px-2.5 text-[11px] font-[650] max-md:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -490,7 +494,7 @@ export function ApprovalDecisionForm({
     <>
       <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
         <ShieldCheck
-          className="mt-px h-[11px] w-[11px] shrink-0 text-success"
+          className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
           aria-hidden
         />
         <span>
@@ -509,7 +513,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-reject"
           onClick={() => setMode("reject")}
           disabled={busy}
-          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650]"
+          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650] max-md:min-h-11"
         >
           {t("agentControl.approvals.reject")}
         </Button>
@@ -519,7 +523,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-approve"
           onClick={() => setApproveOpen(true)}
           disabled={busy}
-          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650]"
+          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650] max-md:min-h-11"
         >
           {t("agents.approvals.confirmApprove")}
         </Button>
@@ -532,7 +536,7 @@ export function ApprovalDecisionForm({
           hideClose
         >
           <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-warning">
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--agent-tone-warning)]">
               <ShieldCheck className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <div className="min-w-0">
@@ -556,7 +560,7 @@ export function ApprovalDecisionForm({
             <div className="mt-2.5 flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
               <code
                 title={planHash}
-                className="min-w-0 flex-1 overflow-hidden font-mono text-[9.5px] whitespace-nowrap text-ellipsis text-muted-foreground"
+                className="min-w-0 flex-1 overflow-hidden font-mono text-[11px] whitespace-nowrap text-ellipsis text-muted-foreground"
               >
                 {planHash.slice(0, 34)}…
               </code>
@@ -568,7 +572,7 @@ export function ApprovalDecisionForm({
               variant="ghost"
               onClick={() => setApproveOpen(false)}
               disabled={submitting}
-              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground"
+              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
             >
               {t("common.cancel")}
             </Button>
@@ -577,7 +581,7 @@ export function ApprovalDecisionForm({
               data-testid="approval-confirm"
               onClick={() => void submitApprove()}
               disabled={submitting || busy}
-              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
+              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -613,7 +617,10 @@ export function ApprovalCancelButton({
         data-testid="approval-cancel"
         disabled={busy || disabled}
         onClick={() => setOpen(true)}
-        className={cn("text-muted-foreground hover:text-foreground", className)}
+        className={cn(
+          "text-muted-foreground hover:text-foreground max-md:min-h-11",
+          className,
+        )}
       >
         <CircleSlash className="h-2.5 w-2.5" aria-hidden />
         {t("agentControl.approvals.cancelRequest")}
@@ -656,9 +663,18 @@ export function ApprovalDetailError({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
-      <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
+      <AlertTriangle
+        className="h-5 w-5 text-[color:var(--agent-tone-warning)]"
+        aria-hidden
+      />
       <p>{t("agentControl.approvals.detailError")}</p>
-      <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={onRetry}
+        className="max-md:min-h-11"
+      >
         {t("agentControl.retry")}
       </Button>
     </div>

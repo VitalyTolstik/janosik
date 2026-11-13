@@ -46,6 +46,7 @@ import { formatDate, formatDateOnly, useI18n } from "@/i18n";
 import { useBoardLive } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
+import { StatusBadge, type StatusTone } from "./status-badge";
 import {
   RUN_KIND_KEYS,
   RUN_STATUS_KEYS,
@@ -60,16 +61,10 @@ import {
 
 type Role = BoardRole | undefined;
 
-const STATUS_CLASS: Record<AgentRunStatus, string> = {
-  applied: "border-success/32 bg-success/6 text-success",
-  reverted: "border-border bg-hover text-muted-foreground",
-  failed: "border-danger/32 bg-danger/6 text-danger",
-};
-
-const STATUS_DOT: Record<AgentRunStatus, string> = {
-  applied: "bg-success",
-  reverted: "bg-muted-foreground",
-  failed: "bg-danger",
+const STATUS_TONE: Record<AgentRunStatus, StatusTone> = {
+  applied: "ok",
+  reverted: "muted",
+  failed: "bad",
 };
 
 /** One shared run status badge: dot + label, vertically centred. */
@@ -84,24 +79,13 @@ export function RunStatusBadge({
 }) {
   const { t } = useI18n();
   return (
-    <span
-      data-testid={testId}
-      data-status={status}
-      className={cn(
-        "inline-flex h-[22px] max-w-full items-center justify-center gap-1.5 rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
-        STATUS_CLASS[status],
-        className,
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "h-[5px] w-[5px] shrink-0 rounded-full",
-          STATUS_DOT[status],
-        )}
-      />
-      <span className="min-w-0 truncate">{t(RUN_STATUS_KEYS[status])}</span>
-    </span>
+    <StatusBadge
+      label={t(RUN_STATUS_KEYS[status])}
+      tone={STATUS_TONE[status]}
+      status={status}
+      testId={testId}
+      className={className}
+    />
   );
 }
 
@@ -117,7 +101,7 @@ export function RunKindChip({ kind }: { kind: AgentRunKind }) {
 export function RunConflictChip({ count }: { count: number }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center gap-1 rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-warning">
+    <span className="inline-flex h-[21px] items-center gap-1 rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
       <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
       {t("agents.runs.conflictChip", { count })}
     </span>
@@ -276,7 +260,7 @@ export function RunList({
                           >
                             {clockLabel(runTime(run), today, lang, t)}
                           </time>
-                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[10.5px] text-muted-foreground max-[760px]:hidden">
+                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden">
                             {shortId(run.id)}
                           </span>
                         </span>
@@ -713,10 +697,10 @@ export function RunDetail({
                     className="rounded-md border border-border bg-background/30 px-2 py-1.5"
                   >
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[18px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[10.5px] font-semibold">
+                      <span className="inline-flex h-[18px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold">
                         #{command.seq}
                       </span>
-                      <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[10.5px]">
+                      <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[11px]">
                         {command.action.type}
                       </code>
                       <span className="min-w-0 truncate">
@@ -754,7 +738,7 @@ export function RunDetail({
                           <ChevronRight className="h-2.5 w-2.5" aria-hidden />
                           {t("agentControl.runs.preimage")}
                         </summary>
-                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[10.5px]">
+                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
                           {JSON.stringify(preimage, null, 2)}
                         </pre>
                       </details>
@@ -783,7 +767,7 @@ export function RunDetail({
               </p>
             ) : previewError !== null ? (
               <div
-                className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-warning"
+                className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-[color:var(--agent-tone-warning)]"
                 role="alert"
                 data-testid={
                   previewExpired
@@ -797,7 +781,7 @@ export function RunDetail({
                   variant="outline"
                   onClick={() => void requestPreview()}
                   disabled={previewing}
-                  className="min-h-9"
+                  className="min-h-9 max-md:min-h-11"
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                   {t("agentControl.runs.refreshPreview")}
@@ -817,12 +801,12 @@ export function RunDetail({
                 >
                   {preview.canRevert ? (
                     <Check
-                      className="mt-px h-3 w-3 shrink-0 text-success"
+                      className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-success)]"
                       aria-hidden
                     />
                   ) : (
                     <AlertTriangle
-                      className="mt-px h-3 w-3 shrink-0 text-warning"
+                      className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-warning)]"
                       aria-hidden
                     />
                   )}
@@ -840,7 +824,7 @@ export function RunDetail({
                     {conflicts.map((conflict) => (
                       <li
                         key={conflict.touch}
-                        className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-warning"
+                        className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]"
                       >
                         <span className="font-mono">{conflict.touch}</span> ·{" "}
                         {conflict.reason} · {conflict.expectedVersion} →{" "}
@@ -854,7 +838,7 @@ export function RunDetail({
                     <summary className="cursor-pointer text-[11px] text-muted-foreground">
                       {t("agentControl.runs.diff")}
                     </summary>
-                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[10.5px]">
+                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
                       {JSON.stringify(preview.diff, null, 2)}
                     </pre>
                   </details>
@@ -883,7 +867,7 @@ export function RunDetail({
                           : t("agents.runs.resolveConflictFirst")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="border-danger/50 text-danger hover:bg-danger/10 max-md:min-h-11"
+                      className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 max-md:min-h-11"
                     >
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                       {conflicts.length > 0
@@ -904,7 +888,7 @@ export function RunDetail({
               className="flex items-start gap-1.5 text-[11px] text-muted-foreground"
             >
               <Check
-                className="mt-px h-3 w-3 shrink-0 text-success"
+                className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-success)]"
                 aria-hidden
               />
               {t("agentControl.runs.alreadyReverted")}
@@ -928,7 +912,7 @@ export function RunDetail({
             <p
               role="alert"
               data-testid="agent-run-action-error"
-              className="mt-2 rounded-md border border-danger/40 bg-danger/10 p-2 text-[11px] text-danger"
+              className="mt-2 rounded-md border border-danger/40 bg-danger/10 p-2 text-[11px] text-[color:var(--agent-tone-danger)]"
             >
               {actionError}
             </p>
@@ -946,7 +930,7 @@ export function RunDetail({
                 count: Object.keys(detail.preimages).length,
               })}
             </p>
-            <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[10.5px]">
+            <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
               {JSON.stringify(detail.preimages, null, 2)}
             </pre>
           </Section>
@@ -971,7 +955,10 @@ export function RunDetail({
               className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground max-md:h-11 max-md:w-11"
             >
               {hashCopied ? (
-                <Check className="h-3 w-3 text-success" aria-hidden />
+                <Check
+                  className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                  aria-hidden
+                />
               ) : (
                 <Copy className="h-3 w-3 opacity-70" aria-hidden />
               )}
@@ -1022,7 +1009,10 @@ export function RunDetail({
             className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
             {linkCopied ? (
-              <Check className="h-3 w-3 text-success" aria-hidden />
+              <Check
+                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                aria-hidden
+              />
             ) : (
               <Link2 className="h-3 w-3" aria-hidden />
             )}
@@ -1054,7 +1044,10 @@ export function RunDetail({
             className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
           >
             {linkCopied ? (
-              <Check className="h-3 w-3 text-success" aria-hidden />
+              <Check
+                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                aria-hidden
+              />
             ) : (
               <Link2 className="h-3 w-3" aria-hidden />
             )}
@@ -1067,7 +1060,10 @@ export function RunDetail({
         <DialogContent className="sm:max-w-md" data-testid="run-revert-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-danger" aria-hidden />
+              <AlertTriangle
+                className="h-4 w-4 text-[color:var(--agent-tone-danger)]"
+                aria-hidden
+              />
               {t("agents.runs.confirmTitle")}
             </DialogTitle>
             <DialogDescription>
@@ -1089,11 +1085,11 @@ export function RunDetail({
               />
             </div>
             <p>{t("agents.runs.confirmImpact")}</p>
-            <p className="rounded-[5px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-warning">
+            <p className="rounded-[5px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[color:var(--agent-tone-warning)]">
               {t("agents.runs.confirmConditional")}
             </p>
             {conflicts.length > 0 ? (
-              <p className="text-warning">
+              <p className="text-[color:var(--agent-tone-warning)]">
                 {t("agents.runs.confirmConflicts", { count: conflicts.length })}
               </p>
             ) : null}
@@ -1147,11 +1143,12 @@ function Banner({
       data-testid={testId}
       className={cn(
         "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45] [&_svg]:mt-px [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
-        tone === "bad" && "border-danger/35 bg-danger/6 [&_svg]:text-danger",
+        tone === "bad" &&
+          "border-danger/35 bg-danger/6 [&_svg]:text-[color:var(--agent-tone-danger)]",
         tone === "warn" &&
-          "border-warning/35 bg-warning/6 [&_svg]:text-warning",
+          "border-warning/35 bg-warning/6 [&_svg]:text-[color:var(--agent-tone-warning)]",
         tone === "info" &&
-          "border-primary/30 bg-primary/6 [&_svg]:text-primary",
+          "border-primary/30 bg-primary/6 [&_svg]:text-[color:var(--agent-tone-primary)]",
       )}
     >
       {icon}
@@ -1205,7 +1202,7 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground/78 uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
         {label}
       </span>
       <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">

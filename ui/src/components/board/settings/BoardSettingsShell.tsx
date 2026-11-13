@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 export type BoardSettingsSectionId = "workflow" | "agents";
 
@@ -62,6 +63,7 @@ export function BoardSettingsShell({
   children,
 }: BoardSettingsShellProps) {
   const { t } = useI18n();
+  const verticalRail = useMediaQuery("(min-width: 768px)");
   const [confirmClose, setConfirmClose] = useState(false);
   const tabRefs = useRef<
     Partial<Record<BoardSettingsSectionId, HTMLButtonElement | null>>
@@ -126,17 +128,17 @@ export function BoardSettingsShell({
       <DialogContent
         hideClose
         className={cn(
-          "h-[min(47.25rem,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]!",
-          "max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0!",
+          "h-[min(47.25rem,calc(100dvh-4.75rem))] max-h-[calc(100dvh-4.75rem)] w-[calc(100vw-2rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[56px] md:bottom-auto",
+          "max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0! max-md:pb-[env(safe-area-inset-bottom)]",
         )}
         data-testid="board-settings-dialog"
       >
         <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-3 pl-4 pr-3.5 pt-3.5 max-md:flex-wrap max-md:px-2.5 max-md:pb-2 max-md:pt-2.5 max-md:pr-[58px]">
           <div className="min-w-0 flex-1">
-            <p className="m-0 mb-0.5 text-[9.5px] font-[650] uppercase leading-[1.4] tracking-[0.08em] text-muted-foreground">
+            <p className="m-0 mb-0.5 text-[11px] font-[650] uppercase leading-[1.4] tracking-[0.08em] text-muted-foreground">
               {t("board.settings.title")}
             </p>
-            <DialogTitle className="m-0 font-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
+            <DialogTitle className="m-0 font-agent-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
               {title}
             </DialogTitle>
             <DialogDescription className="m-0 mt-0.5 text-[11px] leading-[1.45] text-muted-foreground">
@@ -144,7 +146,7 @@ export function BoardSettingsShell({
             </DialogDescription>
           </div>
           <span
-            className="hidden items-center gap-[5px] whitespace-nowrap text-[10px] text-muted-foreground min-[720px]:inline-flex"
+            className="hidden items-center gap-[5px] whitespace-nowrap text-[11px] text-muted-foreground min-[720px]:inline-flex"
             data-testid="board-settings-save-state"
           >
             <span
@@ -179,14 +181,14 @@ export function BoardSettingsShell({
             className="shrink-0 border-b border-border bg-[color-mix(in_oklab,var(--background)_22%,var(--popover))] p-2 md:flex md:w-[194px] md:flex-col md:border-b-0 md:border-r md:p-[12px_9px]"
             data-testid="board-settings-rail"
           >
-            <p className="hidden px-2 pb-[7px] text-[9.5px] font-[650] uppercase tracking-[0.08em] text-muted-foreground md:block">
+            <p className="hidden px-2 pb-[7px] text-[11px] font-[650] uppercase tracking-[0.08em] text-muted-foreground md:block">
               {t("board.settings.shell.settings")}
             </p>
             <nav
               aria-label={t("board.settings.title")}
               className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible"
               role="tablist"
-              aria-orientation="vertical"
+              aria-orientation={verticalRail ? "vertical" : "horizontal"}
             >
               {sections.map((entry, index) => {
                 const Icon = entry.icon;
@@ -215,7 +217,7 @@ export function BoardSettingsShell({
                     <Icon className="h-3.5 w-3.5" aria-hidden />
                     {entry.label}
                     {entry.badge ? (
-                      <span className="ml-auto inline-flex h-[17px] min-w-[17px] shrink-0 items-center justify-center rounded-full bg-warning px-1 text-[10.5px] font-extrabold leading-none tabular-nums text-[#1b1305] shadow-[0_0_0_1px_color-mix(in_oklab,var(--warning)_20%,transparent)]">
+                      <span className="ml-auto inline-flex h-[17px] min-w-[17px] shrink-0 items-center justify-center rounded-full bg-warning px-1 text-[11px] font-extrabold leading-none tabular-nums text-[#1b1305] shadow-[0_0_0_1px_color-mix(in_oklab,var(--warning)_20%,transparent)]">
                         {entry.badge}
                       </span>
                     ) : null}
@@ -223,8 +225,8 @@ export function BoardSettingsShell({
                 );
               })}
             </nav>
-            <p className="mt-4 hidden border-t border-border px-2 pt-2.5 text-[10px] leading-[1.55] text-muted-foreground md:block">
-              <b className="mb-0.5 block text-[10.5px] font-semibold text-foreground">
+            <p className="mt-4 hidden border-t border-border px-2 pt-2.5 text-[11px] leading-[1.55] text-muted-foreground md:block">
+              <b className="mb-0.5 block text-[11px] font-semibold text-foreground">
                 {t("board.settings.shell.noteTitle")}
               </b>
               {t("board.settings.shell.hint")}
