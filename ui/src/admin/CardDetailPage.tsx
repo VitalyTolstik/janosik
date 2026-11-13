@@ -183,6 +183,8 @@ export function CardDetailPage() {
       limit?: number;
       includeDeleted?: boolean;
       append: boolean;
+      /** Re-centre on this row instead of using `offset`. */
+      anchor?: string;
     },
   ) => {
     setSectionLoading(section);
@@ -192,6 +194,7 @@ export function CardDetailPage() {
         offset: params.offset,
         limit: params.limit ?? ADMIN_DETAIL_LIMITS.card,
         ...(params.includeDeleted ? { includeDeleted: true } : {}),
+        ...(params.anchor ? { anchor: params.anchor } : {}),
       });
       setDetail((previous) =>
         previous === null
@@ -257,20 +260,30 @@ export function CardDetailPage() {
    * above it and shift the footer to a bogus window.
    */
   const reloadSection = (section: "comments" | "attachments") => {
+    const window = detail.windows[section];
     const loaded =
       section === "comments"
         ? detail.comments.length
         : detail.attachments.length;
     void loadSection(section, {
-      offset: 0,
+      // An anchored block is already centred around one row (TASK-176.3):
+      // ask for the same anchor again so a write cannot turn its note into
+      // "the linked row is not available" for a row that still exists.
+      offset: window.anchor === null ? 0 : window.offset,
       // Rows already loaded plus the previously hidden ones: a row that was
-      // visible before the write must stay inside the refreshed range.
+      // visible before the write must stay inside the refreshed range. After
+      // the first write the window already includes hidden rows, so adding
+      // them again would inflate the range on every action.
       limit: Math.min(
-        Math.max(loaded + detail.hidden[section], ADMIN_DETAIL_LIMITS.card),
+        Math.max(
+          loaded + (window.includeDeleted ? 0 : detail.hidden[section]),
+          ADMIN_DETAIL_LIMITS.card,
+        ),
         ADMIN_DETAIL_LIMITS.max,
       ),
       includeDeleted: true,
       append: false,
+      ...(window.anchor === null ? {} : { anchor: window.anchor }),
     });
   };
 

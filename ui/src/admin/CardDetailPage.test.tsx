@@ -381,6 +381,42 @@ describe("CardDetailPage identity links and per-row moderation", () => {
     ).toBeNull();
   });
 
+  it("keeps an anchored comment window after deleting its row", async () => {
+    const server = new FakeAdminServer(stateWithCardGraph());
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard("card-1", "?comment=comment-live-59");
+
+    expect(
+      await screen.findByTestId("admin-card-anchor-comments"),
+    ).toBeTruthy();
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-card-comment-actions-comment-live-59"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByText("Delete"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/comments/comment-live-59",
+        ),
+      ).toBe(true);
+    });
+    expect(screen.getByTestId("admin-card-anchor-comments")).toBeTruthy();
+    const anchored = document.querySelector(
+      '[data-testid="admin-card-detail-comments"] tr[data-anchor="true"]',
+    );
+    expect(anchored).toHaveTextContent("Live comment 59");
+    expect(within(anchored as HTMLElement).getByText("Deleted")).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-anchor-missing-comments"),
+    ).toBeNull();
+  });
+
   it("deletes one attachment and keeps it visible with its state", async () => {
     const server = new FakeAdminServer(stateWithOneRow());
     vi.stubGlobal("fetch", server.fetchImpl);

@@ -498,6 +498,7 @@ export function UserDetailPage() {
    * above it and shift the footer to a bogus window.
    */
   const reloadSection = (section: "comments" | "sessions" | "tokens") => {
+    const window = detail.windows[section];
     const loaded =
       section === "comments"
         ? detail.comments.length
@@ -507,9 +508,14 @@ export function UserDetailPage() {
     void loadSection(section, {
       offset: 0,
       // Rows already loaded plus the previously hidden ones: a row that was
-      // visible before the write must stay inside the refreshed range.
+      // visible before the write must stay inside the refreshed range. After
+      // the first write the window already includes hidden rows, so adding
+      // them again would inflate the range on every action.
       limit: Math.min(
-        Math.max(loaded + detail.hidden[section], ADMIN_DETAIL_LIMITS.user),
+        Math.max(
+          loaded + (window.includeDeleted ? 0 : detail.hidden[section]),
+          ADMIN_DETAIL_LIMITS.user,
+        ),
         ADMIN_DETAIL_LIMITS.max,
       ),
       includeDeleted: true,

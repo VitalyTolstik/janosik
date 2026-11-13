@@ -2336,7 +2336,7 @@ export class AdminService {
     return { status: "ok" };
   }
 
-  /** Master deletes an attachment and its blob (TASK-60). */
+  /** Master soft-deletes an attachment; the blob is kept for restore. */
   async deleteAttachment(
     attachmentId: string,
     admin: AdminPrincipal,
