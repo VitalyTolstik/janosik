@@ -59,6 +59,22 @@ describe("clock", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("bumps when the tab becomes visible again", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(new Date("2026-10-29T12:00:00Z"));
+    vi.resetModules();
+    const { getClockNow, subscribeClock } = await import("./clock");
+    const listener = vi.fn();
+    subscribeClock(listener);
+    const before = getClockNow();
+    vi.setSystemTime(new Date("2026-10-29T12:05:00Z"));
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(getClockNow()).toBeGreaterThan(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it("unsubscribes without disturbing the remaining subscribers", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     vi.setSystemTime(new Date("2026-10-29T12:00:00Z"));

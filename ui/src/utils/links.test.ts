@@ -4,6 +4,7 @@ import type { Board, Card } from "@janosik/shared";
 import {
   cardLinkIndex,
   isPairLinked,
+  linkRowGroups,
   linkSignature,
   suggestLinkTargets,
   wouldCreateCycle,
@@ -85,6 +86,33 @@ describe("cardLinkIndex", () => {
     expect(cardLinkIndex(cards)).toBe(first);
     const next = { ...cards };
     expect(cardLinkIndex(next)).not.toBe(first);
+  });
+});
+
+describe("linkRowGroups", () => {
+  it("sorts live rows by title and keeps dangling rows in their group", () => {
+    const cards = {
+      "c-1": card("c-1", "Zebra"),
+      "c-2": card("c-2", "Alpha"),
+      "c-3": card("c-3", "Mango"),
+    };
+    const facts = {
+      outgoing: [
+        { id: "l-1", type: "blocks", targetCardId: "c-1" },
+        { id: "l-2", type: "blocks", targetCardId: "c-3" },
+        { id: "l-3", type: "relates_to", targetCardId: "gone" },
+      ],
+      incoming: [],
+    } as unknown as Parameters<typeof linkRowGroups>[1];
+
+    const groups = linkRowGroups(cards, facts, "Deleted card");
+    expect(groups.find((group) => group.key === "blocks")?.rows).toEqual([
+      expect.objectContaining({ title: "Mango" }),
+      expect.objectContaining({ title: "Zebra" }),
+    ]);
+    expect(groups.find((group) => group.key === "dangling")?.rows).toEqual([
+      expect.objectContaining({ title: "Deleted card", live: false }),
+    ]);
   });
 });
 

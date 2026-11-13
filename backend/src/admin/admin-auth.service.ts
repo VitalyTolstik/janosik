@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { AdminUser } from "@prisma/client";
-import { argon2id, hash as argonHash, verify as argonVerify } from "argon2";
+import { verify as argonVerify } from "argon2";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
@@ -133,13 +133,26 @@ export class AdminAuthService {
       }
     }
 
-    const updated = await this.prisma.adminUser.update({
-      where: { id: admin.id },
+    const accepted = await this.prisma.adminUser.updateMany({
+      where: {
+        id: admin.id,
+        disabledAt: null,
+        passwordHash: admin.passwordHash,
+        OR: [{ lockedUntil: null }, { lockedUntil: { lte: new Date() } }],
+      },
       data: {
         failedLogins: 0,
         lockedUntil: null,
         lastLoginAt: new Date(),
       },
+    });
+    if (accepted.count !== 1)
+      throw new HttpException(
+        "Account is temporarily locked",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    const updated = await this.prisma.adminUser.findUniqueOrThrow({
+      where: { id: admin.id },
     });
     await this.prisma.adminAuditLog.create({
       data: {
@@ -368,23 +381,17 @@ export class AdminAuthService {
     reason: SecurityEventReason,
     ip?: string | null,
   ): Promise<void> {
-    const failedLogins = admin.failedLogins + 1;
-    const lockedUntil =
-      failedLogins >= ADMIN_MAX_FAILED_LOGINS
-        ? new Date(Date.now() + ADMIN_LOCKOUT_MS)
-        : null;
-    await this.prisma.adminUser.update({
-      where: { id: admin.id },
-      data: { failedLogins, lockedUntil },
-    });
+    const until = new Date(Date.now() + ADMIN_LOCKOUT_MS);
+    await this.prisma
+      .$executeRaw`UPDATE "AdminUser" SET "failedLogins" = "failedLogins" + 1, "lockedUntil" = CASE WHEN "failedLogins" + 1 >= ${ADMIN_MAX_FAILED_LOGINS} THEN ${until} ELSE "lockedUntil" END WHERE "id" = ${admin.id}`;
     await this.auditLoginFailed(admin.email, admin.id, reason, ip);
   }
 
   /** Equal-cost path for unknown emails (see class docs). */
   private async burnPasswordTime(password: string): Promise<void> {
-    const dummyHash = await argonHash("janosik-admin-dummy", {
-      type: argon2id,
-    });
-    await argonVerify(dummyHash, password);
+    await argonVerify(
+      "$argon2id$v=19$m=65536,p=4,t=3$isfgtCAq+KXHgTYbJT7YOQ$Eue1lNnMvq+bV/ci5VxvMNojPEYrJFEXx2rs4ws9bJk",
+      password,
+    );
   }
 }

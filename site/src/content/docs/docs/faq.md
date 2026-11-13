@@ -69,9 +69,7 @@ with `node -v`. The from-source steps are in
 ## Is email delivered out of the box?
 
 No — **email delivery is off by default.** With no SMTP transport configured the
-API runs in **log mode**: verification codes and notices are written to the
-server log instead of being sent, and registration auto-verifies. Nothing is
-emailed until you configure a transport in
+API runs in **log mode** and password registration is unavailable. Configure a transport in
 [Email service](/docs/admin/settings/) (or the `SMTP_*` environment variables).
 For local testing, Mailpit captures outgoing email on `localhost:1025` and shows
 it in a web inbox at `http://localhost:8025`:

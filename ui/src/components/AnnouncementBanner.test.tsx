@@ -7,13 +7,14 @@ import { AuthContext, type AuthValue } from "@/auth/AuthContext";
 import { I18nProvider } from "@/i18n";
 import { defaultI18n } from "@/i18n/i18n";
 
-const { activeAnnouncements } = vi.hoisted(() => ({
+const { activeAnnouncements, dismissAnnouncement } = vi.hoisted(() => ({
   activeAnnouncements: vi.fn(),
+  dismissAnnouncement: vi.fn(),
 }));
 
 vi.mock("@/api/client", () => ({
   isApiEnabled: () => true,
-  api: { activeAnnouncements },
+  api: { activeAnnouncements, dismissAnnouncement },
 }));
 
 const AUTH: AuthValue = {
@@ -37,6 +38,7 @@ function announcement(
     contentLocale: "en" | "ru" | null;
     requestedLocale: "en" | "ru";
     isFallback: boolean;
+    version: number;
   }> = {},
 ) {
   return {
@@ -47,6 +49,7 @@ function announcement(
     contentLocale: "en" as const,
     requestedLocale: "en" as const,
     isFallback: false,
+    version: 1,
     ...overrides,
   };
 }
@@ -63,6 +66,7 @@ function renderBanner() {
 
 beforeEach(async () => {
   activeAnnouncements.mockReset();
+  dismissAnnouncement.mockReset();
   localStorage.clear();
   await defaultI18n.changeLanguage("en");
 });
@@ -189,7 +193,8 @@ describe("AnnouncementBanner", () => {
     expect(screen.queryByText("English")).not.toBeInTheDocument();
   });
 
-  it("dismisses one announcement and remembers it in localStorage", async () => {
+  it("dismisses one announcement through the API and optimistically hides it", async () => {
+    dismissAnnouncement.mockResolvedValue({ dismissed: true, version: 1 });
     activeAnnouncements.mockResolvedValue([
       announcement({ id: "a-1", title: "Maintenance", body: "Tonight" }),
     ]);
@@ -200,40 +205,65 @@ describe("AnnouncementBanner", () => {
     await userEvent.click(screen.getByTestId("announcement-dismiss-a-1"));
 
     expect(screen.queryByText("Maintenance")).not.toBeInTheDocument();
-    expect(localStorage.getItem("janosik.announcements.dismissed")).toBe(
-      '["a-1"]',
-    );
+    expect(dismissAnnouncement).toHaveBeenCalledWith("a-1", 1);
+    expect(localStorage.getItem("janosik.announcements.dismissed")).toBeNull();
   });
 
-  it("does not show previously dismissed announcements", async () => {
+  it("removes the legacy global key and does not filter announcements by it", async () => {
     localStorage.setItem("janosik.announcements.dismissed", '["a-1"]');
     activeAnnouncements.mockResolvedValue([
       announcement({ id: "a-1", title: "Old news", body: "" }),
-      announcement({ id: "a-2", title: "Fresh news", body: "" }),
     ]);
 
     renderBanner();
 
-    expect(await screen.findByText("Fresh news")).toBeInTheDocument();
-    expect(screen.queryByText("Old news")).not.toBeInTheDocument();
+    expect(await screen.findByText("Old news")).toBeInTheDocument();
+    expect(localStorage.getItem("janosik.announcements.dismissed")).toBeNull();
   });
 
-  it("keeps a dismissed announcement hidden after a language switch", async () => {
+  it("restores the notice when the dismissal and the refetch both fail", async () => {
+    activeAnnouncements.mockResolvedValueOnce([
+      announcement({ id: "a-1", title: "Maintenance", body: "Tonight" }),
+    ]);
+    dismissAnnouncement.mockRejectedValue(new Error("offline"));
+    renderBanner();
+    await screen.findByText("Maintenance");
+
+    activeAnnouncements.mockRejectedValue(new Error("offline"));
+    await userEvent.click(screen.getByTestId("announcement-dismiss-a-1"));
+
+    expect(await screen.findByText("Maintenance")).toBeInTheDocument();
+  });
+
+  it("refetches and shows the updated version after a stale dismissal", async () => {
+    activeAnnouncements.mockResolvedValueOnce([
+      announcement({ id: "a-1", title: "Old text", version: 1 }),
+    ]);
+    dismissAnnouncement.mockRejectedValue({ status: 409, currentVersion: 2 });
+    renderBanner();
+    await screen.findByText("Old text");
+
     activeAnnouncements.mockResolvedValue([
+      announcement({ id: "a-1", title: "Updated text", version: 2 }),
+    ]);
+    await userEvent.click(screen.getByTestId("announcement-dismiss-a-1"));
+
+    expect(await screen.findByText("Updated text")).toBeInTheDocument();
+    expect(screen.queryByText("Old text")).not.toBeInTheDocument();
+    expect(dismissAnnouncement).toHaveBeenCalledWith("a-1", 1);
+  });
+
+  it("keeps a server-dismissed announcement hidden after a language switch", async () => {
+    activeAnnouncements.mockResolvedValueOnce([
       announcement({ id: "a-1", title: "English" }),
     ]);
+    dismissAnnouncement.mockResolvedValue({ dismissed: true, version: 1 });
     renderBanner();
     await screen.findByText("English");
     await userEvent.click(screen.getByTestId("announcement-dismiss-a-1"));
 
-    activeAnnouncements.mockResolvedValue([
-      announcement({
-        id: "a-1",
-        title: "Русский",
-        contentLocale: "ru",
-        requestedLocale: "ru",
-      }),
-    ]);
+    // The server does not return a dismissed announcement for any language.
+    activeAnnouncements.mockResolvedValue([]);
     await act(async () => {
       await defaultI18n.changeLanguage("ru");
     });

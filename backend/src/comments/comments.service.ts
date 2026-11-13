@@ -35,8 +35,7 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
 /** Body-embedded attachment references (`…/attachments/<id>/content`). */
-const INLINE_ATTACHMENT_URL =
-  /\/api\/v1\/attachments\/([A-Za-z0-9-]+)\/content/g;
+const INLINE_ATTACHMENT_URL = /\/attachments\/([A-Za-z0-9-]+)\/content/g;
 
 /**
  * Card comments (§7.4, TASK-28) — plain text, ordinary REST.
@@ -335,6 +334,13 @@ export class CommentsService {
           comment.text,
           undefined,
         );
+        await this.unlinkInlineAttachments(
+          tx,
+          comment.card.column.boardId,
+          comment.text,
+          userId,
+          attribution,
+        );
         const activity = await tx.activity.create({
           data: {
             boardId: comment.card.column.boardId,
@@ -366,36 +372,69 @@ export class CommentsService {
       comment.id,
       attribution,
     );
-    // Inline media pasted into the comment die with it — soft-deleted like
-    // every attachment (the physical blob stays, matching the soft-delete
-    // restore story; the purge job reclaims rows later). Runs under the same
-    // board lock so it never races a concurrent command.
-    await this.boardWrite.run(comment.card.column.boardId, (tx) =>
-      this.unlinkInlineAttachments(
-        tx,
-        comment.card.column.boardId,
-        comment.text,
-      ),
-    );
     await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
   }
 
-  /**
-   * Soft-delete the inline attachments embedded in a deleted comment. Scoped
-   * to the comment's board (TASK-81): the ids are parsed out of free text, so
-   * without `boardId` a member could paste another board's attachment id
-   * (leaked through public shares) and delete that board's media by removing
-   * their own comment.
-   */
+  /** Delete only the author's inline files that no remaining content uses. */
   private async unlinkInlineAttachments(
     tx: Prisma.TransactionClient,
     boardId: string,
     text: string,
+    userId: string,
+    attribution: RequestAttribution,
   ): Promise<void> {
     const ids = [...text.matchAll(INLINE_ATTACHMENT_URL)].map((m) => m[1]);
     if (ids.length === 0) return;
+    const candidates = await tx.attachment.findMany({
+      where: {
+        id: { in: ids },
+        boardId,
+        isInline: true,
+        deletedAt: null,
+        uploadedById: userId,
+        ...(attribution.actorType === "agent"
+          ? {
+              OR: [
+                { uploadedByTokenId: attribution.apiTokenId },
+                { uploadedByTokenId: null },
+              ],
+            }
+          : {}),
+      },
+      select: { id: true },
+    });
+    if (candidates.length === 0) return;
+    const urls = candidates.map(({ id }) => `/attachments/${id}/content`);
+    const [cards, comments] = await Promise.all([
+      tx.card.findMany({
+        where: {
+          column: { boardId },
+          deletedAt: null,
+          OR: urls.map((url) => ({ description: { contains: url } })),
+        },
+        select: { description: true },
+      }),
+      tx.comment.findMany({
+        where: {
+          card: { column: { boardId }, deletedAt: null },
+          deletedAt: null,
+          OR: urls.map((url) => ({ text: { contains: url } })),
+        },
+        select: { text: true },
+      }),
+    ]);
+    const used = new Set<string>();
+    for (const body of [
+      ...cards.map((card) => card.description ?? ""),
+      ...comments.map((comment) => comment.text),
+    ]) {
+      for (const match of body.matchAll(INLINE_ATTACHMENT_URL))
+        used.add(match[1]);
+    }
+    const unused = candidates.map(({ id }) => id).filter((id) => !used.has(id));
+    if (unused.length === 0) return;
     await tx.attachment.updateMany({
-      where: { id: { in: ids }, boardId, isInline: true, deletedAt: null },
+      where: { id: { in: unused }, boardId, isInline: true, deletedAt: null },
       data: { deletedAt: new Date() },
     });
   }

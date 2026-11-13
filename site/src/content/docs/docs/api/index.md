@@ -102,7 +102,7 @@ with `403`:
 - `POST /auth/password`
 - `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
 - `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline`
-- `POST /users/me/export`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
+- `POST /users/me/export`, `GET /users/me/export/latest`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
 - `POST /users/me/delete/request-code`, `DELETE /users/me`
 - `GET /users/me/notifications`, `GET`/`PATCH /users/me/notification-settings`
 
@@ -419,9 +419,10 @@ out of scope for this reference.
 only an access token from a browser sign-in (see
 [Session-only routes](#session-only-routes)).
 
-`register`, `login`, `refresh` and `email/change/confirm` set the refresh
-cookie and return `{ accessToken, user }`. `register` also sends a 6-digit
-confirmation code to the address.
+`register`, `login` and `refresh` set the refresh cookie and return
+`{ accessToken, user }`. `email/change/confirm` returns a fresh
+`{ accessToken, user }` but deliberately leaves the caller's refresh cookie
+unchanged. `register` also sends a 6-digit confirmation code to the address.
 
 ### Register
 
@@ -477,27 +478,34 @@ reserves `session` for the active agent session (currently `null`).
 
 `POST /auth/password` body:
 
-| Field             | Type   | Required | Constraints            |
-| ----------------- | ------ | -------- | ---------------------- |
-| `currentPassword` | string | required | at most 100 characters |
-| `newPassword`     | string | required | 8 to 100 characters    |
+| Field             | Type   | Required            | Constraints            |
+| ----------------- | ------ | ------------------- | ---------------------- |
+| `currentPassword` | string | password accounts   | at most 100 characters |
+| `oauthProof`      | string | OAuth-only accounts | fresh OAuth access token |
+| `newPassword`     | string | required            | 8 to 100 characters    |
 
 Session-only: a personal API token answers `403` with `code: "pat_forbidden"`.
-Returns `{ status: "ok" }`. The refresh cookie identifies the caller's session,
-which stays signed in; every other session is revoked, and so is every
-personal API token of the account.
+An OAuth-only account proves the first-password operation with a fresh
+OAuth-issued access token (`oauthProof`) instead of `currentPassword`; a
+password JWT or a stale token answers `401` with `code:
+"oauth_proof_invalid"`. Returns `{ status: "ok" }`. The refresh cookie
+identifies the caller's session, which stays signed in; every other session
+is revoked, and so is every personal API token of the account.
 
 ### Email change
 
 Both email-change routes are session-only. `POST /auth/email/change/request`
-requires the current password and confirmation of the new address. Body:
+requires confirmation of the new address, plus the current password for an
+account that has one. Body:
 
-| Field             | Type   | Required | Constraints                         |
-| ----------------- | ------ | -------- | ----------------------------------- |
-| `newEmail`        | string | required | valid email; trimmed and lowercased |
-| `currentPassword` | string | required | at least 1 character                |
+| Field             | Type   | Required          | Constraints                         |
+| ----------------- | ------ | ----------------- | ----------------------------------- |
+| `newEmail`        | string | required          | valid email; trimmed and lowercased |
+| `currentPassword` | string | password accounts | at least 1 character                |
 
-Returns `{ expiresAt, queued }` and sends a 6-digit code to the new address.
+An OAuth-only account may omit `currentPassword` (an empty string is also
+accepted). Returns `{ expiresAt, queued }` and sends a 6-digit code to the
+new address. When e-mail delivery is not configured the route answers `503`.
 
 `POST /auth/email/change/confirm` body:
 
@@ -505,9 +513,10 @@ Returns `{ expiresAt, queued }` and sends a 6-digit code to the new address.
 | ------ | ------ | -------- | ---------------- |
 | `code` | string | required | exactly 6 digits |
 
-On success the address is swapped, every refresh session (including the
-caller's old cookie) is revoked, and a fresh `AuthResponseDto` with a new
-refresh cookie is returned.
+On success the address is swapped and every other refresh session is
+revoked. The caller's refresh cookie stays valid and is not replaced; the
+response carries a fresh access token (`AuthResponseDto`) for the same
+session.
 
 ### Email verification
 
@@ -709,6 +718,17 @@ dependency states (`up` or `down`).
 | Method | Path                    | Auth | Returns             |
 | ------ | ----------------------- | ---- | ------------------- |
 | `GET`  | `/announcements/active` | user | `AnnouncementDto[]` |
+| `POST` | `/announcements/{id}/dismiss` | user | `AnnouncementDismissResponse` |
 
 Returns the in-app announcements addressed to the signed-in user. A
-signed-out visitor gets nothing.
+signed-out visitor gets nothing. Each item carries its current `version`.
+
+`POST /announcements/{id}/dismiss` closes one announcement for the signed-in
+user. The body is `{ "version": <AnnouncementDto.version> }`. Read state is
+stored server-side per user, so it survives a new device, browser or session
+and does not leak to another account in the same browser. A stale version
+answers `409` with `currentVersion` (the announcement was edited); refetch
+`/announcements/active` and dismiss the new version. An unknown, inactive,
+out-of-window or unaddressed announcement answers `404`, so the route never
+reveals announcements the caller cannot see. Editing an announcement bumps
+its version, which shows it again to users who dismissed the previous one.

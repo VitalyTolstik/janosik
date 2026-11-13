@@ -234,6 +234,18 @@ describe("matchesCardFilter", () => {
     ).toBe(true);
   });
 
+  it("matches only unlabeled cards when noLabel is selected alone in ALL mode", () => {
+    const filter = {
+      ...EMPTY_FILTER,
+      labelMatch: "all" as const,
+      noLabel: true,
+    };
+    expect(matchesCardFilter(card("empty", "T", []), filter, NOW)).toBe(true);
+    expect(matchesCardFilter(card("labeled", "T", ["a"]), filter, NOW)).toBe(
+      false,
+    );
+  });
+
   it("keeps noLabel OR-ed with all-match labels", () => {
     const unlabeled = card("c7", "T", []);
     const one = card("c8", "T", ["a"]);
