@@ -1280,7 +1280,7 @@ export function AgentsPage() {
                     <Button
                       variant="outline"
                       onClick={runs.reload}
-                      className={SMALL_OUTLINE_CLASS}
+                      className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
                     >
                       <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                       {t("agents.retry")}
@@ -1302,7 +1302,7 @@ export function AgentsPage() {
                           variant="outline"
                           onClick={clearRunFilters}
                           data-testid="agents-runs-empty-clear"
-                          className={SMALL_BUTTON_CLASS}
+                          className={SMALL_OUTLINE_CLASS}
                         >
                           {t("agents.clearFilters")}
                         </Button>
@@ -1336,7 +1336,7 @@ export function AgentsPage() {
                         variant="outline"
                         size="sm"
                         onClick={runs.reload}
-                        className={SMALL_OUTLINE_CLASS}
+                        className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
                       >
                         {t("agents.retry")}
                       </Button>
@@ -1374,7 +1374,7 @@ export function AgentsPage() {
                         data-testid="agents-runs-more"
                         disabled={runs.loadingMore}
                         onClick={() => void runs.loadMore()}
-                        className={SMALL_BUTTON_CLASS}
+                        className={`${SMALL_BUTTON_CLASS} max-md:h-11 max-md:min-h-11`}
                       >
                         {runs.loadingMore ? (
                           <RefreshCw
@@ -1681,7 +1681,7 @@ function LoadError({ onRetry }: { onRetry: () => void }) {
           variant="outline"
           onClick={onRetry}
           data-testid="agents-load-error-retry"
-          className={SMALL_OUTLINE_CLASS}
+          className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {t("agents.retry")}
