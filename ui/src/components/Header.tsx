@@ -333,6 +333,12 @@ export function Header() {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           initialSection={settingsSection}
+          onOpenLiveControls={() => {
+            // Board Settings closes first (with its dirty guard); the current
+            // board route and its query string stay untouched.
+            setAgentControlTab("pause");
+            setAgentControlOpen(true);
+          }}
         />
       ) : null}
 

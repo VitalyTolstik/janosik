@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { GitBranch, Shield } from "lucide-react";
 import type { BoardSummary, BoardWorkflow } from "@janosik/shared";
 
+import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { WorkflowSettings } from "@/components/board/workflow/WorkflowSettings";
 import {
   BoardSettingsShell,
@@ -23,6 +24,8 @@ interface BoardSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialSection?: BoardSettingsSectionId;
+  /** Opens the board Agent Control on Live, keeping the board deep link. */
+  onOpenLiveControls?: () => void;
 }
 
 /**
@@ -35,6 +38,7 @@ export function BoardSettingsDialog({
   open,
   onOpenChange,
   initialSection = "workflow",
+  onOpenLiveControls,
 }: BoardSettingsDialogProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -44,6 +48,7 @@ export function BoardSettingsDialog({
   const [saving, setSaving] = useState(false);
   const [workflowDirty, setWorkflowDirty] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
+  const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
   const [section, setSection] =
     useState<BoardSettingsSectionId>(initialSection);
   const [policyMounted, setPolicyMounted] = useState(
@@ -136,61 +141,89 @@ export function BoardSettingsDialog({
     ? t("board.settings.shell.discardDescription")
     : t("workflow.discardDescription");
 
+  const openLiveControls = () => {
+    if (onOpenLiveControls === undefined) return;
+    if (dirty) {
+      setLiveConfirmOpen(true);
+      return;
+    }
+    onOpenChange(false);
+    onOpenLiveControls();
+  };
+
+  const confirmOpenLiveControls = () => {
+    setLiveConfirmOpen(false);
+    onOpenChange(false);
+    onOpenLiveControls?.();
+  };
+
   return (
-    <BoardSettingsShell
-      open={open}
-      onOpenChange={onOpenChange}
-      title={board.title}
-      subtitle={t("board.settings.shell.subtitle")}
-      sections={sections}
-      section={section}
-      onSectionChange={selectSection}
-      dirty={dirty}
-      saving={saving}
-      discardTitle={discardTitle}
-      discardDescription={discardDescription}
-      discardConfirmLabel={t("workflow.discard")}
-    >
-      <div
-        id="board-settings-panel-workflow"
-        role="tabpanel"
-        aria-labelledby="board-settings-tab-workflow"
-        hidden={section !== "workflow"}
-        className="h-full min-h-0"
+    <>
+      <BoardSettingsShell
+        open={open}
+        onOpenChange={onOpenChange}
+        title={board.title}
+        subtitle={t("board.settings.shell.subtitle")}
+        sections={sections}
+        section={section}
+        onSectionChange={selectSection}
+        dirty={dirty}
+        saving={saving}
+        discardTitle={discardTitle}
+        discardDescription={discardDescription}
+        discardConfirmLabel={t("workflow.discard")}
       >
-        <div className="flex h-full min-h-0 flex-col">
-          <WorkflowSettings
-            columns={board.columns}
-            cards={board.cards}
-            workflow={board.workflow}
-            workflowInvalid={board.workflowInvalid}
-            canEdit={role === "ADMIN"}
-            role={role}
-            saving={saving}
-            shellDirty={dirty}
-            shellSaving={saving}
-            onSave={save}
-            onDirtyChange={setWorkflowDirty}
-            testIdPrefix="workflow"
-            variant="dialog"
-            insideSettingsShell
-          />
-        </div>
-      </div>
-      {policyMounted ? (
         <div
-          id="board-settings-panel-agents"
+          id="board-settings-panel-workflow"
           role="tabpanel"
-          aria-labelledby="board-settings-tab-agents"
-          hidden={section !== "agents"}
+          aria-labelledby="board-settings-tab-workflow"
+          hidden={section !== "workflow"}
           className="h-full min-h-0"
         >
-          <AgentsAutomationSettings
-            role={role}
-            onDirtyChange={setPolicyDirty}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            <WorkflowSettings
+              columns={board.columns}
+              cards={board.cards}
+              workflow={board.workflow}
+              workflowInvalid={board.workflowInvalid}
+              canEdit={role === "ADMIN"}
+              role={role}
+              saving={saving}
+              shellDirty={dirty}
+              shellSaving={saving}
+              onSave={save}
+              onDirtyChange={setWorkflowDirty}
+              testIdPrefix="workflow"
+              variant="dialog"
+              insideSettingsShell
+            />
+          </div>
         </div>
-      ) : null}
-    </BoardSettingsShell>
+        {policyMounted ? (
+          <div
+            id="board-settings-panel-agents"
+            role="tabpanel"
+            aria-labelledby="board-settings-tab-agents"
+            hidden={section !== "agents"}
+            className="h-full min-h-0"
+          >
+            <AgentsAutomationSettings
+              role={role}
+              onDirtyChange={setPolicyDirty}
+              onOpenLiveControls={openLiveControls}
+            />
+          </div>
+        ) : null}
+      </BoardSettingsShell>
+      <ConfirmDialog
+        open={liveConfirmOpen}
+        onOpenChange={setLiveConfirmOpen}
+        title={discardTitle}
+        description={discardDescription}
+        confirmLabel={t("workflow.discard")}
+        destructive
+        onConfirm={confirmOpenLiveControls}
+      />
+    </>
   );
 }
