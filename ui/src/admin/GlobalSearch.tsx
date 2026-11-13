@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
+import { adminCardsHref } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { SearchSkeleton } from "./skeletons";
 import { Badge } from "./ui";
@@ -81,7 +82,8 @@ interface CommandLine {
   run: () => void;
 }
 
-function buildLines(
+/** Pure result mapping; exported for the exact-target tests. */
+export function buildSearchLines(
   results: AdminGlobalSearchDto,
   groupLabels: Record<string, string>,
 ): ResultLine[] {
@@ -138,7 +140,9 @@ function buildLines(
         comment.text.length > 90
           ? `${comment.text.slice(0, 90)}…`
           : comment.text,
-      secondary: comment.authorEmail,
+      secondary: comment.cardTitle
+        ? `${comment.cardTitle} · ${comment.authorEmail}`
+        : comment.authorEmail,
       href: `${cardHref(comment.cardId)}?comment=${encodeURIComponent(comment.id)}`,
       badge: comment.deletedAt !== null ? "deleted" : null,
     });
@@ -161,7 +165,7 @@ function buildLines(
       group: groupLabels.labels,
       label: label.name,
       secondary: label.boardTitle,
-      href: boardHref(label.boardId),
+      href: adminCardsHref({ labelId: label.id }),
       badge: label.deletedAt !== null ? "deleted" : null,
     });
   }
@@ -250,7 +254,7 @@ export function GlobalSearchDialog({
   };
 
   const entityLines = useMemo(
-    () => (results ? buildLines(results, groupLabels) : []),
+    () => (results ? buildSearchLines(results, groupLabels) : []),
     // groupLabels is derived from the language; rebuilding on every render is
     // cheap and avoids a stale closure when the language flips.
     // eslint-disable-next-line react-hooks/exhaustive-deps

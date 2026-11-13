@@ -114,6 +114,20 @@ function like(value: string): Prisma.StringFilter {
   return { contains: value, mode: "insensitive" };
 }
 
+/**
+ * Card relation scope for the structural filters (TASK-176.6). `boardId`
+ * reaches the card through its column, `labelId` through its label links, so
+ * a row from another board can never satisfy the same query by coincidence.
+ */
+function cardScope(query: AdminListQueryDto): Prisma.CardWhereInput | null {
+  const scope: Prisma.CardWhereInput = {};
+  if (query.cardId) scope.id = query.cardId;
+  if (query.columnId) scope.columnId = query.columnId;
+  if (query.boardId) scope.column = { boardId: query.boardId };
+  if (query.labelId) scope.labels = { some: { labelId: query.labelId } };
+  return Object.keys(scope).length === 0 ? null : scope;
+}
+
 interface CardRowJoin {
   id: string;
   title: string;
@@ -272,6 +286,7 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminBoardMemberRowDto>> {
     const where: Prisma.BoardMemberWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
     if (query.search) {
       const roleHit = (["ADMIN", "MEMBER", "VIEWER"] as const).find(
         (role) => role.toLowerCase() === query.search?.toLowerCase(),
@@ -348,6 +363,12 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminColumnRowDto>> {
     const where: Prisma.ColumnWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
+    if (query.columnId) where.id = query.columnId;
+    if (query.cardId) where.cards = { some: { id: query.cardId } };
+    if (query.labelId) {
+      where.board = { labels: { some: { id: query.labelId } } };
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -409,6 +430,14 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCardLinkRowDto>> {
     const where: Prisma.CardLinkWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
+    if (query.cardId) {
+      where.AND = [
+        {
+          OR: [{ fromCardId: query.cardId }, { toCardId: query.cardId }],
+        },
+      ];
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -472,6 +501,16 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminLabelRowDto>> {
     const where: Prisma.LabelWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
+    if (query.labelId) where.id = query.labelId;
+    if (query.cardId || query.columnId) {
+      where.cards = {
+        some: {
+          ...(query.cardId ? { cardId: query.cardId } : {}),
+          ...(query.columnId ? { card: { columnId: query.columnId } } : {}),
+        },
+      };
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -530,6 +569,14 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCardLabelRowDto>> {
     const where: Prisma.CardLabelWhereInput = {};
+    if (query.labelId) where.labelId = query.labelId;
+    if (query.cardId) where.cardId = query.cardId;
+    if (query.boardId || query.columnId) {
+      where.card = {
+        ...(query.columnId ? { columnId: query.columnId } : {}),
+        ...(query.boardId ? { column: { boardId: query.boardId } } : {}),
+      };
+    }
     if (query.search) {
       where.OR = [
         { cardId: { contains: query.search } },
@@ -586,6 +633,8 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminChecklistRowDto>> {
     const where: Prisma.ChecklistWhereInput = {};
+    const scope = cardScope(query);
+    if (scope !== null) where.card = scope;
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -653,6 +702,8 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminChecklistItemRowDto>> {
     const where: Prisma.ChecklistItemWhereInput = {};
+    const scope = cardScope(query);
+    if (scope !== null) where.checklist = { card: scope };
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -732,6 +783,16 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminAttachmentRowDto>> {
     const where: Prisma.AttachmentWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
+    if (query.cardId) where.cardId = query.cardId;
+    if (query.columnId || query.labelId) {
+      where.card = {
+        ...(query.columnId ? { columnId: query.columnId } : {}),
+        ...(query.labelId
+          ? { labels: { some: { labelId: query.labelId } } }
+          : {}),
+      };
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -800,6 +861,16 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminActivityRowDto>> {
     const where: Prisma.ActivityWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
+    if (query.cardId) where.cardId = query.cardId;
+    if (query.columnId || query.labelId) {
+      where.card = {
+        ...(query.columnId ? { columnId: query.columnId } : {}),
+        ...(query.labelId
+          ? { labels: { some: { labelId: query.labelId } } }
+          : {}),
+      };
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },

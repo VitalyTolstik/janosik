@@ -892,6 +892,16 @@ export class AdminService {
       where.archivedAt = { not: null };
     }
     if (query.status === "deleted") where.deletedAt = { not: null };
+    if (query.boardId) where.id = query.boardId;
+    if (query.columnId || query.cardId) {
+      where.columns = {
+        some: {
+          ...(query.columnId ? { id: query.columnId } : {}),
+          ...(query.cardId ? { cards: { some: { id: query.cardId } } } : {}),
+        },
+      };
+    }
+    if (query.labelId) where.labels = { some: { id: query.labelId } };
 
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
@@ -1138,6 +1148,12 @@ export class AdminService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCardRowDto>> {
     const where: Prisma.CardWhereInput = {};
+    if (query.cardId) where.id = query.cardId;
+    if (query.columnId) where.columnId = query.columnId;
+    if (query.boardId) where.column = { boardId: query.boardId };
+    if (query.labelId) {
+      where.labels = { some: { labelId: query.labelId } };
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -1473,6 +1489,16 @@ export class AdminService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCommentRowDto>> {
     const where: Prisma.CommentWhereInput = {};
+    if (query.cardId) where.cardId = query.cardId;
+    if (query.boardId || query.columnId || query.labelId) {
+      where.card = {
+        ...(query.columnId ? { columnId: query.columnId } : {}),
+        ...(query.boardId ? { column: { boardId: query.boardId } } : {}),
+        ...(query.labelId
+          ? { labels: { some: { labelId: query.labelId } } }
+          : {}),
+      };
+    }
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -1497,6 +1523,8 @@ export class AdminService {
         },
       ];
     }
+    if (query.status === "active") where.deletedAt = null;
+    if (query.status === "deleted") where.deletedAt = { not: null };
     where.createdAt = this.dateRange(query);
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
@@ -1567,6 +1595,12 @@ export class AdminService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCommandRowDto>> {
     const where: Prisma.CommandWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
+    const touches: string[] = [];
+    if (query.cardId) touches.push(`card:${query.cardId}`);
+    if (query.columnId) touches.push(`column:${query.columnId}`);
+    if (touches.length === 1) where.touches = { has: touches[0] };
+    if (touches.length > 1) where.touches = { hasEvery: touches };
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -1767,6 +1801,7 @@ export class AdminService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminShareRowDto>> {
     const where: Prisma.BoardShareWhereInput = {};
+    if (query.boardId) where.boardId = query.boardId;
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },

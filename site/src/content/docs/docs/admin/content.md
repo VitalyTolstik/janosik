@@ -84,7 +84,9 @@ labels.
   an actions menu with archive, restore and delete.
 - The meta row shows Owner, Created, Updated and Version.
 - Nine counters are shown: Members, Columns, Cards, Labels, Links, Comments,
-  Files, Commands and Events.
+  Files, Commands and Events. Cards, Comments, Files, Commands and Events are
+  links to the matching list filtered by this board's exact `boardId`; the
+  member, column, label and link numbers stay plain counts.
 
 ### Members
 
@@ -115,7 +117,9 @@ other `ADMIN` is demoted to `MEMBER` and the target becomes `ADMIN`.
 ### Columns and labels
 
 The columns table shows Column, Position, WIP limit, Cards and Status. The
-labels panel shows each label as a color chip.
+labels panel shows each label as a color chip. A column title or card count
+opens the cards list filtered by that exact `columnId`; a label chip opens it
+filtered by `labelId`. Both links keep the board detail as their return path.
 
 ## Board content editor
 
@@ -124,7 +128,9 @@ labels panel shows each label as a color chip.
 - The left panel lists columns with a card count. Each column has rename and
   delete controls; a composer at the bottom adds a column.
 - The right panel lists the cards of the selected column. Each card has rename
-  and archive controls; a composer at the bottom adds a card.
+  and archive controls; a composer at the bottom adds a card. The card title
+  links to `/admin/cards/:id`, and the card detail's back control returns to
+  this editor.
 - A manual refresh button is in the header.
 - The page polls the board aggregate every 2 seconds while it is visible and
   focused, so you can monitor a running demo on this page.

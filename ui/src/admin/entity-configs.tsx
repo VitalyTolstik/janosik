@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type {
   AdminActivityRowDto,
   AdminAnnouncementDto,
@@ -21,6 +21,7 @@ import type {
 } from "@janosik/shared";
 import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
+import { adminCardsHref } from "./admin-navigation";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { Badge } from "./ui";
@@ -413,7 +414,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.columns.column.title"),
             render: (column) => (
-              <TextCell value={column.title} maxWidth="14rem" />
+              <EntityLink
+                to={adminCardsHref({ columnId: column.id })}
+                className="font-normal text-foreground"
+              >
+                <span title={column.title}>{truncate(column.title, 30)}</span>
+              </EntityLink>
             ),
           },
           {
@@ -434,7 +440,14 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.columns.column.cards"),
-            render: (column) => <NumberCell value={column.cardCount} />,
+            render: (column) => (
+              <EntityLink
+                to={adminCardsHref({ columnId: column.id })}
+                className="font-normal text-muted-foreground tabular-nums"
+              >
+                {String(column.cardCount)}
+              </EntityLink>
+            ),
           },
           {
             label: t("admin.columns.column.updated"),
@@ -656,7 +669,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.labels.column.name"),
             render: (label) => (
-              <LabelChip name={label.name} color={label.color} />
+              <Link
+                to={adminCardsHref({ labelId: label.id })}
+                className="inline-flex rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <LabelChip name={label.name} color={label.color} />
+              </Link>
             ),
           },
           {
@@ -673,7 +691,14 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.labels.column.cards"),
-            render: (label) => <NumberCell value={label.cardCount} />,
+            render: (label) => (
+              <EntityLink
+                to={adminCardsHref({ labelId: label.id })}
+                className="font-normal text-muted-foreground tabular-nums"
+              >
+                {String(label.cardCount)}
+              </EntityLink>
+            ),
           },
           {
             label: t("admin.labels.column.version"),

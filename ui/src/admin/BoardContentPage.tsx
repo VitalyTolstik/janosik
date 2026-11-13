@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   Archive,
   ArrowLeft,
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
+import { currentAdminPath, withReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { ConfirmDialog, ErrorState, IdChip, PageHeader, Panel } from "./ui";
 import { BoardEditorSkeleton } from "./skeletons";
@@ -43,6 +44,8 @@ export function BoardContentPage() {
   const t = useAdminT();
   const toast = useToast();
   const { boardId = "" } = useParams();
+  const location = useLocation();
+  const returnTo = currentAdminPath(location);
 
   const [board, setBoard] = useState<BoardAggregate | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -384,9 +387,14 @@ export function BoardContentPage() {
                       </span>
                     ) : (
                       <span className="flex min-w-0 flex-1 items-center gap-2">
-                        <span className="truncate text-xs text-foreground">
+                        <Link
+                          to={withReturnTo(`/admin/cards/${card.id}`, returnTo)}
+                          data-testid={`admin-card-open-${card.id}`}
+                          className="truncate text-xs text-foreground underline-offset-2 hover:underline"
+                          title={card.title}
+                        >
                           {card.title}
-                        </span>
+                        </Link>
                         <IdChip id={card.id} className="shrink-0" />
                       </span>
                     )}
