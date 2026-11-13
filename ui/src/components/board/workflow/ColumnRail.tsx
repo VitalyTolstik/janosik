@@ -31,6 +31,7 @@ export function ColumnRail({
 }: ColumnRailProps) {
   const { t } = useI18n();
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   // The rail becomes a horizontal scroller as soon as the columns stop
   // fitting. Keep the selected column in view when it is opened from the
@@ -42,6 +43,31 @@ export function ColumnRail({
       block: "nearest",
     });
   }, [activeId, columns.length]);
+
+  // A vertical mouse wheel over an overflowing rail moves it sideways. The
+  // listener is native and non-passive because React's wheel listener cannot
+  // preventDefault the page scroll. It only takes over when the rail can
+  // actually move, so a rail at either end and a rail that fits keep the
+  // dialog/page scrolling normally.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const max = scroller.scrollWidth - scroller.clientWidth;
+      if (max <= 1) return;
+      const step =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? event.deltaY * 16
+          : event.deltaY;
+      const next = Math.min(max, Math.max(0, scroller.scrollLeft + step));
+      if (next === scroller.scrollLeft) return;
+      event.preventDefault();
+      scroller.scrollLeft = next;
+    };
+    scroller.addEventListener("wheel", onWheel, { passive: false });
+    return () => scroller.removeEventListener("wheel", onWheel);
+  }, []);
 
   const move = (direction: 1 | -1) => {
     if (columns.length === 0) return;
@@ -80,10 +106,11 @@ export function ColumnRail({
 
   return (
     <div
+      ref={scrollerRef}
       role={columns.length === 0 ? undefined : "tablist"}
       aria-label={columns.length === 0 ? undefined : t("workflow.rail.label")}
       data-testid={`${testIdPrefix}-rail`}
-      className="flex w-full min-w-0 max-w-full shrink-0 snap-x flex-nowrap items-stretch gap-0 overflow-x-auto overscroll-x-contain scroll-px-3 border-b border-border/80 px-3 [scrollbar-width:none] max-md:scroll-px-1.5 max-md:px-1.5 [&::-webkit-scrollbar]:hidden"
+      className="column-rail-scroll flex w-full min-w-0 max-w-full shrink-0 touch-pan-x snap-x flex-nowrap items-stretch gap-0 overflow-x-auto overscroll-x-contain scroll-px-3 border-b border-border/80 px-3 max-md:scroll-px-1.5 max-md:px-1.5"
     >
       {columns.length === 0 ? (
         <p className="px-2 py-3 text-[11px] text-muted-foreground">
