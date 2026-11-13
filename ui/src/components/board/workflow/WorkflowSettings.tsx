@@ -46,6 +46,13 @@ export interface WorkflowSettingsProps {
   masterMode?: boolean;
   role?: BoardRole;
   saving?: boolean;
+  /**
+   * Combined Board Settings status. The shell header owns the dialog-wide
+   * dirty/saving truth; the workflow footer must not contradict it when the
+   * other section has unsaved edits.
+   */
+  shellDirty?: boolean;
+  shellSaving?: boolean;
   onSave: WorkflowSave;
   onCancel?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -72,6 +79,8 @@ export function WorkflowSettings({
   masterMode = false,
   role = "ADMIN",
   saving = false,
+  shellDirty,
+  shellSaving,
   onSave,
   onCancel,
   onDirtyChange,
@@ -128,21 +137,25 @@ export function WorkflowSettings({
     saveErrorRef.current?.focus();
   }, [saveFailed]);
 
-  const statusText = saving
+  const displayDirty = shellDirty ?? dirty;
+  const displaySaving = shellSaving ?? saving;
+  const statusText = displaySaving
     ? t("workflow.saving")
     : saveFailed
       ? t("workflow.saveError")
-      : dirty
+      : displayDirty
         ? t("workflow.unsaved")
         : t("workflow.saved");
   const statusHint = saveFailed
     ? t("workflow.saveErrorHint")
-    : t("workflow.footerHint");
-  const statusTone = saving
+    : displayDirty && !dirty
+      ? t("board.settings.shell.unsavedInAgents")
+      : t("workflow.footerHint");
+  const statusTone = displaySaving
     ? "bg-primary"
     : saveFailed
       ? "bg-danger"
-      : dirty
+      : displayDirty
         ? "bg-warning"
         : "bg-success";
   const counts = Object.fromEntries(
@@ -210,7 +223,7 @@ export function WorkflowSettings({
         variant === "dialog" && "min-h-0 flex-1 overflow-hidden",
       )}
       data-testid={`${testIdPrefix}-editor`}
-      aria-busy={saving || undefined}
+      aria-busy={displaySaving || undefined}
     >
       <header className="flex shrink-0 items-start gap-[18px] border-b border-border/75 px-5 pb-[15px] pt-[17px] max-md:flex-wrap max-md:gap-2 max-md:px-3.5 max-md:pb-3 max-md:pt-[13px]">
         {!insideSettingsShell ? (
@@ -514,9 +527,9 @@ export function WorkflowSettings({
             className={cn(
               "h-[5px] w-[5px] shrink-0 rounded-full",
               statusTone,
-              !saving &&
+              !displaySaving &&
                 !saveFailed &&
-                (dirty
+                (displayDirty
                   ? "shadow-[0_0_0_3px_color-mix(in_oklab,var(--warning)_14%,transparent)]"
                   : "shadow-[0_0_0_3px_color-mix(in_oklab,var(--success)_14%,transparent)]"),
             )}
