@@ -57,6 +57,16 @@ describe("useAdminList", () => {
     expect(result.current.total).toBe(2);
   });
 
+  it("keeps a page chosen right after mount when the initial search debounce settles", async () => {
+    const fetcher = vi.fn().mockResolvedValue(page([{ id: "a" }]));
+    const { result } = renderHook(() => useAdminList<Row>(fetcher));
+
+    act(() => result.current.setOffset(25));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(result.current.offset).toBe(25);
+  });
+
   it("reports errors only after the refresh settles", async () => {
     const first = pendingPage();
     let rejectSecond!: (error: Error) => void;

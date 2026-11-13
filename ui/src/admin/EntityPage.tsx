@@ -43,6 +43,13 @@ import {
  * error states so support gets identical behaviour everywhere.
  */
 
+/**
+ * Backend `AdminBulkDto` caps one request at 500 ids. The UI keeps the same
+ * number so a large cross-page selection fails with a readable message here
+ * instead of a generic 400 from validation (TASK-176.1).
+ */
+const ADMIN_BULK_LIMIT = 500;
+
 export interface EntityAction {
   label: string;
   destructive?: boolean;
@@ -211,10 +218,21 @@ export function EntityPage<E extends AdminEntity>({
   const visibleIds = list.items
     .map((row) => rowId(row))
     .filter((id): id is string => id !== null);
+  const selectedOnPage = visibleIds.filter((id) => selected.has(id)).length;
   const allSelected =
     bulkEnabled &&
     visibleIds.length > 0 &&
     visibleIds.every((id) => selected.has(id));
+
+  /**
+   * The selection contract (TASK-176.1): it survives pagination but not a
+   * result-set change. The bar's count, the confirmation and the request all
+   * use the same saved set, so a filter must not leave hidden rows selected.
+   */
+  const withSelectionReset = (apply: () => void) => {
+    setSelected(new Set());
+    apply();
+  };
 
   const toggleRow = (id: string) => {
     setSelected((current) => {
@@ -236,21 +254,41 @@ export function EntityPage<E extends AdminEntity>({
     });
   };
 
+  const bulkTooLarge = (): boolean => {
+    if (selected.size <= ADMIN_BULK_LIMIT) return false;
+    toast.error(
+      t("admin.bulk.tooMany", {
+        count: selected.size,
+        limit: ADMIN_BULK_LIMIT,
+      }),
+    );
+    return true;
+  };
+
+  const openBulkDelete = () => {
+    if (bulkTooLarge()) return;
+    setBulkPending(true);
+  };
+
   const runBulk = async (
     action: "delete" | "restore",
     label: string,
   ): Promise<void> => {
     setBulkPending(false);
-    const ids = visibleIds.filter((id) => selected.has(id));
+    // The panel, the dialog and the body all count the same saved ids. Sending
+    // only `visibleIds` made "2 selected" delete one row (TASK-176.1).
+    const ids = Array.from(selected);
     if (ids.length === 0) return;
+    if (bulkTooLarge()) return;
     try {
       const result = await adminApi.bulkEntity(config.entity, ids, action);
-      const failed = result.failed?.length ?? 0;
-      if (failed > 0) {
-        // Keep the refused ids selected so support can inspect or retry them
-        // instead of hunting for the rows again (TASK-156 review).
-        toast.error(t("admin.bulk.partial", { count: failed }));
-        setSelected(new Set(result.failed ?? []));
+      const sent = new Set(ids);
+      // Keep only ids the server actually refused, and only ones that were
+      // part of this request (TASK-156 review).
+      const failed = (result.failed ?? []).filter((id) => sent.has(id));
+      if (failed.length > 0) {
+        toast.error(t("admin.bulk.partial", { count: failed.length }));
+        setSelected(new Set(failed));
       } else {
         toast.success(label);
         setSelected(new Set());
@@ -284,9 +322,11 @@ export function EntityPage<E extends AdminEntity>({
   const filtered =
     list.search.trim() !== "" || list.status !== "all" || list.period !== "any";
   const clearFilters = () => {
-    list.setSearch("");
-    list.setStatus("all");
-    list.setPeriod("any");
+    withSelectionReset(() => {
+      list.setSearch("");
+      list.setStatus("all");
+      list.setPeriod("any");
+    });
   };
 
   return (
@@ -296,19 +336,28 @@ export function EntityPage<E extends AdminEntity>({
         subtitle={config.subtitle?.replaceAll("{total}", String(list.total))}
         actions={
           <>
-            <SearchInput value={list.search} onChange={list.setSearch} />
+            <SearchInput
+              value={list.search}
+              onChange={(value) =>
+                withSelectionReset(() => list.setSearch(value))
+              }
+            />
             {statusOptions ? (
               <FilterTabs
                 value={list.status}
                 options={statusOptions}
-                onChange={list.setStatus}
+                onChange={(value) =>
+                  withSelectionReset(() => list.setStatus(value))
+                }
               />
             ) : null}
             {periodOptions ? (
               <FilterTabs
                 value={list.period}
                 options={periodOptions}
-                onChange={list.setPeriod}
+                onChange={(value) =>
+                  withSelectionReset(() => list.setPeriod(value))
+                }
               />
             ) : null}
             {config.toolbar?.(list.reload)}
@@ -341,16 +390,19 @@ export function EntityPage<E extends AdminEntity>({
         ) : (
           <>
             {bulkEnabled && selected.size > 0 ? (
-              <div className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-card/95 px-3 py-2 text-xs backdrop-blur">
+              <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card/95 px-3 py-2 text-xs backdrop-blur">
                 <span className="text-muted-foreground">
-                  {t("admin.bulk.selected", { count: selected.size })}
+                  {t("admin.bulk.selected", {
+                    count: selected.size,
+                    visible: selectedOnPage,
+                  })}
                 </span>
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-7 px-2 text-xs text-destructive"
                   data-testid="admin-bulk-delete"
-                  onClick={() => setBulkPending(true)}
+                  onClick={openBulkDelete}
                 >
                   {t("admin.bulk.delete")}
                 </Button>
@@ -495,7 +547,9 @@ export function EntityPage<E extends AdminEntity>({
               limit={list.limit}
               offset={list.offset}
               onChange={list.setOffset}
-              onLimitChange={list.setLimit}
+              onLimitChange={(value) =>
+                withSelectionReset(() => list.setLimit(value))
+              }
             />
           </>
         )}
