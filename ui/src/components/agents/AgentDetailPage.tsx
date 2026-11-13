@@ -157,7 +157,7 @@ export function AgentDetailPage() {
           </span>
           <div className="min-w-0">
             <h1
-              className="truncate text-xl font-semibold tracking-[-0.025em] text-foreground"
+              className="truncate text-[18px] font-semibold tracking-[-0.025em] text-foreground"
               data-testid="agent-detail-name"
             >
               {group.name}
@@ -463,7 +463,7 @@ function Field({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+      <dt className="text-[11px] uppercase tracking-widest text-muted-foreground/70">
         {label}
       </dt>
       <dd className="mt-0.5 min-w-0 truncate text-foreground/85">{children}</dd>
@@ -488,15 +488,15 @@ function Stat({
         data-testid={testId}
         className={
           tone === "success"
-            ? "text-xl font-semibold tabular-nums text-success"
+            ? "text-[18px] font-semibold tabular-nums text-success"
             : tone === "warning"
-              ? "text-xl font-semibold tabular-nums text-warning"
-              : "text-xl font-semibold tabular-nums text-foreground"
+              ? "text-[18px] font-semibold tabular-nums text-warning"
+              : "text-[18px] font-semibold tabular-nums text-foreground"
         }
       >
         {value}
       </div>
-      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
     </div>

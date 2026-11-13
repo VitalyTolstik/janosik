@@ -429,7 +429,7 @@ export function AttentionApprovalList({
                       size="sm"
                       onClick={() => onSelect(row)}
                       data-testid={`agents-approval-review-${row.id}`}
-                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650]"
+                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650] max-md:min-h-11"
                     >
                       {t("agents.approvals.reviewPlan")}
                     </Button>
@@ -438,7 +438,7 @@ export function AttentionApprovalList({
                       variant="outline"
                       onClick={() => onReject(row)}
                       data-testid={`agents-approval-reject-${row.id}`}
-                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650]"
+                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650] max-md:min-h-11"
                     >
                       {t("agents.approvals.reject")}
                     </Button>
@@ -638,7 +638,7 @@ export function AttentionApprovalDetail({
               type="button"
               onClick={onBack}
               aria-label={t("agents.approvals.back")}
-              className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground min-[1061px]:hidden"
+              className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground min-[1061px]:hidden"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             </button>
@@ -966,7 +966,7 @@ export function AttentionApprovalDetail({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650]"
+                    className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
                     onClick={onBack}
                   >
                     {t("agents.approvals.closeDetail")}

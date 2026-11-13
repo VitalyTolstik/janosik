@@ -25,6 +25,7 @@ import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
 import { AgentPauseBadge } from "./agents-ui";
+import { StatusBadge, type StatusTone } from "./status-badge";
 import {
   AgentActionDialog,
   type AgentSessionAction,
@@ -41,30 +42,12 @@ import {
   type AgentSessionRow,
 } from "./agent-model";
 
-const STATUS_TONE: Record<
-  ReturnType<typeof agentStatusTone>,
-  { pill: string; dot: string }
-> = {
-  ok: {
-    pill: "border-success/32 bg-success/6 text-success",
-    dot: "bg-success",
-  },
-  warn: {
-    pill: "border-warning/34 bg-warning/6 text-warning",
-    dot: "bg-warning",
-  },
-  bad: {
-    pill: "border-danger/32 bg-danger/6 text-danger",
-    dot: "bg-danger",
-  },
-  primary: {
-    pill: "border-primary/32 bg-primary/6 text-primary",
-    dot: "bg-primary",
-  },
-  muted: {
-    pill: "border-border bg-hover text-muted-foreground",
-    dot: "bg-muted-foreground",
-  },
+const STATUS_TONE: Record<ReturnType<typeof agentStatusTone>, StatusTone> = {
+  ok: "ok",
+  warn: "warn",
+  bad: "bad",
+  primary: "primary",
+  muted: "muted",
 };
 
 /** The real lifecycle status, never `stale` and never `paused`. */
@@ -78,25 +61,17 @@ export function SessionStatusPill({
   short?: boolean;
 }) {
   const { t } = useI18n();
-  const tone = STATUS_TONE[agentStatusTone(status)];
   return (
-    <span
-      data-testid={`agent-status-${status}`}
+    <StatusBadge
       data-lifecycle="true"
-      className={cn(
-        "inline-flex h-[22px] max-w-full items-center justify-center gap-1 overflow-hidden rounded-[5px] border px-1.5 text-[11px] font-[650] leading-none whitespace-nowrap",
-        tone.pill,
-        className,
+      label={t(
+        short ? `agents.statusShort.${status}` : `agents.status.${status}`,
       )}
-    >
-      <span
-        aria-hidden
-        className={cn("h-[5px] w-[5px] shrink-0 rounded-full", tone.dot)}
-      />
-      <span className="truncate">
-        {t(short ? `agents.statusShort.${status}` : `agents.status.${status}`)}
-      </span>
-    </span>
+      tone={STATUS_TONE[agentStatusTone(status)]}
+      status={status}
+      testId={`agent-status-${status}`}
+      className={className}
+    />
   );
 }
 
@@ -122,7 +97,7 @@ export function HeartbeatText({
       data-testid="agent-heartbeat"
       data-stale={session.stale ? "true" : "false"}
       className={cn(
-        "inline-flex items-center gap-1.5 text-[10.5px] whitespace-nowrap",
+        "inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap",
         session.stale ? "text-warning" : "text-muted-foreground",
         className,
       )}
@@ -166,7 +141,7 @@ export function TokenSettingsLink({
         data-testid={`${testId}-readonly`}
         title={t("agents.tokenSettings.ownerOnlyHint")}
         className={cn(
-          "inline-flex items-center gap-1 text-[10px] text-muted-foreground",
+          "inline-flex items-center gap-1 text-[11px] text-muted-foreground",
           className,
         )}
       >
@@ -181,7 +156,7 @@ export function TokenSettingsLink({
       onClick={onOpen}
       data-testid={testId}
       className={cn(
-        "inline-flex min-h-11 items-center gap-1 rounded-sm text-[10px] text-muted-foreground hover:text-foreground hover:underline min-[761px]:min-h-6",
+        "inline-flex min-h-11 items-center gap-1 rounded-sm text-[11px] text-muted-foreground hover:text-foreground hover:underline min-[761px]:min-h-6",
         className,
       )}
     >
@@ -274,19 +249,19 @@ function SessionGroupHeader({
       )}
       <b className="min-w-0 truncate text-[11.5px] font-[650]">{group.title}</b>
       {mode === "token" && group.tokenId !== undefined ? (
-        <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[9.5px] text-muted-foreground">
+        <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
           {shortId(group.tokenId, 12)}
         </span>
       ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
-        <span className="rounded-[4px] border border-warning/26 bg-warning/12 px-1 py-px text-[10px] font-[650] text-warning">
+        <span className="rounded-[4px] border border-warning/26 bg-warning/12 px-1 py-px text-[11px] font-[650] text-warning">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
       <span
         data-testid={`agents-group-meta-${group.key}`}
         className={cn(
-          "text-[10px] text-muted-foreground",
+          "text-[11px] text-muted-foreground",
           mode === "board" && "ml-auto",
         )}
       >
@@ -296,7 +271,7 @@ function SessionGroupHeader({
           : ""}
       </span>
       {staleBoard ? (
-        <span className="text-[10px] text-warning">
+        <span className="text-[11px] text-warning">
           {t("agents.shell.staleData")}
         </span>
       ) : null}
@@ -320,7 +295,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-1.5 py-1 text-[10px] font-[650] tracking-[0.05em] text-muted-foreground/76 uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_120px_96px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_120px_96px] min-[1181px]:gap-2.5"
+      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-1.5 py-1 text-[11px] font-[650] tracking-[0.05em] text-muted-foreground/76 uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_120px_96px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_120px_96px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -376,7 +351,7 @@ export function SessionRow({
           <b className="block truncate text-[11.5px] font-[650] leading-[1.35]">
             {agentLabel(row)}
           </b>
-          <span className="mt-px block truncate text-[10px] leading-[1.35] text-muted-foreground">
+          <span className="mt-px block truncate text-[11px] leading-[1.35] text-muted-foreground">
             {[row.clientName, row.model]
               .filter((value): value is string => Boolean(value))
               .join(" · ") || shortId(row.apiTokenId)}
@@ -384,20 +359,20 @@ export function SessionRow({
         </span>
       </span>
       <span className="min-w-0 max-[760px]:col-start-2 max-[760px]:row-start-1 max-[760px]:text-right">
-        <b className="block truncate text-[11px] font-[550] leading-[1.35] max-[760px]:text-[10px] max-[760px]:font-medium max-[760px]:text-muted-foreground">
+        <b className="block truncate text-[11px] font-[550] leading-[1.35] max-[760px]:text-[11px] max-[760px]:font-medium max-[760px]:text-muted-foreground">
           {row.name ?? shortId(row.id)}
         </b>
-        <span className="mt-px block truncate text-[10px] text-muted-foreground max-[760px]:hidden">
+        <span className="mt-px block truncate text-[11px] text-muted-foreground max-[760px]:hidden">
           {mode === "board" ? row.boardTitle : shortId(row.apiTokenId)}
         </span>
       </span>
       <span className="hidden min-w-0 min-[1181px]:block max-[760px]:col-start-1 max-[760px]:row-start-2 max-[760px]:block">
-        <b className="block truncate text-[10.5px] font-[550] leading-[1.35]">
+        <b className="block truncate text-[11px] font-[550] leading-[1.35]">
           {row.currentCardId === null
             ? "—"
             : (row.cardTitle ?? shortId(row.currentCardId))}
         </b>
-        <span className="mt-px block truncate text-[9.5px] text-muted-foreground">
+        <span className="mt-px block truncate text-[11px] text-muted-foreground">
           {row.currentRunId === null
             ? t("agents.noCurrentRun")
             : t("agents.runHash", { id: runNumber(row.currentRunId) })}
@@ -412,7 +387,7 @@ export function SessionRow({
           <AgentPauseBadge
             scope={row.pauseScope ?? "session"}
             title={row.pausedReason ?? undefined}
-            className="h-[18px] px-1 text-[9px]"
+            className="h-[18px] px-1 text-[11px]"
           />
         ) : null}
       </span>
@@ -511,7 +486,7 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[9.5px] tracking-[0.05em] text-muted-foreground/78 uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.05em] text-muted-foreground/78 uppercase">
         {label}
       </span>
       <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">
@@ -558,7 +533,7 @@ function DetailEmpty({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-0.5 text-[10px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
             {t("agents.shell.detailEyebrow")}
           </p>
           <h2
@@ -676,7 +651,7 @@ export function SessionDetail({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-0.5 text-[10px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
             {t("agents.detail.sessionEyebrow", { board: row.boardTitle })}
           </p>
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
@@ -713,7 +688,7 @@ export function SessionDetail({
           <HeartbeatText session={row} now={now} />
           <Link
             to={routes.board(row.boardId)}
-            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
           >
             <Folder className="h-[10px] w-[10px]" aria-hidden />
             <span className="truncate">{row.boardTitle}</span>
@@ -725,7 +700,7 @@ export function SessionDetail({
             />
           ) : null}
           {staleBoardIds.includes(row.boardId) ? (
-            <span className="text-[10px] text-warning">
+            <span className="text-[11px] text-warning">
               {t("agents.shell.staleData")}
             </span>
           ) : null}
@@ -762,7 +737,7 @@ export function SessionDetail({
             </MetaField>
             <MetaField label={t("agents.detail.token")}>
               <span className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span className="font-mono text-[11px] text-muted-foreground">
                   {shortId(row.apiTokenId, 12)}
                 </span>
                 <TokenSettingsLink
@@ -815,13 +790,13 @@ export function SessionDetail({
           />
           <div className="flex flex-wrap gap-1.5">
             {row.currentCardId === null ? (
-              <span className="text-[10.5px] text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground">
                 {t("agents.detail.noCurrentCard")}
               </span>
             ) : (
               <Link
                 to={boardHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/45 px-1.5 text-[10px] text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/45 px-1.5 text-[11px] text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground"
               >
                 <Folder className="h-[10px] w-[10px]" aria-hidden />
                 {row.cardTitle ?? shortId(row.currentCardId)}
@@ -830,7 +805,7 @@ export function SessionDetail({
             {runHref !== null ? (
               <Link
                 to={runHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/45 px-1.5 text-[10px] text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/45 px-1.5 text-[11px] text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground"
               >
                 <History className="h-[10px] w-[10px]" aria-hidden />
                 {t("agents.runHash", {
@@ -846,7 +821,7 @@ export function SessionDetail({
             icon={<ShieldCheck className="h-3 w-3" aria-hidden />}
             title={t("agents.detail.pauseSemantics")}
           />
-          <p className="m-0 text-[10.5px] leading-[1.5] text-muted-foreground">
+          <p className="m-0 text-[11px] leading-[1.5] text-muted-foreground">
             {t("agents.detail.claims")}
           </p>
         </section>
@@ -857,7 +832,7 @@ export function SessionDetail({
           data-testid={
             !terminal && !canControl ? "agents-session-read-only" : undefined
           }
-          className="m-0 mb-2 flex items-start gap-1.5 text-[10.5px] leading-[1.45] text-muted-foreground"
+          className="m-0 mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground"
         >
           {terminal ? (
             <ShieldCheck
@@ -930,7 +905,7 @@ export function SessionDetail({
               </Button>
             ) : null}
             {pausedByOtherScope ? (
-              <span className="basis-full text-[10px] text-muted-foreground">
+              <span className="basis-full text-[11px] text-muted-foreground">
                 {t("agents.detail.pausedByScope", {
                   scope: t(`agents.pause.scope.${row.pauseScope ?? "board"}`),
                 })}
