@@ -11,7 +11,11 @@ import { describe, expect, it, vi } from "vitest";
 import { FilterBar } from "@/components/board/FilterBar";
 import { I18nProvider } from "@/i18n";
 import type { Label } from "@janosik/shared";
-import { EMPTY_FILTER, type CardFilter } from "@/utils/filter";
+import {
+  EMPTY_FILTER,
+  resolveFilterChange,
+  type CardFilter,
+} from "@/utils/filter";
 
 /**
  * The faceted filters (due date, labels, creation date) live behind a single
@@ -37,6 +41,20 @@ function renderBar(filter: CardFilter = EMPTY_FILTER) {
     </I18nProvider>,
   );
   return onChange;
+}
+
+/**
+ * Apply the last change the bar emitted on top of `current` — the same way
+ * BoardSection resolves it. The reducer form is what keeps two quick facet
+ * picks from overwriting each other.
+ */
+function lastApplied(
+  onChange: ReturnType<typeof vi.fn>,
+  current: CardFilter = EMPTY_FILTER,
+): CardFilter {
+  const change = onChange.mock.lastCall?.[0];
+  if (change === undefined) throw new Error("FilterBar emitted no change");
+  return resolveFilterChange(change, current);
 }
 
 describe("FilterBar", () => {
@@ -70,7 +88,7 @@ describe("FilterBar", () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
     await userEvent.click(screen.getByRole("radio", { name: "Overdue" }));
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
       due: "overdue",
     });
@@ -84,7 +102,7 @@ describe("FilterBar", () => {
     checked.focus();
     fireEvent.keyDown(checked, { key: "ArrowDown" });
 
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
       due: "overdue",
     });
@@ -95,7 +113,7 @@ describe("FilterBar", () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Bug" }));
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
       labelIds: ["l1"],
     });
@@ -105,7 +123,7 @@ describe("FilterBar", () => {
     const onChange = renderBar();
     await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Blocker" }));
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
       priorities: ["blocker"],
     });
@@ -118,7 +136,7 @@ describe("FilterBar", () => {
     expect(group).toHaveTextContent("Any");
     expect(group).toHaveTextContent("All");
     await userEvent.click(screen.getByRole("radio", { name: "All" }));
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
       labelMatch: "all",
     });
@@ -132,17 +150,18 @@ describe("FilterBar", () => {
   });
 
   it("renders removable chips for the active facets", async () => {
-    const onChange = renderBar({
+    const current: CardFilter = {
       ...EMPTY_FILTER,
       due: "overdue",
       noLabel: true,
-    });
+    };
+    const onChange = renderBar(current);
 
     expect(screen.getByText("Overdue")).toBeInTheDocument();
     await userEvent.click(
       screen.getAllByRole("button", { name: "Remove label" })[0],
     );
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange, current)).toEqual({
       ...EMPTY_FILTER,
       due: "any",
       noLabel: true,
@@ -150,26 +169,28 @@ describe("FilterBar", () => {
   });
 
   it("renders a removable chip for the relative created window", async () => {
-    const onChange = renderBar({ ...EMPTY_FILTER, created: "7d" });
+    const current = { ...EMPTY_FILTER, created: "7d" as const };
+    const onChange = renderBar(current);
 
     // The window is a live facet like any other: visible and switchable
     // without reopening the popover.
     expect(screen.getByText("Last 7 days")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Remove label" }));
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange, current)).toEqual({
       ...EMPTY_FILTER,
       created: "any",
     });
   });
 
   it("renders removable chips for priority, assignee and link facets", () => {
-    const onChange = renderBar({
+    const current = {
       ...EMPTY_FILTER,
-      priorities: ["high"],
+      priorities: ["high" as const],
       assignees: ["u-1"],
       blocked: true,
       hasLinks: true,
-    });
+    };
+    const onChange = renderBar(current);
 
     // Every active facet is visible, not just the due/label/created trio.
     expect(screen.getAllByTestId("filter-chip")).toHaveLength(4);
@@ -185,7 +206,7 @@ describe("FilterBar", () => {
     fireEvent.click(
       within(chip("priority")).getByRole("button", { name: "Remove label" }),
     );
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange, current)).toEqual({
       ...EMPTY_FILTER,
       assignees: ["u-1"],
       blocked: true,
@@ -195,9 +216,16 @@ describe("FilterBar", () => {
     fireEvent.click(
       within(chip("links")).getByRole("button", { name: "Remove label" }),
     );
-    expect(onChange).toHaveBeenLastCalledWith({
+    // The second click composes on the first: both facets stay removed.
+    expect(
+      lastApplied(onChange, {
+        ...EMPTY_FILTER,
+        assignees: ["u-1"],
+        blocked: true,
+        hasLinks: true,
+      }),
+    ).toEqual({
       ...EMPTY_FILTER,
-      priorities: ["high"],
       assignees: ["u-1"],
       blocked: true,
     });
@@ -228,7 +256,7 @@ describe("FilterBar", () => {
     // resurrects when the exact-day chip is removed.
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
       created: "any",
       createdOn: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-15`,
