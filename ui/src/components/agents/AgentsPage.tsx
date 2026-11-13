@@ -105,6 +105,7 @@ export function AgentsPage() {
   const [runConflicts, setRunConflicts] = useState<Map<string, number>>(
     () => new Map(),
   );
+  const [autoRunId, setAutoRunId] = useState<string | null>(null);
 
   useEffect(() => {
     const previous = document.title;
@@ -198,6 +199,7 @@ export function AgentsPage() {
   }, [setParams]);
   const openRun = useCallback(
     (run: { id: string; boardId: string }) => {
+      setAutoRunId(run.id);
       setParams(
         (current) => {
           const next = new URLSearchParams(current);
@@ -383,6 +385,19 @@ export function AgentsPage() {
     enabled: section === "runs",
     filter: runFilter,
   });
+  // The master-detail opens the newest run until the URL pins one. Remember
+  // which run that was so a refresh that prepends the new `revert` audit run
+  // does not steal the open pane. A filter/no-rows change falls back again.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- remember the auto-opened run across list refreshes
+    setAutoRunId((current) =>
+      section !== "runs"
+        ? null
+        : current !== null && runs.rows.some((row) => row.id === current)
+          ? current
+          : (runs.rows[0]?.id ?? null),
+    );
+  }, [section, runs.rows]);
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
   const approvalAgentNames = useMemo(() => {
@@ -509,7 +524,9 @@ export function AgentsPage() {
   // The desktop master-detail opens the newest run until the URL pins one;
   // mobile keeps the list until a row is tapped.
   const autoRunRow =
-    section === "runs" && selectedRunId === null ? runs.rows[0] : undefined;
+    section === "runs" && selectedRunId === null
+      ? (runs.rows.find((row) => row.id === autoRunId) ?? runs.rows[0])
+      : undefined;
   const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
   const runDetailBoardId =
     selectedRunId !== null

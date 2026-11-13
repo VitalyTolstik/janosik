@@ -156,6 +156,17 @@ export function RunsPanel({ role }: { role: Role }) {
     setSelectedId(null);
     setMobileDetailOpen(false);
   };
+  // Pin the open run when a refresh prepends a newer row (for example the
+  // revert run created by `run.reverted`). Only fall back to the newest row
+  // when the selected one is gone: a filter change or a revoked board.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pin the open run across list refreshes
+    setSelectedId((current) =>
+      current !== null && runs.rows.some((row) => row.id === current)
+        ? current
+        : (runs.rows[0]?.id ?? null),
+    );
+  }, [runs.rows]);
   const selected: RunSummaryDto | null =
     runs.rows.find((row) => row.id === selectedId) ?? runs.rows[0] ?? null;
   const noteConflicts = (runId: string, count: number) => {

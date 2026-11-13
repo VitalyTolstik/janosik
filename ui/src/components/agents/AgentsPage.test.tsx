@@ -469,6 +469,42 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("keeps the auto-selected run when a refresh prepends its revert run", async () => {
+    const revertRun = run({
+      id: "run-revert",
+      kind: "revert",
+      revertsRunId: "run-1",
+      createdAt: Date.now(),
+      appliedAt: Date.now(),
+    });
+    hoisted.listRuns.mockResolvedValue([run()]);
+    hoisted.getRun.mockImplementation((_boardId: string, runId: string) =>
+      Promise.resolve(
+        runDetail({
+          id: runId,
+          kind: runId === "run-revert" ? "revert" : "batch",
+        }),
+      ),
+    );
+    hoisted.previewRunRevert.mockResolvedValue(revertPreview());
+    renderPage("/agents?section=runs");
+
+    expect(await screen.findByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      "run-1",
+    );
+    hoisted.listRuns.mockResolvedValue([revertRun, run()]);
+    await userEvent.click(screen.getByTestId("agents-refresh"));
+
+    expect(
+      await screen.findByTestId("agents-run-row-run-revert"),
+    ).toBeVisible();
+    expect(screen.getByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      "run-1",
+    );
+  });
+
   it("opens a board-scoped run deep link and copies a link with ?board=", async () => {
     hoisted.listRuns.mockResolvedValue([run()]);
     renderPage("/agents?section=runs&board=board-1&run=run-1");

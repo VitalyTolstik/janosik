@@ -393,6 +393,50 @@ describe("RunsPanel (TASK-179.5)", () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 
+  it("keeps the open run pinned when a refresh prepends the revert run", async () => {
+    const revertRun = run({
+      id: "run-revert",
+      kind: "revert",
+      revertsRunId: RUN.id,
+      createdAt: Date.now(),
+      appliedAt: Date.now(),
+    });
+    const list = vi
+      .spyOn(api, "listRuns")
+      .mockResolvedValueOnce([RUN])
+      .mockResolvedValue([revertRun, RUN]);
+    const get = vi.spyOn(api, "getRun").mockResolvedValue(detail());
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+
+    renderPanel();
+    expect(await screen.findByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      RUN.id,
+    );
+
+    act(() => {
+      live.agentControl.publishRun({
+        type: "run",
+        op: "reverted",
+        runId: RUN.id,
+        revertRunId: revertRun.id,
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByTestId(`agent-run-row-${revertRun.id}`),
+    ).toBeVisible();
+    expect(screen.getByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      RUN.id,
+    );
+    expect(get).toHaveBeenLastCalledWith("board-1", RUN.id);
+  });
+
   it("drives the server query from status, kind and time filters and clears them", async () => {
     mockHappyPath();
     const list = vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);

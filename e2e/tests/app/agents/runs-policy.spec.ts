@@ -182,6 +182,9 @@ test("a run deep link includes the board and survives reload and history back", 
     `agents?section=runs&board=${board.id}&run=${run.runId}`,
     appUrl,
   ).href;
+  // This test opens the global route directly, so sign in as the board owner
+  // first instead of relying on the board modal's own navigation.
+  await board.open(page);
   await page.goto(deepLink);
   await expect(page.getByTestId("agent-run-detail")).toBeVisible();
   await expect(page.getByTestId("agent-run-copy-link")).toHaveAttribute(
