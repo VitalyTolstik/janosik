@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test, expect, adminContext } from "@/fixtures/admin.js";
-import { login } from "@/fixtures/auth.js";
+import { enterCode, login } from "@/fixtures/auth.js";
 import { appUrl } from "@/helpers/urls.js";
 import {
   adminPath,
@@ -16,7 +16,7 @@ import {
   uniqueToken,
 } from "@/helpers/admin.js";
 import { createApiToken, seedRichCard } from "@/helpers/admin-content.js";
-import { waitForMessage } from "@/helpers/mail.js";
+import { waitForCodes, waitForMessage } from "@/helpers/mail.js";
 import type { BoardFixture } from "@/fixtures/board.js";
 
 /**
@@ -195,6 +195,11 @@ test("U6: changing an email moves the login and revokes live sessions", async ({
     await userSide.page.getByTestId("login-email").fill(nextEmail);
     await userSide.page.getByTestId("login-password").fill(targetUser.password);
     await userSide.page.getByTestId("login-submit").click();
+    // The master does not prove ownership of the new mailbox: the user
+    // lands on the verification gate and confirms the code sent there.
+    await expect(userSide.page.getByTestId("email-verify-code")).toBeVisible();
+    const [code] = await waitForCodes(admin, nextEmail, 1);
+    await enterCode(userSide.page, code);
     await expect(userSide.page.getByTestId("account-trigger")).toBeVisible();
   } finally {
     await userSide.context.close();

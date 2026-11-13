@@ -31,6 +31,7 @@ import {
 import { resolveAgentSessionHeader } from "@/agent-sessions/agent-session-context";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BOARD_ROLES_KEY } from "./board-roles.decorator";
+import { setBoardWriteContext } from "./request-context";
 
 /** A PAT SSE stream can opt into session-level pause with `?session=`. */
 const SSE_PATH = /\/events\/?$/;
@@ -124,22 +125,27 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       throw new NotFoundException("Board not found");
     }
 
-    const membership = await this.prisma.boardMember.findUnique({
+    let membership = await this.prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId, userId: user.id } },
     });
-    if (!membership || membership.acceptedAt === null) {
-      // A pending invitation is not membership — it must be accepted first
-      // (TASK-35 addendum); both cases answer the same 403.
-      throw new ForbiddenException("No access to this board");
-    }
-
-    // A time-limited VIEWER membership that has expired is denied and the
-    // stale row is dropped so the invariant is enforced by the data itself.
-    if (membership.expiresAt && membership.expiresAt.getTime() <= Date.now()) {
-      await this.prisma.boardMember.deleteMany({
-        where: { id: membership.id },
+    for (;;) {
+      if (!membership || membership.acceptedAt === null) {
+        throw new ForbiddenException("No access to this board");
+      }
+      if (!membership.expiresAt || membership.expiresAt.getTime() > Date.now())
+        break;
+      const removed = await this.prisma.boardMember.deleteMany({
+        where: {
+          id: membership.id,
+          role: membership.role,
+          expiresAt: membership.expiresAt,
+        },
       });
-      throw new ForbiddenException("Board membership expired");
+      if (removed.count > 0)
+        throw new ForbiddenException("Board membership expired");
+      membership = await this.prisma.boardMember.findUnique({
+        where: { boardId_userId: { boardId, userId: user.id } },
+      });
     }
 
     const write = isWriteMethod(method);
@@ -276,6 +282,8 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
         LIFECYCLE_ACTIONS[agentAction],
       );
     }
+    if (write)
+      setBoardWriteContext(boardId, user.id, membership.id, membership.role);
     return true;
   }
 }

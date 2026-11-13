@@ -75,7 +75,7 @@ async function restoreEmailSettings(
   expect(response.ok()).toBe(true);
 }
 
-test("register when the administrator disables email", async ({
+test("refuse password registration when the administrator disables email", async ({
   page,
   admin,
 }) => {
@@ -84,14 +84,14 @@ test("register when the administrator disables email", async ({
     await setEmailEnabled(admin, false);
     const email = `no-mail-${randomUUID()}@e2e.example`;
     await page.goto(appUrl);
-    await page.getByTestId("login-toggle").click();
-    await page.getByTestId("login-email").fill(email);
-    await page.getByTestId("login-password").fill(password);
-    await page.getByTestId("login-submit").click();
-    await expect(page.getByTestId("account-trigger")).toBeVisible();
-    await expect(page.getByTestId("email-verify-code")).toHaveCount(0);
-    await page.reload();
-    await expect(page.getByTestId("account-trigger")).toBeVisible();
+    await expect(page.getByTestId("login-toggle")).toHaveCount(0);
+    const response = await page.request.post(
+      new URL("/api/v1/auth/register", appUrl).href,
+      {
+        data: { email, password },
+      },
+    );
+    expect(response.status()).toBe(503);
   } finally {
     await restoreEmailSettings(admin, before);
   }

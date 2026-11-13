@@ -156,7 +156,7 @@ describe("Email change API (e2e)", () => {
       .expect(400);
   });
 
-  it("confirms: email moves, other sessions die, caller is re-issued (confirm 4/5)", async () => {
+  it("confirms: email moves, other sessions die, caller remains signed in (confirm 4/5)", async () => {
     // A second device holds a live session that must not survive.
     const other = await server()
       .post("/api/v1/auth/login")
@@ -168,21 +168,15 @@ describe("Email change API (e2e)", () => {
     const res = await server()
       .post("/api/v1/auth/email/change/confirm")
       .set("Authorization", `Bearer ${accessToken}`)
-      // The old caller cookie is sent to prove it is revoked along with the
-      // other session; supertest does not persist cookies, so it is set by
-      // hand.
+      // Supertest does not persist the caller's cookie, so set it by hand.
       .set("Cookie", `refresh_token=${callerRefresh}`)
       .send({ code })
       .expect(200);
 
     expect(res.body.user.email).toBe(NEW_EMAIL);
     expect(typeof res.body.accessToken).toBe("string");
-    // The caller's session is rotated: the old caller cookie is dead too.
-    expect(refreshCookie(res)).toBeDefined();
-    await server()
-      .post("/api/v1/auth/refresh")
-      .set("Cookie", `refresh_token=${callerRefresh}`)
-      .expect(401);
+    // Confirmation must not replace the cookie in a potentially late response.
+    expect(refreshCookie(res)).toBeUndefined();
 
     // The other device's refresh token is revoked.
     await server()
@@ -193,7 +187,11 @@ describe("Email change API (e2e)", () => {
     // A notice reached the old address.
     expect(mailer.outbox.some((mail) => mail.to === OLD_EMAIL)).toBe(true);
 
-    callerRefresh = cookieValue(res, "refresh_token");
+    const refreshed = await server()
+      .post("/api/v1/auth/refresh")
+      .set("Cookie", `refresh_token=${callerRefresh}`)
+      .expect(200);
+    callerRefresh = cookieValue(refreshed, "refresh_token");
   });
 
   it("the consumed code cannot be replayed (confirm 5/5)", async () => {

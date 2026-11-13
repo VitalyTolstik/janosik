@@ -61,8 +61,10 @@ export function EmailVerificationGate() {
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 429) {
         setError(t("auth.verifyEmail.error.tooMany"));
-      } else {
+      } else if (cause instanceof ApiError && cause.status === 400) {
         setError(t("auth.verifyEmail.error.invalidCode"));
+      } else {
+        setError(t("auth.verifyEmail.error.generic"));
       }
     } finally {
       setBusy(false);

@@ -174,18 +174,19 @@ describe("MembershipGuard", () => {
   });
 
   it("denies an expired VIEWER and cleans the stale row", async () => {
+    const expiresAt = new Date(Date.now() - 1000);
     const prisma = prismaWith(
       { id: "board-1" },
       membership({
         role: Role.VIEWER,
-        expiresAt: new Date(Date.now() - 1000),
+        expiresAt,
       }),
     );
     await expect(
       build(undefined, prisma).canActivate(context({ id: "board-1" })),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.boardMember.deleteMany).toHaveBeenCalledWith({
-      where: { id: "member-1" },
+      where: { id: "member-1", role: Role.VIEWER, expiresAt },
     });
   });
 

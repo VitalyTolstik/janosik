@@ -6,11 +6,14 @@ import { env } from "@/config/env";
 import { toAuthUser } from "./auth-user.mapper";
 import { USER_JWT_AUDIENCE } from "./auth.types";
 import type { AuthUser } from "./auth.types";
+import { securityStamp } from "./security-stamp";
 
 interface AccessTokenPayload {
   sub: string;
   /** "admin" on master-account tokens — rejected here (§TASK-36). */
   typ?: string;
+  stamp?: string;
+  imp?: string;
 }
 
 /** Validates the Bearer access token and loads the user it was issued for. */
@@ -35,6 +38,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       where: { id: payload.sub },
     });
     if (!user || user.disabledAt !== null) {
+      throw new UnauthorizedException();
+    }
+    // Impersonation tokens are separately signed by the master contour and
+    // restricted to read-only routes by JwtAuthGuard.
+    if (!payload.imp && payload.stamp !== securityStamp(user)) {
       throw new UnauthorizedException();
     }
     return toAuthUser(user);

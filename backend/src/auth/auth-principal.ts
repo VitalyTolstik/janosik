@@ -55,6 +55,13 @@ export interface AuthPrincipal {
    * panel can send the current access token as `oauthProof`.
    */
   authMethod?: "password" | "oauth";
+  /**
+   * `securityStamp` claim of the verified access token. Sensitive account
+   * writes compare it with the row they lock, so an access token that
+   * survived a password reset, OAuth claim or disable cannot mint a PAT or
+   * change credentials after the fact.
+   */
+  stamp?: string;
 }
 
 /** The request bits the auth layer reads/writes. */

@@ -490,6 +490,7 @@ export class BoardsService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
     approvalApplied = false,
+    requireEmpty = false,
   ): Promise<void> {
     const board = await this.prisma.board.findUnique({
       where: { id: boardId },
@@ -510,6 +511,14 @@ export class BoardsService {
     await this.boardWrite.run(
       boardId,
       async (tx) => {
+        if (
+          requireEmpty &&
+          (await tx.boardMember.count({
+            where: { boardId, acceptedAt: { not: null } },
+          })) > 0
+        ) {
+          throw new ConflictException("Board is no longer empty");
+        }
         const now = new Date();
 
         const cards = await tx.card.findMany({
@@ -779,32 +788,28 @@ export class BoardsService {
     principal?: AuthPrincipal,
     approvalApplied = false,
   ): Promise<BoardMemberDto> {
-    const member = await this.prisma.boardMember.findUnique({
-      where: { boardId_userId: { boardId, userId: targetUserId } },
-      include: { user: true },
-    });
-    if (!member) {
-      throw beforeWrite(new NotFoundException("Board member not found"));
-    }
-
-    const role = dto.role ?? member.role;
-    const demoting =
-      member.acceptedAt !== null &&
-      member.role === Role.ADMIN &&
-      role !== Role.ADMIN;
-
-    const expiresAt = this.resolveExpiresAt(
-      role,
-      dto.expiresAt,
-      member.expiresAt,
-    );
-    const roleChanged = role !== member.role;
-    const expiryChanged =
-      (expiresAt?.getTime() ?? null) !== (member.expiresAt?.getTime() ?? null);
-
     const updated = await this.boardWrite.run(
       boardId,
       async (tx) => {
+        const member = await tx.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: targetUserId } },
+          include: { user: true },
+        });
+        if (!member) throw new NotFoundException("Board member not found");
+        const role = dto.role ?? member.role;
+        const demoting =
+          member.acceptedAt !== null &&
+          member.role === Role.ADMIN &&
+          role !== Role.ADMIN;
+        const expiresAt = this.resolveExpiresAt(
+          role,
+          dto.expiresAt,
+          member.expiresAt,
+        );
+        const roleChanged = role !== member.role;
+        const expiryChanged =
+          (expiresAt?.getTime() ?? null) !==
+          (member.expiresAt?.getTime() ?? null);
         // Last-ADMIN guard runs inside the board lock (TASK-100): two
         // concurrent demotes would otherwise both pass and leave the board
         // adminless. A pending invitation is not a member yet.
@@ -854,7 +859,12 @@ export class BoardsService {
             },
           });
         }
-        return row;
+        return {
+          row,
+          roleChanged,
+          expiryChanged,
+          accepted: member.acceptedAt !== null,
+        };
       },
       pauseGateFor(principal, attribution.agentSessionId, {
         action: "member.update",
@@ -863,15 +873,15 @@ export class BoardsService {
     );
     // A real role/expiry change rewrites the directory every open member
     // list shows; a no-op PATCH stays silent (mirrors the activity write).
-    if ((roleChanged || expiryChanged) && member.acceptedAt !== null) {
+    if ((updated.roleChanged || updated.expiryChanged) && updated.accepted) {
       this.realtime.publish(boardId, {
         type: "membership",
         boardId,
-        userId: member.userId,
+        userId: targetUserId,
         change: "updated",
       });
     }
-    return toMemberDto(updated);
+    return toMemberDto(updated.row);
   }
 
   /** Remove a member (ADMIN only); the last ADMIN cannot be removed. */
@@ -883,22 +893,20 @@ export class BoardsService {
     principal?: AuthPrincipal,
     approvalApplied = false,
   ): Promise<void> {
-    const member = await this.prisma.boardMember.findUnique({
-      where: { boardId_userId: { boardId, userId: targetUserId } },
-      include: { user: true },
-    });
-    if (!member) {
-      throw beforeWrite(new NotFoundException("Board member not found"));
-    }
     // Pending invitations are not members — deleting the row cancels the
     // invitation and never trips the last-ADMIN guard. The guard runs inside
     // the board lock (TASK-100) so a concurrent demote+remove cannot leave
     // the board adminless.
-    const removingAdmin =
-      member.acceptedAt !== null && member.role === Role.ADMIN;
-    await this.boardWrite.run(
+    const member = await this.boardWrite.run(
       boardId,
       async (tx) => {
+        const member = await tx.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: targetUserId } },
+          include: { user: true },
+        });
+        if (!member) throw new NotFoundException("Board member not found");
+        const removingAdmin =
+          member.acceptedAt !== null && member.role === Role.ADMIN;
         if (removingAdmin) {
           await this.assertNotLastAdmin(tx, boardId, targetUserId, "remove");
         }
@@ -919,6 +927,7 @@ export class BoardsService {
             },
           },
         });
+        return member;
       },
       pauseGateFor(principal, attribution.agentSessionId, {
         action: "member.remove",

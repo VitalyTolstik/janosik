@@ -33,7 +33,10 @@ interface BodyParserError extends Error {
  * The HTTP pipeline shared by main.ts and the e2e specs, so tests always run
  * against exactly the middleware stack production uses.
  */
-export function setupApp(app: INestApplication): void {
+export function setupApp(
+  app: INestApplication,
+  options: { siteDir?: string } = {},
+): void {
   // Trace context first (TASK-153): every later middleware, guard and query
   // runs with the request id available for logs.
   app.use(requestContext);
@@ -57,7 +60,10 @@ export function setupApp(app: INestApplication): void {
   // time (`PUBLIC_ANALYTICS_DOMAIN`), so its origin must be allowed here too;
   // otherwise the script and its event beacon are silently blocked.
   const analyticsOrigin = "https://plausible.io";
-  const scriptHashes = inlineScriptHashes([env.STATIC_DIR, env.SITE_DIR]);
+  const scriptHashes = inlineScriptHashes([
+    env.STATIC_DIR,
+    options.siteDir ?? env.SITE_DIR,
+  ]);
   app.use(
     helmet({
       contentSecurityPolicy: {

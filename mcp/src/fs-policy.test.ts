@@ -15,8 +15,10 @@ beforeEach(async () => {
 });
 
 const sandbox = () => ({ allowFs: true, fsRoot: root });
+const supportedRoot =
+  process.platform === "linux" && ["x64", "arm64"].includes(process.arch);
 
-describe("readSandboxedFile", () => {
+describe.skipIf(!supportedRoot)("readSandboxedFile", () => {
   it("reads a file inside the root, relative to it", async () => {
     await writeFile(path.join(root, "a.txt"), "hello");
     const file = await readSandboxedFile("a.txt", sandbox(), 1024);
@@ -48,7 +50,7 @@ describe("readSandboxedFile", () => {
   });
 });
 
-describe("writeSandboxedFile", () => {
+describe.skipIf(!supportedRoot)("writeSandboxedFile", () => {
   it("writes a new file and never overwrites an existing one", async () => {
     const saved = await writeSandboxedFile("out.bin", sandbox(), "one");
     expect(await readFile(saved, "utf8")).toBe("one");
@@ -63,5 +65,16 @@ describe("writeSandboxedFile", () => {
     await expect(
       writeSandboxedFile("escape/x", sandbox(), "data"),
     ).rejects.toThrow(/outside the allowed root/);
+  });
+});
+
+describe.skipIf(supportedRoot)("unsupported confined filesystem access", () => {
+  it("fails closed for reads and writes", async () => {
+    await expect(readSandboxedFile("a.txt", sandbox(), 1024)).rejects.toThrow(
+      /cannot enforce FS_ROOT safely/,
+    );
+    await expect(
+      writeSandboxedFile("a.txt", sandbox(), "data"),
+    ).rejects.toThrow(/cannot enforce FS_ROOT safely/);
   });
 });

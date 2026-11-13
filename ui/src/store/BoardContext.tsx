@@ -299,6 +299,8 @@ interface BoardActionsValue {
    * error toast is already shown), so the caller can skip its success toast.
    */
   importBoards: (boards: BoardState) => void | Promise<boolean>;
+  /** Read every board for export, refusing incomplete or stale snapshots. */
+  exportBoards: () => Promise<BoardState>;
   /**
    * Re-runs server hydration (`GET /boards` + aggregates) — used after
    * accepting an invitation so the fresh board shows up without a reload.
@@ -376,6 +378,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<Record<string, BoardRole>>({});
 
   /* eslint-enable react-hooks/refs */
+
+  const boardMutationsRef = useRef({ pending: 0, epoch: 0 });
+  const trackBoardMutation = useCallback(<T,>(task: () => Promise<T>) => {
+    boardMutationsRef.current.pending += 1;
+    boardMutationsRef.current.epoch += 1;
+    return Promise.resolve()
+      .then(task)
+      .finally(() => {
+        boardMutationsRef.current.pending -= 1;
+        boardMutationsRef.current.epoch += 1;
+      });
+  }, []);
 
   // Per-board entity versions seen in command responses — the basis for the
   // undo preconditions that stop a stale undo from clobbering foreign text.
@@ -876,13 +890,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     };
   }, []);
   const flushDrafts = useCallback(() => {
+    let ok = true;
     for (const flush of [...draftFlushersRef.current]) {
       try {
         flush();
       } catch {
+        ok = false;
         /* one broken editor must not keep the others from saving */
       }
     }
+    return ok;
   }, []);
 
   // Flush pending writes when the tab is hidden, closed or the provider
@@ -965,6 +982,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           });
         }
         if (
+          missing.length > 0 &&
+          aliveRef.current &&
+          hydrationGenRef.current === gen
+        ) {
+          toast.error(t("sync.loadFailed"));
+        }
+        if (
           !aliveRef.current ||
           hydrationGenRef.current !== gen ||
           loaded.size === 0
@@ -1003,17 +1027,49 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [apply, live],
+    [apply, live, t, toast],
   );
 
   const runHydration = useCallback(async (): Promise<void> => {
     const gen = ++hydrationGenRef.current;
+    const beforeList = new Set(stateRef.current.map((board) => board.id));
     // A failed re-hydration must not leave the previous generation's pending
     // rows counting forever; this generation owns the counter from here.
     setPendingBoardCount(0);
     const summaries = await api.listBoards();
     const nextRoles: Record<string, BoardRole> = {};
     for (const summary of summaries) nextRoles[summary.id] = summary.role;
+
+    // A refresh must not replace live optimistic state or its history with
+    // a snapshot taken before an in-flight command. Keep already loaded
+    // boards and fetch only newly discovered ones.
+    if (beforeList.size > 0) {
+      if (!aliveRef.current || hydrationGenRef.current !== gen) return;
+      const ids = summaries.map((summary) => summary.id);
+      const known = new Set(ids);
+      const current = stateRef.current;
+      const byId = new Map(current.map((board) => [board.id, board]));
+      const retained = ids.flatMap((id) => {
+        const board = byId.get(id);
+        return board ? [board] : [];
+      });
+      for (const board of current) {
+        if (!known.has(board.id) && !beforeList.has(board.id))
+          retained.push(board);
+        else if (!known.has(board.id)) {
+          dropHistory(board.id);
+          seqsRef.current.delete(board.id);
+          syncedAtRef.current.delete(board.id);
+        }
+      }
+      const loaded = new Set(retained.map((board) => board.id));
+      const missing = ids.filter((id) => !loaded.has(id));
+      setRoles(nextRoles);
+      setPendingBoardCount(missing.length);
+      apply({ type: "IMPORT_BOARDS", boards: retained });
+      if (missing.length > 0) void loadRemainingBoards(missing, ids, gen);
+      return;
+    }
 
     let boards: Board[] = [];
     const nextSeqs = new Map<string, number>();
@@ -1070,7 +1126,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       const order = summaries.map((summary) => summary.id);
       void loadRemainingBoards(rest, order, gen);
     }
-  }, [apply, clearHistory, live, loadRemainingBoards]);
+  }, [apply, clearHistory, dropHistory, live, loadRemainingBoards]);
 
   /**
    * The member directory powers names and avatars for attribution (TASK-36):
@@ -1127,6 +1183,48 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }
     return hydrationRef.current;
   }, [runHydration]);
+
+  const exportBoards = useCallback(async (): Promise<BoardState> => {
+    if (!flushDrafts()) throw new Error("An editor could not save its draft");
+    if (!serverMode) return stateRef.current;
+    const boardEpoch = boardMutationsRef.current.epoch;
+    if (boardMutationsRef.current.pending > 0) {
+      throw new Error("Board changes are still being saved");
+    }
+    const failures = sync.failureCount;
+    await sync.drain();
+    if (sync.failureCount !== failures) {
+      throw new Error("A board change could not be saved");
+    }
+    const summaries = await api.listBoards();
+    const ids = summaries.map((summary) => summary.id);
+    if (ids.some((id) => sync.isBusy(id))) {
+      throw new Error("Board changes are still being saved");
+    }
+    const epochs = new Map(
+      ids.map((id) => [id, epochsRef.current.get(id) ?? 0]),
+    );
+    const snapshots = await Promise.all(
+      ids.map((id) => api.getBoardSnapshot(id)),
+    );
+    const latestIds = new Set((await api.listBoards()).map(({ id }) => id));
+    if (
+      latestIds.size !== ids.length ||
+      ids.some((id) => !latestIds.has(id)) ||
+      boardMutationsRef.current.pending > 0 ||
+      boardMutationsRef.current.epoch !== boardEpoch ||
+      sync.failureCount !== failures ||
+      snapshots.some(
+        ({ board, seq }) =>
+          sync.isBusy(board.id) ||
+          (epochsRef.current.get(board.id) ?? 0) !== epochs.get(board.id) ||
+          seq < (seqsRef.current.get(board.id) ?? 0),
+      )
+    ) {
+      throw new Error("Boards changed while preparing the export");
+    }
+    return snapshots.map(({ board }) => board);
+  }, [flushDrafts, serverMode, sync]);
 
   useEffect(() => {
     if (!serverMode) return;
@@ -1631,8 +1729,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         // as it always did locally). Nothing local changed yet, so a failure
         // needs no rollback — it is a toast. `false` tells the caller not to
         // announce success on top of that refusal.
-        return api
-          .importBoards(toEnvelope(normalizeBoards(boards)))
+        return trackBoardMutation(() =>
+          api.importBoards(toEnvelope(normalizeBoards(boards))),
+        )
           .then(() => hydrateBoards())
           .then(() => true)
           .catch((error: unknown) => {
@@ -1654,7 +1753,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       clearHistory();
       apply({ type: "IMPORT_BOARDS", boards: normalizeBoards(boards) });
     },
-    [apply, clearHistory, serverMode, hydrateBoards, toast, t],
+    [
+      apply,
+      clearHistory,
+      serverMode,
+      hydrateBoards,
+      toast,
+      t,
+      trackBoardMutation,
+    ],
   );
 
   const addBoard = useCallback(
@@ -1664,8 +1771,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     ): string | Promise<string | null> => {
       const resolved = title.trim() || fallbackTitle;
       if (serverMode) {
-        return api
-          .createBoard(resolved)
+        return trackBoardMutation(() => api.createBoard(resolved))
           .then((created) => {
             if (!aliveRef.current) return null;
             apply({ type: "ADD_BOARD", board: created, remote: true });
@@ -1701,14 +1807,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       });
       return id;
     },
-    [apply, serverMode, toast, t],
+    [apply, serverMode, toast, t, trackBoardMutation],
   );
 
   const removeBoard = useCallback(
     (boardId: string): void | Promise<void> => {
       if (serverMode) {
-        return api
-          .deleteBoard(boardId)
+        return trackBoardMutation(() => api.deleteBoard(boardId))
           .then(() => {
             if (!aliveRef.current) return;
             apply({ type: "REMOVE_BOARD", boardId });
@@ -1731,7 +1836,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         dropHistory(boardId);
       }
     },
-    [apply, dropHistory, serverMode, toast, t],
+    [apply, dropHistory, serverMode, toast, t, trackBoardMutation],
   );
 
   const archiveBoard = useCallback(
@@ -1785,6 +1890,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       undo,
       redo,
       importBoards,
+      exportBoards,
       refreshBoards: hydrateBoards,
       dismissDataIssue,
       registerDraftFlush,
@@ -1801,6 +1907,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       undo,
       redo,
       importBoards,
+      exportBoards,
       hydrateBoards,
       dismissDataIssue,
       registerDraftFlush,
@@ -2369,6 +2476,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     undo: noop,
     redo: noop,
     importBoards: noop,
+    exportBoards: () => Promise.resolve([]),
     refreshBoards: () => Promise.resolve(),
     dismissDataIssue: noop,
     registerDraftFlush: () => noop,

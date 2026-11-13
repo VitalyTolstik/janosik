@@ -53,6 +53,16 @@ model User {
   emailChanges    EmailChangeCode[]
   verifications   EmailVerificationCode[]
   passwordReset   PasswordResetToken?
+  oauthIdentities OAuthIdentity[]
+  dismissals      AnnouncementDismissal[]
+}
+
+model OAuthIdentity {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider String
+  @@unique([userId, provider])
 }
 
 model PasswordResetToken {
@@ -76,10 +86,15 @@ model RefreshToken {
   // a session came from. Nullable — sessions minted before the column exists.
   ip        String?
   userAgent String?
+  // Rotation family (PR #250 review): every token minted by rotating the
+  // same login shares it, so logout can revoke the whole chain atomically.
+  // Nullable — legacy rows predate the column.
+  familyId  String?
 
   @@index([userId, createdAt])
   @@index([expiresAt]) // dead-session sweep (TASK-148)
   @@index([revokedAt]) // dead-session sweep (TASK-148)
+  @@index([familyId, revokedAt])
 }
 
 // Email change (TASK-51) — double opt-in: the user proves the current
@@ -979,6 +994,7 @@ model Announcement {
   // overwriting another admin's translation.
   version        Int                       @default(1)
   translations   AnnouncementTranslation[]
+  dismissals     AnnouncementDismissal[]
 
   @@index([active, startsAt, endsAt])
 }
@@ -1004,6 +1020,23 @@ model AnnouncementTranslation {
 
   @@unique([announcementId, locale])
   @@index([locale])
+}
+
+// Per-user announcement dismissal. The banner is per-account and survives a
+// new device/browser: the server returns only announcements this user has not
+// dismissed at the current version. A PATCH bumps `Announcement.version`, so
+// an edited announcement is shown again even to users who closed the old one.
+model AnnouncementDismissal {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version        Int
+  dismissedAt    DateTime     @default(now())
+
+  @@unique([announcementId, userId])
+  @@index([userId])
 }
 
 // Editable mail template (TASK-62) — overrides the built-in template of the

@@ -23,7 +23,7 @@ After five wrong passwords for one address, sign-in pauses for that address:
 first for 30 seconds, then twice as long after each further miss, up to 15
 minutes. The message says how long to wait.
 
-Signing in with a provider uses the account that already has your address.
+An existing password account must first link the provider in Account → Security.
 If its email was never confirmed, the server removes the password, signs out
 every device and revokes all API keys before linking the provider. You then sign
 in through that provider.
@@ -59,13 +59,16 @@ and a section list on the left: `Profile`, `Security`, `API keys` and
 
 ### Security
 
-**To change your email**, enter the new address and your current password. The
+**To change your email**, enter the new address and, if the account has one, your current password. The
 app sends a six-digit code to the new address. Type
 the code to confirm. Other devices are signed out after the change.
 
-**Change your password** asks for your current password and a new one, entered
+**Change your password** asks for your current password when one is set, and a new one, entered
 twice. After a change, other devices are signed out and every API key is
 revoked, so create new keys for your scripts and agents.
+
+To link a provider to a password account, enter the current password and choose
+the provider in this section. Its verified email must match your account email.
 
 ### API keys
 

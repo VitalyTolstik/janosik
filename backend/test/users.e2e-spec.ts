@@ -103,6 +103,7 @@ describe("Users API (e2e)", () => {
         avatarColor: "teal",
         avatarPath: null,
         createdAt: expect.any(Number),
+        // The e2e harness auto-verifies registrations by default.
         emailVerifiedAt: expect.any(Number),
         hasPassword: true,
       });
@@ -145,6 +146,7 @@ describe("Users API (e2e)", () => {
         avatarColor: null,
         avatarPath: null,
         createdAt: expect.any(Number),
+        // The e2e harness auto-verifies registrations by default.
         emailVerifiedAt: expect.any(Number),
         hasPassword: true,
       });
@@ -231,11 +233,14 @@ describe("Users API (e2e)", () => {
         .expect(200);
       expect(res.body).toEqual({ status: "ok" });
 
-      // The caller's own cookie still rotates…
-      await server()
+      // The caller's own cookie still rotates; the old access token is
+      // stale because the password change bumped the security stamp.
+      const rotated = await server()
         .post("/api/v1/auth/refresh")
         .set(cookie(profileCookie))
         .expect(200);
+      profileToken = rotated.body.accessToken as string;
+      profileCookie = refreshCookieValue(rotated);
       // …while the other session's token is dead. Presenting a revoked
       // refresh token is the anti-reuse theft signal and revokes everything,
       // so this check must come after the caller's.
