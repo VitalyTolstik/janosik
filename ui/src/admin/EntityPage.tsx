@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { X } from "lucide-react";
 import type {
   AdminEntity,
   AdminEntityRowMap,
@@ -9,10 +10,17 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
-import { useAdminT } from "./admin-i18n";
+import {
+  ADMIN_LIST_FILTER_KEYS,
+  adminFiltersKey,
+  hasAdminFilters,
+  type AdminListFilterKey,
+} from "./admin-list-query";
+import { currentAdminPath, withReturnTo } from "./admin-navigation";
+import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { RowActions, type EntityAction } from "./row-actions";
 import { EntityListSkeleton } from "./skeletons";
-import { useAdminList } from "./use-admin-list";
+import { useAdminListQuery } from "./use-admin-list-query";
 import {
   ConfirmDialog,
   EmptyState,
@@ -44,6 +52,15 @@ export type { EntityAction } from "./row-actions";
  * instead of a generic 400 from validation (TASK-176.1).
  */
 const ADMIN_BULK_LIMIT = 500;
+
+/** Stable empty set for a selection that belongs to an older result set. */
+const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+
+interface BulkSelection {
+  /** Search/status/period/page-size/filter signature the ids belong to. */
+  scope: string;
+  ids: Set<string>;
+}
 
 export interface EntityColumn<T> {
   label: string;
@@ -78,16 +95,42 @@ export function EntityPage<E extends AdminEntity>({
 }) {
   const t = useAdminT();
   const navigate = useNavigate();
-  const list = useAdminList<AdminEntityRowMap[E]>(
+  const location = useLocation();
+  const returnTo = currentAdminPath(location);
+  const list = useAdminListQuery<AdminEntityRowMap[E]>(
     (params) =>
       adminApi.listEntity(config.entity, params) as Promise<
         AdminPage<AdminEntityRowMap[E]>
       >,
+    {
+      statuses: config.statuses?.map((status) => status.value),
+      periods: config.periods === true,
+    },
   );
   const toast = useToast();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkPending, setBulkPending] = useState(false);
   const bulkEnabled = config.bulk === true;
+
+  /**
+   * A result-set change invalidates the selection, including one that arrived
+   * via the URL (browser back/forward, a shared link). The ids are tagged with
+   * the scope they were picked in, so stale ids are ignored immediately
+   * instead of being cleared by a racing effect; offset/reload keep the same
+   * scope, exactly as the 176.1 contract says.
+   */
+  const selectionScopeKey = [
+    list.effectiveSearch,
+    list.status,
+    list.period,
+    list.limit,
+    adminFiltersKey(list.filters),
+  ].join("|");
+  const [selection, setSelection] = useState<BulkSelection>(() => ({
+    scope: selectionScopeKey,
+    ids: new Set(),
+  }));
+  const selected =
+    selection.scope === selectionScopeKey ? selection.ids : EMPTY_SELECTION;
   const visibleIds = list.items
     .map((row) => rowId(row))
     .filter((id): id is string => id !== null);
@@ -97,18 +140,34 @@ export function EntityPage<E extends AdminEntity>({
     visibleIds.length > 0 &&
     visibleIds.every((id) => selected.has(id));
 
+  /** Apply a change to the ids of the current scope only. */
+  const updateSelection = (update: (current: Set<string>) => Set<string>) => {
+    setSelection((current) => {
+      const base =
+        current.scope === selectionScopeKey ? current.ids : EMPTY_SELECTION;
+      return {
+        scope: selectionScopeKey,
+        ids: update(new Set(base)),
+      };
+    });
+  };
+
+  const clearSelection = () => {
+    setSelection({ scope: selectionScopeKey, ids: new Set() });
+  };
+
   /**
    * The selection contract (TASK-176.1): it survives pagination but not a
    * result-set change. The bar's count, the confirmation and the request all
    * use the same saved set, so a filter must not leave hidden rows selected.
    */
   const withSelectionReset = (apply: () => void) => {
-    setSelected(new Set());
+    clearSelection();
     apply();
   };
 
   const toggleRow = (id: string) => {
-    setSelected((current) => {
+    updateSelection((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -117,7 +176,7 @@ export function EntityPage<E extends AdminEntity>({
   };
 
   const toggleAll = () => {
-    setSelected((current) => {
+    updateSelection((current) => {
       if (allSelected) {
         const next = new Set(current);
         for (const id of visibleIds) next.delete(id);
@@ -161,10 +220,10 @@ export function EntityPage<E extends AdminEntity>({
       const failed = (result.failed ?? []).filter((id) => sent.has(id));
       if (failed.length > 0) {
         toast.error(t("admin.bulk.partial", { count: failed.length }));
-        setSelected(new Set(failed));
+        setSelection({ scope: selectionScopeKey, ids: new Set(failed) });
       } else {
         toast.success(label);
-        setSelected(new Set());
+        clearSelection();
       }
       list.reload();
     } catch {
@@ -192,13 +251,27 @@ export function EntityPage<E extends AdminEntity>({
       ]
     : undefined;
 
+  const filterLabelKeys: Record<AdminListFilterKey, AdminMessageKey> = {
+    boardId: "admin.filter.board",
+    columnId: "admin.filter.column",
+    labelId: "admin.filter.label",
+    cardId: "admin.filter.card",
+  };
+  const activeFilters = ADMIN_LIST_FILTER_KEYS.filter(
+    (key) => list.filters[key] !== null,
+  );
+
   const filtered =
-    list.search.trim() !== "" || list.status !== "all" || list.period !== "any";
-  const clearFilters = () => {
+    list.search.trim() !== "" ||
+    list.status !== "all" ||
+    list.period !== "any" ||
+    hasAdminFilters(list.filters);
+  const clearAllFilters = () => {
     withSelectionReset(() => {
       list.setSearch("");
       list.setStatus("all");
       list.setPeriod("any");
+      list.clearFilters();
     });
   };
 
@@ -237,6 +310,47 @@ export function EntityPage<E extends AdminEntity>({
           </>
         }
       />
+      {activeFilters.length > 0 ? (
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          data-testid="admin-filter-banner"
+        >
+          {activeFilters.map((key) => (
+            <span
+              key={key}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-hover/40 px-2 text-[11px] text-muted-foreground"
+              data-testid={`admin-filter-${key}`}
+            >
+              <span>{t(filterLabelKeys[key])}</span>
+              <span className="max-w-[12rem] truncate font-mono text-foreground">
+                {list.filters[key]}
+              </span>
+              <button
+                type="button"
+                className="rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t("admin.filter.clearOne", {
+                  filter: t(filterLabelKeys[key]),
+                })}
+                data-testid={`admin-filter-clear-${key}`}
+                onClick={() =>
+                  withSelectionReset(() => list.setFilter(key, null))
+                }
+              >
+                <X className="h-3 w-3" aria-hidden />
+              </button>
+            </span>
+          ))}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            data-testid="admin-filter-clear"
+            onClick={clearAllFilters}
+          >
+            {t("admin.common.clearFilters")}
+          </Button>
+        </div>
+      ) : null}
       <Panel
         className="flex min-h-0 flex-1 flex-col"
         data-testid="admin-entity-panel"
@@ -259,7 +373,7 @@ export function EntityPage<E extends AdminEntity>({
             reference={`${config.entity}:${new Date().toISOString().slice(0, 19)}`}
           />
         ) : list.items.length === 0 ? (
-          <EmptyState filtered={filtered} onClear={clearFilters} />
+          <EmptyState filtered={filtered} onClear={clearAllFilters} />
         ) : (
           <>
             {bulkEnabled && selected.size > 0 ? (
@@ -294,7 +408,7 @@ export function EntityPage<E extends AdminEntity>({
                   size="sm"
                   variant="ghost"
                   className="ml-auto h-7 px-2 text-xs"
-                  onClick={() => setSelected(new Set())}
+                  onClick={() => clearSelection()}
                 >
                   {t("admin.bulk.clear")}
                 </Button>
@@ -329,7 +443,11 @@ export function EntityPage<E extends AdminEntity>({
               </thead>
               <tbody>
                 {list.items.map((row, index) => {
-                  const href = config.rowHref?.(row);
+                  const plannedHref = config.rowHref?.(row);
+                  const href =
+                    plannedHref === undefined
+                      ? undefined
+                      : withReturnTo(plannedHref, returnTo);
                   const testId =
                     config.rowTestId?.(row) ??
                     `admin-row-${config.entity}-${index}`;
@@ -349,7 +467,26 @@ export function EntityPage<E extends AdminEntity>({
                             ? "cursor-pointer transition-colors hover:bg-hover/50"
                             : undefined
                         }
-                        onClick={href ? () => void navigate(href) : undefined}
+                        onClick={
+                          href
+                            ? (event) => {
+                                // A cell can be its own link (board, card,
+                                // identity) or button. The row must not steal
+                                // that click and navigate to the row target
+                                // (TASK-176.5 review, 176.6 column links).
+                                const target = event.target;
+                                if (
+                                  target instanceof Element &&
+                                  target.closest(
+                                    "a,button,input,select,textarea,label,[role='button']",
+                                  ) !== null
+                                ) {
+                                  return;
+                                }
+                                void navigate(href);
+                              }
+                            : undefined
+                        }
                         onKeyDown={
                           href
                             ? (event) => {

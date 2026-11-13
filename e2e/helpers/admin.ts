@@ -137,6 +137,9 @@ export async function searchAdminList(
   });
   await page.getByRole("textbox", { name: "Search" }).fill(value);
   await settled;
+  // The list state writes the URL after the response/state settles; wait for
+  // it so a following click captures the exact returnTo (TASK-176.5).
+  await page.waitForURL((url) => url.searchParams.get("search") === value);
 }
 
 /** A fresh master account; the temporary password is returned only here. */

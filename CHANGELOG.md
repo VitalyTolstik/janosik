@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.5 + TASK-176.6 admin URL state and addressable filters: every
+  admin entity list keeps `search/status/period/limit/offset` in the URL and
+  restores it on load and browser back/forward, preserving the hub `tab`. Row
+  clicks carry the exact filtered list as `returnTo`; user, board and card
+  detail back controls return there, and only internal `/admin` paths are
+  accepted. Global search still lands on the exact comment/attachment anchor
+  and now labels the found card and opens a label result as the cards that
+  carry that label.
+  `GET /admin/entities/*` accepts validated `boardId`, `columnId`, `labelId`
+  and `cardId` filters applied server-side with the existing status/period
+  semantics; board counters link to their exact board list, column and label
+  rows link to their exact cards, and card titles in the content editor link to
+  `/admin/cards/:id`. Filters are removable chips above the table. Backend e2e
+  covers same-name boards, cross-board isolation, deleted/archived rows,
+  pagination and malformed ids; UI tests cover URL restore, back/forward,
+  return paths and exact search targets. EN/RU admin docs and the changelog
+  record the URL and deleted/archived behavior.
+
 - TASK-176.4 + TASK-176.7 admin navigation and per-row moderation: card
   detail links comment authors, timeline actors and the last actor to
   `/admin/users/:id` (a deleted last actor degrades to a copyable id, never a

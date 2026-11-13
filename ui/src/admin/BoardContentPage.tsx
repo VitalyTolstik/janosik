@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   Archive,
   ArrowLeft,
@@ -20,6 +25,11 @@ import { cn } from "@/lib/utils";
 import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
+import {
+  currentAdminPath,
+  readReturnTo,
+  withReturnTo,
+} from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { ConfirmDialog, ErrorState, IdChip, PageHeader, Panel } from "./ui";
 import { BoardEditorSkeleton } from "./skeletons";
@@ -43,6 +53,10 @@ export function BoardContentPage() {
   const t = useAdminT();
   const toast = useToast();
   const { boardId = "" } = useParams();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const returnTo = currentAdminPath(location);
+  const backTo = readReturnTo(searchParams) ?? routes.adminBoardDetail(boardId);
 
   const [board, setBoard] = useState<BoardAggregate | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -71,7 +85,7 @@ export function BoardContentPage() {
         );
       })
       .catch(() => setState("error"));
-  }, [boardId]);
+  }, [boardId, setSelectedColumnId]);
 
   useEffect(() => {
     load();
@@ -119,7 +133,7 @@ export function BoardContentPage() {
         setBusy(false);
       }
     },
-    [boardId, t, toast],
+    [boardId, t, toast, setSelectedColumnId],
   );
 
   if (state === "loading") return <BoardEditorSkeleton />;
@@ -172,7 +186,7 @@ export function BoardContentPage() {
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
         <Link
-          to={routes.adminBoardDetail(boardId)}
+          to={backTo}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
@@ -384,9 +398,14 @@ export function BoardContentPage() {
                       </span>
                     ) : (
                       <span className="flex min-w-0 flex-1 items-center gap-2">
-                        <span className="truncate text-xs text-foreground">
+                        <Link
+                          to={withReturnTo(`/admin/cards/${card.id}`, returnTo)}
+                          data-testid={`admin-card-open-${card.id}`}
+                          className="truncate text-xs text-foreground underline-offset-2 hover:underline"
+                          title={card.title}
+                        >
                           {card.title}
-                        </span>
+                        </Link>
                         <IdChip id={card.id} className="shrink-0" />
                       </span>
                     )}

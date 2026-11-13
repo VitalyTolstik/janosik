@@ -1,5 +1,5 @@
 import { createElement, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   Check,
   ChevronDown,
@@ -19,6 +19,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { adminApi } from "./admin-client";
+import {
+  currentAdminPath,
+  hasAdminUrlContext,
+  withReturnTo,
+} from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { Badge, IdChip } from "./ui";
 
@@ -117,13 +122,20 @@ export function EntityLink({
   /** Full value when the visible label is shortened (ids, long names). */
   ariaLabel?: string;
 }) {
+  const location = useLocation();
   if (to === null) {
     return <span className="text-muted-foreground">—</span>;
   }
+  // Carry the current filtered page (or detail context) into the link so the
+  // target's back control can return there (TASK-176.5). A bare `/admin/...`
+  // URL stays untouched, which keeps every existing bookmark/test href exact.
+  const href = hasAdminUrlContext(location)
+    ? withReturnTo(to, currentAdminPath(location))
+    : to;
   return (
     <span className="inline-flex max-w-full items-center gap-1.5">
       <Link
-        to={to}
+        to={href}
         data-testid={testId}
         aria-label={ariaLabel}
         className={cn(

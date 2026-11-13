@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
+import { readReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import {
   AttachmentDownloadButton,
@@ -134,6 +135,7 @@ export function CardDetailPage() {
   const [dismissedAnchor, setDismissedAnchor] = useState<string | null>(null);
   const scrolledAnchor = useRef<string | null>(null);
   const [searchParams] = useSearchParams();
+  const requestedBack = readReturnTo(searchParams);
   const commentAnchor = searchParams.get("comment");
   const attachmentAnchor = searchParams.get("attachment");
   const anchor = commentAnchor ?? attachmentAnchor;
@@ -373,7 +375,7 @@ export function CardDetailPage() {
       <div className="flex items-center gap-2">
         <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
           <Link
-            to={boardHref(card.boardId)}
+            to={requestedBack ?? boardHref(card.boardId)}
             aria-label={t("admin.common.back")}
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />

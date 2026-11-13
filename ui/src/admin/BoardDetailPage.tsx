@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { ArrowLeft, ExternalLink, MoreHorizontal } from "lucide-react";
 import type { AdminBoardDetailDto } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
@@ -20,6 +25,16 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
+import {
+  adminActivityHref,
+  adminAttachmentsHref,
+  adminCardsHref,
+  adminCommentsHref,
+  adminCommandsHref,
+  currentAdminPath,
+  readReturnTo,
+  withReturnTo,
+} from "./admin-navigation";
 import { routes } from "@/routes";
 import { useAdminT } from "./admin-i18n";
 import {
@@ -70,19 +85,52 @@ function MetaItem({
   );
 }
 
-function CountItem({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="min-w-0">
+function CountItem({
+  label,
+  value,
+  to,
+  testId,
+}: {
+  label: string;
+  value: number;
+  /** Addressable list for this counter (TASK-176.6). */
+  to?: string;
+  testId?: string;
+}) {
+  const body = (
+    <>
       <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <p className="text-sm font-semibold tabular-nums">{value}</p>
-    </div>
+      <p
+        className={
+          to === undefined
+            ? "text-sm font-semibold tabular-nums"
+            : "text-sm font-semibold tabular-nums decoration-primary/50 underline-offset-2 group-hover:underline"
+        }
+      >
+        {value}
+      </p>
+    </>
+  );
+  if (to === undefined) {
+    return <div className="min-w-0">{body}</div>;
+  }
+  return (
+    <Link
+      to={to}
+      data-testid={testId}
+      className="group min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {body}
+    </Link>
   );
 }
 
 export function BoardDetailPage() {
   const { boardId = "" } = useParams();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const t = useAdminT();
   const toast = useToast();
   const [detail, setDetail] = useState<AdminBoardDetailDto | null>(null);
@@ -134,6 +182,10 @@ export function BoardDetailPage() {
 
   const { board } = detail;
   const reload = load;
+  // A counter is a deep link into the same list context: the list's back
+  // control returns to this board (TASK-176.5/176.6).
+  const listReturnTo = currentAdminPath(location);
+  const counterHref = (href: string) => withReturnTo(href, listReturnTo);
 
   const run = async (label: string, action: () => Promise<unknown>) => {
     try {
@@ -171,7 +223,10 @@ export function BoardDetailPage() {
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
         <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
-          <Link to="/admin/boards" aria-label={t("admin.common.back")}>
+          <Link
+            to={readReturnTo(searchParams) ?? "/admin/boards"}
+            aria-label={t("admin.common.back")}
+          >
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
         </Button>
@@ -184,7 +239,13 @@ export function BoardDetailPage() {
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  window.open(routes.adminBoardContent(board.id), "_self")
+                  window.open(
+                    withReturnTo(
+                      routes.adminBoardContent(board.id),
+                      listReturnTo,
+                    ),
+                    "_self",
+                  )
                 }
               >
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -285,6 +346,8 @@ export function BoardDetailPage() {
         <CountItem
           label={t("admin.boardDetail.count.cards")}
           value={board.counts.cards}
+          to={counterHref(adminCardsHref({ boardId: board.id }))}
+          testId="admin-board-counter-cards"
         />
         <CountItem
           label={t("admin.boardDetail.count.labels")}
@@ -297,18 +360,26 @@ export function BoardDetailPage() {
         <CountItem
           label={t("admin.boardDetail.count.comments")}
           value={board.counts.comments}
+          to={counterHref(adminCommentsHref(board.id, "active"))}
+          testId="admin-board-counter-comments"
         />
         <CountItem
           label={t("admin.boardDetail.count.attachments")}
           value={board.counts.attachments}
+          to={counterHref(adminAttachmentsHref(board.id, "active"))}
+          testId="admin-board-counter-attachments"
         />
         <CountItem
           label={t("admin.boardDetail.count.commands")}
           value={board.counts.commands}
+          to={counterHref(adminCommandsHref(board.id))}
+          testId="admin-board-counter-commands"
         />
         <CountItem
           label={t("admin.boardDetail.count.activity")}
           value={board.counts.activity}
+          to={counterHref(adminActivityHref(board.id))}
+          testId="admin-board-counter-activity"
         />
       </Panel>
 
@@ -538,7 +609,18 @@ export function BoardDetailPage() {
           <tbody>
             {detail.columns.map((column) => (
               <tr key={column.id}>
-                <Td>{column.title}</Td>
+                <Td>
+                  <EntityLink
+                    to={withReturnTo(
+                      adminCardsHref({ columnId: column.id }),
+                      listReturnTo,
+                    )}
+                    testId={`admin-board-column-cards-${column.id}`}
+                    className="font-normal text-foreground"
+                  >
+                    {column.title}
+                  </EntityLink>
+                </Td>
                 <Td>
                   <NumberCell value={column.position} />
                 </Td>
@@ -570,7 +652,17 @@ export function BoardDetailPage() {
             {t("admin.boardDetail.labels")}
           </p>
           {detail.labels.map((label) => (
-            <LabelChip key={label.id} name={label.name} color={label.color} />
+            <Link
+              key={label.id}
+              to={withReturnTo(
+                adminCardsHref({ labelId: label.id }),
+                listReturnTo,
+              )}
+              data-testid={`admin-board-label-cards-${label.id}`}
+              className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <LabelChip name={label.name} color={label.color} />
+            </Link>
           ))}
         </Panel>
       ) : null}

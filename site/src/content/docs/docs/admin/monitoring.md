@@ -132,10 +132,50 @@ its entity supports.
   tokens, audit): any time, 24 hours, 7 days, 30 days.
 - Pagination shows the total, the page size and the current page. The page
   size default is 50, the minimum is 1 and the maximum is 100.
+- The entity list state lives in the URL (`search`, `status`, `period`,
+  `limit`, `offset`). Reloading, sharing the link or using browser
+  back/forward restores the same filtered page; hub keys such as `tab` are
+  preserved. Typing in the search box replaces the current history entry,
+  while filters and pagination add one, so Back returns to the previous view
+  rather than one keystroke. The URL carries filters only — never a token,
+  password or one-time code.
+- A row click carries `returnTo` with the exact filtered list URL, and the
+  detail page's back control returns there. Only internal `/admin` paths are
+  accepted, so a crafted query cannot redirect off the panel.
 - A loading spinner, an error state with retry, and an empty state are shown
   per page.
 - If an action fails, a notification shows `Access denied` on `403`, `No connection to the
   server` when the request never left, and `The action failed` otherwise.
+
+### Addressable filters
+
+Board counters and board-detail columns/labels link to the exact rows instead
+of a name search:
+
+| From | Link | Meaning |
+| --- | --- | --- |
+| Board counter Cards / Comments / Files / Commands / Events | `?boardId=<id>` on the matching hub tab | rows of that board only |
+| Column title or card count | `/admin/boards?tab=cards&columnId=<id>` | cards in that column |
+| Label chip or card count | `/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
+| Search label result | `/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
+| Card title in the content editor | `/admin/cards/<id>` | the card detail |
+
+`boardId`, `columnId`, `labelId` and `cardId` are validated ids, not text: a
+malformed value is rejected with `400`, and same-name boards or labels cannot
+collide. The filters combine with `status` and the period window; a request
+that names a column from another board returns no rows rather than widening
+the result. Filtered links show removable chips above the table.
+
+Deleted and archived rows follow the list's own status tabs (board-scoped
+content and moderation lists have them; the log feeds do not). With no explicit
+status filter a board-scoped list still includes soft-deleted comments/files
+and archived or deleted cards, marked with their badge; `status=active`
+excludes them and `status=deleted` selects them. The Comments and Files
+counters link with `status=active`, matching their live-row definition. The
+Cards counter includes archived cards but excludes deleted ones, so its linked
+list can show archived rows in addition to the count; the Cards counter and
+the Cards counter and the Commands/Events counters stay unfiltered by status.
+The status tabs (where the list has them) and filter chips narrow these lists.
 
 The dashboard is described here; the user, board and content listings are on
 their own pages: see [users and masters](/docs/admin/people/) and

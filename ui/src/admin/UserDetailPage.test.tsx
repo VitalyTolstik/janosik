@@ -33,13 +33,13 @@ import {
  * an explicit filter.
  */
 
-function renderUser(userId = "u-1") {
+function renderUser(userId = "u-1", query = "") {
   return render(
     <ThemeProvider>
       <I18nProvider>
         <ToastProvider>
           <TooltipProvider>
-            <MemoryRouter initialEntries={[`/admin/users/${userId}`]}>
+            <MemoryRouter initialEntries={[`/admin/users/${userId}${query}`]}>
               <Routes>
                 <Route path="/admin/*" element={<AdminApp />} />
               </Routes>
@@ -230,9 +230,18 @@ describe("UserDetailPage identity links and per-row moderation", () => {
     const view = renderUser();
 
     fireEvent.click(await screen.findByTestId("admin-user-tab-memberships"));
-    expect(
-      await screen.findByTestId("admin-user-invited-by-membership-1"),
-    ).toHaveAttribute("href", "/admin/users/u-2");
+    const inviterLink = await screen.findByTestId(
+      "admin-user-invited-by-membership-1",
+    );
+    const inviterHref = new URL(
+      inviterLink.getAttribute("href") ?? "",
+      "http://admin.test",
+    );
+    expect(inviterHref.pathname).toBe("/admin/users/u-2");
+    // The inviter's profile returns to the memberships tab it was opened from.
+    expect(inviterHref.searchParams.get("returnTo")).toBe(
+      "/admin/users/u-1?tab=memberships",
+    );
 
     view.unmount();
 
@@ -416,5 +425,16 @@ describe("UserDetailPage identity links and per-row moderation", () => {
     expect(
       screen.queryByTestId("admin-user-session-actions-session-1"),
     ).toBeNull();
+  });
+
+  it("uses returnTo as the back target (TASK-176.5)", async () => {
+    vi.stubGlobal("fetch", new FakeAdminServer(stateWithRows()).fetchImpl);
+    const backTo = "/admin/users?search=member&status=disabled";
+    renderUser("u-1", `?returnTo=${encodeURIComponent(backTo)}`);
+
+    const back = await screen.findByRole("link", {
+      name: adminMessage("admin.common.back", "en"),
+    });
+    expect(back).toHaveAttribute("href", backTo);
   });
 });
