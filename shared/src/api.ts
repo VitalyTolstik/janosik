@@ -1249,8 +1249,8 @@ export interface ApprovalImpactDto {
 /**
  * One `ApprovalRequest` row. `plan` is present on a detail read for a board
  * ADMIN or the requesting token; the list omits it to keep pages small.
- * `impact` is present only when the server could count a known
- * `DELETE_CARD` target.
+ * `impact` is present when the action is `DELETE_CARD` and `cardId` is
+ * known; its counts can be zero when the card was already deleted.
  */
 export interface ApprovalRequestDto {
   id: string;

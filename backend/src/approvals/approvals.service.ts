@@ -125,9 +125,26 @@ export class ApprovalsService {
       }
     }
 
+    const planCardId = cardIdOfPlan(plan);
+    // `cardId` is what the approver sees and what the new impact counts
+    // describe; it must not be able to disagree with the executable plan.
+    // A plan with several card ids is ambiguous, so an explicit display hint
+    // remains allowed there (the DTO only counts a single known card).
+    if (
+      dto.cardId !== undefined &&
+      planCardId !== null &&
+      dto.cardId !== planCardId
+    ) {
+      throw new ConflictException({
+        message: "The explicit cardId does not match the card in the plan",
+        code: "approval_target_mismatch",
+        planCardId,
+        retryable: false,
+      });
+    }
     const cardId = await this.resolveCardId(
       boardId,
-      dto.cardId ?? cardIdOfPlan(plan),
+      dto.cardId ?? planCardId,
       dto.cardId !== undefined,
     );
     const row = await this.createRow({

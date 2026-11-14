@@ -27,8 +27,9 @@ function toMap(
  *
  * These are current rows, not a snapshot taken when the approval was created:
  * a comment deleted in the meantime is already gone from the count. The
- * spec (§179.3) forbids fabricated impact numbers; the UI says "current"
- * only where it can count, and omits the count when it cannot.
+ * spec (§179.3) forbids fabricated impact numbers; the UI shows a number
+ * only where the server could count, and omits it when it could not. The PR
+ * records that these are live counts rather than a creation-time snapshot.
  */
 export async function approvalImpacts(
   prisma: PrismaService,

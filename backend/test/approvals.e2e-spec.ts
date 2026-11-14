@@ -405,6 +405,26 @@ describe("Approvals (e2e)", () => {
     );
   });
 
+  it("refuses an explicit cardId that disagrees with the plan target", async () => {
+    const columnId = await createColumn("Target guard");
+    const shownCard = await createCard(columnId, "Shown target");
+    const executedCard = await createCard(columnId, "Executed target");
+    const before = await prisma.approvalRequest.count({ where: { boardId } });
+
+    const refused = await createApproval({
+      kind: "destructive",
+      cardId: shownCard,
+      plan: deletePlan([executedCard]),
+    }).expect(409);
+    expect(refused.body).toMatchObject({
+      code: "approval_target_mismatch",
+      retryable: false,
+    });
+    expect(await prisma.approvalRequest.count({ where: { boardId } })).toBe(
+      before,
+    );
+  });
+
   it("creates the same request automatically for a destructive command", async () => {
     const columnId = await createColumn("Auto");
     const cardId = await createCard(columnId, "Auto delete");
