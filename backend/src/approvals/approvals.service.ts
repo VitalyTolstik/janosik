@@ -432,7 +432,9 @@ export class ApprovalsService {
       summary: summarizePlan(plan, requirement.action),
       risk: riskOfPlan(plan),
       plan,
-      cardId: cardIdOfPlan(plan),
+      // A plan can name any UUID. Keep the display/impact card only when it
+      // belongs to this board; a foreign id must not leak its counts.
+      cardId: await this.resolveCardId(boardId, cardIdOfPlan(plan), false),
       policy,
     });
     throw this.approvalRequired(row);

@@ -2862,6 +2862,7 @@ components:
         - approval_required
         - approval_expired
         - approval_mismatch
+        - approval_target_mismatch
         - approval_owner_mismatch
         - approval_not_pending
         - approval_rejected
@@ -4548,6 +4549,10 @@ components:
         cardId:
           type: string
           maxLength: 128
+          description: >-
+            Display/impact card. When the plan names exactly one card, this
+            must match it or the request is refused with
+            `409 approval_target_mismatch`.
         ttlMinutes:
           type: integer
           minimum: 1

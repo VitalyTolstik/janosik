@@ -5,6 +5,7 @@ import type { PrismaService } from "@/common/prisma/prisma.service";
 /** The fields an impact read needs; a full `ApprovalRequest` satisfies it. */
 export interface ApprovalImpactRow {
   id: string;
+  boardId: string;
   actionType: string;
   cardId: string | null;
 }
@@ -35,18 +36,31 @@ export async function approvalImpacts(
   prisma: PrismaService,
   rows: readonly ApprovalImpactRow[],
 ): Promise<Map<string, ApprovalImpactDto>> {
-  const cardIds = [...new Set(rows.filter(eligible).map((row) => row.cardId))];
+  const eligibleRows = rows.filter(eligible);
+  const cardIds = [...new Set(eligibleRows.map((row) => row.cardId))];
+  const boardIds = [...new Set(eligibleRows.map((row) => row.boardId))];
   if (cardIds.length === 0) return new Map();
 
   const [comments, attachments] = await Promise.all([
     prisma.comment.groupBy({
       by: ["cardId"],
-      where: { cardId: { in: cardIds }, deletedAt: null },
+      where: {
+        cardId: { in: cardIds },
+        deletedAt: null,
+        // A card id alone is not a board boundary: an approval row must not
+        // be able to count comments on a foreign board's card.
+        card: { column: { boardId: { in: boardIds } } },
+      },
       _count: { _all: true },
     }),
     prisma.attachment.groupBy({
       by: ["cardId"],
-      where: { cardId: { in: cardIds }, deletedAt: null, isInline: false },
+      where: {
+        cardId: { in: cardIds },
+        boardId: { in: boardIds },
+        deletedAt: null,
+        isInline: false,
+      },
       _count: { _all: true },
     }),
   ]);

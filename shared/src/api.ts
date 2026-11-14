@@ -137,6 +137,7 @@ export const API_ERROR_CODES = [
   "approval_required",
   "approval_expired",
   "approval_mismatch",
+  "approval_target_mismatch",
   "approval_owner_mismatch",
   "approval_not_pending",
   "approval_rejected",

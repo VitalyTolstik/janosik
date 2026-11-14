@@ -425,6 +425,45 @@ describe("Approvals (e2e)", () => {
     );
   });
 
+  it("does not attach a foreign card id to an automatic approval", async () => {
+    const foreignBoard = await prisma.board.create({
+      data: { title: "Foreign board" },
+    });
+    const foreignColumn = await prisma.column.create({
+      data: {
+        id: randomUUID(),
+        boardId: foreignBoard.id,
+        title: "Foreign column",
+        position: 0,
+      },
+    });
+    const foreignCard = await prisma.card.create({
+      data: {
+        id: randomUUID(),
+        columnId: foreignColumn.id,
+        title: "Foreign card",
+        position: 0,
+      },
+    });
+
+    const refused = await command(
+      "DELETE_CARD",
+      { cardId: foreignCard.id },
+      { token },
+    );
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("approval_required");
+
+    const detail = await server()
+      .get(
+        `/api/v1/boards/${boardId}/approvals/${String(refused.body.approvalId)}`,
+      )
+      .set(auth(session))
+      .expect(200);
+    expect((detail.body as ApprovalRequestDto).cardId).toBeNull();
+    expect((detail.body as ApprovalRequestDto).impact).toBeUndefined();
+  });
+
   it("creates the same request automatically for a destructive command", async () => {
     const columnId = await createColumn("Auto");
     const cardId = await createCard(columnId, "Auto delete");

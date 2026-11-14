@@ -302,6 +302,7 @@ Error codes are additive and stable:
 | `approval_required` | 409 | a destructive action has no approval; the request is created and nothing is applied; carries `approvalId`, `planHash`, `expiresAt` |
 | `approval_expired` | 409 | the approval expired before decision/apply; carries `approvalId`, `expiresAt` |
 | `approval_mismatch` | 409 | the plan/planHash or kind does not match; carries `approvalId` and the hash prefixes |
+| `approval_target_mismatch` | 409 | an explicit `cardId` disagrees with the single card named by the plan; nothing is created |
 | `approval_owner_mismatch` | 403 | the approval belongs to another token/agent session |
 | `approval_not_pending` | 409 | a decision/cancel/apply hit a non-pending state; carries `status` |
 | `approval_rejected` / `approval_cancelled` | 409 | the request was rejected/cancelled; applying it is refused |
