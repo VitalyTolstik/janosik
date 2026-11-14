@@ -36,6 +36,11 @@
   --success: #10b981;
   /* Warning / In progress */
   --warning: #f59e0b;
+  /* Warning text that must clear AA on the dark surface; the prototype's
+     `--warning` already does, so the dark strong tone is the same hue. */
+  --warning-strong: #f59e0b;
+  /* Slightly darker variant for text on the warning 7% chip fill. */
+  --warning-strong-on-tint: #f59e0b;
   /* Danger / High */
   --danger: #ef4444;
   /* Extended label palette — matching premium shades in dark mode */
@@ -141,6 +146,12 @@
   --secondary-foreground: #ffffff;
   --success: #059669;
   --warning: #d97706;
+  /* Mockup `--warning-strong`: the closest orange warning tone that clears
+     AA as 11 px text on the light surface. */
+  --warning-strong: #b45309;
+  /* On the 7% warning chip fill #b45309 measures 4.37:1; this nearby orange
+     clears AA (4.91:1) without changing the chip's hue or alphas. */
+  --warning-strong-on-tint: #a94c07;
   --danger: #dc2626;
   /* Extended label palette — in light mode */
   --blue: #2563eb;

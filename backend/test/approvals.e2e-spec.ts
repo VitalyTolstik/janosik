@@ -229,6 +229,47 @@ describe("Approvals (e2e)", () => {
   it("runs create → approve → apply → consumed and does not apply twice", async () => {
     const columnId = await createColumn("Lifecycle");
     const cardId = await createCard(columnId, "Delete me");
+    // Real current impact: three live comments and two live non-inline
+    // attachments. One soft-deleted comment and one inline attachment must
+    // not count; the DTO is not a fabricated snapshot.
+    await prisma.comment.createMany({
+      data: Array.from({ length: 3 }, (_, index) => ({
+        cardId,
+        authorId: ownerId,
+        text: `Comment ${index + 1}`,
+      })),
+    });
+    await prisma.comment.create({
+      data: {
+        cardId,
+        authorId: ownerId,
+        text: "Deleted comment",
+        deletedAt: new Date(),
+      },
+    });
+    await prisma.attachment.createMany({
+      data: Array.from({ length: 2 }, (_, index) => ({
+        cardId,
+        boardId,
+        fileName: `note-${index + 1}.txt`,
+        storedName: randomUUID(),
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        uploadedById: ownerId,
+      })),
+    });
+    await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId,
+        fileName: "inline.png",
+        storedName: randomUUID(),
+        mimeType: "image/png",
+        sizeBytes: 1,
+        uploadedById: ownerId,
+        isInline: true,
+      },
+    });
     const plan = deletePlan([cardId]);
     const commandId = (plan.commands as Array<{ commandId: string }>)[0]!
       .commandId;
@@ -258,6 +299,24 @@ describe("Approvals (e2e)", () => {
       plan,
     }).expect(201);
     expect((repeated.body as ApprovalRequestDto).id).toBe(approval.id);
+
+    const list = await server()
+      .get(`/api/v1/boards/${boardId}/approvals`)
+      .set(auth(session))
+      .expect(200);
+    const listed = (list.body as ApprovalRequestDto[]).find(
+      (row) => row.id === approval.id,
+    )!;
+    expect(listed.impact).toEqual({ comments: 3, attachments: 2 });
+
+    const detail = await server()
+      .get(`/api/v1/boards/${boardId}/approvals/${approval.id}`)
+      .set(auth(session))
+      .expect(200);
+    expect((detail.body as ApprovalRequestDto).impact).toEqual({
+      comments: 3,
+      attachments: 2,
+    });
 
     const approved = await decide(approval.id, approval.planHash).expect(200);
     expect(approved.body).toMatchObject({

@@ -844,6 +844,7 @@ describe("AgentsPage", () => {
           overviewItem(),
           overviewItem({
             id: "approval-2",
+            actionType: "ARCHIVE_CARD",
             status: "rejected",
             storedStatus: "rejected",
             summary: "Rejected request",

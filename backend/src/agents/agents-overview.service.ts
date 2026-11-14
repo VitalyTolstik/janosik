@@ -30,6 +30,7 @@ import {
   type BoardRole,
 } from "@janosik/shared";
 import { toAgentSessionDto } from "@/agent-sessions/agent-sessions.service";
+import { approvalImpacts } from "@/approvals/approval-impact";
 import { activeMembershipWhere } from "@/common/membership";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { runToDto } from "@/runs/runs.service";
@@ -593,34 +594,36 @@ export class AgentsOverviewService {
       ),
     ];
 
-    const [cards, sessions, ownTokens, visibleMembers] = await Promise.all([
-      cardIds.length === 0
-        ? Promise.resolve([])
-        : this.prisma.card.findMany({
-            where: {
-              id: { in: cardIds },
-              deletedAt: null,
-              column: { boardId: { in: context.adminBoardIds } },
-            },
-            select: { id: true, title: true },
-          }),
-      sessionIds.length === 0
-        ? Promise.resolve([])
-        : this.prisma.agentSession.findMany({
-            where: {
-              id: { in: sessionIds },
-              boardId: { in: context.adminBoardIds },
-            },
-            select: { id: true, name: true, clientName: true },
-          }),
-      tokenIds.length === 0
-        ? Promise.resolve([])
-        : this.prisma.apiToken.findMany({
-            where: { id: { in: tokenIds }, userId: context.userId },
-            select: { id: true, name: true },
-          }),
-      this.visibleMembers(context.adminBoardIds, userIds, context.now),
-    ]);
+    const [cards, sessions, ownTokens, visibleMembers, impacts] =
+      await Promise.all([
+        cardIds.length === 0
+          ? Promise.resolve([])
+          : this.prisma.card.findMany({
+              where: {
+                id: { in: cardIds },
+                deletedAt: null,
+                column: { boardId: { in: context.adminBoardIds } },
+              },
+              select: { id: true, title: true },
+            }),
+        sessionIds.length === 0
+          ? Promise.resolve([])
+          : this.prisma.agentSession.findMany({
+              where: {
+                id: { in: sessionIds },
+                boardId: { in: context.adminBoardIds },
+              },
+              select: { id: true, name: true, clientName: true },
+            }),
+        tokenIds.length === 0
+          ? Promise.resolve([])
+          : this.prisma.apiToken.findMany({
+              where: { id: { in: tokenIds }, userId: context.userId },
+              select: { id: true, name: true },
+            }),
+        this.visibleMembers(context.adminBoardIds, userIds, context.now),
+        approvalImpacts(this.prisma, rows),
+      ]);
     const cardTitles = new Map(cards.map((row) => [row.id, row.title]));
     const sessionNames = new Map(
       sessions.map((row) => [row.id, row.name ?? row.clientName]),
@@ -679,6 +682,7 @@ export class AgentsOverviewService {
           decidedByName: decidedBy?.displayName ?? null,
           commandCount: plan.commands,
           operationCount: plan.operations,
+          ...(impacts.has(row.id) ? { impact: impacts.get(row.id) } : {}),
         },
       ];
     });

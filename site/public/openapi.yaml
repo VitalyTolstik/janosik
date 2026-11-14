@@ -4567,6 +4567,21 @@ components:
         comment:
           type: string
           maxLength: 2000
+    ApprovalImpact:
+      type: object
+      description: >-
+        Current live comments and non-inline attachments that a `DELETE_CARD`
+        plan would remove with its known card. Counted from current rows, not
+        a snapshot taken when the approval was created. Omitted for other
+        actions or when the card is unknown.
+      required: [comments, attachments]
+      properties:
+        comments:
+          type: integer
+          minimum: 0
+        attachments:
+          type: integer
+          minimum: 0
     ApprovalRequest:
       type: object
       required:
@@ -4632,6 +4647,8 @@ components:
           type: integer
         plan:
           $ref: "#/components/schemas/ApprovalPlan"
+        impact:
+          $ref: "#/components/schemas/ApprovalImpact"
     AgentSessionStatus:
       type: string
       enum: [active, idle, waiting_approval, completed, failed, cancelled]
@@ -5141,6 +5158,8 @@ components:
           type: integer
         operationCount:
           type: integer
+        impact:
+          $ref: "#/components/schemas/ApprovalImpact"
     AgentsOverviewSessionItem:
       allOf:
         - $ref: "#/components/schemas/AgentSession"

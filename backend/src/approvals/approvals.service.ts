@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import type { ApprovalRequest, Prisma, Role } from "@prisma/client";
 import type {
+  ApprovalImpactDto,
   ApprovalKind,
   ApprovalOperationName,
   ApprovalPlan,
@@ -27,6 +28,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { approvalImpact, approvalImpacts } from "./approval-impact";
 import { countPlanCardCreates } from "./plan-card-count";
 import { isGuaranteedRollback } from "@/common/rollback-certainty";
 import type {
@@ -177,7 +179,10 @@ export class ApprovalsService {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: filters.limit ?? 50,
     });
-    return rows.map((row) => this.toDto({ row, includePlan: false }));
+    const impacts = await approvalImpacts(this.prisma, rows);
+    return rows.map((row) =>
+      this.toDto({ row, includePlan: false }, impacts.get(row.id)),
+    );
   }
 
   /** `GET /boards/:id/approvals/:approvalId`. */
@@ -197,7 +202,10 @@ export class ApprovalsService {
     if (!admin && !owner) {
       throw this.ownerMismatch(row);
     }
-    return this.toDto({ row, includePlan: true });
+    return this.toDto(
+      { row, includePlan: true },
+      await approvalImpact(this.prisma, row),
+    );
   }
 
   /**
@@ -1150,7 +1158,10 @@ export class ApprovalsService {
     throw this.mismatch(row, actualHash);
   }
 
-  private toDto(view: ApprovalView): ApprovalRequestDto {
+  private toDto(
+    view: ApprovalView,
+    impact?: ApprovalImpactDto,
+  ): ApprovalRequestDto {
     const row = view.row;
     return {
       id: row.id,
@@ -1175,6 +1186,7 @@ export class ApprovalsService {
       ...(view.includePlan
         ? { plan: row.plan as unknown as ApprovalPlan }
         : {}),
+      ...(impact !== undefined ? { impact } : {}),
     };
   }
 

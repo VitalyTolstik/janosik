@@ -10,6 +10,7 @@ import {
 import type { ApprovalRequestDto, BoardRole } from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
+import { destructiveCardImpactText } from "@/components/approvals/approval-impact";
 import {
   ApprovalCancelButton,
   ApprovalDecisionForm,
@@ -114,7 +115,7 @@ export function ApprovalsPanel({
   role: BoardRole | undefined;
   onChanged?: () => void;
 }) {
-  const { t, lang } = useI18n();
+  const { t, tp, lang } = useI18n();
   const toast = useToast();
   const { board } = useBoardState();
   const live = useBoardLive();
@@ -245,7 +246,7 @@ export function ApprovalsPanel({
         planHash: detail.planHash,
         ...(comment === "" ? {} : { comment }),
       });
-      setDetail(updated);
+      setDetail({ ...updated, impact: updated.impact ?? detail.impact });
       // Keep the decided request visible instead of orphaning the detail.
       setFilter("all");
       setRevision((value) => value + 1);
@@ -270,7 +271,7 @@ export function ApprovalsPanel({
     setBusy(true);
     try {
       const updated = await api.cancelApproval(boardId, detail.id);
-      setDetail(updated);
+      setDetail({ ...updated, impact: updated.impact ?? detail.impact });
       setFilter("all");
       setRevision((value) => value + 1);
       toast.success(t("agentControl.approvals.cancelledToast"));
@@ -290,6 +291,12 @@ export function ApprovalsPanel({
 
   const cardFor = (cardId: string | null) =>
     cardId === null ? undefined : board?.cards[cardId];
+  const detailCard =
+    detail?.cardId != null ? cardFor(detail.cardId) : undefined;
+  const detailImpactText =
+    detail !== null && detail.actionType === "DELETE_CARD" && detailCard
+      ? destructiveCardImpactText(detailCard.title, detail.impact, t, tp, lang)
+      : (detail?.summary ?? "");
 
   const boardMemberName = (userId: string): string => {
     const member = live.members.get(boardId, userId);
@@ -641,11 +648,13 @@ export function ApprovalsPanel({
                   busy={busy}
                   planHash={detail.planHash}
                   impactTitle={
-                    detail.kind === "destructive"
-                      ? t("agents.approvals.destructiveTitle")
-                      : undefined
+                    detail.actionType === "DELETE_CARD" && detailCard
+                      ? t("agents.approvals.destructiveCardTitle")
+                      : detail.kind === "destructive"
+                        ? t("agents.approvals.destructiveTitle")
+                        : undefined
                   }
-                  impactText={detail.summary}
+                  impactText={detailImpactText}
                   onDecide={decide}
                 />
                 <ApprovalCancelButton
