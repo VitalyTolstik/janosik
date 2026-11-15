@@ -7,10 +7,13 @@ import {
   groupAgents,
   heartbeatAge,
   isLiveSession,
+  isSessionPaused,
   latestLiveSession,
   matchesAgentFilter,
+  needsNudge,
   readAgentFilter,
   readAgentGroup,
+  sessionDisplayStatus,
   type AgentSessionRow,
 } from "@/components/agents/agent-model";
 
@@ -241,5 +244,33 @@ describe("agent grouping", () => {
       row({ tokenName: null, name: "Nightly triage" }),
     ]);
     expect(groups[0].name).toBe("Nightly triage");
+  });
+});
+
+describe("pause presentation", () => {
+  it("presents a session pause as Paused instead of Idle", () => {
+    const session = row({
+      status: "idle",
+      paused: true,
+      pauseScope: "session",
+      pausedReason: "Review",
+    });
+    expect(sessionDisplayStatus(session)).toBe("paused");
+    expect(isSessionPaused(session)).toBe(true);
+  });
+
+  it("keeps board and token pauses separate from the lifecycle", () => {
+    for (const pauseScope of ["board", "token"] as const) {
+      const session = row({ status: "idle", paused: true, pauseScope });
+      expect(sessionDisplayStatus(session)).toBe("idle");
+      expect(isSessionPaused(session)).toBe(false);
+    }
+  });
+
+  it("does not put a paused session in the needs-nudge queue", () => {
+    const paused = row({ stale: true, paused: true, pauseScope: "session" });
+    const stale = row({ id: "stale", stale: true, pauseScope: null });
+    expect(needsNudge(paused)).toBe(false);
+    expect(needsNudge(stale)).toBe(true);
   });
 });

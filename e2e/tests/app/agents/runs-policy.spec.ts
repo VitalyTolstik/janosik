@@ -192,6 +192,34 @@ test("a run deep link includes the board and survives reload and history back", 
     `/agents?section=runs&board=${board.id}&run=${run.runId}`,
   );
 
+  // TASK-179.3 feedback sync: real command history, Today wording, mockup
+  // icons and the verbatim footer copy.
+  await expect(page.getByTestId("agent-run-commands")).toContainText(
+    "Deep link card",
+  );
+  await expect(
+    page.getByTestId("agent-run-commands").locator("li"),
+  ).toHaveCount(1);
+  await expect(page.getByTestId("agent-run-commands-missing")).toHaveCount(0);
+  await expect(page.getByTestId("agent-run-timeline")).toContainText("Today,");
+  await expect(page.getByTestId("agent-run-timeline")).not.toContainText(
+    /11\/\d{1,2}\/\d{2}/,
+  );
+  await expect(
+    page.getByTestId("agent-run-footer-open-board").locator("svg"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId("agent-run-footer-copy-link").locator("svg"),
+  ).toHaveClass(/lucide-link/);
+  await expect(
+    page.getByTestId("agent-run-board-chip").locator("svg"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId("agent-run-detail").locator("footer"),
+  ).toContainText(
+    "Runs are history. Rollback is available only for applied runs without conflicts.",
+  );
+
   // The detail pane is 352 px wide; the footer helper must keep a readable
   // column and the actions must sit below it, not squeeze it.
   const footer = page.getByTestId("agent-run-detail").locator("footer");

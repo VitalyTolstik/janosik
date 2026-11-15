@@ -84,6 +84,7 @@ vi.mock("@/components/agents/use-agent-events", () => ({
   useAgentSessionEvents: () => {},
 }));
 
+import { ApiError } from "@/api/client";
 import { AgentsPage } from "@/components/agents/AgentsPage";
 
 const BOARDS: BoardSummary[] = [
@@ -190,28 +191,34 @@ function run(overrides: Partial<RunSummaryDto> = {}): RunSummaryDto {
 }
 
 function runDetail(overrides: Partial<RunSummaryDto> = {}): RunDetailDto {
+  const summary = run(overrides);
+  // Fixtures mirror a real applied run: one stored command (and pre-image)
+  // per recorded command, so the Commands section cannot claim N applied
+  // while rendering zero rows.
+  const commands = Array.from({ length: summary.commandCount }, (_, index) => ({
+    seq: index + 1,
+    action: {
+      type: "DELETE_CARD",
+      boardId: summary.boardId,
+      cardId: "card-1",
+      at: 1,
+    } as unknown as BoardAction,
+    actorId: "user-1",
+    actorType: "agent" as const,
+    commandId: `command-${index + 1}`,
+    touches: [`card:card-${index + 1}`],
+    runId: summary.id,
+    agentName: "QA agent",
+  }));
   return {
-    run: run(overrides),
-    commands: [
-      {
-        seq: 1,
-        action: {
-          type: "DELETE_CARD",
-          boardId: "board-1",
-          cardId: "card-1",
-          at: 1,
-        } as unknown as BoardAction,
-        actorId: "user-1",
-        actorType: "agent",
-        commandId: "command-1",
-        touches: ["card:card-1"],
-        runId: "run-1",
-        agentName: "QA agent",
-      },
-    ],
-    preimages: {
-      "command-1": { schemaVersion: 1, entities: [] },
-    },
+    run: summary,
+    commands,
+    preimages: Object.fromEntries(
+      commands.map((command) => [
+        command.commandId,
+        { schemaVersion: 1, entities: [] },
+      ]),
+    ),
   };
 }
 
@@ -555,6 +562,84 @@ describe("AgentsPage", () => {
     expect(
       await screen.findByTestId("agents-session-detail-hint"),
     ).toBeVisible();
+  });
+
+  it("renders the run detail with mockup commands, timeline, icons and footer", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    const detail = await screen.findByTestId("agent-run-detail");
+    const commands = screen.getByTestId("agent-run-commands");
+    expect(within(commands).getAllByTestId(/^agent-run-command-/)).toHaveLength(
+      2,
+    );
+    expect(screen.queryByTestId("agent-run-commands-missing")).toBeNull();
+    expect(within(detail).getByText("Commands")).toBeInTheDocument();
+    expect(within(detail).queryByText("Commands (0)")).toBeNull();
+
+    const timeline = screen.getByTestId("agent-run-timeline");
+    expect(within(timeline).getAllByText(/,/).length).toBeGreaterThan(0);
+    expect(within(timeline).getAllByText(/Today, /).length).toBe(2);
+    expect(within(timeline).queryByText(/11\/\d{1,2}\/\d{2}/)).toBeNull();
+
+    expect(
+      within(detail).getByText(
+        "No conflicts found. Re-applies 2 pre-images atomically. A separate audit run records the revert.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Runs are history. Rollback is available only for applied runs without conflicts.",
+      ),
+    ).toBeInTheDocument();
+
+    // Mockup icons: no folder on the board chip, Activity for the session
+    // link, Link for copy-link, and no icon on the footer's Open board.
+    expect(
+      screen.getByTestId("agent-run-board-chip").querySelector("svg"),
+    ).toBeNull();
+    expect(
+      screen
+        .getByTestId("agent-run-open-session")
+        .querySelector("svg")
+        ?.getAttribute("class"),
+    ).toContain("lucide-activity");
+    expect(
+      screen
+        .getByTestId("agent-run-footer-copy-link")
+        .querySelector("svg")
+        ?.getAttribute("class"),
+    ).toContain("lucide-link");
+    expect(
+      screen.getByTestId("agent-run-footer-open-board").querySelector("svg"),
+    ).toBeNull();
+  });
+
+  it("is honest when a run records applied commands but has no stored log", async () => {
+    hoisted.listRuns.mockResolvedValue([run({ commandCount: 2 })]);
+    hoisted.getRun.mockResolvedValue({
+      ...runDetail({ commandCount: 2 }),
+      commands: [],
+      preimages: {},
+    });
+    hoisted.previewRunRevert.mockRejectedValue(
+      new ApiError(409, { code: "run_expired", message: "missing" }),
+    );
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    expect(
+      await screen.findByTestId("agent-run-commands-missing"),
+    ).toHaveTextContent(
+      "The command log for this run is missing. The run records 2 commands applied",
+    );
+    expect(screen.getByText("0 of 2 stored")).toBeInTheDocument();
+    expect(screen.queryByText("Commands (0)")).toBeNull();
+    // A missing log does not justify claiming the retention window expired.
+    expect(screen.queryByText(/under the retention window/)).toBeNull();
+    expect(screen.queryByTestId("agent-run-expired")).toBeNull();
+    expect(
+      await screen.findByTestId("agent-run-preview-unavailable"),
+    ).toHaveTextContent("stored commands or pre-images are missing");
   });
 
   it("requires a board for a run deep link", async () => {
@@ -902,6 +987,74 @@ describe("AgentsPage", () => {
     );
     expect(screen.queryByTestId("agents-live-count-waiting")).toBeNull();
     expect(screen.queryByTestId("agents-live-count-paused")).toBeNull();
+  });
+
+  it("counts pending decisions only and keeps a paused session in the live preview", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse(
+        [
+          overviewItem(),
+          overviewItem({
+            id: "approval-2",
+            summary: "Archive card “Release checklist”",
+            actionType: "ARCHIVE_CARD",
+          }),
+        ],
+        {
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 2 },
+          pendingTotal: 2,
+          totalApprovals: 2,
+        },
+      ),
+    );
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? [
+            session({ id: "waiting", status: "waiting_approval" }),
+            session({
+              id: "stale-1",
+              name: "Stale triage",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 600_000,
+            }),
+            session({ id: "active-1", name: "Active triage" }),
+            session({
+              id: "paused-1",
+              name: "Paused triage",
+              status: "idle",
+              paused: true,
+              pauseScope: "session",
+              pausedReason: "Human review",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 600_000,
+            }),
+          ]
+        : [],
+    );
+    renderPage("/agents?section=attention");
+
+    const count = await screen.findByTestId("agents-count-attention");
+    expect(count).toHaveTextContent("2");
+    expect(count).toHaveAttribute("title", "2 pending decisions");
+
+    const live = await screen.findByTestId("agents-live-sessions");
+    const pausedRow = within(live).getByTestId("agent-session-row-paused-1");
+    expect(
+      within(pausedRow).getByTestId("agent-status-paused"),
+    ).toHaveTextContent("Paused");
+    expect(
+      within(live).getByTestId("agents-live-count-paused"),
+    ).toHaveTextContent("1 paused");
+    expect(
+      within(live).getByTestId("agents-live-count-stale"),
+    ).toHaveTextContent("1 no heartbeat");
+    // The paused session is not a "needs a nudge" card; only the genuinely
+    // stale session is.
+    expect(screen.queryByTestId("agents-stale-session-paused-1")).toBeNull();
+    expect(
+      screen.getByTestId("agents-stale-session-stale-1"),
+    ).toBeInTheDocument();
   });
 
   it("caps the live preview at four rows and counts every filtered session", async () => {
@@ -1544,6 +1697,29 @@ describe("AgentsPage", () => {
     expect(screen.queryByText("Stale")).toBeNull();
   });
 
+  it("matches the mockup session detail: no board folder, token link or run chip", async () => {
+    renderPage("/agents?section=sessions&board=board-1&session=session-1");
+
+    const detail = await screen.findByTestId("agents-session-detail-hint");
+    expect(detail).toBeInTheDocument();
+    const boardChip = screen.getByTestId("agents-session-board-chip");
+    expect(boardChip.querySelector("svg")).toBeNull();
+    expect(
+      screen.getByTestId("agents-session-open-board").querySelector("svg"),
+    ).toBeNull();
+
+    const currentWork = screen.getByTestId("agents-session-current-work");
+    expect(within(currentWork).getByRole("link")).toHaveTextContent("card-1");
+    expect(
+      within(currentWork).getByRole("link").querySelector("svg"),
+    ).not.toBeNull();
+    expect(within(currentWork).queryByText(/^Run /)).toBeNull();
+    expect(screen.getByTestId("agents-session-current-run")).toHaveTextContent(
+      "1",
+    );
+    expect(screen.queryByTestId("agents-session-token-settings")).toBeNull();
+  });
+
   it("pauses, resumes and ends a session with confirm and busy/error states", async () => {
     hoisted.pauseAgentSession.mockResolvedValue(
       session({
@@ -1599,9 +1775,11 @@ describe("AgentsPage", () => {
         "Review",
       ),
     );
-    expect(
-      (await screen.findAllByTestId("agent-pause-badge-session")).length,
-    ).toBeGreaterThan(0);
+    const paused = await screen.findAllByTestId("agent-status-paused");
+    expect(paused[0]).toHaveTextContent("Paused");
+    expect(paused[0]).toHaveAttribute("data-lifecycle", "false");
+    expect(screen.queryByTestId("agent-pause-badge-session")).toBeNull();
+    expect(screen.queryByTestId("agent-status-active")).toBeNull();
 
     await userEvent.click(screen.getByTestId("agents-session-resume"));
     await userEvent.click(await screen.findByTestId("agent-action-confirm"));
@@ -1676,24 +1854,33 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-session-end")).toBeNull();
   });
 
-  it("shows token settings only for the caller's own token", async () => {
+  it("keeps the token as plain metadata, without Account controls", async () => {
     hoisted.listTokens.mockResolvedValue([{ id: "token-1", name: "QA agent" }]);
-    const own = renderPage(
-      "/agents?section=sessions&board=board-1&session=session-1",
-    );
+    renderPage("/agents?section=sessions&board=board-1&session=session-1");
+
     expect(
-      await screen.findByTestId("agents-session-token-settings"),
+      await screen.findByTestId("agents-session-detail-hint"),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-session-token-settings")).toBeNull();
     expect(
       screen.queryByTestId("agents-session-token-settings-readonly"),
     ).toBeNull();
-    own.unmount();
+    // The mockup's token field is a mono value, not a settings link.
+    expect(screen.getByTestId("agents-session-board-chip")).toBeInTheDocument();
+  });
 
-    renderPage("/agents?section=sessions&board=board-2&session=session-3");
+  it("keeps token group headers to the agent name, session count and heartbeat", async () => {
+    renderPage("/agents?section=sessions&group=token");
+
+    const group = await screen.findByTestId("agents-token-group-token-1");
+    expect(group).toHaveTextContent("QA agent");
+    expect(group).toHaveTextContent("2 sessions");
+    expect(group).toHaveTextContent("0 no heartbeat");
     expect(
-      await screen.findByTestId("agents-session-token-settings-readonly"),
-    ).toHaveTextContent("Other member's token");
-    expect(screen.queryByTestId("agents-session-token-settings")).toBeNull();
+      within(group).queryByTestId("agents-token-settings-token-1"),
+    ).toBeNull();
+    expect(group).not.toHaveTextContent("token-1");
+    expect(group.querySelector(".font-mono")).toBeNull();
   });
 
   it("keeps the master-detail sheet and 44px actions on mobile", async () => {

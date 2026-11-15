@@ -173,9 +173,10 @@ describe("AgentDetailPage", () => {
         "Stop the loop",
       ),
     );
-    expect(
-      await screen.findByTestId("agent-pause-badge-session"),
-    ).toBeVisible();
+    expect(await screen.findByTestId("agent-status-paused")).toHaveTextContent(
+      "Paused",
+    );
+    expect(screen.queryByTestId("agent-pause-badge-session")).toBeNull();
     expect(screen.getByTestId("agent-session-resume")).toBeInTheDocument();
   });
 

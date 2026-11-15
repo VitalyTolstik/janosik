@@ -11,7 +11,7 @@ import {
   Copy,
   FileDiff,
   History,
-  Link2,
+  Link as LinkIcon,
   Shield,
   X,
 } from "lucide-react";
@@ -960,7 +960,7 @@ export function AttentionApprovalDetail({
 
             <DetailSection
               title={t("agents.approvals.related")}
-              icon={<Link2 aria-hidden />}
+              icon={<LinkIcon aria-hidden />}
             >
               <ApprovalLinks approval={detail} tokenName={agentName} />
             </DetailSection>

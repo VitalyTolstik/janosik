@@ -14,12 +14,8 @@ import type { AgentSessionStatus } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { AgentAttribution } from "./AgentAttribution";
-import {
-  AgentLastSeen,
-  AgentPauseBadge,
-  AgentStaleBadge,
-  AgentStatusBadge,
-} from "./agents-ui";
+import { AgentLastSeen, AgentPauseBadge, AgentStaleBadge } from "./agents-ui";
+import { SessionStatePill } from "./session-ui";
 import {
   AgentActionDialog,
   type AgentSessionAction,
@@ -330,11 +326,13 @@ function SessionCard({
             >
               {row.boardTitle}
             </Link>
-            <AgentStatusBadge status={row.status} />
+            <SessionStatePill session={row} />
             {row.stale && !isTerminal(row.status) ? <AgentStaleBadge /> : null}
-            {row.paused ? (
+            {row.paused &&
+            row.pauseScope !== null &&
+            row.pauseScope !== "session" ? (
               <AgentPauseBadge
-                scope={row.pauseScope ?? "session"}
+                scope={row.pauseScope}
                 title={row.pausedReason ?? undefined}
               />
             ) : null}

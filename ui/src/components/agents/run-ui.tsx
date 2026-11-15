@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
   Check,
@@ -12,8 +13,9 @@ import {
   Folder,
   GitBranch,
   Info,
-  Link2,
+  Link as LinkIcon,
   Loader2,
+  Lock,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
@@ -42,7 +44,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
-import { formatDate, formatDateOnly, useI18n } from "@/i18n";
+import { formatDate, formatDateOnly, useHour12, useI18n } from "@/i18n";
 import { useBoardLive } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
@@ -319,9 +321,11 @@ export function RunDetail({
   onOpenSession,
 }: RunDetailProps) {
   const { t, lang } = useI18n();
+  const hour12 = useHour12();
   const toast = useToast();
   const live = useBoardLive();
   const admin = role === "ADMIN";
+  const [now, setNow] = useState(() => Date.now());
   const [revision, setRevision] = useState(0);
   const [detail, setDetail] = useState<RunDetailDto | null>(null);
   const [detailError, setDetailError] = useState<unknown>(null);
@@ -365,13 +369,15 @@ export function RunDetail({
   }, [boardId, runId, revision]);
 
   // A different run starts with a clean action error; retries of the same run
-  // keep the last rollback failure visible.
+  // keep the last rollback failure visible. `now` is refreshed with the data
+  // so the timeline's Today/Yesterday label cannot drift across midnight.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on a different run
     setActionError(null);
     setHashCopied(false);
     setLinkCopied(false);
-  }, [boardId, runId]);
+    setNow(Date.now());
+  }, [boardId, runId, revision]);
 
   // A committed rollback from this or another tab refreshes the detail and
   // its conflict preview; the list hook refreshes independently.
@@ -496,7 +502,19 @@ export function RunDetail({
   const run = detail.run;
   const conflicts = preview?.conflicts ?? [];
   const rollbackEligible = run.status === "applied" && run.kind !== "revert";
-  const previewExpired = errorCodeOf(previewError) === "run_expired";
+  // `run_expired` means the API has no stored commands/pre-images for this
+  // run. That is usually retention, but a synthetic/partially imported run
+  // looks the same; the UI must not claim a retention window it cannot prove.
+  const previewUnavailable = errorCodeOf(previewError) === "run_expired";
+  const storedCommands = detail.commands.length;
+  const missingCommands = storedCommands === 0 && run.commandCount > 0;
+  const commandsAside =
+    storedCommands === run.commandCount
+      ? t("agents.runs.appliedCount", { count: run.commandCount })
+      : t("agents.runs.commandsStored", {
+          stored: storedCommands,
+          total: run.commandCount,
+        });
   const entitiesTouched = uniqueTouches(detail);
   const duration = Math.max(0, run.appliedAt - run.createdAt);
 
@@ -562,20 +580,8 @@ export function RunDetail({
             {run.revertedAt === null
               ? t("agents.runs.revertedBody")
               : t("agents.runs.revertedAtBody", {
-                  time: formatDate(run.revertedAt, lang, true),
+                  time: formatRunMoment(run.revertedAt, lang, hour12, t, now),
                 })}
-          </Banner>
-        ) : null}
-        {rollbackEligible && previewExpired ? (
-          <Banner
-            tone="warn"
-            icon={<Clock aria-hidden />}
-            testId="agent-run-expired"
-          >
-            <strong className="font-[650]">
-              {t("agents.runs.expiredTitle")}
-            </strong>{" "}
-            {t("agents.runs.expiredBody")}
           </Banner>
         ) : null}
         {rollbackEligible && conflicts.length > 0 ? (
@@ -595,7 +601,7 @@ export function RunDetail({
             data-testid="agent-run-admin-only-note"
             className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground"
           >
-            <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+            <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
             <span>{t("agents.runs.adminOnlyNote")}</span>
           </div>
         ) : null}
@@ -608,9 +614,9 @@ export function RunDetail({
           </span>
           <Link
             to={routes.board(boardId)}
-            className="inline-flex h-[21px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            data-testid="agent-run-board-chip"
+            className="inline-flex h-[21px] max-w-full items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
           >
-            <Folder className="h-2.5 w-2.5" aria-hidden />
             <span className="truncate">{boardTitle ?? boardId}</span>
           </Link>
         </div>
@@ -655,20 +661,20 @@ export function RunDetail({
             <TimelineItem
               tone="warn"
               label={t("agentControl.runs.created")}
-              value={formatDate(run.createdAt, lang, true)}
+              value={formatRunMoment(run.createdAt, lang, hour12, t, now)}
             />
             {run.status !== "failed" ? (
               <TimelineItem
                 tone="applied"
                 label={t("agentControl.runs.applied")}
-                value={formatDate(run.appliedAt, lang, true)}
+                value={formatRunMoment(run.appliedAt, lang, hour12, t, now)}
               />
             ) : null}
             {run.revertedAt !== null ? (
               <TimelineItem
                 tone="reverted"
                 label={t("agentControl.runs.reverted")}
-                value={formatDate(run.revertedAt, lang, true)}
+                value={formatRunMoment(run.revertedAt, lang, hour12, t, now)}
                 testId="agent-run-reverted-at"
               />
             ) : null}
@@ -676,15 +682,20 @@ export function RunDetail({
         </Section>
 
         <Section
-          title={t("agents.runs.commandsTitle", {
-            count: detail.commands.length,
-          })}
+          title={t("agents.runs.commandsTitle")}
           icon={<Terminal aria-hidden />}
-          aside={t("agents.runs.appliedCount", { count: run.commandCount })}
+          aside={commandsAside}
         >
-          {detail.commands.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground">
-              {t("agentControl.runs.noCommands")}
+          {storedCommands === 0 ? (
+            <p
+              className="text-[11px] leading-[1.45] text-muted-foreground"
+              data-testid="agent-run-commands-missing"
+            >
+              {missingCommands
+                ? t("agents.runs.commandsMissingBody", {
+                    count: run.commandCount,
+                  })
+                : t("agentControl.runs.noCommands")}
             </p>
           ) : (
             <ul className="space-y-1.5" data-testid="agent-run-commands">
@@ -770,8 +781,8 @@ export function RunDetail({
                 className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-[color:var(--agent-tone-warning)]"
                 role="alert"
                 data-testid={
-                  previewExpired
-                    ? "agent-run-expired-preview"
+                  previewUnavailable
+                    ? "agent-run-preview-unavailable"
                     : "agent-run-preview-error"
                 }
               >
@@ -788,36 +799,41 @@ export function RunDetail({
                 </Button>
               </div>
             ) : preview !== null ? (
-              <div className="space-y-2">
-                <p
-                  data-testid="agent-run-can-revert"
-                  data-can-revert={preview.canRevert ? "true" : "false"}
-                  className={cn(
-                    "flex items-start gap-1.5 rounded-[5px] border-l-2 px-2 py-1.5 text-[11px] leading-[1.45]",
-                    preview.canRevert
-                      ? "border-success bg-success/6 text-foreground"
-                      : "border-warning bg-warning/6 text-foreground",
-                  )}
-                >
+              <div
+                data-testid="agent-run-rollback-card"
+                className={cn(
+                  "space-y-2 rounded-[7px] border px-2.5 py-2",
+                  preview.canRevert
+                    ? "border-[color-mix(in_oklab,var(--success)_30%,var(--border))] bg-success/5"
+                    : "border-warning/35 bg-warning/6",
+                )}
+              >
+                <div className="flex items-center gap-1.5">
                   {preview.canRevert ? (
                     <Check
-                      className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-success)]"
+                      className="h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-success)]"
                       aria-hidden
                     />
                   ) : (
                     <AlertTriangle
-                      className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-warning)]"
+                      className="h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
                       aria-hidden
                     />
                   )}
-                  <span>
-                    {preview.canRevert
-                      ? t("agents.runs.previewReady", {
-                          count: detail.commands.length,
-                          entities: entitiesTouched,
-                        })
-                      : t("agentControl.runs.cannotRevert")}
-                  </span>
+                  <b className="text-[11.5px] font-[650] text-foreground">
+                    {conflicts.length > 0
+                      ? t("agents.runs.rollbackConflict")
+                      : t("agents.runs.rollbackPreview")}
+                  </b>
+                </div>
+                <p
+                  data-testid="agent-run-can-revert"
+                  data-can-revert={preview.canRevert ? "true" : "false"}
+                  className="m-0 text-[11px] leading-[1.45] text-foreground"
+                >
+                  {preview.canRevert
+                    ? t("agents.runs.previewReady", { count: storedCommands })
+                    : t("agentControl.runs.cannotRevert")}
                 </p>
                 {conflicts.length > 0 ? (
                   <ul data-testid="agent-run-conflicts" className="space-y-1">
@@ -864,13 +880,15 @@ export function RunDetail({
                       title={
                         preview.canRevert
                           ? undefined
-                          : t("agents.runs.resolveConflictFirst")
+                          : conflicts.length > 0
+                            ? t("agents.runs.resolveConflictFirst")
+                            : t("agentControl.runs.cannotRevert")
                       }
                       onClick={() => setConfirmOpen(true)}
                       className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 max-md:min-h-11"
                     >
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-                      {conflicts.length > 0
+                      {!preview.canRevert
                         ? t("agents.runs.revertBlocked")
                         : t("agentControl.runs.revert")}
                     </Button>
@@ -983,7 +1001,7 @@ export function RunDetail({
                 onClick={() => onOpenSession(run.agentSessionId ?? "")}
                 className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
-                <Clock className="h-3 w-3" aria-hidden />
+                <Activity className="h-3 w-3" aria-hidden />
                 {t("agents.runs.openSession")}
               </button>
             ) : (
@@ -996,7 +1014,7 @@ export function RunDetail({
                 data-testid="agent-run-open-session"
                 className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
-                <Clock className="h-3 w-3" aria-hidden />
+                <Activity className="h-3 w-3" aria-hidden />
                 {t("agents.runs.openSession")}
               </Link>
             )
@@ -1014,7 +1032,7 @@ export function RunDetail({
                 aria-hidden
               />
             ) : (
-              <Link2 className="h-3 w-3" aria-hidden />
+              <LinkIcon className="h-3 w-3" aria-hidden />
             )}
             {t("agents.runs.copyLink")}
           </button>
@@ -1035,16 +1053,15 @@ export function RunDetail({
             <Link
               to={routes.board(boardId)}
               data-testid="agent-run-footer-open-board"
-              className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-7 items-center rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
             >
-              <Folder className="h-3 w-3" aria-hidden />
               {t("agents.runs.openBoard")}
             </Link>
             <button
               type="button"
               onClick={() => void copyLink()}
               data-testid="agent-run-footer-copy-link"
-              className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[11px] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
             >
               {linkCopied ? (
                 <Check
@@ -1052,7 +1069,7 @@ export function RunDetail({
                   aria-hidden
                 />
               ) : (
-                <Link2 className="h-3 w-3" aria-hidden />
+                <LinkIcon className="h-3 w-3" aria-hidden />
               )}
               {t("agents.runs.copyLink")}
             </button>
@@ -1399,6 +1416,34 @@ function startOfDay(timestamp: number): number {
   const date = new Date(timestamp);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
+}
+
+/**
+ * The mockup's timeline wording: `Today, 5:24:12 PM`, `Yesterday, …`, or the
+ * locale date for older runs. A raw `11/15/26, 7:15 PM` is not the visual
+ * language of the agents surface.
+ */
+function formatRunMoment(
+  timestamp: number,
+  lang: string,
+  hour12: boolean,
+  t: Translate,
+  now: number,
+): string {
+  const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
+  const time = new Date(timestamp).toLocaleTimeString(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12,
+  });
+  const day = startOfDay(timestamp);
+  const today = startOfDay(now);
+  if (day === today) return `${t("agents.runs.today")}, ${time}`;
+  if (day === today - 24 * 60 * 60 * 1000) {
+    return `${t("agents.runs.yesterday")}, ${time}`;
+  }
+  return formatDate(timestamp, lang, hour12);
 }
 
 function clockLabel(

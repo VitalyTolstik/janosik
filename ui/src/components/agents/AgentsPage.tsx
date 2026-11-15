@@ -28,7 +28,9 @@ import {
   AGENT_STATUS_FILTERS,
   agentLabel,
   isLiveSession,
+  isSessionPaused,
   matchesAgentFilter,
+  needsNudge,
   readAgentFilter,
   readAgentGroup,
   shortId,
@@ -474,18 +476,16 @@ export function AgentsPage() {
         : state.rows.filter((row) => row.boardId === filter.board),
     [filter.board, state.rows],
   );
-  const staleCount = scopedRows.filter((row) => row.stale).length;
   const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
   const isAttentionAdmin =
     filter.board === "all"
       ? hasAdminBoard
       : state.boards.find((board) => board.id === filter.board)?.role ===
         "ADMIN";
-  const attentionCount = isAttentionAdmin
-    ? pendingForScope === null
-      ? null
-      : pendingForScope + staleCount
-    : staleCount;
+  // TASK-179.8: the Attention badge is the pending-decision count, never a
+  // mixed approvals+stale total. Stale sessions stay visible in the list but
+  // do not inflate this number (the mockup uses `scopePending()`).
+  const attentionCount = isAttentionAdmin ? pendingForScope : null;
   const sessionCount = scopedRows.length;
 
   const selectedSession = params.get("session");
@@ -763,8 +763,10 @@ export function AgentsPage() {
                         : undefined
                     }
                     title={
-                      item === "attention" && pending.stale
-                        ? t("agents.pending.stale")
+                      item === "attention"
+                        ? pending.stale
+                          ? `${t("agents.shell.pendingDecisions", { count })} · ${t("agents.pending.stale")}`
+                          : t("agents.shell.pendingDecisions", { count })
                         : undefined
                     }
                     className={cn(
@@ -1456,7 +1458,6 @@ export function AgentsPage() {
                     now={now}
                     staleBoardIds={state.staleBoardIds}
                     onSelect={openSession}
-                    onOpenTokens={openTokens}
                   />
                 )}
               </>
@@ -1640,7 +1641,9 @@ function AttentionStaleSessions({
   onSelect: (row: AgentSessionRow) => void;
 }) {
   const { t } = useI18n();
-  const stale = rows.filter((row) => row.stale).slice(0, 2);
+  // A human pause explains the missing heartbeat: paused sessions stay in
+  // the live preview instead of competing for the two "Needs a nudge" cards.
+  const stale = rows.filter(needsNudge).slice(0, 2);
   if (stale.length === 0) return null;
   return (
     <section
@@ -1727,7 +1730,12 @@ function AttentionLiveSessions({
   onViewAll: () => void;
 }) {
   const { t } = useI18n();
-  const live = rows.filter((row) => !row.stale && isLiveSession(row));
+  // A paused session belongs here even when its heartbeat aged out: silence
+  // is expected while paused, and hiding it made the row disappear after a
+  // pause. Genuinely stale, unpaused rows stay in "Needs a nudge".
+  const live = rows.filter(
+    (row) => isLiveSession(row) && (!row.stale || isSessionPaused(row)),
+  );
   if (live.length === 0) return null;
   // Counts mirror the prototype: they describe every filtered session, not
   // just the four rows in the preview.
@@ -1735,9 +1743,9 @@ function AttentionLiveSessions({
     (row) => row.status === "active" && !row.paused,
   ).length;
   const waiting = rows.filter(
-    (row) => row.status === "waiting_approval",
+    (row) => row.status === "waiting_approval" && !row.paused,
   ).length;
-  const stale = rows.filter((row) => row.stale).length;
+  const stale = rows.filter(needsNudge).length;
   const paused = rows.filter((row) => row.paused).length;
 
   return (

@@ -530,6 +530,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-179 agents live-review feedback: the Attention badge counts pending
+  decisions only (stale sessions no longer inflate it), and a paused session
+  stays in the Attention live preview with a `Paused` pill even when its
+  heartbeat aged out; paused sessions are not "needs a nudge" cards. Session
+  detail drops the non-mockup folder icons, token-settings control and raw run
+  link, and its token/run metadata is plain text. Run detail uses relative
+  `Today, …` timeline wording and the mockup icons, reports a missing command
+  log honestly (`0 of N stored`) instead of claiming N applied with zero rows,
+  and only calls rollback unavailable when the stored commands/pre-images are
+  actually absent. The run footer copy and rollback card match the mockup.
+
 - Admin bulk actions now apply to every selected row across pages: the counter,
   confirmation and request use the same saved ids, filter changes clear the
   selection, and a selection above the backend cap of 500 is blocked with a

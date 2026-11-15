@@ -71,6 +71,16 @@ describe("agent design system (TASK-179.9)", () => {
     );
   });
 
+  it("keeps the mockup's icon vocabulary on the shared detail surfaces", () => {
+    expect(runUi).toContain("Link as LinkIcon");
+    expect(runUi).not.toContain("Link2");
+    expect(attention).not.toContain("Link2");
+    expect(approvalUi).not.toContain("Link2");
+    expect(sessionUi).toContain("GitCommit");
+    expect(sessionUi).not.toContain("agents-session-token-settings");
+    expect(sessionUi).not.toContain("agents-token-settings-");
+  });
+
   it("defines AA status tones for both themes", () => {
     expect(indexCss).toContain("--agent-tone-success");
     expect(indexCss).toContain("--agent-tone-warning");

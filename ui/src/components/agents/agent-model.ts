@@ -150,6 +150,38 @@ export function isTerminalStatus(status: AgentSessionStatus): boolean {
   );
 }
 
+/**
+ * TASK-179.4 — a session paused by a human is presented as `Paused`, not as
+ * its stored lifecycle value (`idle` in most cases). The mockup renders one
+ * status pill per row/detail, so the pause replaces the lifecycle there.
+ * Board- and token-level pauses stay separate chips: they pause every write
+ * on the board/token without rewriting an individual session's lifecycle.
+ */
+export type SessionDisplayStatus = AgentSessionStatus | "paused";
+
+export function sessionDisplayStatus(
+  session: Pick<AgentSessionDto, "status" | "pauseScope">,
+): SessionDisplayStatus {
+  return session.pauseScope === "session" ? "paused" : session.status;
+}
+
+/** True when the session itself is paused (not its board or token). */
+export function isSessionPaused(
+  session: Pick<AgentSessionDto, "pauseScope">,
+): boolean {
+  return session.pauseScope === "session";
+}
+
+/**
+ * A paused session has no expected heartbeat, so it must not compete for one
+ * of the two "Needs a nudge" cards. It stays visible in the live preview.
+ */
+export function needsNudge(
+  session: Pick<AgentSessionDto, "stale" | "pauseScope">,
+): boolean {
+  return session.stale && !isSessionPaused(session);
+}
+
 /** A session the control plane still considers open. */
 export function isLiveSession(session: AgentSessionDto): boolean {
   return session.endedAt === null && !isTerminalStatus(session.status);
