@@ -637,7 +637,7 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agent-run-action-error")).toBeVisible();
   });
 
-  it("is honest when a run records applied commands but has no stored log", async () => {
+  it("is honest when a run records commands but has no stored log", async () => {
     hoisted.listRuns.mockResolvedValue([run({ commandCount: 2 })]);
     hoisted.getRun.mockResolvedValue({
       ...runDetail({ commandCount: 2 }),
@@ -1836,6 +1836,33 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-session-pause")).toBeNull();
     expect(screen.queryByTestId("agents-session-resume")).toBeNull();
     expect(screen.queryByTestId("agents-session-end")).toBeNull();
+  });
+
+  it("offers Resume when a board pause masks a session pause", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? [
+            session({
+              id: "masked",
+              status: "idle",
+              paused: true,
+              pausedAt: Date.now(),
+              pausedReason: "Human review",
+              pauseScope: "board",
+            }),
+          ]
+        : [],
+    );
+    renderPage("/agents?section=sessions&board=board-1&session=masked");
+
+    expect(
+      (await screen.findAllByTestId("agent-status-paused"))[0],
+    ).toHaveTextContent("Paused");
+    expect(screen.getByTestId("agent-pause-badge-board")).toHaveTextContent(
+      "Board pause",
+    );
+    expect(screen.getByTestId("agents-session-resume")).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-session-pause")).toBeNull();
   });
 
   it("keeps the action dialog open and reports a busy/error failure", async () => {

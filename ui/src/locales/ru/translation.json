@@ -1873,7 +1873,7 @@
   "agents.runs.commandsStored_few": "Сохранено {{stored}} из {{total}}",
   "agents.runs.commandsStored_many": "Сохранено {{stored}} из {{total}}",
   "agents.runs.commandsStored_other": "Сохранено {{stored}} из {{total}}",
-  "agents.runs.commandsMissingBody_one": "Журнал команд запуска отсутствует. Запуск сообщает о {{count}} команде, но её действие и pre-image не сохранены, поэтому предпросмотр отката недоступен.",
+  "agents.runs.commandsMissingBody_one": "Журнал команд запуска отсутствует. Запуск сообщает о {{count}} команде, но её действие и pre-image не сохранено, поэтому предпросмотр отката недоступен.",
   "agents.runs.commandsMissingBody_few": "Журнал команд запуска отсутствует. Запуск сообщает о {{count}} командах, но их действия и pre-image не сохранены, поэтому предпросмотр отката недоступен.",
   "agents.runs.commandsMissingBody_many": "Журнал команд запуска отсутствует. Запуск сообщает о {{count}} командах, но их действия и pre-image не сохранены, поэтому предпросмотр отката недоступен.",
   "agents.runs.commandsMissingBody_other": "Журнал команд запуска отсутствует. Запуск сообщает о {{count}} командах, но их действия и pre-image не сохранены, поэтому предпросмотр отката недоступен.",

@@ -654,7 +654,7 @@ export function SessionDetail({
     !isAgentToken &&
     row.boardRole === "ADMIN" &&
     !staleBoardIds.includes(row.boardId);
-  const sessionPaused = isSessionPaused(row);
+  const sessionPaused = !terminal && isSessionPaused(row);
   const pausedByOtherScope = row.paused && !sessionPaused;
   const boardHref =
     row.currentCardId === null
