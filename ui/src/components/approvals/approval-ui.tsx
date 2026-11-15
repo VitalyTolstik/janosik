@@ -53,10 +53,10 @@ const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
 const RISK_CLASS: Record<ApprovalRisk, string> = {
   low: "border-border bg-muted text-muted-foreground",
   // Mockup warning chip: warning hue at 36% border / 7% fill, 4 px radius,
-  // 11 px / 600. The text tone is the AA-checked on-tint orange rather than
-  // raw `--warning` (3.2:1 in light); see the PR's measured contrast.
+  // 11 px / 600. User decision: use the mockup's raw `--warning` orange on
+  // the agent surfaces, overriding the earlier AA-compromised on-tint shade.
   medium:
-    "border-[color-mix(in_oklab,var(--warning)_36%,transparent)] bg-[color-mix(in_oklab,var(--warning)_7%,transparent)] text-[color:var(--warning-strong-on-tint)]",
+    "border-[color-mix(in_oklab,var(--warning)_36%,transparent)] bg-[color-mix(in_oklab,var(--warning)_7%,transparent)] text-[color:var(--warning)]",
   high: "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]",
 };
 

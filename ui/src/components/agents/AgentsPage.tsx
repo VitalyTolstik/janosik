@@ -5,13 +5,14 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
   Bot,
   ChevronRight,
+  Clock,
   Folder,
   History,
   Inbox,
@@ -21,34 +22,25 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import type { BoardSummary } from "@janosik/shared";
-
 import { isApiEnabled } from "@/api/client";
-import {
-  AgentLastSeen,
-  AgentLiveDot,
-  AgentStatusBadge,
-  AgentStaleBadge,
-  AgentPauseBadge,
-} from "./agents-ui";
 import {
   AGENT_STATUS_FILTERS,
   agentLabel,
-  groupAgents,
   isLiveSession,
-  latestLiveSession,
   matchesAgentFilter,
   readAgentFilter,
   readAgentGroup,
   shortId,
   type AgentFilter,
-  type AgentGroup,
   type AgentSessionRow,
   type AgentStatusFilter,
 } from "./agent-model";
 import {
+  HeartbeatText,
   SessionDetail,
   SessionGroupList,
+  SessionRow,
+  SessionTableHeader,
   groupSessionRows,
 } from "./session-ui";
 import { useAgentSessions } from "./use-agent-sessions";
@@ -79,7 +71,6 @@ import { SelectField } from "@/components/ui/select-field";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
@@ -272,29 +263,25 @@ export function AgentsPage() {
   };
   const openSession = useCallback(
     (row: AgentSessionRow) => {
-      setParams(
-        (current) => {
-          const next = new URLSearchParams(current);
-          next.set("section", "sessions");
-          next.set("session", row.id);
-          next.delete("approval");
-          next.delete("run");
-          return next;
-        },
-        { replace: true },
-      );
+      // Keep the current tab: a session opened from Attention stays on
+      // Attention and renders in the shared right-hand detail panel.
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        next.set("section", section);
+        next.set("session", row.id);
+        next.delete("approval");
+        next.delete("run");
+        return next;
+      });
     },
-    [setParams],
+    [section, setParams],
   );
   const closeSession = useCallback(() => {
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        next.delete("session");
-        return next;
-      },
-      { replace: true },
-    );
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("session");
+      return next;
+    });
   }, [setParams]);
   const setSection = (value: Section) => {
     setParams((current) => {
@@ -562,20 +549,6 @@ export function AgentsPage() {
   );
   const displayed =
     section === "attention" ? filtered.filter((row) => row.stale) : filtered;
-  const groups = useMemo(() => groupAgents(displayed), [displayed]);
-  const boardGroups = useMemo(() => {
-    const buckets = new Map<string, typeof displayed>();
-    for (const row of displayed) {
-      const bucket = buckets.get(row.boardId) ?? [];
-      bucket.push(row);
-      buckets.set(row.boardId, bucket);
-    }
-    return [...buckets.entries()].map(([id, rows]) => ({
-      id,
-      title: rows[0]?.boardTitle ?? id,
-      groups: groupAgents(rows),
-    }));
-  }, [displayed]);
   const sessionGroups = useMemo(() => {
     const groups = groupSessionRows(displayed, groupMode);
     if (groupMode !== "board") return groups;
@@ -586,15 +559,17 @@ export function AgentsPage() {
     }));
   }, [displayed, groupMode, pending.counts]);
   const sessionDetailRow = useMemo(() => {
-    if (section !== "sessions") return undefined;
+    if (section !== "sessions" && section !== "attention") return undefined;
     if (selectedSession !== null) {
-      return displayed.find((row) => row.id === selectedSession);
+      return filtered.find((row) => row.id === selectedSession);
     }
-    return displayed[0];
-  }, [displayed, section, selectedSession]);
+    return section === "sessions" ? filtered[0] : undefined;
+  }, [filtered, section, selectedSession]);
   const sessionMissing =
     selectedSession !== null && sessionDetailRow === undefined;
-  const sessionSheetOpen = section === "sessions" && selectedSession !== null;
+  const sessionSheetOpen =
+    (section === "sessions" || section === "attention") &&
+    selectedSession !== null;
   const runBoardKnown =
     runDetailBoardId !== "all" &&
     state.boards.some((board) => board.id === runDetailBoardId) &&
@@ -702,7 +677,7 @@ export function AgentsPage() {
 
   return (
     <main
-      className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface md:flex-row md:overflow-hidden"
+      className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface text-[13px] leading-[1.45] md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
       <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
@@ -771,9 +746,9 @@ export function AgentsPage() {
                         : undefined
                     }
                     className={cn(
-                      "ml-auto inline-grid h-[17px] min-w-[18px] place-items-center rounded px-1 text-[11px] font-semibold tabular-nums",
+                      "ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded px-1 text-[11px] font-[650] tabular-nums",
                       item === "attention"
-                        ? "border border-warning/30 bg-warning/10 text-[color:var(--agent-tone-warning)]"
+                        ? "border border-warning/26 bg-warning/12 text-[color:var(--warning)]"
                         : section === item
                           ? "bg-primary/15 text-[color:var(--agent-tone-primary)]"
                           : "bg-hover text-muted-foreground",
@@ -830,7 +805,7 @@ export function AgentsPage() {
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
                   {count !== null && count > 0 ? (
                     <span
-                      className="inline-grid h-4 min-w-4 place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-[11px] font-[650] tabular-nums text-[color:var(--agent-tone-warning)]"
+                      className="inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-[11px] font-[650] tabular-nums text-[color:var(--warning)]"
                       data-state={pending.stale ? "stale" : "fresh"}
                       title={
                         pending.stale ? t("agents.pending.stale") : undefined
@@ -1417,28 +1392,24 @@ export function AgentsPage() {
                         )}
                       </>
                     )}
-                    {groups.length === 0 ? (
+                    {filtered.length === 0 ? (
                       filteredActive ? (
                         <FilteredEmpty onClear={clearFilters} />
                       ) : null
                     ) : (
                       <>
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span
-                            aria-hidden
-                            className="h-1.5 w-1.5 rounded-full bg-warning"
-                          />
-                          <h3 className="text-xs font-semibold">
-                            {t("agents.shell.needsNudge")}
-                          </h3>
-                          <span className="text-[11px] text-muted-foreground">
-                            {t("agents.shell.heartbeatHint")}
-                          </span>
-                        </div>
-                        <AgentGroupList
-                          boardGroups={boardGroups}
-                          boards={state.boards}
-                          staleBoardIds={state.staleBoardIds}
+                        <AttentionStaleSessions
+                          rows={filtered}
+                          now={now}
+                          selectedId={selectedSession}
+                          onSelect={openSession}
+                        />
+                        <AttentionLiveSessions
+                          rows={filtered}
+                          now={now}
+                          selectedId={selectedSession}
+                          onSelect={openSession}
+                          onViewAll={() => setSection("sessions")}
                         />
                       </>
                     )}
@@ -1475,7 +1446,7 @@ export function AgentsPage() {
           aria-label={t("agents.detail.back")}
           data-testid="agents-session-sheet-scrim"
           onClick={closeSession}
-          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+          className="fixed inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
       {runSheetOpen ? (
@@ -1484,7 +1455,7 @@ export function AgentsPage() {
           aria-label={t("agents.runs.backToList")}
           data-testid="agents-run-sheet-scrim"
           onClick={closeRun}
-          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+          className="fixed inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
       <aside
@@ -1496,7 +1467,7 @@ export function AgentsPage() {
             approvalBoardId !== null) ||
             sessionSheetOpen ||
             runSheetOpen) &&
-            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
+            "max-[1060px]:fixed max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >
@@ -1558,7 +1529,8 @@ export function AgentsPage() {
             onChanged={pending.reload}
             onBack={closeApproval}
           />
-        ) : section === "sessions" ? (
+        ) : section === "sessions" ||
+          (section === "attention" && selectedSession !== null) ? (
           <SessionDetail
             row={sessionDetailRow}
             missingId={sessionMissing ? selectedSession : null}
@@ -1588,35 +1560,227 @@ export function AgentsPage() {
   );
 }
 
-function AgentGroupList({
-  boardGroups,
-  boards,
-  staleBoardIds,
+type CountChipTone = "ok" | "warn" | "muted";
+
+const COUNT_CHIP_TONE: Record<CountChipTone, string> = {
+  ok: "border-success/34 bg-success/7 text-[color:var(--success)]",
+  warn: "border-warning/36 bg-warning/7 text-[color:var(--agent-tone-warning)]",
+  muted:
+    "border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-muted-foreground",
+};
+
+/** Prototype `.chip`: 20 px high, 4 px radius; the app keeps the 11 px floor. */
+function CountChip({
+  tone,
+  dot = false,
+  testId,
+  children,
 }: {
-  boardGroups: Array<{ id: string; title: string; groups: AgentGroup[] }>;
-  boards: BoardSummary[];
-  staleBoardIds: string[];
+  tone: CountChipTone;
+  dot?: boolean;
+  testId: string;
+  children: React.ReactNode;
 }) {
   return (
-    <ul data-testid="agents-list" className="space-y-4">
-      {boardGroups.map((board) => (
-        <li key={board.id}>
-          <h3 className="border-b border-border px-2 py-2 text-xs font-semibold text-muted-foreground">
-            {board.title}
-          </h3>
-          <ul>
-            {board.groups.map((group) => (
-              <AgentRow
-                key={group.tokenId}
-                group={group}
-                boards={boards}
-                staleBoardIds={staleBoardIds}
-              />
-            ))}
-          </ul>
-        </li>
-      ))}
-    </ul>
+    <span
+      data-testid={testId}
+      className={cn(
+        "inline-flex h-[21px] items-center gap-1 rounded-[4px] border px-1.5 text-[11px] leading-none font-semibold whitespace-nowrap",
+        COUNT_CHIP_TONE[tone],
+      )}
+    >
+      {dot ? (
+        <span
+          aria-hidden
+          className="h-[5px] w-[5px] shrink-0 rounded-full bg-current"
+        />
+      ) : null}
+      {children}
+    </span>
+  );
+}
+
+/**
+ * TASK-179.3 — the prototype's stale block is two session cards, not an
+ * agent roll-up: each card selects that exact session in the right panel.
+ */
+function AttentionStaleSessions({
+  rows,
+  now,
+  selectedId,
+  onSelect,
+}: {
+  rows: AgentSessionRow[];
+  now: number;
+  selectedId: string | null;
+  onSelect: (row: AgentSessionRow) => void;
+}) {
+  const { t } = useI18n();
+  const stale = rows.filter((row) => row.stale).slice(0, 2);
+  if (stale.length === 0) return null;
+  return (
+    <section
+      aria-labelledby="agents-stale-heading"
+      data-testid="agents-stale-sessions"
+      className="mt-[18px]"
+    >
+      <div className="mb-[7px] flex flex-wrap items-center gap-2">
+        <h3
+          id="agents-stale-heading"
+          className="m-0 text-[12px] font-[650] leading-[1.45]"
+        >
+          {t("agents.shell.needsNudge")}
+        </h3>
+        <span className="text-[11px] text-muted-foreground">
+          {t("agents.shell.heartbeatHint")}
+        </span>
+      </div>
+      <div className="flex flex-col gap-[7px]">
+        {stale.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            aria-pressed={selectedId === row.id}
+            aria-label={t("agents.shell.staleCardLabel", {
+              agent: agentLabel(row),
+              session: row.name ?? shortId(row.id),
+            })}
+            data-testid={`agents-stale-session-${row.id}`}
+            onClick={() => onSelect(row)}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-lg border px-3 py-[10px] text-left transition-colors",
+              selectedId === row.id
+                ? "border-[color-mix(in_oklab,var(--warning)_54%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_8%,var(--surface))]"
+                : "border-[color-mix(in_oklab,var(--warning)_26%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))] hover:bg-[color-mix(in_oklab,var(--warning)_7%,var(--surface))]",
+            )}
+          >
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-warning/26 bg-warning/10 text-[color:var(--warning)]">
+              <Clock className="h-[15px] w-[15px]" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <b className="block text-[11.5px] leading-[1.35] font-[650] break-words">
+                {agentLabel(row)} · {row.name ?? shortId(row.id)}
+              </b>
+              <span className="mt-px flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] leading-[1.4] text-muted-foreground">
+                <span className="truncate">{row.boardTitle}</span>
+                <span aria-hidden>·</span>
+                <HeartbeatText session={row} now={now} withIcon={false} />
+                <span aria-hidden>·</span>
+                <span className="truncate">
+                  {t("agents.shell.lastStatus", {
+                    status: t(`agents.status.${row.status}`),
+                  })}
+                </span>
+              </span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-[3px] text-[11px] font-semibold text-foreground">
+              {t("agents.shell.inspect")}
+              <ChevronRight className="h-[11px] w-[11px]" aria-hidden />
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * TASK-179.3 — the mockup keeps a compact live preview below the stale block,
+ * so an approval can be waiting while a session is still visible. `row.stale`
+ * wins: a stale row stays in "Needs a nudge" and never repeats here.
+ */
+function AttentionLiveSessions({
+  rows,
+  now,
+  selectedId,
+  onSelect,
+  onViewAll,
+}: {
+  rows: AgentSessionRow[];
+  now: number;
+  selectedId: string | null;
+  onSelect: (row: AgentSessionRow) => void;
+  onViewAll: () => void;
+}) {
+  const { t } = useI18n();
+  const live = rows.filter((row) => !row.stale && isLiveSession(row));
+  if (live.length === 0) return null;
+  // Counts mirror the prototype: they describe every filtered session, not
+  // just the four rows in the preview.
+  const active = rows.filter(
+    (row) => row.status === "active" && !row.paused,
+  ).length;
+  const waiting = rows.filter(
+    (row) => row.status === "waiting_approval",
+  ).length;
+  const stale = rows.filter((row) => row.stale).length;
+  const paused = rows.filter((row) => row.paused).length;
+
+  return (
+    <section
+      aria-labelledby="agents-live-heading"
+      data-testid="agents-live-sessions"
+      className="mt-[18px]"
+    >
+      <div className="mb-[7px] flex flex-wrap items-center gap-2">
+        <h3
+          id="agents-live-heading"
+          className="m-0 text-[12px] font-[650] leading-[1.45]"
+        >
+          {t("agents.shell.liveSessions")}
+        </h3>
+        <span
+          className="flex flex-wrap items-center gap-1"
+          data-testid="agents-live-counts"
+        >
+          <CountChip tone="ok" dot testId="agents-live-count-active">
+            {t("agents.shell.activeCount", { count: active })}
+          </CountChip>
+          {waiting > 0 ? (
+            <CountChip tone="warn" testId="agents-live-count-waiting">
+              {t("agents.waitingCount", { count: waiting })}
+            </CountChip>
+          ) : null}
+          {stale > 0 ? (
+            <CountChip tone="warn" dot testId="agents-live-count-stale">
+              {t("agents.groups.noHeartbeat", { count: stale })}
+            </CountChip>
+          ) : null}
+          {paused > 0 ? (
+            <CountChip tone="muted" testId="agents-live-count-paused">
+              {t("agents.shell.pausedCount", { count: paused })}
+            </CountChip>
+          ) : null}
+        </span>
+        <button
+          type="button"
+          onClick={onViewAll}
+          data-testid="agents-live-view-all"
+          className="ml-auto inline-flex min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground min-[761px]:min-h-6"
+        >
+          {t("agents.shell.viewAll")}
+          <ChevronRight className="h-[11px] w-[11px]" aria-hidden />
+        </button>
+      </div>
+      <div
+        className="min-w-0 overflow-x-auto"
+        data-testid="agents-live-session-table"
+      >
+        <SessionTableHeader />
+        <div className="border-t border-border">
+          {live.slice(0, 4).map((row) => (
+            <SessionRow
+              key={row.id}
+              row={row}
+              mode="board"
+              selected={selectedId === row.id}
+              now={now}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1764,96 +1928,6 @@ function SessionsEmpty({
         </>
       }
     />
-  );
-}
-
-function AgentRow({
-  group,
-  boards,
-  staleBoardIds,
-}: {
-  group: AgentGroup;
-  boards: BoardSummary[];
-  staleBoardIds: string[];
-}) {
-  const { t } = useI18n();
-  const live = latestLiveSession(group);
-  const statusRow =
-    group.rows
-      .slice()
-      .sort(
-        (a, b) =>
-          (b.endedAt ?? b.lastHeartbeatAt) - (a.endedAt ?? a.lastHeartbeatAt),
-      )[0] ?? group.rows[0];
-  const board = boards.find((entry) => entry.id === statusRow.boardId);
-  const paused = group.rows.find((row) => row.paused);
-  return (
-    <li>
-      <Link
-        to={routes.agent(group.tokenId)}
-        data-testid="agent-row"
-        data-agent-token={group.tokenId}
-        className="grid min-w-0 gap-2 border-b border-border/70 px-2 py-3 transition-colors hover:bg-hover sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-      >
-        <div className="flex min-w-0 items-start gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border bg-card text-[color:var(--agent-tone-primary)]">
-            <Bot className="h-4 w-4" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">{group.name}</div>
-            <div className="truncate text-xs text-muted-foreground">
-              {[statusRow.clientName, statusRow.model]
-                .filter(Boolean)
-                .join(" · ") ||
-                t("agents.tokenShort", { id: shortId(group.tokenId) })}
-            </div>
-            {group.liveCount > 0 ? (
-              <span className="inline-flex items-center gap-1 text-xs text-[color:var(--agent-tone-success)]">
-                <AgentLiveDot />
-                {t("agents.liveCount", { count: group.liveCount })}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className="min-w-0 text-xs">
-          <p data-testid="agent-session-name" className="truncate font-medium">
-            {statusRow.name ?? shortId(statusRow.id)}
-          </p>
-          <p className="truncate text-muted-foreground">
-            {board?.title ?? statusRow.boardTitle}
-          </p>
-        </div>
-        <div className="min-w-0 text-xs text-muted-foreground">
-          {live?.currentCardId ? (
-            <p className="truncate text-foreground/80">
-              {t("agents.currentCardShort", {
-                title: live.cardTitle ?? shortId(live.currentCardId),
-              })}
-            </p>
-          ) : live?.currentRunId ? (
-            <p className="truncate">
-              {t("agents.currentRunShort", { id: shortId(live.currentRunId) })}
-            </p>
-          ) : null}
-          <AgentLastSeen at={group.lastSeen} prefix={t("agents.lastSeen")} />
-        </div>
-        <div className="flex flex-wrap items-start gap-1">
-          <AgentStatusBadge status={statusRow.status} />
-          {paused ? (
-            <AgentPauseBadge
-              scope={paused.pauseScope ?? "session"}
-              title={paused.pausedReason ?? undefined}
-            />
-          ) : null}
-          {group.rows.some((row) => row.stale) ? <AgentStaleBadge /> : null}
-          {group.boardIds.some((id) => staleBoardIds.includes(id)) ? (
-            <span className="text-xs text-[color:var(--agent-tone-warning)]">
-              {t("agents.shell.staleData")}
-            </span>
-          ) : null}
-        </div>
-      </Link>
-    </li>
   );
 }
 

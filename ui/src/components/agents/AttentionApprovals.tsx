@@ -399,10 +399,12 @@ export function AttentionApprovalList({
                 <article
                   data-status={effective}
                   className={cn(
-                    "relative overflow-hidden rounded-lg border px-3 pt-2.5 pb-2.5 pl-3.5 transition-colors",
-                    selectedId === row.id
-                      ? "border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))]"
+                    "relative overflow-hidden rounded-lg border px-3 pt-[11px] pb-2.5 pl-3.5 transition-colors",
+                    effective === "pending"
+                      ? "border-border bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))] hover:bg-[color-mix(in_oklab,var(--warning)_7%,var(--surface))]"
                       : "border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] hover:bg-[color-mix(in_oklab,var(--surface)_72%,var(--background))]",
+                    selectedId === row.id &&
+                      "border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))]",
                     effective === "pending" &&
                       "before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-warning",
                   )}
@@ -415,7 +417,7 @@ export function AttentionApprovalList({
                     className="flex w-full flex-col text-left"
                   >
                     <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--warning-strong)]">
+                      <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--warning)]">
                         {t(`agents.approvals.eyebrow.${effective}`)}
                       </span>
                       <span className="text-border">·</span>

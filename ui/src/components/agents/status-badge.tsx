@@ -19,7 +19,7 @@ export type StatusTone = "ok" | "warn" | "bad" | "primary" | "muted";
 
 const TONE_CLASS: Record<StatusTone, string> = {
   ok: "border-success/32 bg-success/6 text-[color:var(--agent-tone-success)]",
-  warn: "border-warning/34 bg-warning/6 text-[color:var(--agent-tone-warning)]",
+  warn: "border-warning/34 bg-[color-mix(in_oklab,var(--warning)_6%,var(--surface))] text-[color:var(--warning)]",
   bad: "border-danger/32 bg-danger/6 text-[color:var(--agent-tone-danger)]",
   primary:
     "border-primary/32 bg-primary/6 text-[color:var(--agent-tone-primary)]",

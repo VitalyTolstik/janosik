@@ -48,15 +48,20 @@ export function AgentPauseBadge({
   scope,
   className,
   title,
+  short = false,
 }: {
   scope: "board" | "token" | "session";
   className?: string;
   title?: string;
+  /** Row badges read `Paused`; the scope stays in the tooltip/detail. */
+  short?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <StatusBadge
-      label={t(`agents.pause.scope.${scope}`)}
+      label={
+        short ? t("agents.pause.paused") : t(`agents.pause.scope.${scope}`)
+      }
       tone="warn"
       withDot={false}
       title={title}

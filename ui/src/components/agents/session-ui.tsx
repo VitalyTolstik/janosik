@@ -15,7 +15,6 @@ import {
   Pause,
   Play,
   ShieldCheck,
-  Square,
 } from "lucide-react";
 import type { AgentSessionDto, AgentSessionStatus } from "@janosik/shared";
 
@@ -76,8 +75,9 @@ export function SessionStatusPill({
 }
 
 /**
- * Heartbeat is a liveness signal, not a lifecycle status. A stale session
- * keeps its real status and shows `No heartbeat · 6m` beside it.
+ * Heartbeat is a liveness signal, not a lifecycle status. The mockup shows
+ * the relative time only (`12s ago`, `7m ago`); a stale session keeps its
+ * real status and gets the warning colour plus a clock icon.
  */
 export function HeartbeatText({
   session,
@@ -111,11 +111,7 @@ export function HeartbeatText({
           <Activity className="h-[11px] w-[11px] shrink-0" aria-hidden />
         )
       ) : null}
-      <span>
-        {session.stale
-          ? t("agents.heartbeat.noHeartbeat", { age })
-          : t("agents.heartbeat.ago", { age })}
-      </span>
+      <span>{t("agents.heartbeat.ago", { age })}</span>
     </span>
   );
 }
@@ -229,7 +225,7 @@ function SessionGroupHeader({
     group.boardId !== undefined && staleBoardIds.includes(group.boardId);
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 border-b border-border-soft px-1.5 pt-1.5 pb-1"
+      className="flex flex-wrap items-center gap-1.5 border-b border-border-soft px-2 pt-0 pb-[5px]"
       data-testid={
         mode === "board"
           ? `agents-board-group-${group.boardId}`
@@ -256,7 +252,7 @@ function SessionGroupHeader({
         </span>
       ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
-        <span className="rounded-[4px] border border-warning/26 bg-warning/12 px-1 py-px text-[11px] font-[650] text-[color:var(--agent-tone-warning)]">
+        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
@@ -297,7 +293,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-1.5 py-1 text-[11px] font-[650] tracking-[0.05em] text-muted-foreground uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_120px_96px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_120px_96px] min-[1181px]:gap-2.5"
+      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_76px_82px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -311,7 +307,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-1.5 py-2 text-left transition-colors last:border-b-0 hover:bg-hover/46 min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_120px_96px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_120px_96px] min-[1181px]:gap-2.5";
+  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-1.5 py-2 text-left transition-colors last:border-b-0 hover:bg-hover/46 min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_76px_82px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5";
 
 export function SessionRow({
   row,
@@ -389,6 +385,7 @@ export function SessionRow({
           <AgentPauseBadge
             scope={row.pauseScope ?? "session"}
             title={row.pausedReason ?? undefined}
+            short
             className="h-[18px] px-1 text-[11px]"
           />
         ) : null}
@@ -443,23 +440,13 @@ export function SessionGroupList({
   );
 }
 
-function terminalKey(
-  status: AgentSessionStatus,
-): "completed" | "failed" | "cancelled" {
-  return status === "failed"
-    ? "failed"
-    : status === "cancelled"
-      ? "cancelled"
-      : "completed";
-}
-
 function sessionHint(
   row: AgentSessionRow,
   now: number,
   t: ReturnType<typeof useI18n>["t"],
 ): string {
   if (isTerminalStatus(row.status)) {
-    return t(`agents.detail.terminal.${terminalKey(row.status)}`);
+    return t("agents.detail.endedHint");
   }
   if (row.stale) {
     return t("agents.detail.staleHint", {
@@ -488,7 +475,7 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.05em] text-muted-foreground uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_78%,transparent)] uppercase">
         {label}
       </span>
       <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">
@@ -508,7 +495,7 @@ function SectionHead({
   return (
     <div className="mb-1.5 flex items-center gap-1.5">
       <span className="text-muted-foreground">{icon}</span>
-      <h3 className="m-0 text-[11px] font-[650] tracking-[0.03em] text-foreground">
+      <h3 className="m-0 text-[11.5px] font-[650] tracking-[0.03em] text-foreground">
         {title}
       </h3>
     </div>
@@ -517,6 +504,10 @@ function SectionHead({
 
 const DETAIL_BUTTON_CLASS =
   "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-[11px] leading-none font-[650]";
+
+/** Prototype `.btn`: 32 px, 11.5 px / 650, 6 px gap, 11 px side padding. */
+const FOOTER_BUTTON_CLASS =
+  "min-h-11 min-w-0 flex-1 gap-1.5 rounded-[6px] px-[11px] text-[11.5px] leading-none font-[650] md:min-h-8";
 
 function DetailEmpty({
   missingId,
@@ -530,7 +521,7 @@ function DetailEmpty({
   const { t } = useI18n();
   return (
     <>
-      <header className="flex shrink-0 items-start gap-2 border-b border-border px-3.5 pt-3 pb-2">
+      <header className="flex shrink-0 items-start gap-2 border-b border-border px-3.5 pt-3 pb-2 max-[760px]:px-3 max-[760px]:pt-2.5">
         <button
           type="button"
           onClick={onClose}
@@ -667,7 +658,7 @@ export function SessionDetail({
 
   return (
     <>
-      <header className="flex shrink-0 items-start gap-2 border-b border-border px-3.5 pt-3 pb-2">
+      <header className="flex shrink-0 items-start gap-2 border-b border-border px-3.5 pt-3 pb-2 max-[760px]:px-3 max-[760px]:pt-2.5">
         <button
           type="button"
           onClick={onClose}
@@ -678,7 +669,7 @@ export function SessionDetail({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.04em] text-muted-foreground uppercase">
             {t("agents.detail.sessionEyebrow", { board: row.boardTitle })}
           </p>
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
@@ -687,7 +678,7 @@ export function SessionDetail({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-4 max-[760px]:px-3 max-[760px]:pt-2.5">
         <div
           role="status"
           data-testid="agents-session-detail-hint"
@@ -715,7 +706,7 @@ export function SessionDetail({
           <HeartbeatText session={row} now={now} />
           <Link
             to={routes.board(row.boardId)}
-            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            className="inline-flex h-[21px] max-w-full items-center gap-1 rounded-[4px] border border-border px-1.5 text-[11px] leading-none font-semibold text-muted-foreground hover:text-foreground"
           >
             <Folder className="h-[10px] w-[10px]" aria-hidden />
             <span className="truncate">{row.boardTitle}</span>
@@ -783,28 +774,23 @@ export function SessionDetail({
               {row.currentCardId === null ? (
                 "—"
               ) : (
-                <Link
-                  to={boardHref}
-                  className="truncate text-[color:var(--agent-tone-primary)] hover:underline"
+                <span
+                  className="block truncate"
                   title={row.cardTitle ?? row.currentCardId}
                 >
                   {row.cardTitle ?? shortId(row.currentCardId)}
-                </Link>
+                </span>
               )}
             </MetaField>
             <MetaField label={t("agents.currentRun")}>
-              {runHref === null ? (
-                "—"
+              {row.currentRunId === null ? (
+                <span className="text-muted-foreground">
+                  {t("agents.noCurrentRun")}
+                </span>
               ) : (
-                <Link
-                  to={runHref}
-                  className="truncate text-[color:var(--agent-tone-primary)] hover:underline"
-                  title={row.currentRunId ?? undefined}
-                >
-                  {t("agents.runHash", {
-                    id: runNumber(row.currentRunId ?? ""),
-                  })}
-                </Link>
+                <span className="block truncate">
+                  #{runNumber(row.currentRunId)}
+                </span>
               )}
             </MetaField>
           </div>
@@ -823,7 +809,7 @@ export function SessionDetail({
             ) : (
               <Link
                 to={boardHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/45 px-1.5 text-[11px] text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
               >
                 <Folder className="h-[10px] w-[10px]" aria-hidden />
                 {row.cardTitle ?? shortId(row.currentCardId)}
@@ -832,7 +818,7 @@ export function SessionDetail({
             {runHref !== null ? (
               <Link
                 to={runHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/45 px-1.5 text-[11px] text-muted-foreground hover:border-muted-foreground/30 hover:text-foreground"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
               >
                 <History className="h-[10px] w-[10px]" aria-hidden />
                 {t("agents.runHash", {
@@ -848,13 +834,15 @@ export function SessionDetail({
             icon={<ShieldCheck className="h-3 w-3" aria-hidden />}
             title={t("agents.detail.pauseSemantics")}
           />
-          <p className="m-0 text-[11px] leading-[1.5] text-muted-foreground">
-            {t("agents.detail.claims")}
+          <p className="m-0 text-[11px] leading-[1.45] text-muted-foreground">
+            {t("agents.detail.claimsPrefix")}{" "}
+            <span className="font-mono text-[11px]">403 agent_paused</span>
+            {t("agents.detail.claimsSuffix")}
           </p>
         </section>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-surface/84 px-3.5 py-2.5">
+      <div className="shrink-0 border-t border-border bg-surface/84 px-3.5 py-2.5 max-[760px]:px-3 max-[760px]:pt-[9px] max-[760px]:pb-[max(9px,env(safe-area-inset-bottom))]">
         <p
           data-testid={
             !terminal && !canControl ? "agents-session-read-only" : undefined
@@ -876,7 +864,7 @@ export function SessionDetail({
           )}
           <span>
             {terminal
-              ? t(`agents.detail.terminalFooter.${terminalKey(row.status)}`)
+              ? t("agents.detail.endedFooter")
               : canControl
                 ? t("agents.detail.adminFooter")
                 : t("agents.detail.readOnlyFooter")}
@@ -888,10 +876,10 @@ export function SessionDetail({
               variant="outline"
               size="sm"
               asChild
-              className="min-h-11 flex-1 md:min-h-8"
+              className={FOOTER_BUTTON_CLASS}
             >
               <Link to={boardHref} data-testid="agents-session-open-board">
-                <Folder className="h-3.5 w-3.5" aria-hidden />
+                <Folder className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.openBoard")}
               </Link>
             </Button>
@@ -899,11 +887,11 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className="min-h-11 flex-1 md:min-h-8"
+                className={`${FOOTER_BUTTON_CLASS} border-[color:var(--border-soft)] bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
                 data-testid="agents-session-resume"
                 onClick={() => setAction("resume")}
               >
-                <Play className="h-3.5 w-3.5" aria-hidden />
+                <Play className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.action.resume")}
               </Button>
             ) : null}
@@ -911,11 +899,11 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className="min-h-11 flex-1 md:min-h-8"
+                className={`${FOOTER_BUTTON_CLASS} border-[color:var(--border-soft)] bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
                 data-testid="agents-session-pause"
                 onClick={() => setAction("pause")}
               >
-                <Pause className="h-3.5 w-3.5" aria-hidden />
+                <Pause className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.action.pause")}
               </Button>
             ) : null}
@@ -923,11 +911,10 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className="min-h-11 flex-1 border-danger/44 bg-danger/5 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 hover:text-[color:var(--agent-tone-danger)] md:min-h-8"
+                className={`${FOOTER_BUTTON_CLASS} border-danger/44 bg-danger/5 text-[color:var(--danger)] hover:bg-danger/10 hover:text-[color:var(--danger)]`}
                 data-testid="agents-session-end"
                 onClick={() => setAction("end")}
               >
-                <Square className="h-3.5 w-3.5" aria-hidden />
                 {t("agents.action.end")}
               </Button>
             ) : null}
