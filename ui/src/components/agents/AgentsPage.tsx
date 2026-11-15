@@ -1745,7 +1745,9 @@ function AttentionLiveSessions({
   const waiting = rows.filter(
     (row) => row.status === "waiting_approval" && !row.paused,
   ).length;
-  const stale = rows.filter(needsNudge).length;
+  // The chip is a factual heartbeat count (same as the Sessions group header
+  // and the mockup); `needsNudge` only decides which rows get warning cards.
+  const stale = rows.filter((row) => row.stale).length;
   const paused = rows.filter((row) => row.paused).length;
 
   return (

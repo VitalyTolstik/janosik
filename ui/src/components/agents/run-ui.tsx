@@ -369,14 +369,23 @@ export function RunDetail({
   }, [boardId, runId, revision]);
 
   // A different run starts with a clean action error; retries of the same run
-  // keep the last rollback failure visible. `now` is refreshed with the data
-  // so the timeline's Today/Yesterday label cannot drift across midnight.
+  // keep the last rollback failure visible. This must not depend on
+  // `revision`: a failed apply bumps it, and clearing here would swallow the
+  // message before the user can read it.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset on a different run
     setActionError(null);
     setHashCopied(false);
     setLinkCopied(false);
+  }, [boardId, runId]);
+
+  // Refresh the timeline day bucket when the fetched run changes and once a
+  // minute while the pane stays open, so "Today" cannot drift past midnight.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh the timeline day bucket
     setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
   }, [boardId, runId, revision]);
 
   // A committed rollback from this or another tab refreshes the detail and
@@ -509,12 +518,14 @@ export function RunDetail({
   const storedCommands = detail.commands.length;
   const missingCommands = storedCommands === 0 && run.commandCount > 0;
   const commandsAside =
-    storedCommands === run.commandCount
-      ? t("agents.runs.appliedCount", { count: run.commandCount })
-      : t("agents.runs.commandsStored", {
-          stored: storedCommands,
-          total: run.commandCount,
-        });
+    run.status === "failed"
+      ? t("agents.runs.commandsStoredOnly", { count: storedCommands })
+      : storedCommands === run.commandCount
+        ? t("agents.runs.appliedCount", { count: run.commandCount })
+        : t("agents.runs.commandsStored", {
+            stored: storedCommands,
+            total: run.commandCount,
+          });
   const entitiesTouched = uniqueTouches(detail);
   const duration = Math.max(0, run.appliedAt - run.createdAt);
 
@@ -787,16 +798,18 @@ export function RunDetail({
                 }
               >
                 <p>{runErrorText(previewError, t)}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void requestPreview()}
-                  disabled={previewing}
-                  className="min-h-9 max-md:min-h-11"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                  {t("agentControl.runs.refreshPreview")}
-                </Button>
+                {previewUnavailable ? null : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void requestPreview()}
+                    disabled={previewing}
+                    className="min-h-9 max-md:min-h-11"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                    {t("agentControl.runs.refreshPreview")}
+                  </Button>
+                )}
               </div>
             ) : preview !== null ? (
               <div
@@ -1440,7 +1453,9 @@ function formatRunMoment(
   const day = startOfDay(timestamp);
   const today = startOfDay(now);
   if (day === today) return `${t("agents.runs.today")}, ${time}`;
-  if (day === today - 24 * 60 * 60 * 1000) {
+  const yesterdayDate = new Date(today);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  if (day === yesterdayDate.getTime()) {
     return `${t("agents.runs.yesterday")}, ${time}`;
   }
   return formatDate(timestamp, lang, hour12);

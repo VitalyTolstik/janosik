@@ -252,6 +252,7 @@ describe("pause presentation", () => {
     const session = row({
       status: "idle",
       paused: true,
+      pausedAt: NOW,
       pauseScope: "session",
       pausedReason: "Review",
     });
@@ -259,16 +260,37 @@ describe("pause presentation", () => {
     expect(isSessionPaused(session)).toBe(true);
   });
 
-  it("keeps board and token pauses separate from the lifecycle", () => {
+  it("keeps an unpaused session on its lifecycle during a board pause", () => {
     for (const pauseScope of ["board", "token"] as const) {
-      const session = row({ status: "idle", paused: true, pauseScope });
+      const session = row({
+        status: "idle",
+        paused: true,
+        pausedAt: null,
+        pauseScope,
+      });
       expect(sessionDisplayStatus(session)).toBe("idle");
       expect(isSessionPaused(session)).toBe(false);
     }
   });
 
+  it("keeps a session pause when a board pause masks the effective scope", () => {
+    const session = row({
+      status: "idle",
+      paused: true,
+      pausedAt: NOW,
+      pauseScope: "board",
+    });
+    expect(sessionDisplayStatus(session)).toBe("paused");
+    expect(isSessionPaused(session)).toBe(true);
+  });
+
   it("does not put a paused session in the needs-nudge queue", () => {
-    const paused = row({ stale: true, paused: true, pauseScope: "session" });
+    const paused = row({
+      stale: true,
+      paused: true,
+      pausedAt: NOW,
+      pauseScope: "session",
+    });
     const stale = row({ id: "stale", stale: true, pauseScope: null });
     expect(needsNudge(paused)).toBe(false);
     expect(needsNudge(stale)).toBe(true);

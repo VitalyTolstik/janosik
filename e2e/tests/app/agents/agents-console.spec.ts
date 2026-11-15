@@ -72,7 +72,7 @@ test("lists a live session, filters it and opens the detail", async ({
     await expect(page.getByTestId("agents-session-pause")).toBeVisible();
     await expect(page.getByTestId("agents-session-end")).toBeVisible();
     await expect(page.getByTestId("agents-session-open-board")).toBeVisible();
-    // TASK-179.3 mockup sync: the global detail keeps the token as plain
+    // TASK-179.4 mockup sync: the global detail keeps the token as plain
     // metadata; Account controls live in the board Live panel.
     await expect(page.getByTestId("agents-session-token-settings")).toHaveCount(
       0,
@@ -148,7 +148,7 @@ test("pauses and resumes a session with a reason", async ({
     expect(paused.paused).toBe(true);
     expect(paused.pausedReason).toBe("Stop the loop");
 
-    // TASK-179.3: the paused session stays in the Attention live preview
+    // TASK-179.3/179.4: the paused session stays in the Attention live preview
     // with a Paused pill instead of disappearing or reading as Idle.
     await page.goto(new URL("agents", appUrl).href);
     const live = page.getByTestId("agents-live-sessions");
@@ -162,6 +162,12 @@ test("pauses and resumes a session with a reason", async ({
     await expect(previewRow).not.toContainText("Idle");
 
     await previewRow.click();
+    await expect(page.getByTestId("agents-session-detail-hint")).toContainText(
+      "Session writes are paused",
+    );
+    await expect(
+      page.getByTestId("agents-session-detail-hint"),
+    ).not.toContainText("Idle");
     await expect(page.getByTestId("agents-session-resume")).toBeVisible();
     await page.getByTestId("agents-session-resume").click();
     await page.getByTestId("agent-action-confirm").click();

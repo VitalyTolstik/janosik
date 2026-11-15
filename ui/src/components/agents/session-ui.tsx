@@ -34,6 +34,7 @@ import {
   agentStatusTone,
   compactAge,
   heartbeatAge,
+  isSessionPaused,
   isTerminalStatus,
   runNumber,
   sessionDisplayStatus,
@@ -85,7 +86,7 @@ export function SessionStatePill({
   className,
   short = false,
 }: {
-  session: Pick<AgentSessionRow, "status" | "pauseScope">;
+  session: Pick<AgentSessionRow, "status" | "pausedAt" | "pauseScope">;
   className?: string;
   short?: boolean;
 }) {
@@ -466,6 +467,15 @@ function sessionHint(
   if (isTerminalStatus(row.status)) {
     return t("agents.detail.endedHint");
   }
+  // A human pause is the explanation for a missing heartbeat. Check it before
+  // `stale` so a paused session never reports its stored `Idle` lifecycle.
+  if (isSessionPaused(row)) {
+    return row.stale
+      ? t("agents.detail.pausedStaleHint", {
+          age: compactAge(heartbeatAge(row, now)),
+        })
+      : t("agents.detail.pausedHint");
+  }
   if (row.stale) {
     return t("agents.detail.staleHint", {
       age: compactAge(heartbeatAge(row, now)),
@@ -655,7 +665,7 @@ export function SessionDetail({
     row.stale || row.paused
       ? "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,transparent)]"
       : "border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6";
-  const BannerIcon = row.stale ? Clock : row.paused ? Pause : Activity;
+  const BannerIcon = row.paused ? Pause : row.stale ? Clock : Activity;
 
   return (
     <>

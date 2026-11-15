@@ -192,7 +192,7 @@ test("a run deep link includes the board and survives reload and history back", 
     `/agents?section=runs&board=${board.id}&run=${run.runId}`,
   );
 
-  // TASK-179.3 feedback sync: real command history, Today wording, mockup
+  // TASK-179.5 feedback sync: real command history, Today wording, mockup
   // icons and the verbatim footer copy.
   await expect(page.getByTestId("agent-run-commands")).toContainText(
     "Deep link card",

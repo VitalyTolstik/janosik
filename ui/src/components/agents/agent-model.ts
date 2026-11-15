@@ -160,16 +160,20 @@ export function isTerminalStatus(status: AgentSessionStatus): boolean {
 export type SessionDisplayStatus = AgentSessionStatus | "paused";
 
 export function sessionDisplayStatus(
-  session: Pick<AgentSessionDto, "status" | "pauseScope">,
+  session: Pick<AgentSessionDto, "status" | "pausedAt">,
 ): SessionDisplayStatus {
-  return session.pauseScope === "session" ? "paused" : session.status;
+  return session.pausedAt !== null ? "paused" : session.status;
 }
 
-/** True when the session itself is paused (not its board or token). */
+/**
+ * True when the session itself is paused. `pauseScope` is the *effective*
+ * scope (token > board > session), so it cannot answer this when a board or
+ * token pause masks a session pause; the session's own `pausedAt` can.
+ */
 export function isSessionPaused(
-  session: Pick<AgentSessionDto, "pauseScope">,
+  session: Pick<AgentSessionDto, "pausedAt">,
 ): boolean {
-  return session.pauseScope === "session";
+  return session.pausedAt !== null;
 }
 
 /**
@@ -177,7 +181,7 @@ export function isSessionPaused(
  * of the two "Needs a nudge" cards. It stays visible in the live preview.
  */
 export function needsNudge(
-  session: Pick<AgentSessionDto, "stale" | "pauseScope">,
+  session: Pick<AgentSessionDto, "stale" | "pausedAt">,
 ): boolean {
   return session.stale && !isSessionPaused(session);
 }
@@ -316,7 +320,7 @@ export function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
 }
 
-/** `run-128` → `128`, so the dense label reads `Run #128`. */
+/** `run-128` → `128`, so the dense label reads `Run 128`. */
 export function runNumber(id: string): string {
   return id.replace(/^run-/, "");
 }

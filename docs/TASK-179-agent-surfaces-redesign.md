@@ -226,7 +226,10 @@ Three clear layers:
   does not. Hide actions on terminal sessions.
 - Remove Stop token/Stop all from board Live; `Manage tokens` link to Account.
   Show `Token settings` only for the current user’s own token; provide a
-  read-only/no-link state for others.
+  read-only/no-link state for others. The global `/agents` session detail and
+  token group headers keep the token as plain mono metadata (no settings
+  control/truncated token pill), as the mockup shows; the ownership-gated
+  control stays in board Live.
 - Claims/in-flight explanation; no release-claim action.
 - Files: `PausePanel`/`LivePanel`, session hooks, shared rows, locales.
 

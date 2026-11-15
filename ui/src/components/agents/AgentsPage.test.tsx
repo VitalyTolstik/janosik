@@ -615,6 +615,28 @@ describe("AgentsPage", () => {
     ).toBeNull();
   });
 
+  it("keeps a failed rollback error visible after the pane refreshes", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    hoisted.getRun.mockResolvedValue(runDetail());
+    hoisted.previewRunRevert.mockResolvedValue(revertPreview());
+    hoisted.revertRun.mockRejectedValue(
+      new ApiError(409, {
+        code: "run_conflict",
+        message: "another writer changed an affected entity",
+      }),
+    );
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    await userEvent.click(await screen.findByTestId("agent-run-revert-apply"));
+    await userEvent.click(await screen.findByTestId("run-revert-confirm"));
+
+    expect(
+      await screen.findByTestId("agent-run-action-error"),
+    ).toHaveTextContent("another writer changed an affected entity");
+    await waitFor(() => expect(hoisted.getRun).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("agent-run-action-error")).toBeVisible();
+  });
+
   it("is honest when a run records applied commands but has no stored log", async () => {
     hoisted.listRuns.mockResolvedValue([run({ commandCount: 2 })]);
     hoisted.getRun.mockResolvedValue({
@@ -1024,6 +1046,7 @@ describe("AgentsPage", () => {
               name: "Paused triage",
               status: "idle",
               paused: true,
+              pausedAt: Date.now(),
               pauseScope: "session",
               pausedReason: "Human review",
               stale: true,
@@ -1048,13 +1071,19 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("1 paused");
     expect(
       within(live).getByTestId("agents-live-count-stale"),
-    ).toHaveTextContent("1 no heartbeat");
+    ).toHaveTextContent("2 no heartbeat");
     // The paused session is not a "needs a nudge" card; only the genuinely
     // stale session is.
     expect(screen.queryByTestId("agents-stale-session-paused-1")).toBeNull();
     expect(
       screen.getByTestId("agents-stale-session-stale-1"),
     ).toBeInTheDocument();
+
+    await userEvent.click(pausedRow);
+    const hint = await screen.findByTestId("agents-session-detail-hint");
+    expect(hint).toHaveTextContent("Session writes are paused");
+    expect(hint).toHaveTextContent(/No heartbeat for \d+m/);
+    expect(hint).not.toHaveTextContent("Idle");
   });
 
   it("caps the live preview at four rows and counts every filtered session", async () => {
