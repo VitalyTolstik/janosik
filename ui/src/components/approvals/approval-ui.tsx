@@ -53,10 +53,10 @@ const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
 const RISK_CLASS: Record<ApprovalRisk, string> = {
   low: "border-border bg-muted text-muted-foreground",
   // Mockup warning chip: warning hue at 36% border / 7% fill, 4 px radius,
-  // 11 px / 600. The text tone is the AA-checked on-tint orange rather than
-  // raw `--warning` (3.2:1 in light); see the PR's measured contrast.
+  // 11 px / 600. User decision: use the mockup's raw `--warning` orange on
+  // the agent surfaces, overriding the earlier AA-compromised on-tint shade.
   medium:
-    "border-[color-mix(in_oklab,var(--warning)_36%,transparent)] bg-[color-mix(in_oklab,var(--warning)_7%,transparent)] text-[color:var(--warning-strong-on-tint)]",
+    "border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_7%,transparent)] text-[color:var(--warning)]",
   high: "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]",
 };
 
@@ -98,7 +98,7 @@ export function ApprovalRiskBadge({
       data-testid={testId}
       data-risk={risk}
       className={cn(
-        "inline-flex h-[21px] shrink-0 items-center rounded border px-1.5 text-[11px] font-semibold whitespace-nowrap",
+        "inline-flex h-[21px] shrink-0 items-center rounded border px-1.5 text-[11px] leading-none font-semibold whitespace-nowrap",
         RISK_CLASS[risk],
       )}
     >
@@ -371,7 +371,7 @@ export function ApprovalLinks({
         hideClose
       >
         <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning-strong)]">
+          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning)]">
             <KeyRound className="h-[15px] w-[15px]" aria-hidden />
           </span>
           <div className="min-w-0">
@@ -528,7 +528,7 @@ export function ApprovalDecisionForm({
 
   return (
     <>
-      <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
+      <p className="mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground">
         <ShieldCheck
           className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
           aria-hidden
@@ -549,7 +549,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-reject"
           onClick={() => setMode("reject")}
           disabled={busy}
-          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650] max-md:min-h-11"
+          className="h-8 min-h-0 flex-1 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11"
         >
           {t("agentControl.approvals.reject")}
         </Button>
@@ -559,7 +559,7 @@ export function ApprovalDecisionForm({
           data-testid="approval-approve"
           onClick={() => setApproveOpen(true)}
           disabled={busy}
-          className="h-8 min-h-0 flex-1 rounded-md px-2.5 text-[11.5px] font-[650] max-md:min-h-11"
+          className="h-8 min-h-0 flex-1 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] px-[11px] text-[11.5px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11"
         >
           {t("agents.approvals.confirmApprove")}
         </Button>

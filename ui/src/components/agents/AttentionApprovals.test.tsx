@@ -202,15 +202,18 @@ describe("AttentionApprovals", () => {
     );
   });
 
-  it("uses the mockup warning tone for the eyebrow and medium risk chip", () => {
-    renderList();
+  it("uses the mockup warning tone for the eyebrow, risk chip and pending card", () => {
+    const { container } = renderList();
     expect(screen.getByText("Approval · needs decision")).toHaveClass(
-      "text-[color:var(--warning-strong)]",
+      "text-[color:var(--warning)]",
     );
     expect(screen.getByTestId("approval-risk")).toHaveClass(
-      "border-[color-mix(in_oklab,var(--warning)_36%,transparent)]",
+      "border-[color-mix(in_oklab,var(--warning)_36%,var(--border))]",
       "bg-[color-mix(in_oklab,var(--warning)_7%,transparent)]",
-      "text-[color:var(--warning-strong-on-tint)]",
+      "text-[color:var(--warning)]",
+    );
+    expect(container.querySelector("article")).toHaveClass(
+      "bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))]",
     );
   });
 

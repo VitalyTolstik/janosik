@@ -23,7 +23,7 @@ describe("one status badge primitive (TASK-179.9)", () => {
     expect(badge.className).toContain("h-[22px]");
     expect(badge.className).toContain("items-center");
     expect(badge.className).toContain("text-[11px]");
-    expect(badge.className).toContain("gap-1.5");
+    expect(badge.className).toContain("gap-[5px]");
     expect(badge.querySelector("[aria-hidden]")?.className).toContain(
       "rounded-full",
     );

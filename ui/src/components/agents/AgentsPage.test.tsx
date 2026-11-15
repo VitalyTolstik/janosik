@@ -837,6 +837,256 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-approval-list")).toBeNull();
   });
 
+  it("renders approvals, stale rows and live sessions in that order without duplicates", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? [
+            session({ id: "live-1", name: "Live triage" }),
+            session({
+              id: "stale-1",
+              name: "Stale triage",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 600_000,
+            }),
+            session({
+              id: "done-1",
+              name: "Done triage",
+              status: "completed",
+              endedAt: Date.now() - 1_000,
+            }),
+          ]
+        : [],
+    );
+    renderPage("/agents?section=attention");
+
+    const approvals = await screen.findByTestId("agents-approval-list");
+    const staleHeading = await screen.findByRole("heading", {
+      name: "Needs a nudge",
+    });
+    const live = await screen.findByTestId("agents-live-sessions");
+
+    expect(
+      approvals.compareDocumentPosition(staleHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      staleHeading.compareDocumentPosition(live) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    expect(
+      within(live).getByTestId("agent-session-row-live-1"),
+    ).toBeInTheDocument();
+    expect(within(live).queryByTestId("agent-session-row-stale-1")).toBeNull();
+    expect(within(live).queryByTestId("agent-session-row-done-1")).toBeNull();
+    expect(screen.getAllByTestId(/^agent-session-row-/)).toHaveLength(1);
+    expect(screen.getAllByText(/Stale triage/)).toHaveLength(1);
+    expect(
+      within(screen.getByTestId("agents-stale-session-stale-1")).getByText(
+        /Stale triage/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("agents-live-count-active")).toHaveTextContent(
+      "2 active",
+    );
+    expect(screen.getByTestId("agents-live-count-stale")).toHaveTextContent(
+      "1 no heartbeat",
+    );
+    expect(screen.queryByTestId("agents-live-count-waiting")).toBeNull();
+    expect(screen.queryByTestId("agents-live-count-paused")).toBeNull();
+  });
+
+  it("caps the live preview at four rows and counts every filtered session", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? Array.from({ length: 6 }, (_, index) =>
+            session({ id: `live-${index}`, name: `Live ${index}` }),
+          )
+        : [],
+    );
+    renderPage("/agents?section=attention");
+
+    const live = await screen.findByTestId("agents-live-sessions");
+    expect(within(live).getAllByTestId(/^agent-session-row-/)).toHaveLength(4);
+    expect(screen.getByTestId("agents-live-count-active")).toHaveTextContent(
+      "6 active",
+    );
+    expect(screen.queryByRole("heading", { name: "Needs a nudge" })).toBeNull();
+  });
+
+  it("renders only the stale block when no session is live", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? [
+            session({
+              id: "stale-1",
+              name: "Stale triage",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 600_000,
+            }),
+            session({
+              id: "done-1",
+              name: "Done triage",
+              status: "cancelled",
+              endedAt: Date.now() - 1_000,
+            }),
+          ]
+        : [],
+    );
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByRole("heading", { name: "Needs a nudge" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId("agents-loading")).toBeNull(),
+    );
+    expect(screen.queryByTestId("agents-live-sessions")).toBeNull();
+  });
+
+  it("shows the empty state when there are no approvals and no sessions", async () => {
+    hoisted.listAgentSessions.mockResolvedValue([]);
+    renderPage("/agents?section=attention");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("agents-loading")).toBeNull(),
+    );
+    const empty = screen.getByTestId("agents-attention-empty");
+    expect(empty).toHaveTextContent("No agent sessions yet");
+    expect(empty).toHaveTextContent(
+      "Attention will show decisions and missing heartbeats here.",
+    );
+    expect(screen.queryByTestId("agents-empty")).toBeNull();
+    expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
+    expect(screen.queryByTestId("agents-live-sessions")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Needs a nudge" })).toBeNull();
+  });
+
+  it("switches to Sessions from the live preview", async () => {
+    renderPage("/agents?section=attention");
+
+    const live = await screen.findByTestId("agents-live-sessions");
+    expect(within(live).getAllByTestId(/^agent-session-row-/).length).toBe(2);
+    await userEvent.click(screen.getByTestId("agents-live-view-all"));
+
+    expect(
+      await screen.findByTestId("agents-session-list"),
+    ).toBeInTheDocument();
+    const url = new URLSearchParams(
+      screen.getByTestId("location").textContent ?? "",
+    );
+    expect(url.get("section")).toBe("sessions");
+    expect(screen.getByTestId("agents-section-sessions")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.queryByTestId("agents-live-sessions")).toBeNull();
+  });
+
+  it("opens a live session in the right panel from Attention without leaving the tab", async () => {
+    renderPage("/agents?section=attention");
+
+    const live = await screen.findByTestId("agents-live-sessions");
+    await userEvent.click(
+      within(live).getByTestId("agent-session-row-session-1"),
+    );
+
+    expect(
+      await screen.findByTestId("agents-session-detail-hint"),
+    ).toBeVisible();
+    expect(screen.getByTestId("agents-detail-panel")).toContainElement(
+      screen.getByTestId("agents-session-detail-hint"),
+    );
+    expect(screen.queryByTestId("agents-session-list")).toBeNull();
+    expect(screen.getByTestId("agents-live-sessions")).toBeInTheDocument();
+    expect(screen.getByTestId("agents-section-attention")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    const url = new URLSearchParams(
+      screen.getByTestId("location").textContent ?? "",
+    );
+    expect(url.get("section")).toBe("attention");
+    expect(url.get("session")).toBe("session-1");
+  });
+
+  it("opens a stale session card in the right panel from Attention", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-1"
+        ? [
+            session({
+              id: "stale-1",
+              name: "Stale triage",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 6 * 60_000,
+            }),
+          ]
+        : [],
+    );
+    renderPage("/agents?section=attention");
+
+    await userEvent.click(
+      await screen.findByTestId("agents-stale-session-stale-1"),
+    );
+
+    const hint = await screen.findByTestId("agents-session-detail-hint");
+    expect(hint).toHaveTextContent(
+      /No heartbeat for \d+m\. The last known lifecycle status is Active\./,
+    );
+    const url = new URLSearchParams(
+      screen.getByTestId("location").textContent ?? "",
+    );
+    expect(url.get("section")).toBe("attention");
+    expect(url.get("session")).toBe("stale-1");
+    expect(screen.queryByTestId("agent-row")).toBeNull();
+    expect(screen.getByTestId("agents-section-attention")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("hides the stale block when no session needs a nudge", async () => {
+    renderPage("/agents?section=attention");
+
+    await screen.findByTestId("agents-live-sessions");
+    expect(screen.queryByTestId("agents-stale-sessions")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Needs a nudge" })).toBeNull();
+  });
+
+  it("shows the live preview to a member without admin controls", async () => {
+    renderPage("/agents?section=attention&board=board-2");
+
+    expect(await screen.findByTestId("agents-member-note")).toBeVisible();
+    const live = await screen.findByTestId("agents-live-sessions");
+    expect(
+      within(live).getByTestId("agent-session-row-session-3"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-approval-list")).toBeNull();
+    expect(hoisted.agentsOverview).not.toHaveBeenCalled();
+    expect(within(live).queryByTestId("agents-session-pause")).toBeNull();
+    expect(within(live).queryByTestId("agents-session-end")).toBeNull();
+    expect(within(live).queryByTestId("agent-token-settings")).toBeNull();
+
+    await userEvent.click(
+      within(live).getByTestId("agent-session-row-session-3"),
+    );
+    expect(
+      await screen.findByTestId("agents-session-read-only"),
+    ).toHaveTextContent(
+      "You can watch. A board admin pauses, resumes or ends sessions.",
+    );
+    expect(screen.queryByTestId("agents-session-pause")).toBeNull();
+    expect(screen.queryByTestId("agents-session-end")).toBeNull();
+  });
+
   it("filters approvals by needs, decided and all with true counts", async () => {
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse(
@@ -1269,17 +1519,17 @@ describe("AgentsPage", () => {
     renderPage("/agents?section=sessions&board=board-1");
 
     const list = await screen.findByTestId("agents-session-list");
-    for (const status of [
-      "active",
-      "idle",
-      "waiting_approval",
-      "completed",
-      "failed",
-      "cancelled",
-    ]) {
+    for (const [status, label] of [
+      ["active", "Active"],
+      ["idle", "Idle"],
+      ["waiting_approval", "Waiting"],
+      ["completed", "Completed"],
+      ["failed", "Failed"],
+      ["cancelled", "Cancelled"],
+    ] as const) {
       expect(
         within(list).getByTestId(`agent-status-${status}`),
-      ).toBeInTheDocument();
+      ).toHaveTextContent(label);
     }
     const staleRow = screen.getByTestId("agent-session-row-active-stale");
     expect(
@@ -1288,7 +1538,8 @@ describe("AgentsPage", () => {
     expect(within(staleRow).queryByText("Stale")).toBeNull();
     const heartbeat = within(staleRow).getByTestId("agent-heartbeat");
     expect(heartbeat).toHaveAttribute("data-stale", "true");
-    expect(heartbeat).toHaveTextContent("No heartbeat · 6m");
+    expect(heartbeat).toHaveTextContent("6m ago");
+    expect(heartbeat).not.toHaveTextContent("No heartbeat");
     expect(screen.queryByTestId("agent-stale-badge")).toBeNull();
     expect(screen.queryByText("Stale")).toBeNull();
   });
@@ -1316,8 +1567,24 @@ describe("AgentsPage", () => {
     expect(
       await screen.findByTestId("agents-session-detail-hint"),
     ).toHaveTextContent("Agent writes are allowed");
+    expect(
+      screen.getByText(
+        "Pause finishes in-flight work; End releases claims and is final.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("agents-session-pause").className).toContain(
+      "bg-hover",
+    );
+    expect(screen.getByTestId("agents-session-pause").className).toContain(
+      "font-[650]",
+    );
+    expect(screen.getByTestId("agents-session-end").className).toContain(
+      "text-[color:var(--danger)]",
+    );
     expect(screen.getByText(/Claims are not released/)).toBeInTheDocument();
-    expect(screen.getByText(/release-claim/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ending the session releases claims and is final/),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId("agents-session-pause"));
     expect(await screen.findByRole("dialog")).toHaveTextContent(
@@ -1384,11 +1651,29 @@ describe("AgentsPage", () => {
 
     expect(
       await screen.findByTestId("agents-session-detail-hint"),
-    ).toHaveTextContent("This session completed");
+    ).toHaveTextContent("This session has ended");
     expect(screen.queryByTestId("agents-session-pause")).toBeNull();
     expect(screen.queryByTestId("agents-session-resume")).toBeNull();
     expect(screen.queryByTestId("agents-session-end")).toBeNull();
     expect(screen.queryByTestId("agents-session-open-board")).toBeNull();
+    expect(
+      screen.getByText(
+        "This session ended. Claims were released; no further actions are available.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the read-only footer to a member", async () => {
+    renderPage("/agents?section=sessions&board=board-2&session=session-3");
+
+    expect(
+      await screen.findByTestId("agents-session-read-only"),
+    ).toHaveTextContent(
+      "You can watch. A board admin pauses, resumes or ends sessions.",
+    );
+    expect(screen.getByTestId("agents-session-open-board")).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-session-pause")).toBeNull();
+    expect(screen.queryByTestId("agents-session-end")).toBeNull();
   });
 
   it("shows token settings only for the caller's own token", async () => {

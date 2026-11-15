@@ -543,7 +543,8 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       within(staleRow).getByTestId("agent-status-active"),
     ).toHaveTextContent("Active");
-    expect(staleRow).toHaveTextContent("No heartbeat · 6m");
+    expect(staleRow).toHaveTextContent("6m ago");
+    expect(staleRow).not.toHaveTextContent("No heartbeat ·");
     expect(within(staleRow).queryByText("Stale")).toBeNull();
     const terminalRow = screen.getByTestId("agent-session-row-completed");
     expect(

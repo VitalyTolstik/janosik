@@ -18,11 +18,11 @@ import { cn } from "@/lib/utils";
 export type StatusTone = "ok" | "warn" | "bad" | "primary" | "muted";
 
 const TONE_CLASS: Record<StatusTone, string> = {
-  ok: "border-success/32 bg-success/6 text-[color:var(--agent-tone-success)]",
-  warn: "border-warning/34 bg-warning/6 text-[color:var(--agent-tone-warning)]",
-  bad: "border-danger/32 bg-danger/6 text-[color:var(--agent-tone-danger)]",
+  ok: "border-[color-mix(in_oklab,var(--success)_32%,var(--border))] bg-[color-mix(in_oklab,var(--success)_6%,var(--surface))] text-[color:var(--agent-tone-success)]",
+  warn: "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,var(--surface))] text-[color:var(--warning)]",
+  bad: "border-[color-mix(in_oklab,var(--danger)_32%,var(--border))] bg-[color-mix(in_oklab,var(--danger)_6%,var(--surface))] text-[color:var(--agent-tone-danger)]",
   primary:
-    "border-primary/32 bg-primary/6 text-[color:var(--agent-tone-primary)]",
+    "border-[color-mix(in_oklab,var(--primary)_32%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_6%,var(--surface))] text-[color:var(--agent-tone-primary)]",
   muted: "border-border bg-hover text-muted-foreground",
 };
 
@@ -51,7 +51,7 @@ export function StatusBadge({
       data-testid={testId}
       data-status={status}
       className={cn(
-        "inline-flex h-[22px] max-w-full shrink-0 items-center justify-center gap-1.5 overflow-hidden rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
+        "inline-flex h-[22px] max-w-full shrink-0 items-center justify-center gap-[5px] overflow-hidden rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
         TONE_CLASS[tone],
         className,
       )}

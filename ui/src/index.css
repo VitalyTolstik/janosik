@@ -94,6 +94,7 @@ body.janosik-touch-dragging {
   --color-fuchsia: var(--fuchsia);
   --color-brown: var(--brown);
   --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-lg: var(--radius);
@@ -123,11 +124,14 @@ body.janosik-touch-dragging {
  * Space Grotesk ships no Cyrillic glyphs, so a Russian UI falls back to the
  * body stack instead of letting the browser mix two faces inside one word.
  *
- * Status tones are explicit, AA-checked shades for 11 px text on the real
- * 6–15% status tints in both themes. They deliberately do not reuse the raw
+ * Status tones are explicit shades for 11 px text on the real 6–15% status
+ * tints in both themes. They deliberately do not reuse the raw
  * `--warning`/`--success`/`--danger`/`--primary` values: `--warning` and
  * `--success` fail on the light surface, `--danger`/`--primary` are marginal
  * on the dark surface, and every chip adds its own 6–15% tint under the text.
+ * User decision (TASK-179 follow-up): the orange on the agent surfaces must
+ * match the mockup's `var(--warning)` exactly, so the light warning tone is
+ * `#d97706` even though it trades away part of that AA margin.
  * ------------------------------------------------------------------------- */
 .font-agent-display {
   font-family: var(--font-display);
@@ -138,6 +142,8 @@ html[lang="ru"] .font-agent-display {
 }
 
 :root {
+  /* Mockup `--border-soft`: 62% in dark, 72% in light (overridden below). */
+  --border-soft: color-mix(in oklab, var(--border) 62%, transparent);
   /* AA-checked status text on the dark surface (#172033); the worst case is
      ≥4.75:1 on the 6–15% status tints. */
   --agent-tone-success: #10b981;
@@ -152,7 +158,8 @@ html.light {
   /* Deeper shades clear 4.5:1 on the 6–15% status tints over both `--surface`
      and `--background`, not only on a bare surface. */
   --agent-tone-success: #065f46;
-  --agent-tone-warning: #92400e;
+  /* User decision: exact mockup `--warning`, overriding the earlier AA shade. */
+  --agent-tone-warning: #d97706;
   --agent-tone-danger: #b91c1c;
   --agent-tone-primary: #1d4ed8;
   --agent-primary-strong: #1d4ed8;
@@ -166,6 +173,8 @@ html.light {
 
 html.light {
   --agent-primary-strong: #1d4ed8;
+  /* Mockup light `--border-soft` is 72% (62% in dark). */
+  --border-soft: color-mix(in oklab, var(--border) 72%, transparent);
 }
 
 /* Board Settings policy checkbox (TASK-179 feedback #6).

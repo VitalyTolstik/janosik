@@ -174,8 +174,24 @@ Three clear layers:
 
 ### 179.3 — Attention / approvals (P1)
 
-- Attention list (approvals for ADMIN + stale sessions), filters
-  `Needs / Decided / All`, counts.
+- Attention list (approvals for ADMIN + stale sessions + a compact live
+  sessions preview), filters `Needs / Decided / All`, counts.
+- Live-sessions preview below the approvals and the stale rows: heading, count
+  chips (active / waiting / no heartbeat / paused), `View all` → Sessions and
+  up to four session rows. It is readable to MEMBER; stale rows stay in
+  `Needs a nudge` and never repeat in the preview.
+- Stale rows render as up to two selectable cards; a live row or a stale card
+  opens the shared session detail in the right panel on Attention without
+  changing tabs, restored by `?section=attention&session=<id>`. The block and
+  its heading are hidden when no session is stale.
+- Heartbeat text on these surfaces is the relative time only (`12s ago`,
+  `7m ago`) per user decision; the stale treatment is the warning clock and
+  colour, not a `No heartbeat ·` prefix.
+- User decision: warning text on these agent surfaces uses the mockup's raw
+  `--warning` (`#d97706` light, `#f59e0b` dark), replacing the earlier
+  AA-checked `#92400e` / `#a94c07` shades. This intentionally gives up part of
+  that AA margin; the pending approval card also uses the mockup's 4% warning
+  tint with the selected border at warning 36%.
 - Approval card/detail: exact commands, plan hash + copy, human summary/
   targets, status, TTL/countdown, card/session/run links, decision record.
 - No fabricated before/after diff or comment/attachment impact counts: use

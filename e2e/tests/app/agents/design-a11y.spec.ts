@@ -291,7 +291,7 @@ test("reduced motion stops the refresh spinner", async ({ page, board }) => {
   expect(animation).toBe("none");
 });
 
-test("status badge contrast clears AA in both themes", async ({
+test("status badge contrast keeps AA except the approved warning hue", async ({
   page,
   board,
   playwright,
@@ -377,8 +377,9 @@ test("status badge contrast clears AA in both themes", async ({
       expect(ratio, theme).toBeGreaterThanOrEqual(4.5);
 
       // The palette itself must clear AA on the real 6/10/12/15% status
-      // tints over both the surface and the page background — measuring only
-      // the bare surface missed the warning/danger chips before the fix.
+      // tints over both the surface and the page background. The warning tone
+      // is the explicit user-approved exception: it uses the mockup's raw
+      // --warning instead of an AA shade (TASK-179 follow-up).
       const toneRatios = await page.evaluate(() => {
         const root = getComputedStyle(document.documentElement);
         const parseHex = (value: string): [number, number, number] => {
@@ -425,8 +426,24 @@ test("status badge contrast clears AA in both themes", async ({
         return result;
       });
       for (const [tone, toneRatio] of Object.entries(toneRatios)) {
+        if (tone === "warning") {
+          // User decision (TASK-179 follow-up): the agent surfaces use the
+          // mockup's raw --warning (#d97706 light / #f59e0b dark) instead of
+          // the earlier AA shades, explicitly accepting the contrast drop.
+          // Keep a documented floor and require the raw hue below.
+          expect(toneRatio, `${theme} warning`).toBeGreaterThanOrEqual(2);
+          continue;
+        }
         expect(toneRatio, `${theme} ${tone}`).toBeGreaterThanOrEqual(4.5);
       }
+      const warningHue = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        return {
+          tone: root.getPropertyValue("--agent-tone-warning").trim(),
+          raw: root.getPropertyValue("--warning").trim(),
+        };
+      });
+      expect(warningHue.tone, theme).toBe(warningHue.raw);
     }
   } finally {
     await agent.dispose();
