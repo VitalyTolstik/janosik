@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
 } from "react";
@@ -93,6 +94,7 @@ const SMALL_PRIMARY_CLASS = `${SMALL_BUTTON_CLASS} !bg-[var(--agent-primary-stro
 export function AgentsPage() {
   const { t, lang } = useI18n();
   const verticalRail = useMediaQuery("(min-width: 768px)");
+  const pageRef = useRef<HTMLElement | null>(null);
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
   const { boards: loadedBoards } = useBoard();
@@ -263,6 +265,11 @@ export function AgentsPage() {
   };
   const openSession = useCallback(
     (row: AgentSessionRow) => {
+      // A narrow sheet is positioned at the top of the scroll container; bring
+      // it into view instead of leaving the header above the viewport.
+      if (window.matchMedia("(max-width: 1060px)").matches) {
+        if (pageRef.current !== null) pageRef.current.scrollTop = 0;
+      }
       // Keep the current tab: a session opened from Attention stays on
       // Attention and renders in the shared right-hand detail panel.
       setParams((current) => {
@@ -677,6 +684,7 @@ export function AgentsPage() {
 
   return (
     <main
+      ref={pageRef}
       className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface text-[13px] leading-[1.45] md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
@@ -1446,7 +1454,7 @@ export function AgentsPage() {
           aria-label={t("agents.detail.back")}
           data-testid="agents-session-sheet-scrim"
           onClick={closeSession}
-          className="fixed inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
       {runSheetOpen ? (
@@ -1455,7 +1463,7 @@ export function AgentsPage() {
           aria-label={t("agents.runs.backToList")}
           data-testid="agents-run-sheet-scrim"
           onClick={closeRun}
-          className="fixed inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
         />
       ) : null}
       <aside
@@ -1467,7 +1475,7 @@ export function AgentsPage() {
             approvalBoardId !== null) ||
             sessionSheetOpen ||
             runSheetOpen) &&
-            "max-[1060px]:fixed max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
+            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >
