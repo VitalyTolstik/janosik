@@ -85,11 +85,14 @@ export function HeartbeatText({
   now,
   className,
   withIcon = true,
+  muted = false,
 }: {
   session: AgentSessionDto;
   now: number;
   className?: string;
   withIcon?: boolean;
+  /** Keep the relative time muted even when the session is stale. */
+  muted?: boolean;
 }) {
   const { t } = useI18n();
   const age = compactAge(heartbeatAge(session, now));
@@ -98,10 +101,12 @@ export function HeartbeatText({
       data-testid="agent-heartbeat"
       data-stale={session.stale ? "true" : "false"}
       className={cn(
-        "inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap",
-        session.stale
-          ? "text-[color:var(--agent-tone-warning)]"
-          : "text-muted-foreground",
+        "inline-flex items-center gap-[5px] text-[11px] leading-[1.45] whitespace-nowrap",
+        muted
+          ? "text-muted-foreground"
+          : session.stale
+            ? "text-[color:var(--agent-tone-warning)]"
+            : "text-muted-foreground",
         className,
       )}
     >
@@ -226,7 +231,7 @@ function SessionGroupHeader({
     group.boardId !== undefined && staleBoardIds.includes(group.boardId);
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 border-b border-border-soft px-2 pt-0 pb-[5px]"
+      className="flex flex-wrap items-center gap-[7px] border-b border-border-soft px-2 pt-0 pb-[5px]"
       data-testid={
         mode === "board"
           ? `agents-board-group-${group.boardId}`
@@ -253,7 +258,7 @@ function SessionGroupHeader({
         </span>
       ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
-        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
+        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
@@ -265,9 +270,7 @@ function SessionGroupHeader({
         )}
       >
         {t("agents.groups.sessions", { count })}
-        {stale > 0
-          ? ` · ${t("agents.groups.noHeartbeat", { count: stale })}`
-          : ""}
+        {` · ${t("agents.groups.noHeartbeat", { count: stale })}`}
       </span>
       {staleBoard ? (
         <span className="text-[11px] text-[color:var(--agent-tone-warning)]">
@@ -294,7 +297,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_76px_82px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5"
+      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px]"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -308,7 +311,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-1.5 py-2 text-left transition-colors last:border-b-0 hover:bg-hover/46 min-[761px]:grid-cols-[minmax(132px,1.45fr)_minmax(128px,1.25fr)_76px_82px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5";
+  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px]";
 
 export function SessionRow({
   row,
@@ -380,15 +383,18 @@ export function SessionRow({
       <span className="min-w-0 max-[760px]:col-start-1 max-[760px]:row-start-3">
         <HeartbeatText session={row} now={now} />
       </span>
-      <span className="flex flex-wrap items-center gap-1 max-[760px]:col-start-2 max-[760px]:row-start-2 max-[760px]:justify-end">
+      <span className="flex flex-nowrap items-center gap-1 max-[760px]:col-start-2 max-[760px]:row-start-2 max-[760px]:justify-end">
         <SessionStatusPill status={row.status} short />
         {row.paused ? (
-          <AgentPauseBadge
-            scope={row.pauseScope ?? "session"}
+          <span
+            data-testid={`agent-pause-badge-${row.pauseScope ?? "session"}`}
+            role="img"
+            aria-label={t(`agents.pause.scope.${row.pauseScope ?? "session"}`)}
             title={row.pausedReason ?? undefined}
-            short
-            className="h-[18px] px-1 text-[11px]"
-          />
+            className="inline-grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,var(--surface))] text-[color:var(--warning)]"
+          >
+            <Pause className="h-3 w-3" aria-hidden />
+          </span>
         ) : null}
       </span>
     </button>
@@ -508,7 +514,7 @@ const DETAIL_BUTTON_CLASS =
 
 /** Prototype `.btn`: 32 px, 11.5 px / 650, 6 px gap, 11 px side padding. */
 const FOOTER_BUTTON_CLASS =
-  "min-h-11 min-w-0 flex-1 gap-1.5 rounded-[6px] px-[11px] text-[11.5px] leading-none font-[650] md:min-h-8";
+  "min-h-11 min-w-0 flex-1 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] md:min-h-8";
 
 function DetailEmpty({
   missingId,
@@ -645,8 +651,8 @@ export function SessionDetail({
   const bannerTone = terminal
     ? "border-border bg-muted/35"
     : row.stale || row.paused
-      ? "border-warning/34 bg-warning/6"
-      : "border-primary/30 bg-primary/6";
+      ? "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,transparent)]"
+      : "border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6";
   const BannerIcon = terminal
     ? row.status === "failed"
       ? AlertTriangle
@@ -707,7 +713,7 @@ export function SessionDetail({
           <HeartbeatText session={row} now={now} />
           <Link
             to={routes.board(row.boardId)}
-            className="inline-flex h-[21px] max-w-full items-center gap-1 rounded-[4px] border border-border px-1.5 text-[11px] leading-none font-semibold text-muted-foreground hover:text-foreground"
+            className="inline-flex h-[21px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[11px] leading-none font-semibold text-muted-foreground hover:text-foreground"
           >
             <Folder className="h-[10px] w-[10px]" aria-hidden />
             <span className="truncate">{row.boardTitle}</span>
@@ -848,7 +854,7 @@ export function SessionDetail({
           data-testid={
             !terminal && !canControl ? "agents-session-read-only" : undefined
           }
-          className="m-0 mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground"
+          className="m-0 mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground"
         >
           {terminal ? (
             <ShieldCheck
@@ -888,7 +894,7 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className={`${FOOTER_BUTTON_CLASS} border-[color:var(--border-soft)] bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
+                className={`${FOOTER_BUTTON_CLASS} border-border-soft bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
                 data-testid="agents-session-resume"
                 onClick={() => setAction("resume")}
               >
@@ -900,7 +906,7 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className={`${FOOTER_BUTTON_CLASS} border-[color:var(--border-soft)] bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
+                className={`${FOOTER_BUTTON_CLASS} border-border-soft bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
                 data-testid="agents-session-pause"
                 onClick={() => setAction("pause")}
               >
@@ -912,7 +918,7 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className={`${FOOTER_BUTTON_CLASS} border-danger/44 bg-danger/5 text-[color:var(--danger)] hover:bg-danger/10 hover:text-[color:var(--danger)]`}
+                className={`${FOOTER_BUTTON_CLASS} border-[color-mix(in_oklab,var(--danger)_44%,var(--border))] bg-danger/5 text-[color:var(--danger)] hover:bg-danger/10 hover:text-[color:var(--danger)]`}
                 data-testid="agents-session-end"
                 onClick={() => setAction("end")}
               >

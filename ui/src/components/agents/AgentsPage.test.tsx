@@ -952,14 +952,17 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-live-sessions")).toBeNull();
   });
 
-  it("hides both session blocks when there are no sessions", async () => {
+  it("shows the empty state when there are no approvals and no sessions", async () => {
     hoisted.listAgentSessions.mockResolvedValue([]);
     renderPage("/agents?section=attention");
 
     await waitFor(() =>
       expect(screen.queryByTestId("agents-loading")).toBeNull(),
     );
-    expect(screen.getByTestId("agents-attention-clear")).toBeInTheDocument();
+    expect(screen.getByTestId("agents-empty")).toHaveTextContent(
+      "No agent sessions yet",
+    );
+    expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
     expect(screen.queryByTestId("agents-live-sessions")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Needs a nudge" })).toBeNull();
   });

@@ -399,7 +399,7 @@ export function AttentionApprovalList({
                 <article
                   data-status={effective}
                   className={cn(
-                    "relative overflow-hidden rounded-lg border px-3 pt-[11px] pb-2.5 pl-3.5 transition-colors",
+                    "relative overflow-hidden rounded-[8px] border px-3 pt-[11px] pb-2.5 pl-3.5 transition-colors",
                     effective === "pending"
                       ? "border-border bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))] hover:bg-[color-mix(in_oklab,var(--warning)_7%,var(--surface))]"
                       : "border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] hover:bg-[color-mix(in_oklab,var(--surface)_72%,var(--background))]",
@@ -426,7 +426,7 @@ export function AttentionApprovalList({
                       <span>{timeLabel}</span>
                       <ApprovalRiskBadge risk={row.risk} />
                     </span>
-                    <span className="mb-0.5 block text-[13px] font-[650] leading-[1.35] text-foreground">
+                    <span className="mb-[3px] block text-[13px] leading-[1.35] font-[650] text-foreground">
                       {title}
                     </span>
                     <span className="block text-[11.5px] leading-[1.5] text-muted-foreground">
@@ -470,7 +470,7 @@ export function AttentionApprovalList({
                       size="sm"
                       onClick={() => onSelect(row)}
                       data-testid={`agents-approval-review-${row.id}`}
-                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650] max-md:min-h-11"
+                      className="h-7 min-h-0 gap-1.5 rounded-[6px] !bg-[var(--agent-primary-strong)] px-[9px] text-[11px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11"
                     >
                       {t("agents.approvals.reviewPlan")}
                     </Button>
@@ -479,7 +479,7 @@ export function AttentionApprovalList({
                       variant="outline"
                       onClick={() => onReject(row)}
                       data-testid={`agents-approval-reject-${row.id}`}
-                      className="h-7 min-h-0 rounded-md px-2 text-[11px] font-[650] max-md:min-h-11"
+                      className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
                     >
                       {t("agents.approvals.reject")}
                     </Button>
@@ -669,9 +669,9 @@ export function AttentionApprovalDetail({
   };
 
   const toneClasses = {
-    warn: "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-warning)]",
-    ok: "border-success/30 bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-success)]",
-    bad: "border-danger/35 bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-danger)]",
+    warn: "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] [&_svg]:text-[color:var(--warning)]",
+    ok: "border-[color-mix(in_oklab,var(--success)_32%,var(--border))] bg-[color-mix(in_oklab,var(--success)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-success)]",
+    bad: "border-[color-mix(in_oklab,var(--danger)_32%,var(--border))] bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] [&_svg]:text-[color:var(--agent-tone-danger)]",
     muted:
       "border-border bg-muted/40 text-muted-foreground [&_svg]:text-muted-foreground",
   } as const;
@@ -694,10 +694,10 @@ export function AttentionApprovalDetail({
             </button>
           ) : null}
           <div className="min-w-0">
-            <p className="text-[11px] font-[650] uppercase tracking-[0.04em] text-muted-foreground">
+            <p className="mb-[3px] text-[11px] font-[650] uppercase tracking-[0.04em] text-muted-foreground">
               {t("agents.approvals.selected")}
             </p>
-            <h2 className="mt-0.5 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
+            <h2 className="text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
               {detail === null
                 ? t("agents.approvals.loading")
                 : titleForApproval(detail, cardTitle, t)}
@@ -874,7 +874,7 @@ export function AttentionApprovalDetail({
                 </code>
                 <button
                   type="button"
-                  className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center self-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => void copyHash()}
                   aria-label={t("agentControl.approvals.copyHash")}
                   data-testid="approval-copy-hash"
@@ -1037,7 +1037,7 @@ function RequestMeta({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
+      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_78%,transparent)] uppercase">
         {label}
       </span>
       <span className="block text-[11px] leading-[1.4] font-medium break-words text-foreground">

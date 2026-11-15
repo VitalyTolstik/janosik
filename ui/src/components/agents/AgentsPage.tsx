@@ -668,6 +668,7 @@ export function AgentsPage() {
     filter.query.trim() !== "";
   const showAllClear =
     isAttentionAdmin &&
+    state.rows.length > 0 &&
     pendingForScope !== null &&
     scopedPendingCount === 0 &&
     approvalFilter === "needs" &&
@@ -1089,7 +1090,7 @@ export function AgentsPage() {
               {filtered.length > 0 ? (
                 <div
                   data-testid="agents-sessions-heartbeat-note"
-                  className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
+                  className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
                 >
                   <Info
                     className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
@@ -1413,7 +1414,9 @@ export function AgentsPage() {
                         )}
                       </>
                     )}
-                    {filtered.length === 0 ? (
+                    {state.rows.length === 0 && !filteredActive ? (
+                      <SessionsEmpty onOpenTokens={openTokens} lang={lang} />
+                    ) : filtered.length === 0 ? (
                       filteredActive ? (
                         <FilteredEmpty onClear={clearFilters} />
                       ) : null
@@ -1488,7 +1491,7 @@ export function AgentsPage() {
             approvalBoardId !== null) ||
             sessionSheetOpen ||
             runSheetOpen) &&
-            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[760px]:w-full",
+            "max-[1060px]:absolute max-[1060px]:inset-y-0 max-[1060px]:right-0 max-[1060px]:z-50 max-[1060px]:flex max-[1060px]:w-[min(372px,100%)] max-[1060px]:border-l max-[1060px]:border-border max-[1060px]:bg-background max-[1060px]:pb-[env(safe-area-inset-bottom)] max-[1060px]:shadow-[-24px_0_60px_-36px_rgb(0_0_0/0.7)] max-[760px]:w-full",
         )}
         aria-label={t("agents.shell.details")}
       >
@@ -1584,8 +1587,8 @@ export function AgentsPage() {
 type CountChipTone = "ok" | "warn" | "muted";
 
 const COUNT_CHIP_TONE: Record<CountChipTone, string> = {
-  ok: "border-success/34 bg-success/7 text-[color:var(--success)]",
-  warn: "border-warning/36 bg-warning/7 text-[color:var(--agent-tone-warning)]",
+  ok: "border-[color-mix(in_oklab,var(--success)_34%,var(--border))] bg-success/7 text-[color:var(--success)]",
+  warn: "border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 text-[color:var(--agent-tone-warning)]",
   muted:
     "border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-muted-foreground",
 };
@@ -1669,13 +1672,13 @@ function AttentionStaleSessions({
             data-testid={`agents-stale-session-${row.id}`}
             onClick={() => onSelect(row)}
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-lg border px-3 py-[10px] text-left transition-colors",
+              "mt-2 flex w-full items-center gap-2.5 rounded-[8px] border px-3 py-[10px] text-left transition-colors",
               selectedId === row.id
                 ? "border-[color-mix(in_oklab,var(--warning)_54%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_8%,var(--surface))]"
                 : "border-[color-mix(in_oklab,var(--warning)_26%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_4%,var(--surface))] hover:bg-[color-mix(in_oklab,var(--warning)_7%,var(--surface))]",
             )}
           >
-            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-warning/26 bg-warning/10 text-[color:var(--warning)]">
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-[color-mix(in_oklab,var(--warning)_26%,var(--border))] bg-warning/10 text-[color:var(--warning)]">
               <Clock className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
@@ -1685,7 +1688,7 @@ function AttentionStaleSessions({
               <span className="mt-px flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] leading-[1.4] text-muted-foreground">
                 <span className="truncate">{row.boardTitle}</span>
                 <span aria-hidden>·</span>
-                <HeartbeatText session={row} now={now} withIcon={false} />
+                <HeartbeatText session={row} now={now} withIcon={false} muted />
                 <span aria-hidden>·</span>
                 <span className="truncate">
                   {t("agents.shell.lastStatus", {
@@ -1777,7 +1780,7 @@ function AttentionLiveSessions({
           type="button"
           onClick={onViewAll}
           data-testid="agents-live-view-all"
-          className="ml-auto inline-flex min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground min-[761px]:min-h-6"
+          className="ml-auto inline-flex min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground min-[761px]:min-h-0"
         >
           {t("agents.shell.viewAll")}
           <ChevronRight className="h-[11px] w-[11px]" aria-hidden />
@@ -1809,7 +1812,7 @@ function MemberAttentionBanner() {
   const { t } = useI18n();
   return (
     <div
-      className="mt-0.5 flex items-start gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5"
+      className="mt-0.5 flex items-start gap-2.5 rounded-lg border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/5 px-3 py-2.5"
       data-testid="agents-member-note"
       role="status"
     >

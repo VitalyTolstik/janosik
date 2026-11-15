@@ -94,6 +94,7 @@ body.janosik-touch-dragging {
   --color-fuchsia: var(--fuchsia);
   --color-brown: var(--brown);
   --color-border: var(--border);
+  --color-border-soft: color-mix(in oklab, var(--border) 62%, transparent);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-lg: var(--radius);

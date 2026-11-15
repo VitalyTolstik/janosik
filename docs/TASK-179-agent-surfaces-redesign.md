@@ -184,6 +184,9 @@ Three clear layers:
   opens the shared session detail in the right panel on Attention without
   changing tabs, restored by `?section=attention&session=<id>`. The block and
   its heading are hidden when no session is stale.
+- Heartbeat text on these surfaces is the relative time only (`12s ago`,
+  `7m ago`) per user decision; the stale treatment is the warning clock and
+  colour, not a `No heartbeat ·` prefix.
 - User decision: warning text on these agent surfaces uses the mockup's raw
   `--warning` (`#d97706` light, `#f59e0b` dark), replacing the earlier
   AA-checked `#92400e` / `#a94c07` shades. This intentionally gives up part of

@@ -1781,7 +1781,6 @@
   "agents.pause.scope.board": "Пауза доски",
   "agents.pause.scope.token": "Пауза токена",
   "agents.pause.scope.session": "Пауза сессии",
-  "agents.pause.paused": "На паузе",
   "agents.error.title": "Не удалось загрузить сессии агентов",
   "agents.error.stale": "Список сессий может быть устаревшим.",
   "agents.retry": "Повторить",

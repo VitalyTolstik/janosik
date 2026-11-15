@@ -1755,7 +1755,6 @@
   "agents.pause.scope.board": "Board pause",
   "agents.pause.scope.token": "Token pause",
   "agents.pause.scope.session": "Session pause",
-  "agents.pause.paused": "Paused",
   "agents.error.title": "Could not load agent sessions",
   "agents.error.stale": "The session list may be out of date.",
   "agents.retry": "Retry",
