@@ -1,0 +1,389 @@
+{
+  "measurements": [
+    {
+      "label": "attention-live-light-1440",
+      "openingPill": "Waiting",
+      "cardBackground": "oklab(0.97546 0.00370848 0.0041632)",
+      "emptyPresent": false,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "sessions-light-1440",
+      "completed": {
+        "text": "Completed",
+        "scrollWidth": 67,
+        "clientWidth": 67,
+        "pillWidth": 92.796875
+      },
+      "failed": {
+        "text": "Failed",
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "pillWidth": 63.171875
+      },
+      "cancelled": {
+        "text": "Cancelled",
+        "scrollWidth": 60,
+        "clientWidth": 60,
+        "pillWidth": 86.1875
+      },
+      "pausedBadge": 18,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "detail-completed-light-1440",
+      "hintText": "This session has ended. Claims were released.",
+      "hintBackground": "oklab(0.54613 -0.0266538 -0.213537 / 0.06)",
+      "hintBorder": "oklab(0.813967 -0.010177 -0.0726)",
+      "iconClass": "lucide lucide-activity mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]",
+      "currentRun": "#140"
+    },
+    {
+      "label": "detail-stale-light-1440",
+      "hintText": "No heartbeat for 6m. The last known lifecycle status is Active.",
+      "currentRun": "—"
+    },
+    {
+      "label": "member-light-1440",
+      "readOnlyFooter": 1,
+      "pauseButton": 0,
+      "endButton": 0
+    },
+    {
+      "label": "attention-empty-light-1440",
+      "text": "No agent sessions yetCreate an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.Create API keyRead docs",
+      "iconClass": "lucide lucide-inbox h-[18px] w-[18px]",
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "attention-live-light-1024",
+      "openingPill": "Waiting",
+      "cardBackground": "oklab(0.97546 0.00370848 0.0041632)",
+      "emptyPresent": false,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "sessions-light-1024",
+      "completed": {
+        "text": "Completed",
+        "scrollWidth": 67,
+        "clientWidth": 67,
+        "pillWidth": 92.796875
+      },
+      "failed": {
+        "text": "Failed",
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "pillWidth": 63.171875
+      },
+      "cancelled": {
+        "text": "Cancelled",
+        "scrollWidth": 60,
+        "clientWidth": 60,
+        "pillWidth": 86.1875
+      },
+      "pausedBadge": 18,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "detail-completed-light-1024",
+      "hintText": "This session has ended. Claims were released.",
+      "hintBackground": "oklab(0.54613 -0.0266538 -0.213537 / 0.06)",
+      "hintBorder": "oklab(0.813967 -0.010177 -0.0726)",
+      "iconClass": "lucide lucide-activity mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]",
+      "currentRun": "#140"
+    },
+    {
+      "label": "detail-stale-light-1024",
+      "hintText": "No heartbeat for 6m. The last known lifecycle status is Active.",
+      "currentRun": "—"
+    },
+    {
+      "label": "member-light-1024",
+      "readOnlyFooter": 1,
+      "pauseButton": 0,
+      "endButton": 0
+    },
+    {
+      "label": "attention-empty-light-1024",
+      "text": "No agent sessions yetCreate an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.Create API keyRead docs",
+      "iconClass": "lucide lucide-inbox h-[18px] w-[18px]",
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "attention-live-light-390",
+      "openingPill": "Waiting",
+      "cardBackground": "oklab(0.97546 0.00370848 0.0041632)",
+      "emptyPresent": false,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "sessions-light-390",
+      "completed": {
+        "text": "Completed",
+        "scrollWidth": 67,
+        "clientWidth": 67,
+        "pillWidth": 92.796875
+      },
+      "failed": {
+        "text": "Failed",
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "pillWidth": 63.171875
+      },
+      "cancelled": {
+        "text": "Cancelled",
+        "scrollWidth": 60,
+        "clientWidth": 60,
+        "pillWidth": 86.1875
+      },
+      "pausedBadge": 18,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "detail-completed-light-390",
+      "hintText": "This session has ended. Claims were released.",
+      "hintBackground": "oklab(0.54613 -0.0266538 -0.213537 / 0.06)",
+      "hintBorder": "oklab(0.813967 -0.010177 -0.0726)",
+      "iconClass": "lucide lucide-activity mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]",
+      "currentRun": "#140"
+    },
+    {
+      "label": "detail-stale-light-390",
+      "hintText": "No heartbeat for 6m. The last known lifecycle status is Active.",
+      "currentRun": "—"
+    },
+    {
+      "label": "member-light-390",
+      "readOnlyFooter": 1,
+      "pauseButton": 0,
+      "endButton": 0
+    },
+    {
+      "label": "attention-empty-light-390",
+      "text": "No agent sessions yetCreate an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.Create API keyRead docs",
+      "iconClass": "lucide lucide-inbox h-[18px] w-[18px]",
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "attention-live-dark-1440",
+      "openingPill": "Waiting",
+      "cardBackground": "oklab(0.265807 -0.0014063 -0.030842)",
+      "emptyPresent": false,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "sessions-dark-1440",
+      "completed": {
+        "text": "Completed",
+        "scrollWidth": 67,
+        "clientWidth": 67,
+        "pillWidth": 92.796875
+      },
+      "failed": {
+        "text": "Failed",
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "pillWidth": 63.171875
+      },
+      "cancelled": {
+        "text": "Cancelled",
+        "scrollWidth": 60,
+        "clientWidth": 60,
+        "pillWidth": 86.1875
+      },
+      "pausedBadge": 18,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "detail-completed-dark-1440",
+      "hintText": "This session has ended. Claims were released.",
+      "hintBackground": "oklab(0.623066 -0.0332245 -0.185038 / 0.06)",
+      "hintBorder": "oklab(0.408359 -0.0152217 -0.088144)",
+      "iconClass": "lucide lucide-activity mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]",
+      "currentRun": "#140"
+    },
+    {
+      "label": "detail-stale-dark-1440",
+      "hintText": "No heartbeat for 6m. The last known lifecycle status is Active.",
+      "currentRun": "—"
+    },
+    {
+      "label": "member-dark-1440",
+      "readOnlyFooter": 1,
+      "pauseButton": 0,
+      "endButton": 0
+    },
+    {
+      "label": "attention-empty-dark-1440",
+      "text": "No agent sessions yetCreate an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.Create API keyRead docs",
+      "iconClass": "lucide lucide-inbox h-[18px] w-[18px]",
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "attention-live-dark-1024",
+      "openingPill": "Waiting",
+      "cardBackground": "oklab(0.265807 -0.0014063 -0.030842)",
+      "emptyPresent": false,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "sessions-dark-1024",
+      "completed": {
+        "text": "Completed",
+        "scrollWidth": 67,
+        "clientWidth": 67,
+        "pillWidth": 92.796875
+      },
+      "failed": {
+        "text": "Failed",
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "pillWidth": 63.171875
+      },
+      "cancelled": {
+        "text": "Cancelled",
+        "scrollWidth": 60,
+        "clientWidth": 60,
+        "pillWidth": 86.1875
+      },
+      "pausedBadge": 18,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "detail-completed-dark-1024",
+      "hintText": "This session has ended. Claims were released.",
+      "hintBackground": "oklab(0.623066 -0.0332245 -0.185038 / 0.06)",
+      "hintBorder": "oklab(0.408359 -0.0152217 -0.088144)",
+      "iconClass": "lucide lucide-activity mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]",
+      "currentRun": "#140"
+    },
+    {
+      "label": "detail-stale-dark-1024",
+      "hintText": "No heartbeat for 6m. The last known lifecycle status is Active.",
+      "currentRun": "—"
+    },
+    {
+      "label": "member-dark-1024",
+      "readOnlyFooter": 1,
+      "pauseButton": 0,
+      "endButton": 0
+    },
+    {
+      "label": "attention-empty-dark-1024",
+      "text": "No agent sessions yetCreate an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.Create API keyRead docs",
+      "iconClass": "lucide lucide-inbox h-[18px] w-[18px]",
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "attention-live-dark-390",
+      "openingPill": "Waiting",
+      "cardBackground": "oklab(0.265807 -0.0014063 -0.030842)",
+      "emptyPresent": false,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "sessions-dark-390",
+      "completed": {
+        "text": "Completed",
+        "scrollWidth": 67,
+        "clientWidth": 67,
+        "pillWidth": 92.796875
+      },
+      "failed": {
+        "text": "Failed",
+        "scrollWidth": 37,
+        "clientWidth": 37,
+        "pillWidth": 63.171875
+      },
+      "cancelled": {
+        "text": "Cancelled",
+        "scrollWidth": 60,
+        "clientWidth": 60,
+        "pillWidth": 86.1875
+      },
+      "pausedBadge": 18,
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    },
+    {
+      "label": "detail-completed-dark-390",
+      "hintText": "This session has ended. Claims were released.",
+      "hintBackground": "oklab(0.623066 -0.0332245 -0.185038 / 0.06)",
+      "hintBorder": "oklab(0.408359 -0.0152217 -0.088144)",
+      "iconClass": "lucide lucide-activity mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]",
+      "currentRun": "#140"
+    },
+    {
+      "label": "detail-stale-dark-390",
+      "hintText": "No heartbeat for 6m. The last known lifecycle status is Active.",
+      "currentRun": "—"
+    },
+    {
+      "label": "member-dark-390",
+      "readOnlyFooter": 1,
+      "pauseButton": 0,
+      "endButton": 0
+    },
+    {
+      "label": "attention-empty-dark-390",
+      "text": "No agent sessions yetCreate an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.Create API keyRead docs",
+      "iconClass": "lucide lucide-inbox h-[18px] w-[18px]",
+      "overflow": {
+        "document": 0,
+        "page": 0
+      }
+    }
+  ],
+  "consoleErrors": []
+}
