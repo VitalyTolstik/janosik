@@ -1760,6 +1760,7 @@
   "agents.retry": "Retry",
   "agents.empty.title": "No agent sessions yet",
   "agents.empty.body": "Create an API key in Account → API keys and connect an agent. Sessions appear here grouped by board, with their heartbeat and current card.",
+  "agents.empty.attentionBody": "Create an API key in Account → API keys, then start a session from your agent. Attention will show decisions and missing heartbeats here.",
   "agents.emptyFiltered": "No sessions match these filters",
   "agents.emptyFilteredBody": "Clear the board, agent, status or time filter to see the other sessions.",
   "agents.clearFilters": "Clear filters",

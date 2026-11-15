@@ -959,9 +959,12 @@ describe("AgentsPage", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("agents-loading")).toBeNull(),
     );
-    expect(screen.getByTestId("agents-empty")).toHaveTextContent(
-      "No agent sessions yet",
+    const empty = screen.getByTestId("agents-attention-empty");
+    expect(empty).toHaveTextContent("No agent sessions yet");
+    expect(empty).toHaveTextContent(
+      "Attention will show decisions and missing heartbeats here.",
     );
+    expect(screen.queryByTestId("agents-empty")).toBeNull();
     expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
     expect(screen.queryByTestId("agents-live-sessions")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Needs a nudge" })).toBeNull();
@@ -1516,17 +1519,17 @@ describe("AgentsPage", () => {
     renderPage("/agents?section=sessions&board=board-1");
 
     const list = await screen.findByTestId("agents-session-list");
-    for (const status of [
-      "active",
-      "idle",
-      "waiting_approval",
-      "completed",
-      "failed",
-      "cancelled",
-    ]) {
+    for (const [status, label] of [
+      ["active", "Active"],
+      ["idle", "Idle"],
+      ["waiting_approval", "Waiting"],
+      ["completed", "Completed"],
+      ["failed", "Failed"],
+      ["cancelled", "Cancelled"],
+    ] as const) {
       expect(
         within(list).getByTestId(`agent-status-${status}`),
-      ).toBeInTheDocument();
+      ).toHaveTextContent(label);
     }
     const staleRow = screen.getByTestId("agent-session-row-active-stale");
     expect(

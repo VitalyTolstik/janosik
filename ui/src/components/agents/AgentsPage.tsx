@@ -1415,7 +1415,7 @@ export function AgentsPage() {
                       </>
                     )}
                     {state.rows.length === 0 && !filteredActive ? (
-                      <SessionsEmpty onOpenTokens={openTokens} lang={lang} />
+                      <AttentionEmpty onOpenTokens={openTokens} lang={lang} />
                     ) : filtered.length === 0 ? (
                       filteredActive ? (
                         <FilteredEmpty onClear={clearFilters} />
@@ -1920,6 +1920,36 @@ function FilteredEmpty({ onClear }: { onClear: () => void }) {
         >
           {t("agents.clearFilters")}
         </Button>
+      }
+    />
+  );
+}
+
+function AttentionEmpty({
+  onOpenTokens,
+  lang,
+}: {
+  onOpenTokens: () => void;
+  lang: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <EmptyState
+      testId="agents-attention-empty"
+      icon={<Inbox className="h-[18px] w-[18px]" />}
+      title={t("agents.empty.title")}
+      body={t("agents.empty.attentionBody")}
+      action={
+        <>
+          <Button onClick={onOpenTokens} className={SMALL_PRIMARY_CLASS}>
+            {t("agents.shell.createKey")}
+          </Button>
+          <Button variant="outline" asChild className={SMALL_OUTLINE_CLASS}>
+            <a href={docsUrl(lang)} target="_blank" rel="noreferrer">
+              {t("agents.shell.readDocs")}
+            </a>
+          </Button>
+        </>
       }
     />
   );

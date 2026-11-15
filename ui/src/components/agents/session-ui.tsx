@@ -297,7 +297,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5"
+      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_100px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -311,7 +311,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5";
+  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_100px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5";
 
 export function SessionRow({
   row,
@@ -649,20 +649,11 @@ export function SessionDetail({
           board: row.boardId,
           run: row.currentRunId,
         }).toString()}`;
-  const bannerTone = terminal
-    ? "border-border bg-muted/35"
-    : row.stale || row.paused
+  const bannerTone =
+    row.stale || row.paused
       ? "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,transparent)]"
       : "border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6";
-  const BannerIcon = terminal
-    ? row.status === "failed"
-      ? AlertTriangle
-      : ShieldCheck
-    : row.stale
-      ? Clock
-      : row.paused
-        ? Pause
-        : Activity;
+  const BannerIcon = row.stale ? Clock : row.paused ? Pause : Activity;
 
   return (
     <>
@@ -698,11 +689,9 @@ export function SessionDetail({
           <BannerIcon
             className={cn(
               "mt-px h-3.5 w-3.5 shrink-0",
-              terminal
-                ? "text-muted-foreground"
-                : row.stale || row.paused
-                  ? "text-[color:var(--agent-tone-warning)]"
-                  : "text-[color:var(--agent-tone-primary)]",
+              row.stale || row.paused
+                ? "text-[color:var(--agent-tone-warning)]"
+                : "text-[color:var(--agent-tone-primary)]",
             )}
             aria-hidden
           />
@@ -792,9 +781,7 @@ export function SessionDetail({
             </MetaField>
             <MetaField label={t("agents.currentRun")}>
               {row.currentRunId === null ? (
-                <span className="text-muted-foreground">
-                  {t("agents.noCurrentRun")}
-                </span>
+                <span className="text-muted-foreground">—</span>
               ) : (
                 <span className="block truncate">
                   #{runNumber(row.currentRunId)}
