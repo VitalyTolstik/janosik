@@ -101,15 +101,3 @@ export function AgentLastSeen({
     </span>
   );
 }
-
-export function AgentLiveDot({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "inline-block h-2 w-2 shrink-0 rounded-full bg-success shadow-[0_0_0_3px] shadow-success/15",
-        className,
-      )}
-    />
-  );
-}

@@ -75,9 +75,10 @@ export function SessionStatusPill({
 }
 
 /**
- * Heartbeat is a liveness signal, not a lifecycle status. The mockup shows
- * the relative time only (`12s ago`, `7m ago`); a stale session keeps its
- * real status and gets the warning colour plus a clock icon.
+ * Heartbeat is a liveness signal, not a lifecycle status. User decision: the
+ * row shows the relative time only (`12s ago`, `7m ago`); a stale session
+ * keeps its real status and gets the warning colour plus a clock icon instead
+ * of a "No heartbeat ·" prefix.
  */
 export function HeartbeatText({
   session,

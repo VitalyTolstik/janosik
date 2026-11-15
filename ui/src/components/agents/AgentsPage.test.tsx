@@ -1068,6 +1068,17 @@ describe("AgentsPage", () => {
     expect(within(live).queryByTestId("agents-session-pause")).toBeNull();
     expect(within(live).queryByTestId("agents-session-end")).toBeNull();
     expect(within(live).queryByTestId("agent-token-settings")).toBeNull();
+
+    await userEvent.click(
+      within(live).getByTestId("agent-session-row-session-3"),
+    );
+    expect(
+      await screen.findByTestId("agents-session-read-only"),
+    ).toHaveTextContent(
+      "You can watch. A board admin pauses, resumes or ends sessions.",
+    );
+    expect(screen.queryByTestId("agents-session-pause")).toBeNull();
+    expect(screen.queryByTestId("agents-session-end")).toBeNull();
   });
 
   it("filters approvals by needs, decided and all with true counts", async () => {

@@ -371,7 +371,7 @@ export function ApprovalLinks({
         hideClose
       >
         <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning-strong)]">
+          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning)]">
             <KeyRound className="h-[15px] w-[15px]" aria-hidden />
           </span>
           <div className="min-w-0">

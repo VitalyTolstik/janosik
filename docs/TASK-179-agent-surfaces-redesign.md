@@ -185,8 +185,10 @@ Three clear layers:
   changing tabs, restored by `?section=attention&session=<id>`. The block and
   its heading are hidden when no session is stale.
 - User decision: warning text on these agent surfaces uses the mockup's raw
-  `--warning` (`#d97706` light, `#f59e0b` dark), overriding the earlier
-  AA-compromised `#92400e` / `#a94c07` shades.
+  `--warning` (`#d97706` light, `#f59e0b` dark), replacing the earlier
+  AA-checked `#92400e` / `#a94c07` shades. This intentionally gives up part of
+  that AA margin; the pending approval card also uses the mockup's 4% warning
+  tint with the selected border at warning 36%.
 - Approval card/detail: exact commands, plan hash + copy, human summary/
   targets, status, TTL/countdown, card/session/run links, decision record.
 - No fabricated before/after diff or comment/attachment impact counts: use

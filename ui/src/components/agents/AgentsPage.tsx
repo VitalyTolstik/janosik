@@ -265,11 +265,6 @@ export function AgentsPage() {
   };
   const openSession = useCallback(
     (row: AgentSessionRow) => {
-      // A narrow sheet is positioned at the top of the scroll container; bring
-      // it into view instead of leaving the header above the viewport.
-      if (window.matchMedia("(max-width: 1060px)").matches) {
-        if (pageRef.current !== null) pageRef.current.scrollTop = 0;
-      }
       // Keep the current tab: a session opened from Attention stays on
       // Attention and renders in the shared right-hand detail panel.
       setParams((current) => {
@@ -284,11 +279,16 @@ export function AgentsPage() {
     [section, setParams],
   );
   const closeSession = useCallback(() => {
-    setParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete("session");
-      return next;
-    });
+    // Opening pushes one entry; closing replaces it so Back still leaves the
+    // detail instead of re-opening the panel.
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("session");
+        return next;
+      },
+      { replace: true },
+    );
   }, [setParams]);
   const setSection = (value: Section) => {
     setParams((current) => {
@@ -554,17 +554,15 @@ export function AgentsPage() {
     () => state.rows.filter((row) => matchesAgentFilter(row, filter, now)),
     [state.rows, filter, now],
   );
-  const displayed =
-    section === "attention" ? filtered.filter((row) => row.stale) : filtered;
   const sessionGroups = useMemo(() => {
-    const groups = groupSessionRows(displayed, groupMode);
+    const groups = groupSessionRows(filtered, groupMode);
     if (groupMode !== "board") return groups;
     return groups.map((group) => ({
       ...group,
       pending:
         group.boardId === undefined ? 0 : (pending.counts[group.boardId] ?? 0),
     }));
-  }, [displayed, groupMode, pending.counts]);
+  }, [filtered, groupMode, pending.counts]);
   const sessionDetailRow = useMemo(() => {
     if (section !== "sessions" && section !== "attention") return undefined;
     if (selectedSession !== null) {
@@ -573,7 +571,9 @@ export function AgentsPage() {
     return section === "sessions" ? filtered[0] : undefined;
   }, [filtered, section, selectedSession]);
   const sessionMissing =
-    selectedSession !== null && sessionDetailRow === undefined;
+    !state.loading &&
+    selectedSession !== null &&
+    sessionDetailRow === undefined;
   const sessionSheetOpen =
     (section === "sessions" || section === "attention") &&
     selectedSession !== null;
@@ -583,6 +583,19 @@ export function AgentsPage() {
     !runs.revokedBoardIds.includes(runDetailBoardId);
   const runSheetOpen =
     section === "runs" && selectedRunId !== null && runBoardKnown;
+  const approvalSheetOpen =
+    section === "attention" &&
+    isAttentionAdmin &&
+    selectedApprovalId !== null &&
+    approvalBoardId !== null;
+  // Below 1061 px the detail panel is an absolute sheet inside the page
+  // scroller, so a stale scroll offset would place its header above the
+  // viewport. Reset it whenever any sheet opens.
+  useEffect(() => {
+    if (!(sessionSheetOpen || runSheetOpen || approvalSheetOpen)) return;
+    if (!window.matchMedia("(max-width: 1060px)").matches) return;
+    if (pageRef.current !== null) pageRef.current.scrollTop = 0;
+  }, [sessionSheetOpen, runSheetOpen, approvalSheetOpen]);
   const boardOptions = [
     { value: "all", label: t("agents.filters.allBoards") },
     ...state.boards.map((board) => ({ value: board.id, label: board.title })),
@@ -1073,7 +1086,7 @@ export function AgentsPage() {
           {section === "sessions" &&
           (state.loading || state.rows.length > 0) ? (
             <>
-              {displayed.length > 0 ? (
+              {filtered.length > 0 ? (
                 <div
                   data-testid="agents-sessions-heartbeat-note"
                   className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-primary/30 bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
@@ -1133,8 +1146,8 @@ export function AgentsPage() {
                 </div>
                 <span className="ml-auto text-[11px] text-muted-foreground">
                   {t("agents.groups.summary", {
-                    count: displayed.length,
-                    live: displayed.filter(isLiveSession).length,
+                    count: filtered.length,
+                    live: filtered.filter(isLiveSession).length,
                   })}
                 </span>
               </div>
