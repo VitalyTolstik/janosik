@@ -312,6 +312,7 @@ keep-alive PAT-поток получает
 | `approval_required` | 409 | destructive-действие без подтверждения; запрос создан, ничего не применено; содержит `approvalId`, `planHash`, `expiresAt` |
 | `approval_expired` | 409 | подтверждение истекло до решения/применения; содержит `approvalId`, `expiresAt` |
 | `approval_mismatch` | 409 | план/`planHash` или `kind` не совпадают; содержит `approvalId` и префиксы хешей |
+| `approval_target_mismatch` | 409 | явный `cardId` не совпадает с единственной карточкой плана; ничего не создаётся |
 | `approval_owner_mismatch` | 403 | подтверждение принадлежит другому токену/агентской сессии |
 | `approval_not_pending` | 409 | решение/отмена/применение попали в состояние не `pending`; содержит `status` |
 | `approval_rejected` / `approval_cancelled` | 409 | запрос отклонён/отменён; применять его нельзя |

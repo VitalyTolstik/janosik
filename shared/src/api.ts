@@ -137,6 +137,7 @@ export const API_ERROR_CODES = [
   "approval_required",
   "approval_expired",
   "approval_mismatch",
+  "approval_target_mismatch",
   "approval_owner_mismatch",
   "approval_not_pending",
   "approval_rejected",
@@ -1236,8 +1237,21 @@ export interface ApprovalDecisionRequest {
 }
 
 /**
+ * Live counts of the comments and non-inline attachments that a
+ * `DELETE_CARD` plan would remove with the card. Computed from current rows,
+ * never stored as a snapshot: a list read batches by card, a detail read
+ * counts one card. Absent for every other action and for an unknown card.
+ */
+export interface ApprovalImpactDto {
+  comments: number;
+  attachments: number;
+}
+
+/**
  * One `ApprovalRequest` row. `plan` is present on a detail read for a board
  * ADMIN or the requesting token; the list omits it to keep pages small.
+ * `impact` is present when the action is `DELETE_CARD` and `cardId` is
+ * known; its counts can be zero when the card was already deleted.
  */
 export interface ApprovalRequestDto {
   id: string;
@@ -1260,6 +1274,7 @@ export interface ApprovalRequestDto {
   consumedAt: number | null;
   createdAt: number;
   plan?: ApprovalPlan;
+  impact?: ApprovalImpactDto;
 }
 
 /** `GET /boards/:id/approvals` filters. */

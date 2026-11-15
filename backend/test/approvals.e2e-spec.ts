@@ -229,6 +229,47 @@ describe("Approvals (e2e)", () => {
   it("runs create → approve → apply → consumed and does not apply twice", async () => {
     const columnId = await createColumn("Lifecycle");
     const cardId = await createCard(columnId, "Delete me");
+    // Real current impact: three live comments and two live non-inline
+    // attachments. One soft-deleted comment and one inline attachment must
+    // not count; the DTO is not a fabricated snapshot.
+    await prisma.comment.createMany({
+      data: Array.from({ length: 3 }, (_, index) => ({
+        cardId,
+        authorId: ownerId,
+        text: `Comment ${index + 1}`,
+      })),
+    });
+    await prisma.comment.create({
+      data: {
+        cardId,
+        authorId: ownerId,
+        text: "Deleted comment",
+        deletedAt: new Date(),
+      },
+    });
+    await prisma.attachment.createMany({
+      data: Array.from({ length: 2 }, (_, index) => ({
+        cardId,
+        boardId,
+        fileName: `note-${index + 1}.txt`,
+        storedName: randomUUID(),
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        uploadedById: ownerId,
+      })),
+    });
+    await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId,
+        fileName: "inline.png",
+        storedName: randomUUID(),
+        mimeType: "image/png",
+        sizeBytes: 1,
+        uploadedById: ownerId,
+        isInline: true,
+      },
+    });
     const plan = deletePlan([cardId]);
     const commandId = (plan.commands as Array<{ commandId: string }>)[0]!
       .commandId;
@@ -258,6 +299,24 @@ describe("Approvals (e2e)", () => {
       plan,
     }).expect(201);
     expect((repeated.body as ApprovalRequestDto).id).toBe(approval.id);
+
+    const list = await server()
+      .get(`/api/v1/boards/${boardId}/approvals`)
+      .set(auth(session))
+      .expect(200);
+    const listed = (list.body as ApprovalRequestDto[]).find(
+      (row) => row.id === approval.id,
+    )!;
+    expect(listed.impact).toEqual({ comments: 3, attachments: 2 });
+
+    const detail = await server()
+      .get(`/api/v1/boards/${boardId}/approvals/${approval.id}`)
+      .set(auth(session))
+      .expect(200);
+    expect((detail.body as ApprovalRequestDto).impact).toEqual({
+      comments: 3,
+      attachments: 2,
+    });
 
     const approved = await decide(approval.id, approval.planHash).expect(200);
     expect(approved.body).toMatchObject({
@@ -344,6 +403,65 @@ describe("Approvals (e2e)", () => {
         "approval_consumed",
       ]),
     );
+  });
+
+  it("refuses an explicit cardId that disagrees with the plan target", async () => {
+    const columnId = await createColumn("Target guard");
+    const shownCard = await createCard(columnId, "Shown target");
+    const executedCard = await createCard(columnId, "Executed target");
+    const before = await prisma.approvalRequest.count({ where: { boardId } });
+
+    const refused = await createApproval({
+      kind: "destructive",
+      cardId: shownCard,
+      plan: deletePlan([executedCard]),
+    }).expect(409);
+    expect(refused.body).toMatchObject({
+      code: "approval_target_mismatch",
+      retryable: false,
+    });
+    expect(await prisma.approvalRequest.count({ where: { boardId } })).toBe(
+      before,
+    );
+  });
+
+  it("does not attach a foreign card id to an automatic approval", async () => {
+    const foreignBoard = await prisma.board.create({
+      data: { title: "Foreign board" },
+    });
+    const foreignColumn = await prisma.column.create({
+      data: {
+        id: randomUUID(),
+        boardId: foreignBoard.id,
+        title: "Foreign column",
+        position: 0,
+      },
+    });
+    const foreignCard = await prisma.card.create({
+      data: {
+        id: randomUUID(),
+        columnId: foreignColumn.id,
+        title: "Foreign card",
+        position: 0,
+      },
+    });
+
+    const refused = await command(
+      "DELETE_CARD",
+      { cardId: foreignCard.id },
+      { token },
+    );
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("approval_required");
+
+    const detail = await server()
+      .get(
+        `/api/v1/boards/${boardId}/approvals/${String(refused.body.approvalId)}`,
+      )
+      .set(auth(session))
+      .expect(200);
+    expect((detail.body as ApprovalRequestDto).cardId).toBeNull();
+    expect((detail.body as ApprovalRequestDto).impact).toBeUndefined();
   });
 
   it("creates the same request automatically for a destructive command", async () => {

@@ -26,6 +26,10 @@ import type {
 
 import { api, ApiError } from "@/api/client";
 import {
+  destructiveCardImpactText,
+  deleteCardImpactSentence,
+} from "@/components/approvals/approval-impact";
+import {
   ApprovalDecisionForm,
   ApprovalDetailError,
   ApprovalLinks,
@@ -71,6 +75,13 @@ const ACTION_LABEL_KEYS: Record<string, string> = {
   revert: "agents.approvals.action.revert",
 };
 
+/** Result wording for the "Exact action" box; it describes the effect, not
+ * the command verb. Only actions whose result is materially different from
+ * the verb get an entry. */
+const RESULT_LABEL_KEYS: Record<string, string> = {
+  DELETE_CARD: "agents.approvals.result.deleteCard",
+};
+
 const RISK_SHORT_KEYS: Record<ApprovalRequestDto["risk"], string> = {
   low: "agents.approvals.risk.low",
   medium: "agents.approvals.risk.medium",
@@ -86,6 +97,11 @@ function actionLabel(actionType: string, t: Translate): string {
   if (key !== undefined) return t(key as MessageKey);
   const words = actionType.toLowerCase().replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function resultLabel(actionType: string, t: Translate): string {
+  const key = RESULT_LABEL_KEYS[actionType];
+  return key !== undefined ? t(key as MessageKey) : actionLabel(actionType, t);
 }
 
 function formatHistoryTime(ts: number, lang: string, t: Translate): string {
@@ -115,11 +131,11 @@ function titleForApproval(
   cardTitle: string | null,
   t: Translate,
 ): string {
-  if (
-    approval.actionType === "DELETE_CARD" &&
-    cardTitle !== null &&
-    approval.summary.startsWith("Apply ")
-  ) {
+  // A known card title is the real target; the seeded summary is not a
+  // reliable title source (legacy rows say `Delete card '…'` with straight
+  // quotes, some plans say `Apply …`). Keep the summary only as a fallback
+  // when the card is gone or unknown.
+  if (approval.actionType === "DELETE_CARD" && cardTitle !== null) {
     return t("agents.approvals.deleteCardTitle", { card: cardTitle });
   }
   return approval.summary;
@@ -264,7 +280,7 @@ export function AttentionApprovalList({
   onReject: (row: AttentionApprovalRow) => void;
   now: number;
 }) {
-  const { t, lang } = useI18n();
+  const { t, tp, lang } = useI18n();
   const counts = useMemo(() => {
     let needs = 0;
     for (const row of rows) {
@@ -376,6 +392,8 @@ export function AttentionApprovalList({
               `agents.approvals.cardKind.${cardKindKey}` as MessageKey,
               { card: row.cardTitle ?? "" },
             );
+            const destructiveCard =
+              row.actionType === "DELETE_CARD" && row.cardTitle !== null;
             return (
               <li key={row.id}>
                 <article
@@ -397,7 +415,7 @@ export function AttentionApprovalList({
                     className="flex w-full flex-col text-left"
                   >
                     <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--agent-tone-warning)]">
+                      <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--warning-strong)]">
                         {t(`agents.approvals.eyebrow.${effective}`)}
                       </span>
                       <span className="text-border">·</span>
@@ -416,13 +434,32 @@ export function AttentionApprovalList({
                       {t("agents.approvals.asksPrefix")}{" "}
                       <code className="font-mono text-[11.5px]">
                         {row.actionType}
-                      </code>{" "}
-                      {t("agents.approvals.asksOn")}{" "}
-                      <b className="font-semibold text-foreground">
-                        {row.boardTitle}
-                      </b>
-                      {row.kind === "custom" ? null : (
-                        <> . {cardKindSentence}</>
+                      </code>
+                      {destructiveCard ? (
+                        <>
+                          {". "}
+                          {deleteCardImpactSentence(
+                            row.cardTitle ?? "",
+                            row.impact,
+                            t,
+                            tp,
+                            lang,
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {" "}
+                          {t("agents.approvals.asksOn")}{" "}
+                          <b className="font-semibold text-foreground">
+                            {row.boardTitle}
+                          </b>
+                          {row.kind === "custom" ? null : (
+                            <>
+                              {". "}
+                              {cardKindSentence}
+                            </>
+                          )}
+                        </>
                       )}
                     </span>
                   </button>
@@ -480,7 +517,7 @@ export function AttentionApprovalDetail({
   onChanged: () => void;
   onBack?: () => void;
 }) {
-  const { t, lang } = useI18n();
+  const { t, tp, lang } = useI18n();
   const toast = useToast();
   const [detail, setDetail] = useState<ApprovalRequestDto | null>(null);
   const [error, setError] = useState(false);
@@ -560,6 +597,10 @@ export function AttentionApprovalDetail({
   const cardTitle = boardCard?.title ?? fallbackCardTitle ?? null;
   const destructiveCard =
     detail?.actionType === "DELETE_CARD" && cardTitle !== null;
+  const destructiveImpactText =
+    detail !== null && destructiveCard
+      ? destructiveCardImpactText(cardTitle ?? "", detail.impact, t, tp, lang)
+      : null;
   const requestedBy =
     memberName(detail?.requestedBy ?? null) ?? detail?.requestedBy ?? "";
   const decidedBy =
@@ -603,7 +644,12 @@ export function AttentionApprovalDetail({
         planHash: detail.planHash,
         ...(comment === "" ? {} : { comment }),
       });
-      setDetail(updated);
+      // The decision response does not recompute impact; keep the counts the
+      // detail read already proved instead of blanking the paragraph.
+      setDetail({
+        ...updated,
+        impact: updated.impact ?? detail.impact,
+      });
       onChanged();
       toast.success(
         decision === "approve"
@@ -706,11 +752,8 @@ export function AttentionApprovalDetail({
                     : t("agents.approvals.destructiveTitle")}
                 </p>
                 <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
-                  {destructiveCard
-                    ? t("agents.approvals.destructiveCardBody", {
-                        card: cardTitle,
-                      })
-                    : t("agents.approvals.destructiveBody")}
+                  {destructiveImpactText ??
+                    t("agents.approvals.destructiveBody")}
                 </p>
               </div>
             ) : null}
@@ -808,7 +851,7 @@ export function AttentionApprovalDetail({
                           : "text-foreground",
                     )}
                   >
-                    {actionLabel(detail.actionType, t)}
+                    {resultLabel(detail.actionType, t)}
                   </b>
                 </div>
               </div>
@@ -917,7 +960,7 @@ export function AttentionApprovalDetail({
               title={t("agents.approvals.related")}
               icon={<Link2 aria-hidden />}
             >
-              <ApprovalLinks approval={detail} />
+              <ApprovalLinks approval={detail} tokenName={agentName} />
             </DetailSection>
 
             <details
@@ -952,13 +995,7 @@ export function AttentionApprovalDetail({
                   ? t("agents.approvals.destructiveCardTitle")
                   : undefined
               }
-              impactText={
-                destructiveCard
-                  ? t("agents.approvals.destructiveCardBody", {
-                      card: cardTitle ?? "",
-                    })
-                  : detail.summary
-              }
+              impactText={destructiveImpactText ?? detail.summary}
               initialMode={initialMode}
               onDecide={decide}
             />

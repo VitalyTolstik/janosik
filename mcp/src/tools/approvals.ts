@@ -109,7 +109,12 @@ export function registerApprovalTools(
         kind: z
           .enum(["destructive", "done", "custom"])
           .describe("Why a human is needed: destructive, done, or custom."),
-        cardId: z.string().optional().describe("Card the request is about."),
+        cardId: z
+          .string()
+          .optional()
+          .describe(
+            "Card the request is about. When the plan names one card, this must match it.",
+          ),
         ttlMinutes: z
           .number()
           .int()

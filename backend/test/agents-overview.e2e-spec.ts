@@ -187,6 +187,48 @@ describe("Agents overview aggregation (e2e)", () => {
     gammaCard = (await createCard(gammaColumn, "Gamma card")).id;
     isolationCard = (await createCard(isolationColumn, "Isolation card")).id;
 
+    // Live impact for the DELETE_CARD approvals on `alphaCard`: 3 comments
+    // and 2 non-inline attachments; one deleted comment and one inline
+    // attachment must stay out of the batch count.
+    await prisma.comment.createMany({
+      data: Array.from({ length: 3 }, (_, index) => ({
+        cardId: alphaCard,
+        authorId: owner.id,
+        text: `Alpha comment ${index + 1}`,
+      })),
+    });
+    await prisma.comment.create({
+      data: {
+        cardId: alphaCard,
+        authorId: owner.id,
+        text: "Deleted alpha comment",
+        deletedAt: new Date(),
+      },
+    });
+    await prisma.attachment.createMany({
+      data: Array.from({ length: 2 }, (_, index) => ({
+        cardId: alphaCard,
+        boardId: alpha,
+        fileName: `alpha-${index + 1}.txt`,
+        storedName: randomUUID(),
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        uploadedById: owner.id,
+      })),
+    });
+    await prisma.attachment.create({
+      data: {
+        cardId: alphaCard,
+        boardId: alpha,
+        fileName: "alpha-inline.png",
+        storedName: randomUUID(),
+        mimeType: "image/png",
+        sizeBytes: 1,
+        uploadedById: owner.id,
+        isInline: true,
+      },
+    });
+
     alphaSession1 = (
       await createSession({
         boardId: alpha,
@@ -1093,6 +1135,23 @@ describe("Agents overview aggregation (e2e)", () => {
       notificationsBefore,
     );
     expect(await prisma.securityAuditLog.count()).toBe(auditBefore);
+  });
+
+  it("returns current impact counts only for a known DELETE_CARD card", async () => {
+    const page = await approvalsPage(owner.accessToken, {
+      status: "pending",
+      limit: 100,
+    });
+    const withCard = page.items.find(
+      (row) => row.id === approvals.pendingEarly.id,
+    );
+    expect(withCard?.impact).toEqual({ comments: 3, attachments: 2 });
+
+    const withoutCard = page.items.find(
+      (row) => row.id === approvals.pendingLate.id,
+    );
+    expect(withoutCard).toBeDefined();
+    expect(withoutCard?.impact).toBeUndefined();
   });
 
   it("orders pending by expiry and decided by decision across pages", async () => {
