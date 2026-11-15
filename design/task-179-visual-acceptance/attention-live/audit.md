@@ -1,6 +1,7 @@
 # TASK-179 — Attention live sessions · visual acceptance
 
-Verified source commit: `d613d3f2` (the follow-up commit adds only this evidence folder).
+Verified source commit: `d613d3f2` (commits after it change only this evidence
+folder).
 Reference: `design/agent-surfaces-prototype/index.html`.
 Method: Playwright with a mocked API at **1440 / 1024 / 390**, **light + dark**,
 ADMIN and MEMBER; computed styles and geometry read from the live app. Raw
