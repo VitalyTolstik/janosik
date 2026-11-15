@@ -150,6 +150,46 @@ export function isTerminalStatus(status: AgentSessionStatus): boolean {
   );
 }
 
+/**
+ * TASK-179.4 — a session paused by a human is presented as `Paused`, not as
+ * its stored lifecycle value (`idle` in most cases). The mockup renders one
+ * status pill per row/detail, so the pause replaces the lifecycle there.
+ * Board- and token-level pauses stay separate chips: they pause every write
+ * on the board/token without rewriting an individual session's lifecycle.
+ */
+export type SessionDisplayStatus = AgentSessionStatus | "paused";
+
+export function sessionDisplayStatus(
+  session: Pick<AgentSessionDto, "status" | "pausedAt">,
+): SessionDisplayStatus {
+  // A terminal row never presents as paused, even if a malformed payload
+  // leaves `pausedAt` behind.
+  return !isTerminalStatus(session.status) && session.pausedAt !== null
+    ? "paused"
+    : session.status;
+}
+
+/**
+ * True when the session itself is paused. `pauseScope` is the *effective*
+ * scope (token > board > session), so it cannot answer this when a board or
+ * token pause masks a session pause; the session's own `pausedAt` can.
+ */
+export function isSessionPaused(
+  session: Pick<AgentSessionDto, "pausedAt">,
+): boolean {
+  return session.pausedAt !== null;
+}
+
+/**
+ * A paused session has no expected heartbeat, so it must not compete for one
+ * of the two "Needs a nudge" cards. It stays visible in the live preview.
+ */
+export function needsNudge(
+  session: Pick<AgentSessionDto, "stale" | "pausedAt">,
+): boolean {
+  return session.stale && !isSessionPaused(session);
+}
+
 /** A session the control plane still considers open. */
 export function isLiveSession(session: AgentSessionDto): boolean {
   return session.endedAt === null && !isTerminalStatus(session.status);
@@ -284,7 +324,7 @@ export function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
 }
 
-/** `run-128` → `128`, so the dense label reads `Run #128`. */
+/** `run-128` → `128`, so the dense label reads `Run 128`. */
 export function runNumber(id: string): string {
   return id.replace(/^run-/, "");
 }

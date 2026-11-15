@@ -9,7 +9,7 @@ import {
   Bot,
   Clock,
   Folder,
-  History,
+  GitCommit,
   KeyRound,
   Lock,
   Pause,
@@ -34,8 +34,10 @@ import {
   agentStatusTone,
   compactAge,
   heartbeatAge,
+  isSessionPaused,
   isTerminalStatus,
   runNumber,
+  sessionDisplayStatus,
   shortId,
   type AgentGroupMode,
   type AgentSessionRow,
@@ -69,6 +71,48 @@ export function SessionStatusPill({
       tone={STATUS_TONE[agentStatusTone(status)]}
       status={status}
       testId={`agent-status-${status}`}
+      className={className}
+    />
+  );
+}
+
+/**
+ * The status a session actually reads as. A human pause replaces the stored
+ * lifecycle (`idle`) with `Paused`, matching the mockup's single status pill;
+ * board/token pauses stay separate chips so they do not rewrite every row.
+ */
+export function SessionStatePill({
+  session,
+  className,
+  short = false,
+}: {
+  session: Pick<AgentSessionRow, "status" | "pausedAt">;
+  className?: string;
+  short?: boolean;
+}) {
+  const { t } = useI18n();
+  const display = sessionDisplayStatus(session);
+  if (display === "paused") {
+    return (
+      <StatusBadge
+        data-lifecycle="false"
+        label={t("agents.status.paused")}
+        tone="warn"
+        status="paused"
+        testId="agent-status-paused"
+        className={className}
+      />
+    );
+  }
+  return (
+    <StatusBadge
+      data-lifecycle="true"
+      label={t(
+        short ? `agents.statusShort.${display}` : `agents.status.${display}`,
+      )}
+      tone={STATUS_TONE[agentStatusTone(display)]}
+      status={display}
+      testId={`agent-status-${display}`}
       className={className}
     />
   );
@@ -218,12 +262,10 @@ function SessionGroupHeader({
   group,
   mode,
   staleBoardIds,
-  onOpenTokens,
 }: {
   group: SessionGroup;
   mode: AgentGroupMode;
   staleBoardIds: string[];
-  onOpenTokens: () => void;
 }) {
   const { t } = useI18n();
   const { count, stale } = groupMeta(group);
@@ -252,40 +294,23 @@ function SessionGroupHeader({
         </span>
       )}
       <b className="min-w-0 truncate text-[11.5px] font-[650]">{group.title}</b>
-      {mode === "token" && group.tokenId !== undefined ? (
-        <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
-          {shortId(group.tokenId, 12)}
-        </span>
-      ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
         <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
+      {staleBoard ? (
+        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
+          {t("agents.shell.staleData")}
+        </span>
+      ) : null}
       <span
         data-testid={`agents-group-meta-${group.key}`}
-        className={cn(
-          "text-[11px] text-muted-foreground",
-          mode === "board" && "ml-auto",
-        )}
+        className="ml-auto text-[11px] text-muted-foreground"
       >
         {t("agents.groups.sessions", { count })}
         {` · ${t("agents.groups.noHeartbeat", { count: stale })}`}
       </span>
-      {staleBoard ? (
-        <span className="text-[11px] text-[color:var(--agent-tone-warning)]">
-          {t("agents.shell.staleData")}
-        </span>
-      ) : null}
-      {mode === "token" ? (
-        <span className="ml-auto">
-          <TokenSettingsLink
-            isOwn={group.isOwnToken === true}
-            onOpen={onOpenTokens}
-            testId={`agents-token-settings-${group.tokenId ?? "unknown"}`}
-          />
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -385,18 +410,7 @@ export function SessionRow({
         <HeartbeatText session={row} now={now} />
       </span>
       <span className="flex flex-nowrap items-center gap-1 max-[760px]:col-start-2 max-[760px]:row-start-2 max-[760px]:justify-end">
-        <SessionStatusPill status={row.status} short />
-        {row.paused ? (
-          <span
-            data-testid={`agent-pause-badge-${row.pauseScope ?? "session"}`}
-            role="img"
-            aria-label={t(`agents.pause.scope.${row.pauseScope ?? "session"}`)}
-            title={row.pausedReason ?? undefined}
-            className="inline-grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,var(--surface))] text-[color:var(--warning)]"
-          >
-            <Pause className="h-3 w-3" aria-hidden />
-          </span>
-        ) : null}
+        <SessionStatePill session={row} short />
       </span>
     </button>
   );
@@ -409,7 +423,6 @@ export function SessionGroupList({
   now,
   staleBoardIds,
   onSelect,
-  onOpenTokens,
 }: {
   groups: SessionGroup[];
   mode: AgentGroupMode;
@@ -417,7 +430,6 @@ export function SessionGroupList({
   now: number;
   staleBoardIds: string[];
   onSelect: (row: AgentSessionRow) => void;
-  onOpenTokens: () => void;
 }) {
   return (
     <div data-testid="agents-session-list" className="min-w-0">
@@ -427,7 +439,6 @@ export function SessionGroupList({
             group={group}
             mode={mode}
             staleBoardIds={staleBoardIds}
-            onOpenTokens={onOpenTokens}
           />
           <SessionTableHeader />
           <div className="border-t border-border">
@@ -455,6 +466,15 @@ function sessionHint(
 ): string {
   if (isTerminalStatus(row.status)) {
     return t("agents.detail.endedHint");
+  }
+  // A human pause is the explanation for a missing heartbeat. Check it before
+  // `stale` so a paused session never reports its stored `Idle` lifecycle.
+  if (isSessionPaused(row)) {
+    return row.stale
+      ? t("agents.detail.pausedStaleHint", {
+          age: compactAge(heartbeatAge(row, now)),
+        })
+      : t("agents.detail.pausedHint");
   }
   if (row.stale) {
     return t("agents.detail.staleHint", {
@@ -634,26 +654,17 @@ export function SessionDetail({
     !isAgentToken &&
     row.boardRole === "ADMIN" &&
     !staleBoardIds.includes(row.boardId);
-  const sessionPaused = row.pauseScope === "session";
-  const pausedByOtherScope =
-    row.paused && row.pauseScope !== null && row.pauseScope !== "session";
+  const sessionPaused = !terminal && isSessionPaused(row);
+  const pausedByOtherScope = row.paused && !sessionPaused;
   const boardHref =
     row.currentCardId === null
       ? routes.board(row.boardId)
       : `${routes.board(row.boardId)}?card=${encodeURIComponent(row.currentCardId)}`;
-  const runHref =
-    row.currentRunId === null
-      ? null
-      : `${routes.agents}?${new URLSearchParams({
-          section: "runs",
-          board: row.boardId,
-          run: row.currentRunId,
-        }).toString()}`;
   const bannerTone =
     row.stale || row.paused
       ? "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,transparent)]"
       : "border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6";
-  const BannerIcon = row.stale ? Clock : row.paused ? Pause : Activity;
+  const BannerIcon = row.paused ? Pause : row.stale ? Clock : Activity;
 
   return (
     <>
@@ -699,23 +710,25 @@ export function SessionDetail({
         </div>
 
         <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-          <SessionStatusPill status={row.status} />
+          <SessionStatePill session={row} />
           <HeartbeatText session={row} now={now} />
           <Link
             to={routes.board(row.boardId)}
-            className="inline-flex h-[21px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[11px] leading-none font-semibold text-muted-foreground hover:text-foreground"
+            data-testid="agents-session-board-chip"
+            className="inline-flex h-[21px] max-w-full items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[11px] leading-none font-semibold text-muted-foreground hover:text-foreground"
           >
-            <Folder className="h-[10px] w-[10px]" aria-hidden />
             <span className="truncate">{row.boardTitle}</span>
           </Link>
-          {row.paused ? (
+          {row.paused &&
+          row.pauseScope !== null &&
+          row.pauseScope !== "session" ? (
             <AgentPauseBadge
-              scope={row.pauseScope ?? "session"}
+              scope={row.pauseScope}
               title={row.pausedReason ?? undefined}
             />
           ) : null}
           {staleBoardIds.includes(row.boardId) ? (
-            <span className="text-[11px] text-[color:var(--agent-tone-warning)]">
+            <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
               {t("agents.shell.staleData")}
             </span>
           ) : null}
@@ -751,15 +764,11 @@ export function SessionDetail({
                 .join(" · ") || "—"}
             </MetaField>
             <MetaField label={t("agents.detail.token")}>
-              <span className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {shortId(row.apiTokenId, 12)}
-                </span>
-                <TokenSettingsLink
-                  isOwn={row.isOwnToken}
-                  onOpen={onOpenTokens}
-                  testId="agents-session-token-settings"
-                />
+              <span
+                className="block truncate font-mono text-[11px] text-muted-foreground"
+                title={row.apiTokenId}
+              >
+                {shortId(row.apiTokenId, 12)}
               </span>
             </MetaField>
             <MetaField label={t("agents.started")}>
@@ -783,23 +792,32 @@ export function SessionDetail({
               {row.currentRunId === null ? (
                 <span className="text-muted-foreground">—</span>
               ) : (
-                <span className="block truncate">
-                  #{runNumber(row.currentRunId)}
+                <span
+                  data-testid="agents-session-current-run"
+                  className="block truncate font-mono text-[11px]"
+                  title={row.currentRunId}
+                >
+                  {runNumber(row.currentRunId)}
                 </span>
               )}
             </MetaField>
           </div>
         </section>
 
-        <section className="border-b border-border-soft py-2.5">
+        <section
+          data-testid="agents-session-current-work"
+          className="border-b border-border-soft py-2.5"
+        >
           <SectionHead
-            icon={<History className="h-3 w-3" aria-hidden />}
+            icon={<GitCommit className="h-3 w-3" aria-hidden />}
             title={t("agents.detail.currentWork")}
           />
           <div className="flex flex-wrap gap-1.5">
             {row.currentCardId === null ? (
               <span className="text-[11px] text-muted-foreground">
-                {t("agents.detail.noCurrentCard")}
+                {sessionPaused
+                  ? t("agents.detail.noCurrentCardPaused")
+                  : t("agents.detail.noCurrentCard")}
               </span>
             ) : (
               <Link
@@ -810,17 +828,6 @@ export function SessionDetail({
                 {row.cardTitle ?? shortId(row.currentCardId)}
               </Link>
             )}
-            {runHref !== null ? (
-              <Link
-                to={runHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
-              >
-                <History className="h-[10px] w-[10px]" aria-hidden />
-                {t("agents.runHash", {
-                  id: runNumber(row.currentRunId ?? ""),
-                })}
-              </Link>
-            ) : null}
           </div>
         </section>
 
@@ -874,7 +881,6 @@ export function SessionDetail({
               className={FOOTER_BUTTON_CLASS}
             >
               <Link to={boardHref} data-testid="agents-session-open-board">
-                <Folder className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.openBoard")}
               </Link>
             </Button>

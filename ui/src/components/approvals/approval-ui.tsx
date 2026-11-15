@@ -8,7 +8,7 @@ import {
   Folder,
   History,
   KeyRound,
-  Link2,
+  Link as LinkIcon,
   Loader2,
   ShieldCheck,
 } from "lucide-react";
@@ -356,7 +356,7 @@ export function ApprovalLinks({
               aria-hidden
             />
           ) : (
-            <Link2 className="h-2.5 w-2.5" aria-hidden />
+            <LinkIcon className="h-2.5 w-2.5" aria-hidden />
           )}
           {t("agents.approvals.copyLink")}
         </button>

@@ -4,7 +4,10 @@ import type { ReactNode } from "react";
 
 import { AgentStatusBadge } from "@/components/agents/agents-ui";
 import { RunStatusBadge } from "@/components/agents/run-ui";
-import { SessionStatusPill } from "@/components/agents/session-ui";
+import {
+  SessionStatePill,
+  SessionStatusPill,
+} from "@/components/agents/session-ui";
 import { StatusBadge } from "@/components/agents/status-badge";
 import { ApprovalStatusBadge } from "@/components/approvals/approval-ui";
 import { I18nProvider } from "@/i18n";
@@ -67,6 +70,23 @@ describe("one status badge primitive (TASK-179.9)", () => {
     expect(badge).toHaveAttribute("data-lifecycle", "true");
     expect(badge).toHaveAttribute("data-status", status);
     expect(badge.className).toContain("h-[22px]");
+  });
+
+  it("presents a session-level pause instead of its stored Idle lifecycle", () => {
+    withI18n(
+      <SessionStatePill session={{ status: "idle", pausedAt: Date.now() }} />,
+    );
+    const badge = screen.getByTestId("agent-status-paused");
+    expect(badge).toHaveAttribute("data-status", "paused");
+    expect(badge).toHaveAttribute("data-lifecycle", "false");
+    expect(badge).toHaveTextContent("Paused");
+    expect(screen.queryByTestId("agent-status-idle")).toBeNull();
+  });
+
+  it("keeps an unpaused session on its lifecycle", () => {
+    withI18n(<SessionStatePill session={{ status: "idle", pausedAt: null }} />);
+    expect(screen.getByTestId("agent-status-idle")).toHaveTextContent("Idle");
+    expect(screen.queryByTestId("agent-status-paused")).toBeNull();
   });
 
   it("keeps the agent badge on the same primitive", () => {

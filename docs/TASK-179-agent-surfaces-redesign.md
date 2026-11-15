@@ -179,7 +179,11 @@ Three clear layers:
 - Live-sessions preview below the approvals and the stale rows: heading, count
   chips (active / waiting / no heartbeat / paused), `View all` → Sessions and
   up to four session rows. It is readable to MEMBER; stale rows stay in
-  `Needs a nudge` and never repeat in the preview.
+  `Needs a nudge` and never repeat in the preview. A session paused by a human
+  stays in the live preview with a `Paused` status pill even when its heartbeat
+  aged out; pause explains the silence, so it is not a `Needs a nudge` card.
+  The Attention rail badge is the pending-decision count only — stale and
+  paused sessions never inflate it.
 - Stale rows render as up to two selectable cards; a live row or a stale card
   opens the shared session detail in the right panel on Attention without
   changing tabs, restored by `?section=attention&session=<id>`. The block and
@@ -222,7 +226,10 @@ Three clear layers:
   does not. Hide actions on terminal sessions.
 - Remove Stop token/Stop all from board Live; `Manage tokens` link to Account.
   Show `Token settings` only for the current user’s own token; provide a
-  read-only/no-link state for others.
+  read-only/no-link state for others. The global `/agents` session detail and
+  token group headers keep the token as plain mono metadata (no settings
+  control/truncated token pill), as the mockup shows; the ownership-gated
+  control stays in board Live.
 - Claims/in-flight explanation; no release-claim action.
 - Files: `PausePanel`/`LivePanel`, session hooks, shared rows, locales.
 

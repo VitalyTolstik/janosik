@@ -7,10 +7,13 @@ import {
   groupAgents,
   heartbeatAge,
   isLiveSession,
+  isSessionPaused,
   latestLiveSession,
   matchesAgentFilter,
+  needsNudge,
   readAgentFilter,
   readAgentGroup,
+  sessionDisplayStatus,
   type AgentSessionRow,
 } from "@/components/agents/agent-model";
 
@@ -241,5 +244,60 @@ describe("agent grouping", () => {
       row({ tokenName: null, name: "Nightly triage" }),
     ]);
     expect(groups[0].name).toBe("Nightly triage");
+  });
+});
+
+describe("pause presentation", () => {
+  it("presents a session pause as Paused instead of Idle", () => {
+    const session = row({
+      status: "idle",
+      paused: true,
+      pausedAt: NOW,
+      pauseScope: "session",
+      pausedReason: "Review",
+    });
+    expect(sessionDisplayStatus(session)).toBe("paused");
+    expect(isSessionPaused(session)).toBe(true);
+  });
+
+  it("keeps an unpaused session on its lifecycle during a board pause", () => {
+    for (const pauseScope of ["board", "token"] as const) {
+      const session = row({
+        status: "idle",
+        paused: true,
+        pausedAt: null,
+        pauseScope,
+      });
+      expect(sessionDisplayStatus(session)).toBe("idle");
+      expect(isSessionPaused(session)).toBe(false);
+    }
+  });
+
+  it("keeps a session pause when a board pause masks the effective scope", () => {
+    const session = row({
+      status: "idle",
+      paused: true,
+      pausedAt: NOW,
+      pauseScope: "board",
+    });
+    expect(sessionDisplayStatus(session)).toBe("paused");
+    expect(isSessionPaused(session)).toBe(true);
+  });
+
+  it("never presents a terminal session as paused", () => {
+    const completed = row({ status: "completed", pausedAt: NOW });
+    expect(sessionDisplayStatus(completed)).toBe("completed");
+  });
+
+  it("does not put a paused session in the needs-nudge queue", () => {
+    const paused = row({
+      stale: true,
+      paused: true,
+      pausedAt: NOW,
+      pauseScope: "session",
+    });
+    const stale = row({ id: "stale", stale: true, pauseScope: null });
+    expect(needsNudge(paused)).toBe(false);
+    expect(needsNudge(stale)).toBe(true);
   });
 });

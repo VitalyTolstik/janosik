@@ -591,7 +591,7 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(await screen.findByTestId("agent-run-detail")).toBeVisible();
   });
 
-  it("reports a retention-expired run and keeps apply disabled", async () => {
+  it("reports missing stored commands honestly and keeps apply disabled", async () => {
     vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
     vi.spyOn(api, "getRun").mockResolvedValue(detail());
     vi.spyOn(api, "previewRunRevert").mockRejectedValue(
@@ -601,10 +601,10 @@ describe("RunsPanel (TASK-179.5)", () => {
     vi.spyOn(api, "listTokens").mockResolvedValue([]);
 
     renderPanel();
-    expect(await screen.findByTestId("agent-run-expired")).toHaveTextContent(
-      "removed by retention",
-    );
+    expect(
+      await screen.findByTestId("agent-run-preview-unavailable"),
+    ).toHaveTextContent("stored commands or pre-images are missing");
+    expect(screen.queryByTestId("agent-run-expired")).toBeNull();
     expect(screen.queryByTestId("agent-run-revert-apply")).toBeNull();
-    expect(screen.getByTestId("agent-run-expired-preview")).toBeVisible();
   });
 });
