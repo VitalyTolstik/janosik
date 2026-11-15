@@ -94,7 +94,7 @@ body.janosik-touch-dragging {
   --color-fuchsia: var(--fuchsia);
   --color-brown: var(--brown);
   --color-border: var(--border);
-  --color-border-soft: color-mix(in oklab, var(--border) 62%, transparent);
+  --color-border-soft: var(--border-soft);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-lg: var(--radius);
@@ -142,6 +142,8 @@ html[lang="ru"] .font-agent-display {
 }
 
 :root {
+  /* Mockup `--border-soft`: 62% in dark, 72% in light (overridden below). */
+  --border-soft: color-mix(in oklab, var(--border) 62%, transparent);
   /* AA-checked status text on the dark surface (#172033); the worst case is
      ≥4.75:1 on the 6–15% status tints. */
   --agent-tone-success: #10b981;
@@ -171,6 +173,8 @@ html.light {
 
 html.light {
   --agent-primary-strong: #1d4ed8;
+  /* Mockup light `--border-soft` is 72% (62% in dark). */
+  --border-soft: color-mix(in oklab, var(--border) 72%, transparent);
 }
 
 /* Board Settings policy checkbox (TASK-179 feedback #6).

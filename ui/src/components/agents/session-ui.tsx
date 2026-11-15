@@ -297,7 +297,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px]"
+      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -311,7 +311,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px]";
+  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5";
 
 export function SessionRow({
   row,
@@ -342,7 +342,8 @@ export function SessionRow({
       onClick={() => onSelect(row)}
       className={cn(
         ROW_GRID,
-        selected && "bg-primary/6 shadow-[inset_2px_0_0_var(--primary)]",
+        selected &&
+          "bg-primary/6 shadow-[inset_2px_0_0_var(--primary)] hover:bg-primary/6",
       )}
     >
       <span className="flex min-w-0 items-start gap-1.5 max-[760px]:col-start-1 max-[760px]:row-start-1">
@@ -350,7 +351,7 @@ export function SessionRow({
           <Bot className="h-3.5 w-3.5" aria-hidden />
         </span>
         <span className="min-w-0">
-          <b className="block truncate text-[11.5px] font-[650] leading-[1.35]">
+          <b className="block truncate text-[11.5px] leading-[1.35] font-[650] text-muted-foreground">
             {agentLabel(row)}
           </b>
           <span className="mt-px block truncate text-[11px] leading-[1.35] text-muted-foreground">
