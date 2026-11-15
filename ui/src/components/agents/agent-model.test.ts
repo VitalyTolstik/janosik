@@ -284,6 +284,11 @@ describe("pause presentation", () => {
     expect(isSessionPaused(session)).toBe(true);
   });
 
+  it("never presents a terminal session as paused", () => {
+    const completed = row({ status: "completed", pausedAt: NOW });
+    expect(sessionDisplayStatus(completed)).toBe("completed");
+  });
+
   it("does not put a paused session in the needs-nudge queue", () => {
     const paused = row({
       stale: true,

@@ -652,7 +652,7 @@ describe("AgentsPage", () => {
     expect(
       await screen.findByTestId("agent-run-commands-missing"),
     ).toHaveTextContent(
-      "The command log for this run is missing. The run records 2 commands applied",
+      "The command log for this run is missing. The run records 2 commands",
     );
     expect(screen.getByText("0 of 2 stored")).toBeInTheDocument();
     expect(screen.queryByText("Commands (0)")).toBeNull();

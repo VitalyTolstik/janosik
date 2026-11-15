@@ -162,7 +162,11 @@ export type SessionDisplayStatus = AgentSessionStatus | "paused";
 export function sessionDisplayStatus(
   session: Pick<AgentSessionDto, "status" | "pausedAt">,
 ): SessionDisplayStatus {
-  return session.pausedAt !== null ? "paused" : session.status;
+  // A terminal row never presents as paused, even if a malformed payload
+  // leaves `pausedAt` behind.
+  return !isTerminalStatus(session.status) && session.pausedAt !== null
+    ? "paused"
+    : session.status;
 }
 
 /**

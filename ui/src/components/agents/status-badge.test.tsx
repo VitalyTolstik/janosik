@@ -74,13 +74,7 @@ describe("one status badge primitive (TASK-179.9)", () => {
 
   it("presents a session-level pause instead of its stored Idle lifecycle", () => {
     withI18n(
-      <SessionStatePill
-        session={{
-          status: "idle",
-          pausedAt: Date.now(),
-          pauseScope: "session",
-        }}
-      />,
+      <SessionStatePill session={{ status: "idle", pausedAt: Date.now() }} />,
     );
     const badge = screen.getByTestId("agent-status-paused");
     expect(badge).toHaveAttribute("data-status", "paused");
@@ -89,12 +83,8 @@ describe("one status badge primitive (TASK-179.9)", () => {
     expect(screen.queryByTestId("agent-status-idle")).toBeNull();
   });
 
-  it("keeps a board pause separate from the session lifecycle", () => {
-    withI18n(
-      <SessionStatePill
-        session={{ status: "idle", pausedAt: null, pauseScope: "board" }}
-      />,
-    );
+  it("keeps an unpaused session on its lifecycle", () => {
+    withI18n(<SessionStatePill session={{ status: "idle", pausedAt: null }} />);
     expect(screen.getByTestId("agent-status-idle")).toHaveTextContent("Idle");
     expect(screen.queryByTestId("agent-status-paused")).toBeNull();
   });

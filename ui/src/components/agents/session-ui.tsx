@@ -86,7 +86,7 @@ export function SessionStatePill({
   className,
   short = false,
 }: {
-  session: Pick<AgentSessionRow, "status" | "pausedAt" | "pauseScope">;
+  session: Pick<AgentSessionRow, "status" | "pausedAt">;
   className?: string;
   short?: boolean;
 }) {
@@ -654,9 +654,8 @@ export function SessionDetail({
     !isAgentToken &&
     row.boardRole === "ADMIN" &&
     !staleBoardIds.includes(row.boardId);
-  const sessionPaused = row.pauseScope === "session";
-  const pausedByOtherScope =
-    row.paused && row.pauseScope !== null && row.pauseScope !== "session";
+  const sessionPaused = isSessionPaused(row);
+  const pausedByOtherScope = row.paused && !sessionPaused;
   const boardHref =
     row.currentCardId === null
       ? routes.board(row.boardId)
@@ -816,7 +815,9 @@ export function SessionDetail({
           <div className="flex flex-wrap gap-1.5">
             {row.currentCardId === null ? (
               <span className="text-[11px] text-muted-foreground">
-                {t("agents.detail.noCurrentCard")}
+                {sessionPaused
+                  ? t("agents.detail.noCurrentCardPaused")
+                  : t("agents.detail.noCurrentCard")}
               </span>
             ) : (
               <Link
