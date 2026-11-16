@@ -161,13 +161,13 @@ export function AgentActionDialog({
     >
       <DialogContent
         hideClose
-        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
+        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 !shadow-[var(--agent-shadow-lg)] sm:rounded-[10px]"
         data-testid="agent-action-dialog"
       >
         <div className="flex items-start gap-2.5 px-4 pt-3.5 pb-2.5">
           <span
             className={cn(
-              "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-background/40",
+              "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-surface",
               action === "end"
                 ? "border-danger/40 text-[color:var(--agent-tone-danger)]"
                 : "border-border text-muted-foreground",
@@ -201,21 +201,27 @@ export function AgentActionDialog({
                 : ""}
             </p>
           ) : (
-            <label className="mt-[10px] mb-[2.3px] block space-y-[3.3px] text-[10.5px] leading-[1.45]">
-              <span className="block text-[10.5px] font-semibold text-muted-foreground">
+            // The field keeps the prototype's line box around the inline-block
+            // textarea; that baseline gap is part of the 244 px dialog height.
+            <div className="mt-[10px] mb-[2px] text-[11.5px] leading-[1.55]">
+              <label
+                htmlFor="agent-action-reason"
+                className="block text-[10px] leading-[15.5px] font-semibold text-muted-foreground"
+              >
                 {t("agents.action.reason")}
-              </span>
+              </label>
               <Textarea
+                id="agent-action-reason"
                 value={reason}
                 maxLength={REASON_MAX}
                 rows={2}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={t("agents.action.reasonPlaceholder")}
                 data-testid="agent-action-reason"
-                className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+                className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
                 autoFocus
               />
-            </label>
+            </div>
           )}
         </div>
 

@@ -258,12 +258,14 @@ describe("AttentionApprovals", () => {
     await user.click(trigger);
     const dialog = await screen.findByTestId("approval-token-dialog");
     expect(
-      within(dialog).getByRole("heading", { name: `Token ${AGENT}` }),
+      within(dialog).getByRole("heading", {
+        name: `Your token · ${AGENT}`,
+      }),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByTestId("approval-token-impact"),
     ).toHaveTextContent(
-      "The board surface can stop writes for this token, but cannot rotate or reveal it.",
+      "This link is shown only for your own token. Other members' tokens stay read-only and expose no settings action.",
     );
     expect(within(dialog).queryByText("token-1")).toBeNull();
 

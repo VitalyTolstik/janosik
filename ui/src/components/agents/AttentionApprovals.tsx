@@ -291,8 +291,10 @@ export function AttentionApprovalList({
     );
   if (rows.length === 0) return null;
 
-  const heading =
-    counts.needs === 1
+  const decidedView = filter === "decided";
+  const heading = decidedView
+    ? t("agents.approvals.decidedHeading")
+    : counts.needs === 1
       ? t("agents.approvals.oneWaiting")
       : counts.needs > 1
         ? t("agents.approvals.manyWaiting", { count: counts.needs })
@@ -310,7 +312,9 @@ export function AttentionApprovalList({
         />
         <h2 className="text-[12.5px] font-[650]">{heading}</h2>
         <span className="text-[11px] text-muted-foreground">
-          {t("agents.approvals.sortedByExpiry")}
+          {decidedView
+            ? t("agents.approvals.decidedSubtitle")
+            : t("agents.approvals.sortedByExpiry")}
         </span>
         <div
           role="group"
@@ -461,15 +465,17 @@ export function AttentionApprovalList({
                     >
                       {t("agents.approvals.reviewPlan")}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onReject(row)}
-                      data-testid={`agents-approval-reject-${row.id}`}
-                      className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
-                    >
-                      {t("agents.approvals.reject")}
-                    </Button>
+                    {effective === "pending" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReject(row)}
+                        data-testid={`agents-approval-reject-${row.id}`}
+                        className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
+                      >
+                        {t("agents.approvals.reject")}
+                      </Button>
+                    ) : null}
                     <code className="ml-auto hidden truncate font-mono text-[11px] text-muted-foreground md:block">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
@@ -744,16 +750,32 @@ export function AttentionApprovalDetail({
               <span className="mt-px shrink-0">{hint.icon}</span>
               <span>{hint.text}</span>
             </p>
+            {variant === "global" &&
+            effectiveStatus === "approved" &&
+            onNextPending !== undefined ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                data-testid="approval-next-pending"
+                onClick={onNextPending}
+                className="h-7 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
+              >
+                {t("agents.approvals.nextPending")}
+              </Button>
+            ) : null}
             {onBack !== undefined ? (
               <div className="flex justify-end">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
+                  className="h-8 min-h-0 rounded-[6px] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11"
                   onClick={onBack}
                 >
-                  {t("common.close")}
+                  {variant === "global"
+                    ? t("agents.approvals.closeDetail")
+                    : t("common.close")}
                 </Button>
               </div>
             ) : null}
@@ -770,7 +792,7 @@ export function AttentionApprovalDetail({
       <header
         className={cn(
           "shrink-0 border-b border-border px-3.5",
-          variant === "board" ? "pt-[11px] pb-[9px]" : "pt-3 pb-2",
+          variant === "board" ? "pt-[11px] pb-2" : "pt-3 pb-2",
         )}
       >
         <div className="flex items-start gap-2">
@@ -808,7 +830,7 @@ export function AttentionApprovalDetail({
                 : titleForApproval(detail, cardTitle, t)}
             </h2>
             {variant === "board" && detail !== null ? (
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <div className="-mt-0.5 flex flex-wrap items-center gap-1.5">
                 {effectiveStatus !== undefined ? (
                   <ApprovalStatusBadge
                     status={effectiveStatus}
@@ -816,7 +838,7 @@ export function AttentionApprovalDetail({
                   />
                 ) : null}
                 <ApprovalRiskBadge risk={detail.risk} />
-                <span className="inline-flex h-[22px] items-center rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[7px] text-[11px] font-semibold leading-none text-muted-foreground">
+                <span className="inline-flex h-[21px] items-center rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[7px] text-[11px] font-semibold leading-none text-muted-foreground">
                   {boardLabel}
                 </span>
               </div>
@@ -1016,7 +1038,7 @@ export function AttentionApprovalDetail({
                 </code>
                 <button
                   type="button"
-                  className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:h-11 max-md:w-11"
                   onClick={() => void copyHash()}
                   aria-label={t("agentControl.approvals.copyHash")}
                   data-testid="approval-copy-hash"

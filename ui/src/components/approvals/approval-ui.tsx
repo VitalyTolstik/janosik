@@ -28,11 +28,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
 import { StatusBadge, type StatusTone } from "@/components/agents/status-badge";
+import { TokenInfoDialog } from "@/components/agents/TokenInfoDialog";
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
@@ -306,7 +306,7 @@ export function ApprovalLinks({
   };
 
   return (
-    <Dialog open={tokenOpen} onOpenChange={setTokenOpen}>
+    <>
       <div className="flex flex-wrap gap-1.5" data-testid="approval-links">
         <Link
           to={routes.agentControl(approval.boardId, "inbox")}
@@ -336,16 +336,15 @@ export function ApprovalLinks({
             {t("agentControl.approvals.openRun")}
           </Link>
         ) : null}
-        <DialogTrigger asChild>
-          <button
-            type="button"
-            className={RELATED_CLASS}
-            data-testid="approval-token-link"
-          >
-            <KeyRound className="h-2.5 w-2.5" aria-hidden />
-            {t("agents.approvals.tokenLabel", { token: resolvedToken })}
-          </button>
-        </DialogTrigger>
+        <button
+          type="button"
+          className={RELATED_CLASS}
+          data-testid="approval-token-link"
+          onClick={() => setTokenOpen(true)}
+        >
+          <KeyRound className="h-2.5 w-2.5" aria-hidden />
+          {t("agents.approvals.tokenLabel", { token: resolvedToken })}
+        </button>
         <button
           type="button"
           onClick={copyLink}
@@ -367,57 +366,16 @@ export function ApprovalLinks({
         {copied ? t("agentControl.approvals.copied") : ""}
       </span>
 
-      <DialogContent
-        className="w-[min(420px,calc(100vw-1.5rem))] max-w-[420px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
-        data-testid="approval-token-dialog"
-        hideClose
-      >
-        <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning)]">
-            <KeyRound className="h-[15px] w-[15px]" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
-              {t("agents.approvals.tokenInfoTitle", {
-                token: resolvedToken,
-              })}
-            </DialogTitle>
-            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
-              {t("agents.approvals.tokenInfoDescription")}
-            </DialogDescription>
-          </div>
-        </DialogHeader>
-        <div className="px-4 pb-0.5">
-          <p
-            data-testid="approval-token-impact"
-            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-muted-foreground"
-          >
-            {t("agents.approvals.tokenInfoBody")}
-          </p>
-        </div>
-        <DialogFooter className="px-4 pt-3 pb-3.5">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setTokenOpen(false)}
-            className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            type="button"
-            data-testid="approval-token-open-account"
-            onClick={() => {
-              setTokenOpen(false);
-              window.dispatchEvent(new Event("janosik:open-api-keys"));
-            }}
-            className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
-          >
-            {t("agents.approvals.tokenInfoOpen")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <TokenInfoDialog
+        open={tokenOpen}
+        onOpenChange={setTokenOpen}
+        tokenName={resolvedToken}
+        testIdPrefix="approval-token"
+        onOpenAccount={() =>
+          window.dispatchEvent(new Event("janosik:open-api-keys"))
+        }
+      />
+    </>
   );
 }
 
@@ -505,7 +463,7 @@ export function ApprovalDecisionForm({
           rows={2}
           maxLength={2000}
           placeholder={t("agentControl.approvals.rejectReasonPlaceholder")}
-          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px]"
+          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
           autoFocus
         />
         <div className="flex items-center justify-end gap-1.5">

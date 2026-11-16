@@ -68,12 +68,12 @@ export function AgentConfirmDialog({
       <DialogContent
         hideClose
         data-testid={testId}
-        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
+        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 !shadow-[var(--agent-shadow-lg)] sm:rounded-[10px]"
       >
         <div className="flex items-start gap-2.5 px-4 pt-3.5 pb-2.5">
           <span
             className={cn(
-              "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-background/40",
+              "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-surface",
               tone === "danger"
                 ? "border-danger/40 text-[color:var(--agent-tone-danger)]"
                 : "border-border text-muted-foreground",

@@ -278,14 +278,20 @@ function BoardPauseDialog({
       cancelTestId="board-pause-cancel"
       confirmClassName="min-w-[122px]"
     >
-      <label className="mt-[10px] mb-[2.3px] block space-y-[3.3px] text-[10.5px] leading-[1.45]">
-        <span className="block text-[10.5px] font-semibold text-muted-foreground">
+      {/* Inline-block textarea + inherited 11.5/1.55 line box: the baseline
+          gap below the field is the prototype's, not extra footer padding. */}
+      <div className="mt-[10px] mb-[2px] text-[11.5px] leading-[1.55]">
+        <label
+          htmlFor={pause ? "board-pause-reason" : "board-resume-reason"}
+          className="block text-[10px] leading-[15.5px] font-semibold text-muted-foreground"
+        >
           {t("agentControl.pause.reasonLabel")}
-        </span>
+        </label>
         <Textarea
+          id={pause ? "board-pause-reason" : "board-resume-reason"}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          rows={3}
+          rows={2}
           maxLength={500}
           placeholder={t(
             pause
@@ -293,10 +299,10 @@ function BoardPauseDialog({
               : "agentControl.pause.boardResumeReasonPlaceholder",
           )}
           data-testid={pause ? "board-pause-reason" : "board-resume-reason"}
-          className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+          className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
           autoFocus
         />
-      </label>
+      </div>
     </AgentConfirmDialog>
   );
 }
@@ -629,15 +635,19 @@ export function PausePanel({
       <div className="ac-toolbar">
         <h3>{t("agentControl.shell.live")}</h3>
         <span className="meta">
-          {sessions !== null && sessions.length > 0
-            ? t("agentControl.live.summary", {
-                count: sessions.length,
-                tokens: t("agentControl.live.tokenCount", {
-                  count: groups.length,
-                }),
-                stale: staleCount,
-              })
-            : t("agentControl.live.summaryZero")}
+          {sessions === null
+            ? sessionsError
+              ? "—"
+              : null
+            : sessions.length > 0
+              ? t("agentControl.live.summary", {
+                  count: sessions.length,
+                  tokens: t("agentControl.live.tokenCount", {
+                    count: groups.length,
+                  }),
+                  stale: staleCount,
+                })
+              : t("agentControl.live.summaryZero")}
         </span>
         {sessions !== null && sessions.length > 0 ? (
           <button
@@ -726,9 +736,6 @@ export function PausePanel({
                           !row.stale,
                       ).length,
                     })}
-                    {group.rows.some((row) => row.stale && !row.paused)
-                      ? ` · ${t("agents.groups.noHeartbeat", { count: group.rows.filter((row) => row.stale && !row.paused).length })}`
-                      : ""}
                     {group.rows.some((row) => row.paused)
                       ? ` · ${t("agentControl.live.groupPaused", {
                           count: group.rows.filter((row) => row.paused).length,
@@ -738,6 +745,7 @@ export function PausePanel({
                   <span className="ml-auto">
                     <TokenSettingsLink
                       isOwn={ownTokenIds.has(group.tokenId)}
+                      tokenName={group.name}
                       onOpen={openTokens}
                       testId={`agent-live-token-settings-${group.tokenId}`}
                     />

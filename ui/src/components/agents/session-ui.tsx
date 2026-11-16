@@ -30,6 +30,7 @@ import {
   AgentActionDialog,
   type AgentSessionAction,
 } from "./AgentActionDialog";
+import { TokenInfoDialog } from "./TokenInfoDialog";
 import {
   agentLabel,
   agentStatusTone,
@@ -179,44 +180,54 @@ export function HeartbeatText({
  */
 export function TokenSettingsLink({
   isOwn,
+  tokenName,
   onOpen,
   className,
   testId = "agent-token-settings",
 }: {
   isOwn: boolean;
+  tokenName: string;
   onOpen: () => void;
   className?: string;
   testId?: string;
 }) {
   const { t } = useI18n();
+  const [infoOpen, setInfoOpen] = useState(false);
   if (!isOwn) {
     return (
       <span
         data-testid={`${testId}-readonly`}
         title={t("agents.tokenSettings.ownerOnlyHint")}
         className={cn(
-          "inline-flex items-center gap-1 text-[11px] text-muted-foreground",
+          "inline-flex min-h-11 items-center text-[11px] text-muted-foreground min-[761px]:min-h-0",
           className,
         )}
       >
-        <Lock className="h-[10px] w-[10px] shrink-0" aria-hidden />
         {t("agents.tokenSettings.ownerOnly")}
       </span>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-testid={testId}
-      className={cn(
-        "inline-flex min-h-11 items-center gap-1 rounded-sm text-[11px] text-muted-foreground hover:text-foreground hover:underline min-[761px]:min-h-6",
-        className,
-      )}
-    >
-      {t("agents.tokenSettings.open")}
-      <ArrowUpRight className="h-[10px] w-[10px]" aria-hidden />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setInfoOpen(true)}
+        data-testid={testId}
+        className={cn(
+          "inline-flex min-h-11 min-w-[121px] items-center justify-center gap-[5px] rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:min-h-6",
+          className,
+        )}
+      >
+        {t("agents.tokenSettings.open")}
+        <ArrowUpRight className="h-[13px] w-[13px]" aria-hidden />
+      </button>
+      <TokenInfoDialog
+        open={infoOpen}
+        onOpenChange={setInfoOpen}
+        tokenName={tokenName}
+        onOpenAccount={onOpen}
+      />
+    </>
   );
 }
 
@@ -336,7 +347,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_100px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5"
+      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -350,7 +361,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_100px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5";
+  "agents-session-grid grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5";
 
 export function SessionRow({
   row,
@@ -846,7 +857,7 @@ export function SessionDetail({
             ) : (
               <Link
                 to={boardHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:h-11 max-md:px-2.5"
               >
                 <Folder className="h-[10px] w-[10px]" aria-hidden />
                 {row.cardTitle ?? shortId(row.currentCardId)}
@@ -860,7 +871,7 @@ export function SessionDetail({
                   run: row.currentRunId,
                 }).toString()}`}
                 data-testid="agents-session-current-work-run"
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] font-mono text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] font-mono text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:h-11 max-md:px-2.5"
               >
                 <History className="h-[10px] w-[10px]" aria-hidden />
                 {t("agents.runHash", { id: runNumber(row.currentRunId) })}
