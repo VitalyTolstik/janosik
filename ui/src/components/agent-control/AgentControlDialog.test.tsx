@@ -267,7 +267,9 @@ describe("agent control (TASK-166.14)", () => {
     renderDialog();
     await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
     expect(await screen.findByTestId("approval-cancel-menu")).toBeVisible();
-    expect(screen.getByText(/Approving authorizes only/)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Approving authorizes only/).length,
+    ).toBeGreaterThan(0);
     const footerHost = screen.getByTestId("agent-control-footer");
     expect(within(footerHost).getByTestId("approval-reject")).toBeVisible();
     expect(within(footerHost).getByTestId("approval-approve")).toBeVisible();
@@ -662,11 +664,11 @@ describe("agent control (TASK-166.14)", () => {
       "agent-session-row-stale-active",
     );
     expect(
-      within(staleRow).getByTestId("agent-status-stale"),
-    ).toHaveTextContent("Stale");
+      within(staleRow).getByTestId("agent-status-active"),
+    ).toHaveTextContent("Active");
     expect(staleRow).toHaveTextContent("6m ago");
-    expect(staleRow).not.toHaveTextContent("No heartbeat ·");
-    expect(within(staleRow).getByText("Stale")).toBeInTheDocument();
+    expect(staleRow).toHaveTextContent("No heartbeat · 6m");
+    expect(within(staleRow).queryByTestId("agent-status-stale")).toBeNull();
     const terminalRow = screen.getByTestId("agent-session-row-completed");
     expect(
       within(terminalRow).getByTestId("agent-status-completed"),

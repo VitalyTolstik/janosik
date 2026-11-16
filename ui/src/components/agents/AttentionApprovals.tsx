@@ -24,10 +24,7 @@ import type {
 } from "@janosik/shared";
 
 import { api, ApiError } from "@/api/client";
-import {
-  destructiveCardImpactText,
-  deleteCardImpactSentence,
-} from "@/components/approvals/approval-impact";
+import { deleteCardImpactSentence } from "@/components/approvals/approval-impact";
 import {
   ApprovalDecisionForm,
   ApprovalDetailError,
@@ -250,6 +247,7 @@ export function AttentionApprovalList({
   onSelect,
   onReject,
   now,
+  loading = false,
 }: {
   rows: readonly AttentionApprovalRow[];
   filter: AttentionApprovalFilter;
@@ -258,6 +256,7 @@ export function AttentionApprovalList({
   onSelect: (row: AttentionApprovalRow) => void;
   onReject: (row: AttentionApprovalRow) => void;
   now: number;
+  loading?: boolean;
 }) {
   const { t, tp, lang } = useI18n();
   const counts = useMemo(() => {
@@ -283,6 +282,13 @@ export function AttentionApprovalList({
     [filter, now, rows],
   );
 
+  if (loading && rows.length === 0)
+    return (
+      <section aria-busy="true" data-testid="agents-approvals-loading">
+        <Skeleton variant="text" lines={2} />
+        <Skeleton variant="card" height={90} />
+      </section>
+    );
   if (rows.length === 0) return null;
 
   const heading =
@@ -510,7 +516,7 @@ export function AttentionApprovalDetail({
   onNextPending?: () => void;
   onCancelRequest?: () => Promise<boolean>;
 }) {
-  const { t, tp, lang } = useI18n();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const [detail, setDetail] = useState<ApprovalRequestDto | null>(null);
   const [error, setError] = useState(false);
@@ -603,12 +609,6 @@ export function AttentionApprovalDetail({
   const boardCard =
     detail?.cardId != null ? board?.cards[detail.cardId] : undefined;
   const cardTitle = boardCard?.title ?? fallbackCardTitle ?? null;
-  const destructiveCard =
-    detail?.actionType === "DELETE_CARD" && cardTitle !== null;
-  const destructiveImpactText =
-    detail !== null && destructiveCard
-      ? destructiveCardImpactText(cardTitle ?? "", detail.impact, t, tp, lang)
-      : null;
   const requestedBy =
     memberName(detail?.requestedBy ?? null) ?? detail?.requestedBy ?? "";
   const decidedBy =
@@ -716,7 +716,7 @@ export function AttentionApprovalDetail({
           "ac-foot ac-foot-static shrink-0 border-t border-border",
           variant === "board"
             ? "ac-foot-approval bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-3 py-[9px]"
-            : "bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5",
+            : "bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 max-md:px-3 max-md:py-[9px]",
         )}
       >
         {canDecide ? (
@@ -734,7 +734,7 @@ export function AttentionApprovalDetail({
             impactTitle={
               t("agents.runs.commandCount", { count: commandCount }) + "."
             }
-            impactText={`${destructiveImpactText ?? detail.summary}${cardTitle === null ? "" : `. ${t("agents.approvals.targetLabel", { target: cardTitle })}`}`}
+            impactText={`${detail.summary.replace(/[.\s]+$/, "")}.${cardTitle === null ? "" : ` ${t("agents.approvals.targetLabel", { target: cardTitle })}`}`}
             initialMode={initialMode}
             onDecide={decide}
           />
@@ -877,7 +877,7 @@ export function AttentionApprovalDetail({
                   {boardLabel}
                 </RequestMeta>
                 <RequestMeta label={t("agents.approvals.requestedBy")}>
-                  {requestedBy}
+                  {agentName}
                 </RequestMeta>
                 <RequestMeta label={t("agents.approvals.agent")}>
                   {session?.name === undefined &&

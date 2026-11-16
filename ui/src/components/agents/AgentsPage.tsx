@@ -58,6 +58,7 @@ import {
 import { BoardScopeSelect } from "./BoardScopeSelect";
 import { RunDetail, RunList } from "./run-ui";
 import {
+  EMPTY_RUN_FILTER,
   hasRunFilter,
   readRunFilter,
   runBoardRole as roleForRunBoard,
@@ -100,8 +101,21 @@ export function AgentsPage() {
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
   const { boards: loadedBoards } = useBoard();
-  const filter = useMemo(() => readAgentFilter(params), [params]);
-  const runFilter = useMemo(() => readRunFilter(params), [params]);
+  const allDetailScope = params.get("scope") === "all";
+  const filter = useMemo(
+    () => ({
+      ...readAgentFilter(params),
+      ...(allDetailScope ? { board: "all" } : {}),
+    }),
+    [params, allDetailScope],
+  );
+  const runFilter = useMemo(
+    () => ({
+      ...readRunFilter(params),
+      ...(allDetailScope ? { board: "all" } : {}),
+    }),
+    [params, allDetailScope],
+  );
   const groupMode = readAgentGroup(params);
   const sectionParam = params.get("section");
   const section: Section = SECTIONS.includes(sectionParam as Section)
@@ -144,6 +158,7 @@ export function AgentsPage() {
           const search = new URLSearchParams(current);
           const next = { ...readAgentFilter(search), ...patch };
           setOrDelete(search, "board", next.board, "all");
+          if ("board" in patch) search.delete("scope");
           if ("token" in patch) {
             // `?agent=` is canonical; the old `?token=` spelling stays readable
             // but a filter change normalises the URL to the new name.
@@ -174,6 +189,7 @@ export function AgentsPage() {
           const search = new URLSearchParams(current);
           const next = { ...readRunFilter(search), ...patch };
           writeRunFilter(search, next);
+          if ("board" in patch) search.delete("scope");
           search.set("section", "runs");
           search.delete("run");
           search.delete("approval");
@@ -214,6 +230,8 @@ export function AgentsPage() {
         (current) => {
           const next = new URLSearchParams(current);
           next.set("section", "runs");
+          if (!current.has("board") || current.get("scope") === "all")
+            next.set("scope", "all");
           next.set("board", run.boardId);
           next.set("run", run.id);
           next.delete("approval");
@@ -229,6 +247,10 @@ export function AgentsPage() {
       (current) => {
         const next = new URLSearchParams(current);
         next.delete("run");
+        if (next.get("scope") === "all") {
+          next.delete("scope");
+          next.delete("board");
+        }
         return next;
       },
       { replace: true },
@@ -298,6 +320,10 @@ export function AgentsPage() {
       setOrDelete(search, "section", value, "attention");
       // Section switches close a detail selection, but board/token filters
       // stay in the URL: `agent`/`token` both name the token filter.
+      if (search.get("scope") === "all") {
+        search.delete("scope");
+        search.delete("board");
+      }
       for (const key of ["session", "approval", "run"]) search.delete(key);
       // Normalise values that belong to the other section so the URL never
       // claims a filter the visible list is not applying.
@@ -326,6 +352,8 @@ export function AgentsPage() {
         (current) => {
           const next = new URLSearchParams(current);
           next.set("section", "attention");
+          if (!current.has("board") || current.get("scope") === "all")
+            next.set("scope", "all");
           next.set("board", row.boardId);
           next.set("approval", row.id);
           next.delete("session");
@@ -344,6 +372,10 @@ export function AgentsPage() {
       (current) => {
         const next = new URLSearchParams(current);
         next.delete("approval");
+        if (next.get("scope") === "all") {
+          next.delete("scope");
+          next.delete("board");
+        }
         return next;
       },
       { replace: true },
@@ -374,6 +406,7 @@ export function AgentsPage() {
         const next = new URLSearchParams(current);
         for (const key of [
           "board",
+          "scope",
           "token",
           "agent",
           "status",
@@ -400,6 +433,25 @@ export function AgentsPage() {
     enabled: !state.isAgentToken,
     filter: runFilter,
   });
+  const countFilter = useMemo(
+    () => ({ ...EMPTY_RUN_FILTER, board: filter.board }),
+    [filter.board],
+  );
+  const runCount = useAgentRuns(state.boards, {
+    enabled: !state.isAgentToken,
+    filter: countFilter,
+  });
+  const {
+    loading: countLoading,
+    loadingMore: countLoadingMore,
+    hasMore: countHasMore,
+    error: countError,
+    loadMore: loadMoreCount,
+  } = runCount;
+  useEffect(() => {
+    if (!countLoading && !countLoadingMore && countHasMore && !countError)
+      void loadMoreCount();
+  }, [countLoading, countLoadingMore, countHasMore, countError, loadMoreCount]);
   useEffect(() => {
     // A new filter starts at the mockup's first page of seven.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the visible page on filter change
@@ -581,7 +633,9 @@ export function AgentsPage() {
       ? undefined
       : pending.rows.find((row) => row.id === visibleApprovalId);
   const approvalBoardId =
-    params.get("board") ?? selectedApprovalBase?.boardId ?? null;
+    selectedApprovalId !== null
+      ? params.get("board")
+      : (params.get("board") ?? selectedApprovalBase?.boardId ?? null);
   const selectedRunRow =
     selectedRunId === null
       ? undefined
@@ -595,7 +649,7 @@ export function AgentsPage() {
   const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
   const runDetailBoardId =
     selectedRunId !== null
-      ? runFilter.board
+      ? (params.get("board") ?? "all")
       : (autoRunRow?.boardId ?? runFilter.board);
   const runBoardRole =
     roleForRunBoard(state.boards, runDetailBoardId) ??
@@ -772,7 +826,7 @@ export function AgentsPage() {
     (!state.boards.some((board) => board.id === filter.board) ||
       (section === "runs" && runs.revokedBoardIds.includes(filter.board)));
   const missingScope =
-    filter.board === "all" && (params.has("approval") || params.has("run"));
+    !params.has("board") && (params.has("approval") || params.has("run"));
   const openTokens = () =>
     window.dispatchEvent(new Event("janosik:open-api-keys"));
 
@@ -818,7 +872,12 @@ export function AgentsPage() {
                 ? attentionCount
                 : item === "sessions"
                   ? sessionCount
-                  : runs.rows.length;
+                  : runCount.loading ||
+                      runCount.loadingMore ||
+                      runCount.hasMore ||
+                      runCount.error
+                    ? null
+                    : runCount.total;
             return (
               <button
                 key={item}
@@ -980,6 +1039,7 @@ export function AgentsPage() {
               <span
                 className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:inline-flex"
                 data-testid="agents-updated"
+                style={unknownBoard ? { visibility: "hidden" } : undefined}
                 data-state={
                   state.error || offline
                     ? "stale"
@@ -1005,7 +1065,20 @@ export function AgentsPage() {
                     ? t("agents.shell.freshnessUnknown")
                     : state.lastLoadedAt === null
                       ? ""
-                      : t("agents.shell.updated", {
+                      : state.boards
+                          .filter(
+                            (board) =>
+                              filter.board === "all" ||
+                              board.id === filter.board,
+                          )
+                          .map((board) =>
+                            state.boardLoadedAt[board.id] === undefined
+                              ? null
+                              : `${board.title} ${t("agents.shell.updatedAge", { seconds: Math.max(0, Math.floor((now - state.boardLoadedAt[board.id]) / 1000)) })}`,
+                          )
+                          .filter(Boolean)
+                          .join(" · ") ||
+                        t("agents.shell.updated", {
                           seconds: Math.max(
                             0,
                             Math.floor((now - state.lastLoadedAt) / 1000),
@@ -1019,6 +1092,7 @@ export function AgentsPage() {
                 onClick={() => {
                   state.reload();
                   pending.reload();
+                  runCount.reload();
                   if (section === "runs") runs.reload();
                 }}
                 disabled={
@@ -1539,6 +1613,7 @@ export function AgentsPage() {
                           />
                         ) : (
                           <AttentionApprovalList
+                            loading={pending.loading}
                             rows={scopedApprovalRows}
                             filter={approvalFilter}
                             onFilterChange={changeApprovalFilter}
@@ -1553,8 +1628,8 @@ export function AgentsPage() {
                     {state.rows.length === 0 && !filteredActive ? (
                       <AttentionEmpty onOpenTokens={openTokens} lang={lang} />
                     ) : filtered.length === 0 ? (
-                      filteredActive ? (
-                        <FilteredEmpty onClear={clearFilters} />
+                      filteredActive && scopedApprovalRows.length === 0 ? (
+                        <FilteredEmpty onClear={clearFilters} approvals />
                       ) : null
                     ) : (
                       <>
@@ -1622,6 +1697,7 @@ export function AgentsPage() {
         data-testid="agents-detail-panel"
         className={cn(
           "hidden shrink-0 flex-col border-l border-border bg-[color-mix(in_oklab,var(--surface)_48%,var(--background))] min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
+          (missingScope || unknownBoard) && "!hidden",
           ((section === "attention" &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
@@ -1631,7 +1707,9 @@ export function AgentsPage() {
         )}
         aria-label={t("agents.shell.details")}
       >
-        {state.loading ? (
+        {missingScope || unknownBoard ? (
+          <GenericDetailEmpty />
+        ) : state.loading ? (
           <div className="p-4" data-testid="agents-detail-loading">
             <Skeleton variant="text" lines={3} />
           </div>
@@ -1661,7 +1739,10 @@ export function AgentsPage() {
                   : (runSessionNames.get(sessionId) ?? shortId(sessionId))
               }
               onClose={closeRun}
-              onChanged={() => runs.reload()}
+              onChanged={() => {
+                runs.reload();
+                runCount.reload();
+              }}
               onPreview={noteRunConflicts}
               onOpenSession={openRunSession}
             />
@@ -2061,14 +2142,26 @@ function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
   );
 }
 
-function FilteredEmpty({ onClear }: { onClear: () => void }) {
+function FilteredEmpty({
+  onClear,
+  approvals = false,
+}: {
+  onClear: () => void;
+  approvals?: boolean;
+}) {
   const { t } = useI18n();
   return (
     <EmptyState
       testId="agents-filtered-empty"
       icon={<Search className="h-[18px] w-[18px]" />}
-      title={t("agents.emptyFiltered")}
-      body={t("agents.emptyFilteredBody")}
+      title={t(
+        approvals ? "agents.approvals.emptyFiltered" : "agents.emptyFiltered",
+      )}
+      body={t(
+        approvals
+          ? "agents.approvals.emptyFilteredBody"
+          : "agents.emptyFilteredBody",
+      )}
       action={
         <Button
           variant="outline"

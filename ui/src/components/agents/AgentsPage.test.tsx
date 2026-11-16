@@ -537,6 +537,9 @@ describe("AgentsPage", () => {
     renderPage("/agents?section=runs");
 
     const total = await screen.findByTestId("agents-runs-total");
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-count-runs")).toHaveTextContent("11"),
+    );
     await waitFor(() => expect(total).toHaveTextContent("7 runs shown"));
     expect(total).toHaveAttribute("data-has-more", "true");
     await userEvent.click(screen.getByTestId("agents-runs-more"));
@@ -583,6 +586,25 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agent-run-detail")).toHaveAttribute(
       "data-run-id",
       "run-1",
+    );
+  });
+
+  it("keeps all boards in the list when opening a run", async () => {
+    hoisted.listRuns.mockImplementation((boardId: string) =>
+      Promise.resolve([run({ id: `run-${boardId}`, boardId })]),
+    );
+    hoisted.getRun.mockResolvedValue(runDetail({ id: "run-board-1" }));
+    renderPage("/agents?section=runs");
+    await userEvent.click(
+      await screen.findByTestId("agents-run-row-run-board-1"),
+    );
+    expect(
+      screen.getByTestId("agents-run-row-run-board-2"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("scope=all");
+    expect(await screen.findByTestId("agent-run-detail")).toHaveAttribute(
+      "data-run-id",
+      "run-board-1",
     );
   });
 
@@ -706,7 +728,61 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agent-run-expired")).toBeNull();
     expect(
       await screen.findByTestId("agent-run-preview-unavailable"),
-    ).toHaveTextContent("stored commands or pre-images are missing");
+    ).toHaveTextContent("Retention removed the run or its pre-images");
+  });
+
+  it("counts all runs in the board scope independently of status and session filters", async () => {
+    const all = [
+      run(),
+      run({ id: "run-2", status: "failed", agentSessionId: "other" }),
+    ];
+    hoisted.listRuns.mockImplementation(
+      (_board: string, query: { status?: string; agentSessionId?: string }) =>
+        Promise.resolve(
+          all.filter(
+            (r) =>
+              (!query.status || r.status === query.status) &&
+              (!query.agentSessionId ||
+                r.agentSessionId === query.agentSessionId),
+          ),
+        ),
+    );
+    renderPage(
+      "/agents?section=runs&board=board-1&status=failed&session=other",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-section-runs")).toHaveTextContent("2"),
+    );
+    await waitFor(() =>
+      expect(hoisted.listRuns).toHaveBeenCalledWith(
+        "board-1",
+        expect.objectContaining({ status: "failed", agentSessionId: "other" }),
+      ),
+    );
+  });
+
+  it("never shows applied diffs or preimages for a failed run", async () => {
+    const failed = run({ status: "failed" });
+    hoisted.listRuns.mockResolvedValue([failed]);
+    hoisted.getRun.mockResolvedValue(runDetail({ status: "failed" }));
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+    expect(await screen.findByTestId("agent-run-failed-banner")).toBeVisible();
+    expect(
+      within(screen.getByTestId("agent-run-commands")).getAllByText(
+        "Not applied",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByTestId("agent-run-preimage")).toBeNull();
+    expect(screen.queryByTestId("agent-run-preimages")).toBeNull();
+    expect(screen.queryByText("After")).toBeNull();
+  });
+
+  it("shows an approvals skeleton while the overview is pending", async () => {
+    hoisted.agentsOverview.mockImplementation(() => new Promise(() => {}));
+    renderPage("/agents?section=attention&board=board-1");
+    expect(
+      await screen.findByTestId("agents-approvals-loading"),
+    ).toHaveAttribute("aria-busy", "true");
   });
 
   it("requires a board for a run deep link", async () => {
@@ -721,6 +797,8 @@ describe("AgentsPage", () => {
     expect(await screen.findByTestId("agents-missing-scope")).toHaveTextContent(
       "Approval and run links must include a board.",
     );
+    expect(screen.queryByTestId("agents-approval-detail")).toBeNull();
+    expect(hoisted.getApproval).not.toHaveBeenCalled();
   });
 
   it("keeps rollback read-only on a board where the caller is a member", async () => {
@@ -1809,20 +1887,17 @@ describe("AgentsPage", () => {
       ["cancelled", "Cancelled"],
     ] as const) {
       expect(
-        within(list).getByTestId(`agent-status-${status}`),
+        within(list).getAllByTestId(`agent-status-${status}`)[0],
       ).toHaveTextContent(label);
     }
     const staleRow = screen.getByTestId("agent-session-row-active-stale");
     expect(
-      within(staleRow).getByTestId("agent-status-stale"),
-    ).toHaveTextContent("Stale");
-    expect(within(staleRow).getByText("Stale")).toBeInTheDocument();
+      within(staleRow).getByTestId("agent-status-active"),
+    ).toHaveTextContent("Active");
     const heartbeat = within(staleRow).getByTestId("agent-heartbeat");
     expect(heartbeat).toHaveAttribute("data-stale", "true");
-    expect(heartbeat).toHaveTextContent("6m ago");
-    expect(heartbeat).not.toHaveTextContent("No heartbeat");
-    expect(screen.queryByTestId("agent-stale-badge")).toBeNull();
-    expect(within(staleRow).getAllByText("Stale")).toHaveLength(1);
+    expect(heartbeat).toHaveTextContent("No heartbeat · 6m");
+    expect(within(staleRow).queryByTestId("agent-status-stale")).toBeNull();
   });
 
   it("matches the mockup session detail: no board folder, token link or run chip", async () => {

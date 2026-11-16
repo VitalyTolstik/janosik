@@ -95,17 +95,16 @@ describe("one status badge primitive (TASK-179.9)", () => {
     expect(screen.queryByTestId("agent-status-paused")).toBeNull();
   });
 
-  it("presents a stale heartbeat instead of the stored Idle lifecycle", () => {
+  it("keeps the Idle lifecycle when the heartbeat is stale", () => {
     withI18n(
       <SessionStatePill
         session={{ status: "idle", pausedAt: null, stale: true }}
       />,
     );
-    const badge = screen.getByTestId("agent-status-stale");
-    expect(badge).toHaveAttribute("data-status", "stale");
-    expect(badge).toHaveAttribute("data-lifecycle", "false");
-    expect(badge).toHaveTextContent("Stale");
-    expect(screen.queryByTestId("agent-status-idle")).toBeNull();
+    const badge = screen.getByTestId("agent-status-idle");
+    expect(badge).toHaveAttribute("data-status", "idle");
+    expect(badge).toHaveAttribute("data-lifecycle", "true");
+    expect(screen.queryByTestId("agent-status-stale")).toBeNull();
   });
 
   it("keeps the agent badge on the same primitive", () => {

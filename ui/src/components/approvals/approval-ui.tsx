@@ -493,7 +493,7 @@ export function ApprovalDecisionForm({
           className="block text-[10.5px] font-semibold text-foreground"
         >
           {t("agents.approvals.rejectReason")}{" "}
-          <span className="font-normal text-muted-foreground">
+          <span className="font-semibold text-muted-foreground">
             {t("agents.approvals.required")}
           </span>
         </label>
@@ -555,26 +555,26 @@ export function ApprovalDecisionForm({
             className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
             aria-hidden
           />
-          <span>
-            {footerHash !== undefined ? (
-              <>
+          {footerHash !== undefined ? (
+            <>
+              <span>
                 {t("agents.approvals.footerBefore")}{" "}
-                <b className="font-semibold text-foreground">only </b>
-                <b className="font-semibold text-foreground">
-                  {footerHash.slice(0, 10)}…
-                </b>
-                {t("agents.approvals.footerBoardAfter")}
-              </>
-            ) : (
-              <>
-                {t("agents.approvals.footerBefore")}{" "}
-                <b className="font-semibold text-foreground">
-                  {t("agents.approvals.footerHash")}
-                </b>
-                {t("agents.approvals.footerAfter")}
-              </>
-            )}
-          </span>
+                {t("agents.approvals.only")}
+              </span>
+              <b className="font-semibold text-foreground">
+                {footerHash.slice(0, 10)}…
+              </b>
+              <span>{t("agents.approvals.footerBoardAfter")}</span>
+            </>
+          ) : (
+            <span>
+              {t("agents.approvals.footerBefore")}{" "}
+              <b className="font-semibold text-foreground">
+                {t("agents.approvals.footerHash")}
+              </b>
+              {t("agents.approvals.footerAfter")}
+            </span>
+          )}
         </p>
         <div
           className={cn(

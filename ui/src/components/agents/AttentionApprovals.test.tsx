@@ -244,7 +244,7 @@ describe("AttentionApprovals", () => {
     await user.click(screen.getByTestId("approval-approve"));
     const dialog = await screen.findByTestId("approval-approve-dialog");
     expect(dialog).toHaveTextContent(
-      "“Card claim visibility” and its 3 comments, 2 attachments and history will be deleted. Recovery depends on a run rollback and is not guaranteed.",
+      "1 command. Delete card 'Card claim visibility'. Target: card Card claim visibility.",
     );
   });
 

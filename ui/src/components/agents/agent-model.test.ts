@@ -184,6 +184,8 @@ describe("agent session filters", () => {
 describe("session liveness helpers", () => {
   it("formats compact heartbeat ages without inventing a lifecycle status", () => {
     expect(compactAge(0)).toBe("0s");
+    expect(compactAge(14 * 60_000, "ru")).toBe("14м");
+    expect(compactAge(3_600_000, "ru")).toBe("1ч");
     expect(compactAge(12_000)).toBe("12s");
     expect(compactAge(6 * 60_000)).toBe("6m");
     expect(compactAge(3 * 3_600_000)).toBe("3h");
@@ -269,14 +271,14 @@ describe("pause presentation", () => {
     expect(isSessionPaused(session)).toBe(true);
   });
 
-  it("presents a stale session as stale instead of Idle", () => {
+  it("keeps the lifecycle for a stale session", () => {
     expect(
       sessionDisplayStatus({
         status: "idle",
         pausedAt: null,
         stale: true,
       }),
-    ).toBe("stale");
+    ).toBe("idle");
   });
 
   it("keeps an unpaused session on its lifecycle during a board pause", () => {

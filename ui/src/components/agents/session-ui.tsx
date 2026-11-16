@@ -105,18 +105,6 @@ export function SessionStatePill({
       />
     );
   }
-  if (display === "stale") {
-    return (
-      <StatusBadge
-        data-lifecycle="false"
-        label={t("agents.status.stale")}
-        tone="warn"
-        status="stale"
-        testId="agent-status-stale"
-        className={className}
-      />
-    );
-  }
   return (
     <StatusBadge
       data-lifecycle="true"
@@ -132,10 +120,9 @@ export function SessionStatePill({
 }
 
 /**
- * Heartbeat is a liveness signal, not a lifecycle status. User decision: the
- * row shows the relative time only (`12s ago`, `7m ago`); a stale session
- * keeps its real status and gets the warning colour plus a clock icon instead
- * of a "No heartbeat ·" prefix.
+ * Heartbeat is a liveness signal, separate from lifecycle. Fresh rows show
+ * relative age; stale rows show a warning and "No heartbeat ·" with that age.
+ * Board Live can suppress the prefix when its adjacent chip already has it.
  */
 export function HeartbeatText({
   session,
@@ -143,6 +130,7 @@ export function HeartbeatText({
   className,
   withIcon = true,
   muted = false,
+  noHeartbeatLabel = true,
 }: {
   session: AgentSessionDto;
   now: number;
@@ -150,9 +138,10 @@ export function HeartbeatText({
   withIcon?: boolean;
   /** Keep the relative time muted even when the session is stale. */
   muted?: boolean;
+  noHeartbeatLabel?: boolean;
 }) {
-  const { t } = useI18n();
-  const age = compactAge(heartbeatAge(session, now));
+  const { t, lang } = useI18n();
+  const age = compactAge(heartbeatAge(session, now), lang);
   return (
     <span
       data-testid="agent-heartbeat"
@@ -174,7 +163,11 @@ export function HeartbeatText({
           <Activity className="h-[11px] w-[11px] shrink-0" aria-hidden />
         )
       ) : null}
-      <span>{t("agents.heartbeat.ago", { age })}</span>
+      <span>
+        {session.stale && !session.paused && noHeartbeatLabel
+          ? t("agentControl.live.noHeartbeatAge", { age })
+          : t("agents.heartbeat.ago", { age })}
+      </span>
     </span>
   );
 }
@@ -488,6 +481,7 @@ function sessionHint(
   row: AgentSessionRow,
   now: number,
   t: ReturnType<typeof useI18n>["t"],
+  lang: string,
 ): string {
   if (isTerminalStatus(row.status)) {
     return t("agents.detail.endedHint");
@@ -497,13 +491,13 @@ function sessionHint(
   if (isSessionPaused(row)) {
     return row.stale
       ? t("agents.detail.pausedStaleHint", {
-          age: compactAge(heartbeatAge(row, now)),
+          age: compactAge(heartbeatAge(row, now), lang),
         })
       : t("agents.detail.pausedHint");
   }
   if (row.stale) {
     return t("agents.detail.staleHint", {
-      age: compactAge(heartbeatAge(row, now)),
+      age: compactAge(heartbeatAge(row, now), lang),
       status: t(`agents.status.${row.status}`),
     });
   }
@@ -660,7 +654,7 @@ export function SessionDetail({
   onSaved: (session: AgentSessionDto) => void;
   onOpenTokens: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [action, setAction] = useState<AgentSessionAction | null>(null);
 
   if (row === undefined) {
@@ -732,7 +726,7 @@ export function SessionDetail({
             )}
             aria-hidden
           />
-          <span className="min-w-0">{sessionHint(row, now, t)}</span>
+          <span className="min-w-0">{sessionHint(row, now, t, lang)}</span>
         </div>
 
         <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
@@ -799,7 +793,7 @@ export function SessionDetail({
             </MetaField>
             <MetaField label={t("agents.started")}>
               {t("agents.startedAgo", {
-                age: compactAge(Math.max(0, now - row.startedAt)),
+                age: compactAge(Math.max(0, now - row.startedAt), lang),
               })}
             </MetaField>
             <MetaField label={t("agents.currentCard")}>

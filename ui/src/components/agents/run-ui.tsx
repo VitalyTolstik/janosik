@@ -761,7 +761,7 @@ export function RunDetail({
                         : t("agentControl.runs.actorHuman")}{" "}
                       · {command.agentName ?? command.actorId}
                     </p>
-                    {admin ? (
+                    {admin && run.status === "applied" ? (
                       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                         <DiffBox
                           label={t("agents.runs.before")}
@@ -777,7 +777,9 @@ export function RunDetail({
                         />
                       </div>
                     ) : null}
-                    {admin && preimage !== undefined ? (
+                    {admin &&
+                    run.status === "applied" &&
+                    preimage !== undefined ? (
                       <details
                         data-testid="agent-run-preimage"
                         className="mt-1.5"
@@ -791,12 +793,19 @@ export function RunDetail({
                         </pre>
                       </details>
                     ) : null}
+                    {run.status === "failed" ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {t("agents.runs.commandNotApplied")}
+                      </p>
+                    ) : null}
                   </li>
                 );
               })}
             </ul>
           )}
-          {admin && Object.keys(detail.preimages).length > 0 ? (
+          {admin &&
+          run.status === "applied" &&
+          Object.keys(detail.preimages).length > 0 ? (
             <details
               className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
               data-testid="agent-run-preimages"
@@ -856,10 +865,7 @@ export function RunDetail({
               <div
                 data-testid="agent-run-rollback-card"
                 className={cn(
-                  "space-y-2 rounded-[7px] border px-2.5 py-2",
-                  preview.canRevert
-                    ? "border-[color-mix(in_oklab,var(--success)_30%,var(--border))] bg-success/5"
-                    : "border-warning/35 bg-warning/6",
+                  "space-y-2 border-t border-border bg-transparent pt-2",
                 )}
               >
                 <div className="flex items-center gap-1.5">
@@ -910,9 +916,9 @@ export function RunDetail({
                     data-testid="agent-run-preview"
                     disabled={previewing}
                     onClick={() => void requestPreview()}
-                    className="max-md:min-h-11"
+                    className="h-7 min-h-0 gap-1.5 px-2 text-[11px] max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                   >
-                    <Eye className="h-3.5 w-3.5" aria-hidden />
+                    <Eye className="h-[13px] w-[13px]" aria-hidden />
                     {t("agents.runs.previewAgain")}
                   </Button>
                   {admin ? (
@@ -929,9 +935,9 @@ export function RunDetail({
                             : t("agentControl.runs.cannotRevert")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11"
+                      className="h-7 min-h-0 gap-1.5 px-2 text-[11px] border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                      <RotateCcw className="h-[13px] w-[13px]" aria-hidden />
                       {!preview.canRevert
                         ? t("agents.runs.revertBlocked")
                         : t("agentControl.runs.revert")}
@@ -1061,7 +1067,7 @@ export function RunDetail({
             ) : (
               <LinkIcon className="h-2.5 w-2.5" aria-hidden />
             )}
-            {t("agents.runs.copyLink")}
+            {t("agents.runs.copyRunLink")}
           </button>
         </div>
       </div>
@@ -1083,7 +1089,7 @@ export function RunDetail({
             <Link
               to={routes.agentControl(boardId, "runs")}
               data-testid="agent-run-footer-open-board"
-              className="inline-flex h-8 min-h-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] text-foreground hover:bg-hover max-md:min-h-11"
             >
               {t("agents.runs.openBoard")}
             </Link>
@@ -1091,7 +1097,7 @@ export function RunDetail({
               type="button"
               onClick={() => void copyLink()}
               data-testid="agent-run-footer-copy-link"
-              className="inline-flex h-8 min-h-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] px-[11px] text-[11.5px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-transparent px-[11px] text-[11.5px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
             >
               {linkCopied ? (
                 <Check

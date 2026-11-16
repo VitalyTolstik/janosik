@@ -623,7 +623,7 @@ describe("RunsPanel (TASK-179.5)", () => {
     renderPanel();
     expect(
       await screen.findByTestId("agent-run-preview-unavailable"),
-    ).toHaveTextContent("stored commands or pre-images are missing");
+    ).toHaveTextContent("Retention removed the run or its pre-images");
     expect(screen.queryByTestId("agent-run-expired")).toBeNull();
     expect(screen.queryByTestId("agent-run-revert-apply")).toBeNull();
   });

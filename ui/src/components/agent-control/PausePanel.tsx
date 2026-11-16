@@ -38,6 +38,7 @@ import {
 import {
   compactAge,
   isTerminalStatus,
+  heartbeatAge,
   runNumber,
   shortId,
 } from "@/components/agents/agent-model";
@@ -101,7 +102,7 @@ function LiveSessionRow({
   cardTitles: Map<string, string>;
   onAction: (action: AgentSessionAction, session: AgentSessionDto) => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const terminal = isTerminalStatus(session.status);
   const sessionPaused = session.pauseScope === "session";
   const pausedByOtherScope =
@@ -120,12 +121,14 @@ function LiveSessionRow({
             {session.name ?? t("agentControl.sessions.unnamed")}
           </b>
           <SessionStatePill session={session} />
-          {session.stale ? (
+          {session.stale && !session.paused ? (
             <span
               data-testid="agent-session-no-heartbeat"
               className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[11px] font-[650] text-[color:var(--agent-tone-warning)]"
             >
-              {t("agentControl.live.noHeartbeatChip")}
+              {t("agentControl.live.noHeartbeatAge", {
+                age: compactAge(heartbeatAge(session, now), lang),
+              })}
             </span>
           ) : null}
           {session.paused && session.pauseScope !== null ? (
@@ -138,7 +141,7 @@ function LiveSessionRow({
           ) : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-          <HeartbeatText session={session} now={now} />
+          <HeartbeatText session={session} now={now} noHeartbeatLabel={false} />
           <span aria-hidden>·</span>
           <span className="truncate">
             {[session.clientName, session.model]
@@ -148,7 +151,7 @@ function LiveSessionRow({
           <span aria-hidden>·</span>
           <span>
             {t("agents.startedAgo", {
-              age: compactAge(Math.max(0, now - session.startedAt)),
+              age: compactAge(Math.max(0, now - session.startedAt), lang),
             })}
           </span>
         </div>
@@ -275,7 +278,7 @@ function BoardPauseDialog({
       cancelTestId="board-pause-cancel"
       confirmClassName="min-w-[122px]"
     >
-      <label className="mt-[10px] mb-[2.3px] block space-y-[3px]">
+      <label className="mt-[10px] mb-[2.3px] block space-y-[3px] leading-[1.45]">
         <span className="text-[10.5px] font-semibold text-muted-foreground">
           {t("agentControl.pause.reasonLabel")}
         </span>
@@ -580,7 +583,9 @@ export function PausePanel({
     });
   }, [ownTokenIds, sessions, tokenNames]);
 
-  const staleCount = (sessions ?? []).filter((session) => session.stale).length;
+  const staleCount = (sessions ?? []).filter(
+    (session) => session.stale && !session.paused,
+  ).length;
   const actionTarget: AgentActionTarget | null =
     action === null
       ? null
@@ -627,7 +632,9 @@ export function PausePanel({
           {sessions !== null && sessions.length > 0
             ? t("agentControl.live.summary", {
                 count: sessions.length,
-                tokens: groups.length,
+                tokens: t("agentControl.live.tokenCount", {
+                  count: groups.length,
+                }),
                 stale: staleCount,
               })
             : t("agentControl.live.summaryZero")}

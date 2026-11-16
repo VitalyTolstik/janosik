@@ -95,14 +95,15 @@ export function readAgentGroup(params: URLSearchParams): AgentGroupMode {
  * `Intl.RelativeTimeFormat` is deliberately not used here: the prototype's
  * heartbeat cell is a dense two-word signal, not a sentence.
  */
-export function compactAge(ms: number): string {
+export function compactAge(ms: number, lang = "en"): string {
+  const units = lang === "ru" ? ["с", "м", "ч", "д"] : ["s", "m", "h", "d"];
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 60) return `${seconds}${units[0]}`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}${units[1]}`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+  if (hours < 24) return `${hours}${units[2]}`;
+  return `${Math.floor(hours / 24)}${units[3]}`;
 }
 
 /** Heartbeat age in ms; never negative even if a clock skews backwards. */
@@ -157,17 +158,14 @@ export function isTerminalStatus(status: AgentSessionStatus): boolean {
  * Board- and token-level pauses stay separate chips: they pause every write
  * on the board/token without rewriting an individual session's lifecycle.
  */
-export type SessionDisplayStatus = AgentSessionStatus | "paused" | "stale";
+export type SessionDisplayStatus = AgentSessionStatus | "paused";
 
 export function sessionDisplayStatus(
   session: Pick<AgentSessionDto, "status" | "pausedAt" | "stale">,
 ): SessionDisplayStatus {
-  // A terminal row never presents as paused/stale, even if malformed payload
-  // fields remain. A human pause explains the missing heartbeat; otherwise a
-  // stale row must not keep reading as `Idle`/`Active` in the primary pill.
+  // A human pause takes precedence over the stored lifecycle; heartbeat is separate.
   if (isTerminalStatus(session.status)) return session.status;
   if (session.pausedAt !== null) return "paused";
-  if (session.stale) return "stale";
   return session.status;
 }
 
