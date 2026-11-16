@@ -372,7 +372,7 @@ export function ApprovalLinks({
         data-testid="approval-token-dialog"
         hideClose
       >
-        <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-[6.3px] text-left">
+        <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
           <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning)]">
             <KeyRound className="h-[15px] w-[15px]" aria-hidden />
           </span>
