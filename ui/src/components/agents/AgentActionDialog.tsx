@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CirclePause, CirclePlay, Loader2, Square } from "lucide-react";
+import { Loader2, Pause, Play, Square } from "lucide-react";
 
 import type { AgentSessionDto } from "@janosik/shared";
 
@@ -100,12 +100,7 @@ export function AgentActionDialog({
       : action === "resume"
         ? t("agents.action.confirmResume")
         : t("agents.action.confirmEnd");
-  const Icon =
-    action === "pause"
-      ? CirclePause
-      : action === "resume"
-        ? CirclePlay
-        : Square;
+  const Icon = action === "pause" ? Pause : action === "resume" ? Play : Square;
   const agentLabel = row.agentLabel ?? row.tokenName ?? row.name ?? row.id;
 
   const submit = async (): Promise<void> => {
@@ -175,7 +170,7 @@ export function AgentActionDialog({
               "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-background/40",
               action === "end"
                 ? "border-danger/40 text-[color:var(--agent-tone-danger)]"
-                : "border-border text-[color:var(--agent-tone-warning)]",
+                : "border-border text-muted-foreground",
             )}
             aria-hidden
           >
@@ -195,7 +190,7 @@ export function AgentActionDialog({
           {action === "end" ? (
             <p
               data-testid="agent-end-target"
-              className="mt-1.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-muted-foreground"
+              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-muted-foreground"
             >
               <b className="font-[650] text-foreground">{agentLabel}</b>
               {row.name !== null && row.name !== agentLabel
@@ -207,7 +202,7 @@ export function AgentActionDialog({
             </p>
           ) : (
             <label className="mt-[10px] block space-y-1">
-              <span className="text-[11px] font-semibold text-foreground">
+              <span className="text-[10px] font-semibold text-foreground">
                 {t("agents.action.reason")}
               </span>
               <Textarea
@@ -224,22 +219,28 @@ export function AgentActionDialog({
           )}
         </div>
 
-        <DialogFooter className="gap-[7px] px-4 pt-3 pb-3.5">
+        <DialogFooter className="!flex-row items-center justify-end gap-[7px] px-4 pt-3 pb-3.5">
           <Button
             variant="ghost"
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
-            className="!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
+            className="!gap-[6px] h-7 min-h-0 min-w-[61px] !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
           <Button
-            variant={action === "end" ? "destructive" : "default"}
+            variant="default"
             disabled={busy}
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
-            className="!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-md:min-h-11"
+            className={cn(
+              "!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-md:min-h-11",
+              action === "end" ? "min-w-[93px]" : "min-w-[107px]",
+              action === "end"
+                ? "!bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)]"
+                : "!bg-[var(--agent-primary-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)]",
+            )}
           >
             {busy ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

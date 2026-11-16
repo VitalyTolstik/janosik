@@ -144,10 +144,10 @@ function token(overrides: Partial<UserTokenDto> = {}): UserTokenDto {
 let live: BoardLive;
 let onOpenChange: (open: boolean) => void;
 
-function renderDialog() {
+function renderDialog(path = "/board/board-1") {
   onOpenChange = vi.fn();
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <I18nProvider>
         <ToastProvider>
           <BoardLiveProvider live={live}>
@@ -268,19 +268,94 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
     expect(await screen.findByTestId("approval-cancel-menu")).toBeVisible();
     expect(screen.getByText(/Approving authorizes only/)).toBeInTheDocument();
-    expect(screen.getByTestId("approval-reject")).toBeVisible();
-    expect(screen.getByTestId("approval-approve")).toBeVisible();
+    const footerHost = screen.getByTestId("agent-control-footer");
+    expect(within(footerHost).getByTestId("approval-reject")).toBeVisible();
+    expect(within(footerHost).getByTestId("approval-approve")).toBeVisible();
+    expect(
+      screen.getByTestId("approval-detail").querySelector("footer"),
+    ).toBeNull();
     expect(screen.queryByTestId("approval-next-pending")).toBeNull();
 
     await userEvent.click(screen.getByTestId("approval-cancel-menu"));
-    const confirmTitle = await screen.findByText(
-      "Cancel this approval request?",
-    );
+    const confirmTitle = await screen.findByText("Cancel this request?");
     const dialog = confirmTitle.closest('[role="dialog"]') as HTMLElement;
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Cancel request" }),
     );
     await waitFor(() => expect(cancel).toHaveBeenCalledWith("board-1", row.id));
+  });
+
+  it("selects the first pending request from the visible Needs queue, not an expired head row", async () => {
+    const expired = approval({
+      id: "approval-expired",
+      summary: "Expired landing move",
+      expiresAt: Date.now() - 60_000,
+    });
+    const pending = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([expired, pending]);
+    vi.spyOn(api, "getApproval").mockImplementation((_boardId, id) =>
+      Promise.resolve(id === pending.id ? pending : expired),
+    );
+
+    renderDialog();
+
+    expect(await screen.findByText("Pending delete claim")).toBeInTheDocument();
+    expect(await screen.findByTestId("approval-approve")).toBeVisible();
+    expect(screen.queryByText("Expired landing move")).toBeNull();
+  });
+
+  it("moves the detail to the visible queue when the filter changes", async () => {
+    const pending = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    const decided = approval({
+      id: "approval-decided",
+      summary: "Approved landing move",
+      status: "approved",
+      decidedBy: "Auditor",
+      decidedAt: Date.now() - 60_000,
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([pending, decided]);
+    vi.spyOn(api, "getApproval").mockImplementation((_boardId, id) =>
+      Promise.resolve(id === decided.id ? decided : pending),
+    );
+
+    renderDialog();
+    expect(await screen.findByText("Pending delete claim")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("approval-filter-decided"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("approval-detail")).toHaveTextContent(
+        "Approved landing move",
+      ),
+    );
+    expect(screen.queryByText("Pending delete claim")).toBeNull();
+  });
+
+  it("honors an explicit ?approval deep link even when the row is decided", async () => {
+    const expired = approval({
+      id: "approval-expired",
+      summary: "Expired landing move",
+      expiresAt: Date.now() - 60_000,
+    });
+    const pending = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([expired, pending]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(expired);
+
+    renderDialog("/board/board-1?agents=inbox&approval=approval-expired");
+
+    expect(
+      await screen.findByRole("heading", { name: "Expired landing move" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
   });
 
   it("requires a reason and sends the plan hash when rejecting", async () => {
@@ -587,11 +662,11 @@ describe("agent control (TASK-166.14)", () => {
       "agent-session-row-stale-active",
     );
     expect(
-      within(staleRow).getByTestId("agent-status-active"),
-    ).toHaveTextContent("Active");
+      within(staleRow).getByTestId("agent-status-stale"),
+    ).toHaveTextContent("Stale");
     expect(staleRow).toHaveTextContent("6m ago");
     expect(staleRow).not.toHaveTextContent("No heartbeat ·");
-    expect(within(staleRow).queryByText("Stale")).toBeNull();
+    expect(within(staleRow).getByText("Stale")).toBeInTheDocument();
     const terminalRow = screen.getByTestId("agent-session-row-completed");
     expect(
       within(terminalRow).getByTestId("agent-status-completed"),
@@ -777,6 +852,9 @@ describe("agent control (TASK-166.14)", () => {
         "Choose a request to see its impact, hash and decision.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-control-footer")).toHaveTextContent(
+      "Only a board admin can decide. This queue is empty.",
+    );
     expect(screen.getByTestId("approval-search")).toHaveAttribute(
       "placeholder",
       "Search approvals…",

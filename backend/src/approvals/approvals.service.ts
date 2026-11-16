@@ -748,7 +748,10 @@ export class ApprovalsService {
     const rows = await this.prisma.approvalRequest.findMany({
       where: {
         boardId,
-        status: { in: ["pending", "approved"] },
+        // Only an undecided request may become `expired`. An approved plan
+        // keeps its honest approved status even after the decision TTL; the
+        // apply path still refuses a lapsed apply window.
+        status: "pending",
         expiresAt: { lte: now },
       },
       orderBy: { createdAt: "asc" },
@@ -762,14 +765,11 @@ export class ApprovalsService {
     row: ApprovalRequest,
     now: Date = new Date(),
   ): Promise<ApprovalRequest> {
-    if (
-      (row.status !== "pending" && row.status !== "approved") ||
-      row.expiresAt.getTime() > now.getTime()
-    ) {
+    if (row.status !== "pending" || row.expiresAt.getTime() > now.getTime()) {
       return row;
     }
     const changed = await this.prisma.approvalRequest.updateMany({
-      where: { id: row.id, status: { in: ["pending", "approved"] } },
+      where: { id: row.id, status: "pending" },
       data: { status: "expired" },
     });
     if (changed.count === 0) {

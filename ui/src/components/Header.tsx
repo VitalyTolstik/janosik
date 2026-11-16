@@ -114,27 +114,59 @@ export function Header() {
     }
   }, [isAgentsRoute, location.key, location.state]);
 
-  // `Open board` on the agent surfaces deep-links into the board-scoped Agent
-  // control dialog (TASK-179 pixel parity): `?agents=inbox|live|runs`.
-  useEffect(() => {
-    if (!isBoardRoute) return;
-    const params = new URLSearchParams(location.search);
-    const target = params.get("agents");
-    if (target === null) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
-    setAgentControlTab(
-      target === "live" ? "pause" : target === "runs" ? "runs" : "approvals",
-    );
-    setAgentControlOpen(true);
-    params.delete("agents");
+  const agentsParam = isBoardRoute
+    ? new URLSearchParams(location.search).get("agents")
+    : null;
+  const tabForAgentsParam = (value: string): AgentControlTab =>
+    value === "live" ? "pause" : value === "runs" ? "runs" : "approvals";
+  const agentsValueForTab = (value: AgentControlTab): string =>
+    value === "pause" ? "live" : value === "runs" ? "runs" : "inbox";
+  const writeAgentsParam = (value: AgentControlTab | null) => {
+    const next = new URLSearchParams(location.search);
+    if (value === null) {
+      next.delete("agents");
+      next.delete("approval");
+    } else {
+      next.set("agents", agentsValueForTab(value));
+      if (value !== "approvals") next.delete("approval");
+    }
     navigate(
-      {
-        pathname: location.pathname,
-        search: params.toString(),
-      },
+      { pathname: location.pathname, search: next.toString() },
       { replace: true },
     );
-  }, [isBoardRoute, location.pathname, location.search, navigate]);
+  };
+  const openAgentControl = (value: AgentControlTab) => {
+    setAgentControlTab(value);
+    setAgentControlOpen(true);
+    writeAgentsParam(value);
+  };
+  const closeAgentControl = () => {
+    setAgentControlOpen(false);
+    writeAgentsParam(null);
+  };
+
+  // `Open board` on the agent surfaces deep-links into the board-scoped Agent
+  // control dialog (TASK-179 pixel parity): `?agents=inbox|live|runs`.
+  // The param stays in the URL so reload/back/forward reopen the same tab.
+  const lastAgentsParam = useRef<string | null>(agentsParam);
+  useEffect(() => {
+    if (!isBoardRoute) {
+      lastAgentsParam.current = agentsParam;
+      return;
+    }
+    if (agentsParam === null) {
+      // Browser Back from a pinned tab closes the dialog again; the initial
+      // board load without a param must stay closed.
+      if (lastAgentsParam.current !== null) {
+        setAgentControlOpen(false);
+      }
+    } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
+      setAgentControlTab(tabForAgentsParam(agentsParam));
+      setAgentControlOpen(true);
+    }
+    lastAgentsParam.current = agentsParam;
+  }, [agentsParam, isBoardRoute]);
 
   return (
     <header
@@ -230,8 +262,7 @@ export function Header() {
               onOpen={(trigger) => {
                 agentTrigger.current = trigger;
                 // Members start on read-only Live; admins start in Inbox.
-                setAgentControlTab(role === "ADMIN" ? "approvals" : "pause");
-                setAgentControlOpen(true);
+                openAgentControl(role === "ADMIN" ? "approvals" : "pause");
               }}
             />
             {role === "ADMIN" ? (
@@ -353,10 +384,9 @@ export function Header() {
           onOpenChange={setSettingsOpen}
           initialSection={settingsSection}
           onOpenLiveControls={() => {
-            // Board Settings closes first (with its dirty guard); the current
-            // board route and its query string stay untouched.
-            setAgentControlTab("pause");
-            setAgentControlOpen(true);
+            // Board Settings closes first (with its dirty guard); keep the
+            // board route and expose the same durable Live deep link.
+            openAgentControl("pause");
           }}
         />
       ) : null}
@@ -384,11 +414,15 @@ export function Header() {
         >
           <AgentControlDialog
             open={agentControlOpen}
-            onOpenChange={setAgentControlOpen}
+            onOpenChange={(open) => {
+              if (open) setAgentControlOpen(true);
+              else closeAgentControl();
+            }}
+            onTabChange={(next) => writeAgentsParam(next)}
             initialTab={agentControlTab}
             onOpenAllAgents={openAllAgents}
             onOpenPolicy={() => {
-              setAgentControlOpen(false);
+              closeAgentControl();
               setSettingsSection("agents");
               setSettingsOpen(true);
             }}

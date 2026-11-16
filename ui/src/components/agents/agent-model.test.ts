@@ -13,6 +13,7 @@ import {
   needsNudge,
   readAgentFilter,
   readAgentGroup,
+  runNumber,
   sessionDisplayStatus,
   type AgentSessionRow,
 } from "@/components/agents/agent-model";
@@ -203,6 +204,14 @@ describe("session liveness helpers", () => {
   });
 });
 
+describe("run numbers", () => {
+  it("renders readable run ids without the raw prefix", () => {
+    expect(runNumber("run-128")).toBe("#128");
+    expect(runNumber("cmwj5enl100hoiduzapojq7vj42")).toBe("#42");
+    expect(runNumber("external")).toBe("#extern");
+  });
+});
+
 describe("agent grouping", () => {
   it("keeps two tokens of one account as two agents", () => {
     const groups = groupAgents([
@@ -239,11 +248,11 @@ describe("agent grouping", () => {
     expect(latestLiveSession(groups[0])?.id).toBe("b");
   });
 
-  it("falls back to the session name when the token name is private", () => {
+  it("falls back to the client name, not the session name, when the token is private", () => {
     const groups = groupAgents([
-      row({ tokenName: null, name: "Nightly triage" }),
+      row({ tokenName: null, name: "Nightly triage", clientName: "opencode" }),
     ]);
-    expect(groups[0].name).toBe("Nightly triage");
+    expect(groups[0].name).toBe("opencode");
   });
 });
 
@@ -258,6 +267,16 @@ describe("pause presentation", () => {
     });
     expect(sessionDisplayStatus(session)).toBe("paused");
     expect(isSessionPaused(session)).toBe(true);
+  });
+
+  it("presents a stale session as stale instead of Idle", () => {
+    expect(
+      sessionDisplayStatus({
+        status: "idle",
+        pausedAt: null,
+        stale: true,
+      }),
+    ).toBe("stale");
   });
 
   it("keeps an unpaused session on its lifecycle during a board pause", () => {

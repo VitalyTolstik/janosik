@@ -299,7 +299,8 @@ export function useAgentSessions(): AgentSessionsState {
           session.currentCardId === null
             ? null
             : (cardTitles.get(session.currentCardId) ?? null),
-        tokenName: tokenById.get(session.apiTokenId) ?? null,
+        tokenName:
+          session.tokenName ?? tokenById.get(session.apiTokenId) ?? null,
         // `listTokens` is session-only and returns the caller's own keys;
         // presence in the map is therefore an ownership check, not a name
         // fallback. Other members' token names stay hidden.

@@ -488,7 +488,7 @@ export function ApprovalDecisionForm({
       <form noValidate onSubmit={submitReject} className="space-y-1.5">
         <label
           htmlFor="approval-comment"
-          className="block text-[11px] font-semibold text-foreground"
+          className="block text-[10.5px] font-semibold text-foreground"
         >
           {t("agents.approvals.rejectReason")}{" "}
           <span className="font-normal text-muted-foreground">
@@ -513,7 +513,7 @@ export function ApprovalDecisionForm({
             variant="ghost"
             onClick={resetReject}
             disabled={submitting}
-            className="!py-0 h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] text-[11px] leading-none text-muted-foreground max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -523,7 +523,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="!py-0 h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] max-md:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -599,7 +599,7 @@ export function ApprovalDecisionForm({
             onClick={() => setMode("reject")}
             disabled={busy}
             className={cn(
-              "min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] leading-none font-[650] max-md:min-h-11",
+              "min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] !leading-[11px] font-[650] max-md:min-h-11",
               layout === "inline"
                 ? "h-7 flex-none px-[9px] text-[11px]"
                 : "h-8 flex-1 px-[11px] text-[11.5px]",
@@ -614,7 +614,7 @@ export function ApprovalDecisionForm({
             onClick={() => setApproveOpen(true)}
             disabled={busy}
             className={cn(
-              "min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
+              "min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] !leading-[11px] font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
               layout === "inline"
                 ? "h-7 flex-none px-[9px] text-[11px]"
                 : "h-8 flex-1 px-[11px] text-[11.5px]",

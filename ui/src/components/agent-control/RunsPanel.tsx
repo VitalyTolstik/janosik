@@ -24,7 +24,6 @@ import {
   type RunBoardScope,
   type RunKindFilter,
   type RunStatusFilter,
-  type RunTimeFilter,
 } from "../agents/run-model";
 import { RunDetail, RunList } from "../agents/run-ui";
 import { useAgentRuns } from "../agents/use-agent-runs";
@@ -115,15 +114,22 @@ export function RunsPanel({ role }: { role: Role }) {
   const tokenNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const token of tokens) names.set(token.id, token.name);
+    for (const run of runs.rows) {
+      if (run.apiTokenId === null || run.tokenName == null) continue;
+      names.set(run.apiTokenId, run.tokenName);
+    }
     for (const session of sessions) {
       if (names.has(session.apiTokenId)) continue;
       names.set(
         session.apiTokenId,
-        session.name ?? session.clientName ?? shortId(session.apiTokenId),
+        session.tokenName ??
+          session.clientName ??
+          session.name ??
+          shortId(session.apiTokenId),
       );
     }
     return names;
-  }, [sessions, tokens]);
+  }, [runs.rows, sessions, tokens]);
   const sessionNames = useMemo(
     () =>
       new Map(
@@ -311,14 +317,6 @@ export function RunsPanel({ role }: { role: Role }) {
           className="h-11 w-auto min-w-[96px] text-[11px] md:h-[26px] md:min-h-[26px]"
         />
         <SelectField
-          value={filter.time}
-          options={options.time}
-          onChange={(value) => patch({ time: value as RunTimeFilter })}
-          ariaLabel={t("agentControl.runs.filter.time")}
-          testId="run-filter-time"
-          className="h-11 w-auto min-w-[92px] text-[11px] md:h-[26px] md:min-h-[26px]"
-        />
-        <SelectField
           value={filter.token}
           options={tokenOptions}
           onChange={(value) => patch({ token: value })}
@@ -461,6 +459,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 listTestId="agent-run-rows"
                 tokenLabel={tokenLabel}
                 conflicts={conflicts}
+                groupMode="single"
               />
               <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
                 <span
@@ -477,7 +476,7 @@ export function RunsPanel({ role }: { role: Role }) {
                   data-testid="agent-runs-more"
                   disabled={runs.loadingMore || !canLoadMore}
                   onClick={() => void loadMore()}
-                  className="max-md:min-h-11"
+                  className="h-6 min-h-0 px-[7px] text-[10.5px] font-[650] leading-none"
                 >
                   {runs.loadingMore ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

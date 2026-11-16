@@ -36,6 +36,10 @@ html.light .agent-control-surface {
   font-family: inherit;
 }
 
+.agent-control-surface.ac-modal:focus {
+  outline: none;
+}
+
 .agent-control-surface.ac-modal {
   position: fixed;
   inset: 0;
@@ -252,9 +256,21 @@ html[lang="ru"] .agent-control-surface .ac-title {
   flex: 1;
   min-height: 0;
   display: flex;
-  /* The shared footer is rendered by the active panel but spans the whole
-     modal, exactly like the prototype's footer below .ac-body. */
+}
+
+/* Live/Runs still own an absolutely-positioned footer inside the panel, so
+   only those tabs reserve its 50 px; the Inbox footer is a flex sibling. */
+.agent-control-surface .ac-body--overlay-footer {
   padding-bottom: 50px;
+}
+
+.agent-control-surface .ac-footer-host {
+  flex: none;
+  min-height: 0;
+}
+
+.agent-control-surface .ac-footer-host:empty {
+  display: none;
 }
 
 .agent-control-surface .ac-rail {
@@ -836,18 +852,18 @@ html[lang="ru"] .agent-control-surface .ac-title {
   min-height: 50px;
 }
 
-/* The approval detail owns its action footer (it depends on the selected
-   request). At desktop it spans the whole modal like the prototype; on mobile
-   it stays in the detail pane so the back/detail layout keeps its own scroll. */
-@media (min-width: 761px) {
-  .agent-control-surface .ac-foot-approval {
-    position: absolute;
-    z-index: 5;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    min-height: 50px;
-  }
+/* Portalled footers are flex siblings after .ac-body, so they can grow with
+   the reject form or show a list-only hint without covering content. */
+.agent-control-surface .ac-foot-static {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+}
+
+.agent-control-surface .ac-foot-approval.ac-foot-static {
+  min-height: 50px;
 }
 
 .agent-control-surface .ac-foot .ac-foot-note {
@@ -891,6 +907,10 @@ html[lang="ru"] .agent-control-surface .ac-title {
   height: 12px;
   flex: none;
   color: var(--primary);
+}
+
+.agent-control-surface .ac-foot-static .ac-foot-mobile-hint {
+  display: flex;
 }
 
 /* Live status card (non-empty state) ------------------------------------- */
@@ -1053,6 +1073,9 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
   .agent-control-surface .ac-body {
     flex-direction: column;
+  }
+
+  .agent-control-surface .ac-body--overlay-footer {
     padding-bottom: 56px;
   }
 

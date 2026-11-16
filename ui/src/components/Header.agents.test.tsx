@@ -38,7 +38,12 @@ const boardTwo: Board = {
 
 function RouteProbe() {
   const location = useLocation();
-  return <output data-testid="location">{location.pathname}</output>;
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+    </output>
+  );
 }
 
 function renderHeader(path: string, server: FakeServer) {
@@ -93,6 +98,22 @@ describe("agent entry points in the header", () => {
       within(dialog).getByRole("button", { name: "Close" }),
     );
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("keeps ?agents= durable and syncs tab changes back to the URL", async () => {
+    renderHeader("/board/board-1?agents=live", new FakeServer([board]));
+    const dialog = await screen.findByTestId("agent-control-dialog");
+    expect(dialog).toBeVisible();
+    expect(screen.getByTestId("agent-pause-tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("location")).toHaveTextContent("agents=live");
+
+    await userEvent.click(screen.getByTestId("agent-runs-tab"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("agents=runs"),
+    );
   });
 
   it("opens the global console from board control", async () => {

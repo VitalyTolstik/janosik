@@ -1507,7 +1507,7 @@ function approvalStatusWhere(
     case "pending":
       return { status: "pending", expiresAt: { gt: now } };
     case "approved":
-      return { status: "approved", expiresAt: { gt: now } };
+      return { status: "approved" };
     case "rejected":
       return { status: "rejected" };
     case "cancelled":
@@ -1518,7 +1518,7 @@ function approvalStatusWhere(
       return {
         OR: [
           { status: "expired" },
-          { status: { in: ["pending", "approved"] }, expiresAt: { lte: now } },
+          { status: "pending", expiresAt: { lte: now } },
         ],
       };
     case "decided":

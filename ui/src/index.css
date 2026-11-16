@@ -150,8 +150,10 @@ html[lang="ru"] .font-agent-display {
   --agent-tone-warning: #f59e0b;
   --agent-tone-danger: #f87171;
   --agent-tone-primary: #60a5fa;
-  /* Primary button fill from the prototype's `--primary-strong`. */
+  /* Primary/danger fills from the prototype's `--primary-strong` /
+     `--danger-strong` tokens. */
   --agent-primary-strong: #2563eb;
+  --agent-danger-strong: #b91c1c;
 }
 
 html.light {

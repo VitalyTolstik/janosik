@@ -48,6 +48,7 @@ import { useBoardLive } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
 import { StatusBadge, type StatusTone } from "./status-badge";
+import { runNumber } from "./agent-model";
 import {
   RUN_KIND_KEYS,
   RUN_STATUS_KEYS,
@@ -120,6 +121,8 @@ export interface RunListProps {
   boardTitle?: (run: RunSummaryDto) => string;
   tokenLabel?: (tokenId: string | null) => string;
   conflicts?: ReadonlyMap<string, number>;
+  /** Board Runs uses the mockup's single `Today` group; `/agents` keeps days. */
+  groupMode?: "day" | "single";
 }
 
 /**
@@ -138,9 +141,21 @@ export function RunList({
   boardTitle,
   tokenLabel,
   conflicts,
+  groupMode = "day",
 }: RunListProps) {
   const { t, lang } = useI18n();
-  const days = useMemo(() => groupRunsByDay(rows), [rows]);
+  const days = useMemo(() => {
+    if (groupMode === "single") {
+      return [
+        {
+          key: "today",
+          timestamp: now,
+          rows: [...rows],
+        },
+      ];
+    }
+    return groupRunsByDay(rows);
+  }, [groupMode, now, rows]);
   const today = startOfDay(now);
   const yesterday = today - 24 * 60 * 60 * 1000;
 
@@ -172,7 +187,9 @@ export function RunList({
                 const token =
                   run.apiTokenId === null
                     ? t("agentControl.runs.noToken")
-                    : (tokenLabel?.(run.apiTokenId) ?? shortId(run.apiTokenId));
+                    : (run.tokenName ??
+                      tokenLabel?.(run.apiTokenId) ??
+                      shortId(run.apiTokenId));
                 const conflictCount = conflicts?.get(run.id) ?? 0;
                 if (variant === "board") {
                   return (
@@ -257,8 +274,11 @@ export function RunList({
                           >
                             {clockLabel(runTime(run), today, lang, t)}
                           </time>
-                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden">
-                            {shortId(run.id)}
+                          <span
+                            className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden"
+                            title={run.id}
+                          >
+                            {runNumber(run.id)}
                           </span>
                         </span>
                       </span>
@@ -560,12 +580,16 @@ export function RunDetail({
               t,
               run.apiTokenId === null
                 ? undefined
-                : (tokenLabel?.(run.apiTokenId) ?? undefined),
+                : (run.tokenName ?? tokenLabel?.(run.apiTokenId) ?? undefined),
             )}
           </h2>
           {variant === "board" ? (
-            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-              {run.id} · {t(RUN_KIND_KEYS[run.kind])} ·{" "}
+            <p
+              className="mt-0.5 font-mono text-[11px] text-muted-foreground"
+              title={run.id}
+            >
+              {t("agents.runHash", { id: runNumber(run.id) })} ·{" "}
+              {t(RUN_KIND_KEYS[run.kind])} ·{" "}
               {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
               {clockLabel(runTime(run), today, lang, t)}
             </p>
@@ -644,14 +668,18 @@ export function RunDetail({
           icon={<GitBranch aria-hidden />}
         >
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <MetaField label={t("agents.runs.actor")}>{run.actorId}</MetaField>
+            <MetaField label={t("agents.runs.actor")}>
+              {run.actorName ?? run.actorId}
+            </MetaField>
             <MetaField label={t("agentControl.runs.token")}>
-              {tokenLabel?.(run.apiTokenId) ??
+              {run.tokenName ??
+                tokenLabel?.(run.apiTokenId) ??
                 run.apiTokenId ??
                 t("agentControl.runs.noToken")}
             </MetaField>
             <MetaField label={t("agentControl.runs.session")}>
-              {sessionLabel?.(run.agentSessionId) ??
+              {run.sessionName ??
+                sessionLabel?.(run.agentSessionId) ??
                 run.agentSessionId ??
                 t("agentControl.runs.noSession")}
             </MetaField>
@@ -659,8 +687,8 @@ export function RunDetail({
               {formatDuration(duration)}
             </MetaField>
             <MetaField label={t("agents.runs.runId")}>
-              <span className="font-mono">
-                {run.id}
+              <span className="font-mono" title={run.id}>
+                {t("agents.runHash", { id: runNumber(run.id) })}
                 {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
               </span>
             </MetaField>
@@ -1064,7 +1092,10 @@ export function RunDetail({
       {variant === "global" ? (
         <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground">
           <p className="m-0 flex items-start gap-1.5">
-            <Info className="mt-[2px] h-[11px] w-[11px] shrink-0" aria-hidden />
+            <Info
+              className="mt-[2px] h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
+              aria-hidden
+            />
             <span className="min-w-0">
               {admin
                 ? t("agents.runs.footerAdmin")

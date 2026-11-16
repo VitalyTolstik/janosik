@@ -4,10 +4,9 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Bot,
-  CirclePause,
-  CirclePlay,
+  Pause,
+  Play,
   KeyRound,
-  Loader2,
   RefreshCw,
   ShieldCheck,
   Square,
@@ -16,14 +15,6 @@ import type { AgentSessionDto, UserTokenDto } from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
@@ -33,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardActions, useBoardState } from "@/store/BoardContext";
 import { AgentPauseBadge } from "@/components/agents/agents-ui";
+import { AgentConfirmDialog } from "@/components/agents/AgentConfirmDialog";
 import {
   AgentActionDialog,
   type AgentActionTarget,
@@ -40,7 +32,7 @@ import {
 } from "@/components/agents/AgentActionDialog";
 import {
   HeartbeatText,
-  SessionStatusPill,
+  SessionStatePill,
   TokenSettingsLink,
 } from "@/components/agents/session-ui";
 import {
@@ -127,7 +119,7 @@ function LiveSessionRow({
           <b className="max-w-full truncate text-[11px] font-[650] leading-[1.35]">
             {session.name ?? t("agentControl.sessions.unnamed")}
           </b>
-          <SessionStatusPill status={session.status} />
+          <SessionStatePill session={session} />
           {session.stale ? (
             <span
               data-testid="agent-session-no-heartbeat"
@@ -198,9 +190,9 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-resume"
                 onClick={() => onAction("resume", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[11px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[10px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
-                <CirclePlay className="h-[13px] w-[13px]" aria-hidden />
+                <Play className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.resume")}
               </Button>
             ) : session.paused ? null : (
@@ -210,9 +202,9 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-pause"
                 onClick={() => onAction("pause", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[11px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[10px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
-                <CirclePause className="h-3.5 w-3.5" aria-hidden />
+                <Pause className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.pause")}
               </Button>
             )}
@@ -252,108 +244,57 @@ function BoardPauseDialog({
   const [reason, setReason] = useState("");
   const pause = kind === "pause";
   return (
-    <Dialog
+    <AgentConfirmDialog
       open
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
+      icon={pause ? Pause : Play}
+      tone={pause ? "danger" : "primary"}
+      title={t(
+        pause
+          ? "agentControl.pause.boardPauseTitle"
+          : "agentControl.pause.boardResumeTitle",
+      )}
+      description={t(
+        pause
+          ? "agentControl.pause.boardPauseBody"
+          : "agentControl.pause.boardResumeBody",
+      )}
+      confirmLabel={t(
+        pause
+          ? "agentControl.pause.pauseAgents"
+          : "agentControl.pause.resumeAgents",
+      )}
+      onConfirm={() => onConfirm(reason.trim())}
+      busy={busy}
+      error={error}
+      errorTestId="board-pause-error"
+      testId={pause ? "board-pause-dialog" : "board-resume-dialog"}
+      confirmTestId={pause ? "board-pause-confirm" : "board-resume-confirm"}
+      cancelTestId="board-pause-cancel"
+      confirmClassName="min-w-[122px]"
     >
-      <DialogContent
-        className="sm:max-w-md"
-        data-testid={pause ? "board-pause-dialog" : "board-resume-dialog"}
-      >
-        <DialogHeader>
-          <span
-            className={cn(
-              "mb-1 grid h-8 w-8 place-items-center rounded-lg border",
-              pause
-                ? "border-warning/30 bg-warning/10 text-[color:var(--agent-tone-warning)]"
-                : "border-success/30 bg-success/10 text-[color:var(--agent-tone-success)]",
-            )}
-          >
-            {pause ? (
-              <CirclePause className="h-4 w-4" aria-hidden />
-            ) : (
-              <CirclePlay className="h-4 w-4" aria-hidden />
-            )}
-          </span>
-          <DialogTitle>
-            {t(
-              pause
-                ? "agentControl.pause.boardPauseTitle"
-                : "agentControl.pause.boardResumeTitle",
-            )}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              pause
-                ? "agentControl.pause.boardPauseBody"
-                : "agentControl.pause.boardResumeBody",
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-foreground">
-            {t("agentControl.pause.reasonLabel")}
-          </span>
-          <Textarea
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            rows={3}
-            maxLength={500}
-            placeholder={t(
-              pause
-                ? "agentControl.pause.boardReasonPlaceholder"
-                : "agentControl.pause.boardResumeReasonPlaceholder",
-            )}
-            data-testid={pause ? "board-pause-reason" : "board-resume-reason"}
-            autoFocus
-          />
-        </label>
-        {error !== null ? (
-          <p
-            role="alert"
-            data-testid="board-pause-error"
-            className="flex items-start gap-2 rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-xs text-[color:var(--agent-tone-danger)]"
-          >
-            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-            {error}
-          </p>
-        ) : null}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={onClose}
-            className="min-h-11 sm:min-h-9"
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            type="button"
-            variant={pause ? "destructive" : "default"}
-            disabled={busy}
-            data-testid={pause ? "board-pause-confirm" : "board-resume-confirm"}
-            onClick={() => onConfirm(reason.trim())}
-            className="min-h-11 sm:min-h-9"
-          >
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : pause ? (
-              <CirclePause className="h-4 w-4" aria-hidden />
-            ) : (
-              <CirclePlay className="h-4 w-4" aria-hidden />
-            )}
-            {t(
-              pause
-                ? "agentControl.pause.pauseAgents"
-                : "agentControl.pause.resumeAgents",
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <label className="mt-[10px] block space-y-1">
+        <span className="text-[10px] font-semibold text-foreground">
+          {t("agentControl.pause.reasonLabel")}
+        </span>
+        <Textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          rows={3}
+          maxLength={500}
+          placeholder={t(
+            pause
+              ? "agentControl.pause.boardReasonPlaceholder"
+              : "agentControl.pause.boardResumeReasonPlaceholder",
+          )}
+          data-testid={pause ? "board-pause-reason" : "board-resume-reason"}
+          className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55]"
+          autoFocus
+        />
+      </label>
+    </AgentConfirmDialog>
   );
 }
 
@@ -383,7 +324,7 @@ function LiveStatusCard({
     >
       <span className="live-icon">
         {paused ? (
-          <CirclePause className="icon" aria-hidden="true" />
+          <Pause className="icon" aria-hidden="true" />
         ) : (
           <Activity className="icon" aria-hidden="true" />
         )}
@@ -417,7 +358,7 @@ function LiveStatusCard({
               data-testid="live-status-resume"
               onClick={onResume}
             >
-              <CirclePlay className="icon" aria-hidden="true" />
+              <Play className="icon" aria-hidden="true" />
               {t("agentControl.pause.resumeAgents")}
             </button>
           ) : (
@@ -427,7 +368,7 @@ function LiveStatusCard({
               data-testid="live-status-pause"
               onClick={onPause}
             >
-              <CirclePause className="icon" aria-hidden="true" />
+              <Pause className="icon" aria-hidden="true" />
               {t("agentControl.pause.pauseAgents")}
             </button>
           )
@@ -452,9 +393,11 @@ function LiveStatusCard({
 export function PausePanel({
   role,
   onChanged,
+  onClose,
 }: {
   role: "ADMIN" | "MEMBER" | "VIEWER" | undefined;
   onChanged?: () => void;
+  onClose?: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -600,10 +543,14 @@ export function PausePanel({
     () => new Set(tokens.map((token) => token.id)),
     [tokens],
   );
-  const tokenNames = useMemo(
-    () => new Map(tokens.map((token) => [token.id, token.name])),
-    [tokens],
-  );
+  const tokenNames = useMemo(() => {
+    const names = new Map(tokens.map((token) => [token.id, token.name]));
+    for (const session of sessions ?? []) {
+      if (names.has(session.apiTokenId) || session.tokenName == null) continue;
+      names.set(session.apiTokenId, session.tokenName);
+    }
+    return names;
+  }, [sessions, tokens]);
 
   const groups = useMemo(() => {
     const map = new Map<
@@ -620,8 +567,8 @@ export function PausePanel({
         tokenId: session.apiTokenId,
         name:
           tokenNames.get(session.apiTokenId) ??
-          session.name ??
           session.clientName ??
+          session.name ??
           `Token ${shortId(session.apiTokenId)}`,
         rows: [session],
       });
@@ -646,6 +593,7 @@ export function PausePanel({
           tokenName: tokenNames.get(action.session.apiTokenId) ?? null,
           agentLabel:
             tokenNames.get(action.session.apiTokenId) ??
+            action.session.clientName ??
             action.session.name ??
             null,
           cardTitle:
@@ -844,7 +792,7 @@ export function PausePanel({
                   setBoardDialog("resume");
                 }}
               >
-                <CirclePlay className="icon" aria-hidden="true" />
+                <Play className="icon" aria-hidden="true" />
                 {t("agentControl.pause.resumeAgents")}
               </button>
             ) : (
@@ -857,10 +805,19 @@ export function PausePanel({
                   setBoardDialog("pause");
                 }}
               >
-                <CirclePause className="icon" aria-hidden="true" />
+                <Pause className="icon" aria-hidden="true" />
                 {t("agentControl.pause.pauseAgents")}
               </button>
             )
+          ) : onClose !== undefined ? (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              data-testid="agent-live-close"
+              onClick={onClose}
+            >
+              {t("common.close")}
+            </button>
           ) : null}
         </div>
       </footer>

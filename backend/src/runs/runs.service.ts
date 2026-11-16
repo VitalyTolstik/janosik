@@ -72,6 +72,81 @@ export function runToDto(row: AgentRun): AgentRunDto {
   };
 }
 
+interface RunAttribution {
+  tokenNames: Map<string, string>;
+  actorNames: Map<string, string>;
+  sessionNames: Map<string, string>;
+}
+
+/** Human names for run attribution; board-scoped and read-only. */
+async function loadRunAttribution(
+  prisma: PrismaService,
+  rows: readonly AgentRun[],
+): Promise<RunAttribution> {
+  const tokenIds = [
+    ...new Set(
+      rows
+        .map((row) => row.apiTokenId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const actorIds = [...new Set(rows.map((row) => row.actorId))];
+  const sessionIds = [
+    ...new Set(
+      rows
+        .map((row) => row.agentSessionId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const [tokens, actors, sessions] = await Promise.all([
+    tokenIds.length === 0
+      ? Promise.resolve([])
+      : prisma.apiToken.findMany({
+          where: { id: { in: tokenIds } },
+          select: { id: true, name: true },
+        }),
+    actorIds.length === 0
+      ? Promise.resolve([])
+      : prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: { id: true, displayName: true },
+        }),
+    sessionIds.length === 0
+      ? Promise.resolve([])
+      : prisma.agentSession.findMany({
+          where: { id: { in: sessionIds } },
+          select: { id: true, name: true, clientName: true },
+        }),
+  ]);
+  return {
+    tokenNames: new Map(tokens.map((row) => [row.id, row.name])),
+    actorNames: new Map(
+      actors.map((row) => [row.id, row.displayName ?? row.id]),
+    ),
+    sessionNames: new Map(
+      sessions.map((row) => [row.id, row.name ?? row.clientName ?? row.id]),
+    ),
+  };
+}
+
+function withRunAttribution(
+  dto: AgentRunDto,
+  names: RunAttribution,
+): AgentRunDto {
+  return {
+    ...dto,
+    tokenName:
+      dto.apiTokenId === null
+        ? null
+        : (names.tokenNames.get(dto.apiTokenId) ?? null),
+    actorName: names.actorNames.get(dto.actorId) ?? null,
+    sessionName:
+      dto.agentSessionId === null
+        ? null
+        : (names.sessionNames.get(dto.agentSessionId) ?? null),
+  };
+}
+
 /** Strip the internal compensating action from a public pre-image read. */
 function publicPreimage(data: PreimageData): Record<string, unknown> {
   const copy = { ...data } as Record<string, unknown>;
@@ -149,14 +224,17 @@ export class RunsService {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
     });
-    const summaries = await loadCommandSummaries(
-      this.prisma,
-      rows.map((row) => row.id),
-    );
+    const [summaries, attribution] = await Promise.all([
+      loadCommandSummaries(
+        this.prisma,
+        rows.map((row) => row.id),
+      ),
+      loadRunAttribution(this.prisma, rows),
+    ]);
     return rows.map((row) => {
       const summary = summaries.get(row.id);
       return {
-        ...runToDto(row),
+        ...withRunAttribution(runToDto(row), attribution),
         ...(summary === undefined ? {} : { commandSummary: summary }),
       };
     });
@@ -172,10 +250,11 @@ export class RunsService {
     const commands = await this.commandEntries(boardId, runId);
     const summaries = await loadCommandSummaries(this.prisma, [run.id]);
     const summary = summaries.get(run.id);
+    const attribution = await loadRunAttribution(this.prisma, [run]);
     const fullDetail = principal?.via === "jwt" && role === Role.ADMIN;
     return {
       run: {
-        ...runToDto(run),
+        ...withRunAttribution(runToDto(run), attribution),
         ...(summary === undefined ? {} : { commandSummary: summary }),
       },
       commands,

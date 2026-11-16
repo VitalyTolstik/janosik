@@ -453,12 +453,13 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(get).toHaveBeenLastCalledWith("board-1", RUN.id);
   });
 
-  it("drives the server query from status, kind and time filters and clears them", async () => {
+  it("drives the server query from the mockup's status and kind filters and clears them", async () => {
     mockHappyPath();
     const list = vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
 
     renderPanel();
     await screen.findByTestId(`agent-run-row-${RUN.id}`);
+    expect(screen.queryByTestId("run-filter-time")).toBeNull();
 
     await userEvent.click(screen.getByTestId("run-filter-status"));
     await userEvent.click(
@@ -480,15 +481,6 @@ describe("RunsPanel (TASK-179.5)", () => {
       ),
     );
 
-    await userEvent.click(screen.getByTestId("run-filter-time"));
-    await userEvent.click(screen.getByTestId("run-filter-time-option-24h"));
-    await waitFor(() =>
-      expect(list).toHaveBeenLastCalledWith(
-        "board-1",
-        expect.objectContaining({ from: expect.any(Number) }),
-      ),
-    );
-
     await userEvent.click(screen.getByTestId("agent-runs-clear-filters"));
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith(
@@ -500,6 +492,26 @@ describe("RunsPanel (TASK-179.5)", () => {
         }),
       ),
     );
+  });
+
+  it("uses the mockup's four filters, one Today group and actor-led row titles", async () => {
+    mockHappyPath();
+    vi.spyOn(api, "listRuns").mockResolvedValue([
+      run({ commandSummary: { actionTypes: ["ADD_CARD"], title: null } }),
+      run({
+        id: "run-old",
+        createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+        appliedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+      }),
+    ]);
+
+    renderPanel();
+    const row = await screen.findByTestId(`agent-run-row-${RUN.id}`);
+    expect(screen.queryByTestId("run-filter-time")).toBeNull();
+    expect(screen.getAllByText("Today")).toHaveLength(1);
+    expect(screen.queryByText("Yesterday")).toBeNull();
+    expect(row).toHaveTextContent("QA agent");
+    expect(row).toHaveTextContent("added 1 card");
   });
 
   it("shows a total and appends the next page with Load more", async () => {

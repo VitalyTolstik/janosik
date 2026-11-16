@@ -87,7 +87,7 @@ export function SessionStatePill({
   className,
   short = false,
 }: {
-  session: Pick<AgentSessionRow, "status" | "pausedAt">;
+  session: Pick<AgentSessionRow, "status" | "pausedAt" | "stale">;
   className?: string;
   short?: boolean;
 }) {
@@ -101,6 +101,18 @@ export function SessionStatePill({
         tone="warn"
         status="paused"
         testId="agent-status-paused"
+        className={className}
+      />
+    );
+  }
+  if (display === "stale") {
+    return (
+      <StatusBadge
+        data-lifecycle="false"
+        label={t("agents.status.stale")}
+        tone="warn"
+        status="stale"
+        testId="agent-status-stale"
         className={className}
       />
     );
@@ -799,7 +811,7 @@ export function SessionDetail({
                   className="block truncate font-mono text-[11px]"
                   title={row.currentRunId}
                 >
-                  {runNumber(row.currentRunId)}
+                  {t("agents.runHash", { id: runNumber(row.currentRunId) })}
                 </span>
               )}
             </MetaField>
@@ -819,7 +831,11 @@ export function SessionDetail({
               <span className="text-[11px] text-muted-foreground">
                 {sessionPaused
                   ? t("agents.detail.noCurrentCardPaused")
-                  : t("agents.detail.noCurrentCard")}
+                  : terminal
+                    ? t("agents.detail.noCurrentCardEnded")
+                    : row.status === "idle" || row.status === "waiting_approval"
+                      ? t("agents.detail.noCurrentCard")
+                      : t("agents.detail.noCurrentCardActive")}
               </span>
             ) : (
               <Link
@@ -841,7 +857,7 @@ export function SessionDetail({
                 className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] font-mono text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
               >
                 <History className="h-[10px] w-[10px]" aria-hidden />
-                {t("agents.runHash", { id: shortId(row.currentRunId) })}
+                {t("agents.runHash", { id: runNumber(row.currentRunId) })}
               </Link>
             ) : null}
           </div>

@@ -154,13 +154,12 @@ export function AgentsPage() {
           setOrDelete(search, "status", next.status, "all");
           setOrDelete(search, "time", next.time, "any");
           setOrDelete(search, "q", next.query, "");
-          // A filter change can hide the selected row; closing the detail
-          // avoids an orphaned master-detail pane.
+          // A filter change can hide the selected row; closing every detail
+          // avoids an orphaned master-detail pane and lets Attention fall
+          // back to the first pending request in the new scope.
           search.delete("session");
-          if ("board" in patch) {
-            search.delete("approval");
-            search.delete("run");
-          }
+          search.delete("approval");
+          search.delete("run");
           return search;
         },
         { replace: true },
@@ -432,6 +431,20 @@ export function AgentsPage() {
   }, [section, runs.rows]);
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
+  const changeApprovalFilter = useCallback(
+    (next: AttentionApprovalFilter) => {
+      setApprovalFilter(next);
+      setParams(
+        (current) => {
+          const search = new URLSearchParams(current);
+          search.delete("approval");
+          return search;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
   const approvalAgentNames = useMemo(
     () => new Map(state.tokens.map((token) => [token.id, token.name])),
     [state.tokens],
@@ -492,6 +505,17 @@ export function AgentsPage() {
         agentName: approvalNameFor(row),
       }));
   }, [approvalNameFor, filter.board, filter.query, filter.token, pending.rows]);
+  const approvalRowsForFilter = useMemo(
+    () =>
+      scopedApprovalRows.filter((row) => {
+        const pending =
+          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
+        if (approvalFilter === "needs") return pending;
+        if (approvalFilter === "decided") return !pending;
+        return true;
+      }),
+    [approvalFilter, now, scopedApprovalRows],
+  );
   const scopedPendingCount = useMemo(
     () =>
       scopedApprovalRows.filter(
@@ -500,16 +524,31 @@ export function AgentsPage() {
       ).length,
     [now, scopedApprovalRows],
   );
+  const defaultApprovalId =
+    approvalRowsForFilter.find(
+      (row) =>
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+    )?.id ??
+    approvalRowsForFilter[0]?.id ??
+    null;
+  const selectedSession = params.get("session");
+  // An explicit `?approval=` link is a deliberate deep link; it wins over the
+  // current filter and may point at a decided/expired row. Otherwise the
+  // detail auto-follows the first visible pending row — unless the user has
+  // explicitly opened a session from the same Attention list, which must win
+  // over the default approval selection.
+  const visibleApprovalId =
+    selectedApprovalId ?? (selectedSession === null ? defaultApprovalId : null);
   const nextPendingApproval = useMemo(() => {
-    if (selectedApprovalId === null) return null;
-    const pendingRows = scopedApprovalRows.filter(
+    if (visibleApprovalId === null) return null;
+    const pendingRows = approvalRowsForFilter.filter(
       (row) =>
         effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
     );
     if (pendingRows.length < 2) return null;
-    const index = pendingRows.findIndex((row) => row.id === selectedApprovalId);
+    const index = pendingRows.findIndex((row) => row.id === visibleApprovalId);
     return pendingRows[(index + 1) % pendingRows.length] ?? null;
-  }, [now, scopedApprovalRows, selectedApprovalId]);
+  }, [now, approvalRowsForFilter, visibleApprovalId]);
   const pendingAll = pending.totalCount;
   const pendingForScope =
     filter.board === "all"
@@ -534,9 +573,13 @@ export function AgentsPage() {
   const attentionCount = isAttentionAdmin ? pendingForScope : null;
   const sessionCount = scopedRows.length;
 
-  const selectedSession = params.get("session");
   const selectedRunId = params.get("run");
-  const approvalBoardId = params.get("board");
+  const selectedApprovalBase =
+    visibleApprovalId === null
+      ? undefined
+      : pending.rows.find((row) => row.id === visibleApprovalId);
+  const approvalBoardId =
+    params.get("board") ?? selectedApprovalBase?.boardId ?? null;
   const selectedRunRow =
     selectedRunId === null
       ? undefined
@@ -571,7 +614,7 @@ export function AgentsPage() {
     }
     for (const row of runs.rows) {
       if (row.apiTokenId === null || names.has(row.apiTokenId)) continue;
-      names.set(row.apiTokenId, shortId(row.apiTokenId));
+      names.set(row.apiTokenId, row.tokenName ?? shortId(row.apiTokenId));
     }
     return names;
   }, [runs.rows, state.rows, state.tokens]);
@@ -583,14 +626,13 @@ export function AgentsPage() {
     for (const row of runs.rows) {
       if (row.agentSessionId === null || names.has(row.agentSessionId))
         continue;
-      names.set(row.agentSessionId, shortId(row.agentSessionId));
+      names.set(
+        row.agentSessionId,
+        row.sessionName ?? shortId(row.agentSessionId),
+      );
     }
     return names;
   }, [runs.rows, state.rows]);
-  const selectedApprovalBase =
-    selectedApprovalId === null
-      ? undefined
-      : pending.rows.find((row) => row.id === selectedApprovalId);
   const approvalBoardTitle =
     selectedApprovalBase?.boardTitle ??
     state.boards.find((board) => board.id === approvalBoardId)?.title ??
@@ -872,6 +914,18 @@ export function AgentsPage() {
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
+                  {state.staleBoardIds.includes(board.value) ? (
+                    <span
+                      title={t("agents.shell.staleData")}
+                      aria-label={t("agents.shell.staleData")}
+                      data-testid={`agents-board-stale-${board.value}`}
+                    >
+                      <AlertTriangle
+                        className="h-3 w-3 text-[color:var(--agent-tone-warning)]"
+                        aria-hidden
+                      />
+                    </span>
+                  ) : null}
                   {count !== null && count > 0 ? (
                     <span
                       className="inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-[11px] font-[650] tabular-nums text-[color:var(--warning)]"
@@ -1232,7 +1286,15 @@ export function AgentsPage() {
                     <strong className="font-[650]">
                       {t("agents.shell.partialErrorTitle")}
                     </strong>{" "}
-                    {t("agents.shell.partialError")}
+                    {t("agents.shell.partialError", {
+                      boards: state.staleBoardIds
+                        .map(
+                          (id) =>
+                            state.boards.find((board) => board.id === id)
+                              ?.title ?? id,
+                        )
+                        .join(", "),
+                    })}
                   </>
                 )}
               </span>
@@ -1464,8 +1526,8 @@ export function AgentsPage() {
                           <AttentionApprovalList
                             rows={scopedApprovalRows}
                             filter={approvalFilter}
-                            onFilterChange={setApprovalFilter}
-                            selectedId={selectedApprovalId}
+                            onFilterChange={changeApprovalFilter}
+                            selectedId={visibleApprovalId}
                             onSelect={openApproval}
                             onReject={(row) => openApproval(row, "reject")}
                             now={now}
@@ -1593,11 +1655,11 @@ export function AgentsPage() {
           )
         ) : section === "attention" &&
           isAttentionAdmin &&
-          selectedApprovalId !== null &&
+          visibleApprovalId !== null &&
           approvalBoardId !== null ? (
           <AttentionApprovalDetail
             boardId={approvalBoardId}
-            approvalId={selectedApprovalId}
+            approvalId={visibleApprovalId}
             boardTitle={approvalBoardTitle}
             fallbackAgentName={
               selectedApprovalBase === undefined

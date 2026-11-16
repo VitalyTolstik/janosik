@@ -46,9 +46,11 @@ describe("agent design system (TASK-179.9)", () => {
     }
   });
 
-  it("keeps the 11 px type floor in every agent surface", () => {
+  it("keeps the mockup's 10 px minimum in every agent surface", () => {
+    // The current prototype uses 10/10.5 px for dense metadata (Live row
+    // actions, reject label, Load more); nothing may fall below that floor.
     for (const [name, source] of Object.entries(SURFACES)) {
-      expect(source, name).not.toMatch(/text-\[(8|9|10)(?:\.5)?px\]/);
+      expect(source, name).not.toMatch(/text-\[(8|9)(?:\.5)?px\]/);
     }
   });
 

@@ -16,8 +16,9 @@ describe("agents overview model", () => {
     expect(effectiveApprovalStatus("pending", NOW.getTime(), NOW)).toBe(
       "expired",
     );
+    // A decided approval keeps its status; only pending rows expire.
     expect(effectiveApprovalStatus("approved", NOW.getTime() - 1, NOW)).toBe(
-      "expired",
+      "approved",
     );
     expect(effectiveApprovalStatus("rejected", 0, NOW)).toBe("rejected");
     expect(effectiveApprovalStatus("consumed", 0, NOW)).toBe("consumed");

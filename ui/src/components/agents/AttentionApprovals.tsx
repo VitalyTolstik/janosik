@@ -35,7 +35,7 @@ import {
   ApprovalRiskBadge,
   ApprovalStatusBadge,
 } from "@/components/approvals/approval-ui";
-import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { AgentConfirmDialog } from "./AgentConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
@@ -46,8 +46,9 @@ import {
   APPROVAL_STATUS_KEYS,
   effectiveApprovalStatus,
 } from "@/utils/approval";
-import { shortId } from "./agent-model";
+import { runNumber, shortId } from "./agent-model";
 import { actionSummary } from "./run-model";
+import { AgentControlFooterPortal } from "./AgentControlFooterPortal";
 
 export type AttentionApprovalFilter = "needs" | "decided" | "all";
 
@@ -362,7 +363,7 @@ export function AttentionApprovalList({
             const title = titleForApproval(row, row.cardTitle ?? null, t);
             const timeLabel =
               effective === "pending"
-                ? t("agents.approvals.minLeft", {
+                ? t("agents.approvals.expiresIn", {
                     count: minutesLeft(row.expiresAt, now),
                   })
                 : formatDate(row.decidedAt ?? row.expiresAt, lang);
@@ -491,6 +492,7 @@ export function AttentionApprovalDetail({
   fallbackCardTitle,
   initialMode = null,
   variant = "global",
+  footerActive = true,
   onChanged,
   onBack,
   onNextPending,
@@ -505,6 +507,8 @@ export function AttentionApprovalDetail({
   initialMode?: "reject" | null;
   /** Global panel keeps list context; the board panel shows the cancel action. */
   variant?: "global" | "board";
+  /** Mobile list-only state hides the board footer until a detail is open. */
+  footerActive?: boolean;
   onChanged: () => void;
   onBack?: () => void;
   onNextPending?: () => void;
@@ -594,8 +598,9 @@ export function AttentionApprovalDetail({
   const agentName =
     fallbackAgentName ??
     (detail === null ? undefined : tokenNames.get(detail.requestedByTokenId)) ??
-    session?.name ??
+    session?.tokenName ??
     session?.clientName ??
+    session?.name ??
     detail?.requestedByTokenId ??
     "";
   const boardLabel = board?.title ?? boardTitle;
@@ -708,6 +713,61 @@ export function AttentionApprovalDetail({
     }
   };
 
+  const footerNode =
+    detail !== null && effectiveStatus !== undefined && hint !== null ? (
+      <footer
+        className={cn(
+          "ac-foot ac-foot-static shrink-0 border-t border-border",
+          variant === "board"
+            ? "ac-foot-approval bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-3 py-[9px]"
+            : "bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5",
+        )}
+      >
+        {canDecide ? (
+          <ApprovalDecisionForm
+            key={`${detail.id}-${initialMode ?? "idle"}`}
+            busy={busy}
+            planHash={detail.planHash}
+            footerHash={variant === "board" ? detail.planHash : undefined}
+            layout={variant === "board" ? "inline" : "stacked"}
+            onNextPending={
+              variant === "board" || onNextPending === undefined
+                ? undefined
+                : onNextPending
+            }
+            impactTitle={
+              destructiveCard
+                ? t("agents.approvals.destructiveCardTitle")
+                : undefined
+            }
+            impactText={destructiveImpactText ?? detail.summary}
+            initialMode={initialMode}
+            onDecide={decide}
+          />
+        ) : (
+          <>
+            <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
+              <span className="mt-px shrink-0">{hint.icon}</span>
+              <span>{hint.text}</span>
+            </p>
+            {onBack !== undefined ? (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
+                  onClick={onBack}
+                >
+                  {t("agents.approvals.closeDetail")}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </footer>
+    ) : null;
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col"
@@ -731,7 +791,14 @@ export function AttentionApprovalDetail({
                 {t("agents.approvals.selected")}
               </p>
             ) : null}
-            <h2 className="text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
+            <h2
+              className={cn(
+                "break-words tracking-[-0.01em]",
+                variant === "board"
+                  ? "font-agent-display text-[15px] font-[700] leading-[1.3]"
+                  : "text-[13px] font-[650] leading-[1.35]",
+              )}
+            >
               {detail === null
                 ? t("agents.approvals.loading")
                 : titleForApproval(detail, cardTitle, t)}
@@ -1004,8 +1071,16 @@ export function AttentionApprovalDetail({
                 {detail.consumedAt !== null ? (
                   <HistoryItem
                     tone="primary"
-                    title={t("agents.approvals.historyApplied")}
-                    detail={formatHistoryTime(detail.consumedAt, lang, t)}
+                    title={
+                      detail.runId === null
+                        ? t("agents.approvals.historyApplied")
+                        : t("agents.approvals.historyAppliedRun", {
+                            run: t("agents.runHash", {
+                              id: runNumber(detail.runId),
+                            }),
+                          })
+                    }
+                    detail={`${formatHistoryTime(detail.consumedAt, lang, t)} · ${detail.summary}`}
                   />
                 ) : null}
               </div>
@@ -1038,71 +1113,35 @@ export function AttentionApprovalDetail({
           </div>
         )}
       </div>
-      {detail !== null && effectiveStatus !== undefined && hint !== null ? (
-        <footer
-          className={cn(
-            "shrink-0 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))]",
-            variant === "board"
-              ? "ac-foot-approval px-3 py-[9px]"
-              : "px-3.5 py-2.5",
-          )}
-        >
-          {canDecide ? (
-            <ApprovalDecisionForm
-              key={`${detail.id}-${initialMode ?? "idle"}`}
-              busy={busy}
-              planHash={detail.planHash}
-              footerHash={variant === "board" ? detail.planHash : undefined}
-              layout={variant === "board" ? "inline" : "stacked"}
-              onNextPending={
-                variant === "board" || onNextPending === undefined
-                  ? undefined
-                  : onNextPending
-              }
-              impactTitle={
-                destructiveCard
-                  ? t("agents.approvals.destructiveCardTitle")
-                  : undefined
-              }
-              impactText={destructiveImpactText ?? detail.summary}
-              initialMode={initialMode}
-              onDecide={decide}
-            />
-          ) : (
-            <>
-              <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
-                <span className="mt-px shrink-0">{hint.icon}</span>
-                <span>{hint.text}</span>
-              </p>
-              {onBack !== undefined ? (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
-                    onClick={onBack}
-                  >
-                    {t("agents.approvals.closeDetail")}
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </footer>
-      ) : null}
       {variant === "board" ? (
-        <ConfirmDialog
+        <AgentControlFooterPortal active={footerActive}>
+          {footerNode}
+        </AgentControlFooterPortal>
+      ) : (
+        footerNode
+      )}
+      {variant === "board" ? (
+        <AgentConfirmDialog
           open={cancelOpen}
           onOpenChange={setCancelOpen}
+          icon={CircleSlash}
+          tone="danger"
           title={t("agentControl.approvals.cancelTitle")}
           description={t("agentControl.approvals.cancelDescription")}
           confirmLabel={t("agentControl.approvals.cancelConfirm")}
-          destructive
           onConfirm={() => {
             void cancelRequest();
           }}
-        />
+          busy={cancelBusy}
+          testId="approval-cancel-dialog"
+          confirmTestId="approval-cancel-confirm"
+          cancelTestId="approval-cancel-cancel"
+          confirmClassName="min-w-[107px]"
+        >
+          <p className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-foreground">
+            {detail === null ? null : `${detail.summary} · ${agentName}`}
+          </p>
+        </AgentConfirmDialog>
       ) : null}
     </div>
   );

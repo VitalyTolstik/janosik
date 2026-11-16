@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Inbox, RefreshCw, Search } from "lucide-react";
 import type {
   AgentSessionDto,
@@ -17,6 +18,8 @@ import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
 import { ApprovalStatusBadge } from "@/components/approvals/approval-ui";
 import { AttentionApprovalDetail } from "@/components/agents/AttentionApprovals";
+import { AgentControlFooterPortal } from "@/components/agents/AgentControlFooterPortal";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 /**
  * The approval queue of one board (TASK-166.14, TASK-179.3).
@@ -70,11 +73,18 @@ export function ApprovalsPanel({
   const { t, lang } = useI18n();
   const { board } = useBoardState();
   const live = useBoardLive();
+  const [params, setParams] = useSearchParams();
+  // Only the approval present when the panel opened is a real deep link. A row
+  // the user selects later must not stay pinned when a filter hides it.
+  const initialApprovalRef = useRef(params.get("approval"));
+  const mobile = useMediaQuery("(max-width: 760px)");
   const [filter, setFilter] = useState<ApprovalFilter>("needs");
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ApprovalRequestDto[] | null>(null);
   const [listError, setListError] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    params.get("approval"),
+  );
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [revision, setRevision] = useState(0);
   const [tokens, setTokens] = useState<UserTokenDto[]>([]);
@@ -97,10 +107,6 @@ export function ApprovalsPanel({
       .then((next) => {
         if (!alive) return;
         setRows(next);
-        // Keep an explicitly selected approval even when the active filter no
-        // longer lists it: a live decision from another tab must update the
-        // open detail instead of closing it.
-        setSelectedId((current) => current ?? next[0]?.id ?? null);
       })
       .catch(() => {
         if (!alive) return;
@@ -137,6 +143,7 @@ export function ApprovalsPanel({
         entry.apiTokenId === row.requestedByTokenId,
     );
     return (
+      session?.tokenName ??
       session?.name ??
       session?.clientName ??
       row.requestedByTokenId.slice(0, 12)
@@ -181,6 +188,28 @@ export function ApprovalsPanel({
       return haystack.includes(needle);
     });
   }, [board?.cards, filter, now, queue, search]);
+  const requestedApprovalId = params.get("approval");
+  useEffect(() => {
+    // Selection follows the visible list: never keep a detail that the active
+    // Needs/Decided filter hides. A valid board deep link wins over the first
+    // visible row; anything else repairs to the first visible request.
+    setSelectedId((current) => {
+      // An explicit board `?approval=` deep link wins even when the row is in
+      // Decided/expired. Only the value present on mount is pinned; later
+      // selections follow the visible queue when a filter hides them.
+      if (
+        requestedApprovalId !== null &&
+        requestedApprovalId === initialApprovalRef.current &&
+        rows?.some((row) => row.id === requestedApprovalId)
+      ) {
+        return requestedApprovalId;
+      }
+      if (current !== null && filtered.some((row) => row.id === current)) {
+        return current;
+      }
+      return filtered[0]?.id ?? null;
+    });
+  }, [filtered, requestedApprovalId, rows]);
   const loadingList = rows === null && !listError;
   const pendingRows = useMemo(
     () =>
@@ -220,6 +249,33 @@ export function ApprovalsPanel({
       ? t("agentControl.approvals.listHeadDecidedRight")
       : t("agentControl.approvals.listHeadExpires");
 
+  const dropApprovalParam = () => {
+    if (!params.has("approval")) return;
+    const next = new URLSearchParams(params);
+    next.delete("approval");
+    setParams(next, { replace: true });
+  };
+
+  const changeFilter = (next: ApprovalFilter) => {
+    setFilter(next);
+    setSelectedId(null);
+    dropApprovalParam();
+  };
+
+  const changeSearch = (next: string) => {
+    setSearch(next);
+    setSelectedId(null);
+    dropApprovalParam();
+  };
+
+  const selectApproval = (id: string) => {
+    setSelectedId(id);
+    setMobileDetailOpen(true);
+    const next = new URLSearchParams(params);
+    next.set("approval", id);
+    setParams(next, { replace: true });
+  };
+
   const renderRow = (row: ApprovalRequestDto, pending: boolean) => {
     const card = row.cardId === null ? undefined : board?.cards[row.cardId];
     const effective = effectiveApprovalStatus(row.status, row.expiresAt, now);
@@ -231,10 +287,7 @@ export function ApprovalsPanel({
         data-testid={`approval-row-${row.id}`}
         data-status={effective}
         aria-current={selectedId === row.id}
-        onClick={() => {
-          setSelectedId(row.id);
-          setMobileDetailOpen(true);
-        }}
+        onClick={() => selectApproval(row.id)}
         className={cn(
           "block w-full border-b border-border-soft px-2.5 py-2 text-left transition-colors",
           pending && "bg-warning/3",
@@ -300,7 +353,7 @@ export function ApprovalsPanel({
               type="button"
               data-testid={`approval-filter-${value}`}
               aria-pressed={filter === value}
-              onClick={() => setFilter(value)}
+              onClick={() => changeFilter(value)}
               className={cn("chip", filter === value && "primary")}
             >
               {t(key)}
@@ -315,7 +368,7 @@ export function ApprovalsPanel({
             data-testid="approval-search"
             type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => changeSearch(event.target.value)}
             placeholder={t("agentControl.approvals.searchPlaceholder")}
             aria-label={t("agentControl.approvals.searchLabel")}
           />
@@ -380,7 +433,7 @@ export function ApprovalsPanel({
                 <button
                   type="button"
                   className="btn btn-outline btn-sm"
-                  onClick={() => setFilter("all")}
+                  onClick={() => changeFilter("all")}
                 >
                   {t("agentControl.approvals.viewAll")}
                 </button>
@@ -430,6 +483,7 @@ export function ApprovalsPanel({
               approvalId={selectedId}
               boardTitle={board?.title ?? boardId}
               variant="board"
+              footerActive={!mobile || mobileDetailOpen}
               onBack={() => setMobileDetailOpen(false)}
               onChanged={() => {
                 setRevision((value) => value + 1);
@@ -444,6 +498,24 @@ export function ApprovalsPanel({
           )}
         </div>
       </div>
+      {!loadingList && !listError && filtered.length === 0 ? (
+        <AgentControlFooterPortal>
+          <footer className="ac-foot ac-foot-static">
+            <span className="ac-foot-note">
+              {t("agentControl.approvals.emptyFooter")}
+            </span>
+          </footer>
+        </AgentControlFooterPortal>
+      ) : null}
+      {mobile && !mobileDetailOpen && filtered.length > 0 ? (
+        <AgentControlFooterPortal>
+          <footer className="ac-foot ac-foot-static">
+            <span className="ac-foot-mobile-hint">
+              {t("agentControl.approvals.mobileHint")}
+            </span>
+          </footer>
+        </AgentControlFooterPortal>
+      ) : null}
     </div>
   );
 }

@@ -684,6 +684,8 @@ export interface AgentSessionDto {
   id: string;
   userId: string;
   apiTokenId: string;
+  /** Token display name for board attribution; null when not disclosed. */
+  tokenName?: string | null;
   boardId: string;
   name: string | null;
   clientName: string | null;
@@ -1311,8 +1313,14 @@ export interface AgentRunDto {
   id: string;
   boardId: string;
   apiTokenId: string | null;
+  /** Token display name for board attribution; null when not disclosed. */
+  tokenName?: string | null;
   agentSessionId: string | null;
+  /** Session display name for the run→session link. */
+  sessionName?: string | null;
   actorId: string;
+  /** Board actor display name when the caller can see the roster. */
+  actorName?: string | null;
   kind: AgentRunKind;
   status: AgentRunStatus;
   clientRunId: string | null;

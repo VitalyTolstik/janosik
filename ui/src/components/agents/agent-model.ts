@@ -157,16 +157,18 @@ export function isTerminalStatus(status: AgentSessionStatus): boolean {
  * Board- and token-level pauses stay separate chips: they pause every write
  * on the board/token without rewriting an individual session's lifecycle.
  */
-export type SessionDisplayStatus = AgentSessionStatus | "paused";
+export type SessionDisplayStatus = AgentSessionStatus | "paused" | "stale";
 
 export function sessionDisplayStatus(
-  session: Pick<AgentSessionDto, "status" | "pausedAt">,
+  session: Pick<AgentSessionDto, "status" | "pausedAt" | "stale">,
 ): SessionDisplayStatus {
-  // A terminal row never presents as paused, even if a malformed payload
-  // leaves `pausedAt` behind.
-  return !isTerminalStatus(session.status) && session.pausedAt !== null
-    ? "paused"
-    : session.status;
+  // A terminal row never presents as paused/stale, even if malformed payload
+  // fields remain. A human pause explains the missing heartbeat; otherwise a
+  // stale row must not keep reading as `Idle`/`Active` in the primary pill.
+  if (isTerminalStatus(session.status)) return session.status;
+  if (session.pausedAt !== null) return "paused";
+  if (session.stale) return "stale";
+  return session.status;
 }
 
 /**
@@ -201,10 +203,13 @@ export function lastSeenAt(session: AgentSessionDto): number {
 }
 
 export function agentLabel(row: AgentSessionRow): string {
+  // A session name describes the work, not the agent. Token names are now
+  // disclosed in board context; when one is unavailable, the client name is
+  // the honest fallback, and the session stays in its own column/card.
   return (
     row.tokenName ??
-    row.name ??
     row.clientName ??
+    row.name ??
     `Agent ${row.apiTokenId.slice(0, 8)}`
   );
 }
@@ -324,7 +329,11 @@ export function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
 }
 
-/** `run-128` → `128`, so the dense label reads `Run 128`. */
+/** `run-128` → `#128`, so the dense label reads `Run #128`. */
 export function runNumber(id: string): string {
-  return id.replace(/^run-/, "");
+  const explicit = /^run-(\d+)$/.exec(id);
+  if (explicit !== null) return `#${explicit[1]}`;
+  const trailing = /(\d+)$/.exec(id);
+  if (trailing !== null) return `#${trailing[1]}`;
+  return `#${id.slice(0, 6)}`;
 }

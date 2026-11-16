@@ -794,6 +794,21 @@ describe("AgentsPage", () => {
     ).not.toHaveTextContent(/\d/);
   });
 
+  it("auto-selects the first pending approval on Attention", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+    renderPage("/agents?section=attention");
+
+    expect(await screen.findByTestId("agents-approval-detail")).toBeVisible();
+    expect(await screen.findByTestId("approval-plan-hash")).toBeVisible();
+  });
+
   it("names the approval's own session, not an arbitrary session of that token", async () => {
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse(
@@ -1741,6 +1756,11 @@ describe("AgentsPage", () => {
                 stale: true,
                 lastHeartbeatAt: now - 6 * 60_000,
               }),
+              session({
+                id: "active-fresh",
+                status: "active",
+                name: "Fresh session",
+              }),
               session({ id: "idle", status: "idle", name: "Idle session" }),
               session({
                 id: "waiting",
@@ -1785,15 +1805,15 @@ describe("AgentsPage", () => {
     }
     const staleRow = screen.getByTestId("agent-session-row-active-stale");
     expect(
-      within(staleRow).getByTestId("agent-status-active"),
-    ).toHaveTextContent("Active");
-    expect(within(staleRow).queryByText("Stale")).toBeNull();
+      within(staleRow).getByTestId("agent-status-stale"),
+    ).toHaveTextContent("Stale");
+    expect(within(staleRow).getByText("Stale")).toBeInTheDocument();
     const heartbeat = within(staleRow).getByTestId("agent-heartbeat");
     expect(heartbeat).toHaveAttribute("data-stale", "true");
     expect(heartbeat).toHaveTextContent("6m ago");
     expect(heartbeat).not.toHaveTextContent("No heartbeat");
     expect(screen.queryByTestId("agent-stale-badge")).toBeNull();
-    expect(screen.queryByText("Stale")).toBeNull();
+    expect(within(staleRow).getAllByText("Stale")).toHaveLength(1);
   });
 
   it("matches the mockup session detail: no board folder, token link or run chip", async () => {

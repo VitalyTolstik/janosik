@@ -84,7 +84,9 @@ const ids = {
   sessionRelease: "px-session-release",
   sessionDeploy: "px-session-deploy",
   sessionPricing: "px-session-pricing",
+  sessionCi: "px-session-ci",
   sessionIdle: "px-session-idle",
+  sessionStale: "px-session-stale",
   sessionDone: "px-session-done",
   sessionFailed: "px-session-failed",
   sessionCancelled: "px-session-cancelled",
@@ -153,15 +155,43 @@ async function applyRun({
   // A real PAT batch creates the AgentRun and every pre-image.
   const result = await api(`/boards/${boardId}/commands/batch`, {
     token,
-    sessionId,
+    // Sessions are inserted later in this fixture; link them by direct DB
+    // update below instead of presenting a not-yet-existing session header.
+    sessionId: undefined,
     body: { clientRunId, commands },
   });
-  const runId = result.body.runId ?? result.headers.get("x-run-id");
+  let runId = result.body.runId ?? result.headers.get("x-run-id");
   if (!runId) throw new Error(`No run id for ${clientRunId}`);
+  // Readable ids preserve the mockup's `Run #128` language while the real
+  // command transport still creates the run. No foreign keys reference the
+  // id, so the scalar rows are updated explicitly.
+  const numeric = /(\d+)$/.exec(clientRunId ?? "")?.[1];
+  if (numeric !== undefined) {
+    const readable = `run-${numeric}`;
+    await prisma.agentRun.update({
+      where: { id: runId },
+      data: { id: readable },
+    });
+    await prisma.command.updateMany({
+      where: { runId },
+      data: { runId: readable },
+    });
+    await prisma.commandPreimage.updateMany({
+      where: { runId },
+      data: { runId: readable },
+    });
+    runId = readable;
+  }
   const when = new Date(atMs);
+  const appliedAt = new Date(atMs + 12_000 + (commands.length - 1) * 3_000);
   await prisma.agentRun.update({
     where: { id: runId },
-    data: { createdAt: when, appliedAt: when },
+    data: {
+      createdAt: when,
+      appliedAt,
+      planHash: sha256(`plan:${clientRunId}`).slice(0, 64),
+      ...(sessionId === undefined ? {} : { agentSessionId: sessionId }),
+    },
   });
   await prisma.command.updateMany({
     where: { runId },
@@ -433,7 +463,7 @@ async function main() {
       },
       {
         id: ids.tokenDocs,
-        userId: member.id,
+        userId: admin.id,
         name: "Docs agent",
         tokenHash: sha256(rawTokens[ids.tokenDocs]),
         scopePreset: "worker",
@@ -450,7 +480,7 @@ async function main() {
       },
       {
         id: ids.tokenCi,
-        userId: member.id,
+        userId: admin.id,
         name: "Release agent (CI)",
         tokenHash: sha256(rawTokens[ids.tokenCi]),
         scopePreset: "worker",
@@ -462,29 +492,27 @@ async function main() {
   // --- runs through the real command transport ---------------------------
   const run128 = await applyRun({
     token: rawTokens[ids.tokenCi],
-    sessionId: null,
+    sessionId: ids.sessionCi,
     clientRunId: "seed-run-128",
     atMs: now - minutes(36),
-    kind: "batch",
+    kind: "single",
     commands: [
+      // Applies the `px-approval-consumed` plan, so the approval → run
+      // back-link and the run → approval link point at the same work.
       command({
-        type: "ADD_CARD",
-        newCardId: "px-card-created-approval-inbox",
-        columnId: ids.columnOpsProgress,
-        title: "Approval inbox polish",
-      }),
-      command({
-        type: "ADD_CARD",
-        newCardId: "px-card-created-heartbeat-copy",
-        columnId: ids.columnOpsReview,
-        title: "Session heartbeat copy",
+        type: "MOVE_CARD",
+        cardId: ids.cardApprovalInbox,
+        fromColumnId: ids.columnOpsProgress,
+        fromIndex: 0,
+        toColumnId: ids.columnOpsDone,
+        toIndex: 1,
       }),
     ],
   });
 
   const run126 = await applyRun({
     token: rawTokens[ids.tokenDocs],
-    sessionId: null,
+    sessionId: ids.sessionApi,
     clientRunId: "seed-run-126",
     atMs: now - hours(1) - minutes(9),
     kind: "single",
@@ -572,6 +600,23 @@ async function main() {
     data: { status: "failed" },
   });
 
+  // Sixth Agent Ops run: the board list still starts at five rows, so the
+  // reviewer can exercise Load more and the next server cursor.
+  const run108 = await applyRun({
+    token: rawTokens[ids.tokenClaude],
+    sessionId: ids.sessionRefactor,
+    clientRunId: "seed-run-108",
+    atMs: now - hours(1) - minutes(47),
+    kind: "single",
+    commands: [
+      command({
+        type: "UPDATE_CARD",
+        cardId: ids.cardApprovalInbox,
+        description: "Approval inbox copy reviewed after the docs build.",
+      }),
+    ],
+  });
+
   const movedCards = [
     { cardId: ids.cardPricingRefs, from: ids.columnSiteReview, index: 0 },
     { cardId: ids.cardReleaseNotes, from: ids.columnSiteProgress, index: 0 },
@@ -580,9 +625,9 @@ async function main() {
   const run115 = await applyRun({
     boardId: ids.boardSite,
     token: rawTokens[ids.tokenCi],
-    sessionId: null,
+    sessionId: ids.sessionDeploy,
     clientRunId: "seed-run-115",
-    atMs: now - hours(30),
+    atMs: now - hours(1) - minutes(50),
     kind: "batch",
     commands: movedCards.map(({ cardId, from, index }) =>
       command(ids.boardSite, {
@@ -599,9 +644,9 @@ async function main() {
   const run112 = await applyRun({
     boardId: ids.boardSite,
     token: rawTokens[ids.tokenDocs],
-    sessionId: null,
+    sessionId: ids.sessionPricing,
     clientRunId: "seed-run-112",
-    atMs: now - hours(34),
+    atMs: now - minutes(20),
     kind: "single",
     commands: [
       command(ids.boardSite, {
@@ -618,7 +663,7 @@ async function main() {
     boardId: ids.boardSite,
     token: rawTokens[ids.tokenCi],
     sessionId: null,
-    clientRunId: "seed-run-expired",
+    clientRunId: "seed-run-104",
     atMs: now - hours(52),
     kind: "batch",
     commands: [
@@ -663,7 +708,7 @@ async function main() {
       risk: "medium",
       planHash: hash("landing"),
       status: "pending",
-      expiresAt: at(minutes(7)),
+      expiresAt: at(hours(12)),
       createdAt: at(-minutes(4)),
       plan: approvalPlan(ids.cardLanding, {
         type: "MOVE_CARD",
@@ -677,7 +722,7 @@ async function main() {
       id: "px-approval-delete-claim",
       boardId: ids.boardOps,
       cardId: ids.cardClaim,
-      requestedBy: member.id,
+      requestedBy: admin.id,
       requestedByTokenId: ids.tokenDocs,
       agentSessionId: ids.sessionApi,
       kind: "destructive",
@@ -686,7 +731,7 @@ async function main() {
       risk: "medium",
       planHash: hash("delete-claim"),
       status: "pending",
-      expiresAt: at(minutes(52)),
+      expiresAt: at(hours(18)),
       createdAt: at(-minutes(8)),
       plan: approvalPlan(ids.cardClaim, { type: "DELETE_CARD" }),
     },
@@ -703,12 +748,13 @@ async function main() {
       risk: "low",
       planHash: hash("approved"),
       status: "approved",
-      expiresAt: at(minutes(30)),
+      // Deliberately past the decision TTL: only a pending row may become
+      // expired; an approved row keeps its honest approved state.
+      expiresAt: at(-minutes(10)),
       createdAt: at(-hours(2)),
       decidedBy: admin.id,
       decidedAt: at(-hours(1) - minutes(48)),
       decisionComment: "Ship it with the docs release.",
-      runId: run128,
       plan: approvalPlan(ids.cardMcpCallouts, {
         type: "MOVE_CARD",
         fromColumnId: ids.columnOpsProgress,
@@ -721,7 +767,7 @@ async function main() {
       id: "px-approval-rejected",
       boardId: ids.boardOps,
       cardId: ids.cardHeartbeat,
-      requestedBy: member.id,
+      requestedBy: admin.id,
       requestedByTokenId: ids.tokenDocs,
       agentSessionId: ids.sessionApi,
       kind: "destructive",
@@ -766,7 +812,9 @@ async function main() {
       cardId: ids.cardHeartbeat,
       requestedBy: member.id,
       requestedByTokenId: ids.tokenRelease,
-      agentSessionId: ids.sessionPricing,
+      // No session on this board for the member's release token; an honest
+      // null beats a cross-board session that can never match the request.
+      agentSessionId: null,
       kind: "custom",
       actionType: "UPDATE_CARD",
       summary: "Refresh the heartbeat copy",
@@ -785,20 +833,20 @@ async function main() {
       boardId: ids.boardOps,
       cardId: ids.cardApprovalInbox,
       requestedBy: admin.id,
-      requestedByTokenId: ids.tokenClaude,
-      agentSessionId: ids.sessionRefactor,
+      requestedByTokenId: ids.tokenCi,
+      agentSessionId: ids.sessionCi,
       kind: "done",
       actionType: "MOVE_CARD",
       summary: "Move “Approval inbox polish” to done",
       risk: "low",
       planHash: hash("consumed"),
       status: "consumed",
-      expiresAt: at(-hours(1)),
-      createdAt: at(-hours(8)),
+      expiresAt: at(-minutes(20)),
+      createdAt: at(-hours(1) - minutes(10)),
       decidedBy: admin.id,
-      decidedAt: at(-hours(7)),
-      consumedAt: at(-hours(6) - minutes(45)),
-      runId: run126,
+      decidedAt: at(-minutes(40)),
+      consumedAt: at(-minutes(35)),
+      runId: run128,
       plan: approvalPlan(ids.cardApprovalInbox, {
         type: "MOVE_CARD",
         fromColumnId: ids.columnOpsProgress,
@@ -820,7 +868,7 @@ async function main() {
       risk: "medium",
       planHash: hash("website"),
       status: "pending",
-      expiresAt: at(minutes(35)),
+      expiresAt: at(hours(16)),
       createdAt: at(-minutes(6)),
       plan: {
         commands: [
@@ -846,6 +894,11 @@ async function main() {
       },
     });
   }
+  // Keep the run → approval back-link alongside the approval → run link.
+  await prisma.agentRun.update({
+    where: { id: run128 },
+    data: { approvalId: "px-approval-consumed" },
+  });
 
   // --- sessions ----------------------------------------------------------
   const sessionRows = [
@@ -857,12 +910,12 @@ async function main() {
       name: "Refactor approval flow",
       clientName: "opencode",
       model: "deepseek-v4.1",
-      status: "waiting_approval",
+      status: "active",
       currentCardId: ids.cardApprovalInbox,
-      currentRunId: run128,
-      startedAt: at(-minutes(42)),
-      lastHeartbeatAt: at(-seconds(12)),
-      summary: "Waiting on the landing-page plan hash.",
+      currentRunId: run108,
+      startedAt: at(-hours(2)),
+      lastHeartbeatAt: at(hours(6)),
+      summary: "Refactoring the approval flow.",
     },
     {
       id: ids.sessionLanding,
@@ -872,16 +925,16 @@ async function main() {
       name: "Landing page rewrite",
       clientName: "opencode",
       model: "gpt-5.2",
-      status: "active",
+      status: "waiting_approval",
       currentCardId: ids.cardLanding,
       currentRunId: null,
       startedAt: at(-hours(3)),
-      lastHeartbeatAt: at(-minutes(6)),
+      lastHeartbeatAt: at(hours(6)),
       summary: "Last known work: landing page rewrite.",
     },
     {
       id: ids.sessionApi,
-      userId: member.id,
+      userId: admin.id,
       apiTokenId: ids.tokenDocs,
       boardId: ids.boardOps,
       name: "API reference sweep",
@@ -890,8 +943,8 @@ async function main() {
       status: "active",
       currentCardId: ids.cardMcp,
       currentRunId: run126,
-      startedAt: at(-minutes(19)),
-      lastHeartbeatAt: at(-minutes(1)),
+      startedAt: at(-hours(1) - minutes(20)),
+      lastHeartbeatAt: at(hours(6)),
       summary: "Sweeping the API reference.",
     },
     {
@@ -904,9 +957,9 @@ async function main() {
       model: "claude-sonnet-4.5",
       status: "waiting_approval",
       currentCardId: ids.cardPricingCopy,
-      currentRunId: run115,
+      currentRunId: null,
       startedAt: at(-minutes(58)),
-      lastHeartbeatAt: at(-seconds(34)),
+      lastHeartbeatAt: at(hours(6)),
       pausedAt: at(-minutes(20)),
       pausedBy: admin.id,
       pausedReason: "Hold until the pricing copy is reviewed.",
@@ -914,22 +967,22 @@ async function main() {
     },
     {
       id: ids.sessionDeploy,
-      userId: member.id,
+      userId: admin.id,
       apiTokenId: ids.tokenCi,
       boardId: ids.boardSite,
       name: "Deploy notes",
       clientName: "github-actions",
       model: "gpt-5.2",
       status: "active",
-      currentCardId: null,
-      currentRunId: null,
+      currentCardId: ids.cardPricingRefs,
+      currentRunId: run115,
       startedAt: at(-hours(2)),
-      lastHeartbeatAt: at(-minutes(18)),
+      lastHeartbeatAt: at(hours(6)),
       summary: "Waiting for the next deploy.",
     },
     {
       id: ids.sessionPricing,
-      userId: member.id,
+      userId: admin.id,
       apiTokenId: ids.tokenDocs,
       boardId: ids.boardSite,
       name: "Pricing copy references",
@@ -939,7 +992,7 @@ async function main() {
       currentCardId: ids.cardPricingRefs,
       currentRunId: run112,
       startedAt: at(-minutes(24)),
-      lastHeartbeatAt: at(-minutes(2)),
+      lastHeartbeatAt: at(hours(6)),
       summary: "Collecting pricing references.",
     },
     {
@@ -954,7 +1007,7 @@ async function main() {
       currentCardId: null,
       currentRunId: null,
       startedAt: at(-minutes(50)),
-      lastHeartbeatAt: at(-seconds(20)),
+      lastHeartbeatAt: at(hours(6)),
       summary: "Idle but heartbeating.",
     },
     {
@@ -967,7 +1020,7 @@ async function main() {
       model: "deepseek-v4.1",
       status: "completed",
       currentCardId: null,
-      currentRunId: run128,
+      currentRunId: null,
       startedAt: at(-hours(5)),
       lastHeartbeatAt: at(-hours(4)),
       endedAt: at(-hours(4)),
@@ -976,7 +1029,7 @@ async function main() {
     },
     {
       id: ids.sessionFailed,
-      userId: member.id,
+      userId: admin.id,
       apiTokenId: ids.tokenDocs,
       boardId: ids.boardSite,
       name: "Docs build",
@@ -1008,14 +1061,46 @@ async function main() {
       endReason: "Operator cancelled the cleanup.",
       summary: "Cancelled before any writes.",
     },
+    {
+      id: ids.sessionStale,
+      userId: admin.id,
+      apiTokenId: ids.tokenClaude,
+      boardId: ids.boardOps,
+      name: "Landing page QA",
+      clientName: "opencode",
+      model: "deepseek-v4.1",
+      status: "active",
+      currentCardId: ids.cardLanding,
+      currentRunId: null,
+      startedAt: at(-hours(2)),
+      lastHeartbeatAt: at(-minutes(18)),
+      summary: "No heartbeat since the last review.",
+    },
+    {
+      id: ids.sessionCi,
+      userId: admin.id,
+      apiTokenId: ids.tokenCi,
+      boardId: ids.boardOps,
+      name: "Release notes deploy",
+      clientName: "github-actions",
+      model: "gpt-5.2",
+      status: "completed",
+      currentCardId: null,
+      currentRunId: run128,
+      startedAt: at(-hours(1)),
+      lastHeartbeatAt: at(-minutes(35)),
+      endedAt: at(-minutes(35)),
+      endReason: "Release notes shipped.",
+      summary: "Completed successfully.",
+    },
   ];
   for (const row of sessionRows) {
     await prisma.agentSession.create({ data: row });
   }
 
-  // A stale session whose stored lifecycle is still `idle` is deliberately
-  // absent: the scene proves heartbeat and lifecycle are separate without
-  // using a misleading Idle label for a hanging agent.
+  // The dedicated stale row keeps its real lifecycle (`active`) while the
+  // primary pill reports Stale; `sessionIdle` stays fresh so it demonstrates
+  // Idle without turning into a stale Idle after five minutes.
 
   console.log(
     JSON.stringify(
@@ -1034,6 +1119,7 @@ async function main() {
           reverted: run124,
           conflict: run121,
           failed: run118,
+          sixth: run108,
           movedThree: run115,
           notes: run112,
           expired: runExpired,
