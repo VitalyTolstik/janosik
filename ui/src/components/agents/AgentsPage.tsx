@@ -431,6 +431,7 @@ export function AgentsPage() {
   });
   const runs = useAgentRuns(state.boards, {
     enabled: !state.isAgentToken,
+    boardsLoading: state.loading,
     filter: runFilter,
   });
   const countFilter = useMemo(
@@ -439,6 +440,7 @@ export function AgentsPage() {
   );
   const runCount = useAgentRuns(state.boards, {
     enabled: !state.isAgentToken,
+    boardsLoading: state.loading,
     filter: countFilter,
   });
   const {
