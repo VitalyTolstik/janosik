@@ -275,10 +275,14 @@ function SessionGroupHeader({
   group,
   mode,
   staleBoardIds,
+  boardLoadedAt,
+  now,
 }: {
   group: SessionGroup;
   mode: AgentGroupMode;
   staleBoardIds: string[];
+  boardLoadedAt: Record<string, number>;
+  now: number;
 }) {
   const { t } = useI18n();
   const { count, stale } = groupMeta(group);
@@ -323,6 +327,10 @@ function SessionGroupHeader({
       >
         {t("agents.groups.sessions", { count })}
         {` · ${t("agents.groups.noHeartbeat", { count: stale })}`}
+        {group.boardId !== undefined &&
+        boardLoadedAt[group.boardId] !== undefined
+          ? ` · ${t("agents.shell.updated", { seconds: Math.max(0, Math.floor((now - boardLoadedAt[group.boardId]) / 1000)) })}`
+          : ""}
       </span>
     </div>
   );
@@ -404,7 +412,7 @@ export function SessionRow({
           {row.name ?? shortId(row.id)}
         </b>
         <span className="mt-px block truncate text-[11px] text-muted-foreground max-[760px]:hidden">
-          {mode === "board" ? row.boardTitle : shortId(row.apiTokenId)}
+          {mode === "board" ? row.boardTitle : shortId(row.apiTokenId, 12)}
         </span>
       </span>
       <span className="hidden min-w-0 min-[1181px]:block max-[760px]:col-start-1 max-[760px]:row-start-2 max-[760px]:block">
@@ -435,6 +443,7 @@ export function SessionGroupList({
   selectedId,
   now,
   staleBoardIds,
+  boardLoadedAt = {},
   onSelect,
 }: {
   groups: SessionGroup[];
@@ -442,6 +451,7 @@ export function SessionGroupList({
   selectedId: string | null;
   now: number;
   staleBoardIds: string[];
+  boardLoadedAt?: Record<string, number>;
   onSelect: (row: AgentSessionRow) => void;
 }) {
   return (
@@ -452,6 +462,8 @@ export function SessionGroupList({
             group={group}
             mode={mode}
             staleBoardIds={staleBoardIds}
+            boardLoadedAt={boardLoadedAt}
+            now={now}
           />
           <SessionTableHeader />
           <div className="border-t border-border">

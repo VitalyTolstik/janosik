@@ -459,7 +459,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 listTestId="agent-run-rows"
                 tokenLabel={tokenLabel}
                 conflicts={conflicts}
-                groupMode="single"
+                groupMode="day"
               />
               <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
                 <span
@@ -476,7 +476,7 @@ export function RunsPanel({ role }: { role: Role }) {
                   data-testid="agent-runs-more"
                   disabled={runs.loadingMore || !canLoadMore}
                   onClick={() => void loadMore()}
-                  className="h-6 min-h-0 px-[7px] text-[10.5px] font-[650] leading-none"
+                  className="h-6 min-h-0 rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none"
                 >
                   {runs.loadingMore ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

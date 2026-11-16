@@ -115,12 +115,6 @@ function planCommandTarget(
     action as unknown as Parameters<typeof actionSummary>[0],
     board ?? undefined,
   );
-  if (action.type === "MOVE_CARD" && board !== null) {
-    const toColumnId =
-      typeof action.toColumnId === "string" ? action.toColumnId : null;
-    const column = board.columns.find((entry) => entry.id === toColumnId);
-    if (column !== undefined) return `${target} → ${column.title}`;
-  }
   if (target !== "") return target;
   const title = action.title;
   return typeof title === "string" ? title : action.type;
@@ -438,7 +432,9 @@ export function AttentionApprovalList({
                           {" "}
                           {t("agents.approvals.asksOn")}{" "}
                           <b className="font-semibold text-foreground">
-                            {row.boardTitle}
+                            {row.cardTitle === null
+                              ? row.boardTitle
+                              : `${t("agents.approvals.targetCard")} ${row.cardTitle}`}
                           </b>
                           {row.kind === "custom" ? null : (
                             <>
@@ -736,17 +732,15 @@ export function AttentionApprovalDetail({
                 : onNextPending
             }
             impactTitle={
-              destructiveCard
-                ? t("agents.approvals.destructiveCardTitle")
-                : undefined
+              t("agents.runs.commandCount", { count: commandCount }) + "."
             }
-            impactText={destructiveImpactText ?? detail.summary}
+            impactText={`${destructiveImpactText ?? detail.summary}${cardTitle === null ? "" : `. ${t("agents.approvals.targetLabel", { target: cardTitle })}`}`}
             initialMode={initialMode}
             onDecide={decide}
           />
         ) : (
-          <>
-            <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
+          <div className="flex w-full items-center gap-2">
+            <p className="flex flex-1 items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
               <span className="mt-px shrink-0">{hint.icon}</span>
               <span>{hint.text}</span>
             </p>
@@ -756,14 +750,14 @@ export function AttentionApprovalDetail({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
+                  className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
                   onClick={onBack}
                 >
-                  {t("agents.approvals.closeDetail")}
+                  {t("common.close")}
                 </Button>
               </div>
             ) : null}
-          </>
+          </div>
         )}
       </footer>
     ) : null;
@@ -773,14 +767,24 @@ export function AttentionApprovalDetail({
       className="flex min-h-0 flex-1 flex-col"
       data-testid="agents-approval-detail"
     >
-      <header className="shrink-0 border-b border-border px-3.5 pt-3 pb-2">
+      <header
+        className={cn(
+          "shrink-0 border-b border-border px-3.5",
+          variant === "board" ? "pt-[11px] pb-[9px]" : "pt-3 pb-2",
+        )}
+      >
         <div className="flex items-start gap-2">
           {onBack ? (
             <button
               type="button"
               onClick={onBack}
               aria-label={t("agents.approvals.back")}
-              className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground min-[1061px]:hidden"
+              className={cn(
+                "mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground",
+                variant === "board"
+                  ? "min-[761px]:hidden"
+                  : "min-[1061px]:hidden",
+              )}
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             </button>
@@ -952,6 +956,24 @@ export function AttentionApprovalDetail({
                       <span className="min-w-0 truncate text-[11px] text-foreground">
                         {planCommandTarget(command.action, board)}
                       </span>
+                      {command.action.type === "MOVE_CARD" && board !== null
+                        ? (() => {
+                            const action = command.action as Record<
+                              string,
+                              unknown
+                            >;
+                            const column = board.columns.find(
+                              (entry) => entry.id === action.toColumnId,
+                            );
+                            return column === undefined ? null : (
+                              <span>
+                                {t("agents.approvals.toColumn", {
+                                  column: column.title,
+                                })}
+                              </span>
+                            );
+                          })()
+                        : null}
                     </div>
                   </div>
                 ))}

@@ -36,6 +36,7 @@ export interface AgentSessionsState {
   refreshBoard: (boardId: string) => Promise<void>;
   replaceSession: (session: AgentSessionDto) => void;
   lastLoadedAt: number | null;
+  boardLoadedAt: Record<string, number>;
   staleBoardIds: string[];
 }
 
@@ -57,6 +58,9 @@ export function useAgentSessions(): AgentSessionsState {
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
+  const [boardLoadedAt, setBoardLoadedAt] = useState<Record<string, number>>(
+    {},
+  );
   const generation = useRef(0);
   const inFlight = useRef(false);
   const failedBoards = useRef(new Set<string>());
@@ -103,6 +107,17 @@ export function useAgentSessions(): AgentSessionsState {
             if (firstFailureStatus === null) firstFailureStatus = status;
           }
         }
+        const loadedAt = Date.now();
+        setBoardLoadedAt((previous) => {
+          const next: Record<string, number> = {};
+          nextSummaries.forEach((board, index) => {
+            if (results[index].status === "fulfilled")
+              next[board.id] = loadedAt;
+            else if (failed.has(board.id) && previous[board.id] !== undefined)
+              next[board.id] = previous[board.id];
+          });
+          return next;
+        });
         boardListFailed.current = false;
         failedBoards.current = failed;
         setStaleBoardIds([...failed]);
@@ -186,6 +201,10 @@ export function useAgentSessions(): AgentSessionsState {
           return [...others, ...next];
         });
         if (nextTokens !== null) setTokens(nextTokens);
+        setBoardLoadedAt((previous) => ({
+          ...previous,
+          [boardId]: Date.now(),
+        }));
         failedBoards.current.delete(boardId);
         setStaleBoardIds([...failedBoards.current]);
         if (failedBoards.current.size === 0 && !boardListFailed.current) {
@@ -326,6 +345,7 @@ export function useAgentSessions(): AgentSessionsState {
     refreshBoard,
     replaceSession,
     lastLoadedAt,
+    boardLoadedAt,
     staleBoardIds,
   };
 }

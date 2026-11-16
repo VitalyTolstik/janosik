@@ -190,9 +190,9 @@ export function AgentActionDialog({
           {action === "end" ? (
             <p
               data-testid="agent-end-target"
-              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-muted-foreground"
+              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-foreground"
             >
-              <b className="font-[650] text-foreground">{agentLabel}</b>
+              {agentLabel}
               {row.name !== null && row.name !== agentLabel
                 ? ` · ${row.name}`
                 : ""}
@@ -201,8 +201,8 @@ export function AgentActionDialog({
                 : ""}
             </p>
           ) : (
-            <label className="mt-[10px] block space-y-1">
-              <span className="text-[10px] font-semibold text-foreground">
+            <label className="mt-[10px] block space-y-[3px]">
+              <span className="text-[10.5px] font-semibold text-muted-foreground">
                 {t("agents.action.reason")}
               </span>
               <Textarea
@@ -212,7 +212,7 @@ export function AgentActionDialog({
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={t("agents.action.reasonPlaceholder")}
                 data-testid="agent-action-reason"
-                className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55]"
+                className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
                 autoFocus
               />
             </label>

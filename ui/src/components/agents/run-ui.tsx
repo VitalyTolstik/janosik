@@ -33,14 +33,7 @@ import type {
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AgentConfirmDialog } from "./AgentConfirmDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatDateOnly, useHour12, useI18n } from "@/i18n";
@@ -176,7 +169,9 @@ export function RunList({
             <div
               className={cn(
                 "border-b border-border/70 px-2 text-[11px] font-[650] tracking-[0.06em] uppercase text-muted-foreground",
-                variant === "global" ? "pt-2.5 pb-1" : "pt-2 pb-1",
+                variant === "global"
+                  ? "pt-2.5 pb-1"
+                  : "!px-2.5 pt-[7px] pb-[3px]",
               )}
             >
               {label}
@@ -259,7 +254,9 @@ export function RunList({
                             })}
                           </span>
                           <Dot />
-                          <span>{t(RUN_KIND_KEYS[run.kind])}</span>
+                          <span className="lowercase">
+                            {t(RUN_KIND_KEYS[run.kind])}
+                          </span>
                           {conflictCount > 0 ? (
                             <RunConflictChip count={conflictCount} />
                           ) : null}
@@ -278,7 +275,7 @@ export function RunList({
                             className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden"
                             title={run.id}
                           >
-                            {runNumber(run.id)}
+                            {runNumber(run.id).replace(/^#/, "run-")}
                           </span>
                         </span>
                       </span>
@@ -542,7 +539,6 @@ export function RunDetail({
             stored: storedCommands,
             total: run.commandCount,
           });
-  const entitiesTouched = uniqueTouches(detail);
   const duration = Math.max(0, run.appliedAt - run.createdAt);
 
   return (
@@ -588,8 +584,8 @@ export function RunDetail({
               className="mt-0.5 font-mono text-[11px] text-muted-foreground"
               title={run.id}
             >
-              {t("agents.runHash", { id: runNumber(run.id) })} ·{" "}
-              {t(RUN_KIND_KEYS[run.kind])} ·{" "}
+              {runNumber(run.id).replace(/^#/, "run-")} ·{" "}
+              <span className="lowercase">{t(RUN_KIND_KEYS[run.kind])}</span> ·{" "}
               {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
               {clockLabel(runTime(run), today, lang, t)}
             </p>
@@ -688,8 +684,7 @@ export function RunDetail({
             </MetaField>
             <MetaField label={t("agents.runs.runId")}>
               <span className="font-mono" title={run.id}>
-                {t("agents.runHash", { id: runNumber(run.id) })}
-                {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
+                {runNumber(run.id).replace(/^#/, "run-")}
               </span>
             </MetaField>
             <MetaField label={t("agentControl.runs.approval")}>
@@ -754,9 +749,6 @@ export function RunDetail({
                     className="rounded-md border border-border bg-background/30 px-2 py-1.5"
                   >
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[18px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold">
-                        #{command.seq}
-                      </span>
                       <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[11px]">
                         {command.action.type}
                       </code>
@@ -831,10 +823,6 @@ export function RunDetail({
           icon={<RotateCcw aria-hidden />}
           testId="agent-run-revert"
         >
-          <p className="mb-2 text-[11px] leading-[1.5] text-muted-foreground">
-            {t("agents.runs.rollbackConditional")}
-          </p>
-
           {rollbackEligible ? (
             previewing && preview === null ? (
               <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -916,16 +904,6 @@ export function RunDetail({
                     ))}
                   </ul>
                 ) : null}
-                {admin && preview.diff !== undefined ? (
-                  <details data-testid="agent-run-diff">
-                    <summary className="cursor-pointer text-[11px] text-muted-foreground">
-                      {t("agentControl.runs.diff")}
-                    </summary>
-                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
-                      {JSON.stringify(preview.diff, null, 2)}
-                    </pre>
-                  </details>
-                ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
@@ -952,7 +930,7 @@ export function RunDetail({
                             : t("agentControl.runs.cannotRevert")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 max-md:min-h-11"
+                      className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11"
                     >
                       <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                       {!preview.canRevert
@@ -1004,7 +982,7 @@ export function RunDetail({
           ) : null}
         </Section>
 
-        {admin && run.planHash !== null ? (
+        {admin && run.status === "applied" && run.planHash !== null ? (
           <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
             <code
               data-testid="agent-run-plan-hash"
@@ -1038,9 +1016,9 @@ export function RunDetail({
           <Link
             to={routes.agentControl(boardId, "runs")}
             data-testid="agent-run-open-board"
-            className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
-            <Folder className="h-3 w-3" aria-hidden />
+            <Folder className="h-2.5 w-2.5" aria-hidden />
             {t("agents.runs.openBoard")}
           </Link>
           {run.agentSessionId !== null ? (
@@ -1049,9 +1027,9 @@ export function RunDetail({
                 type="button"
                 data-testid="agent-run-open-session"
                 onClick={() => onOpenSession(run.agentSessionId ?? "")}
-                className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
-                <Activity className="h-3 w-3" aria-hidden />
+                <Activity className="h-2.5 w-2.5" aria-hidden />
                 {t("agents.runs.openSession")}
               </button>
             ) : (
@@ -1062,9 +1040,9 @@ export function RunDetail({
                   session: run.agentSessionId,
                 }).toString()}`}
                 data-testid="agent-run-open-session"
-                className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
-                <Activity className="h-3 w-3" aria-hidden />
+                <Activity className="h-2.5 w-2.5" aria-hidden />
                 {t("agents.runs.openSession")}
               </Link>
             )
@@ -1074,15 +1052,15 @@ export function RunDetail({
             onClick={() => void copyLink()}
             data-testid="agent-run-copy-link"
             data-copy-url={runLink(boardId, runId)}
-            className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+            className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
             {linkCopied ? (
               <Check
-                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                className="h-2.5 w-2.5 text-[color:var(--agent-tone-success)]"
                 aria-hidden
               />
             ) : (
-              <LinkIcon className="h-3 w-3" aria-hidden />
+              <LinkIcon className="h-2.5 w-2.5" aria-hidden />
             )}
             {t("agents.runs.copyLink")}
           </button>
@@ -1130,72 +1108,27 @@ export function RunDetail({
         </footer>
       ) : null}
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-md" data-testid="run-revert-dialog">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle
-                className="h-4 w-4 text-[color:var(--agent-tone-danger)]"
-                aria-hidden
-              />
-              {t("agents.runs.confirmTitle")}
-            </DialogTitle>
-            <DialogDescription>
-              {t("agents.runs.confirmBody", {
-                count: detail.commands.length,
-                board: boardTitle ?? boardId,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 text-[11px] text-muted-foreground">
-            <div className="grid grid-cols-2 gap-1.5">
-              <Impact
-                label={t("agents.runs.impactCommands")}
-                value={String(detail.commands.length)}
-              />
-              <Impact
-                label={t("agents.runs.impactEntities")}
-                value={String(entitiesTouched)}
-              />
-            </div>
-            <p>{t("agents.runs.confirmImpact")}</p>
-            <p className="rounded-[5px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[color:var(--agent-tone-warning)]">
-              {t("agents.runs.confirmConditional")}
-            </p>
-            {conflicts.length > 0 ? (
-              <p className="text-[color:var(--agent-tone-warning)]">
-                {t("agents.runs.confirmConflicts", { count: conflicts.length })}
-              </p>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={reverting}
-              onClick={() => setConfirmOpen(false)}
-              className="min-h-11"
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              data-testid="run-revert-confirm"
-              disabled={reverting || !preview?.canRevert}
-              onClick={() => void applyRevert()}
-              className="min-h-11"
-            >
-              {reverting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : (
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-              )}
-              {t("agents.runs.confirmApply")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AgentConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        icon={RotateCcw}
+        tone="danger"
+        title={t("agents.runs.confirmTitle")}
+        description={t("agents.runs.confirmDescription")}
+        confirmLabel={t("agents.runs.confirmApply")}
+        onConfirm={() => void applyRevert()}
+        busy={reverting}
+        testId="run-revert-dialog"
+        confirmTestId="run-revert-confirm"
+      >
+        <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-foreground">
+          <b className="font-[650]">
+            {t("agents.runs.confirmCount", { count: detail.commands.length })}
+          </b>{" "}
+          {runTitle(run, t, run.tokenName ?? undefined)}.{" "}
+          {t("agents.runs.confirmNoConflicts")}
+        </div>
+      </AgentConfirmDialog>
     </div>
   );
 }
@@ -1340,17 +1273,6 @@ function DiffBox({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Impact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[5px] border border-border bg-background/35 px-2 py-1.5">
-      <span className="block text-[11px] text-muted-foreground">{label}</span>
-      <b className="mt-0.5 block text-[13px] font-[650] text-foreground">
-        {value}
-      </b>
-    </div>
-  );
-}
-
 function errorCodeOf(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   const body = error.body;
@@ -1402,14 +1324,6 @@ function runErrorText(error: unknown, t: Translate): string {
     return t("agentControl.error.forbidden");
   }
   return t("agentControl.error.generic");
-}
-
-function uniqueTouches(detail: RunDetailDto): number {
-  return new Set(
-    detail.commands.flatMap((command) =>
-      Array.isArray(command.touches) ? command.touches : [],
-    ),
-  ).size;
 }
 
 function preimageLabel(preimage: unknown): string | null {

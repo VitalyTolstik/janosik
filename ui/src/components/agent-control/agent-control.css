@@ -863,6 +863,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 }
 
 .agent-control-surface .ac-foot-approval.ac-foot-static {
+  display: block;
   min-height: 50px;
 }
 

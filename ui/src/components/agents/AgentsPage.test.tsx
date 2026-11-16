@@ -622,7 +622,7 @@ describe("AgentsPage", () => {
 
     expect(
       within(detail).getByText(
-        "No conflicts found. Re-applies 2 pre-images atomically. A separate audit run records the revert.",
+        "Re-applies 2 pre-images atomically. No conflicts found. A separate audit run records the revert.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -1638,14 +1638,13 @@ describe("AgentsPage", () => {
     hoisted.listAgentSessions.mockRejectedValue({ status: 0 });
     renderPage("/agents?section=sessions");
 
-    expect(await screen.findByTestId("agents-error")).toBeInTheDocument();
-    expect(screen.getByTestId("agents-error")).toHaveTextContent(
+    expect(await screen.findByTestId("agents-load-error")).toHaveTextContent(
       "Could not load agent sessions",
     );
-    expect(screen.getByTestId("agents-load-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-error")).toBeNull();
 
     hoisted.listAgentSessions.mockResolvedValue([session()]);
-    await userEvent.click(screen.getByTestId("agents-retry"));
+    await userEvent.click(screen.getByTestId("agents-load-error-retry"));
     await waitFor(() =>
       expect(screen.getByTestId("agents-session-list")).toBeInTheDocument(),
     );

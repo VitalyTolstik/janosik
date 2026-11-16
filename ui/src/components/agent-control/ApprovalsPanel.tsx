@@ -338,8 +338,9 @@ export function ApprovalsPanel({
         <h3>{t("agents.approvals.title")}</h3>
         <div
           role="group"
+          aria-hidden={loadingList || listError}
+          className={cn("seg", (loadingList || listError) && "invisible")}
           aria-label={t("agentControl.approvals.filterLabel")}
-          className="seg"
         >
           {(
             [
@@ -384,8 +385,19 @@ export function ApprovalsPanel({
         </button>
       </div>
 
-      <div className={cn("ac-split", mobileDetailOpen && "is-detail-open")}>
-        <div className="ac-list">
+      <div
+        className={cn(
+          "ac-split",
+          mobileDetailOpen && "is-detail-open",
+          (loadingList || listError) && "!grid-cols-1",
+        )}
+      >
+        <div
+          className={cn(
+            "ac-list",
+            (loadingList || listError) && "!w-full !border-r-0",
+          )}
+        >
           <div className="ac-list-head">
             <span>{headLeft}</span>
             <span>{headRight}</span>
@@ -468,35 +480,37 @@ export function ApprovalsPanel({
           ) : null}
         </div>
 
-        <div className="ac-detail" data-testid="approval-detail">
-          {selectedId === null || boardId === undefined ? (
-            <div className="detail-empty" data-testid="approval-detail-empty">
-              <span className="empty-icon">
-                <Inbox className="icon" aria-hidden="true" />
-              </span>
-              <h3>{t("agentControl.approvals.selectTitle")}</h3>
-              <p>{t("agentControl.approvals.selectHint")}</p>
-            </div>
-          ) : (
-            <AttentionApprovalDetail
-              boardId={boardId}
-              approvalId={selectedId}
-              boardTitle={board?.title ?? boardId}
-              variant="board"
-              footerActive={!mobile || mobileDetailOpen}
-              onBack={() => setMobileDetailOpen(false)}
-              onChanged={() => {
-                setRevision((value) => value + 1);
-                onChanged?.();
-              }}
-              onNextPending={
-                nextPendingId === null
-                  ? undefined
-                  : () => setSelectedId(nextPendingId)
-              }
-            />
-          )}
-        </div>
+        {!loadingList && !listError ? (
+          <div className="ac-detail" data-testid="approval-detail">
+            {selectedId === null || boardId === undefined ? (
+              <div className="detail-empty" data-testid="approval-detail-empty">
+                <span className="empty-icon">
+                  <Inbox className="icon" aria-hidden="true" />
+                </span>
+                <h3>{t("agentControl.approvals.selectTitle")}</h3>
+                <p>{t("agentControl.approvals.selectHint")}</p>
+              </div>
+            ) : (
+              <AttentionApprovalDetail
+                boardId={boardId}
+                approvalId={selectedId}
+                boardTitle={board?.title ?? boardId}
+                variant="board"
+                footerActive={!mobile || mobileDetailOpen}
+                onBack={() => setMobileDetailOpen(false)}
+                onChanged={() => {
+                  setRevision((value) => value + 1);
+                  onChanged?.();
+                }}
+                onNextPending={
+                  nextPendingId === null
+                    ? undefined
+                    : () => setSelectedId(nextPendingId)
+                }
+              />
+            )}
+          </div>
+        ) : null}
       </div>
       {!loadingList && !listError && filtered.length === 0 ? (
         <AgentControlFooterPortal>

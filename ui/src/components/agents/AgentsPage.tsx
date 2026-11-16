@@ -465,14 +465,16 @@ export function AgentsPage() {
     (
       row: Pick<
         AttentionApprovalRow,
-        "requestedByTokenId" | "agentSessionId" | "sessionName"
+        "requestedByTokenId" | "agentSessionId" | "sessionName" | "tokenName"
       >,
     ): string | undefined =>
       approvalAgentNames.get(row.requestedByTokenId) ??
       row.sessionName ??
       (row.agentSessionId === null
         ? undefined
-        : approvalSessionNames.get(row.agentSessionId)),
+        : approvalSessionNames.get(row.agentSessionId)) ??
+      row.tokenName ??
+      undefined,
     [approvalAgentNames, approvalSessionNames],
   );
   const selectedApprovalId = params.get("approval");
@@ -1048,7 +1050,17 @@ export function AgentsPage() {
                   {t("agents.shell.manageTokens")}
                 </Button>
               ) : null}
-              {section === "runs" ? (
+              {state.loading ? (
+                <div className="p-4" data-testid="agents-detail-loading">
+                  <Skeleton variant="text" lines={3} />
+                </div>
+              ) : state.error && state.rows.length === 0 ? (
+                <GenericDetailEmpty />
+              ) : section === "sessions" &&
+                filteredActive &&
+                filtered.length === 0 ? (
+                <GenericDetailEmpty />
+              ) : section === "runs" ? (
                 <button
                   type="button"
                   onClick={clearRunFilters}
@@ -1256,7 +1268,7 @@ export function AgentsPage() {
               </div>
             </>
           ) : null}
-          {(state.error || offline) && (
+          {(state.error || offline) && state.rows.length > 0 && (
             <div
               className={cn(
                 "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
@@ -1295,6 +1307,15 @@ export function AgentsPage() {
                         )
                         .join(", "),
                     })}
+                    {Object.entries(state.boardLoadedAt ?? {})
+                      .filter(([id]) =>
+                        state.rows.some((row) => row.boardId === id),
+                      )
+                      .map(
+                        ([id, loaded]) =>
+                          ` ${t("agents.shell.lastLoadedBoard", { board: state.boards.find((board) => board.id === id)?.title ?? id, seconds: Math.max(0, Math.floor((now - loaded) / 1000)) })}`,
+                      )
+                      .join("")}
                   </>
                 )}
               </span>
@@ -1309,7 +1330,9 @@ export function AgentsPage() {
               </button>
             </div>
           )}
-          {section === "attention" && pending.error ? (
+          {section === "attention" &&
+          pending.error &&
+          !(state.error && state.rows.length === 0) ? (
             <div
               className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
               data-testid="agents-approvals-error"
@@ -1360,6 +1383,8 @@ export function AgentsPage() {
                   </Button>
                 }
               />
+            ) : state.error && state.rows.length === 0 ? (
+              <LoadError onRetry={state.reload} />
             ) : missingScope ? (
               <EmptyState
                 testId="agents-missing-scope"
@@ -1576,6 +1601,7 @@ export function AgentsPage() {
                     selectedId={sessionDetailRow?.id ?? null}
                     now={now}
                     staleBoardIds={state.staleBoardIds}
+                    boardLoadedAt={state.boardLoadedAt}
                     onSelect={openSession}
                   />
                 )}

@@ -137,7 +137,7 @@ export function ApprovalPlanBlock({
         </p>
       ) : null}
       {commands.length > 0 ? (
-        <ol className="space-y-1.5">
+        <ol className="w-full space-y-1.5">
           {commands.map((command, index) => (
             <li
               key={command.commandId}
@@ -275,7 +275,7 @@ export function ApprovalLinks({
   const base = `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=attention`;
   const sessionHref =
     approval.agentSessionId === null
-      ? `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&token=${encodeURIComponent(approval.requestedByTokenId)}`
+      ? null
       : `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&session=${encodeURIComponent(approval.agentSessionId)}`;
   const runHref =
     approval.runId === null
@@ -316,14 +316,16 @@ export function ApprovalLinks({
           <Folder className="h-2.5 w-2.5" aria-hidden />
           {t("agents.approvals.openBoard")}
         </Link>
-        <Link
-          to={sessionHref}
-          className={RELATED_CLASS}
-          data-testid="approval-session-link"
-        >
-          <Activity className="h-2.5 w-2.5" aria-hidden />
-          {t("agentControl.approvals.openSession")}
-        </Link>
+        {sessionHref !== null ? (
+          <Link
+            to={sessionHref}
+            className={RELATED_CLASS}
+            data-testid="approval-session-link"
+          >
+            <Activity className="h-2.5 w-2.5" aria-hidden />
+            {t("agentControl.approvals.openSession")}
+          </Link>
+        ) : null}
         {runHref !== null ? (
           <Link
             to={runHref}
@@ -538,7 +540,10 @@ export function ApprovalDecisionForm({
   return (
     <>
       <div
-        className={cn(layout === "inline" && "flex w-full items-center gap-2")}
+        className={cn(
+          layout === "inline" &&
+            "flex w-full items-center gap-2 max-[760px]:flex-col max-[760px]:items-stretch",
+        )}
       >
         <p
           className={cn(
@@ -574,7 +579,8 @@ export function ApprovalDecisionForm({
         <div
           className={cn(
             "flex items-center gap-1.5",
-            layout === "inline" && "shrink-0",
+            layout === "inline" &&
+              "shrink-0 max-[760px]:w-full [&>button]:max-[760px]:flex-1",
           )}
         >
           {onNextPending !== undefined ? (
@@ -632,7 +638,7 @@ export function ApprovalDecisionForm({
           hideClose
         >
           <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--agent-tone-warning)]">
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-muted-foreground">
               <ShieldCheck className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <div className="min-w-0">
@@ -646,10 +652,10 @@ export function ApprovalDecisionForm({
           </DialogHeader>
           <div className="px-4 pb-0.5">
             <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] text-foreground">
-              <b className="block font-[650]">
-                {impactTitle ?? t("agents.approvals.approveImpactTitle")}
-              </b>
-              <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
+              <p className="text-[11px] leading-[1.5] text-foreground">
+                <b className="font-[650]">
+                  {impactTitle ?? t("agents.approvals.approveImpactTitle")}
+                </b>{" "}
                 {impactText ?? t("agents.approvals.approveImpactBody")}
               </p>
             </div>

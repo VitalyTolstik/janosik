@@ -281,8 +281,8 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     await userEvent.click(screen.getByTestId("agent-run-revert-apply"));
     const dialog = await screen.findByTestId("run-revert-dialog");
-    expect(dialog).toHaveTextContent("This is a destructive");
-    expect(dialog).toHaveTextContent("1");
+    expect(dialog).toHaveTextContent("re-applies pre-images atomically");
+    expect(dialog).toHaveTextContent("1 command will be reverted");
     await userEvent.click(screen.getByTestId("run-revert-confirm"));
 
     await waitFor(() =>

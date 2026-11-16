@@ -180,7 +180,7 @@ function LiveSessionRow({
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-1 max-[760px]:col-start-2 max-[760px]:row-start-1 max-[760px]:row-span-2">
+      <div className="flex flex-wrap items-center justify-end gap-1 max-[760px]:col-start-2 max-[760px]:row-start-1 max-[760px]:row-span-2 max-[760px]:w-[112px] max-[760px]:content-center">
         {admin && !terminal ? (
           <>
             {sessionPaused ? (
@@ -190,7 +190,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-resume"
                 onClick={() => onAction("resume", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[10px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <Play className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.resume")}
@@ -202,7 +202,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-pause"
                 onClick={() => onAction("pause", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[10px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <Pause className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.pause")}
@@ -275,8 +275,8 @@ function BoardPauseDialog({
       cancelTestId="board-pause-cancel"
       confirmClassName="min-w-[122px]"
     >
-      <label className="mt-[10px] block space-y-1">
-        <span className="text-[10px] font-semibold text-foreground">
+      <label className="mt-[10px] block space-y-[3px]">
+        <span className="text-[10.5px] font-semibold text-muted-foreground">
           {t("agentControl.pause.reasonLabel")}
         </span>
         <Textarea
@@ -290,7 +290,7 @@ function BoardPauseDialog({
               : "agentControl.pause.boardResumeReasonPlaceholder",
           )}
           data-testid={pause ? "board-pause-reason" : "board-resume-reason"}
-          className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55]"
+          className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
           autoFocus
         />
       </label>
@@ -712,9 +712,16 @@ export function PausePanel({
                   <span className="text-[11px] text-muted-foreground">
                     {t("agentControl.live.groupLive", {
                       count: group.rows.filter(
-                        (row) => !isTerminalStatus(row.status) && !row.paused,
+                        (row) =>
+                          (row.status === "active" ||
+                            row.status === "waiting_approval") &&
+                          !row.paused &&
+                          !row.stale,
                       ).length,
                     })}
+                    {group.rows.some((row) => row.stale && !row.paused)
+                      ? ` · ${t("agents.groups.noHeartbeat", { count: group.rows.filter((row) => row.stale && !row.paused).length })}`
+                      : ""}
                     {group.rows.some((row) => row.paused)
                       ? ` · ${t("agentControl.live.groupPaused", {
                           count: group.rows.filter((row) => row.paused).length,
