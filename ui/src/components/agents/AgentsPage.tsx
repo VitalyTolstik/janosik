@@ -432,12 +432,36 @@ export function AgentsPage() {
   }, [section, runs.rows]);
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
-  const approvalAgentNames = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const token of state.tokens) names.set(token.id, token.name);
-    for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
-    return names;
-  }, [state.rows, state.tokens]);
+  const approvalAgentNames = useMemo(
+    () => new Map(state.tokens.map((token) => [token.id, token.name])),
+    [state.tokens],
+  );
+  const approvalSessionNames = useMemo(
+    () =>
+      new Map(
+        state.rows.map((row) => [
+          row.id,
+          row.name ?? row.clientName ?? shortId(row.apiTokenId),
+        ]),
+      ),
+    [state.rows],
+  );
+  // The exact session is safer than a token→session guess: one token can own
+  // several sessions, and the last one in the list is not the requester.
+  const approvalNameFor = useCallback(
+    (
+      row: Pick<
+        AttentionApprovalRow,
+        "requestedByTokenId" | "agentSessionId" | "sessionName"
+      >,
+    ): string | undefined =>
+      approvalAgentNames.get(row.requestedByTokenId) ??
+      row.sessionName ??
+      (row.agentSessionId === null
+        ? undefined
+        : approvalSessionNames.get(row.agentSessionId)),
+    [approvalAgentNames, approvalSessionNames],
+  );
   const selectedApprovalId = params.get("approval");
   const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
     const query = filter.query.trim().toLowerCase();
@@ -465,15 +489,9 @@ export function AgentsPage() {
       })
       .map((row) => ({
         ...row,
-        agentName: approvalAgentNames.get(row.requestedByTokenId),
+        agentName: approvalNameFor(row),
       }));
-  }, [
-    approvalAgentNames,
-    filter.board,
-    filter.query,
-    filter.token,
-    pending.rows,
-  ]);
+  }, [approvalNameFor, filter.board, filter.query, filter.token, pending.rows]);
   const scopedPendingCount = useMemo(
     () =>
       scopedApprovalRows.filter(
@@ -1584,9 +1602,7 @@ export function AgentsPage() {
             fallbackAgentName={
               selectedApprovalBase === undefined
                 ? undefined
-                : approvalAgentNames.get(
-                    selectedApprovalBase.requestedByTokenId,
-                  )
+                : approvalNameFor(selectedApprovalBase)
             }
             fallbackCardTitle={selectedApprovalBase?.cardTitle ?? undefined}
             initialMode={approvalIntent}

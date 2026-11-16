@@ -794,6 +794,31 @@ describe("AgentsPage", () => {
     ).not.toHaveTextContent(/\d/);
   });
 
+  it("names the approval's own session, not an arbitrary session of that token", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse(
+        [
+          overviewItem({
+            requestedByTokenId: "token-other",
+            agentSessionId: "session-3",
+            sessionName: "Docs build",
+          }),
+        ],
+        {
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 1 },
+          pendingTotal: 1,
+          totalApprovals: 1,
+        },
+      ),
+    );
+    renderPage("/agents?section=attention");
+
+    const card = await screen.findByTestId("agents-approval-approval-1");
+    expect(card).toHaveTextContent("Docs build asks to run DELETE_CARD");
+    expect(card).not.toHaveTextContent("Nightly triage");
+  });
+
   it("uses the selected board scope and its exact count, not All boards", async () => {
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse([overviewItem()], {
