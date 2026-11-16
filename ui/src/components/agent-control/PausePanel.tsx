@@ -219,12 +219,12 @@ function LiveSessionRow({
             <Button
               type="button"
               size="sm"
-              variant="outline"
+              variant="ghost"
               data-testid="agent-session-end"
               aria-label={t("agentControl.live.endSession")}
               title={t("agentControl.live.endSessionHint")}
               onClick={() => onAction("end", session)}
-              className="h-11 w-11 min-h-11 border-danger/44 bg-danger/5 px-0 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 hover:text-[color:var(--agent-tone-danger)] min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6"
+              className="h-11 w-11 min-h-11 px-0 text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6"
             >
               <Square className="h-3.5 w-3.5" aria-hidden />
             </Button>
@@ -626,8 +626,12 @@ export function PausePanel({
         rows: [session],
       });
     }
-    return [...map.values()];
-  }, [sessions, tokenNames]);
+    return [...map.values()].sort((a, b) => {
+      const ownA = ownTokenIds.has(a.tokenId) ? 0 : 1;
+      const ownB = ownTokenIds.has(b.tokenId) ? 0 : 1;
+      return ownA - ownB || a.name.localeCompare(b.name);
+    });
+  }, [ownTokenIds, sessions, tokenNames]);
 
   const staleCount = (sessions ?? []).filter((session) => session.stale).length;
   const actionTarget: AgentActionTarget | null =
@@ -640,6 +644,14 @@ export function PausePanel({
           name: action.session.name,
           boardTitle,
           tokenName: tokenNames.get(action.session.apiTokenId) ?? null,
+          agentLabel:
+            tokenNames.get(action.session.apiTokenId) ??
+            action.session.name ??
+            null,
+          cardTitle:
+            action.session.currentCardId === null
+              ? null
+              : (cardTitles.get(action.session.currentCardId) ?? null),
         };
 
   const openTokens = () =>

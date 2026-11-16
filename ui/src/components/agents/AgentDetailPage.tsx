@@ -310,6 +310,7 @@ function SessionCard({
     row.currentCardId === null
       ? routes.board(row.boardId)
       : `${routes.board(row.boardId)}?card=${encodeURIComponent(row.currentCardId)}`;
+  const agentControlHref = routes.agentControl(row.boardId, "live");
 
   return (
     <li
@@ -386,7 +387,7 @@ function SessionCard({
           ) : null}
           <Button variant="ghost" size="sm" asChild className="max-md:min-h-11">
             <Link
-              to={boardHref}
+              to={agentControlHref}
               data-testid="agent-session-open-board"
               title={t("agents.openBoard")}
             >

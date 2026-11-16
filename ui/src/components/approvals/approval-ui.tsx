@@ -309,7 +309,7 @@ export function ApprovalLinks({
     <Dialog open={tokenOpen} onOpenChange={setTokenOpen}>
       <div className="flex flex-wrap gap-1.5" data-testid="approval-links">
         <Link
-          to={routes.board(approval.boardId)}
+          to={routes.agentControl(approval.boardId, "inbox")}
           className={RELATED_CLASS}
           data-testid="approval-board-link"
         >
@@ -426,6 +426,9 @@ export function ApprovalDecisionForm({
   impactText,
   initialMode = null,
   onDecide,
+  onNextPending,
+  footerHash,
+  layout = "stacked",
 }: {
   busy: boolean;
   planHash: string;
@@ -438,6 +441,12 @@ export function ApprovalDecisionForm({
     decision: "approve" | "reject",
     comment: string,
   ) => Promise<boolean>;
+  /** Select the next pending request, as the mockup's footer does. */
+  onNextPending?: () => void;
+  /** Board panel shows the exact hash; the global panel keeps the wording. */
+  footerHash?: string;
+  /** Board detail keeps helper and actions on one row, like the mockup. */
+  layout?: "stacked" | "inline";
 }) {
   const { t } = useI18n();
   const [mode, setMode] = useState<"reject" | null>(initialMode);
@@ -528,41 +537,86 @@ export function ApprovalDecisionForm({
 
   return (
     <>
-      <p className="mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground">
-        <ShieldCheck
-          className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
-          aria-hidden
-        />
-        <span>
-          {t("agents.approvals.footerBefore")}{" "}
-          <b className="font-semibold text-foreground">
-            {t("agents.approvals.footerHash")}
-          </b>
-          {t("agents.approvals.footerAfter")}
-        </span>
-      </p>
-      <div className="flex items-center gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="approval-reject"
-          onClick={() => setMode("reject")}
-          disabled={busy}
-          className="h-8 min-h-0 flex-1 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11"
+      <div className={cn(layout === "inline" && "flex items-center gap-2")}>
+        <p
+          className={cn(
+            "mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground",
+            layout === "inline" && "mb-0 min-w-0 flex-1",
+          )}
         >
-          {t("agentControl.approvals.reject")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          data-testid="approval-approve"
-          onClick={() => setApproveOpen(true)}
-          disabled={busy}
-          className="h-8 min-h-0 flex-1 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] px-[11px] text-[11.5px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11"
+          <ShieldCheck
+            className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
+            aria-hidden
+          />
+          <span>
+            {footerHash !== undefined ? (
+              <>
+                {t("agents.approvals.footerBefore")}{" "}
+                <b className="font-semibold text-foreground">only </b>
+                <b className="font-semibold text-foreground">
+                  {footerHash.slice(0, 10)}…
+                </b>
+                {t("agents.approvals.footerBoardAfter")}
+              </>
+            ) : (
+              <>
+                {t("agents.approvals.footerBefore")}{" "}
+                <b className="font-semibold text-foreground">
+                  {t("agents.approvals.footerHash")}
+                </b>
+                {t("agents.approvals.footerAfter")}
+              </>
+            )}
+          </span>
+        </p>
+        <div
+          className={cn(
+            "flex items-center gap-1.5",
+            layout === "inline" && "shrink-0",
+          )}
         >
-          {t("agents.approvals.confirmApprove")}
-        </Button>
+          {onNextPending !== undefined ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid="approval-next-pending"
+              onClick={onNextPending}
+              disabled={busy}
+              className="h-8 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
+              title={t("agents.approvals.nextPendingHint")}
+            >
+              {t("agents.approvals.nextPending")}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="approval-reject"
+            onClick={() => setMode("reject")}
+            disabled={busy}
+            className={cn(
+              "h-8 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11",
+              layout === "inline" ? "flex-none" : "flex-1",
+            )}
+          >
+            {t("agentControl.approvals.reject")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            data-testid="approval-approve"
+            onClick={() => setApproveOpen(true)}
+            disabled={busy}
+            className={cn(
+              "h-8 min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] px-[11px] text-[11.5px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
+              layout === "inline" ? "flex-none" : "flex-1",
+            )}
+          >
+            {t("agents.approvals.confirmApprove")}
+          </Button>
+        </div>
       </div>
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>

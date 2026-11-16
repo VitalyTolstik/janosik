@@ -77,7 +77,8 @@ export const RUN_TIME_WINDOWS_MS: Record<
 };
 
 /** How many rows one board page asks for. The API caps a page at 100. */
-export const RUN_PAGE_SIZE = 100;
+/** One server page per board; small enough to exercise Load more. */
+export const RUN_PAGE_SIZE = 10;
 
 /** The `createdAt` lower bound for a time filter, or `undefined`. */
 export function runFrom(

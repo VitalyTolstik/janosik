@@ -503,7 +503,7 @@ describe("RunsPanel (TASK-179.5)", () => {
   });
 
   it("shows a total and appends the next page with Load more", async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -523,19 +523,21 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     renderPanel();
     const total = await screen.findByTestId("agent-runs-total");
-    expect(total).toHaveTextContent("100 runs");
+    expect(total).toHaveTextContent("5 of 10 runs");
     expect(total).toHaveAttribute("data-has-more", "true");
     await userEvent.click(screen.getByTestId("agent-runs-more"));
+    await waitFor(() => expect(total).toHaveTextContent("10 of 10 runs"));
+    await userEvent.click(screen.getByTestId("agent-runs-more"));
 
-    await waitFor(() => expect(total).toHaveTextContent("101 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("11 of 11 runs"));
     expect(list).toHaveBeenLastCalledWith(
       "board-1",
-      expect.objectContaining({ cursor: "run-99" }),
+      expect.objectContaining({ cursor: "run-9" }),
     );
   });
 
   it("does not leave Load more disabled when a reload races the page request", async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -558,6 +560,12 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     renderPanel();
     const more = await screen.findByTestId("agent-runs-more");
+    await userEvent.click(more);
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-runs-total")).toHaveTextContent(
+        "10 of 10 runs",
+      ),
+    );
     await userEvent.click(more);
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
 

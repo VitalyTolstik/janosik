@@ -114,6 +114,7 @@ export function AgentsPage() {
     () => new Map(),
   );
   const [autoRunId, setAutoRunId] = useState<string | null>(null);
+  const [runVisibleCount, setRunVisibleCount] = useState(7);
 
   useEffect(() => {
     const previous = document.title;
@@ -397,9 +398,25 @@ export function AgentsPage() {
     enabled: !state.isAgentToken,
   });
   const runs = useAgentRuns(state.boards, {
-    enabled: section === "runs",
+    enabled: !state.isAgentToken,
     filter: runFilter,
   });
+  useEffect(() => {
+    // A new filter starts at the mockup's first page of seven.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the visible page on filter change
+    setRunVisibleCount(7);
+  }, [
+    runFilter.board,
+    runFilter.kind,
+    runFilter.session,
+    runFilter.status,
+    runFilter.time,
+    runFilter.token,
+  ]);
+  const visibleRunRows = useMemo(
+    () => runs.rows.slice(0, runVisibleCount),
+    [runVisibleCount, runs.rows],
+  );
   // The master-detail opens the newest run until the URL pins one. Remember
   // which run that was so a refresh that prepends the new `revert` audit run
   // does not steal the open pane. A filter/no-rows change falls back again.
@@ -421,6 +438,7 @@ export function AgentsPage() {
     for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
     return names;
   }, [state.rows, state.tokens]);
+  const selectedApprovalId = params.get("approval");
   const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
     const query = filter.query.trim().toLowerCase();
     return pending.rows
@@ -464,6 +482,16 @@ export function AgentsPage() {
       ).length,
     [now, scopedApprovalRows],
   );
+  const nextPendingApproval = useMemo(() => {
+    if (selectedApprovalId === null) return null;
+    const pendingRows = scopedApprovalRows.filter(
+      (row) =>
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+    );
+    if (pendingRows.length < 2) return null;
+    const index = pendingRows.findIndex((row) => row.id === selectedApprovalId);
+    return pendingRows[(index + 1) % pendingRows.length] ?? null;
+  }, [now, scopedApprovalRows, selectedApprovalId]);
   const pendingAll = pending.totalCount;
   const pendingForScope =
     filter.board === "all"
@@ -489,7 +517,6 @@ export function AgentsPage() {
   const sessionCount = scopedRows.length;
 
   const selectedSession = params.get("session");
-  const selectedApprovalId = params.get("approval");
   const selectedRunId = params.get("run");
   const approvalBoardId = params.get("board");
   const selectedRunRow =
@@ -1076,12 +1103,13 @@ export function AgentsPage() {
                 <span
                   className="ml-auto text-[11px] text-muted-foreground"
                   data-testid="agents-runs-total"
+                  data-shown={visibleRunRows.length}
                   data-total={runs.total}
                   data-has-more={runs.hasMore ? "true" : "false"}
                 >
-                  {runs.hasMore
-                    ? t("agents.runs.totalMore", { count: runs.total })
-                    : t("agents.runs.shown", { count: runs.total })}
+                  {t("agents.runs.shown", {
+                    count: visibleRunRows.length,
+                  })}
                 </span>
               </>
             )}
@@ -1344,7 +1372,7 @@ export function AgentsPage() {
                     </div>
                   ) : null}
                   <RunList
-                    rows={runs.rows}
+                    rows={visibleRunRows}
                     selectedId={runDetailRunId}
                     onSelect={openRun}
                     now={now}
@@ -1364,28 +1392,39 @@ export function AgentsPage() {
                   />
                   <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-[11px] text-muted-foreground">
                     <span data-testid="agents-runs-footer-total">
-                      {runs.hasMore
-                        ? t("agents.runs.totalMore", { count: runs.total })
-                        : t("agents.runs.footerCount", { count: runs.total })}
+                      {t("agents.runs.footerShown", {
+                        shown: visibleRunRows.length,
+                        total: runs.rows.length,
+                      })}
                     </span>
-                    {runs.hasMore ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        data-testid="agents-runs-more"
-                        disabled={runs.loadingMore}
-                        onClick={() => void runs.loadMore()}
-                        className={`${SMALL_BUTTON_CLASS} max-md:h-11 max-md:min-h-11`}
-                      >
-                        {runs.loadingMore ? (
-                          <RefreshCw
-                            className="h-3.5 w-3.5 animate-spin"
-                            aria-hidden
-                          />
-                        ) : null}
-                        {t("agentControl.runs.loadMore")}
-                      </Button>
-                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="agents-runs-more"
+                      disabled={
+                        runs.loadingMore ||
+                        (visibleRunRows.length >= runs.rows.length &&
+                          !runs.hasMore)
+                      }
+                      onClick={() => {
+                        if (visibleRunRows.length < runs.rows.length) {
+                          setRunVisibleCount((value) => value + 7);
+                        } else {
+                          void runs.loadMore().then(() => {
+                            setRunVisibleCount((value) => value + 7);
+                          });
+                        }
+                      }}
+                      className={`${SMALL_BUTTON_CLASS} max-md:h-11 max-md:min-h-11`}
+                    >
+                      {runs.loadingMore ? (
+                        <RefreshCw
+                          className="h-3.5 w-3.5 animate-spin"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {t("agentControl.runs.loadMore")}
+                    </Button>
                   </div>
                 </>
               )
@@ -1553,6 +1592,11 @@ export function AgentsPage() {
             initialMode={approvalIntent}
             onChanged={pending.reload}
             onBack={closeApproval}
+            onNextPending={
+              nextPendingApproval === null
+                ? undefined
+                : () => openApproval(nextPendingApproval)
+            }
           />
         ) : section === "sessions" ||
           (section === "attention" && selectedSession !== null) ? (

@@ -114,6 +114,28 @@ export function Header() {
     }
   }, [isAgentsRoute, location.key, location.state]);
 
+  // `Open board` on the agent surfaces deep-links into the board-scoped Agent
+  // control dialog (TASK-179 pixel parity): `?agents=inbox|live|runs`.
+  useEffect(() => {
+    if (!isBoardRoute) return;
+    const params = new URLSearchParams(location.search);
+    const target = params.get("agents");
+    if (target === null) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
+    setAgentControlTab(
+      target === "live" ? "pause" : target === "runs" ? "runs" : "approvals",
+    );
+    setAgentControlOpen(true);
+    params.delete("agents");
+    navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString(),
+      },
+      { replace: true },
+    );
+  }, [isBoardRoute, location.pathname, location.search, navigate]);
+
   return (
     <header
       className={cn(

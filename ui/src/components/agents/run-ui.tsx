@@ -18,7 +18,6 @@ import {
   Lock,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
   Terminal,
 } from "lucide-react";
 import type {
@@ -190,25 +189,21 @@ export function RunList({
                             "bg-primary/6 shadow-[inset_2px_0_0_var(--primary)]",
                         )}
                       >
-                        <span className="flex min-w-0 items-start justify-between gap-2">
-                          <span className="min-w-0">
-                            <b className="block truncate text-[11px] leading-[1.4] font-semibold">
-                              {runTitle(run, t)}
-                            </b>
-                            <span className="mt-0.5 block truncate text-[11px] leading-[1.4] text-muted-foreground">
-                              {token} ·{" "}
-                              {t("agents.runs.commandCount", {
-                                count: run.commandCount,
-                              })}{" "}
-                              · {clockLabel(runTime(run), today, lang, t)}
-                            </span>
-                          </span>
-                          <span className="flex shrink-0 flex-col items-end gap-1">
-                            <RunStatusBadge status={run.status} />
-                            {conflictCount > 0 ? (
-                              <RunConflictChip count={conflictCount} />
-                            ) : null}
-                          </span>
+                        <b className="block truncate text-[11px] leading-[1.4] font-semibold">
+                          {runTitle(run, t)}
+                        </b>
+                        <span className="mt-1 block truncate text-[11px] leading-[1.4] text-muted-foreground">
+                          {token} ·{" "}
+                          {t("agents.runs.commandCount", {
+                            count: run.commandCount,
+                          })}{" "}
+                          · {clockLabel(runTime(run), today, lang, t)}
+                        </span>
+                        <span className="mt-1 flex flex-wrap items-center gap-1">
+                          <RunStatusBadge status={run.status} />
+                          {conflictCount > 0 ? (
+                            <RunConflictChip count={conflictCount} />
+                          ) : null}
                         </span>
                       </button>
                     </li>
@@ -509,6 +504,7 @@ export function RunDetail({
   }
 
   const run = detail.run;
+  const today = startOfDay(now);
   const conflicts = preview?.conflicts ?? [];
   const rollbackEligible = run.status === "applied" && run.kind !== "revert";
   // `run_expired` means the API has no stored commands/pre-images for this
@@ -551,17 +547,29 @@ export function RunDetail({
           </button>
         ) : null}
         <div className="min-w-0 flex-1">
-          <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
-            {t("agents.runs.detailEyebrow", {
-              board: boardTitle ?? run.boardId,
-            })}
-          </p>
+          {variant === "global" ? (
+            <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+              {t("agents.runs.detailEyebrow", {
+                board: boardTitle ?? run.boardId,
+              })}
+            </p>
+          ) : null}
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
             {runTitle(run, t)}
           </h2>
           <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-            {run.id}
-            {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
+            {variant === "board" ? (
+              <>
+                {run.id} · {t(RUN_KIND_KEYS[run.kind])} ·{" "}
+                {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
+                {clockLabel(runTime(run), today, lang, t)}
+              </>
+            ) : (
+              <>
+                {run.id}
+                {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
+              </>
+            )}
           </p>
         </div>
       </header>
@@ -770,6 +778,25 @@ export function RunDetail({
               })}
             </ul>
           )}
+          {admin && Object.keys(detail.preimages).length > 0 ? (
+            <details
+              className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
+              data-testid="agent-run-preimages"
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+                <ChevronRight
+                  className="h-[11px] w-[11px] transition-transform group-open:rotate-90"
+                  aria-hidden
+                />
+                {t("agents.runs.technicalPreimages", {
+                  count: Object.keys(detail.preimages).length,
+                })}
+              </summary>
+              <pre className="m-0 max-h-64 overflow-auto border-t border-border p-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
+                {JSON.stringify(detail.preimages, null, 2)}
+              </pre>
+            </details>
+          ) : null}
         </Section>
 
         <Section
@@ -950,23 +977,6 @@ export function RunDetail({
           ) : null}
         </Section>
 
-        {admin && Object.keys(detail.preimages).length > 0 ? (
-          <Section
-            title={t("agentControl.runs.preimagesTitle")}
-            icon={<ShieldCheck aria-hidden />}
-            testId="agent-run-preimages"
-          >
-            <p className="mb-1.5 text-[11px] text-muted-foreground">
-              {t("agents.runs.preimagesAdminHint", {
-                count: Object.keys(detail.preimages).length,
-              })}
-            </p>
-            <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
-              {JSON.stringify(detail.preimages, null, 2)}
-            </pre>
-          </Section>
-        ) : null}
-
         {admin && run.planHash !== null ? (
           <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
             <code
@@ -999,7 +1009,7 @@ export function RunDetail({
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <Link
-            to={routes.board(boardId)}
+            to={routes.agentControl(boardId, "runs")}
             data-testid="agent-run-open-board"
             className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
@@ -1053,7 +1063,7 @@ export function RunDetail({
       </div>
 
       {variant === "global" ? (
-        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface/80 px-3.5 py-2 text-[11px] leading-[1.45] text-muted-foreground">
+        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground">
           <p className="m-0 flex items-start gap-1.5">
             <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
             <span className="min-w-0">
@@ -1062,11 +1072,11 @@ export function RunDetail({
                 : t("agents.runs.footerMember")}
             </span>
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Link
-              to={routes.board(boardId)}
+              to={routes.agentControl(boardId, "runs")}
               data-testid="agent-run-footer-open-board"
-              className="inline-flex h-7 items-center rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] text-foreground hover:bg-hover max-md:min-h-11"
             >
               {t("agents.runs.openBoard")}
             </Link>
@@ -1074,15 +1084,15 @@ export function RunDetail({
               type="button"
               onClick={() => void copyLink()}
               data-testid="agent-run-footer-copy-link"
-              className="inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[11px] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] px-[11px] text-[11.5px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
             >
               {linkCopied ? (
                 <Check
-                  className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                  className="h-[13px] w-[13px] text-[color:var(--agent-tone-success)]"
                   aria-hidden
                 />
               ) : (
-                <LinkIcon className="h-3 w-3" aria-hidden />
+                <LinkIcon className="h-[13px] w-[13px]" aria-hidden />
               )}
               {t("agents.runs.copyLink")}
             </button>

@@ -1,35 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  ArrowLeft,
-  Inbox,
-  Info,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+import { Inbox, RefreshCw, Search } from "lucide-react";
 import type { ApprovalRequestDto, BoardRole } from "@janosik/shared";
 
-import { api, ApiError, isApiEnabled } from "@/api/client";
-import { destructiveCardImpactText } from "@/components/approvals/approval-impact";
-import {
-  ApprovalCancelButton,
-  ApprovalDecisionForm,
-  ApprovalDetailError,
-  ApprovalHash,
-  ApprovalLinks,
-  ApprovalMetaRow as MetaRow,
-  ApprovalPlanBlock,
-  ApprovalRiskBadge,
-  ApprovalStatusBadge,
-} from "@/components/approvals/approval-ui";
+import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
-import { useToast } from "@/components/Toast";
-import { formatDate, formatRelative, useI18n } from "@/i18n";
+import { formatRelative, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { APPROVAL_KIND_KEYS, effectiveApprovalStatus } from "@/utils/approval";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
+import {
+  ApprovalRiskBadge,
+  ApprovalStatusBadge,
+} from "@/components/approvals/approval-ui";
+import { AttentionApprovalDetail } from "@/components/agents/AttentionApprovals";
 
 /**
  * The approval queue of one board (TASK-166.14, TASK-179.3).
@@ -45,40 +30,6 @@ import { useBoardState } from "@/store/BoardContext";
  */
 
 type ApprovalFilter = "needs" | "decided" | "all";
-type Decision = "approve" | "reject";
-type Translate = ReturnType<typeof useI18n>["t"];
-
-function errorCodeOf(error: unknown): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  const body = error.body;
-  if (body === null || typeof body !== "object") return undefined;
-  const code = (body as { code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
-}
-
-function decisionError(error: unknown, t: Translate): string {
-  if (error instanceof ApiError && error.offline) {
-    return t("agentControl.error.offline");
-  }
-  switch (errorCodeOf(error)) {
-    case "approval_expired":
-      return t("agentControl.error.expired");
-    case "approval_not_pending":
-      return t("agentControl.error.notPending");
-    case "approval_mismatch":
-      return t("agentControl.error.mismatch");
-    case "approval_owner_mismatch":
-      return t("agentControl.error.ownerMismatch");
-    case "pat_forbidden":
-      return t("agentControl.error.sessionOnly");
-    default:
-      break;
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return t("agentControl.error.forbidden");
-  }
-  return t("agentControl.error.generic");
-}
 
 function useNow(intervalMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
@@ -109,14 +60,12 @@ function QueueSkeleton() {
 }
 
 export function ApprovalsPanel({
-  role,
   onChanged,
 }: {
   role: BoardRole | undefined;
   onChanged?: () => void;
 }) {
-  const { t, tp, lang } = useI18n();
-  const toast = useToast();
+  const { t, lang } = useI18n();
   const { board } = useBoardState();
   const live = useBoardLive();
   const [filter, setFilter] = useState<ApprovalFilter>("needs");
@@ -125,13 +74,9 @@ export function ApprovalsPanel({
   const [listError, setListError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
-  const [detail, setDetail] = useState<ApprovalRequestDto | null>(null);
-  const [detailError, setDetailError] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [busy, setBusy] = useState(false);
   const now = useNow();
   const boardId = board?.id;
-  const admin = role === "ADMIN";
 
   useEffect(
     () => live.agentControl.subscribeApproval(() => setRevision((v) => v + 1)),
@@ -162,29 +107,6 @@ export function ApprovalsPanel({
       alive = false;
     };
   }, [boardId, revision]);
-
-  useEffect(() => {
-    if (boardId === undefined || selectedId === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing selection is the effect's purpose
-      setDetail(null);
-      setDetailError(false);
-      return;
-    }
-    let alive = true;
-    setDetailError(false);
-    setDetail((current) => (current?.id === selectedId ? current : null));
-    void api
-      .getApproval(boardId, selectedId)
-      .then((next) => {
-        if (alive) setDetail(next);
-      })
-      .catch(() => {
-        if (alive) setDetailError(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [boardId, selectedId, revision]);
 
   const queue = useMemo(() => rows ?? [], [rows]);
   const counts = useMemo(() => {
@@ -225,83 +147,16 @@ export function ApprovalsPanel({
     });
   }, [board?.cards, filter, now, queue, search]);
   const loadingList = rows === null && !listError;
-  const detailEmpty =
-    !listError && selectedId === null && !loadingList && filtered.length === 0;
-  const effectiveStatus =
-    detail === null
-      ? undefined
-      : effectiveApprovalStatus(detail.status, detail.expiresAt, now);
-  const canDecide = admin && detail !== null && effectiveStatus === "pending";
-  const canCancel = admin && detail !== null && effectiveStatus === "pending";
-
-  const decide = async (
-    decision: Decision,
-    comment: string,
-  ): Promise<boolean> => {
-    if (boardId === undefined || detail === null) return false;
-    setBusy(true);
-    try {
-      const updated = await api.decideApproval(boardId, detail.id, {
-        decision,
-        planHash: detail.planHash,
-        ...(comment === "" ? {} : { comment }),
-      });
-      setDetail({ ...updated, impact: updated.impact ?? detail.impact });
-      // Keep the decided request visible instead of orphaning the detail.
-      setFilter("all");
-      setRevision((value) => value + 1);
-      toast.success(
-        decision === "approve"
-          ? t("agentControl.approvals.approvedToast")
-          : t("agentControl.approvals.rejectedToast"),
-      );
-      onChanged?.();
-      return true;
-    } catch (error) {
-      toast.error(decisionError(error, t));
-      setRevision((value) => value + 1);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cancel = async (): Promise<boolean> => {
-    if (boardId === undefined || detail === null) return false;
-    setBusy(true);
-    try {
-      const updated = await api.cancelApproval(boardId, detail.id);
-      setDetail({ ...updated, impact: updated.impact ?? detail.impact });
-      setFilter("all");
-      setRevision((value) => value + 1);
-      toast.success(t("agentControl.approvals.cancelledToast"));
-      onChanged?.();
-      return true;
-    } catch (error) {
-      toast.error(
-        error instanceof ApiError && error.offline
-          ? t("agentControl.error.offline")
-          : t("agentControl.approvals.cancelError"),
-      );
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cardFor = (cardId: string | null) =>
-    cardId === null ? undefined : board?.cards[cardId];
-  const detailCard =
-    detail?.cardId != null ? cardFor(detail.cardId) : undefined;
-  const detailImpactText =
-    detail !== null && detail.actionType === "DELETE_CARD" && detailCard
-      ? destructiveCardImpactText(detailCard.title, detail.impact, t, tp, lang)
-      : (detail?.summary ?? "");
-
-  const boardMemberName = (userId: string): string => {
-    const member = live.members.get(boardId, userId);
-    return member?.displayName ?? member?.email ?? userId;
-  };
+  const nextPendingId = useMemo(() => {
+    if (selectedId === null) return null;
+    const pending = filtered.filter(
+      (row) =>
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+    );
+    if (pending.length < 2) return null;
+    const index = pending.findIndex((row) => row.id === selectedId);
+    return pending[(index + 1) % pending.length]?.id ?? null;
+  }, [filtered, now, selectedId]);
 
   const headLeft =
     filter === "needs"
@@ -425,7 +280,8 @@ export function ApprovalsPanel({
           {filtered.length > 0 ? (
             <ul data-testid="approval-queue" className="divide-y">
               {filtered.map((row) => {
-                const card = cardFor(row.cardId);
+                const card =
+                  row.cardId === null ? undefined : board?.cards[row.cardId];
                 const effective = effectiveApprovalStatus(
                   row.status,
                   row.expiresAt,
@@ -483,207 +339,34 @@ export function ApprovalsPanel({
         </div>
 
         <div className="ac-detail" data-testid="approval-detail">
-          <div className={cn("ac-detail-scroll", detailEmpty && "is-empty")}>
-            {detailError ? (
-              <ApprovalDetailError onRetry={() => setRevision((v) => v + 1)} />
-            ) : null}
-
-            {!detailError && selectedId !== null && detail === null ? (
-              <div className="space-y-3" aria-hidden="true">
-                <Skeleton width={220} height={18} />
-                <Skeleton width={140} height={12} />
-                <Skeleton width="100%" height={80} />
-              </div>
-            ) : null}
-
-            {!detailError &&
-            detail !== null &&
-            effectiveStatus !== undefined ? (
-              <div className="space-y-4">
-                <header className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setMobileDetailOpen(false)}
-                    data-testid="approval-detail-back"
-                    className="mb-1 inline-flex min-h-11 items-center gap-1 rounded-md pr-2 text-[11px] font-medium text-muted-foreground hover:text-foreground md:hidden"
-                  >
-                    <ArrowLeft className="h-4 w-4" aria-hidden />
-                    {t("agents.approvals.back")}
-                  </button>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <h3 className="text-sm font-semibold">
-                        {detail.summary}
-                      </h3>
-                      <p className="text-[11px] text-muted-foreground">
-                        {t(APPROVAL_KIND_KEYS[detail.kind])} ·{" "}
-                        {detail.actionType}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <ApprovalRiskBadge risk={detail.risk} />
-                      <ApprovalStatusBadge status={effectiveStatus} />
-                    </div>
-                  </div>
-                  {!admin ? (
-                    <p className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]">
-                      {t("agentControl.approvals.readOnly")}
-                    </p>
-                  ) : null}
-                  {detail.status === "approved" ? (
-                    <p className="rounded-md border border-success/30 bg-success/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-success)]">
-                      {t("agentControl.approvals.approvedHint")}
-                    </p>
-                  ) : null}
-                  {detail.status === "consumed" ? (
-                    <p className="rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-primary)]">
-                      {t("agentControl.approvals.consumedHint")}
-                    </p>
-                  ) : null}
-                  {detail.status === "pending" &&
-                  effectiveStatus === "expired" ? (
-                    <p className="rounded-md border border-border bg-muted px-2 py-1.5 text-[11px] text-muted-foreground">
-                      {t("agentControl.approvals.expiredHint")}
-                    </p>
-                  ) : null}
-                </header>
-
-                <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <MetaRow label={t("agentControl.approvals.requestedBy")}>
-                    <span data-testid="approval-requested-by">
-                      {boardMemberName(detail.requestedBy)}
-                    </span>
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.board")}>
-                    {board?.title ?? detail.boardId}
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.token")}>
-                    <code className="font-mono text-[11px]">
-                      {detail.requestedByTokenId}
-                    </code>
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.session")}>
-                    {detail.agentSessionId ? (
-                      <code className="font-mono text-[11px]">
-                        {detail.agentSessionId}
-                      </code>
-                    ) : (
-                      t("agentControl.approvals.noSession")
-                    )}
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.card")}>
-                    {detail.cardId === null ? (
-                      t("agentControl.approvals.noCard")
-                    ) : (
-                      <span data-testid="approval-card">
-                        {cardFor(detail.cardId)?.title ?? detail.cardId}
-                      </span>
-                    )}
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.expires")}>
-                    <span data-testid="approval-expiry">
-                      {formatDate(detail.expiresAt, lang)} (
-                      {formatRelative(detail.expiresAt, lang, now)})
-                    </span>
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.created")}>
-                    {formatDate(detail.createdAt, lang)}
-                  </MetaRow>
-                  <MetaRow label={t("agentControl.approvals.decidedBy")}>
-                    {detail.decidedBy === null
-                      ? t("agentControl.approvals.notDecided")
-                      : boardMemberName(detail.decidedBy)}
-                  </MetaRow>
-                  {detail.decidedAt !== null ? (
-                    <MetaRow label={t("agentControl.approvals.decidedAt")}>
-                      {formatDate(detail.decidedAt, lang)}
-                    </MetaRow>
-                  ) : null}
-                  {detail.consumedAt !== null ? (
-                    <MetaRow label={t("agentControl.approvals.consumedAt")}>
-                      {formatDate(detail.consumedAt, lang)}
-                    </MetaRow>
-                  ) : null}
-                </dl>
-
-                <ApprovalLinks approval={detail} />
-
-                {detail.decisionComment !== null ? (
-                  <div
-                    className="space-y-1"
-                    data-testid="approval-comment-view"
-                  >
-                    <h4 className="text-xs font-semibold">
-                      {t("agentControl.approvals.comment")}
-                    </h4>
-                    <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-2 text-xs">
-                      {detail.decisionComment}
-                    </p>
-                  </div>
-                ) : null}
-
-                <ApprovalPlanBlock approval={detail} />
-                <ApprovalHash hash={detail.planHash} />
-              </div>
-            ) : null}
-
-            {!detailError &&
-            selectedId === null &&
-            !loadingList &&
-            filtered.length === 0 ? (
-              <div className="detail-empty" data-testid="approval-detail-empty">
-                <span className="empty-icon">
-                  <Inbox className="icon" aria-hidden="true" />
-                </span>
-                <h3>{t("agentControl.approvals.selectTitle")}</h3>
-                <p>{t("agentControl.approvals.selectHint")}</p>
-              </div>
-            ) : null}
-          </div>
-          {canDecide && detail !== null ? (
-            <div className="shrink-0 border-t border-border bg-popover px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <div className="flex flex-wrap items-center gap-2">
-                <ApprovalDecisionForm
-                  key={detail.id}
-                  busy={busy}
-                  planHash={detail.planHash}
-                  impactTitle={
-                    detail.actionType === "DELETE_CARD" && detailCard
-                      ? t("agents.approvals.destructiveCardTitle")
-                      : detail.kind === "destructive"
-                        ? t("agents.approvals.destructiveTitle")
-                        : undefined
-                  }
-                  impactText={detailImpactText}
-                  onDecide={decide}
-                />
-                <ApprovalCancelButton
-                  busy={busy}
-                  onCancel={cancel}
-                  disabled={!canCancel}
-                />
-              </div>
+          {selectedId === null || boardId === undefined ? (
+            <div className="detail-empty" data-testid="approval-detail-empty">
+              <span className="empty-icon">
+                <Inbox className="icon" aria-hidden="true" />
+              </span>
+              <h3>{t("agentControl.approvals.selectTitle")}</h3>
+              <p>{t("agentControl.approvals.selectHint")}</p>
             </div>
-          ) : null}
+          ) : (
+            <AttentionApprovalDetail
+              boardId={boardId}
+              approvalId={selectedId}
+              boardTitle={board?.title ?? boardId}
+              variant="board"
+              onBack={() => setMobileDetailOpen(false)}
+              onChanged={() => {
+                setRevision((value) => value + 1);
+                onChanged?.();
+              }}
+              onNextPending={
+                nextPendingId === null
+                  ? undefined
+                  : () => setSelectedId(nextPendingId)
+              }
+            />
+          )}
         </div>
       </div>
-
-      <footer className="ac-foot">
-        <span className="ac-foot-note">
-          <ShieldCheck className="icon" aria-hidden="true" />
-          {detail !== null && effectiveStatus === "pending"
-            ? t("agentControl.approvals.footerPending", {
-                hash: `${detail.planHash.slice(0, 10)}…`,
-              })
-            : t("agentControl.approvals.footerEmpty")}
-        </span>
-        {detail !== null && effectiveStatus === "pending" ? (
-          <span className="ac-foot-mobile-hint">
-            <Info className="icon" aria-hidden="true" />
-            {t("agentControl.approvals.mobileHint")}
-          </span>
-        ) : null}
-      </footer>
     </div>
   );
 }

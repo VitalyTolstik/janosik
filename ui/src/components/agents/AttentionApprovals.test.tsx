@@ -97,6 +97,16 @@ function approval(
     consumedAt: null,
     createdAt: now - 60_000,
     impact: { comments: 3, attachments: 2 },
+    plan: {
+      schemaVersion: 1,
+      boardId: "board-1",
+      commands: [
+        {
+          commandId: "cmd-1",
+          action: { type: "DELETE_CARD", cardId: "card-1" },
+        },
+      ],
+    },
     ...overrides,
   };
 }
@@ -217,20 +227,19 @@ describe("AttentionApprovals", () => {
     );
   });
 
-  it("shows real counts in the detail and the decision dialog", async () => {
+  it("shows the exact plan and the decision dialog impact", async () => {
     const user = userEvent.setup();
     renderDetail();
 
-    const impact = await screen.findByTestId("agents-approval-impact");
-    expect(impact).toHaveTextContent(
-      "“Card claim visibility” and its 3 comments, 2 attachments and history will be deleted. Recovery depends on a run rollback and is not guaranteed.",
-    );
     expect(
-      screen.getByRole("heading", {
+      await screen.findByRole("heading", {
         name: "Delete card “Card claim visibility”",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Removed · card and history")).toBeInTheDocument();
+    expect(await screen.findByTestId("approval-plan")).toHaveTextContent(
+      "DELETE_CARD",
+    );
+    expect(screen.queryByTestId("agents-approval-impact")).toBeNull();
 
     await user.click(screen.getByTestId("approval-approve"));
     const dialog = await screen.findByTestId("approval-approve-dialog");

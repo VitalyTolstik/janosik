@@ -213,7 +213,7 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
 
     expect(await screen.findByTestId("approval-plan-hash")).toHaveTextContent(
-      row.planHash,
+      row.planHash.slice(0, 44),
     );
     expect(screen.getByTestId("approval-plan-command")).toHaveTextContent(
       "DELETE_CARD",
@@ -232,6 +232,33 @@ describe("agent control (TASK-166.14)", () => {
       }),
     );
     expect(await screen.findByText("Approval granted")).toBeInTheDocument();
+  });
+
+  it("shows the mockup header cancel action and inline footer", async () => {
+    const row = approval();
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+    const cancel = vi
+      .spyOn(api, "cancelApproval")
+      .mockResolvedValue(approval({ status: "cancelled" }));
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    expect(await screen.findByTestId("approval-cancel-menu")).toBeVisible();
+    expect(screen.getByText(/Approving authorizes only/)).toBeInTheDocument();
+    expect(screen.getByTestId("approval-reject")).toBeVisible();
+    expect(screen.getByTestId("approval-approve")).toBeVisible();
+    expect(screen.queryByTestId("approval-next-pending")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("approval-cancel-menu"));
+    const confirmTitle = await screen.findByText(
+      "Cancel this approval request?",
+    );
+    const dialog = confirmTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel request" }),
+    );
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("board-1", row.id));
   });
 
   it("requires a reason and sends the plan hash when rejecting", async () => {
@@ -333,9 +360,6 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
-    expect(
-      screen.getByText("Only a board admin can decide. This queue is empty."),
-    ).toBeInTheDocument();
     expect(screen.getByText("Select an approval")).toBeInTheDocument();
     // One request from the Inbox panel, one from the rail/header counter,
     // plus the manual retry.
@@ -674,9 +698,7 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(screen.getByTestId("agent-pause-tab"));
     const row = await screen.findByTestId("agent-session-row-session-1");
     await userEvent.click(within(row).getByTestId("agent-session-end"));
-    expect(
-      await screen.findByText("End this agent session?"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("End this session?")).toBeInTheDocument();
     await userEvent.click(screen.getByTestId("agent-action-confirm"));
 
     await waitFor(() =>

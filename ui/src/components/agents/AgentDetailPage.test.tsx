@@ -180,23 +180,20 @@ describe("AgentDetailPage", () => {
     expect(screen.getByTestId("agent-session-resume")).toBeInTheDocument();
   });
 
-  it("ends a session with a final status and hides the controls", async () => {
+  it("ends a session from the mocked confirmation and hides the controls", async () => {
     renderDetail();
     await screen.findByTestId("agent-session-list");
 
     await userEvent.click(screen.getByTestId("agent-session-end"));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.type(
-      within(dialog).getByTestId("agent-action-summary"),
-      "Finished the queue",
-    );
+    expect(within(dialog).getByTestId("agent-end-target")).toBeVisible();
     await userEvent.click(within(dialog).getByTestId("agent-action-confirm"));
 
     await waitFor(() =>
       expect(hoisted.endAgentSession).toHaveBeenCalledWith(
         "board-1",
         "session-1",
-        { status: "completed", summary: "Finished the queue" },
+        { status: "completed" },
       ),
     );
     await waitFor(() =>

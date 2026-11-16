@@ -10,6 +10,7 @@ import {
   Clock,
   Folder,
   GitCommit,
+  History,
   KeyRound,
   Lock,
   Pause,
@@ -660,6 +661,7 @@ export function SessionDetail({
     row.currentCardId === null
       ? routes.board(row.boardId)
       : `${routes.board(row.boardId)}?card=${encodeURIComponent(row.currentCardId)}`;
+  const agentControlHref = routes.agentControl(row.boardId, "live");
   const bannerTone =
     row.stale || row.paused
       ? "border-[color-mix(in_oklab,var(--warning)_34%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_6%,transparent)]"
@@ -828,6 +830,20 @@ export function SessionDetail({
                 {row.cardTitle ?? shortId(row.currentCardId)}
               </Link>
             )}
+            {row.currentRunId !== null ? (
+              <Link
+                to={`${routes.agents}?${new URLSearchParams({
+                  section: "runs",
+                  board: row.boardId,
+                  run: row.currentRunId,
+                }).toString()}`}
+                data-testid="agents-session-current-work-run"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] font-mono text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground"
+              >
+                <History className="h-[10px] w-[10px]" aria-hidden />
+                {t("agents.runHash", { id: shortId(row.currentRunId) })}
+              </Link>
+            ) : null}
           </div>
         </section>
 
@@ -880,7 +896,10 @@ export function SessionDetail({
               asChild
               className={FOOTER_BUTTON_CLASS}
             >
-              <Link to={boardHref} data-testid="agents-session-open-board">
+              <Link
+                to={agentControlHref}
+                data-testid="agents-session-open-board"
+              >
                 {t("agents.openBoard")}
               </Link>
             </Button>
@@ -933,7 +952,11 @@ export function SessionDetail({
       {action !== null ? (
         <AgentActionDialog
           action={action}
-          row={row}
+          row={{
+            ...row,
+            agentLabel: agentLabel(row),
+            cardTitle: row.cardTitle,
+          }}
           onClose={() => setAction(null)}
           onSaved={onSaved}
         />

@@ -363,6 +363,28 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-count-attention")).toBeNull();
   });
 
+  it("shows the runs count before the Runs tab is opened", async () => {
+    hoisted.listRuns.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-1"
+          ? [run({ id: "run-a" }), run({ id: "run-b" })]
+          : [],
+      ),
+    );
+    renderPage("/agents?section=attention");
+
+    expect(await screen.findByTestId("agents-count-runs")).toHaveTextContent(
+      "2",
+    );
+  });
+
+  it("opens the board agent-control Live surface from a session", async () => {
+    renderPage("/agents?section=sessions&board=board-1&session=session-1");
+
+    const open = await screen.findByTestId("agents-session-open-board");
+    expect(open).toHaveAttribute("href", "/board/board-1?agents=live");
+  });
+
   it("explains approvals to a member and never requests them", async () => {
     renderPage("/agents?board=board-2");
 
@@ -481,7 +503,7 @@ describe("AgentsPage", () => {
   });
 
   it("shows a loaded total and appends the next runs page", async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -501,14 +523,16 @@ describe("AgentsPage", () => {
     renderPage("/agents?section=runs");
 
     const total = await screen.findByTestId("agents-runs-total");
-    await waitFor(() => expect(total).toHaveTextContent("100 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("7 runs shown"));
     expect(total).toHaveAttribute("data-has-more", "true");
     await userEvent.click(screen.getByTestId("agents-runs-more"));
+    await waitFor(() => expect(total).toHaveTextContent("10 runs shown"));
+    await userEvent.click(screen.getByTestId("agents-runs-more"));
 
-    await waitFor(() => expect(total).toHaveTextContent("101 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("11 runs shown"));
     expect(hoisted.listRuns).toHaveBeenLastCalledWith(
       "board-1",
-      expect.objectContaining({ cursor: "run-99" }),
+      expect.objectContaining({ cursor: "run-9" }),
     );
   });
 
@@ -613,6 +637,13 @@ describe("AgentsPage", () => {
     expect(
       screen.getByTestId("agent-run-footer-open-board").querySelector("svg"),
     ).toBeNull();
+    const footerOpen = screen.getByTestId("agent-run-footer-open-board");
+    expect(footerOpen.className).toContain("h-8");
+    expect(footerOpen.className).toContain("text-[11.5px]");
+    expect(footerOpen).toHaveAttribute("href", "/board/board-1?agents=runs");
+    const footerCopy = screen.getByTestId("agent-run-footer-copy-link");
+    expect(footerCopy.className).toContain("h-8");
+    expect(footerCopy.querySelector("svg")).toHaveClass("h-[13px]", "w-[13px]");
   });
 
   it("keeps a failed rollback error visible after the pane refreshes", async () => {
@@ -1738,11 +1769,12 @@ describe("AgentsPage", () => {
     ).toBeNull();
 
     const currentWork = screen.getByTestId("agents-session-current-work");
-    expect(within(currentWork).getByRole("link")).toHaveTextContent("card-1");
+    const cardLink = within(currentWork).getAllByRole("link")[0];
+    expect(cardLink).toHaveTextContent("card-1");
+    expect(cardLink.querySelector("svg")).not.toBeNull();
     expect(
-      within(currentWork).getByRole("link").querySelector("svg"),
-    ).not.toBeNull();
-    expect(within(currentWork).queryByText(/^Run /)).toBeNull();
+      within(currentWork).getByTestId("agents-session-current-work-run"),
+    ).toHaveTextContent(/Run/);
     expect(screen.getByTestId("agents-session-current-run")).toHaveTextContent(
       "1",
     );
@@ -1793,7 +1825,7 @@ describe("AgentsPage", () => {
 
     await userEvent.click(screen.getByTestId("agents-session-pause"));
     expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Pause this agent session?",
+      "Pause this session?",
     );
     await userEvent.type(screen.getByTestId("agent-action-reason"), "Review");
     await userEvent.click(screen.getByTestId("agent-action-confirm"));
@@ -1821,13 +1853,12 @@ describe("AgentsPage", () => {
     );
 
     await userEvent.click(screen.getByTestId("agents-session-end"));
-    await userEvent.type(screen.getByTestId("agent-action-summary"), "Done");
     await userEvent.click(screen.getByTestId("agent-action-confirm"));
     await waitFor(() =>
       expect(hoisted.endAgentSession).toHaveBeenCalledWith(
         "board-1",
         "session-1",
-        { status: "completed", summary: "Done" },
+        { status: "completed" },
       ),
     );
     expect(
@@ -1875,9 +1906,7 @@ describe("AgentsPage", () => {
       await screen.findByText("Could not update the session"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("agent-action-confirm")).toBeEnabled();
-    expect(screen.getByRole("dialog")).toHaveTextContent(
-      "Pause this agent session?",
-    );
+    expect(screen.getByRole("dialog")).toHaveTextContent("Pause this session?");
   });
 
   it("hides every session action on a terminal session", async () => {

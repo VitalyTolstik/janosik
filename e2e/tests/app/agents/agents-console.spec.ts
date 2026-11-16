@@ -72,6 +72,16 @@ test("lists a live session, filters it and opens the detail", async ({
     await expect(page.getByTestId("agents-session-pause")).toBeVisible();
     await expect(page.getByTestId("agents-session-end")).toBeVisible();
     await expect(page.getByTestId("agents-session-open-board")).toBeVisible();
+    await expect(page.getByTestId("agents-session-open-board")).toHaveAttribute(
+      "href",
+      /agents=live$/,
+    );
+    await page.getByTestId("agents-session-open-board").click();
+    await expect(page.getByTestId("agent-control-dialog")).toBeVisible();
+    await expect(page.getByTestId("agent-pause-tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     // TASK-179.4 mockup sync: the global detail keeps the token as plain
     // metadata; Account controls live in the board Live panel.
     await expect(page.getByTestId("agents-session-token-settings")).toHaveCount(
@@ -133,7 +143,7 @@ test("pauses and resumes a session with a reason", async ({
 
     await page.getByTestId("agents-session-pause").click();
     await expect(page.getByRole("dialog").last()).toContainText(
-      "Pause this agent session?",
+      "Pause this session?",
     );
     await page.getByTestId("agent-action-reason").fill("Stop the loop");
     await page.getByTestId("agent-action-confirm").click();
@@ -183,7 +193,7 @@ test("pauses and resumes a session with a reason", async ({
   }
 });
 
-test("ends a session with a final status and hides its controls", async ({
+test("ends a session from the mockup confirmation and hides its controls", async ({
   page,
   board,
   playwright,
@@ -199,9 +209,8 @@ test("ends a session with a final status and hides its controls", async ({
     await page.getByTestId(`agent-session-row-${agent.session.id}`).click();
     await page.getByTestId("agents-session-end").click();
     await expect(page.getByRole("dialog").last()).toContainText(
-      "End this agent session?",
+      "End this session?",
     );
-    await page.getByTestId("agent-action-summary").fill("Queue drained");
     await page.getByTestId("agent-action-confirm").click();
 
     await expect(
@@ -211,7 +220,7 @@ test("ends a session with a final status and hides its controls", async ({
     const ended = await readAgentSession(board.api, board.id, agent.session.id);
     expect(ended.status).toBe("completed");
     expect(ended.endedAt).not.toBeNull();
-    expect(ended.summary).toBe("Queue drained");
+    expect(ended.summary).toBeNull();
   } finally {
     await agent.dispose();
   }

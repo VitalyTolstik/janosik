@@ -90,6 +90,27 @@ export function RunsPanel({ role }: { role: Role }) {
     enabled: board !== undefined && isApiEnabled(),
     filter,
   });
+  const [visibleCount, setVisibleCount] = useState(5);
+  useEffect(() => {
+    // Filtering starts a fresh page of five, like the mockup's board history.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the visible page on filter change
+    setVisibleCount(5);
+  }, [filter]);
+  const visibleRows = useMemo(
+    () => runs.rows.slice(0, visibleCount),
+    [runs.rows, visibleCount],
+  );
+  const shown = visibleRows.length;
+  const total = runs.rows.length;
+  const canLoadMore = shown < total || runs.hasMore;
+  const loadMore = async () => {
+    if (shown < total) {
+      setVisibleCount((value) => value + 5);
+      return;
+    }
+    await runs.loadMore();
+    setVisibleCount((value) => value + 5);
+  };
   const options = useMemo(() => runFilterOptions(t), [t]);
   const tokenNames = useMemo(() => {
     const names = new Map<string, string>();
@@ -251,8 +272,9 @@ export function RunsPanel({ role }: { role: Role }) {
         <span className="meta">
           {runs.loading
             ? t("agentControl.runs.loading")
-            : t("agents.runs.boardHistory", {
-                count: runs.total,
+            : t("agents.runs.boardHistoryOf", {
+                shown,
+                total,
               })}
         </span>
         <button
@@ -427,7 +449,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 </div>
               ) : null}
               <RunList
-                rows={runs.rows}
+                rows={visibleRows}
                 selectedId={selected?.id ?? null}
                 onSelect={(run) => {
                   setSelectedId(run.id);
@@ -443,31 +465,25 @@ export function RunsPanel({ role }: { role: Role }) {
               <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
                 <span
                   data-testid="agent-runs-total"
-                  data-total={runs.total}
-                  data-has-more={runs.hasMore ? "true" : "false"}
+                  data-shown={shown}
+                  data-total={total}
+                  data-has-more={canLoadMore ? "true" : "false"}
                 >
-                  {runs.hasMore
-                    ? t("agents.runs.totalMore", { count: runs.total })
-                    : t("agents.runs.shown", { count: runs.total })}
+                  {t("agents.runs.shownOf", { shown, total })}
                 </span>
-                {runs.hasMore ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-testid="agent-runs-more"
-                    disabled={runs.loadingMore}
-                    onClick={() => void runs.loadMore()}
-                    className="max-md:min-h-11"
-                  >
-                    {runs.loadingMore ? (
-                      <Loader2
-                        className="h-3.5 w-3.5 animate-spin"
-                        aria-hidden
-                      />
-                    ) : null}
-                    {t("agentControl.runs.loadMore")}
-                  </Button>
-                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  data-testid="agent-runs-more"
+                  disabled={runs.loadingMore || !canLoadMore}
+                  onClick={() => void loadMore()}
+                  className="max-md:min-h-11"
+                >
+                  {runs.loadingMore ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : null}
+                  {t("agentControl.runs.loadMore")}
+                </Button>
               </div>
             </>
           )}
