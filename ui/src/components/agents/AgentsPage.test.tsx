@@ -355,6 +355,20 @@ describe("AgentsPage", () => {
     );
     expect(screen.queryByText("Docs agent")).toBeNull();
   });
+  it("renders a human run title from the command summary hint", async () => {
+    hoisted.listRuns.mockResolvedValue([
+      run({
+        commandSummary: { actionTypes: ["ADD_CARD"], title: null },
+        commandCount: 2,
+      }),
+    ]);
+    renderPage("/agents?section=runs&board=board-1&run=run-1");
+
+    expect(
+      await screen.findByText("QA agent added 2 cards"),
+    ).toBeInTheDocument();
+  });
+
   it("shows the scoped session count in the rail", async () => {
     renderPage("/agents?section=attention");
 
