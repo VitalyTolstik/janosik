@@ -188,7 +188,9 @@ re-seeding. `setsid` and redirected standard streams let it survive the
 launching shell. Check it with `pgrep -af '[s]eed-agent-pixel-demo.mjs'`
 and verify heartbeat timestamps advance from a separate shell. The designated
 fresh rows are updated once per minute; the deliberately stale row is not.
-Pending demo approvals have a 72-hour expiry. The sixth run is placed on the
+Pending demo approvals have a 72-hour expiry. The deliberately stale session
+starts at six minutes; `round4-fresh-seed-*` shows it immediately after the
+final seed. The sixth run is placed on the
 current calendar day, including just after midnight. Board Runs deliberately
 groups by each run's actual day rather than the prototype's single Today
 group.
