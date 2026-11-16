@@ -256,5 +256,12 @@ Deliberate remaining deviations:
 - Board Live still says **Manage tokens**; Stop all remains owner-only in
   Account → API keys (item 15 is a false premise).
 - Unknown approval counts stay hidden rather than a dash badge; actual-day
-  run grouping, human decision attribution, and the 72 h TTL display remain
-  documented API/spec choices.
+  run grouping, human decision attribution, and the 72 h TTL display
+  (`expires in 4294 min`) remain documented API/spec choices.
+- Remaining sub-pixel drift is deliberate: the labeled header Agents entry is
+  108.5 px vs the mockup's 107.5 px, the token info is 195.7 px vs 195.8 px,
+  and the 1024 main pane is 826 px because the 198 px rail is measured inside
+  the 1 px page border. None changes a hit target or truncates content.
+- Board Live still includes stale/paused rows in its rail count; the spec does
+  not define that badge. Approval TTL/expiry copy, the empty/partial spec
+  variants, and the token page (which has no mockup) are unchanged.
