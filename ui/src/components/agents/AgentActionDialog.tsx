@@ -206,7 +206,7 @@ export function AgentActionDialog({
                 : ""}
             </p>
           ) : (
-            <label className="mt-1.5 block space-y-1">
+            <label className="mt-[10px] block space-y-1">
               <span className="text-[11px] font-semibold text-foreground">
                 {t("agents.action.reason")}
               </span>
@@ -217,7 +217,7 @@ export function AgentActionDialog({
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={t("agents.action.reasonPlaceholder")}
                 data-testid="agent-action-reason"
-                className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px]"
+                className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55]"
                 autoFocus
               />
             </label>
@@ -230,7 +230,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
-            className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
+            className="!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -239,7 +239,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
-            className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] font-[650] max-md:min-h-11"
+            className="!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-md:min-h-11"
           >
             {busy ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

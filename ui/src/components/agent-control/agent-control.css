@@ -822,6 +822,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 /* Footer ------------------------------------------------------------------ */
 .agent-control-surface .ac-foot {
   position: absolute;
+  z-index: 5;
   left: 0;
   right: 0;
   bottom: 0;

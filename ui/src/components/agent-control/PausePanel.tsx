@@ -198,9 +198,9 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-resume"
                 onClick={() => onAction("resume", session)}
-                className="h-11 min-h-11 px-2 text-[11px] min-[761px]:h-[26px] min-[761px]:min-h-[26px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[11px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
-                <CirclePlay className="h-3.5 w-3.5" aria-hidden />
+                <CirclePlay className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.resume")}
               </Button>
             ) : session.paused ? null : (
@@ -210,7 +210,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-pause"
                 onClick={() => onAction("pause", session)}
-                className="h-11 min-h-11 px-2 text-[11px] min-[761px]:h-[26px] min-[761px]:min-h-[26px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[7px] text-[11px] font-[650] min-[761px]:h-[26px] min-[761px]:min-h-[26px] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <CirclePause className="h-3.5 w-3.5" aria-hidden />
                 {t("agentControl.pause.pause")}
@@ -224,7 +224,7 @@ function LiveSessionRow({
               aria-label={t("agentControl.live.endSession")}
               title={t("agentControl.live.endSessionHint")}
               onClick={() => onAction("end", session)}
-              className="h-11 w-11 min-h-11 px-0 text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6"
+              className="h-11 w-11 min-h-11 rounded-[5px] px-0 text-[13px] font-normal leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6 [&_svg]:!h-3.5 [&_svg]:!w-3.5"
             >
               <Square className="h-3.5 w-3.5" aria-hidden />
             </Button>

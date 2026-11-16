@@ -513,7 +513,7 @@ export function ApprovalDecisionForm({
             variant="ghost"
             onClick={resetReject}
             disabled={submitting}
-            className="h-7 min-h-0 px-2 text-[11px] text-muted-foreground max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] text-[11px] leading-none text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -523,7 +523,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="h-7 min-h-0 px-2.5 text-[11px] font-[650] max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

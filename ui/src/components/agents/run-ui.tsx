@@ -563,20 +563,13 @@ export function RunDetail({
                 : (tokenLabel?.(run.apiTokenId) ?? undefined),
             )}
           </h2>
-          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-            {variant === "board" ? (
-              <>
-                {run.id} · {t(RUN_KIND_KEYS[run.kind])} ·{" "}
-                {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
-                {clockLabel(runTime(run), today, lang, t)}
-              </>
-            ) : (
-              <>
-                {run.id}
-                {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
-              </>
-            )}
-          </p>
+          {variant === "board" ? (
+            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+              {run.id} · {t(RUN_KIND_KEYS[run.kind])} ·{" "}
+              {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
+              {clockLabel(runTime(run), today, lang, t)}
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -1071,7 +1064,7 @@ export function RunDetail({
       {variant === "global" ? (
         <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground">
           <p className="m-0 flex items-start gap-1.5">
-            <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+            <Info className="mt-[2px] h-[11px] w-[11px] shrink-0" aria-hidden />
             <span className="min-w-0">
               {admin
                 ? t("agents.runs.footerAdmin")

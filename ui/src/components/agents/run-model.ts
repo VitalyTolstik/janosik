@@ -242,7 +242,9 @@ export function runTitle(
       run.status === "failed"
         ? t("agents.runs.title.failed", { count })
         : action;
-    return token === undefined || token === "" ? phrase : `${token} ${phrase}`;
+    return token === undefined || token === "" || token.endsWith("…")
+      ? phrase
+      : `${token} ${phrase}`;
   }
   return t("agents.runs.rowTitle", {
     kind: t(RUN_KIND_KEYS[run.kind]),

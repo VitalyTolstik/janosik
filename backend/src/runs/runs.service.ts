@@ -170,9 +170,14 @@ export class RunsService {
   ): Promise<RunDetailDto> {
     const run = await this.load(boardId, runId);
     const commands = await this.commandEntries(boardId, runId);
+    const summaries = await loadCommandSummaries(this.prisma, [run.id]);
+    const summary = summaries.get(run.id);
     const fullDetail = principal?.via === "jwt" && role === Role.ADMIN;
     return {
-      run: runToDto(run),
+      run: {
+        ...runToDto(run),
+        ...(summary === undefined ? {} : { commandSummary: summary }),
+      },
       commands,
       preimages: fullDetail ? await this.preimages(boardId, runId) : {},
     };

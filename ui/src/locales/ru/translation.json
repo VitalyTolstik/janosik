@@ -2029,6 +2029,7 @@
   "agents.approvals.targetBoard": "доска",
   "agents.approvals.targetCard": "карточка",
   "agents.approvals.inMinutes": "через {{count}} мин",
+  "agents.approvals.expiresIn": "истекает через {{count}} мин",
   "agents.approvals.whatWillChange": "Что изменится",
   "agents.approvals.knownTarget": "Известная цель",
   "agents.approvals.exactAction": "Точное действие",

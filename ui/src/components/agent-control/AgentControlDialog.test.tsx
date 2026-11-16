@@ -234,6 +234,28 @@ describe("agent control (TASK-166.14)", () => {
     expect(await screen.findByText("Approval granted")).toBeInTheDocument();
   });
 
+  it("groups the queue and names the requesting agent from the token list", async () => {
+    const row = approval();
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+    vi.spyOn(api, "listTokens").mockResolvedValue([token()]);
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+
+    renderDialog();
+
+    const queue = await screen.findByTestId("approval-queue");
+    expect(within(queue).getByText("Needs decision")).toBeInTheDocument();
+    expect(
+      within(queue).getByText("QA agent · Remove stale card"),
+    ).toBeInTheDocument();
+    expect(
+      within(queue).getByTestId(`approval-row-${row.id}`),
+    ).toHaveTextContent("expires in 30 min");
+    expect(within(queue).getByTestId("approval-row-status")).toHaveTextContent(
+      "Pending",
+    );
+  });
+
   it("shows the mockup header cancel action and inline footer", async () => {
     const row = approval();
     vi.spyOn(api, "listApprovals").mockResolvedValue([row]);

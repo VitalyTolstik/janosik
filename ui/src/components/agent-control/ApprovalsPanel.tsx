@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Inbox, RefreshCw, Search } from "lucide-react";
-import type { ApprovalRequestDto, BoardRole } from "@janosik/shared";
+import type {
+  AgentSessionDto,
+  ApprovalRequestDto,
+  BoardRole,
+  UserTokenDto,
+} from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { formatRelative, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { APPROVAL_KIND_KEYS, effectiveApprovalStatus } from "@/utils/approval";
+import { effectiveApprovalStatus } from "@/utils/approval";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
-import {
-  ApprovalRiskBadge,
-  ApprovalStatusBadge,
-} from "@/components/approvals/approval-ui";
+import { ApprovalStatusBadge } from "@/components/approvals/approval-ui";
 import { AttentionApprovalDetail } from "@/components/agents/AttentionApprovals";
 
 /**
@@ -75,6 +77,8 @@ export function ApprovalsPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [tokens, setTokens] = useState<UserTokenDto[]>([]);
+  const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
   const now = useNow();
   const boardId = board?.id;
 
@@ -107,6 +111,37 @@ export function ApprovalsPanel({
       alive = false;
     };
   }, [boardId, revision]);
+
+  useEffect(() => {
+    if (boardId === undefined || !isApiEnabled()) return;
+    let alive = true;
+    void Promise.all([
+      api.listTokens().catch(() => [] as UserTokenDto[]),
+      api.listAgentSessions(boardId).catch(() => [] as AgentSessionDto[]),
+    ]).then(([nextTokens, nextSessions]) => {
+      if (!alive) return;
+      setTokens(nextTokens);
+      setSessions(nextSessions);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [boardId, revision]);
+
+  const agentNameFor = (row: ApprovalRequestDto): string => {
+    const token = tokens.find((entry) => entry.id === row.requestedByTokenId);
+    if (token !== undefined) return token.name;
+    const session = sessions.find(
+      (entry) =>
+        entry.id === row.agentSessionId ||
+        entry.apiTokenId === row.requestedByTokenId,
+    );
+    return (
+      session?.name ??
+      session?.clientName ??
+      row.requestedByTokenId.slice(0, 12)
+    );
+  };
 
   const queue = useMemo(() => rows ?? [], [rows]);
   const counts = useMemo(() => {
@@ -147,6 +182,22 @@ export function ApprovalsPanel({
     });
   }, [board?.cards, filter, now, queue, search]);
   const loadingList = rows === null && !listError;
+  const pendingRows = useMemo(
+    () =>
+      filtered.filter(
+        (row) =>
+          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+      ),
+    [filtered, now],
+  );
+  const decidedRows = useMemo(
+    () =>
+      filtered.filter(
+        (row) =>
+          effectiveApprovalStatus(row.status, row.expiresAt, now) !== "pending",
+      ),
+    [filtered, now],
+  );
   const nextPendingId = useMemo(() => {
     if (selectedId === null) return null;
     const pending = filtered.filter(
@@ -168,6 +219,65 @@ export function ApprovalsPanel({
     filter === "decided"
       ? t("agentControl.approvals.listHeadDecidedRight")
       : t("agentControl.approvals.listHeadExpires");
+
+  const renderRow = (row: ApprovalRequestDto, pending: boolean) => {
+    const card = row.cardId === null ? undefined : board?.cards[row.cardId];
+    const effective = effectiveApprovalStatus(row.status, row.expiresAt, now);
+    const agent = agentNameFor(row);
+    return (
+      <button
+        key={row.id}
+        type="button"
+        data-testid={`approval-row-${row.id}`}
+        data-status={effective}
+        aria-current={selectedId === row.id}
+        onClick={() => {
+          setSelectedId(row.id);
+          setMobileDetailOpen(true);
+        }}
+        className={cn(
+          "block w-full border-b border-border-soft px-2.5 py-2 text-left transition-colors",
+          pending && "bg-warning/3",
+          selectedId === row.id
+            ? pending
+              ? "bg-warning/6 shadow-[inset_2px_0_0_var(--warning)]"
+              : "bg-primary/6 shadow-[inset_2px_0_0_var(--primary)]"
+            : "hover:bg-hover/48",
+        )}
+      >
+        <span className="line-clamp-2 block text-[11.5px] leading-[1.35] font-[650] text-foreground">
+          {row.summary}
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] leading-[1.4] text-muted-foreground">
+          {agent}
+          {card ? ` · ${card.title}` : ""}
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+          <ApprovalStatusBadge
+            status={effective}
+            testId="approval-row-status"
+          />
+          <span
+            aria-hidden
+            className="h-0.5 w-0.5 shrink-0 rounded-full bg-border"
+          />
+          <span>{t(`agentControl.risk.${row.risk}`)}</span>
+          <span
+            className={cn(
+              "ml-auto whitespace-nowrap",
+              pending ? "text-[color:var(--warning)]" : "text-muted-foreground",
+            )}
+          >
+            {pending
+              ? t("agents.approvals.expiresIn", {
+                  count: Math.max(0, Math.ceil((row.expiresAt - now) / 60_000)),
+                })
+              : formatRelative(row.decidedAt ?? row.expiresAt, lang, now)}
+          </span>
+        </span>
+      </button>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -278,63 +388,30 @@ export function ApprovalsPanel({
             </div>
           ) : null}
           {filtered.length > 0 ? (
-            <ul data-testid="approval-queue" className="divide-y">
-              {filtered.map((row) => {
-                const card =
-                  row.cardId === null ? undefined : board?.cards[row.cardId];
-                const effective = effectiveApprovalStatus(
-                  row.status,
-                  row.expiresAt,
-                  now,
-                );
-                return (
-                  <li key={row.id}>
-                    <button
-                      type="button"
-                      data-testid={`approval-row-${row.id}`}
-                      data-status={effective}
-                      aria-current={selectedId === row.id}
-                      onClick={() => {
-                        setSelectedId(row.id);
-                        setMobileDetailOpen(true);
-                      }}
-                      className={cn(
-                        "flex w-full flex-col gap-1.5 px-3 py-2.5 text-left transition-colors",
-                        selectedId === row.id
-                          ? "bg-primary/10"
-                          : "hover:bg-hover",
-                      )}
-                    >
-                      <span className="flex items-start justify-between gap-2">
-                        <span className="min-w-0 truncate text-xs font-medium">
-                          {row.summary}
-                        </span>
-                        <ApprovalStatusBadge
-                          status={effective}
-                          testId="approval-row-status"
-                        />
-                      </span>
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <ApprovalRiskBadge
-                          risk={row.risk}
-                          testId="approval-row-risk"
-                        />
-                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                          {t(APPROVAL_KIND_KEYS[row.kind])}
-                        </span>
-                      </span>
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {card
-                          ? `#${card.title}`
-                          : t("agentControl.approvals.boardOnly")}
-                        {" · "}
-                        {formatRelative(row.createdAt, lang, now)}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div data-testid="approval-queue" className="pb-1">
+              {pendingRows.length > 0 ? (
+                <div>
+                  <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-[11px] tracking-[0.06em] uppercase text-muted-foreground">
+                    <span>{t("agentControl.approvals.listHeadNeeds")}</span>
+                    <span className="ml-auto tabular-nums">
+                      {pendingRows.length}
+                    </span>
+                  </div>
+                  {pendingRows.map((row) => renderRow(row, true))}
+                </div>
+              ) : null}
+              {decidedRows.length > 0 && filter !== "needs" ? (
+                <div>
+                  <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-[11px] tracking-[0.06em] uppercase text-muted-foreground">
+                    <span>{t("agentControl.approvals.listHeadDecided")}</span>
+                    <span className="ml-auto tabular-nums">
+                      {decidedRows.length}
+                    </span>
+                  </div>
+                  {decidedRows.map((row) => renderRow(row, false))}
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
 

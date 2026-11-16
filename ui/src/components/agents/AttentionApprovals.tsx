@@ -33,6 +33,7 @@ import {
   ApprovalDetailError,
   ApprovalLinks,
   ApprovalRiskBadge,
+  ApprovalStatusBadge,
 } from "@/components/approvals/approval-ui";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -735,6 +736,20 @@ export function AttentionApprovalDetail({
                 ? t("agents.approvals.loading")
                 : titleForApproval(detail, cardTitle, t)}
             </h2>
+            {variant === "board" && detail !== null ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {effectiveStatus !== undefined ? (
+                  <ApprovalStatusBadge
+                    status={effectiveStatus}
+                    testId="approval-detail-status"
+                  />
+                ) : null}
+                <ApprovalRiskBadge risk={detail.risk} />
+                <span className="inline-flex h-[22px] items-center rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[7px] text-[11px] font-semibold leading-none text-muted-foreground">
+                  {boardLabel}
+                </span>
+              </div>
+            ) : null}
           </div>
           {variant === "board" && effectiveStatus === "pending" ? (
             <button
@@ -744,9 +759,9 @@ export function AttentionApprovalDetail({
               data-testid="approval-cancel-menu"
               aria-label={t("agentControl.approvals.cancelRequest")}
               title={t("agentControl.approvals.cancelRequest")}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-[5px] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
+              className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[5px] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
             >
-              <MoreHorizontal className="h-4 w-4" aria-hidden />
+              <MoreHorizontal className="!h-3.5 !w-3.5" aria-hidden />
             </button>
           ) : null}
         </div>
