@@ -432,7 +432,7 @@ export function AttentionApprovalList({
                           {" "}
                           {t("agents.approvals.asksOn")}{" "}
                           <b className="font-semibold text-foreground">
-                            {row.cardTitle === null
+                            {row.cardTitle == null
                               ? row.boardTitle
                               : `${t("agents.approvals.targetCard")} ${row.cardTitle}`}
                           </b>

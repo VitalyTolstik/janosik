@@ -767,6 +767,14 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("does not offer a session link for an approval without a session", async () => {
+    const row = approval({ agentSessionId: null });
+    hoisted.getApproval.mockResolvedValue(row);
+    renderPage("/agents?section=attention&board=board-1&approval=approval-1");
+    expect(await screen.findByTestId("approval-links")).toBeVisible();
+    expect(screen.queryByTestId("approval-session-link")).toBeNull();
+  });
+
   it("shows pending approvals in the rail and board scope", async () => {
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse([overviewItem()], {
@@ -1592,6 +1600,7 @@ describe("AgentsPage", () => {
     expect(
       await screen.findByTestId("agents-filtered-empty"),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-detail-create-key")).toBeNull();
     await userEvent.click(screen.getByTestId("agents-clear-filters"));
     expect(
       await screen.findByTestId("agents-session-list"),
@@ -1715,8 +1724,9 @@ describe("AgentsPage", () => {
     const open = vi.fn();
     window.addEventListener("janosik:open-api-keys", open);
     renderPage("/agents?section=sessions");
+    const empty = await screen.findByTestId("agents-empty");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Create API key" }),
+      within(empty).getByRole("button", { name: "Create API key" }),
     );
     expect(open).toHaveBeenCalledOnce();
     expect(screen.getByRole("link", { name: "Read docs" })).toHaveAttribute(

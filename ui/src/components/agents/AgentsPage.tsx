@@ -1050,17 +1050,7 @@ export function AgentsPage() {
                   {t("agents.shell.manageTokens")}
                 </Button>
               ) : null}
-              {state.loading ? (
-                <div className="p-4" data-testid="agents-detail-loading">
-                  <Skeleton variant="text" lines={3} />
-                </div>
-              ) : state.error && state.rows.length === 0 ? (
-                <GenericDetailEmpty />
-              ) : section === "sessions" &&
-                filteredActive &&
-                filtered.length === 0 ? (
-                <GenericDetailEmpty />
-              ) : section === "runs" ? (
+              {section === "runs" ? (
                 <button
                   type="button"
                   onClick={clearRunFilters}
@@ -1641,7 +1631,17 @@ export function AgentsPage() {
         )}
         aria-label={t("agents.shell.details")}
       >
-        {section === "runs" ? (
+        {state.loading ? (
+          <div className="p-4" data-testid="agents-detail-loading">
+            <Skeleton variant="text" lines={3} />
+          </div>
+        ) : state.error && state.rows.length === 0 ? (
+          <GenericDetailEmpty />
+        ) : section === "sessions" &&
+          filteredActive &&
+          filtered.length === 0 ? (
+          <GenericDetailEmpty />
+        ) : section === "runs" ? (
           runDetailRunId !== null && runBoardKnown ? (
             <RunDetail
               boardId={runDetailBoardId}

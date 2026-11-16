@@ -525,7 +525,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="!py-0 h-7 min-h-0 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] disabled:opacity-40 max-md:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

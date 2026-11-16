@@ -275,7 +275,7 @@ function BoardPauseDialog({
       cancelTestId="board-pause-cancel"
       confirmClassName="min-w-[122px]"
     >
-      <label className="mt-[10px] block space-y-[3px]">
+      <label className="mt-[10px] mb-[2.3px] block space-y-[3px]">
         <span className="text-[10.5px] font-semibold text-muted-foreground">
           {t("agentControl.pause.reasonLabel")}
         </span>

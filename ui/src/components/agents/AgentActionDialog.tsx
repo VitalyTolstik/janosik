@@ -190,7 +190,7 @@ export function AgentActionDialog({
           {action === "end" ? (
             <p
               data-testid="agent-end-target"
-              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-foreground"
+              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7.25px] text-[11px] leading-[1.5] text-foreground"
             >
               {agentLabel}
               {row.name !== null && row.name !== agentLabel
@@ -201,7 +201,7 @@ export function AgentActionDialog({
                 : ""}
             </p>
           ) : (
-            <label className="mt-[10px] block space-y-[3px]">
+            <label className="mt-[10px] mb-[2.3px] block space-y-[3px]">
               <span className="text-[10.5px] font-semibold text-muted-foreground">
                 {t("agents.action.reason")}
               </span>

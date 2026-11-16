@@ -41,7 +41,6 @@ import { useBoardLive } from "@/store/board-live";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
 import { StatusBadge, type StatusTone } from "./status-badge";
-import { runNumber } from "./agent-model";
 import {
   RUN_KIND_KEYS,
   RUN_STATUS_KEYS,
@@ -275,7 +274,7 @@ export function RunList({
                             className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden"
                             title={run.id}
                           >
-                            {runNumber(run.id).replace(/^#/, "run-")}
+                            {shortId(run.id, 12)}
                           </span>
                         </span>
                       </span>
@@ -584,7 +583,7 @@ export function RunDetail({
               className="mt-0.5 font-mono text-[11px] text-muted-foreground"
               title={run.id}
             >
-              {runNumber(run.id).replace(/^#/, "run-")} ·{" "}
+              {shortId(run.id, 12)} ·{" "}
               <span className="lowercase">{t(RUN_KIND_KEYS[run.kind])}</span> ·{" "}
               {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
               {clockLabel(runTime(run), today, lang, t)}
@@ -684,7 +683,7 @@ export function RunDetail({
             </MetaField>
             <MetaField label={t("agents.runs.runId")}>
               <span className="font-mono" title={run.id}>
-                {runNumber(run.id).replace(/^#/, "run-")}
+                {shortId(run.id, 12)}
               </span>
             </MetaField>
             <MetaField label={t("agentControl.runs.approval")}>
