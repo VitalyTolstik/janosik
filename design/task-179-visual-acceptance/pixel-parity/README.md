@@ -201,3 +201,60 @@ does not provide a failure reason for failed commands, so the command copy
 says “Not applied” instead of inventing a stale-version diagnosis. The
 disposable failed-run fixture is synthetic: it is made from an applied run
 and then marked failed in the seed to exercise this display.
+
+## Round 5 — final fix before manual review
+
+`round5-browser-results.json` records the live computed values after the
+round-5 fixes. The screenshots are `round5-*.png` in
+[`screenshots/`](./screenshots). The stack was freshly seeded and left running
+on `:5301`/`:5302` with `SEED_KEEP_HEARTBEATS=1`.
+
+Measured at HEAD after the fixes:
+
+- Session/board pause modal: **440 × 244**; label 10 px/600 with a 15.5 px
+  line box, textarea 70 px, footer buttons 201 px from the dialog top. The
+  prototype's inline-block baseline gap below the textarea supplies the last
+  ~5 px instead of extra footer padding; the tile is `--surface` and the
+  scrim shadow is the prototype `--shadow-lg`.
+- Board Live token-info dialog: **440 × 195.7** (“Your token · …”, owner-only
+  copy, Cancel / Open Account → API keys); it no longer opens the 768 × 768
+  Account modal. The owner-only Token settings action is 121 × 24, 10.5 px/650
+  with a 13 px icon; another member's token is plain text with no lock glyph.
+- Board header Agents entry: labeled 108.5 × 30 (44 px tall at 390), 11.5 px/600,
+  16 px Bot, 17 × 17 amber badge with `#1b1305` text. This is 1 px wider than
+  the mockup's 107.5 px because of font metrics.
+- 1024 rail: **198 px**, main pane 826 px; 1440 keeps 222/352.
+- 1024 scrim: 0.36 slate / 2 px blur in light, 0.64 black / 2 px in dark,
+  starting at the real 52 px header (the mockup device frame starts at 48 px).
+  The 1024 approval detail also has a click-outside scrim.
+- Mobile: approval hash copy 44 × 44; current-work card/run links 44 px tall;
+  header search/bell/account and board Agents entry 44 px tall at 390; the
+  avatar is hidden at ≤760 px and the account keeps a neutral glyph. `/agents`
+  header is 61 px at 390 and 52 px at 1024/1440.
+- RU: `Простаивает` is not truncated at 1024/1440 (RU grid gives the status
+  column 110 px; EN keeps the mockup 92/88). The 390 board Agent Control rail
+  has `scrollWidth === clientWidth (390)` and shows `Запуски 6`.
+- Decided approvals are read-only: no Reject on decided cards, heading
+  “Recently decided”, subtitle “Read-only history. Decisions cannot be
+  changed.”; the global decided footer uses 32 px “Close detail” and offers
+  Next pending when an approved decision still has pending siblings.
+- Loading/error copy no longer reports false zeros (`—` or hidden for unknown
+  counts); runs do not flash “No runs yet” before the board list resolves;
+  Attention freshness switches to “Update incomplete” when the approvals
+  fetch fails.
+- Run detail: client run id in the meta row, no per-command pre-image
+  disclosure (one technical pre-images block), reverted runs show before/after
+  for admins, and rollback buttons use the 6 px / 11 px 650 / 0 9 px tokens.
+
+Deliberate remaining deviations:
+
+- The 1024 scrim starts at 52 px (real header) rather than the mockup's 48 px
+  device-frame coordinate.
+- The board header on the 390 board route is two rows (105 px) because the
+  app keeps the board switcher and board actions there; the 61 px measurement
+  in the brief is the `/agents` header, which now matches.
+- Board Live still says **Manage tokens**; Stop all remains owner-only in
+  Account → API keys (item 15 is a false premise).
+- Unknown approval counts stay hidden rather than a dash badge; actual-day
+  run grouping, human decision attribution, and the 72 h TTL display remain
+  documented API/spec choices.
