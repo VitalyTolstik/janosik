@@ -1,0 +1,226 @@
+
+    <div class="live-frame">
+      <div class="app-container">
+        <div class="app-shell agents-shell">
+          
+    <header class="app-header global-header">
+      <span class="app-brand"><span class="brand-tile" aria-hidden="true"><svg class="icon " aria-hidden="true"><use href="#i-feather"></use></svg></span><span class="app-wordmark">Janosik</span></span>
+      <span class="header-divider" aria-hidden="true"></span>
+      <button type="button" class="board-picker cselect-trigger" id="board-scope-trigger" data-action="combo-open" data-combo-key="board" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Board scope: All boards">
+        <span class="board-name cselect-value">All boards</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+      </button>
+      <span class="crumb"><svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg><b>Agents</b></span>
+      <span class="global-route-note" title="Global route: board controls stay on the board. This is the intentional Agents header."><svg class="icon " aria-hidden="true"><use href="#i-info"></use></svg>Global view</span>
+      <div class="header-actions">
+        <button type="button" class="header-btn" data-action="focus-search" aria-label="Search agents" title="Search agents"><svg class="icon " aria-hidden="true"><use href="#i-search"></use></svg></button>
+        <button type="button" class="header-btn" data-action="bell" aria-label="Notifications, invitations only" title="Invitations only — approval attention lives in Agents">
+          <svg class="icon " aria-hidden="true"><use href="#i-bell"></use></svg>
+        </button>
+        <button type="button" class="agents-trigger" data-action="agents-home" aria-label="Agents, 2 approvals waiting" title="Agents — global inbox">
+          <svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg><span>Agents</span><span class="count-badge">2</span>
+        </button>
+        <span class="avatar" title="Audit Admin">AA</span>
+      </div>
+    </header>
+          <div class="agents-grid">
+            
+    <nav class="agents-rail" aria-label="Agents sections">
+      <div class="rail-head"><h2>Agents</h2><p>What needs a human. What runs now.</p></div>
+      <div class="rail-tabs" role="tablist" aria-label="Agents sections" aria-orientation="vertical" data-tablist="agents">
+        
+    <button type="button" class="rail-tab" role="tab" id="agents-tab-attention" aria-selected="false" aria-controls="agents-main" tabindex="-1" data-action="agents-tab" data-tab="attention">
+      <svg class="icon " aria-hidden="true"><use href="#i-inbox"></use></svg><span>Attention</span><span class="rail-count is-amber">2</span>
+    </button>
+        
+    <button type="button" class="rail-tab" role="tab" id="agents-tab-sessions" aria-selected="false" aria-controls="agents-main" tabindex="-1" data-action="agents-tab" data-tab="sessions">
+      <svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg><span>Sessions</span><span class="rail-count ">6</span>
+    </button>
+        
+    <button type="button" class="rail-tab" role="tab" id="agents-tab-runs" aria-selected="true" aria-controls="agents-main" tabindex="0" data-action="agents-tab" data-tab="runs">
+      <svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg><span>Runs</span><span class="rail-count ">7</span>
+    </button>
+      </div>
+      <div class="rail-section">
+        <div class="rail-section-head"><span>Boards</span><span>pending</span></div>
+        <button type="button" class="rail-board is-active" data-action="board-select" data-board="all" title="Agent Ops 12s ago · Website 8s ago">
+          <span class="board-dot is-all"></span><span class="board-name">All boards</span><span class="rail-count is-amber">2</span>
+        </button>
+        <button type="button" class="rail-board " data-action="board-select" data-board="agent-ops" title="Updated 12s ago">
+          <span class="board-dot "></span><span class="board-name">Agent Ops Demo</span><span class="rail-count is-amber">2</span>
+        </button><button type="button" class="rail-board " data-action="board-select" data-board="website" title="Updated 8s ago">
+          <span class="board-dot teal"></span><span class="board-name">Website Relaunch</span>
+        </button>
+      </div>
+      <div class="rail-foot">
+        <p>Agents are personal API tokens. Board policy lives in Board Settings → Agents &amp; automation.</p>
+        <button type="button" data-action="manage-tokens">Manage tokens <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button>
+      </div>
+    </nav>
+            <main class="agents-main" id="agents-main" role="tabpanel" aria-labelledby="agents-tab-runs">
+              <div class="agents-main-inner">
+    <div class="page-head">
+      <div>
+        <h1>Runs</h1>
+        <p>What agents changed, with a way back. History is grouped by day.</p>
+      </div>
+      <div class="page-head-actions">
+        <span class="freshness" title="Per-board freshness"><span class="status-dot ok"></span><span aria-live="polite">Agent Ops 12s ago · Website 8s ago</span></span>
+        <button type="button" class="btn btn-outline btn-sm" data-action="refresh"><svg class="icon " aria-hidden="true"><use href="#i-refresh"></use></svg>Refresh</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="clear-run-filters">Clear all</button>
+      </div>
+    </div><div class="runs-toolbar">
+    <button type="button" class="select cselect-trigger cselect-trigger" id="run-filter-status" data-action="combo-open" data-combo-key="runStatus" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Run status: All statuses">
+    <span class="cselect-value">All statuses</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+    <button type="button" class="select cselect-trigger cselect-trigger" id="run-filter-kind" data-action="combo-open" data-combo-key="runKind" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Run kind: All kinds">
+    <span class="cselect-value">All kinds</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+    <button type="button" class="select cselect-trigger cselect-trigger" id="run-filter-time" data-action="combo-open" data-combo-key="runTime" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Time: Any time">
+    <span class="cselect-value">Any time</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+    <button type="button" class="select cselect-trigger cselect-trigger" id="run-filter-token" data-action="combo-open" data-combo-key="runToken" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Agent or token: All agents">
+    <span class="cselect-value">All agents</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+    <button type="button" class="select cselect-trigger cselect-trigger" id="run-filter-session" data-action="combo-open" data-combo-key="runSession" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Session: All sessions">
+    <span class="cselect-value">All sessions</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+    <span class="meta" style="margin-left:auto">7 runs shown</span>
+  </div><div class="runs-list">
+    <div class="run-day-label">Today</div>
+    <button type="button" class="run-row is-selected" data-action="select-run" data-id="run-128" aria-label="Release bot added 2 cards, Applied">
+        <span class="run-main">
+          <span class="run-title"><b>Release bot added 2 cards</b></span>
+          <span class="run-meta"><span>Release bot</span><span class="sep"></span><span>Agent Ops Demo</span><span class="sep"></span><span>2 commands</span><span class="sep"></span><span>batch</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="run-side-meta"><time>5:24 PM</time><span class="chip">run-128</span></span></span>
+      </button><button type="button" class="run-row " data-action="select-run" data-id="run-126" aria-label="Docs agent updated the API reference, Applied">
+        <span class="run-main">
+          <span class="run-title"><b>Docs agent updated the API reference</b></span>
+          <span class="run-meta"><span>Docs agent</span><span class="sep"></span><span>Agent Ops Demo</span><span class="sep"></span><span>1 command</span><span class="sep"></span><span>single</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="run-side-meta"><time>4:51 PM</time><span class="chip">run-126</span></span></span>
+      </button><button type="button" class="run-row " data-action="select-run" data-id="run-124" aria-label="Release bot deleted “Old onboarding draft”, Reverted">
+        <span class="run-main">
+          <span class="run-title"><b>Release bot deleted “Old onboarding draft”</b></span>
+          <span class="run-meta"><span>Release bot</span><span class="sep"></span><span>Agent Ops Demo</span><span class="sep"></span><span>1 command</span><span class="sep"></span><span>single</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill muted"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Reverted</span></span><span class="run-side-meta"><time>11:09 AM</time><span class="chip">run-124</span></span></span>
+      </button><button type="button" class="run-row " data-action="select-run" data-id="run-121" aria-label="Release bot re-applied “Pricing page copy”, Applied">
+        <span class="run-main">
+          <span class="run-title"><b>Release bot re-applied “Pricing page copy”</b></span>
+          <span class="run-meta"><span>Release bot</span><span class="sep"></span><span>Website Relaunch</span><span class="sep"></span><span>2 commands</span><span class="sep"></span><span>plan</span><span class="chip warn">1 conflict</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="run-side-meta"><time>10:42 AM</time><span class="chip">run-121</span></span></span>
+      </button>
+    <div class="run-day-label">Yesterday</div>
+    <button type="button" class="run-row " data-action="select-run" data-id="run-118" aria-label="Docs agent could not sync MCP callouts, Failed">
+        <span class="run-main">
+          <span class="run-title"><b>Docs agent could not sync MCP callouts</b></span>
+          <span class="run-meta"><span>Docs agent</span><span class="sep"></span><span>Agent Ops Demo</span><span class="sep"></span><span>2 commands</span><span class="sep"></span><span>batch</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill bad"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Failed</span></span><span class="run-side-meta"><time>Yesterday</time><span class="chip">run-118</span></span></span>
+      </button><button type="button" class="run-row " data-action="select-run" data-id="run-115" aria-label="Release agent moved 3 cards to Done, Applied">
+        <span class="run-main">
+          <span class="run-title"><b>Release agent moved 3 cards to Done</b></span>
+          <span class="run-meta"><span>Release agent (CI)</span><span class="sep"></span><span>Website Relaunch</span><span class="sep"></span><span>3 commands</span><span class="sep"></span><span>batch</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="run-side-meta"><time>Yesterday</time><span class="chip">run-115</span></span></span>
+      </button><button type="button" class="run-row " data-action="select-run" data-id="run-112" aria-label="Docs agent added API notes, Applied">
+        <span class="run-main">
+          <span class="run-title"><b>Docs agent added API notes</b></span>
+          <span class="run-meta"><span>Docs agent</span><span class="sep"></span><span>Agent Ops Demo</span><span class="sep"></span><span>1 command</span><span class="sep"></span><span>single</span></span>
+        </span>
+        <span class="run-side"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="run-side-meta"><time>Yesterday</time><span class="chip">run-112</span></span></span>
+      </button></div><div class="load-more"><span>7 of 7 runs · history is append-only</span><button type="button" class="btn btn-ghost btn-sm" data-action="runs-load-more">Load more</button></div></div>
+            </main>
+            
+            
+    <aside class="agents-detail " aria-label="Detail">
+      <div class="detail-head">
+        <button type="button" class="icon-btn-sm detail-back" data-action="close-sheet" aria-label="Back to list"><svg class="icon " aria-hidden="true"><use href="#i-arrow-left"></use></svg></button>
+        <div><p class="eyebrow">RUN · Agent Ops Demo</p><h2>Release bot added 2 cards</h2></div>
+      </div>
+      <div class="detail-scroll" id="agents-detail-scroll">
+    
+    
+    
+    <div class="row wrap" style="margin-bottom:9px"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="chip  ">batch</span><span class="chip  ">2 commands</span><span class="chip  ">Agent Ops Demo</span></div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-git-branch"></use></svg><h3>Attribution</h3></div>
+      <div class="meta-grid">
+        <div><span class="meta-label">Actor</span><span class="meta-value">Release bot</span></div>
+        <div><span class="meta-label">Token</span><span class="meta-value">Release bot</span></div>
+        <div><span class="meta-label">Session</span><span class="meta-value">Release checklist</span></div>
+        <div><span class="meta-label">Duration</span><span class="meta-value">1.2s</span></div>
+        <div><span class="meta-label">Run</span><span class="meta-value mono">run-128 · client-8f3a</span></div>
+        <div><span class="meta-label">Approval</span><span class="meta-value">ap-1</span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-clock"></use></svg><h3>Timeline</h3></div>
+      <div class="timeline">
+        <div class="timeline-item"><span class="timeline-dot"><span class="status-dot warn"></span></span><span class="timeline-body"><b>Created</b><span>Today, 5:24:12 PM</span></span></div><div class="timeline-item"><span class="timeline-dot"><span class="status-dot ok"></span></span><span class="timeline-body"><b>Applied</b><span>Today, 5:24:13 PM</span></span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-terminal"></use></svg><h3>Commands</h3><span class="spacer"></span><span class="meta">2 applied</span></div>
+      <div class="command-list">
+        
+          <div class="command-row">
+            <div class="command-head"><span class="chip  ">ADD_CARD</span><span>Approval inbox polish</span></div>
+            <div class="command-diff"><div><span>before</span><b>—</b></div><div><span>after</span><b>Created in Review</b></div></div>
+          </div>
+          <div class="command-row">
+            <div class="command-head"><span class="chip  ">ADD_CARD</span><span>Session heartbeat copy</span></div>
+            <div class="command-diff"><div><span>before</span><b>—</b></div><div><span>after</span><b>Created in Backlog</b></div></div>
+          </div>
+      </div>
+      <details class="technical"><summary><svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg>Technical details · pre-images</summary><pre>[
+  {
+    "action": "ADD_CARD",
+    "title": "Approval inbox polish",
+    "from": "—",
+    "to": "Created in Review",
+    "actor": "Release bot"
+  },
+  {
+    "action": "ADD_CARD",
+    "title": "Session heartbeat copy",
+    "from": "—",
+    "to": "Created in Backlog",
+    "actor": "Release bot"
+  }
+]</pre></details>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-rotate"></use></svg><h3>Rollback</h3></div>
+      
+        <div class="rollback-card">
+          <div class="rollback-head"><svg class="icon " aria-hidden="true"><use href="#i-check"></use></svg><b>Rollback preview</b></div>
+          <p>Re-applies 2 pre-images atomically. No conflicts found. A separate audit run records the revert.</p>
+          <div class="rollback-actions">
+            <button type="button" class="btn btn-outline btn-sm" data-action="run-preview"><svg class="icon " aria-hidden="true"><use href="#i-eye"></use></svg>Preview again</button>
+            <button type="button" class="btn btn-danger-outline btn-sm" data-action="run-revert" data-id="run-128"><svg class="icon " aria-hidden="true"><use href="#i-rotate"></use></svg>Revert run</button>
+          </div>
+        </div>
+      <div class="hash-row" style="margin-top:8px" title="a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8d1f3e6c9b0a2d4e7f1c3b5a8d0e2f4"><code>plan a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8…</code><button type="button" class="icon-btn-sm" data-action="copy" data-copy="a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8d1f3e6c9b0a2d4e7f1c3b5a8d0e2f4" aria-label="Copy run hash"><svg class="icon " aria-hidden="true"><use href="#i-copy"></use></svg></button></div>
+    </div>
+    <div class="related-links" style="margin-top:10px">
+      <button type="button" class="related-link" data-action="open-board" data-board="agent-ops"><svg class="icon " aria-hidden="true"><use href="#i-folder"></use></svg>Open board</button>
+      <button type="button" class="related-link" data-action="select-session" data-id="s4"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>Session</button>
+      <button type="button" class="related-link" data-action="copy" data-copy="https://janosik.app/agents?board=agent-ops&amp;section=runs&amp;run=run-128"><svg class="icon " aria-hidden="true"><use href="#i-link"></use></svg>Copy run link</button>
+    </div></div>
+      <div class="detail-foot">
+    <p class="foot-helper"><svg class="icon " aria-hidden="true"><use href="#i-info"></use></svg>Runs are history. Rollback is available only for applied runs without conflicts.</p>
+    <div class="detail-actions">
+      <button type="button" class="btn btn-outline" data-action="open-board" data-board="agent-ops">Open board</button>
+      <button type="button" class="btn btn-ghost" data-action="copy" data-copy="https://janosik.app/agents?board=agent-ops&amp;section=runs&amp;run=run-128"><svg class="icon " aria-hidden="true"><use href="#i-link"></use></svg>Copy link</button>
+    </div>
+  </div>
+    </aside>
+          </div>
+          
+          
+        </div>
+      </div>
+    </div>

@@ -1,0 +1,155 @@
+Agent Ops Demo
+1
+Global search
+AA
+Audit Admin
+Filters
+Board
+Calendar
+Table
+Watch
+
+Backlog
+1
+Add a card
+
+Card claim visibility
+
+Medium
+Add a card
+Add a card
+In progress
+3
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+
+MCP write contract
+
+Medium
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+Add a card
+Review
+3
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+
+Landing page rewrite — final
+
+Medium
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+Add a card
+Done
+1
+Add a card
+
+MCP callouts
+
+Medium
+Add a card
+Add a card
+Add column
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+1 waiting
+All agents
+THIS BOARD
+Inbox
+1
+Live
+4
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Live
+4 sessions · 2 tokens · 4 no heartbeat
+Agent writes are allowed
+
+Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends.
+
+Pause all agents
+Manage tokens
+Claude Code — audit
+px-token-cla…
+3 live
+Token settings
+Refactor approval flow
+Waiting for approval
+No heartbeat
+15m ago
+·
+opencode · deepseek-v4.1
+·
+57m ago
+Approval inbox polish
+Run cmwj2j8jg0061id7cc5zyoh1e
+Pause
+Idle heartbeat check
+Idle
+No heartbeat
+15m ago
+·
+opencode · deepseek-v4.1
+·
+1h ago
+No current card
+No current run
+Pause
+Landing page rewrite
+Active
+No heartbeat
+21m ago
+·
+opencode · gpt-5.2
+·
+3h ago
+Landing page rewrite — final
+No current run
+Pause
+API reference sweep
+px-token-doc…
+1 live
+Other member's token
+API reference sweep
+Active
+No heartbeat
+16m ago
+·
+terminal · claude-haiku-4.5
+·
+34m ago
+MCP write contract
+Run cmwj2j8mk0062id7c15pnxq27
+Pause
+
+Ending a session releases its claims. Token-level pause, stop-all and revoke stay in Account → API keys; this board surface only links there.
+
+Pause is a board-wide safety switch, not a policy change. In-flight finishes; claims stay.
+Pause all agents

@@ -1,0 +1,127 @@
+Janosik
+Agent Ops Demo
+Agents
+Global view
+Agents
+1
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+1
+Sessions
+6
+Runs
+5
+
+BOARDS
+PENDING
+
+All boards
+1
+Agent Ops Demo
+1
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Attention
+
+What needs a human. What runs now.
+
+Updated 0s ago
+Refresh
+All agents
+All statuses
+Agent Ops Demo
+One decision is waiting
+Sorted by expiry. A decision authorizes one exact plan hash.
+Needs
+1
+Decided
+6
+All
+7
+APPROVAL · NEEDS DECISION
+·
+Agent Ops Demo
+·
+37 min left
+Medium risk
+Delete card “Card claim visibility”
+Docs build asks to run DELETE_CARD. This removes 1 card — “Card claim visibility” and its history will be deleted.
+Review plan
+Reject
+hash 61eb467fe9…
+Needs a nudge
+Heartbeat is not a lifecycle status
+API reference sweep · API reference sweep
+Agent Ops Demo
+·
+16m ago
+·
+last status Active
+Inspect
+Claude Code — audit · Refactor approval flow
+Agent Ops Demo
+·
+15m ago
+·
+last status Waiting for approval
+Inspect
+
+SELECTED APPROVAL
+
+Delete card “Card claim visibility”
+Waiting for a board admin. The request expires in 37 min.
+
+Docs build asks to run DELETE_CARD on Agent Ops Demo. Approving authorizes only the plan below — the agent still applies it.
+
+Request
+BOARD
+Agent Ops Demo
+REQUESTED BY
+Riley Member
+AGENT
+Docs build
+SESSION
+API reference sweep
+TARGET
+card · Card claim visibility
+EXPIRES
+in 37 min
+Plan
+1 command
+
+Delete card “Card claim visibility”
+
+DELETE_CARD
+Card claim visibility
+
+Exact commands and known targets from the plan.
+
+Integrity
+exact hash
+61eb467fe99a9bf54264dea6d4d3f0c0407c827af902…
+
+The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.
+
+Decision history
+Requested by Riley Member
+Today, 12:27 PM · risk medium · TTL 60 min
+Waiting for a board admin
+Expires in 37 min. A decision is one-time.
+Related
+Open board
+Agent session
+Token: Docs build
+Copy link
+Technical details · plan JSON
+
+Approving authorizes only this plan hash. The agent still applies it.
+
+Reject
+Approve plan

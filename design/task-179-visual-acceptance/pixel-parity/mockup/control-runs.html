@@ -1,0 +1,235 @@
+
+    <div class="scene">
+      
+    <div class="board-scene" inert="" aria-hidden="true">
+      
+    <header class="app-header">
+      <span class="app-brand"><span class="brand-tile" aria-hidden="true"><svg class="icon " aria-hidden="true"><use href="#i-feather"></use></svg></span><span class="app-wordmark">Janosik</span></span>
+      <span class="header-divider" aria-hidden="true"></span>
+      <span class="board-title">Agent Ops Demo <svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg></span>
+      <div class="header-actions">
+        <button type="button" class="header-btn hide-mobile" data-action="bell" aria-label="Notifications, invitations only" title="Invitations only — approval attention lives in Agents"><svg class="icon " aria-hidden="true"><use href="#i-bell"></use></svg></button>
+        <button type="button" class="header-btn hide-mobile" data-action="members" aria-label="Members"><svg class="icon " aria-hidden="true"><use href="#i-users"></use></svg></button>
+        <button type="button" class="header-btn hide-mobile" data-action="share" aria-label="Share"><svg class="icon " aria-hidden="true"><use href="#i-share"></use></svg></button>
+        <button type="button" class="agents-trigger" id="agent-control-trigger" data-action="open-control" aria-label="Agent control, 2 approvals waiting" aria-expanded="true">
+          <svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg><span>Agents</span><span class="count-badge">2</span>
+        </button>
+        <button type="button" class="header-btn" id="board-settings-trigger" data-action="open-settings" aria-label="Board settings" title="Board settings"><svg class="icon " aria-hidden="true"><use href="#i-settings"></use></svg></button>
+        <span class="avatar" title="Audit Admin">AA</span>
+      </div>
+    </header>
+      <div class="board-scene-toolbar">
+        <div class="view-tabs" role="tablist" aria-label="Board views">
+          <button type="button" class="view-tab is-active" role="tab" aria-selected="true"><svg class="icon " aria-hidden="true"><use href="#i-folder"></use></svg>Board</button>
+          <button type="button" class="view-tab" role="tab" aria-selected="false" data-action="board-view"><svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg>Calendar</button>
+          <button type="button" class="view-tab" role="tab" aria-selected="false" data-action="board-view"><svg class="icon " aria-hidden="true"><use href="#i-database"></use></svg>Table</button>
+          <button type="button" class="view-tab" role="tab" aria-selected="false" data-action="board-view"><svg class="icon " aria-hidden="true"><use href="#i-eye"></use></svg>Watch</button>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" class="header-btn" data-action="board-display" aria-label="Board display" title="Board display — column style, density, glass"><svg class="icon " aria-hidden="true"><use href="#i-menu"></use></svg></button>
+      </div>
+      <div class="board-columns">
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot "></span>Backlog<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label amber">backlog</span></div><b>Card claim visibility</b><p>Approval pending</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label ">backlog</span></div><b>Old onboarding draft</b><p>Delete approved</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div>
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot "></span>In progress<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label ">in progress</span></div><b>Approval inbox polish</b><p>Claude Code</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label teal">in progress</span></div><b>MCP write contract</b><p>Docs agent</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div>
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot teal"></span>Review<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label ">review</span></div><b>Session heartbeat copy</b><p>Release bot</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label amber">review</span></div><b>Landing page rewrite</b><p>Claude Code</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div>
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot "></span>Done<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label ">backlog</span></div><b>MCP callouts</b><p>Docs agent</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label teal">backlog</span></div><b>Pricing page copy</b><p>Release bot</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div></div>
+      
+    </div>
+      <div class="scene-scrim is-open" data-action="close-control"></div>
+      
+    <section class="ac-modal " role="dialog" aria-modal="true" aria-labelledby="ac-title">
+      <header class="ac-head">
+        <span class="bot-tile" aria-hidden="true"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span>
+        <div class="ac-title-wrap">
+          <h2 id="ac-title">Agents on Agent Ops Demo</h2>
+          <p>Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.</p>
+        </div>
+        <div class="ac-head-right">
+          <span class="ac-head-chip ok"><span class="status-dot ok"></span>Running</span>
+          <span class="ac-head-chip warn"><svg class="icon " aria-hidden="true"><use href="#i-inbox"></use></svg>2 waiting</span>
+          <button type="button" class="ac-head-link" data-action="section" data-section="agents">All agents <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button>
+          <button type="button" class="ac-close" id="ac-close" data-action="close-control" aria-label="Close agent control"><svg class="icon " aria-hidden="true"><use href="#i-x"></use></svg></button>
+        </div>
+      </header>
+      <div class="ac-body">
+        <nav class="ac-rail" aria-label="Agent control sections">
+          <div class="ac-rail-label">This board</div>
+          <div class="ac-rail-tabs" role="tablist" aria-label="Agent control sections" data-tablist="ac" aria-orientation="vertical">
+            
+    <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-inbox" aria-selected="false" aria-controls="ac-panel" tabindex="-1" data-action="ac-tab" data-tab="inbox">
+      <svg class="icon " aria-hidden="true"><use href="#i-inbox"></use></svg><span>Inbox</span><span class="count-badge">2</span>
+    </button>
+            
+    <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-live" aria-selected="false" aria-controls="ac-panel" tabindex="-1" data-action="ac-tab" data-tab="live">
+      <svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg><span>Live</span><span class="rail-count">2</span>
+    </button>
+            
+    <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-runs" aria-selected="true" aria-controls="ac-panel" tabindex="0" data-action="ac-tab" data-tab="runs">
+      <svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg><span>Runs</span><span class="rail-count">5</span>
+    </button>
+          </div>
+          
+            <div class="ac-rail-divider"></div>
+            <div class="ac-rail-note"><strong>Agent policy ↗</strong>Approval rules, limits and destructive actions live in Board settings → Agents &amp; automation.</div>
+            <button type="button" class="ac-rail-link" data-action="open-settings"><svg class="icon " aria-hidden="true"><use href="#i-settings"></use></svg>Open policy settings</button>
+          <div class="ac-rail-footer">
+            <b>Across all boards</b>
+            <p>Global sessions, approvals and run history live on /agents.</p>
+            <button type="button" class="ac-rail-link" data-action="section" data-section="agents"><svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>All agents across boards</button>
+          </div>
+        </nav>
+        <div class="ac-content" id="ac-panel" role="tabpanel" aria-labelledby="ac-tab-runs">
+          
+    <div class="ac-toolbar"><h3>Runs</h3><span class="meta">5 of 5 · board history</span><button type="button" class="icon-btn-sm" data-action="refresh-control" aria-label="Refresh runs" style="margin-left:auto"><svg class="icon " aria-hidden="true"><use href="#i-refresh"></use></svg></button></div>
+    <div class="ac-runs-layout ">
+      <div class="ac-runs-filters">
+        <button type="button" class="select cselect-trigger cselect-trigger" id="ac-run-filter-status" data-action="combo-open" data-combo-key="acRunStatus" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Run status: All statuses">
+    <span class="cselect-value">All statuses</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+        <button type="button" class="select cselect-trigger cselect-trigger" id="ac-run-filter-kind" data-action="combo-open" data-combo-key="acRunKind" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Run kind: All kinds">
+    <span class="cselect-value">All kinds</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+        <button type="button" class="select cselect-trigger cselect-trigger" id="ac-run-filter-token" data-action="combo-open" data-combo-key="acRunToken" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Agent or token: All agents">
+    <span class="cselect-value">All agents</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+        <button type="button" class="select cselect-trigger cselect-trigger" id="ac-run-filter-session" data-action="combo-open" data-combo-key="acRunSession" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Session: All sessions">
+    <span class="cselect-value">All sessions</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+        <button type="button" class="btn btn-ghost btn-xs" data-action="ac-run-clear">Clear all</button>
+      </div>
+      <div class="ac-runs-body"><div class="ac-run-list" id="ac-run-list">
+    <div class="run-day">Today</div>
+    <button type="button" class="ac-run-row" aria-selected="true" data-action="ac-select-run" data-id="run-128">
+        <b>Release bot added 2 cards</b>
+        <span>Release bot · 2 commands · 5:24 PM</span>
+        <span class="run-row-badges"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span></span>
+      </button><button type="button" class="ac-run-row" aria-selected="false" data-action="ac-select-run" data-id="run-126">
+        <b>Docs agent updated the API reference</b>
+        <span>Docs agent · 1 command · 4:51 PM</span>
+        <span class="run-row-badges"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span></span>
+      </button><button type="button" class="ac-run-row" aria-selected="false" data-action="ac-select-run" data-id="run-124">
+        <b>Release bot deleted “Old onboarding draft”</b>
+        <span>Release bot · 1 command · 11:09 AM</span>
+        <span class="run-row-badges"><span class="status-pill muted"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Reverted</span></span></span>
+      </button><button type="button" class="ac-run-row" aria-selected="false" data-action="ac-select-run" data-id="run-118">
+        <b>Docs agent could not sync MCP callouts</b>
+        <span>Docs agent · 2 commands · Yesterday</span>
+        <span class="run-row-badges"><span class="status-pill bad"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Failed</span></span></span>
+      </button><button type="button" class="ac-run-row" aria-selected="false" data-action="ac-select-run" data-id="run-112">
+        <b>Docs agent added API notes</b>
+        <span>Docs agent · 1 command · Yesterday</span>
+        <span class="run-row-badges"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span></span>
+      </button>
+    <div class="load-more"><span>5 of 5 runs</span><button type="button" class="btn btn-ghost btn-xs" data-action="runs-load-more">Load more</button></div>
+  </div>
+    <div class="ac-run-detail">
+      <div class="ac-run-detail-head">
+        <button type="button" class="icon-btn-sm ac-detail-back" data-action="ac-run-back" aria-label="Back to runs"><svg class="icon " aria-hidden="true"><use href="#i-arrow-left"></use></svg></button>
+        <div style="min-width:0;flex:1"><h3>Release bot added 2 cards</h3><div class="meta">run-128 · batch · 2 commands · 5:24 PM</div></div>
+      </div>
+      <div class="ac-detail-scroll">
+    
+    
+    
+    <div class="row wrap" style="margin-bottom:9px"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Applied</span></span><span class="chip  ">batch</span><span class="chip  ">2 commands</span><span class="chip  ">Agent Ops Demo</span></div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-git-branch"></use></svg><h3>Attribution</h3></div>
+      <div class="meta-grid">
+        <div><span class="meta-label">Actor</span><span class="meta-value">Release bot</span></div>
+        <div><span class="meta-label">Token</span><span class="meta-value">Release bot</span></div>
+        <div><span class="meta-label">Session</span><span class="meta-value">Release checklist</span></div>
+        <div><span class="meta-label">Duration</span><span class="meta-value">1.2s</span></div>
+        <div><span class="meta-label">Run</span><span class="meta-value mono">run-128 · client-8f3a</span></div>
+        <div><span class="meta-label">Approval</span><span class="meta-value">ap-1</span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-clock"></use></svg><h3>Timeline</h3></div>
+      <div class="timeline">
+        <div class="timeline-item"><span class="timeline-dot"><span class="status-dot warn"></span></span><span class="timeline-body"><b>Created</b><span>Today, 5:24:12 PM</span></span></div><div class="timeline-item"><span class="timeline-dot"><span class="status-dot ok"></span></span><span class="timeline-body"><b>Applied</b><span>Today, 5:24:13 PM</span></span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-terminal"></use></svg><h3>Commands</h3><span class="spacer"></span><span class="meta">2 applied</span></div>
+      <div class="command-list">
+        
+          <div class="command-row">
+            <div class="command-head"><span class="chip  ">ADD_CARD</span><span>Approval inbox polish</span></div>
+            <div class="command-diff"><div><span>before</span><b>—</b></div><div><span>after</span><b>Created in Review</b></div></div>
+          </div>
+          <div class="command-row">
+            <div class="command-head"><span class="chip  ">ADD_CARD</span><span>Session heartbeat copy</span></div>
+            <div class="command-diff"><div><span>before</span><b>—</b></div><div><span>after</span><b>Created in Backlog</b></div></div>
+          </div>
+      </div>
+      <details class="technical"><summary><svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg>Technical details · pre-images</summary><pre>[
+  {
+    "action": "ADD_CARD",
+    "title": "Approval inbox polish",
+    "from": "—",
+    "to": "Created in Review",
+    "actor": "Release bot"
+  },
+  {
+    "action": "ADD_CARD",
+    "title": "Session heartbeat copy",
+    "from": "—",
+    "to": "Created in Backlog",
+    "actor": "Release bot"
+  }
+]</pre></details>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-rotate"></use></svg><h3>Rollback</h3></div>
+      
+        <div class="rollback-card">
+          <div class="rollback-head"><svg class="icon " aria-hidden="true"><use href="#i-check"></use></svg><b>Rollback preview</b></div>
+          <p>Re-applies 2 pre-images atomically. No conflicts found. A separate audit run records the revert.</p>
+          <div class="rollback-actions">
+            <button type="button" class="btn btn-outline btn-sm" data-action="run-preview"><svg class="icon " aria-hidden="true"><use href="#i-eye"></use></svg>Preview again</button>
+            <button type="button" class="btn btn-danger-outline btn-sm" data-action="run-revert" data-id="run-128"><svg class="icon " aria-hidden="true"><use href="#i-rotate"></use></svg>Revert run</button>
+          </div>
+        </div>
+      <div class="hash-row" style="margin-top:8px" title="a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8d1f3e6c9b0a2d4e7f1c3b5a8d0e2f4"><code>plan a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8…</code><button type="button" class="icon-btn-sm" data-action="copy" data-copy="a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8d1f3e6c9b0a2d4e7f1c3b5a8d0e2f4" aria-label="Copy run hash"><svg class="icon " aria-hidden="true"><use href="#i-copy"></use></svg></button></div>
+    </div>
+    <div class="related-links" style="margin-top:10px">
+      <button type="button" class="related-link" data-action="open-board" data-board="agent-ops"><svg class="icon " aria-hidden="true"><use href="#i-folder"></use></svg>Open board</button>
+      <button type="button" class="related-link" data-action="select-session" data-id="s4"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>Session</button>
+      <button type="button" class="related-link" data-action="copy" data-copy="https://janosik.app/agents?board=agent-ops&amp;section=runs&amp;run=run-128"><svg class="icon " aria-hidden="true"><use href="#i-link"></use></svg>Copy run link</button>
+    </div></div>
+    </div></div>
+    </div>
+        </div>
+      </div>
+      <footer class="ac-foot">
+    <span class="ac-foot-note"><svg class="icon " aria-hidden="true"><use href="#i-info"></use></svg>History is read-only. Rollback requires a board admin and an applied run without conflicts.</span>
+    <div class="ac-foot-actions"><button type="button" class="btn btn-outline btn-sm" data-action="section" data-section="agents" data-tab="runs">Open all runs <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button></div>
+  </footer>
+    </section>
+      
+      
+    </div>

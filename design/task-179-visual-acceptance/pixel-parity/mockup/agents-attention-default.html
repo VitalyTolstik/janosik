@@ -1,0 +1,244 @@
+
+    <div class="live-frame">
+      <div class="app-container">
+        <div class="app-shell agents-shell">
+          
+    <header class="app-header global-header">
+      <span class="app-brand"><span class="brand-tile" aria-hidden="true"><svg class="icon " aria-hidden="true"><use href="#i-feather"></use></svg></span><span class="app-wordmark">Janosik</span></span>
+      <span class="header-divider" aria-hidden="true"></span>
+      <button type="button" class="board-picker cselect-trigger" id="board-scope-trigger" data-action="combo-open" data-combo-key="board" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Board scope: All boards">
+        <span class="board-name cselect-value">All boards</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+      </button>
+      <span class="crumb"><svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg><b>Agents</b></span>
+      <span class="global-route-note" title="Global route: board controls stay on the board. This is the intentional Agents header."><svg class="icon " aria-hidden="true"><use href="#i-info"></use></svg>Global view</span>
+      <div class="header-actions">
+        <button type="button" class="header-btn" data-action="focus-search" aria-label="Search agents" title="Search agents"><svg class="icon " aria-hidden="true"><use href="#i-search"></use></svg></button>
+        <button type="button" class="header-btn" data-action="bell" aria-label="Notifications, invitations only" title="Invitations only — approval attention lives in Agents">
+          <svg class="icon " aria-hidden="true"><use href="#i-bell"></use></svg>
+        </button>
+        <button type="button" class="agents-trigger" data-action="agents-home" aria-label="Agents, 2 approvals waiting" title="Agents — global inbox">
+          <svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg><span>Agents</span><span class="count-badge">2</span>
+        </button>
+        <span class="avatar" title="Audit Admin">AA</span>
+      </div>
+    </header>
+          <div class="agents-grid">
+            
+    <nav class="agents-rail" aria-label="Agents sections">
+      <div class="rail-head"><h2>Agents</h2><p>What needs a human. What runs now.</p></div>
+      <div class="rail-tabs" role="tablist" aria-label="Agents sections" aria-orientation="vertical" data-tablist="agents">
+        
+    <button type="button" class="rail-tab" role="tab" id="agents-tab-attention" aria-selected="true" aria-controls="agents-main" tabindex="0" data-action="agents-tab" data-tab="attention">
+      <svg class="icon " aria-hidden="true"><use href="#i-inbox"></use></svg><span>Attention</span><span class="rail-count is-amber">2</span>
+    </button>
+        
+    <button type="button" class="rail-tab" role="tab" id="agents-tab-sessions" aria-selected="false" aria-controls="agents-main" tabindex="-1" data-action="agents-tab" data-tab="sessions">
+      <svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg><span>Sessions</span><span class="rail-count ">6</span>
+    </button>
+        
+    <button type="button" class="rail-tab" role="tab" id="agents-tab-runs" aria-selected="false" aria-controls="agents-main" tabindex="-1" data-action="agents-tab" data-tab="runs">
+      <svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg><span>Runs</span><span class="rail-count ">7</span>
+    </button>
+      </div>
+      <div class="rail-section">
+        <div class="rail-section-head"><span>Boards</span><span>pending</span></div>
+        <button type="button" class="rail-board is-active" data-action="board-select" data-board="all" title="Agent Ops 12s ago · Website 8s ago">
+          <span class="board-dot is-all"></span><span class="board-name">All boards</span><span class="rail-count is-amber">2</span>
+        </button>
+        <button type="button" class="rail-board " data-action="board-select" data-board="agent-ops" title="Updated 12s ago">
+          <span class="board-dot "></span><span class="board-name">Agent Ops Demo</span><span class="rail-count is-amber">2</span>
+        </button><button type="button" class="rail-board " data-action="board-select" data-board="website" title="Updated 8s ago">
+          <span class="board-dot teal"></span><span class="board-name">Website Relaunch</span>
+        </button>
+      </div>
+      <div class="rail-foot">
+        <p>Agents are personal API tokens. Board policy lives in Board Settings → Agents &amp; automation.</p>
+        <button type="button" data-action="manage-tokens">Manage tokens <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button>
+      </div>
+    </nav>
+            <main class="agents-main" id="agents-main" role="tabpanel" aria-labelledby="agents-tab-attention">
+              <div class="agents-main-inner">
+    <div class="page-head">
+      <div>
+        <h1>Attention</h1>
+        <p>What needs a human. What runs now.</p>
+      </div>
+      <div class="page-head-actions">
+        <span class="freshness" title="Per-board freshness"><span class="status-dot ok"></span><span aria-live="polite">Agent Ops 12s ago · Website 8s ago</span></span>
+        <button type="button" class="btn btn-outline btn-sm" data-action="refresh"><svg class="icon " aria-hidden="true"><use href="#i-refresh"></use></svg>Refresh</button>
+        
+      </div>
+    </div>
+    <div class="agents-toolbar">
+      <div class="input-wrap"><svg class="icon " aria-hidden="true"><use href="#i-search"></use></svg><input class="input" id="agents-search" data-action="agents-search" type="search" placeholder="Search agents or cards…" aria-label="Search agents" style=""></div>
+      <button type="button" class="select cselect-trigger cselect-trigger" id="agents-agent-filter" data-action="combo-open" data-combo-key="agentFilter" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Agent filter: All agents">
+    <span class="cselect-value">All agents</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+      <button type="button" class="select cselect-trigger cselect-trigger" id="agents-status-filter" data-action="combo-open" data-combo-key="statusFilter" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Status filter: All statuses">
+    <span class="cselect-value">All statuses</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+  </button>
+      <button type="button" class="filter-chip cselect-trigger " id="board-filter-trigger" data-action="combo-open" data-combo-key="board" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="combo-listbox" aria-label="Board scope: All boards">
+        <svg class="icon " aria-hidden="true"><use href="#i-folder"></use></svg><span class="cselect-value">All boards</span><svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+      </button>
+      
+    </div>
+        <div class="attention-intro"><span class="status-dot warn"></span><h2>2 decisions are waiting</h2><span class="meta">Sorted by expiry. A decision authorizes one exact plan hash.</span></div>
+        <div class="stack" style="gap:8px">
+    <article class="approval-card is-selected">
+      <div class="approval-eyebrow">
+        <span class="eyebrow">Approval · needs decision</span>
+        <span class="sep">·</span>
+        <span class="meta">Agent Ops Demo</span>
+        <span class="sep">·</span>
+        <span class="meta">expires in 7 min</span>
+        <span class="chip warn ">Medium risk</span>
+      </div>
+      <p class="approval-title">Move “Landing page rewrite” to Review</p>
+      <p class="approval-sentence"><b>Claude Code — audit</b> asks to run <span class="mono">MOVE_CARD</span> on card <b>Landing page rewrite</b>.</p>
+      <div class="approval-actions">
+        <button type="button" class="btn btn-primary btn-sm" data-action="select-approval" data-id="ap-8">Review plan</button>
+        <button type="button" class="btn btn-outline btn-sm" data-action="quick-reject" data-id="ap-8">Reject</button>
+        <span class="approval-hash">hash 4b6d8f0a2c…</span>
+      </div>
+    </article>
+    <article class="approval-card ">
+      <div class="approval-eyebrow">
+        <span class="eyebrow">Approval · needs decision</span>
+        <span class="sep">·</span>
+        <span class="meta">Agent Ops Demo</span>
+        <span class="sep">·</span>
+        <span class="meta">expires in 52 min</span>
+        <span class="chip warn ">Medium risk</span>
+      </div>
+      <p class="approval-title">Delete card “Card claim visibility”</p>
+      <p class="approval-sentence"><b>Claude Code — audit</b> asks to run <span class="mono">DELETE_CARD</span> on card <b>Card claim visibility</b>.</p>
+      <div class="approval-actions">
+        <button type="button" class="btn btn-primary btn-sm" data-action="select-approval" data-id="ap-1">Review plan</button>
+        <button type="button" class="btn btn-outline btn-sm" data-action="quick-reject" data-id="ap-1">Reject</button>
+        <span class="approval-hash">hash da83a76145…</span>
+      </div>
+    </article></div><div class="list-heading"><h2>Needs a nudge</h2><span class="meta">Heartbeat is not a lifecycle status</span></div>
+      <div class="stack" style="gap:7px">
+    <button type="button" class="stale-card " data-action="select-session" data-id="s2" aria-label="Open stale session Claude Code — audit, Landing page rewrite">
+      <span class="empty-icon"><svg class="icon " aria-hidden="true"><use href="#i-clock"></use></svg></span>
+      <span class="stale-main">
+        <b>Claude Code — audit · Landing page rewrite</b>
+        <span>Agent Ops Demo · No heartbeat · 6m · last status Active</span>
+      </span>
+      <span class="stale-cta">Inspect <svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg></span>
+    </button>
+    <button type="button" class="stale-card " data-action="select-session" data-id="s5" aria-label="Open stale session Release agent (CI), Deploy notes">
+      <span class="empty-icon"><svg class="icon " aria-hidden="true"><use href="#i-clock"></use></svg></span>
+      <span class="stale-main">
+        <b>Release agent (CI) · Deploy notes</b>
+        <span>Website Relaunch · No heartbeat · 18m · last status Active</span>
+      </span>
+      <span class="stale-cta">Inspect <svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg></span>
+    </button></div><div class="list-heading"><h2>Live sessions</h2><span class="chip ok dot">4 active</span><span class="chip warn">1 waiting</span><span class="chip warn dot">2 no heartbeat</span><span class="chip">1 paused</span><button type="button" class="view-all" data-action="agents-tab" data-tab="sessions">View all <svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg></button></div>
+      <div class="session-table-head" aria-hidden="true"><span>AGENT / TOKEN</span><span>SESSION</span><span>CURRENT CARD / RUN</span><span>HEARTBEAT</span><span>STATUS</span></div>
+      <div class="session-table">
+    <button type="button" class="session-row " data-action="select-session" data-id="s1" aria-label="Claude Code — audit, session Refactor approval flow, Agent Ops Demo">
+      <span class="session-agent"><span class="bot-tile"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span><span><b>Claude Code — audit</b><span>opencode · deepseek-v4.1</span></span></span>
+      <span class="session-cell session-name-cell"><b>Refactor approval flow</b><span>Agent Ops Demo</span></span>
+      <span class="session-cell session-card-cell"><b>Approval inbox polish</b><span>Run #128</span></span>
+      <span class="session-heartbeat-cell"><span class="heartbeat "><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>12s ago</span></span>
+      <span class="session-status-cell"><span class="status-pill warn"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Waiting</span></span></span>
+    </button>
+    <button type="button" class="session-row " data-action="select-session" data-id="s3" aria-label="Docs agent, session API reference sweep, Agent Ops Demo">
+      <span class="session-agent"><span class="bot-tile"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span><span><b>Docs agent</b><span>terminal · claude-haiku-4.5</span></span></span>
+      <span class="session-cell session-name-cell"><b>API reference sweep</b><span>Agent Ops Demo</span></span>
+      <span class="session-cell session-card-cell"><b>MCP write contract</b><span>Run #119</span></span>
+      <span class="session-heartbeat-cell"><span class="heartbeat "><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>1m ago</span></span>
+      <span class="session-status-cell"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Active</span></span></span>
+    </button>
+    <button type="button" class="session-row " data-action="select-session" data-id="s4" aria-label="Release bot, session Release checklist, Website Relaunch">
+      <span class="session-agent"><span class="bot-tile"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span><span><b>Release bot</b><span>cursor · claude-sonnet-4.5</span></span></span>
+      <span class="session-cell session-name-cell"><b>Release checklist</b><span>Website Relaunch</span></span>
+      <span class="session-cell session-card-cell"><b>Pricing page copy</b><span>Run #204</span></span>
+      <span class="session-heartbeat-cell"><span class="heartbeat "><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>34s ago</span></span>
+      <span class="session-status-cell"><span class="status-pill warn"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Paused</span></span></span>
+    </button>
+    <button type="button" class="session-row " data-action="select-session" data-id="s6" aria-label="Docs agent, session Pricing copy references, Website Relaunch">
+      <span class="session-agent"><span class="bot-tile"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span><span><b>Docs agent</b><span>terminal · claude-haiku-4.5</span></span></span>
+      <span class="session-cell session-name-cell"><b>Pricing copy references</b><span>Website Relaunch</span></span>
+      <span class="session-cell session-card-cell"><b>Pricing page copy</b><span>Run #201</span></span>
+      <span class="session-heartbeat-cell"><span class="heartbeat "><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>2m ago</span></span>
+      <span class="session-status-cell"><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Active</span></span></span>
+    </button></div></div>
+            </main>
+            
+            
+    <aside class="agents-detail " aria-label="Detail">
+      <div class="detail-head">
+        <button type="button" class="icon-btn-sm detail-back" data-action="close-sheet" aria-label="Back to list"><svg class="icon " aria-hidden="true"><use href="#i-arrow-left"></use></svg></button>
+        <div><p class="eyebrow">SELECTED APPROVAL</p><h2>Move “Landing page rewrite” to Review</h2></div>
+      </div>
+      <div class="detail-scroll" id="agents-detail-scroll">
+    <div class="banner warn" style="margin-bottom:10px"><svg class="icon " aria-hidden="true"><use href="#i-clock"></use></svg><span>Waiting for a board admin. The request expires in 7 min.</span></div>
+    <p class="detail-lead"><b>Claude Code — audit</b> asks to run <span class="mono">MOVE_CARD</span> on <b>Agent Ops Demo</b>. Approving authorizes only the commands below — the agent still applies them.</p>
+    <div class="detail-section" style="margin-top:10px">
+      <div class="detail-section-head"><h3>Request</h3></div>
+      <div class="meta-grid">
+        <div><span class="meta-label">Board</span><span class="meta-value">Agent Ops Demo</span></div>
+        <div><span class="meta-label">Requested by</span><span class="meta-value">Claude Code — audit</span></div>
+        <div><span class="meta-label">Agent</span><span class="meta-value">Claude Code — audit</span></div>
+        <div><span class="meta-label">Session</span><span class="meta-value">Landing page rewrite</span></div>
+        <div><span class="meta-label">Target</span><span class="meta-value">card · Landing page rewrite</span></div>
+        <div><span class="meta-label">Expires</span><span class="meta-value">in 7 min</span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-terminal"></use></svg><h3>Plan</h3><span class="spacer"></span><span class="chip">1 command</span></div>
+      <p class="detail-lead" style="margin-bottom:6px">Move “Landing page rewrite” to Review</p>
+      <div class="command-list">
+        
+          <div class="command-row">
+            <div class="command-head"><span class="chip  ">MOVE_CARD</span><span>Landing page rewrite</span><span class="meta">to Review</span></div>
+          </div>
+      </div>
+      <p class="meta" style="margin:6px 0 0">Exact commands and known targets from the plan.</p>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-shield"></use></svg><h3>Integrity</h3><span class="spacer"></span><span class="chip">exact hash</span></div>
+      <div class="hash-row" title="4b6d8f0a2c4e6f8b0d2f4a6c8e0b2d4f6a8c0e2f4a6b8d0f2a4c6e8b0d2f4a6c"><code>4b6d8f0a2c4e6f8b0d2f4a6c8e0b2d4f6a8c0e2f4a6b…</code><button type="button" class="icon-btn-sm" data-action="copy" data-copy="4b6d8f0a2c4e6f8b0d2f4a6c8e0b2d4f6a8c0e2f4a6b8d0f2a4c6e8b0d2f4a6c" aria-label="Copy plan hash"><svg class="icon " aria-hidden="true"><use href="#i-copy"></use></svg></button></div>
+      <p class="meta" style="margin:5px 0 0">The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.</p>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg><h3>Decision history</h3></div>
+      <div class="history-list">
+        <div class="history-item"><span class="status-dot ok" style="margin-top:4px"></span><span><b>Requested by Claude Code — audit</b><span>Today, 5:26 PM · risk Medium · TTL 60 min</span></span></div>
+        <div class="history-item"><span class="status-dot warn" style="margin-top:4px"></span><span><b>Waiting for a board admin</b><span>Expires in 7 min. A decision is one-time.</span></span></div>
+        
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-head"><svg class="icon " aria-hidden="true"><use href="#i-link"></use></svg><h3>Related</h3></div>
+      <div class="related-links">
+        <button type="button" class="related-link" data-action="open-board" data-board="agent-ops"><svg class="icon " aria-hidden="true"><use href="#i-folder"></use></svg>Open board</button>
+        <button type="button" class="related-link" data-action="select-session" data-id="s2"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>Agent session</button>
+        <button type="button" class="related-link" data-action="token-info" data-token="Claude Code — audit"><svg class="icon " aria-hidden="true"><use href="#i-key"></use></svg>Token: Claude Code — audit</button>
+        <button type="button" class="related-link" data-action="copy" data-copy="https://janosik.app/agents?board=agent-ops&amp;section=attention&amp;approval=ap-8"><svg class="icon " aria-hidden="true"><use href="#i-link"></use></svg>Copy link</button>
+      </div>
+    </div>
+    <details class="technical">
+      <summary><svg class="icon " aria-hidden="true"><use href="#i-chevron-right"></use></svg>Technical details · plan JSON</summary>
+      <pre>{
+  "type": "MOVE_CARD",
+  "columnId": "review"
+}</pre>
+    </details></div>
+      <div class="detail-foot">
+      <p class="foot-helper"><svg class="icon " aria-hidden="true"><use href="#i-shield"></use></svg>Approving authorizes <b>only this plan hash</b>. The agent still applies it.</p>
+      <div class="detail-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-action="next-pending" title="Select the next pending request">Next pending</button>
+        <button type="button" class="btn btn-outline" data-action="reject-start">Reject</button>
+        <button type="button" class="btn btn-primary" data-action="approve-start">Approve plan</button>
+      </div>
+    </div>
+    </aside>
+          </div>
+          
+          
+        </div>
+      </div>
+    </div>

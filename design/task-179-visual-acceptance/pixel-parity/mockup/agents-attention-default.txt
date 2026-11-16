@@ -1,0 +1,175 @@
+Janosik
+All boards
+Agents
+Global view
+Agents
+2
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+2
+Sessions
+6
+Runs
+7
+BOARDS
+PENDING
+All boards
+2
+Agent Ops Demo
+2
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Attention
+
+What needs a human. What runs now.
+
+Agent Ops 12s ago · Website 8s ago
+Refresh
+All agents
+All statuses
+All boards
+2 decisions are waiting
+Sorted by expiry. A decision authorizes one exact plan hash.
+APPROVAL · NEEDS DECISION
+·
+Agent Ops Demo
+·
+expires in 7 min
+Medium risk
+
+Move “Landing page rewrite” to Review
+
+Claude Code — audit asks to run MOVE_CARD on card Landing page rewrite.
+
+Review plan
+Reject
+hash 4b6d8f0a2c…
+APPROVAL · NEEDS DECISION
+·
+Agent Ops Demo
+·
+expires in 52 min
+Medium risk
+
+Delete card “Card claim visibility”
+
+Claude Code — audit asks to run DELETE_CARD on card Card claim visibility.
+
+Review plan
+Reject
+hash da83a76145…
+Needs a nudge
+Heartbeat is not a lifecycle status
+Claude Code — audit · Landing page rewrite
+Agent Ops Demo · No heartbeat · 6m · last status Active
+Inspect
+Release agent (CI) · Deploy notes
+Website Relaunch · No heartbeat · 18m · last status Active
+Inspect
+Live sessions
+4 active
+1 waiting
+2 no heartbeat
+1 paused
+View all
+AGENT / TOKEN
+SESSION
+CURRENT CARD / RUN
+HEARTBEAT
+STATUS
+Claude Code — audit
+opencode · deepseek-v4.1
+Refactor approval flow
+Agent Ops Demo
+Approval inbox polish
+Run #128
+12s ago
+Waiting
+Docs agent
+terminal · claude-haiku-4.5
+API reference sweep
+Agent Ops Demo
+MCP write contract
+Run #119
+1m ago
+Active
+Release bot
+cursor · claude-sonnet-4.5
+Release checklist
+Website Relaunch
+Pricing page copy
+Run #204
+34s ago
+Paused
+Docs agent
+terminal · claude-haiku-4.5
+Pricing copy references
+Website Relaunch
+Pricing page copy
+Run #201
+2m ago
+Active
+
+SELECTED APPROVAL
+
+Move “Landing page rewrite” to Review
+Waiting for a board admin. The request expires in 7 min.
+
+Claude Code — audit asks to run MOVE_CARD on Agent Ops Demo. Approving authorizes only the commands below — the agent still applies them.
+
+Request
+BOARD
+Agent Ops Demo
+REQUESTED BY
+Claude Code — audit
+AGENT
+Claude Code — audit
+SESSION
+Landing page rewrite
+TARGET
+card · Landing page rewrite
+EXPIRES
+in 7 min
+Plan
+1 command
+
+Move “Landing page rewrite” to Review
+
+MOVE_CARD
+Landing page rewrite
+to Review
+
+Exact commands and known targets from the plan.
+
+Integrity
+exact hash
+4b6d8f0a2c4e6f8b0d2f4a6c8e0b2d4f6a8c0e2f4a6b…
+
+The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.
+
+Decision history
+Requested by Claude Code — audit
+Today, 5:26 PM · risk Medium · TTL 60 min
+Waiting for a board admin
+Expires in 7 min. A decision is one-time.
+Related
+Open board
+Agent session
+Token: Claude Code — audit
+Copy link
+Technical details · plan JSON
+
+Approving authorizes
+only this plan hash
+. The agent still applies it.
+
+Next pending
+Reject
+Approve plan

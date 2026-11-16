@@ -1,0 +1,156 @@
+Agent Ops Demo
+1
+Global search
+AA
+Audit Admin
+Filters
+Board
+Calendar
+Table
+Watch
+
+Backlog
+1
+Add a card
+
+Card claim visibility
+
+Medium
+Add a card
+Add a card
+In progress
+3
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+
+MCP write contract
+
+Medium
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+Add a card
+Review
+3
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+
+Landing page rewrite — final
+
+Medium
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+Add a card
+Done
+1
+Add a card
+
+MCP callouts
+
+Medium
+Add a card
+Add a card
+Add column
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+1 waiting
+All agents
+THIS BOARD
+Inbox
+1
+Live
+4
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Approvals
+Needs
+1
+Decided
+6
+All
+7
+NEEDS DECISION
+EXPIRES FIRST
+Delete card “Card claim visibility”
+Pending
+Medium risk
+DESTRUCTIVE
+#Card claim visibility · 24 minutes ago
+Move “Landing page rewrite” to Review
+Expired
+Medium risk
+Agent Ops Demo
+Expired before a decision. Ask the agent to request it again.
+
+Claude Code — audit asks to run MOVE_CARD on Agent Ops Demo. Approving authorizes only the plan below — the agent still applies it.
+
+Request
+BOARD
+Agent Ops Demo
+REQUESTED BY
+Audit Admin
+AGENT
+Claude Code — audit
+SESSION
+Landing page rewrite
+TARGET
+card · Landing page rewrite — final
+REQUESTED
+Today, 12:31 PM
+Plan
+1 command
+
+Move “Landing page rewrite” to Review
+
+MOVE_CARD
+Landing page rewrite — final → Review
+
+Exact commands and known targets from the plan.
+
+Integrity
+exact hash
+558d32619f349054244adfa359f4e0bf65496ae45ced…
+
+The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.
+
+Decision history
+Requested by Audit Admin
+Today, 12:31 PM · risk medium · TTL 11 min
+Expired
+Today, 12:42 PM
+Related
+Open board
+Agent session
+Token: Claude Code — audit
+Copy link
+Technical details · plan JSON
+
+Expired before a decision. Ask the agent to request it again.
+
+Close detail

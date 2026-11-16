@@ -1,0 +1,183 @@
+Agent Ops Demo
+1
+Global search
+AA
+Audit Admin
+Filters
+Board
+Calendar
+Table
+Watch
+
+Backlog
+1
+Add a card
+
+Card claim visibility
+
+Medium
+Add a card
+Add a card
+In progress
+3
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+
+MCP write contract
+
+Medium
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+Add a card
+Review
+3
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+
+Landing page rewrite — final
+
+Medium
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+Add a card
+Done
+1
+Add a card
+
+MCP callouts
+
+Medium
+Add a card
+Add a card
+Add column
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+1 waiting
+All agents
+THIS BOARD
+Inbox
+1
+Live
+4
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Runs
+5 of 5 · board history
+All statuses
+All kinds
+Any time
+All agents
+All sessions
+Clear all
+TODAY
+px-token… added 2 cards
+px-token… · 2 commands · 11:59 AM
+Applied
+API reference sweep updated 1 card
+API reference sweep · 1 command · 11:26 AM
+Applied
+px-token… deleted 1 card
+px-token… · 1 command · 5:44 AM
+Reverted
+px-token… updated “Landing page rewrite”
+px-token… · 2 commands · 5:17 AM
+Applied
+YESTERDAY
+API reference sweep could not apply 2 commands
+API reference sweep · 2 commands · Yesterday
+Failed
+5 of 5 runs
+Load more
+px-token… added 2 cards
+
+cmwj2j8jg0061id7cc5zyoh1e · Batch · 2 commands · 11:59 AM
+
+Applied
+Batch
+2 commands
+Agent Ops Demo
+Attribution
+ACTOR
+px-user-member
+TOKEN
+px-token…
+SESSION
+No session
+DURATION
+0 ms
+RUN
+cmwj2j8jg0061id7cc5zyoh1e · seed-run-128
+APPROVAL
+Not approval-gated
+Timeline
+Created
+Today, 11:59:58 AM
+Applied
+Today, 11:59:58 AM
+Commands
+2 applied
+#96
+ADD_CARD
+Approval inbox polish
+
+Agent · Release agent (CI)
+
+BEFORE
+In progress
+AFTER
+Created
+Pre-image (board admin only)
+#97
+ADD_CARD
+Session heartbeat copy
+
+Agent · Release agent (CI)
+
+BEFORE
+Review
+AFTER
+Created
+Pre-image (board admin only)
+Technical details · pre-images
+Rollback
+
+Rollback is conditional: conflicts, missing pre-images or the retention window can block it. It is not a guaranteed recovery.
+
+Rollback preview
+
+No conflicts found. Re-applies 2 pre-images atomically. A separate audit run records the revert.
+
+Diff (board admin only)
+Preview again
+Revert run
+Open board
+Copy link
+History is read-only. Rollback requires a board admin and an applied run without conflicts.
+Open all runs

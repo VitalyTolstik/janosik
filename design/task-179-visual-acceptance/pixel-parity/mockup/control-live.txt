@@ -1,0 +1,159 @@
+Janosik
+Agent Ops Demo
+Agents
+2
+AA
+Board
+Calendar
+Table
+Watch
+Backlog
+4
+backlog
+Card claim visibility
+
+Approval pending
+
+2 ·
+1/3 ·
+AA
+backlog
+Old onboarding draft
+
+Delete approved
+
+2 ·
+1/3 ·
+AA
++ Add card
+In progress
+4
+in progress
+Approval inbox polish
+
+Claude Code
+
+2 ·
+1/3 ·
+AA
+in progress
+MCP write contract
+
+Docs agent
+
+2 ·
+1/3 ·
+AA
++ Add card
+Review
+4
+review
+Session heartbeat copy
+
+Release bot
+
+2 ·
+1/3 ·
+AA
+review
+Landing page rewrite
+
+Claude Code
+
+2 ·
+1/3 ·
+AA
++ Add card
+Done
+4
+backlog
+MCP callouts
+
+Docs agent
+
+2 ·
+1/3 ·
+AA
+backlog
+Pricing page copy
+
+Release bot
+
+2 ·
+1/3 ·
+AA
++ Add card
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+2 waiting
+All agents
+THIS BOARD
+Inbox
+2
+Live
+2
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Live
+3 sessions · 2 tokens · 1 no heartbeat
+Agent writes are allowed
+
+Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends.
+
+Pause all agents
+Manage tokens
+Claude Code — audit
+cmwc7a7y…pz4qe6
+2 live
+Token settings
+Refactor approval flow
+Waiting for approval
+12s ago
+·
+opencode · deepseek-v4.1
+·
+42 min ago
+Approval inbox polish
+Run #128
+Pause
+Landing page rewrite
+Active
+No heartbeat
+No heartbeat · 6m
+·
+opencode · gpt-5.2
+·
+3 h ago
+No current card
+No current run
+Pause
+Docs agent
+cmwc7aab…x7c1a9
+1 live
+Other member's token
+API reference sweep
+Active
+1m ago
+·
+terminal · claude-haiku-4.5
+·
+19 min ago
+MCP write contract
+Run #119
+Pause
+
+Ending a session releases its claims. Token pause, stop-all and revoke are owner actions in Account → API keys; this board surface only links there.
+
+Pause is a board-wide safety switch, not a policy change. In-flight finishes; claims stay.
+Pause all agents

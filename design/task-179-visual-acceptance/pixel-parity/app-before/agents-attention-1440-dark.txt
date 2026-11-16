@@ -1,0 +1,101 @@
+Janosik
+All boards
+Agents
+Global view
+Agents
+1
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+1
+Sessions
+10
+Runs
+8
+
+BOARDS
+PENDING
+
+All boards
+1
+Agent Ops Demo
+1
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Attention
+
+What needs a human. What runs now.
+
+Updated 0s ago
+Refresh
+All agents
+All statuses
+All boards
+One decision is waiting
+Sorted by expiry. A decision authorizes one exact plan hash.
+Needs
+1
+Decided
+6
+All
+7
+APPROVAL · NEEDS DECISION
+·
+Agent Ops Demo
+·
+37 min left
+Medium risk
+Delete card “Card claim visibility”
+Docs build asks to run DELETE_CARD. This removes 1 card — “Card claim visibility” and its history will be deleted.
+Review plan
+Reject
+hash 61eb467fe9…
+Needs a nudge
+Heartbeat is not a lifecycle status
+API reference sweep · API reference sweep
+Agent Ops Demo
+·
+16m ago
+·
+last status Active
+Inspect
+Claude Code — audit · Refactor approval flow
+Agent Ops Demo
+·
+15m ago
+·
+last status Waiting for approval
+Inspect
+Live sessions
+4 active
+1 waiting
+7 no heartbeat
+1 paused
+View all
+AGENT / TOKEN
+SESSION
+CURRENT CARD / RUN
+HEARTBEAT
+STATUS
+Release checklist
+terminal · claude-sonnet-4.5
+Release checklist
+Website Relaunch
+Pricing page copy
+Run cmwj2j8us0066id7cej8ihquh
+16m ago
+Paused
+
+DETAIL
+
+Nothing selected
+
+Select an item
+
+Choose an approval, session or run in the list to see its evidence and actions.
