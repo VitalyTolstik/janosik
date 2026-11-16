@@ -616,7 +616,10 @@ async function main() {
     token: rawTokens[ids.tokenClaude],
     sessionId: ids.sessionRefactor,
     clientRunId: "seed-run-108",
-    atMs: now - hours(1) - minutes(47),
+    atMs: Math.max(
+      now - hours(1) - minutes(47),
+      new Date(now).setHours(0, 0, 0, 0),
+    ),
     kind: "single",
     commands: [
       command({
@@ -718,7 +721,7 @@ async function main() {
       risk: "medium",
       planHash: hash("landing"),
       status: "pending",
-      expiresAt: at(hours(12)),
+      expiresAt: at(hours(72)),
       createdAt: at(-minutes(4)),
       plan: approvalPlan(ids.cardLanding, {
         type: "MOVE_CARD",
@@ -741,7 +744,7 @@ async function main() {
       risk: "medium",
       planHash: hash("delete-claim"),
       status: "pending",
-      expiresAt: at(hours(18)),
+      expiresAt: at(hours(72)),
       createdAt: at(-minutes(8)),
       plan: approvalPlan(ids.cardClaim, { type: "DELETE_CARD" }),
     },
@@ -877,7 +880,7 @@ async function main() {
       risk: "medium",
       planHash: hash("website"),
       status: "pending",
-      expiresAt: at(hours(16)),
+      expiresAt: at(hours(72)),
       createdAt: at(-minutes(6)),
       plan: {
         commands: [
@@ -1108,8 +1111,8 @@ async function main() {
   }
 
   // The dedicated stale row keeps its real lifecycle (`active`) while the
-  // primary pill reports Stale; `sessionIdle` stays fresh so it demonstrates
-  // Idle without turning into a stale Idle after five minutes.
+  // heartbeat reports its age separately; `sessionIdle` stays fresh so it
+  // demonstrates Idle for the whole review.
 
   console.log(
     JSON.stringify(
