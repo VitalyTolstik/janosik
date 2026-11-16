@@ -711,7 +711,7 @@ export function AgentsPage() {
     if (selectedSession !== null) {
       return filtered.find((row) => row.id === selectedSession);
     }
-    return section === "sessions" ? filtered[0] : undefined;
+    return filtered[0];
   }, [filtered, section, selectedSession]);
   const sessionMissing =
     !state.loading &&
@@ -827,6 +827,10 @@ export function AgentsPage() {
       (section === "runs" && runs.revokedBoardIds.includes(filter.board)));
   const missingScope =
     !params.has("board") && (params.has("approval") || params.has("run"));
+  // A failed approvals request means the Attention timestamp cannot claim
+  // freshness, even when the board/session fetch succeeded.
+  const freshnessStale =
+    state.error || offline || (section === "attention" && pending.error);
   const openTokens = () =>
     window.dispatchEvent(new Event("janosik:open-api-keys"));
 
@@ -845,7 +849,7 @@ export function AgentsPage() {
       className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface text-[13px] leading-[1.45] md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
-      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
+      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[198px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
         <div className="hidden px-1.5 pb-3 md:block">
           <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}
@@ -1041,7 +1045,7 @@ export function AgentsPage() {
                 data-testid="agents-updated"
                 style={unknownBoard ? { visibility: "hidden" } : undefined}
                 data-state={
-                  state.error || offline
+                  freshnessStale
                     ? "stale"
                     : state.lastLoadedAt === null
                       ? "idle"
@@ -1053,7 +1057,7 @@ export function AgentsPage() {
                   aria-hidden
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    state.error || offline
+                    freshnessStale
                       ? "bg-warning"
                       : state.lastLoadedAt === null
                         ? "bg-muted-foreground"
@@ -1061,7 +1065,7 @@ export function AgentsPage() {
                   )}
                 />
                 <span>
-                  {state.error || offline
+                  {freshnessStale
                     ? t("agents.shell.freshnessUnknown")
                     : state.lastLoadedAt === null
                       ? ""
@@ -1165,7 +1169,7 @@ export function AgentsPage() {
                   onChange={(token) => setFilter({ token })}
                   ariaLabel={t("agents.filters.token")}
                   testId="agents-filter-token"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1176,7 +1180,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agents.filters.status")}
                   testId="agents-filter-status"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <BoardScopeSelect
@@ -1205,7 +1209,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agentControl.runs.filter.status")}
                   testId="agents-run-filter-status"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1216,7 +1220,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agentControl.runs.filter.kind")}
                   testId="agents-run-filter-kind"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1227,7 +1231,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agentControl.runs.filter.time")}
                   testId="agents-run-filter-time"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1236,7 +1240,7 @@ export function AgentsPage() {
                   onChange={(token) => setRunFilter({ token })}
                   ariaLabel={t("agentControl.runs.filter.token")}
                   testId="agents-run-filter-token"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1245,22 +1249,50 @@ export function AgentsPage() {
                   onChange={(session) => setRunFilter({ session })}
                   ariaLabel={t("agentControl.runs.filter.session")}
                   testId="agents-run-filter-session"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
-                <span
-                  className="ml-auto text-[11px] text-muted-foreground"
-                  data-testid="agents-runs-total"
-                  data-shown={visibleRunRows.length}
-                  data-total={runs.total}
-                  data-has-more={runs.hasMore ? "true" : "false"}
-                >
-                  {t("agents.runs.shown", {
-                    count: visibleRunRows.length,
-                  })}
-                </span>
+                {!missingScope ? (
+                  <span
+                    className="ml-auto text-[11px] text-muted-foreground"
+                    data-testid="agents-runs-total"
+                    data-shown={visibleRunRows.length}
+                    data-total={runs.total}
+                    data-has-more={runs.hasMore ? "true" : "false"}
+                    data-state={
+                      runs.loading ? "loading" : runs.error ? "error" : "ready"
+                    }
+                  >
+                    {runs.loading || runs.error
+                      ? "—"
+                      : t("agents.runs.shown", {
+                          count: visibleRunRows.length,
+                        })}
+                  </span>
+                ) : null}
               </>
             )}
+            {section === "runs" ? (
+              hasRunFilter(runFilter) ? (
+                <button
+                  type="button"
+                  onClick={clearRunFilters}
+                  data-testid="agents-toolbar-clear"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                >
+                  {t("agents.clearFilters")}
+                </button>
+              ) : null
+            ) : filteredActive ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                data-testid="agents-toolbar-clear"
+                className="ml-auto inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+              >
+                {t("agents.clearFilters")}
+              </button>
+            ) : null}
           </div>
           {section === "sessions" &&
           (state.loading || state.rows.length > 0) ? (
@@ -1324,10 +1356,12 @@ export function AgentsPage() {
                   </button>
                 </div>
                 <span className="ml-auto text-[11px] text-muted-foreground">
-                  {t("agents.groups.summary", {
-                    count: filtered.length,
-                    live: filtered.filter(isLiveSession).length,
-                  })}
+                  {state.loading
+                    ? "—"
+                    : t("agents.groups.summary", {
+                        count: filtered.length,
+                        live: filtered.filter(isLiveSession).length,
+                      })}
                 </span>
               </div>
             </>
@@ -1675,6 +1709,15 @@ export function AgentsPage() {
           </div>
         </div>
       </section>
+      {approvalSheetOpen ? (
+        <button
+          type="button"
+          aria-label={t("agents.approvals.back")}
+          data-testid="agents-approval-sheet-scrim"
+          onClick={closeApproval}
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+        />
+      ) : null}
       {sessionSheetOpen ? (
         <button
           type="button"
@@ -1784,7 +1827,7 @@ export function AgentsPage() {
             }
           />
         ) : section === "sessions" ||
-          (section === "attention" && selectedSession !== null) ? (
+          (section === "attention" && sessionDetailRow !== undefined) ? (
           <SessionDetail
             row={sessionDetailRow}
             missingId={sessionMissing ? selectedSession : null}

@@ -407,6 +407,14 @@ describe("AgentsPage", () => {
     );
     expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
     expect(screen.getByText("Scope")).toBeInTheDocument();
+    // No approval can be selected for this member, so Attention falls back
+    // to the first filtered session detail instead of "Nothing selected".
+    expect(
+      await screen.findByTestId("agents-session-detail-hint"),
+    ).toBeVisible();
+    expect(screen.getByTestId("agents-detail-panel")).not.toHaveTextContent(
+      "Nothing selected",
+    );
     expect(hoisted.agentsOverview).not.toHaveBeenCalled();
     expect(hoisted.listApprovals).not.toHaveBeenCalled();
   });
@@ -1479,6 +1487,23 @@ describe("AgentsPage", () => {
     expect(
       screen.getByTestId("agents-approvals-filter-decided"),
     ).toHaveTextContent("1");
+    expect(screen.getByText("Recently decided")).toBeVisible();
+    expect(
+      screen.getByText("Read-only history. Decisions cannot be changed."),
+    ).toBeVisible();
+    // Decided rows are history: the dead Reject action must not render.
+    expect(
+      screen.queryByTestId("agents-approval-reject-approval-2"),
+    ).toBeNull();
+  });
+
+  it("shows a toolbar Clear filters action for an active session search", async () => {
+    renderPage("/agents?section=sessions&q=no-match");
+    const empty = await screen.findByTestId("agents-filtered-empty");
+    expect(empty).toHaveTextContent(
+      "Try a different board, agent or heartbeat filter.",
+    );
+    expect(screen.getByTestId("agents-toolbar-clear")).toBeVisible();
   });
 
   it("quick-rejects an approval with a required reason", async () => {

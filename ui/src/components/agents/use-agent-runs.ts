@@ -101,6 +101,9 @@ export function useAgentRuns(
 
   const load = useCallback(async (): Promise<void> => {
     if (!enabled || !isApiEnabled()) return;
+    // The board list is still loading (or failed): an empty fan-out would
+    // publish a false "no runs" snapshot before any board answered.
+    if (scopedBoards.length === 0) return;
     const request = ++generation.current;
     const previous =
       pagesRef.current.key === filterKey

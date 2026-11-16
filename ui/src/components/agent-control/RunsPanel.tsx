@@ -278,10 +278,12 @@ export function RunsPanel({ role }: { role: Role }) {
         <span className="meta">
           {runs.loading
             ? t("agentControl.runs.loading")
-            : t("agents.runs.boardHistoryOf", {
-                shown,
-                total,
-              })}
+            : runs.error
+              ? "—"
+              : t("agents.runs.boardHistoryOf", {
+                  shown,
+                  total,
+                })}
         </span>
         <button
           type="button"

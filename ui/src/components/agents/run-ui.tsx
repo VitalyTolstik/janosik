@@ -685,6 +685,15 @@ export function RunDetail({
               <span className="font-mono" title={run.id}>
                 {shortId(run.id, 12)}
               </span>
+              {run.clientRunId !== null && run.clientRunId !== "" ? (
+                <span
+                  className="font-mono text-muted-foreground"
+                  title={run.clientRunId}
+                >
+                  {" "}
+                  · {run.clientRunId}
+                </span>
+              ) : null}
             </MetaField>
             <MetaField label={t("agentControl.runs.approval")}>
               {run.approvalId ?? t("agents.runs.notApprovalGated")}
@@ -761,7 +770,8 @@ export function RunDetail({
                         : t("agentControl.runs.actorHuman")}{" "}
                       · {command.agentName ?? command.actorId}
                     </p>
-                    {admin && run.status === "applied" ? (
+                    {admin &&
+                    (run.status === "applied" || run.status === "reverted") ? (
                       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                         <DiffBox
                           label={t("agents.runs.before")}
@@ -776,22 +786,6 @@ export function RunDetail({
                           value={afterLabel(command.action, preimage, t)}
                         />
                       </div>
-                    ) : null}
-                    {admin &&
-                    run.status === "applied" &&
-                    preimage !== undefined ? (
-                      <details
-                        data-testid="agent-run-preimage"
-                        className="mt-1.5"
-                      >
-                        <summary className="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
-                          <ChevronRight className="h-2.5 w-2.5" aria-hidden />
-                          {t("agentControl.runs.preimage")}
-                        </summary>
-                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
-                          {JSON.stringify(preimage, null, 2)}
-                        </pre>
-                      </details>
                     ) : null}
                     {run.status === "failed" ? (
                       <p className="mt-1 text-[11px] text-muted-foreground">
@@ -916,7 +910,7 @@ export function RunDetail({
                     data-testid="agent-run-preview"
                     disabled={previewing}
                     onClick={() => void requestPreview()}
-                    className="h-7 min-h-0 gap-1.5 px-2 text-[11px] max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                    className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-[11px] font-[650] max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                   >
                     <Eye className="h-[13px] w-[13px]" aria-hidden />
                     {t("agents.runs.previewAgain")}
@@ -935,7 +929,7 @@ export function RunDetail({
                             : t("agentControl.runs.cannotRevert")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="h-7 min-h-0 gap-1.5 px-2 text-[11px] border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                      className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-[11px] font-[650] border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                     >
                       <RotateCcw className="h-[13px] w-[13px]" aria-hidden />
                       {!preview.canRevert
@@ -1073,7 +1067,7 @@ export function RunDetail({
       </div>
 
       {variant === "global" ? (
-        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground">
+        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground max-md:px-3 max-md:py-[9px]">
           <p className="m-0 flex items-start gap-1.5">
             <Info
               className="mt-[2px] h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
