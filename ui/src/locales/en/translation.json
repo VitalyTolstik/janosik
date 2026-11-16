@@ -2020,6 +2020,7 @@
   "agents.approvals.closeDetail": "Close detail",
   "agents.approvals.copiedToast": "Copied to clipboard.",
   "agents.approvals.tokenLabel": "Token: {{token}}",
+  "agents.approvals.tokenOtherLabel": "Token: {{token}} (other member)",
   "agents.approvals.tokenInfoTitle": "Your token · {{token}}",
   "agents.approvals.tokenInfoDescription": "Token settings are available to the token owner in Account → API keys. Board Live never pauses or stops a token.",
   "agents.approvals.tokenInfoBody": "This link is shown only for your own token. Other members' tokens stay read-only and expose no settings action.",

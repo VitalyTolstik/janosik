@@ -2,7 +2,11 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApprovalRequestDto, Board } from "@janosik/shared";
+import type {
+  AgentSessionDto,
+  ApprovalRequestDto,
+  Board,
+} from "@janosik/shared";
 
 import { I18nProvider } from "@/i18n";
 import { overviewItem } from "@/test/agents-overview";
@@ -12,6 +16,7 @@ const hoisted = vi.hoisted(() => ({
   getBoard: vi.fn(),
   listMembers: vi.fn(),
   listAgentSessions: vi.fn(),
+  listTokens: vi.fn(),
   decideApproval: vi.fn(),
   cancelApproval: vi.fn(),
 }));
@@ -38,6 +43,7 @@ vi.mock("@/api/client", () => {
       getBoard: hoisted.getBoard,
       listMembers: hoisted.listMembers,
       listAgentSessions: hoisted.listAgentSessions,
+      listTokens: hoisted.listTokens,
       decideApproval: hoisted.decideApproval,
       cancelApproval: hoisted.cancelApproval,
     },
@@ -111,6 +117,33 @@ function approval(
   };
 }
 
+function session(overrides: Partial<AgentSessionDto> = {}): AgentSessionDto {
+  return {
+    id: "session-1",
+    userId: "user-1",
+    apiTokenId: "token-1",
+    boardId: "board-1",
+    name: "Nightly triage",
+    clientName: "mcp",
+    model: "gpt-5",
+    status: "active",
+    currentCardId: null,
+    currentRunId: null,
+    startedAt: Date.now() - 60_000,
+    lastHeartbeatAt: Date.now() - 5_000,
+    stale: false,
+    paused: false,
+    pausedAt: null,
+    pausedBy: null,
+    pausedReason: null,
+    pauseScope: null,
+    endedAt: null,
+    endReason: null,
+    summary: null,
+    ...overrides,
+  };
+}
+
 function renderList(overrides: Partial<AttentionApprovalRow> = {}) {
   const row: AttentionApprovalRow = {
     ...overviewItem({
@@ -136,7 +169,10 @@ function renderList(overrides: Partial<AttentionApprovalRow> = {}) {
   );
 }
 
-function renderDetail(detail: ApprovalRequestDto = approval()) {
+function renderDetail(
+  detail: ApprovalRequestDto = approval(),
+  fallbackAgentName = AGENT,
+) {
   hoisted.getApproval.mockResolvedValue(detail);
   return render(
     <MemoryRouter>
@@ -145,7 +181,7 @@ function renderDetail(detail: ApprovalRequestDto = approval()) {
           boardId="board-1"
           approvalId={detail.id}
           boardTitle="Launch"
-          fallbackAgentName={AGENT}
+          fallbackAgentName={fallbackAgentName}
           onChanged={() => {}}
         />
       </I18nProvider>
@@ -159,6 +195,7 @@ describe("AttentionApprovals", () => {
     hoisted.getBoard.mockResolvedValue(BOARD);
     hoisted.listMembers.mockResolvedValue([]);
     hoisted.listAgentSessions.mockResolvedValue([]);
+    hoisted.listTokens.mockResolvedValue([{ id: "token-1", name: AGENT }]);
     hoisted.decideApproval.mockImplementation((async (
       _boardId: string,
       _approvalId: string,
@@ -276,5 +313,52 @@ describe("AttentionApprovals", () => {
     );
     await waitFor(() => expect(trigger).toHaveFocus());
     window.removeEventListener("janosik:open-api-keys", openApiKeys);
+  });
+
+  it("keeps another member's token read-only with no settings action", async () => {
+    const user = userEvent.setup();
+    hoisted.listTokens.mockResolvedValue([
+      { id: "token-own", name: "My token" },
+    ]);
+    renderDetail(approval({ requestedByTokenId: "token-other" }));
+
+    const staticToken = await screen.findByTestId("approval-token-static");
+    expect(staticToken).toHaveAttribute("data-ownership", "other");
+    expect(staticToken).toHaveTextContent(`Token: ${AGENT} (other member)`);
+    expect(screen.queryByTestId("approval-token-link")).toBeNull();
+    expect(screen.queryByTestId("approval-token-open-account")).toBeNull();
+
+    await user.click(staticToken);
+    expect(screen.queryByTestId("approval-token-dialog")).toBeNull();
+  });
+
+  it("attributes the approval to the token, not the session name", async () => {
+    hoisted.listTokens.mockResolvedValue([
+      { id: "token-own", name: "My token" },
+    ]);
+    hoisted.listAgentSessions.mockResolvedValue([
+      session({
+        id: "session-other",
+        apiTokenId: "token-other",
+        name: "Docs build",
+        tokenName: "Docs agent",
+        status: "waiting_approval",
+      }),
+    ]);
+    // A stale parent fallback must not win over the session's token name.
+    renderDetail(
+      approval({
+        requestedByTokenId: "token-other",
+        agentSessionId: "session-other",
+      }),
+      "Docs build",
+    );
+
+    const detail = await screen.findByTestId("agents-approval-detail");
+    expect(detail).toHaveTextContent("Docs agent asks to run DELETE_CARD");
+    expect(detail).not.toHaveTextContent("Docs build asks");
+    expect(within(detail).getAllByText("Docs agent").length).toBeGreaterThan(1);
+    expect(within(detail).getByText("Session")).toBeInTheDocument();
+    expect(within(detail).getByText("Docs build")).toBeInTheDocument();
   });
 });

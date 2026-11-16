@@ -903,7 +903,25 @@ describe("AgentsPage", () => {
     expect(await screen.findByTestId("approval-plan-hash")).toBeVisible();
   });
 
-  it("names the approval's own session, not an arbitrary session of that token", async () => {
+  it("attributes a member-board approval to the token and keeps the session separate", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-1"
+          ? [
+              session(),
+              session({
+                id: "session-3",
+                apiTokenId: "token-other",
+                name: "Docs build",
+                tokenName: "Docs agent",
+                status: "waiting_approval",
+                currentCardId: null,
+                currentRunId: null,
+              }),
+            ]
+          : [],
+      ),
+    );
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse(
         [
@@ -911,6 +929,8 @@ describe("AgentsPage", () => {
             requestedByTokenId: "token-other",
             agentSessionId: "session-3",
             sessionName: "Docs build",
+            tokenName: null,
+            requestedBy: "user-member",
           }),
         ],
         {
@@ -921,11 +941,23 @@ describe("AgentsPage", () => {
         },
       ),
     );
+    hoisted.getApproval.mockResolvedValue(
+      approval({
+        requestedByTokenId: "token-other",
+        agentSessionId: "session-3",
+      }),
+    );
     renderPage("/agents?section=attention");
 
     const card = await screen.findByTestId("agents-approval-approval-1");
-    expect(card).toHaveTextContent("Docs build asks to run DELETE_CARD");
-    expect(card).not.toHaveTextContent("Nightly triage");
+    expect(card).toHaveTextContent("Docs agent asks to run DELETE_CARD");
+    expect(card).not.toHaveTextContent("Docs build asks");
+
+    const detail = await screen.findByTestId("agents-approval-detail");
+    expect(detail).toHaveTextContent("Docs agent asks to run DELETE_CARD");
+    expect(detail).not.toHaveTextContent("Docs build asks");
+    expect(within(detail).getByText("Session")).toBeInTheDocument();
+    expect(within(detail).getByText("Docs build")).toBeInTheDocument();
   });
 
   it("uses the selected board scope and its exact count, not All boards", async () => {

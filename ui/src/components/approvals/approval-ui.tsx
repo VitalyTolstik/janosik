@@ -41,6 +41,9 @@ import { APPROVAL_RISK_KEYS, APPROVAL_STATUS_KEYS } from "@/utils/approval";
 const RELATED_CLASS =
   "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:min-h-11";
 
+const RELATED_STATIC_CLASS =
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground max-md:min-h-11";
+
 const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
   pending: "warn",
   approved: "ok",
@@ -265,10 +268,17 @@ function shorten(value: string, max = 12): string {
 export function ApprovalLinks({
   approval,
   tokenName,
+  tokenOwnership = "unknown",
 }: {
   approval: ApprovalRequestDto;
   /** Resolved agent/token name; the short id is the fallback. */
   tokenName?: string | null;
+  /**
+   * `own` opens the owner-only token-info dialog. `other` keeps the token
+   * read-only and adds the prototype's explicit attribution. `unknown`
+   * fails closed: a token name/id is shown, but no settings action.
+   */
+  tokenOwnership?: "own" | "other" | "unknown";
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -336,15 +346,30 @@ export function ApprovalLinks({
             {t("agentControl.approvals.openRun")}
           </Link>
         ) : null}
-        <button
-          type="button"
-          className={RELATED_CLASS}
-          data-testid="approval-token-link"
-          onClick={() => setTokenOpen(true)}
-        >
-          <KeyRound className="h-2.5 w-2.5" aria-hidden />
-          {t("agents.approvals.tokenLabel", { token: resolvedToken })}
-        </button>
+        {tokenOwnership === "own" ? (
+          <button
+            type="button"
+            className={RELATED_CLASS}
+            data-testid="approval-token-link"
+            onClick={() => setTokenOpen(true)}
+          >
+            <KeyRound className="h-2.5 w-2.5" aria-hidden />
+            {t("agents.approvals.tokenLabel", { token: resolvedToken })}
+          </button>
+        ) : (
+          <span
+            className={RELATED_STATIC_CLASS}
+            data-testid="approval-token-static"
+            data-ownership={tokenOwnership}
+          >
+            <KeyRound className="h-2.5 w-2.5" aria-hidden />
+            {tokenOwnership === "other"
+              ? t("agents.approvals.tokenOtherLabel", {
+                  token: resolvedToken,
+                })
+              : t("agents.approvals.tokenLabel", { token: resolvedToken })}
+          </span>
+        )}
         <button
           type="button"
           onClick={copyLink}
@@ -366,15 +391,17 @@ export function ApprovalLinks({
         {copied ? t("agentControl.approvals.copied") : ""}
       </span>
 
-      <TokenInfoDialog
-        open={tokenOpen}
-        onOpenChange={setTokenOpen}
-        tokenName={resolvedToken}
-        testIdPrefix="approval-token"
-        onOpenAccount={() =>
-          window.dispatchEvent(new Event("janosik:open-api-keys"))
-        }
-      />
+      {tokenOwnership === "own" ? (
+        <TokenInfoDialog
+          open={tokenOpen}
+          onOpenChange={setTokenOpen}
+          tokenName={resolvedToken}
+          testIdPrefix="approval-token"
+          onOpenAccount={() =>
+            window.dispatchEvent(new Event("janosik:open-api-keys"))
+          }
+        />
+      ) : null}
     </>
   );
 }

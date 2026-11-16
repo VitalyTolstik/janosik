@@ -2101,6 +2101,7 @@
   "agents.approvals.closeDetail": "Закрыть детали",
   "agents.approvals.copiedToast": "Скопировано в буфер обмена.",
   "agents.approvals.tokenLabel": "Токен: {{token}}",
+  "agents.approvals.tokenOtherLabel": "Токен: {{token}} (другой участник)",
   "agents.approvals.tokenInfoTitle": "Ваш токен · {{token}}",
   "agents.approvals.tokenInfoDescription": "Настройки токена доступны владельцу в разделе «Аккаунт → API-ключи». Раздел активности доски не ставит токен на паузу и не останавливает его.",
   "agents.approvals.tokenInfoBody": "Эта ссылка показывается только для вашего токена. Токены других участников остаются только для чтения и не предлагают настроек.",

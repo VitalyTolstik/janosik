@@ -503,33 +503,34 @@ export function AgentsPage() {
     () => new Map(state.tokens.map((token) => [token.id, token.name])),
     [state.tokens],
   );
-  const approvalSessionNames = useMemo(
+  const approvalSessionTokenNames = useMemo(
     () =>
       new Map(
-        state.rows.map((row) => [
-          row.id,
-          row.name ?? row.clientName ?? shortId(row.apiTokenId),
-        ]),
+        state.rows.flatMap((row) =>
+          row.tokenName === null ? [] : [[row.id, row.tokenName] as const],
+        ),
       ),
     [state.rows],
   );
   // The exact session is safer than a token→session guess: one token can own
-  // several sessions, and the last one in the list is not the requester.
+  // several sessions, and the last one in the list is not the requester. The
+  // agent label is the token name (own or disclosed by the board session),
+  // then the token id; the session name is a separate field and never the
+  // agent attribution.
   const approvalNameFor = useCallback(
     (
       row: Pick<
         AttentionApprovalRow,
         "requestedByTokenId" | "agentSessionId" | "sessionName" | "tokenName"
       >,
-    ): string | undefined =>
+    ): string =>
+      row.tokenName ??
       approvalAgentNames.get(row.requestedByTokenId) ??
-      row.sessionName ??
       (row.agentSessionId === null
         ? undefined
-        : approvalSessionNames.get(row.agentSessionId)) ??
-      row.tokenName ??
-      undefined,
-    [approvalAgentNames, approvalSessionNames],
+        : approvalSessionTokenNames.get(row.agentSessionId)) ??
+      shortId(row.requestedByTokenId, 12),
+    [approvalAgentNames, approvalSessionTokenNames],
   );
   const selectedApprovalId = params.get("approval");
   const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {

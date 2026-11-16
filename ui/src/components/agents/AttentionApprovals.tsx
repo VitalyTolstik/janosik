@@ -537,6 +537,10 @@ export function AttentionApprovalDetail({
   const [tokenNames, setTokenNames] = useState<Map<string, string>>(
     () => new Map(),
   );
+  // `GET /users/me/tokens` is owner-only. A fulfilled read is the ownership
+  // boundary: an id missing from it belongs to another member, so the token
+  // stays read-only. A failed read is unknown and also fails closed.
+  const [ownTokensKnown, setOwnTokensKnown] = useState(false);
   const now = useNow();
 
   useEffect(() => {
@@ -577,6 +581,7 @@ export function AttentionApprovalDetail({
         setTokenNames(
           new Map(tokensResult.value.map((token) => [token.id, token.name])),
         );
+        setOwnTokensKnown(true);
       }
     });
     return () => {
@@ -603,14 +608,24 @@ export function AttentionApprovalDetail({
       : detail.agentSessionId !== null
         ? sessions.find((row) => row.id === detail.agentSessionId)
         : sessions.find((row) => row.apiTokenId === detail.requestedByTokenId);
+  const tokenName =
+    detail === null ? undefined : tokenNames.get(detail.requestedByTokenId);
+  // Attribution is the token (name first, id second), never the session:
+  // one token can drive several sessions, and the session has its own field.
   const agentName =
-    fallbackAgentName ??
-    (detail === null ? undefined : tokenNames.get(detail.requestedByTokenId)) ??
+    tokenName ??
     session?.tokenName ??
-    session?.clientName ??
-    session?.name ??
+    fallbackAgentName ??
     detail?.requestedByTokenId ??
     "";
+  const tokenOwnership =
+    detail === null
+      ? "unknown"
+      : tokenNames.has(detail.requestedByTokenId)
+        ? "own"
+        : ownTokensKnown
+          ? "other"
+          : "unknown";
   const boardLabel = board?.title ?? boardTitle;
   const boardCard =
     detail?.cardId != null ? board?.cards[detail.cardId] : undefined;
@@ -1134,7 +1149,11 @@ export function AttentionApprovalDetail({
               title={t("agents.approvals.related")}
               icon={<LinkIcon aria-hidden />}
             >
-              <ApprovalLinks approval={detail} tokenName={agentName} />
+              <ApprovalLinks
+                approval={detail}
+                tokenName={agentName}
+                tokenOwnership={tokenOwnership}
+              />
             </DetailSection>
 
             <details
