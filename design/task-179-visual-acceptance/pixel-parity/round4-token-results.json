@@ -4,263 +4,167 @@
     "width": 1440,
     "theme": "light",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1440,
     "theme": "light",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1440,
     "theme": "dark",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1440,
     "theme": "dark",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1024,
     "theme": "light",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1024,
     "theme": "light",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1024,
     "theme": "dark",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 1024,
     "theme": "dark",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 390,
     "theme": "light",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 390,
     "theme": "light",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 390,
     "theme": "dark",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "admin",
     "width": 390,
     "theme": "dark",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1440,
     "theme": "light",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1440,
     "theme": "light",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1440,
     "theme": "dark",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1440,
     "theme": "dark",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1024,
     "theme": "light",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1024,
     "theme": "light",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1024,
     "theme": "dark",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 1024,
     "theme": "dark",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 390,
     "theme": "light",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 390,
     "theme": "light",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 390,
     "theme": "dark",
     "lang": "en",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   },
   {
     "role": "member",
     "width": 390,
     "theme": "dark",
     "lang": "ru",
-    "checks": [
-      "title",
-      "lifecycle",
-      "one stale signal"
-    ]
+    "checks": ["title", "lifecycle", "one stale signal"]
   }
 ]
