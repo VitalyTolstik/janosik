@@ -154,6 +154,29 @@ describe("AgentDetailPage", () => {
     );
   });
 
+  it("shows the lifecycle and one stale signal on a stale session card", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-1"
+          ? [
+              session({
+                status: "idle",
+                stale: true,
+                lastHeartbeatAt: Date.now() - 360_000,
+              }),
+            ]
+          : [],
+      ),
+    );
+    renderDetail();
+    const card = await screen.findByTestId("agent-session");
+    expect(within(card).getByTestId("agent-status-idle")).toHaveTextContent(
+      "Idle",
+    );
+    expect(within(card).getAllByTestId("agent-stale-badge")).toHaveLength(1);
+    expect(document.title).toBe("Agents — Janosik");
+  });
+
   it("pauses a session with a reason and updates the row without a reload", async () => {
     renderDetail();
     await screen.findByTestId("agent-session-list");

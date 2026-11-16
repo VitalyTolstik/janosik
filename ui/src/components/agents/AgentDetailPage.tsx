@@ -333,6 +333,7 @@ function SessionCard({
               {row.boardTitle}
             </Link>
             <SessionStatePill session={row} />
+            {row.stale && live && !row.paused ? <AgentStaleBadge /> : null}
             {row.paused &&
             row.pauseScope !== null &&
             row.pauseScope !== "session" ? (
