@@ -166,12 +166,17 @@ pixel-by-pixel comparison for every error, role and locale combination.
 `tools/verify-round4.mjs` exercises the unfiltered run badge, failed-run
 commands, missing and unknown board recovery, and stale lifecycle in the
 1440/1024/390 × light/dark × ADMIN/MEMBER × EN/RU matrix. It also checks
-the approval confirmation and reject form for ADMIN, plus rollback styling and equal footer widths, and records screenshots and results in
+the approval confirmation and reject form for ADMIN, plus rollback styling
+and equal footer widths, and records screenshots and results in
 `round4-browser-results.json`. The browser check is read-only. The approval
 loading skeleton, full pagination of the run count, and all-board detail
 scope are covered by UI component tests. `tools/verify-round4-token.mjs`
 checks the token-page title, lifecycle, and one stale signal per card across
-the same matrix. The run badge is withheld until all
+the same matrix. `tools/verify-round4-pause.mjs` checks the board and
+session pause dialogs for ADMIN and read-only controls for MEMBER, including
+the desktop label and textarea offsets. The measured English desktop approval
+confirmation is 440 × 229.48 px; the board pause label and textarea start at
+90.69 px and 109.20 px from the dialog top. The run badge is withheld until all
 pages are loaded, or when a board could not be read; it is never presented as
 a total while incomplete.
 

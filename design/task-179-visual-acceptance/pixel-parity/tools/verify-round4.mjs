@@ -215,6 +215,15 @@ try {
             const dialog = page.getByTestId("approval-approve-dialog");
             await dialog.waitFor();
             assert.equal((await dialog.innerText()).includes(".."), false);
+            if (width === 1440 && lang === "en") {
+              const box = await dialog.boundingBox();
+              assert.ok(
+                box &&
+                  Math.abs(box.width - 440) < 0.1 &&
+                  Math.abs(box.height - 229.5) < 0.2,
+                `${tag} approval dialog dimensions`,
+              );
+            }
             await page.screenshot({ path: `${out}/round4-approve-${tag}.png` });
           }
           assert.deepEqual(pageErrors, [], `${tag} page errors`);
