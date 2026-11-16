@@ -31,8 +31,8 @@ rollback states in the screenshots are real API states, not mocked HTML.
 
 ## Feedback checklist
 
-The handoff called out these areas; each row names the implementation and the
-place that pins it.
+The handoff's 20-item feedback checklist maps to these rows; each row names
+the implementation and the place that pins it.
 
 | Area | Result | Implementation / evidence |
 | --- | --- | --- |
@@ -48,11 +48,14 @@ place that pins it.
 | Runs count / limit | Covered | Board Runs shows five rows per page, `5 of N` from loaded rows, `Load more` appends five and fetches the next server cursor; the global list keeps its own board-scoped page. `RunsPanel.tsx`, `use-agent-runs.ts`; `RunsPanel.test.tsx` (`shows a total and appends the next page with Load more`). |
 | Approvals expired / consumed / cancelled copy | Covered | Effective expiry is computed from `status + expiresAt`; disabled actions and banner/history copy switch without a refresh. `effectiveApprovalStatus`, `statusHint`; `state-approval-*` screenshots; `AgentControlDialog.test.tsx` (`explains an expired request`). |
 | Mobile geometry | Covered | 390 full-screen modal, 44 px close/rail/actions, one scroll pane; 1024 sheet below the real header. `control-*.png` at 390/1024; `design-system.test.ts` pins the shell rules. |
+| Session detail body/footer | Covered | Status/hint banner, chips, meta grid, current work, paused semantics, and the footer `Open board` / quiet Pause·Resume / danger End; member and terminal variants keep only their allowed actions. `session-ui.tsx`; `agents-session-detail-*`, `agents-session-pause-*`, `agents-session-end-*`. |
+| Counts and rail badges | Covered | Attention badge is the pending-decision count only; stale and paused sessions do not inflate it; board scope and All boards keep separate scope counts. `use-pending-approvals.test.tsx`, `AgentsPage.test.tsx`. |
 | RU locale | Covered | The new `expires in N min` row label has an RU translation; RU captures verify no fallback. `ui/src/locales/ru/translation.json`; `agents-attention-admin-dark-1440-ru-RU.png`, `control-inbox-admin-dark-1440-ru-RU.png`. |
 | Token/actor names | Partial by contract | Own-token names come from `listTokens`; another member's token name is deliberately not disclosed by the board API. Approval rows fall back to the exact session name, and board run rows fall back to a short token id. This is a display/security boundary, not missing UI state. |
 | Partial board error / stale rows | Covered | Existing 166.17 retention behavior is preserved; global updated state switches to `incomplete`. `AgentsPage.test.tsx` partial-error case. |
 | Unknown `?board=` / deep-link board requirement | Covered | Unknown board shows recovery copy; `?approval`/`?run` without `?board` is rejected with the documented message. `AgentsPage.test.tsx`. |
 | No fabricated diffs / impact promises | Covered | Approval surfaces show exact commands, plan hash, summary and known targets; rollback is described as conditional. `AttentionApprovals.tsx`, `run-ui.tsx`; the `runFooter`/approval tests. |
+| No horizontal overflow or page errors | Covered | `overflow-1024`/`overflow-390` are false; there are no `pageerror` entries. The only console entries are the expected pre-login `/auth/refresh` 401s recorded in `errors-*.json`. |
 
 The broader 24-element comparison remains in
 [`../README.md`](../README.md); this folder records the final screenshot and

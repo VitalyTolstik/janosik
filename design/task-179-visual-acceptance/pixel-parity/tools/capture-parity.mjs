@@ -398,9 +398,11 @@ async function captureLanguages() {
       theme: "dark",
       locale,
     });
-    await go(page, "/agents?section=attention");
+    // The server profile locale wins after login, so the marketing-style
+    // `?lng=` handoff is the reliable way to force the RU catalog here.
+    await go(page, "/agents?section=attention&lng=ru");
     await shot(page, `agents-attention-admin-dark-1440-${locale}`);
-    await go(page, "/board/px-board-agent-ops?agents=inbox");
+    await go(page, "/board/px-board-agent-ops?agents=inbox&lng=ru");
     await page.waitForTimeout(700);
     await shot(page, `control-inbox-admin-dark-1440-${locale}`);
     await context.close();
