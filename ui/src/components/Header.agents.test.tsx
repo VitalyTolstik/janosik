@@ -344,6 +344,29 @@ describe("agent entry points in the header", () => {
     );
   });
 
+  it("keeps the header scope on All boards when a detail adds ?scope=all&board=", async () => {
+    const server = new FakeServer([board, boardTwo]);
+    renderHeader(
+      "/agents?section=runs&scope=all&board=board-2&run=run-1",
+      server,
+    );
+
+    const trigger = await screen.findByTestId("agents-header-scope");
+    expect(trigger).toHaveTextContent("All boards");
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/api/v1/agents/overview",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      server.requests.filter(
+        (request) => request.path === "/api/v1/agents/overview",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("sums All boards, renders 99+ and leaves the bell invitations-only", async () => {
     const server = new FakeServer([board, boardTwo]);
     server.pendingApprovals.set("board-1", 60);

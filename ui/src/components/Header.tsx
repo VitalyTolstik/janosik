@@ -75,21 +75,27 @@ export function Header() {
   const { role } = useBoardAccess();
   const { boards } = useBoard();
   const scopeParam = new URLSearchParams(location.search).get("board");
+  // Opening a detail from All boards keeps `scope=all` and adds the row's
+  // `board` for the deep link. The visible scope stays All boards; the board
+  // param belongs to the detail, not to the header combobox or its counts.
+  const allDetailScope =
+    new URLSearchParams(location.search).get("scope") === "all";
+  const headerBoardId = allDetailScope ? null : scopeParam;
   const pendingBoards = boards.map((board) => ({
     id: board.id,
     role: roleOf(board.id),
     archivedAt: board.archivedAt,
   }));
   const pendingApprovals = usePendingApprovals({
-    boardId: scopeParam,
+    boardId: headerBoardId,
     boards: pendingBoards,
     enabled: isAgentsRoute,
   });
   const pendingAll = pendingApprovals.totalCount;
   const pendingForScope =
-    scopeParam === null
+    headerBoardId === null
       ? pendingAll
-      : (pendingApprovals.counts[scopeParam] ?? null);
+      : (pendingApprovals.counts[headerBoardId] ?? null);
   const pendingBadge = pendingForScope;
   // A VIEWER has no mutating affordances, undo included: a stale local stack
   // after a live demotion would only offer commands the server refuses.
@@ -274,7 +280,9 @@ export function Header() {
         {isBoardRoute ? (
           <>
             <BoardTitle />
-            <BoardSwitcher />
+            <div className="max-[720px]:hidden">
+              <BoardSwitcher />
+            </div>
           </>
         ) : isAgentsRoute ? (
           <nav
@@ -283,9 +291,7 @@ export function Header() {
           >
             <div className="max-w-[150px] min-w-0 sm:max-w-[240px]">
               <BoardScopeSelect
-                value={
-                  new URLSearchParams(location.search).get("board") ?? "all"
-                }
+                value={headerBoardId ?? "all"}
                 boards={boards
                   .filter((board) => !board.archivedAt)
                   .map((board) => ({ id: board.id, title: board.title }))}
@@ -293,6 +299,7 @@ export function Header() {
                   const query = new URLSearchParams(location.search);
                   if (boardId === "all") query.delete("board");
                   else query.set("board", boardId);
+                  query.delete("scope");
                   query.delete("approval");
                   query.delete("run");
                   query.delete("session");
@@ -318,11 +325,19 @@ export function Header() {
             </span>
           </nav>
         ) : null}
-        {!isAgentsRoute ? <NotificationsBell /> : null}
+        {!isAgentsRoute ? (
+          <div className={cn(isBoardRoute && "max-[720px]:hidden")}>
+            <NotificationsBell />
+          </div>
+        ) : null}
         {isBoardRoute ? (
           <>
-            <BoardMembersDialog />
-            <ShareDialog />
+            <div className="max-[720px]:hidden">
+              <BoardMembersDialog />
+            </div>
+            <div className="max-[720px]:hidden">
+              <ShareDialog />
+            </div>
             <AgentControlButton
               onOpen={(trigger) => {
                 agentTrigger.current = trigger;
@@ -331,23 +346,25 @@ export function Header() {
               }}
             />
             {role === "ADMIN" ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t("board.settings.button")}
-                    data-testid="board-settings-trigger"
-                    onClick={() => {
-                      setSettingsSection("workflow");
-                      setSettingsOpen(true);
-                    }}
-                  >
-                    <LazyAnimatedIcon name="settings" size={20} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("board.settings.button")}</TooltipContent>
-              </Tooltip>
+              <div className="max-[720px]:hidden">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t("board.settings.button")}
+                      data-testid="board-settings-trigger"
+                      onClick={() => {
+                        setSettingsSection("workflow");
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <LazyAnimatedIcon name="settings" size={20} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("board.settings.button")}</TooltipContent>
+                </Tooltip>
+              </div>
             ) : null}
             {/* The presence stack needs more width than a phone header can
             give; the roster stays reachable from the members dialog. */}
@@ -369,9 +386,17 @@ export function Header() {
             <GlobalSearch iconOnly />
           </div>
         ) : (
-          <GlobalSearch />
+          <div className={cn(isBoardRoute && "max-[720px]:hidden")}>
+            <GlobalSearch iconOnly={isBoardRoute} />
+          </div>
         )}
-        {isAgentsRoute ? <NotificationsBell /> : <HelpMenu />}
+        {isAgentsRoute ? (
+          <NotificationsBell />
+        ) : (
+          <div className={cn(isBoardRoute && "max-[720px]:hidden")}>
+            <HelpMenu />
+          </div>
+        )}
         {isAgentsRoute ? (
           <Link
             to={routes.agents}
@@ -405,7 +430,7 @@ export function Header() {
         ) : null}
 
         {isBoardRoute && !readOnly ? (
-          <>
+          <div className="flex items-center gap-0.5 max-[720px]:hidden">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -435,10 +460,14 @@ export function Header() {
               </TooltipTrigger>
               <TooltipContent>{t("redo.tooltip")}</TooltipContent>
             </Tooltip>
-          </>
+          </div>
         ) : null}
 
-        {isBoardRoute ? <DataMenu /> : null}
+        {isBoardRoute ? (
+          <div className="max-[720px]:hidden">
+            <DataMenu />
+          </div>
+        ) : null}
 
         <AccountDialog onOpenAgents={openAllAgents} compact={isAgentsRoute} />
       </div>

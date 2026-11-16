@@ -328,6 +328,28 @@ beforeEach(() => {
 });
 
 describe("AgentsPage", () => {
+  it("shows one partial-error banner on Runs when sessions and runs both fail", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-2"
+        ? Promise.reject({ status: 503 })
+        : Promise.resolve([session()]),
+    );
+    hoisted.listRuns.mockImplementation((boardId: string) =>
+      boardId === "board-2"
+        ? Promise.reject({ status: 503 })
+        : Promise.resolve([run({ id: `run-${boardId}`, boardId })]),
+    );
+    renderPage("/agents?section=runs");
+
+    const banner = await screen.findByTestId("agents-runs-stale");
+    expect(banner).toHaveTextContent("Docs");
+    expect(banner).toHaveTextContent("Some boards are unavailable");
+    expect(screen.queryByTestId("agents-error")).toBeNull();
+    expect(
+      screen.getByTestId("agents-run-row-run-board-1"),
+    ).toBeInTheDocument();
+  });
+
   it("warns and retains the last known sessions when one board fails", async () => {
     renderPage("/agents?section=sessions");
     expect(await screen.findByText("Docs agent")).toBeInTheDocument();
@@ -399,14 +421,16 @@ describe("AgentsPage", () => {
     expect(open).toHaveAttribute("href", "/board/board-1?agents=live");
   });
 
-  it("explains approvals to a member and never requests them", async () => {
+  it("explains approvals to a member and requests only cross-board counts", async () => {
     renderPage("/agents?board=board-2");
 
     expect(await screen.findByTestId("agents-member-note")).toHaveTextContent(
       "Approvals are handled by board admins.",
     );
     expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
-    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByTestId("agents-boards-scope")).toHaveTextContent(
+      "Pending",
+    );
     // No approval can be selected for this member, so Attention falls back
     // to the first filtered session detail instead of "Nothing selected".
     expect(
@@ -415,7 +439,11 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agents-detail-panel")).not.toHaveTextContent(
       "Nothing selected",
     );
-    expect(hoisted.agentsOverview).not.toHaveBeenCalled();
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith({
+      section: "approvals",
+      limit: 100,
+    });
+    expect(hoisted.getApproval).not.toHaveBeenCalled();
     expect(hoisted.listApprovals).not.toHaveBeenCalled();
   });
 
@@ -424,7 +452,10 @@ describe("AgentsPage", () => {
 
     expect(await screen.findByTestId("agents-member-note")).toBeVisible();
     expect(hoisted.getApproval).not.toHaveBeenCalled();
-    expect(hoisted.agentsOverview).not.toHaveBeenCalled();
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith({
+      section: "approvals",
+      limit: 100,
+    });
     expect(hoisted.listApprovals).not.toHaveBeenCalled();
     expect(screen.queryByTestId("agents-approval-detail")).toBeNull();
   });
@@ -614,6 +645,40 @@ describe("AgentsPage", () => {
       "data-run-id",
       "run-board-1",
     );
+  });
+
+  it("shows a conflict chip in the list before the run is opened", async () => {
+    hoisted.listRuns.mockImplementation((boardId: string) =>
+      Promise.resolve([run({ id: `run-${boardId}`, boardId })]),
+    );
+    hoisted.getRun.mockResolvedValue(runDetail({ id: "run-board-1" }));
+    hoisted.previewRunRevert.mockImplementation(
+      (_boardId: string, runId: string) =>
+        Promise.resolve(
+          revertPreview({
+            conflicts:
+              runId === "run-board-1"
+                ? [
+                    {
+                      touch: "card:card-1",
+                      expectedVersion: 1,
+                      currentVersion: 2,
+                      reason: "version_changed",
+                    },
+                  ]
+                : [],
+          }),
+        ),
+    );
+    renderPage("/agents?section=runs");
+
+    expect(await screen.findByText("1 conflict")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("agents-run-row-run-board-1"),
+    ).toHaveTextContent("1 conflict");
+    expect(
+      screen.getByTestId("agents-run-row-run-board-2"),
+    ).not.toHaveTextContent("conflict");
   });
 
   it("opens a board-scoped run deep link and copies a link with ?board=", async () => {
@@ -984,6 +1049,27 @@ describe("AgentsPage", () => {
     expect(
       screen.getByTestId("agents-filter-board-option-all"),
     ).toHaveTextContent("1");
+  });
+
+  it("keeps cross-board pending counts in a member board scope", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 3 },
+      }),
+    );
+    renderPage("/agents?section=attention&board=board-2");
+
+    expect(await screen.findByTestId("agents-boards-scope")).toHaveTextContent(
+      "Pending",
+    );
+    await userEvent.click(screen.getByTestId("agents-filter-board"));
+    expect(
+      screen.getByTestId("agents-filter-board-option-board-1"),
+    ).toHaveTextContent("3");
+    expect(
+      screen.getByTestId("agents-filter-board-option-all"),
+    ).toHaveTextContent("3");
   });
 
   it("counts only ADMIN boards in All scope and ignores member boards", async () => {
@@ -1463,7 +1549,10 @@ describe("AgentsPage", () => {
       within(live).getByTestId("agent-session-row-session-3"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("agents-approval-list")).toBeNull();
-    expect(hoisted.agentsOverview).not.toHaveBeenCalled();
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith({
+      section: "approvals",
+      limit: 100,
+    });
     expect(within(live).queryByTestId("agents-session-pause")).toBeNull();
     expect(within(live).queryByTestId("agents-session-end")).toBeNull();
     expect(within(live).queryByTestId("agent-token-settings")).toBeNull();
@@ -1527,6 +1616,60 @@ describe("AgentsPage", () => {
     expect(
       screen.queryByTestId("agents-approval-reject-approval-2"),
     ).toBeNull();
+  });
+
+  it("offers Next pending from a decided approval with a pending sibling", async () => {
+    const approved = overviewItem({
+      id: "approval-approved",
+      status: "approved",
+      storedStatus: "approved",
+      summary: "Approved request",
+      decidedBy: "user-1",
+      decidedAt: Date.now(),
+      decisionComment: "Ship it",
+    });
+    const pending = overviewItem({
+      id: "approval-pending",
+      actionType: "ARCHIVE_CARD",
+      summary: "Still waiting",
+    });
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([approved, pending], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 2,
+      }),
+    );
+    hoisted.getApproval.mockImplementation((_boardId: string, id: string) =>
+      Promise.resolve(
+        id === approved.id
+          ? approval({
+              id: approved.id,
+              status: "approved",
+              decidedBy: "user-1",
+              decidedAt: Date.now(),
+              decisionComment: "Ship it",
+            })
+          : approval({ id: pending.id, summary: pending.summary }),
+      ),
+    );
+    renderPage("/agents?section=attention");
+
+    await userEvent.click(
+      await screen.findByTestId("agents-approvals-filter-decided"),
+    );
+    expect(await screen.findByTestId("approval-status")).toHaveAttribute(
+      "data-status",
+      "approved",
+    );
+    await userEvent.click(screen.getByTestId("approval-next-pending"));
+    await waitFor(() =>
+      expect(screen.getByTestId("approval-status")).toHaveAttribute(
+        "data-status",
+        "pending",
+      ),
+    );
   });
 
   it("shows a toolbar Clear filters action for an active session search", async () => {
@@ -2154,7 +2297,7 @@ describe("AgentsPage", () => {
     expect(screen.getByTestId("agents-session-board-chip")).toBeInTheDocument();
   });
 
-  it("keeps token group headers to the agent name, session count and heartbeat", async () => {
+  it("shows the plain-mono token id in a token group header", async () => {
     renderPage("/agents?section=sessions&group=token");
 
     const group = await screen.findByTestId("agents-token-group-token-1");
@@ -2164,8 +2307,9 @@ describe("AgentsPage", () => {
     expect(
       within(group).queryByTestId("agents-token-settings-token-1"),
     ).toBeNull();
-    expect(group).not.toHaveTextContent("token-1");
-    expect(group.querySelector(".font-mono")).toBeNull();
+    const tokenChip = within(group).getByTestId("agents-token-chip-token-1");
+    expect(tokenChip).toHaveTextContent("token-1");
+    expect(tokenChip.className).toContain("font-mono");
   });
 
   it("keeps the master-detail sheet and 44px actions on mobile", async () => {

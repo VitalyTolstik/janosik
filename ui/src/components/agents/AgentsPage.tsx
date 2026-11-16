@@ -57,6 +57,7 @@ import {
 } from "./AttentionApprovals";
 import { BoardScopeSelect } from "./BoardScopeSelect";
 import { RunDetail, RunList } from "./run-ui";
+import { useRunConflictPreviews } from "./use-run-conflict-previews";
 import {
   EMPTY_RUN_FILTER,
   hasRunFilter,
@@ -424,11 +425,33 @@ export function AgentsPage() {
     );
   }, [setParams]);
 
+  const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
+  const isAttentionAdmin =
+    filter.board === "all"
+      ? hasAdminBoard
+      : state.boards.find((board) => board.id === filter.board)?.role ===
+        "ADMIN";
+  // A board-scoped URL can point at a board where the caller is only a
+  // MEMBER. Approvals stay unavailable there, but the rail still shows the
+  // caller's cross-board pending counts from the ADMIN boards they can read.
+  const needsCrossBoardCounts =
+    filter.board !== "all" && !isAttentionAdmin && hasAdminBoard;
+  const crossBoardPending = usePendingApprovals({
+    boardId: null,
+    boards: state.boards,
+    enabled: !state.isAgentToken && needsCrossBoardCounts,
+  });
   const pending = usePendingApprovals({
     boardId: filter.board === "all" ? null : filter.board,
     boards: state.boards,
     enabled: !state.isAgentToken,
   });
+  const pendingCounts = needsCrossBoardCounts
+    ? crossBoardPending.counts
+    : pending.counts;
+  const pendingAll = needsCrossBoardCounts
+    ? crossBoardPending.totalCount
+    : pending.totalCount;
   const runs = useAgentRuns(state.boards, {
     enabled: !state.isAgentToken,
     boardsLoading: state.loading,
@@ -469,6 +492,16 @@ export function AgentsPage() {
   const visibleRunRows = useMemo(
     () => runs.rows.slice(0, runVisibleCount),
     [runVisibleCount, runs.rows],
+  );
+  // The list must surface rollback blockers before a run is opened. Previews
+  // are read-only; the detail's own preview wins when both have an answer.
+  const precomputedConflicts = useRunConflictPreviews(
+    section === "runs" ? visibleRunRows : [],
+    section === "runs",
+  );
+  const displayedConflicts = useMemo(
+    () => new Map([...precomputedConflicts, ...runConflicts]),
+    [precomputedConflicts, runConflicts],
   );
   // The master-detail opens the newest run until the URL pins one. Remember
   // which run that was so a refresh that prepends the new `revert` audit run
@@ -598,19 +631,23 @@ export function AgentsPage() {
     selectedApprovalId ?? (selectedSession === null ? defaultApprovalId : null);
   const nextPendingApproval = useMemo(() => {
     if (visibleApprovalId === null) return null;
-    const pendingRows = approvalRowsForFilter.filter(
+    // Decided is a history filter, not a reason to lose the pending peers:
+    // an approved detail opened from Recently decided still offers the next
+    // request waiting for a decision.
+    const pendingRows = scopedApprovalRows.filter(
       (row) =>
         effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
     );
-    if (pendingRows.length < 2) return null;
+    if (pendingRows.length === 0) return null;
     const index = pendingRows.findIndex((row) => row.id === visibleApprovalId);
+    // The open row is decided: offer the first pending peer. A pending row
+    // only gets a "next" when at least one other request is waiting.
+    if (index === -1) return pendingRows[0] ?? null;
+    if (pendingRows.length < 2) return null;
     return pendingRows[(index + 1) % pendingRows.length] ?? null;
-  }, [now, approvalRowsForFilter, visibleApprovalId]);
-  const pendingAll = pending.totalCount;
+  }, [now, scopedApprovalRows, visibleApprovalId]);
   const pendingForScope =
-    filter.board === "all"
-      ? pendingAll
-      : (pending.counts[filter.board] ?? null);
+    filter.board === "all" ? pendingAll : (pendingCounts[filter.board] ?? null);
   const scopedRows = useMemo(
     () =>
       filter.board === "all"
@@ -618,12 +655,6 @@ export function AgentsPage() {
         : state.rows.filter((row) => row.boardId === filter.board),
     [filter.board, state.rows],
   );
-  const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
-  const isAttentionAdmin =
-    filter.board === "all"
-      ? hasAdminBoard
-      : state.boards.find((board) => board.id === filter.board)?.role ===
-        "ADMIN";
   // TASK-179.8: the Attention badge is the pending-decision count, never a
   // mixed approvals+stale total. Stale sessions stay visible in the list but
   // do not inflate this number (the mockup uses `scopePending()`).
@@ -706,9 +737,9 @@ export function AgentsPage() {
     return groups.map((group) => ({
       ...group,
       pending:
-        group.boardId === undefined ? 0 : (pending.counts[group.boardId] ?? 0),
+        group.boardId === undefined ? 0 : (pendingCounts[group.boardId] ?? 0),
     }));
-  }, [filtered, groupMode, pending.counts]);
+  }, [filtered, groupMode, pendingCounts]);
   const sessionDetailRow = useMemo(() => {
     if (section !== "sessions" && section !== "attention") return undefined;
     if (selectedSession !== null) {
@@ -833,7 +864,25 @@ export function AgentsPage() {
   // A failed approvals request means the Attention timestamp cannot claim
   // freshness, even when the board/session fetch succeeded.
   const freshnessStale =
-    state.error || offline || (section === "attention" && pending.error);
+    state.error ||
+    offline ||
+    (section === "attention" && pending.error) ||
+    (section === "runs" && runs.error);
+  // One partial-error banner on Runs, even when both the session fan-out and
+  // the run fan-out failed. The board names come from either source and the
+  // Retry refreshes both, so the retained rows cannot claim to be fresh.
+  const unavailableRunBoardIds = useMemo(() => {
+    const ids = new Set<string>(runs.errorBoardIds);
+    if (state.error) for (const id of state.staleBoardIds) ids.add(id);
+    return [...ids];
+  }, [runs.errorBoardIds, state.error, state.staleBoardIds]);
+  const unavailableRunBoards = unavailableRunBoardIds
+    .map((id) => state.boards.find((board) => board.id === id)?.title ?? id)
+    .join(", ");
+  const showRunsPartialError =
+    section === "runs" &&
+    runs.rows.length > 0 &&
+    (runs.error || state.error || offline);
   const openTokens = () =>
     window.dispatchEvent(new Event("janosik:open-api-keys"));
 
@@ -943,8 +992,8 @@ export function AgentsPage() {
         <div className="mt-[18px] hidden md:block">
           <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-[650] uppercase tracking-[0.07em] text-muted-foreground">
             <span>{t("agents.shell.boards")}</span>
-            <span>
-              {isAttentionAdmin
+            <span data-testid="agents-boards-scope">
+              {hasAdminBoard
                 ? t("agents.shell.pending")
                 : t("agents.shell.scope")}
             </span>
@@ -954,7 +1003,7 @@ export function AgentsPage() {
               const count =
                 board.value === "all"
                   ? pendingAll
-                  : (pending.counts[board.value] ?? null);
+                  : (pendingCounts[board.value] ?? null);
               return (
                 <button
                   key={board.value}
@@ -1197,7 +1246,7 @@ export function AgentsPage() {
                   testId="agents-filter-board"
                   variant="filter"
                   className="w-auto min-w-0"
-                  counts={pending.counts}
+                  counts={pendingCounts}
                   totalCount={pendingAll}
                   stale={pending.stale}
                 />
@@ -1369,68 +1418,70 @@ export function AgentsPage() {
               </div>
             </>
           ) : null}
-          {(state.error || offline) && state.rows.length > 0 && (
-            <div
-              className={cn(
-                "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
-                state.rows.length === 0
-                  ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
-                  : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
-              )}
-              data-testid="agents-error"
-              role="alert"
-            >
-              <AlertTriangle
+          {(state.error || offline) &&
+            state.rows.length > 0 &&
+            !(section === "runs" && (runs.error || offline)) && (
+              <div
                 className={cn(
-                  "mt-px h-3.5 w-3.5 shrink-0",
+                  "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                   state.rows.length === 0
-                    ? "text-[color:var(--agent-tone-danger)]"
-                    : "text-[color:var(--agent-tone-warning)]",
+                    ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
+                    : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
                 )}
-                aria-hidden
-              />
-              <span className="min-w-0 flex-1">
-                {offline ? (
-                  t("agents.shell.offline")
-                ) : state.rows.length === 0 ? (
-                  t("agents.error.title")
-                ) : (
-                  <>
-                    <strong className="font-[650]">
-                      {t("agents.shell.partialErrorTitle")}
-                    </strong>{" "}
-                    {t("agents.shell.partialError", {
-                      boards: state.staleBoardIds
-                        .map(
-                          (id) =>
-                            state.boards.find((board) => board.id === id)
-                              ?.title ?? id,
-                        )
-                        .join(", "),
-                    })}
-                    {Object.entries(state.boardLoadedAt ?? {})
-                      .filter(([id]) =>
-                        state.rows.some((row) => row.boardId === id),
-                      )
-                      .map(
-                        ([id, loaded]) =>
-                          ` ${t("agents.shell.lastLoadedBoard", { board: state.boards.find((board) => board.id === id)?.title ?? id, seconds: Math.max(0, Math.floor((now - loaded) / 1000)) })}`,
-                      )
-                      .join("")}
-                  </>
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={state.reload}
-                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
-                data-testid="agents-retry"
+                data-testid="agents-error"
+                role="alert"
               >
-                <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
-                {t("agents.retry")}
-              </button>
-            </div>
-          )}
+                <AlertTriangle
+                  className={cn(
+                    "mt-px h-3.5 w-3.5 shrink-0",
+                    state.rows.length === 0
+                      ? "text-[color:var(--agent-tone-danger)]"
+                      : "text-[color:var(--agent-tone-warning)]",
+                  )}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1">
+                  {offline ? (
+                    t("agents.shell.offline")
+                  ) : state.rows.length === 0 ? (
+                    t("agents.error.title")
+                  ) : (
+                    <>
+                      <strong className="font-[650]">
+                        {t("agents.shell.partialErrorTitle")}
+                      </strong>{" "}
+                      {t("agents.shell.partialError", {
+                        boards: state.staleBoardIds
+                          .map(
+                            (id) =>
+                              state.boards.find((board) => board.id === id)
+                                ?.title ?? id,
+                          )
+                          .join(", "),
+                      })}
+                      {Object.entries(state.boardLoadedAt ?? {})
+                        .filter(([id]) =>
+                          state.rows.some((row) => row.boardId === id),
+                        )
+                        .map(
+                          ([id, loaded]) =>
+                            ` ${t("agents.shell.lastLoadedBoard", { board: state.boards.find((board) => board.id === id)?.title ?? id, seconds: Math.max(0, Math.floor((now - loaded) / 1000)) })}`,
+                        )
+                        .join("")}
+                    </>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={state.reload}
+                  className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
+                  data-testid="agents-retry"
+                >
+                  <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
+                  {t("agents.retry")}
+                </button>
+              </div>
+            )}
           {section === "attention" &&
           pending.error &&
           !(state.error && state.rows.length === 0) ? (
@@ -1445,6 +1496,46 @@ export function AgentsPage() {
                 onClick={pending.reload}
                 className="min-h-9 rounded-sm border border-current/40 px-2 font-medium max-md:min-h-11"
               >
+                {t("agents.retry")}
+              </button>
+            </div>
+          ) : null}
+          {showRunsPartialError ? (
+            <div
+              className="mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.45] text-foreground"
+              role="alert"
+              data-testid="agents-runs-stale"
+            >
+              <AlertTriangle
+                className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
+                {offline ? (
+                  t("agents.shell.offline")
+                ) : (
+                  <>
+                    <strong className="font-[650]">
+                      {t("agents.shell.partialErrorTitle")}
+                    </strong>{" "}
+                    {t("agents.runs.partialError", {
+                      boards:
+                        unavailableRunBoards || t("agents.filters.allBoards"),
+                    })}
+                  </>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  state.reload();
+                  runs.reload();
+                  runCount.reload();
+                }}
+                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
+                data-testid="agents-runs-retry"
+              >
+                <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
                 {t("agents.retry")}
               </button>
             </div>
@@ -1560,23 +1651,6 @@ export function AgentsPage() {
                 )
               ) : (
                 <>
-                  {runs.error ? (
-                    <div
-                      className="mb-2.5 flex flex-wrap items-center gap-3 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
-                      role="alert"
-                      data-testid="agents-runs-stale"
-                    >
-                      <span>{t("agents.runs.stale")}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={runs.reload}
-                        className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
-                      >
-                        {t("agents.retry")}
-                      </Button>
-                    </div>
-                  ) : null}
                   <RunList
                     rows={visibleRunRows}
                     selectedId={runDetailRunId}
@@ -1594,7 +1668,7 @@ export function AgentsPage() {
                         ? t("agentControl.runs.noToken")
                         : (runTokenNames.get(tokenId) ?? shortId(tokenId))
                     }
-                    conflicts={runConflicts}
+                    conflicts={displayedConflicts}
                   />
                   <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-[11px] text-muted-foreground">
                     <span data-testid="agents-runs-footer-total">
