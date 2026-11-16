@@ -51,7 +51,7 @@ export function StatusBadge({
       data-testid={testId}
       data-status={status}
       className={cn(
-        "inline-flex h-[22px] max-w-full shrink-0 items-center justify-center gap-[5px] overflow-hidden rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
+        "inline-flex h-[22px] shrink-0 items-center justify-center gap-[5px] rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
         TONE_CLASS[tone],
         className,
       )}
@@ -63,7 +63,7 @@ export function StatusBadge({
           className="h-[5px] w-[5px] shrink-0 rounded-full bg-current"
         />
       ) : null}
-      <span className="min-w-0 truncate">{label}</span>
+      <span>{label}</span>
     </span>
   );
 }

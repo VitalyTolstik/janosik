@@ -807,7 +807,7 @@ export function AttentionApprovalDetail({
       <header
         className={cn(
           "shrink-0 border-b border-border px-3.5",
-          variant === "board" ? "pt-[11px] pb-2" : "pt-3 pb-2",
+          variant === "board" ? "pt-[11px] pb-[9px]" : "pt-3 pb-2",
         )}
       >
         <div className="flex items-start gap-2">
@@ -845,7 +845,7 @@ export function AttentionApprovalDetail({
                 : titleForApproval(detail, cardTitle, t)}
             </h2>
             {variant === "board" && detail !== null ? (
-              <div className="-mt-0.5 flex flex-wrap items-center gap-1.5">
+              <div className="-mt-0.5 mb-2 flex flex-wrap items-center gap-1.5">
                 {effectiveStatus !== undefined ? (
                   <ApprovalStatusBadge
                     status={effectiveStatus}

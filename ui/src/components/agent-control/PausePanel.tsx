@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
-  AlertTriangle,
   ArrowUpRight,
   Bot,
   Pause,
@@ -25,6 +24,7 @@ import { useBoardLive } from "@/store/board-live";
 import { useBoardActions, useBoardState } from "@/store/BoardContext";
 import { AgentPauseBadge } from "@/components/agents/agents-ui";
 import { AgentConfirmDialog } from "@/components/agents/AgentConfirmDialog";
+import { AgentControlError } from "./AgentControlError";
 import {
   AgentActionDialog,
   type AgentActionTarget,
@@ -38,7 +38,6 @@ import {
 import {
   compactAge,
   isTerminalStatus,
-  heartbeatAge,
   runNumber,
   shortId,
 } from "@/components/agents/agent-model";
@@ -113,7 +112,7 @@ function LiveSessionRow({
       data-testid={`agent-session-row-${session.id}`}
       data-status={session.status}
       data-paused={session.paused ? "true" : "false"}
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft py-2 last:border-b-0 min-[761px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1.25fr)_auto] min-[761px]:gap-2"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft py-1 last:border-b-0 min-[761px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1.25fr)_auto] min-[761px]:gap-2"
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -126,12 +125,13 @@ function LiveSessionRow({
               data-testid="agent-session-no-heartbeat"
               className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[11px] font-[650] text-[color:var(--agent-tone-warning)]"
             >
-              {t("agentControl.live.noHeartbeatAge", {
-                age: compactAge(heartbeatAge(session, now), lang),
-              })}
+              {t("agentControl.live.noHeartbeatChip")}
             </span>
           ) : null}
-          {session.paused && session.pauseScope !== null ? (
+          {/* A session-level pause is already the one visible status pill; a
+              second "Session pause" chip would repeat it. Board/token pauses
+              stay separate because they do not rewrite the lifecycle. */}
+          {session.paused && session.pauseScope !== null && !sessionPaused ? (
             <span data-testid="agent-session-paused">
               <AgentPauseBadge
                 scope={session.pauseScope}
@@ -141,7 +141,7 @@ function LiveSessionRow({
           ) : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-          <HeartbeatText session={session} now={now} noHeartbeatLabel={false} />
+          <HeartbeatText session={session} now={now} />
           <span aria-hidden>·</span>
           <span className="truncate">
             {[session.clientName, session.model]
@@ -155,11 +155,6 @@ function LiveSessionRow({
             })}
           </span>
         </div>
-        {session.pausedReason ? (
-          <p className="mt-0.5 text-[11px] text-[color:var(--agent-tone-warning)]">
-            {t("agentControl.pause.reasonValue")}: {session.pausedReason}
-          </p>
-        ) : null}
         {pausedByOtherScope ? (
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {t("agentControl.live.pausedByScope", {
@@ -483,7 +478,9 @@ export function PausePanel({
       .then(setSessions)
       .catch(() => {
         setSessionsError(true);
-        setSessions([]);
+        // Keep the unknown state distinct from a successful empty answer so
+        // the toolbar cannot fabricate "0 sessions" after a failed fetch.
+        setSessions(null);
       });
   }, [boardId]);
 
@@ -668,22 +665,13 @@ export function PausePanel({
           <SessionSkeleton label={t("agentControl.sessions.loading")} />
         ) : null}
         {sessionsError ? (
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">
-            <AlertTriangle
-              className="h-5 w-5 text-[color:var(--agent-tone-warning)]"
-              aria-hidden
-            />
-            <p>{t("agentControl.sessions.loadError")}</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setRevision((value) => value + 1)}
-              className="max-md:min-h-11"
-            >
-              {t("agentControl.retry")}
-            </Button>
-          </div>
+          <AgentControlError
+            title={t("agentControl.sessions.loadError")}
+            body={t("agentControl.sessions.loadErrorBody")}
+            onRetry={() => setRevision((value) => value + 1)}
+            testId="agent-live-error-card"
+            retryTestId="agent-live-retry"
+          />
         ) : null}
 
         {sessions !== null && !sessionsError && sessions.length === 0 ? (

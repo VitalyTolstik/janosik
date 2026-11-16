@@ -32,6 +32,16 @@ describe("one status badge primitive (TASK-179.9)", () => {
     );
   });
 
+  it("never ellipsizes a lifecycle label", () => {
+    withI18n(<SessionStatusPill status="completed" />);
+    const badge = screen.getByTestId("agent-status-completed");
+    const label = badge.lastElementChild;
+    expect(badge.className).not.toContain("overflow-hidden");
+    expect(label?.className).not.toContain("truncate");
+    expect(label).toHaveTextContent("Completed");
+    expect(badge).toHaveTextContent("Completed");
+  });
+
   it.each([
     ["pending", "Pending"],
     ["approved", "Approved"],

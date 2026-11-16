@@ -172,6 +172,7 @@ function renderList(overrides: Partial<AttentionApprovalRow> = {}) {
 function renderDetail(
   detail: ApprovalRequestDto = approval(),
   fallbackAgentName = AGENT,
+  variant: "global" | "board" = "global",
 ) {
   hoisted.getApproval.mockResolvedValue(detail);
   return render(
@@ -182,6 +183,7 @@ function renderDetail(
           approvalId={detail.id}
           boardTitle="Launch"
           fallbackAgentName={fallbackAgentName}
+          variant={variant}
           onChanged={() => {}}
         />
       </I18nProvider>
@@ -190,6 +192,16 @@ function renderDetail(
 }
 
 describe("AttentionApprovals", () => {
+  it("uses the mockup board-detail header spacing", async () => {
+    renderDetail(approval(), AGENT, "board");
+    const header = (
+      await screen.findByTestId("agents-approval-detail")
+    ).querySelector("header");
+    expect(header?.className).toContain("pt-[11px]");
+    expect(header?.className).toContain("pb-[9px]");
+    const subRow = header?.querySelector("div[class*='-mt-0.5']");
+    expect(subRow?.className).toContain("mb-2");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     hoisted.getBoard.mockResolvedValue(BOARD);

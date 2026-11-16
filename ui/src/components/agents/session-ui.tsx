@@ -315,6 +315,15 @@ function SessionGroupHeader({
         </span>
       )}
       <b className="min-w-0 truncate text-[11.5px] font-[650]">{group.title}</b>
+      {mode === "token" && group.tokenId !== undefined ? (
+        <span
+          data-testid={`agents-token-chip-${group.tokenId}`}
+          title={group.tokenId}
+          className="inline-flex h-[21px] max-w-[150px] shrink-0 items-center rounded-[3px] border border-border bg-background px-1 font-mono text-[11px] text-muted-foreground"
+        >
+          <span className="truncate">{group.tokenId}</span>
+        </span>
+      ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
         <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
@@ -347,7 +356,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5"
+      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_104px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -361,7 +370,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "agents-session-grid grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_88px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_92px] min-[1181px]:gap-2.5";
+  "agents-session-grid grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_104px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5";
 
 export function SessionRow({
   row,

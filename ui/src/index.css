@@ -184,14 +184,14 @@ html.light {
     0 28px 80px -36px rgb(15 23 42 / 0.28), 0 2px 8px rgb(15 23 42 / 0.06);
 }
 
-/* Russian lifecycle labels are wider than the mockup's English column
-   (Простаивает needs 78 px of text). Keep the mockup column for EN and give
-   RU enough room instead of truncating the status pill. */
+/* Russian lifecycle/pause labels are wider than the mockup's English column
+   (Приостановлена needs the full pill, not an ellipsis). Keep the mockup
+   column for EN and give RU enough room; the pill itself never truncates. */
 @media (min-width: 761px) {
   html[lang="ru"] .agents-session-grid {
     grid-template-columns:
       minmax(128px, 1.35fr) minmax(120px, 1.2fr) 82px
-      110px;
+      140px;
   }
 }
 
@@ -199,7 +199,7 @@ html.light {
   html[lang="ru"] .agents-session-grid {
     grid-template-columns:
       minmax(140px, 1.4fr) minmax(140px, 1.35fr) minmax(108px, 1.1fr)
-      82px 110px;
+      82px 140px;
   }
 }
 

@@ -53,7 +53,10 @@ export function TokenInfoDialog({
         hideClose
       >
         <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-surface text-[color:var(--warning)]">
+          <span
+            data-testid={`${testIdPrefix}-icon`}
+            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-surface text-muted-foreground"
+          >
             <KeyRound className="h-[15px] w-[15px]" aria-hidden />
           </span>
           <div className="min-w-0">
@@ -68,7 +71,7 @@ export function TokenInfoDialog({
         <div className="px-4 pb-[3px]">
           <p
             data-testid={`${testIdPrefix}-impact`}
-            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-muted-foreground"
+            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-foreground"
           >
             {t("agents.approvals.tokenInfoBody")}
           </p>
@@ -90,7 +93,7 @@ export function TokenInfoDialog({
               onOpenChange(false);
               onOpenAccount();
             }}
-            className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:min-h-11"
+            className="h-7 min-h-0 min-w-[176px] justify-center rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:min-h-11"
           >
             {t("agents.approvals.tokenInfoOpen")}
           </Button>

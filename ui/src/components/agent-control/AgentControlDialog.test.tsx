@@ -456,6 +456,11 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       await screen.findByText("Could not load the approval queue"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-approvals-error-card")).toHaveTextContent(
+      "Retry does not drop the filters",
+    );
+    expect(screen.queryByTestId("approval-detail-empty")).toBeNull();
+    expect(screen.queryByText("Select an approval")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
@@ -626,9 +631,14 @@ describe("agent control (TASK-166.14)", () => {
       ),
     );
 
+    const pausedRow = await screen.findByTestId("agent-session-row-session-1");
     expect(
-      await screen.findByTestId("agent-session-paused"),
-    ).toBeInTheDocument();
+      within(pausedRow).getByTestId("agent-status-paused"),
+    ).toHaveTextContent("Paused");
+    // One paused pill: no duplicate "Session pause" chip and no row-level
+    // reason; the reason lives in the detail surface.
+    expect(within(pausedRow).queryByTestId("agent-session-paused")).toBeNull();
+    expect(pausedRow).not.toHaveTextContent("Reason: Review");
     await userEvent.click(screen.getByTestId("agent-session-resume"));
     await userEvent.click(await screen.findByTestId("agent-action-confirm"));
     await waitFor(() =>
@@ -666,7 +676,6 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       within(staleRow).getByTestId("agent-status-active"),
     ).toHaveTextContent("Active");
-    expect(staleRow).toHaveTextContent("6m ago");
     expect(staleRow).toHaveTextContent("No heartbeat · 6m");
     expect(within(staleRow).queryByTestId("agent-status-stale")).toBeNull();
     const terminalRow = screen.getByTestId("agent-session-row-completed");
@@ -762,6 +771,27 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       screen.getByText("Could not load agent sessions"),
     ).toBeInTheDocument();
+    const errorCard = screen.getByTestId("agent-live-error-card");
+    expect(errorCard).toHaveTextContent("Retry does not drop the filters");
+    expect(screen.getByTestId("agent-live-panel")).not.toHaveTextContent(
+      "0 sessions",
+    );
+  });
+
+  it("keeps the stale age in the subline, not the No heartbeat chip", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+      session({ stale: true, lastHeartbeatAt: Date.now() - 53 * 60_000 }),
+    ]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    const row = await screen.findByTestId("agent-session-row-session-1");
+    const chip = within(row).getByTestId("agent-session-no-heartbeat");
+    expect(chip).toHaveTextContent(/^No heartbeat$/);
+    expect(chip).not.toHaveTextContent("53m");
+    expect(within(row).getByTestId("agent-heartbeat")).toHaveTextContent(
+      "No heartbeat · 53m",
+    );
   });
 
   it("keeps the board pause dialog open with an inline error", async () => {
