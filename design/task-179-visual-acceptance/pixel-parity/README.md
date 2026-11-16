@@ -170,7 +170,10 @@ the approval confirmation and reject form for ADMIN, plus rollback styling
 and equal footer widths, and records screenshots and results in
 `round4-browser-results.json`. The browser check is read-only. The approval
 loading skeleton, full pagination of the run count, and all-board detail
-scope are covered by UI component tests. `tools/verify-round4-token.mjs`
+scope are covered by UI component tests and by the read-only
+`tools/verify-round4-navigation.mjs` browser matrix, which also checks
+per-board freshness and approvals filtered-empty copy.
+`tools/verify-round4-token.mjs`
 checks the token-page title, lifecycle, and one stale signal per card across
 the same matrix. `tools/verify-round4-pause.mjs` checks the board and
 session pause dialogs for ADMIN and read-only controls for MEMBER, including
