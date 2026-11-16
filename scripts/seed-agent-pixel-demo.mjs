@@ -77,6 +77,7 @@ const ids = {
   tokenClaude: "px-token-claude",
   tokenDocs: "px-token-docs",
   tokenRelease: "px-token-release",
+  tokenReleaseArchive: "px-token-release-archive",
   tokenCi: "px-token-ci",
   sessionRefactor: "px-session-refactor",
   sessionLanding: "px-session-landing",
@@ -96,6 +97,7 @@ const rawTokens = {
   [ids.tokenClaude]: "jnk_pixel_claude_demo_0000000000000000000000000000",
   [ids.tokenDocs]: "jnk_pixel_docs_demo_000000000000000000000000000000",
   [ids.tokenRelease]: "jnk_pixel_release_demo_00000000000000000000000000",
+  [ids.tokenReleaseArchive]: "jnk_pixel_release_archive_0000000000000000000000",
   [ids.tokenCi]: "jnk_pixel_ci_demo_0000000000000000000000000000000",
 };
 
@@ -479,6 +481,14 @@ async function main() {
         lastUsedAt: at(-minutes(2)),
       },
       {
+        id: ids.tokenReleaseArchive,
+        userId: admin.id,
+        name: "Release bot",
+        tokenHash: sha256(rawTokens[ids.tokenReleaseArchive]),
+        scopePreset: "worker",
+        lastUsedAt: at(-hours(5)),
+      },
+      {
         id: ids.tokenCi,
         userId: admin.id,
         name: "Release agent (CI)",
@@ -519,7 +529,7 @@ async function main() {
     commands: [
       command({
         type: "UPDATE_CARD",
-        cardId: ids.cardApprovalInbox,
+        cardId: ids.cardClaim,
         description: "API reference sweep — exact MCP transport contract.",
       }),
     ],
@@ -579,7 +589,7 @@ async function main() {
     token: rawTokens[ids.tokenDocs],
     sessionId: null,
     clientRunId: "seed-run-118",
-    atMs: now - hours(26),
+    atMs: now - hours(12),
     kind: "batch",
     commands: [
       command({
@@ -611,7 +621,7 @@ async function main() {
     commands: [
       command({
         type: "UPDATE_CARD",
-        cardId: ids.cardApprovalInbox,
+        cardId: ids.cardMcp,
         description: "Approval inbox copy reviewed after the docs build.",
       }),
     ],
@@ -810,10 +820,9 @@ async function main() {
       id: "px-approval-expired",
       boardId: ids.boardOps,
       cardId: ids.cardHeartbeat,
-      requestedBy: member.id,
-      requestedByTokenId: ids.tokenRelease,
-      // No session on this board for the member's release token; an honest
-      // null beats a cross-board session that can never match the request.
+      requestedBy: admin.id,
+      requestedByTokenId: ids.tokenReleaseArchive,
+      // This archival token has no session on the board.
       agentSessionId: null,
       kind: "custom",
       actionType: "UPDATE_CARD",
@@ -911,10 +920,10 @@ async function main() {
       clientName: "opencode",
       model: "deepseek-v4.1",
       status: "active",
-      currentCardId: ids.cardApprovalInbox,
+      currentCardId: ids.cardMcp,
       currentRunId: run108,
       startedAt: at(-hours(2)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       summary: "Refactoring the approval flow.",
     },
     {
@@ -929,7 +938,7 @@ async function main() {
       currentCardId: ids.cardLanding,
       currentRunId: null,
       startedAt: at(-hours(3)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       summary: "Last known work: landing page rewrite.",
     },
     {
@@ -941,10 +950,10 @@ async function main() {
       clientName: "terminal",
       model: "claude-haiku-4.5",
       status: "active",
-      currentCardId: ids.cardMcp,
+      currentCardId: ids.cardClaim,
       currentRunId: run126,
       startedAt: at(-hours(1) - minutes(20)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       summary: "Sweeping the API reference.",
     },
     {
@@ -959,7 +968,7 @@ async function main() {
       currentCardId: ids.cardPricingCopy,
       currentRunId: null,
       startedAt: at(-minutes(58)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       pausedAt: at(-minutes(20)),
       pausedBy: admin.id,
       pausedReason: "Hold until the pricing copy is reviewed.",
@@ -977,7 +986,7 @@ async function main() {
       currentCardId: ids.cardPricingRefs,
       currentRunId: run115,
       startedAt: at(-hours(2)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       summary: "Waiting for the next deploy.",
     },
     {
@@ -992,7 +1001,7 @@ async function main() {
       currentCardId: ids.cardPricingRefs,
       currentRunId: run112,
       startedAt: at(-minutes(24)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       summary: "Collecting pricing references.",
     },
     {
@@ -1007,7 +1016,7 @@ async function main() {
       currentCardId: null,
       currentRunId: null,
       startedAt: at(-minutes(50)),
-      lastHeartbeatAt: at(hours(6)),
+      lastHeartbeatAt: at(-seconds(12)),
       summary: "Idle but heartbeating.",
     },
     {
@@ -1130,6 +1139,33 @@ async function main() {
       2,
     ),
   );
+
+  // Optional disposable-demo heartbeat: keep the intentionally fresh rows
+  // alive without future timestamps. Stop the process to let them age out.
+  if (process.env.SEED_KEEP_HEARTBEATS === "1") {
+    const freshIds = [
+      ids.sessionRefactor,
+      ids.sessionLanding,
+      ids.sessionApi,
+      ids.sessionDeploy,
+      ids.sessionPricing,
+      ids.sessionIdle,
+    ];
+    const beat = async () => {
+      await prisma.agentSession.updateMany({
+        where: { id: { in: freshIds }, endedAt: null },
+        data: { lastHeartbeatAt: new Date() },
+      });
+    };
+    await beat();
+    await new Promise(() => {
+      setInterval(() => {
+        void beat().catch((error) =>
+          console.error("demo heartbeat failed", error),
+        );
+      }, 60_000);
+    });
+  }
 }
 
 main()
