@@ -365,12 +365,10 @@ async function captureCombo(width, height, theme, roleName, locale = "en-US") {
     await shot(page, `control-run-rollback${suffix}`);
   }
 
-  if (errors.length > 0) {
-    await writeFile(
-      path.join(out, `errors-${prefix}.json`),
-      JSON.stringify(errors, null, 2),
-    );
-  }
+  await writeFile(
+    path.join(out, `errors-${prefix}.json`),
+    JSON.stringify(errors, null, 2),
+  );
   await context.close();
 }
 
@@ -416,6 +414,11 @@ async function captureExtraStates() {
   const token = await page.evaluate(() => null);
   void token;
   await go(page, "/board/px-board-agent-ops?agents=live");
+  if ((await page.getByTestId("agent-control-dialog").count()) === 0) {
+    await page.getByTestId("agent-control-trigger").click();
+  }
+  await page.getByTestId("agent-control-dialog").waitFor();
+  await page.getByTestId("agent-pause-tab").click();
   await page.getByTestId("board-pause").click();
   await page.getByTestId("board-pause-reason").fill("Evidence pause");
   await page.getByTestId("board-pause-confirm").click();

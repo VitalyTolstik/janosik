@@ -112,3 +112,50 @@ there or the extra-state run ids point at the previous seed.
   global time after partial success.
 - The full browser e2e suite is intentionally left to PR CI; this folder is the
   mocked/real-API visual matrix.
+
+## Round 3
+
+The matrix was recaptured from the disposable stack after the round-3 UI
+changes. `measurements.json` records the capture script's computed values;
+`round3-board-reject-*` contains the additional reject-form checks. The
+read-only `tools/verify-round3.mjs` checks the actual rollback preview API,
+responsive approval controls, the no-session approval link, RU filtered-empty
+state and MEMBER controls. It uses the seeded users and does not submit a
+mutation. `capture-parity.mjs` also pauses and resumes the demo board to capture
+that state, so reseed after capture before handing the stack to a reviewer.
+
+The demo now gives the independent applied runs independent card writes. The
+intentional conflict remains `run-121`; run pagination groups by actual day,
+including across midnight, rather than putting every loaded row under Today.
+The optional `SEED_KEEP_HEARTBEATS=1` seed mode updates the designated fresh
+session heartbeats with the current time once a minute; the deliberately stale
+and terminal rows are not updated. It is a long-running disposable process and
+must be stopped before reseeding. Run the seed in a foreground terminal or
+supervised process and redirect its JSON output to `/tmp/pixel-seed.json`.
+
+Source-of-truth decisions and remaining differences:
+
+- Board Live retains **Manage tokens**. The spec §3.3 explicitly puts Stop all
+  in Account → API keys.
+- The global Attention Needs/Decided/All filter remains: §179.3 explicitly
+  requires those filters, even though the prototype omits them there.
+- Approval Run links remain when a run exists: §179.3 requires run links. A
+  missing session no longer links to an unrelated token-filtered sessions page.
+- Stale heartbeat copy remains relative time only as required by §179.3.
+- The global 1024 px detail is a dismissible sheet in this implementation, so
+  it retains its Back control; the board approval detail hides it at 1024 px.
+- An unknown approval count remains hidden instead of displayed as zero. The
+  existing count contract distinguishes unknown from zero; a dash badge is a
+  remaining visual difference.
+- Run footer buttons retain the measured 1–2 px width difference. Their hit
+  targets and order are unchanged. Per-board freshness timestamps describe the
+  most recent successful fetch, not an agent heartbeat.
+
+Round-3 browser assertions measured equal reject form/textarea widths of
+1094 px at 1440, 976 px at 1024 and 372 px at 390, in both themes. The
+390 px approval buttons were at least 150×44 px, and the Live Pause/End
+controls wrapped with 44 px heights. The later `app-measurements.json` pass
+measured the pause dialog at 440×244 px and the end dialog at 440×178.7 px.
+The real preview API returned `canRevert=true` for runs 128 and 126 and
+`canRevert=false` for run 121. These measurements do not establish a complete
+pixel-by-pixel comparison for every error, role and locale combination.
