@@ -184,7 +184,10 @@ export function RunList({
                     : (run.tokenName ??
                       tokenLabel?.(run.apiTokenId) ??
                       shortId(run.apiTokenId));
-                const conflictCount = conflicts?.get(run.id) ?? 0;
+                const conflictCount =
+                  run.status === "applied" && run.kind !== "revert"
+                    ? (conflicts?.get(run.id) ?? 0)
+                    : 0;
                 if (variant === "board") {
                   return (
                     <li key={run.id}>
@@ -633,16 +636,6 @@ export function RunDetail({
             {t("agents.runs.conflictBody")}
           </Banner>
         ) : null}
-        {!admin ? (
-          <div
-            data-testid="agent-run-admin-only-note"
-            className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground"
-          >
-            <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>{t("agents.runs.adminOnlyNote")}</span>
-          </div>
-        ) : null}
-
         <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
           <RunStatusBadge status={run.status} testId="agent-run-status" />
           <RunKindChip kind={run.kind} />
@@ -764,12 +757,6 @@ export function RunDetail({
                         {actionSummary(command.action, board)}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                      {command.actorType === "agent"
-                        ? t("agentControl.runs.actorAgent")
-                        : t("agentControl.runs.actorHuman")}{" "}
-                      · {command.agentName ?? command.actorId}
-                    </p>
                     {admin &&
                     (run.status === "applied" || run.status === "reverted") ? (
                       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
@@ -797,6 +784,15 @@ export function RunDetail({
               })}
             </ul>
           )}
+          {!admin ? (
+            <div
+              data-testid="agent-run-admin-only-note"
+              className="mt-2 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground"
+            >
+              <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{t("agents.runs.adminOnlyNote")}</span>
+            </div>
+          ) : null}
           {admin &&
           run.status === "applied" &&
           Object.keys(detail.preimages).length > 0 ? (

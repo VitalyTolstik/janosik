@@ -348,6 +348,9 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(screen.getByTestId("agent-run-admin-only-note")).toHaveTextContent(
       "Pre-images and diffs",
     );
+    expect(screen.getByTestId("agent-run-command-5")).not.toHaveTextContent(
+      "Release bot",
+    );
     expect(screen.queryByTestId("agent-run-plan-hash")).toBeNull();
   });
 
@@ -363,6 +366,11 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(
       await screen.findByText("Could not load the run history"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-runs-error")).toHaveTextContent(
+      "Retry does not drop the filters",
+    );
+    expect(screen.queryByText("Select a run")).toBeNull();
+    expect(screen.queryByTestId("run-filter-status")).toBeNull();
     await userEvent.click(screen.getByTestId("agent-runs-retry"));
 
     expect(await screen.findByText("No runs yet")).toBeInTheDocument();
@@ -537,7 +545,9 @@ describe("RunsPanel (TASK-179.5)", () => {
     const total = await screen.findByTestId("agent-runs-total");
     expect(total).toHaveTextContent("5 of 10 runs");
     expect(total).toHaveAttribute("data-has-more", "true");
-    await userEvent.click(screen.getByTestId("agent-runs-more"));
+    const more = screen.getByTestId("agent-runs-more");
+    expect(more.className).toContain("max-md:h-11");
+    await userEvent.click(more);
     await waitFor(() => expect(total).toHaveTextContent("10 of 10 runs"));
     await userEvent.click(screen.getByTestId("agent-runs-more"));
 

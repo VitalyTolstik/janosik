@@ -27,6 +27,8 @@ import {
 } from "../agents/run-model";
 import { RunDetail, RunList } from "../agents/run-ui";
 import { useAgentRuns } from "../agents/use-agent-runs";
+import { useRunConflictPreviews } from "../agents/use-run-conflict-previews";
+import { AgentControlError } from "./AgentControlError";
 
 type Role = BoardRole | undefined;
 
@@ -98,6 +100,11 @@ export function RunsPanel({ role }: { role: Role }) {
   const visibleRows = useMemo(
     () => runs.rows.slice(0, visibleCount),
     [runs.rows, visibleCount],
+  );
+  const previewedConflicts = useRunConflictPreviews(visibleRows);
+  const displayedConflicts = useMemo(
+    () => new Map([...previewedConflicts, ...conflicts]),
+    [conflicts, previewedConflicts],
   );
   const shown = visibleRows.length;
   const total = runs.rows.length;
@@ -264,6 +271,29 @@ export function RunsPanel({ role }: { role: Role }) {
           </div>
         </div>
         {foot}
+      </div>
+    );
+  }
+
+  if (!runs.loading && runs.error && runs.rows.length === 0) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-testid="agent-runs-panel"
+      >
+        <div className="ac-toolbar">
+          <h3>{t("agents.shell.runs")}</h3>
+          <span className="meta">—</span>
+        </div>
+        <div className="ac-panel-scroll">
+          <AgentControlError
+            title={t("agentControl.runs.loadError")}
+            body={t("agentControl.runs.loadErrorBody")}
+            onRetry={runs.reload}
+            testId="agent-runs-error"
+            retryTestId="agent-runs-retry"
+          />
+        </div>
       </div>
     );
   }
@@ -460,7 +490,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 testIdPrefix="agent-run"
                 listTestId="agent-run-rows"
                 tokenLabel={tokenLabel}
-                conflicts={conflicts}
+                conflicts={displayedConflicts}
                 groupMode="day"
               />
               <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
@@ -478,7 +508,7 @@ export function RunsPanel({ role }: { role: Role }) {
                   data-testid="agent-runs-more"
                   disabled={runs.loadingMore || !canLoadMore}
                   onClick={() => void loadMore()}
-                  className="h-6 min-h-0 rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none"
+                  className="h-6 min-h-0 rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none max-md:h-11 max-md:min-h-11"
                 >
                   {runs.loadingMore ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

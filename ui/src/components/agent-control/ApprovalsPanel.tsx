@@ -20,6 +20,7 @@ import { ApprovalStatusBadge } from "@/components/approvals/approval-ui";
 import { AttentionApprovalDetail } from "@/components/agents/AttentionApprovals";
 import { AgentControlFooterPortal } from "@/components/agents/AgentControlFooterPortal";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { AgentControlError } from "./AgentControlError";
 
 /**
  * The approval queue of one board (TASK-166.14, TASK-179.3).
@@ -237,6 +238,28 @@ export function ApprovalsPanel({
     const index = pending.findIndex((row) => row.id === selectedId);
     return pending[(index + 1) % pending.length]?.id ?? null;
   }, [filtered, now, selectedId]);
+
+  if (listError) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-testid="agent-approvals-panel"
+      >
+        <div className="ac-toolbar">
+          <h3>{t("agents.approvals.title")}</h3>
+        </div>
+        <div className="ac-panel-scroll">
+          <AgentControlError
+            title={t("agentControl.approvals.loadError")}
+            body={t("agentControl.approvals.loadErrorBody")}
+            onRetry={() => setRevision((value) => value + 1)}
+            testId="agent-approvals-error-card"
+            retryTestId="agent-approvals-retry"
+          />
+        </div>
+      </div>
+    );
+  }
 
   const headLeft =
     filter === "needs"
