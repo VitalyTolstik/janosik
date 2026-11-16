@@ -86,7 +86,7 @@ export function RunStatusBadge({
 export function RunKindChip({ kind }: { kind: AgentRunKind }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground">
+    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold whitespace-nowrap lowercase text-muted-foreground">
       {t(RUN_KIND_KEYS[kind])}
     </span>
   );
