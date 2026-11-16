@@ -51,6 +51,13 @@ const AgentControlDialog = lazy(() =>
   })),
 );
 
+const AGENT_TRIGGER_SELECTOR =
+  '[data-testid="agent-control-trigger"], [data-testid="agent-runs-trigger"]';
+
+function findAgentTrigger(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>(AGENT_TRIGGER_SELECTOR);
+}
+
 /** Header: brand, board switcher, search, undo/redo, data and the account. */
 export function Header() {
   const { t } = useI18n();
@@ -98,9 +105,13 @@ export function Header() {
     useState<AgentControlTab>("approvals");
 
   const restoreAgentTrigger = (event: Event) => {
-    if (agentTrigger.current?.isConnected) {
+    const trigger = agentTrigger.current?.isConnected
+      ? agentTrigger.current
+      : findAgentTrigger();
+    if (trigger !== null) {
       event.preventDefault();
-      agentTrigger.current.focus();
+      agentTrigger.current = trigger;
+      trigger.focus();
       return;
     }
     // Browser Back replaced the board header: its trigger is detached. Hand
@@ -185,10 +196,15 @@ export function Header() {
   // so the board-scoped modal cannot outlive its route, then restore focus to
   // the global Agents entry one task later (after Radix's own focus cleanup).
   useEffect(() => {
-    if (isBoardRoute || !agentControlOpen) return;
-    restoreAgentsFocus.current = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- leaving the board must unmount the modal
-    setAgentControlOpen(false);
+    if (isBoardRoute) return;
+    if (agentControlOpen) {
+      restoreAgentsFocus.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- leaving the board must unmount the modal
+      setAgentControlOpen(false);
+    }
+    // The board trigger unmounts with its header. Dropping the stale node
+    // lets the reopen resolver attach the freshly mounted button.
+    agentTrigger.current = null;
   }, [agentControlOpen, isBoardRoute]);
 
   useEffect(() => {
@@ -209,14 +225,13 @@ export function Header() {
 
   // A `?agents=` deep link opens the dialog without a click, so the return
   // trigger was never stored. Resolve the header entry once it is mounted so
-  // Escape returns focus there instead of leaving it on BODY.
+  // Escape returns focus there instead of leaving it on BODY. A stale ref from
+  // the previous board visit is detached; replace it with the live button.
   useEffect(() => {
-    if (!agentControlOpen || agentTrigger.current !== null) return;
-    const trigger = document.querySelector<HTMLButtonElement>(
-      '[data-testid="agent-control-trigger"], [data-testid="agent-runs-trigger"]',
-    );
+    if (!agentControlOpen || agentTrigger.current?.isConnected) return;
+    const trigger = findAgentTrigger();
     if (trigger !== null) agentTrigger.current = trigger;
-  }, [agentControlOpen, agentsParam]);
+  }, [agentControlOpen, agentsParam, location.pathname]);
 
   return (
     <header

@@ -70,6 +70,13 @@ function HistoryControls() {
       >
         history forward
       </button>
+      <button
+        type="button"
+        data-testid="open-board"
+        onClick={() => navigate("/board/board-1?agents=live")}
+      >
+        open board
+      </button>
     </>
   );
 }
@@ -175,8 +182,56 @@ describe("agent entry points in the header", () => {
 
     // Forward reopens the same board tab from the durable ?agents= param.
     fireEvent.click(screen.getByTestId("history-forward"));
-    expect(await screen.findByTestId("agent-control-dialog")).toBeVisible();
+    const reopened = await screen.findByTestId("agent-control-dialog");
+    expect(reopened).toBeVisible();
     expect(screen.getByTestId("location")).toHaveTextContent("agents=live");
+
+    // Escaping the reopened modal must focus the freshly mounted board
+    // trigger, not the detached one from before Back and not BODY.
+    const boardTrigger = screen.getByTestId("agent-control-trigger");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-control-dialog")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).not.toHaveTextContent("agents="),
+    );
+    await waitFor(() => expect(boardTrigger).toHaveFocus());
+  });
+
+  it("restores the board trigger after Back, reopen and the dialog X", async () => {
+    renderHeader(
+      "/agents?section=sessions&session=session-1",
+      new FakeServer([board]),
+    );
+    await screen.findByTestId("agents-trigger");
+
+    await userEvent.click(screen.getByTestId("open-board"));
+    expect(await screen.findByTestId("agent-control-dialog")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("history-back"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/agents?section=sessions&session=session-1",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-trigger")).toHaveFocus(),
+    );
+
+    await userEvent.click(screen.getByTestId("open-board"));
+    const dialog = await screen.findByTestId("agent-control-dialog");
+    const boardTrigger = screen.getByTestId("agent-control-trigger");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Close" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-control-dialog")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).not.toHaveTextContent("agents="),
+    );
+    await waitFor(() => expect(boardTrigger).toHaveFocus());
   });
 
   it("opens the global console from board control", async () => {
