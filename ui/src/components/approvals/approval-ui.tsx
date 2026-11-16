@@ -366,7 +366,7 @@ export function ApprovalLinks({
       </span>
 
       <DialogContent
-        className="w-[min(420px,calc(100vw-1.5rem))] max-w-[420px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0"
+        className="w-[min(420px,calc(100vw-1.5rem))] max-w-[420px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
         data-testid="approval-token-dialog"
         hideClose
       >
@@ -621,7 +621,7 @@ export function ApprovalDecisionForm({
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent
-          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0"
+          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
           data-testid="approval-approve-dialog"
           hideClose
         >

@@ -166,7 +166,7 @@ export function AgentActionDialog({
     >
       <DialogContent
         hideClose
-        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0"
+        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
         data-testid="agent-action-dialog"
       >
         <div className="flex items-start gap-2.5 px-4 pt-3.5 pb-2.5">
@@ -217,20 +217,20 @@ export function AgentActionDialog({
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={t("agents.action.reasonPlaceholder")}
                 data-testid="agent-action-reason"
-                className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px]"
+                className="min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px]"
                 autoFocus
               />
             </label>
           )}
         </div>
 
-        <DialogFooter className="px-4 pt-3 pb-3.5">
+        <DialogFooter className="gap-[7px] px-4 pt-3 pb-3.5">
           <Button
             variant="ghost"
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
-            className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
+            className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -239,7 +239,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
-            className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
+            className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] font-[650] max-md:min-h-11"
           >
             {busy ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
