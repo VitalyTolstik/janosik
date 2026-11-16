@@ -1085,7 +1085,7 @@ async function main() {
       currentCardId: ids.cardLanding,
       currentRunId: null,
       startedAt: at(-hours(2)),
-      lastHeartbeatAt: at(-minutes(18)),
+      lastHeartbeatAt: at(-minutes(6)),
       summary: "No heartbeat since the last review.",
     },
     {
