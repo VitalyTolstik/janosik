@@ -101,6 +101,14 @@ export function Header() {
     if (agentTrigger.current?.isConnected) {
       event.preventDefault();
       agentTrigger.current.focus();
+      return;
+    }
+    // Browser Back replaced the board header: its trigger is detached. Hand
+    // focus to the mounted global entry instead of letting Radix drop it on
+    // BODY.
+    if (isAgentsRoute) {
+      event.preventDefault();
+      agentsLink.current?.focus();
     }
   };
   const openAllAgents = () => {
@@ -149,9 +157,13 @@ export function Header() {
   // control dialog (TASK-179 pixel parity): `?agents=inbox|live|runs`.
   // The param stays in the URL so reload/back/forward reopen the same tab.
   const lastAgentsParam = useRef<string | null>(agentsParam);
+  const restoreAgentsFocus = useRef(false);
   useEffect(() => {
     if (!isBoardRoute) {
-      lastAgentsParam.current = agentsParam;
+      // The board header unmounts with its trigger; the dialog state lives on
+      // this shared Header. Reset it so Back to /agents cannot orphan the
+      // board-scoped modal over the global page.
+      lastAgentsParam.current = null;
       return;
     }
     if (agentsParam === null) {
@@ -167,6 +179,33 @@ export function Header() {
     }
     lastAgentsParam.current = agentsParam;
   }, [agentsParam, isBoardRoute]);
+
+  // A route change away from a board is not a Dialog close event: Radix never
+  // sees `onOpenChange`, and the old trigger is already detached. Close here
+  // so the board-scoped modal cannot outlive its route, then restore focus to
+  // the global Agents entry one task later (after Radix's own focus cleanup).
+  useEffect(() => {
+    if (isBoardRoute || !agentControlOpen) return;
+    restoreAgentsFocus.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- leaving the board must unmount the modal
+    setAgentControlOpen(false);
+  }, [agentControlOpen, isBoardRoute]);
+
+  useEffect(() => {
+    if (!restoreAgentsFocus.current || agentControlOpen) return;
+    if (!isAgentsRoute) {
+      restoreAgentsFocus.current = false;
+      return;
+    }
+    const focusEntry = () => {
+      restoreAgentsFocus.current = false;
+      agentsLink.current?.focus();
+    };
+    // Run after Radix's own close-auto-focus task, which would otherwise drop
+    // focus on BODY because the board trigger is detached.
+    const timer = window.setTimeout(focusEntry, 0);
+    return () => window.clearTimeout(timer);
+  }, [agentControlOpen, isAgentsRoute]);
 
   // A `?agents=` deep link opens the dialog without a click, so the return
   // trigger was never stored. Resolve the header entry once it is mounted so

@@ -1,6 +1,12 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "@janosik/shared";
 
@@ -46,7 +52,33 @@ function RouteProbe() {
   );
 }
 
-function renderHeader(path: string, server: FakeServer) {
+function HistoryControls() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="history-back"
+        onClick={() => navigate(-1)}
+      >
+        history back
+      </button>
+      <button
+        type="button"
+        data-testid="history-forward"
+        onClick={() => navigate(1)}
+      >
+        history forward
+      </button>
+    </>
+  );
+}
+
+function renderHeader(
+  path: string,
+  server: FakeServer,
+  history?: { entries: string[]; index: number },
+) {
   vi.stubGlobal("fetch", server.handle);
   return render(
     <ThemeProvider>
@@ -55,11 +87,15 @@ function renderHeader(path: string, server: FakeServer) {
           <I18nProvider>
             <TooltipProvider>
               <ToastProvider>
-                <MemoryRouter initialEntries={[path]}>
+                <MemoryRouter
+                  initialEntries={history?.entries ?? [path]}
+                  initialIndex={history?.index}
+                >
                   <AuthProvider>
                     <BoardProvider>
                       <Header />
                       <RouteProbe />
+                      <HistoryControls />
                     </BoardProvider>
                   </AuthProvider>
                 </MemoryRouter>
@@ -114,6 +150,33 @@ describe("agent entry points in the header", () => {
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent("agents=runs"),
     );
+  });
+
+  it("closes the board dialog on browser Back and restores the Agents entry", async () => {
+    renderHeader("/board/board-1?agents=live", new FakeServer([board]), {
+      entries: [
+        "/agents?section=sessions&session=session-1",
+        "/board/board-1?agents=live",
+      ],
+      index: 1,
+    });
+    expect(await screen.findByTestId("agent-control-dialog")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("history-back"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/agents?section=sessions&session=session-1",
+      ),
+    );
+    expect(screen.queryByTestId("agent-control-dialog")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-trigger")).toHaveFocus(),
+    );
+
+    // Forward reopens the same board tab from the durable ?agents= param.
+    fireEvent.click(screen.getByTestId("history-forward"));
+    expect(await screen.findByTestId("agent-control-dialog")).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent("agents=live");
   });
 
   it("opens the global console from board control", async () => {
