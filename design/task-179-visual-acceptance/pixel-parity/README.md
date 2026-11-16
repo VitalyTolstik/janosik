@@ -265,3 +265,37 @@ Deliberate remaining deviations:
 - Board Live still includes stale/paused rows in its rail count; the spec does
   not define that badge. Approval TTL/expiry copy, the empty/partial spec
   variants, and the token page (which has no mockup) are unchanged.
+
+## Round 6 — Medium findings (M1–M15)
+
+The Medium-only pass fixes the fifteen findings from the review brief without
+changing the closed High behavior. Evidence is in
+[`round6-medium/`](./round6-medium): targeted 1440/1024/390 captures,
+`results.json` raw measurements, and a per-issue `NOTES.md`.
+
+Headline measurements after the fixes:
+
+- All-boards detail keeps `scope=all` in the URL while the header combobox and
+  pending badge stay on **All boards**.
+- Status pills never ellipsize: EN status column 104 px, RU 140 px;
+  `Completed` and `Приостановлена` both show their full labels at 1440/1024/390.
+- Conflict chips precompute from the read-only preview for visible applied
+  runs, so `run-121` reads `1 conflict` before it is opened.
+- Runs shows one partial-error banner naming the unavailable board(s); both
+  fetches retry from that one action.
+- A paused Live row has one `Paused` pill and no row-level reason; its height is
+  47.9 px. A stale row's chip is `No heartbeat`, with the age in the subline.
+- Board approval detail header is **68.5 px**; Board Runs `Load more` is
+  **44 px** at 390; Token info action is **176 × 28**.
+- Board header title is the full `Agent Ops Demo` at 390/1024. Secondary
+  header chrome hides at ≤720 px (deliberate: Board settings stays on the
+  desktop header; the phone keeps Agents and Account at 44 px).
+- Token group headers show the plain-mono token id chip (21 px).
+- A failed Live fetch reads `Live —` and the red error card, never `0 sessions`.
+  Inbox/Live/Runs share the mockup error card and drop stale filter/detail
+  chrome on zero-row errors.
+- A member-only board scope keeps cross-board pending counts and the rail
+  `Pending` header.
+- `Next pending` works from an approved row under the Decided filter.
+- Member run detail moves the read-only note into Commands and uses 33.9 px
+  command rows; no top banner, attribution stays in its own section.

@@ -1,0 +1,190 @@
+{
+  "m2En1440": {
+    "text": "Completed",
+    "pill": 92.796875,
+    "label": 66.796875,
+    "clientWidth": 67,
+    "scrollWidth": 67
+  },
+  "m10": {
+    "count": 1,
+    "text": "px-token-claude",
+    "rect": {
+      "w": 109,
+      "h": 21,
+      "font": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace"
+    }
+  },
+  "m14": {
+    "nextPendingVisible": 1,
+    "text": "Next pending",
+    "detailStatus": "approved"
+  },
+  "m1": {
+    "url": "http://127.0.0.1:5301/agents?section=runs&lng=en&scope=all&board=px-board-website&run=run-112",
+    "headerScope": "All boards",
+    "detailVisible": 1
+  },
+  "m3": {
+    "rowVisible": 1,
+    "rowText": "Release bot updated “Landing page rewrite”\nRelease bot · 2 commands · Yesterday\nApplied\n1 conflict"
+  },
+  "m6": {
+    "header": {
+      "h": 68.5,
+      "className": "shrink-0 border-b border-border px-3.5 pt-[11px] pb-[9px]",
+      "subRow": {
+        "h": 22,
+        "className": "-mt-0.5 mb-2 flex flex-wrap items-center gap-1.5"
+      }
+    }
+  },
+  "m8": {
+    "iconClass": "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-surface text-muted-foreground",
+    "impactClass": "mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-foreground",
+    "openW": 176,
+    "openH": 28,
+    "openText": "Open Account → API keys"
+  },
+  "m5": {
+    "h": 47.9,
+    "text": "Release checklistPaused11m ago·terminal · claude-sonnet-4.5·1h agoPricing page copyNo current run",
+    "pausedChip": false,
+    "reason": false,
+    "status": "Paused"
+  },
+  "m11": {
+    "toolbar": "Live\n—",
+    "errorCard": 1,
+    "errorText": "Could not load agent sessions\n\nThe last known board state is retained where available. Retry does not drop the filters.\n\nRetry",
+    "zeroSessions": false
+  },
+  "m12Approvals": {
+    "card": 1,
+    "listHead": 0,
+    "selectEmpty": 0
+  },
+  "m12Runs": {
+    "card": 1,
+    "selectEmpty": 0,
+    "filters": 0
+  },
+  "m13": {
+    "railHeader": "PENDING",
+    "attentionCount": 0,
+    "opsOption": "Agent Ops Demo\n2",
+    "allOption": "All boards\n2"
+  },
+  "m2Ru1440": [
+    {
+      "text": "Завершена",
+      "pillW": 97.7,
+      "labelClient": 72,
+      "labelScroll": 72,
+      "overflow": "visible"
+    },
+    {
+      "text": "Завершена",
+      "pillW": 97.7,
+      "labelClient": 72,
+      "labelScroll": 72,
+      "overflow": "visible"
+    },
+    {
+      "text": "Приостановлена",
+      "pillW": 131.3,
+      "labelClient": 105,
+      "labelScroll": 105,
+      "overflow": "visible"
+    }
+  ],
+  "m2Ru1024": [
+    {
+      "text": "Завершена",
+      "pillW": 97.7,
+      "labelClient": 72,
+      "labelScroll": 72,
+      "overflow": "visible"
+    },
+    {
+      "text": "Завершена",
+      "pillW": 97.7,
+      "labelClient": 72,
+      "labelScroll": 72,
+      "overflow": "visible"
+    },
+    {
+      "text": "Приостановлена",
+      "pillW": 131.3,
+      "labelClient": 105,
+      "labelScroll": 105,
+      "overflow": "visible"
+    }
+  ],
+  "m2Ru390": [
+    {
+      "text": "Завершена",
+      "pillW": 97.7,
+      "labelClient": 72,
+      "labelScroll": 72,
+      "overflow": "visible"
+    },
+    {
+      "text": "Завершена",
+      "pillW": 97.7,
+      "labelClient": 72,
+      "labelScroll": 72,
+      "overflow": "visible"
+    },
+    {
+      "text": "Приостановлена",
+      "pillW": 131.3,
+      "labelClient": 105,
+      "labelScroll": 105,
+      "overflow": "visible"
+    }
+  ],
+  "m7": {
+    "w": 76.6,
+    "h": 44,
+    "className": "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:bg-hover hover:text-foreground h-6 min-h-0 rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none max-md:h-11 max-md:min-h-11"
+  },
+  "m9_390": {
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "w": 151.7
+    },
+    "gearRect": {
+      "w": 0,
+      "h": 0
+    },
+    "headerH": 105
+  },
+  "m9_1024": {
+    "title": "Agent Ops Demo",
+    "titleW": 167.3,
+    "titleScroll": 167,
+    "headerH": 52,
+    "agentW": 108.5,
+    "agentH": 30
+  },
+  "m2En1024": {
+    "text": "Completed",
+    "pillW": 92.8,
+    "labelClient": 67,
+    "labelScroll": 67,
+    "overflow": "visible"
+  },
+  "m15": {
+    "detailPresent": true,
+    "note": {
+      "text": "Pre-images and diffs are available to board admins only. The timeline, commands and conflicts stay readable.",
+      "insideCommands": true
+    },
+    "command": {
+      "h": 33.9,
+      "text": "MOVE_CARDApproval inbox polish"
+    },
+    "topBannerCount": 0
+  }
+}
