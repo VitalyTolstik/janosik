@@ -43,7 +43,7 @@ the implementation and the place that pins it.
 | Pause / End modals | Covered | 440 px, 10 px radius, 15 px icon, 14 px title, 70 px reason field for pause, target row for end, 28 px footer actions (44 px on mobile). `AgentActionDialog.tsx`; `app-measurements.json` keys `pauseDialog`/`pauseTitle`/`pauseReason`/`endDialog`/`endTarget`. |
 | Run-detail footer sizing/order | Covered | Helper line above the action row, 11 px info glyph, 32 px `Open board`/`Copy link` buttons, 352 px pane. `run-ui.tsx`; `app-measurements.json` keys `runFooter`, `runFooterOpen`, `runFooterCopy`; `AgentsPage.test.tsx` checks the footer destination. |
 | Open board destinations | Covered | Every `Open board` action lands on the board's Agent Control surface: `?agents=inbox` for approvals, `?agents=live` for sessions, `?agents=runs` for runs. `routes.agentControl`; `AgentsPage.test.tsx` expects `/board/board-1?agents=live` and `?agents=runs`. |
-| Idle / stale session state | Covered | The primary pill reports `Stale` for an unpaused session without a recent heartbeat; a human pause replaces it with `Paused`; the stored lifecycle remains in the detail/meta. The seeded Idle row keeps a fresh heartbeat, and paused/stale rows stay in the live preview but are excluded from `Needs a nudge`. `agent-model.ts`, `session-ui.tsx`, `AgentsPage.tsx`; `agent-model.test.ts` and `status-badge.test.tsx`. |
+| Idle / stale session state | Covered | The primary pill keeps the lifecycle for an unpaused session; a separate no-heartbeat signal shows its age. A human pause uses `Paused`. The seeded Idle row keeps a fresh heartbeat, and paused/stale rows stay in the live preview but are excluded from `Needs a nudge`. `agent-model.ts`, `session-ui.tsx`, `AgentsPage.tsx`; `agent-model.test.ts` and `status-badge.test.tsx`. |
 | Rollback fixtures | Covered | The seed creates applied, reverted, failed, conflict and retention-expired runs through the real batch endpoint, including preimages and a genuine conflict. `scripts/seed-agent-pixel-demo.mjs`; `state-run-*` screenshots; `RunsPanel.test.tsx`. |
 | Runs count / limit | Covered | Board Runs shows five rows per page, `5 of N` from loaded rows, `Load more` appends five and fetches the next server cursor; the global list keeps its own board-scoped page. `RunsPanel.tsx`, `use-agent-runs.ts`; `RunsPanel.test.tsx` (`shows a total and appends the next page with Load more`). |
 | Approvals expired / consumed / cancelled copy | Covered | Only an undecided `pending` row expires from `status + expiresAt`; a decided approval keeps `Approved` even past the decision TTL, while apply-time still refuses a lapsed apply window. Disabled actions and banner/history copy switch without a refresh. `effectiveApprovalStatus`, `statusHint`; `state-approval-*` screenshots; `AgentControlDialog.test.tsx` (`explains an expired request`). |
@@ -69,15 +69,15 @@ docker run --rm --name janosik-pixel-db \
   -e POSTGRES_DB=janosik_pixel -e POSTGRES_USER=janosik \
   -e POSTGRES_PASSWORD=pixel -p 127.0.0.1:5434:5432 -d postgres:16-alpine
 
-# 2. schema and API build
+# 2. schema and TypeScript compilation
 DATABASE_URL=postgresql://janosik:pixel@127.0.0.1:5434/janosik_pixel \
   npx prisma migrate deploy -w backend
-npm run build -w backend
+npx tsc -b backend shared
 
 # 3. API on 5302
 DATABASE_URL=postgresql://janosik:pixel@127.0.0.1:5434/janosik_pixel \
 JWT_SECRET=pixel-parity-test-secret-0123456789abcdef PORT=5302 \
-PUBLIC_ORIGIN=http://127.0.0.1:5301 COOKIE_SECURE=false \
+PUBLIC_ORIGIN=http://127.0.0.1:5301 COOKIE_SECURE=false THROTTLE_LIMIT=1000000 \
 node backend/dist/main.js
 
 # 4. UI on 5301 with the API proxy
@@ -86,9 +86,10 @@ UI_API_PROXY=http://127.0.0.1:5302 npx vite --port 5301 --strictPort --host 127.
 
 # 5. seed and capture
 cd ..
-SEED_ALLOW=1 DATABASE_URL=postgresql://janosik:pixel@127.0.0.1:5434/janosik_pixel \
-  API_URL=http://127.0.0.1:5302 node scripts/seed-agent-pixel-demo.mjs \
-  > /tmp/pixel-seed.json
+SEED_ALLOW=1 SEED_KEEP_HEARTBEATS=1 \
+  DATABASE_URL=postgresql://janosik:pixel@127.0.0.1:5434/janosik_pixel \
+  API_URL=http://127.0.0.1:5302 setsid node scripts/seed-agent-pixel-demo.mjs \
+  > /tmp/pixel-seed.json 2> /tmp/pixel-seed.log < /dev/null &
 node design/task-179-visual-acceptance/pixel-parity/tools/measure-app.mjs
 node design/task-179-visual-acceptance/pixel-parity/tools/capture-parity.mjs
 ```
@@ -141,7 +142,7 @@ Source-of-truth decisions and remaining differences:
   requires those filters, even though the prototype omits them there.
 - Approval Run links remain when a run exists: §179.3 requires run links. A
   missing session no longer links to an unrelated token-filtered sessions page.
-- Stale heartbeat copy remains relative time only as required by §179.3.
+- Stale heartbeat copy keeps the lifecycle and shows a separate no-heartbeat age as required by §179.4.
 - The global 1024 px detail is a dismissible sheet in this implementation, so
   it retains its Back control; the board approval detail hides it at 1024 px.
 - An unknown approval count remains hidden instead of displayed as zero. The
@@ -159,3 +160,34 @@ measured the pause dialog at 440×244 px and the end dialog at 440×178.7 px.
 The real preview API returned `canRevert=true` for runs 128 and 126 and
 `canRevert=false` for run 121. These measurements do not establish a complete
 pixel-by-pixel comparison for every error, role and locale combination.
+
+## Round 4
+
+`tools/verify-round4.mjs` exercises the unfiltered run badge, failed-run
+commands, missing and unknown board recovery, and stale lifecycle in the
+1440/1024/390 × light/dark × ADMIN/MEMBER × EN/RU matrix. It also checks
+the approval confirmation and reject form for ADMIN, plus rollback styling and equal footer widths, and records screenshots and results in
+`round4-browser-results.json`. The browser check is read-only. The approval
+loading skeleton, full pagination of the run count, and all-board detail
+scope are covered by UI component tests. `tools/verify-round4-token.mjs`
+checks the token-page title, lifecycle, and one stale signal per card across
+the same matrix. The run badge is withheld until all
+pages are loaded, or when a board could not be read; it is never presented as
+a total while incomplete.
+
+For the detached heartbeat process, stop the prior seed process before
+re-seeding. `setsid` and redirected standard streams let it survive the
+launching shell. Check it with `pgrep -af '[s]eed-agent-pixel-demo.mjs'`
+and verify heartbeat timestamps advance from a separate shell. The designated
+fresh rows are updated once per minute; the deliberately stale row is not.
+Pending demo approvals have a 72-hour expiry. The sixth run is placed on the
+current calendar day, including just after midnight. Board Runs deliberately
+groups by each run's actual day rather than the prototype's single Today
+group.
+
+The request metadata names the requesting agent, as in the prototype; the
+decision history retains the human account recorded by the API. The API
+does not provide a failure reason for failed commands, so the command copy
+says “Not applied” instead of inventing a stale-version diagnosis. The
+disposable failed-run fixture is synthetic: it is made from an applied run
+and then marked failed in the seed to exercise this display.
