@@ -168,12 +168,23 @@ export function Header() {
     lastAgentsParam.current = agentsParam;
   }, [agentsParam, isBoardRoute]);
 
+  // A `?agents=` deep link opens the dialog without a click, so the return
+  // trigger was never stored. Resolve the header entry once it is mounted so
+  // Escape returns focus there instead of leaving it on BODY.
+  useEffect(() => {
+    if (!agentControlOpen || agentTrigger.current !== null) return;
+    const trigger = document.querySelector<HTMLButtonElement>(
+      '[data-testid="agent-control-trigger"], [data-testid="agent-runs-trigger"]',
+    );
+    if (trigger !== null) agentTrigger.current = trigger;
+  }, [agentControlOpen, agentsParam]);
+
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex min-h-14 shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-14 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0",
+        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-[52px] sm:min-h-[52px] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0",
         isAgentsRoute &&
-          "min-h-14 flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-14 sm:px-[14px]",
+          "min-h-[61px] flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-[52px] sm:min-h-[52px] sm:px-[14px]",
       )}
     >
       <div

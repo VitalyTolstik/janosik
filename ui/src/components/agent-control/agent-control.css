@@ -82,6 +82,24 @@ html.light .agent-control-surface {
   }
 }
 
+/* Prototype scene scrim: 0.64 black in dark / slate 0.36 in light, 2 px
+   blur. On the 1024 sheet it starts below the real header instead of dimming
+   the board chrome (the default dialog scrim covers the whole viewport). */
+.ac-scrim {
+  background: rgb(0 0 0 / 0.64);
+  backdrop-filter: blur(2px);
+}
+
+html.light .ac-scrim {
+  background: rgb(15 23 42 / 0.36);
+}
+
+@media (min-width: 761px) and (max-width: 1279px) {
+  .ac-scrim {
+    top: 52px;
+  }
+}
+
 /* Header ------------------------------------------------------------------ */
 .agent-control-surface .ac-head {
   position: relative;
@@ -1084,7 +1102,9 @@ html[lang="ru"] .agent-control-surface .ac-title {
     width: 100%;
     border-right: 0;
     border-bottom: 1px solid var(--border);
-    padding: 5px 8px;
+    /* RU labels ("Активность", "Запуски") plus the 16 px side padding used to
+       scroll the 390 rail by 16 px. Tighten the mobile rhythm instead. */
+    padding: 5px 4px;
     flex-direction: row;
     align-items: center;
     min-height: 48px;
@@ -1102,14 +1122,15 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
   .agent-control-surface .ac-rail-tabs {
     flex-direction: row;
-    gap: 3px;
+    gap: 2px;
     align-items: center;
   }
 
   .agent-control-surface .ac-rail-tab {
     min-height: 44px;
-    padding: 0 9px;
-    font-size: 12px;
+    padding: 0 6px;
+    gap: 6px;
+    font-size: 11.5px;
     white-space: nowrap;
   }
 

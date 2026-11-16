@@ -35,16 +35,25 @@ const DialogContent = React.forwardRef<
     closeClassName?: string;
     /** Render the close button in the caller's own header instead. */
     hideClose?: boolean;
+    /** Surface-specific scrim (the Agent Control tablet sheet). */
+    overlayClassName?: string;
   }
 >(
   (
-    { className, children, closeClassName, hideClose = false, ...props },
+    {
+      className,
+      children,
+      closeClassName,
+      hideClose = false,
+      overlayClassName,
+      ...props
+    },
     ref,
   ) => {
     const { t } = useI18n();
     return (
       <DialogPortal>
-        <DialogOverlay />
+        <DialogOverlay className={overlayClassName} />
         <DialogPrimitive.Content
           ref={ref}
           className={cn(

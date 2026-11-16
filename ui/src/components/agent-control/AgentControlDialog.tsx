@@ -199,6 +199,7 @@ export function AgentControlDialog({
         }}
         tabIndex={-1}
         hideClose
+        overlayClassName="ac-scrim"
         className="agent-control-surface ac-modal"
       >
         <AgentControlFooterContext.Provider value={footerHost}>

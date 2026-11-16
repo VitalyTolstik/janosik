@@ -178,13 +178,13 @@ describe("agent entry points in the header", () => {
     },
   );
 
-  it("keeps the app-wide header height and font on /agents", async () => {
+  it("keeps the app-wide header geometry and font on /agents", async () => {
     const { container } = renderHeader("/agents", new FakeServer([board]));
     const header = container.querySelector("header");
     expect(await screen.findByTestId("agents-trigger")).toBeInTheDocument();
-    expect(header?.className).toContain("min-h-14");
-    expect(header?.className).toContain("sm:h-14");
-    expect(header?.className).not.toContain("h-[52px]");
+    expect(header?.className).toContain("min-h-[61px]");
+    expect(header?.className).toContain("sm:h-[52px]");
+    expect(header?.className).toContain("sm:min-h-[52px]");
     const wordmark = screen.getByTestId("agents-wordmark");
     // The tracked prototype uses the Space Grotesk display face for the
     // Latin wordmark; only Cyrillic headings fall back to the body stack.

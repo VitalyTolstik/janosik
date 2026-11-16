@@ -154,6 +154,9 @@ html[lang="ru"] .font-agent-display {
      `--danger-strong` tokens. */
   --agent-primary-strong: #2563eb;
   --agent-danger-strong: #b91c1c;
+  /* Prototype `--shadow-lg` for the 440 px agent dialogs. */
+  --agent-shadow-lg:
+    0 28px 80px -32px rgb(0 0 0 / 0.78), 0 2px 8px rgb(0 0 0 / 0.22);
 }
 
 html.light {
@@ -177,6 +180,27 @@ html.light {
   --agent-primary-strong: #1d4ed8;
   /* Mockup light `--border-soft` is 72% (62% in dark). */
   --border-soft: color-mix(in oklab, var(--border) 72%, transparent);
+  --agent-shadow-lg:
+    0 28px 80px -36px rgb(15 23 42 / 0.28), 0 2px 8px rgb(15 23 42 / 0.06);
+}
+
+/* Russian lifecycle labels are wider than the mockup's English column
+   (Простаивает needs 78 px of text). Keep the mockup column for EN and give
+   RU enough room instead of truncating the status pill. */
+@media (min-width: 761px) {
+  html[lang="ru"] .agents-session-grid {
+    grid-template-columns:
+      minmax(128px, 1.35fr) minmax(120px, 1.2fr) 82px
+      110px;
+  }
+}
+
+@media (min-width: 1181px) {
+  html[lang="ru"] .agents-session-grid {
+    grid-template-columns:
+      minmax(140px, 1.4fr) minmax(140px, 1.35fr) minmax(108px, 1.1fr)
+      82px 110px;
+  }
 }
 
 /* Board Settings policy checkbox (TASK-179 feedback #6).
