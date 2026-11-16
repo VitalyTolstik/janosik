@@ -201,8 +201,8 @@ export function AgentActionDialog({
                 : ""}
             </p>
           ) : (
-            <label className="mt-[10px] mb-[2.3px] block space-y-[3px] leading-[1.45]">
-              <span className="text-[10.5px] font-semibold text-muted-foreground">
+            <label className="mt-[10px] mb-[2.3px] block space-y-[3.3px] text-[10.5px] leading-[1.45]">
+              <span className="block text-[10.5px] font-semibold text-muted-foreground">
                 {t("agents.action.reason")}
               </span>
               <Textarea
