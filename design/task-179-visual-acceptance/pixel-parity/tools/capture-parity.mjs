@@ -28,6 +28,59 @@ const approvals = {
 
 const browser = await chromium.launch({ headless: true });
 const measurements = {};
+// `/auth/login` is throttled to five attempts per minute. Keep the matrix
+// below that ceiling instead of burning retries on 429 responses.
+const loginAttempts = [];
+
+async function waitForLoginSlot() {
+  const now = Date.now();
+  const recent = loginAttempts.filter((at) => now - at < 60_000);
+  if (recent.length >= 4) {
+    const wait = 60_000 - (now - recent[0]) + 1_500;
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  loginAttempts.push(Date.now());
+}
+
+/** Obtain one refresh cookie through the API, not the throttled login form. */
+async function loginCookie(roleName) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await waitForLoginSlot();
+    const response = await fetch("http://127.0.0.1:5302/api/v1/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email:
+          roleName === "admin"
+            ? "pixel-admin@example.com"
+            : "pixel-member@example.com",
+        password: "pixel-demo-password",
+      }),
+    });
+    if (response.status === 200) {
+      const setCookies = response.headers.getSetCookie?.() ?? [];
+      const raw = setCookies.find((value) =>
+        value.startsWith("refresh_token="),
+      );
+      if (raw === undefined)
+        throw new Error("login returned no refresh cookie");
+      return {
+        name: "refresh_token",
+        value: raw.slice("refresh_token=".length).split(";")[0],
+        domain: "127.0.0.1",
+        path: "/api/v1/auth",
+        httpOnly: true,
+        secure: false,
+        sameSite: "Strict",
+      };
+    }
+    if (response.status !== 429) {
+      throw new Error(`login failed for ${roleName}: ${response.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 61_000));
+  }
+  throw new Error(`login throttled for ${roleName}`);
+}
 
 async function newPage({ width, height, theme, locale = "en-US" }) {
   const context = await browser.newContext({
@@ -35,37 +88,23 @@ async function newPage({ width, height, theme, locale = "en-US" }) {
     colorScheme: theme,
     locale,
   });
+  await context.addCookies([await loginCookie(role)]);
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
-  await page.goto(`${base}/login`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(500);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if ((await page.getByTestId("login-email").count()) > 0) {
-      await page
-        .getByTestId("login-email")
-        .fill(
-          role === "admin"
-            ? "pixel-admin@example.com"
-            : "pixel-member@example.com",
-        );
-      await page.getByTestId("login-password").fill("pixel-demo-password");
-      await page.getByTestId("login-submit").click();
-      await page.waitForTimeout(1200);
-    }
-    // The login route itself is not an app route: after auth the shell may
-    // briefly render its 404. A full navigation restores the session through
-    // the refresh cookie and lands on a real route.
-    await page.goto(`${base}/agents`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1400);
-    if ((await page.getByTestId("login-email").count()) === 0) {
+  await page.goto(`${base}/agents`, { waitUntil: "domcontentloaded" });
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await page.waitForTimeout(1000);
+    if ((await page.getByTestId("agents-page").count()) > 0) {
       return { context, page, errors };
     }
+    if ((await page.getByTestId("login-email").count()) > 0) break;
   }
-  throw new Error(`login failed for ${role} at ${width}x${height}`);
+  await context.close();
+  throw new Error(`session restore failed for ${role} at ${width}x${height}`);
 }
 
 let role = "admin";

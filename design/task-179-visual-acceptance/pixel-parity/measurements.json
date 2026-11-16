@@ -49,13 +49,13 @@
   },
   "pauseConfirm": {
     "text": "Pause session",
-    "width": 94.4,
+    "width": 107,
     "height": 28,
     "fontSize": "11px",
     "fontWeight": "650",
     "lineHeight": "11px",
     "color": "rgb(255, 255, 255)",
-    "background": "rgb(59, 130, 246)",
+    "background": "rgb(37, 99, 235)",
     "borderColor": "rgb(36, 50, 74)",
     "borderRadius": "6px",
     "padding": "0px 9px",
@@ -65,7 +65,7 @@
   "endModal": {
     "text": "End this session?Ending is final for this session. It releases claims and cannot",
     "width": 440,
-    "height": 176.2,
+    "height": 178.2,
     "fontSize": "16px",
     "fontWeight": "400",
     "lineHeight": "24px",
@@ -81,9 +81,9 @@
     }
   },
   "endTarget": {
-    "text": "API reference sweep · MCP write contract",
+    "text": "Docs agent · API reference sweep · MCP write contract",
     "width": 406,
-    "height": 32.5,
+    "height": 30.5,
     "fontSize": "11px",
     "fontWeight": "400",
     "lineHeight": "16.5px",
@@ -91,7 +91,7 @@
     "background": "oklab(0.768595 0.0561344 0.154817 / 0.06)",
     "borderColor": "rgb(245, 158, 11)",
     "borderRadius": "0px 5px 5px 0px",
-    "padding": "8px 10px",
+    "padding": "7px 9px",
     "gap": "normal",
     "icon": null
   },
@@ -146,31 +146,13 @@
       "height": 13
     }
   },
-  "boardApprovalFooter": {
-    "text": "Approving authorizes only 558d32619f…. The agent applies the exact plan.RejectAp",
-    "width": 1118,
-    "height": 50,
-    "fontSize": "13px",
-    "fontWeight": "400",
-    "lineHeight": "18.85px",
-    "color": "rgb(230, 237, 247)",
-    "background": "oklab(0.234978 -0.00376351 -0.0373144)",
-    "borderColor": "rgb(36, 50, 74)",
-    "borderRadius": "0px",
-    "padding": "9px 12px",
-    "gap": "normal",
-    "icon": {
-      "width": 11,
-      "height": 11
-    }
-  },
   "boardApprovalReject": {
     "text": "Reject",
     "width": 59,
     "height": 28,
     "fontSize": "11px",
     "fontWeight": "650",
-    "lineHeight": "15.95px",
+    "lineHeight": "11px",
     "color": "rgb(230, 237, 247)",
     "background": "oklab(0.244858 -0.00380383 -0.0385778 / 0.65)",
     "borderColor": "rgb(36, 50, 74)",
@@ -185,7 +167,7 @@
     "height": 28,
     "fontSize": "11px",
     "fontWeight": "650",
-    "lineHeight": "15.95px",
+    "lineHeight": "11px",
     "color": "rgb(255, 255, 255)",
     "background": "rgb(37, 99, 235)",
     "borderColor": "rgba(0, 0, 0, 0)",
@@ -249,7 +231,7 @@
     }
   },
   "boardRunsHeader": {
-    "text": "Runs5 of 5 · board history",
+    "text": "Runs5 of 6 · board history",
     "width": 912,
     "height": 46,
     "fontSize": "13px",
@@ -267,7 +249,7 @@
     }
   },
   "boardRunsTotal": {
-    "text": "5 of 5 runs",
+    "text": "5 of 6 runs",
     "width": 59.3,
     "height": 15.9,
     "fontSize": "11px",
@@ -282,7 +264,7 @@
     "icon": null
   },
   "boardRunRow": {
-    "text": "Release agent (CI) added 2 cardsRelease agent (CI) · 2 commands · 1:20 PMApplied",
+    "text": "Release agent (CI) moved 1 cardRelease agent (CI) · 1 command · 4:00 PMApplied1 ",
     "width": 285,
     "height": 75.8,
     "fontSize": "13px",
@@ -294,6 +276,9 @@
     "borderRadius": "0px",
     "padding": "7px 10px",
     "gap": "normal",
-    "icon": null
+    "icon": {
+      "width": 10,
+      "height": 10
+    }
   }
 }
