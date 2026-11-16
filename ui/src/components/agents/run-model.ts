@@ -208,7 +208,42 @@ export function runBoardRole(
 }
 
 /** The list title used where the API has no stored human summary. */
-export function runTitle(run: RunSummaryDto, t: Translate): string {
+export function runTitle(
+  run: RunSummaryDto,
+  t: Translate,
+  token?: string,
+): string {
+  const summary = run.commandSummary;
+  if (summary !== undefined && summary.actionTypes.length > 0) {
+    const types = new Set(summary.actionTypes);
+    const count = run.commandCount;
+    let action: string | null = null;
+    if (types.size === 1) {
+      const type = summary.actionTypes[0];
+      if (type === "ADD_CARD") {
+        action = t("agents.runs.title.addedCards", { count });
+      } else if (type === "UPDATE_CARD") {
+        action =
+          summary.title === null
+            ? t("agents.runs.title.updatedCards", { count })
+            : t("agents.runs.title.updatedCard", { title: summary.title });
+      } else if (type === "DELETE_CARD") {
+        action = t("agents.runs.title.deletedCards", { count });
+      } else if (type === "MOVE_CARD") {
+        action = t("agents.runs.title.movedCards", { count });
+      } else if (type === "ARCHIVE_CARD") {
+        action = t("agents.runs.title.archivedCards", { count });
+      }
+    }
+    if (action === null) {
+      action = t("agents.runs.title.appliedCommands", { count });
+    }
+    const phrase =
+      run.status === "failed"
+        ? t("agents.runs.title.failed", { count })
+        : action;
+    return token === undefined || token === "" ? phrase : `${token} ${phrase}`;
+  }
   return t("agents.runs.rowTitle", {
     kind: t(RUN_KIND_KEYS[run.kind]),
     count: run.commandCount,

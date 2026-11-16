@@ -1024,7 +1024,14 @@ export function AttentionApprovalDetail({
         )}
       </div>
       {detail !== null && effectiveStatus !== undefined && hint !== null ? (
-        <footer className="shrink-0 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5">
+        <footer
+          className={cn(
+            "shrink-0 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))]",
+            variant === "board"
+              ? "ac-foot-approval px-3 py-[9px]"
+              : "px-3.5 py-2.5",
+          )}
+        >
           {canDecide ? (
             <ApprovalDecisionForm
               key={`${detail.id}-${initialMode ?? "idle"}`}

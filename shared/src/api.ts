@@ -1300,6 +1300,13 @@ export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
  * belongs to exactly one board; `clientRunId` is the optional idempotency key
  * scoped to that board. `firstSeq`/`lastSeq` are the `Command.seq` range.
  */
+export interface AgentRunCommandSummary {
+  /** Distinct action types in command order. */
+  actionTypes: string[];
+  /** First human title carried by a command (add/update), if any. */
+  title: string | null;
+}
+
 export interface AgentRunDto {
   id: string;
   boardId: string;
@@ -1318,6 +1325,8 @@ export interface AgentRunDto {
   createdAt: number;
   appliedAt: number;
   revertedAt: number | null;
+  /** Additive read-only hint for the list title; absent on legacy rows. */
+  commandSummary?: AgentRunCommandSummary;
 }
 
 /** `GET /boards/:id/runs` returns summaries: no commands or preimages. */

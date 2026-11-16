@@ -59,6 +59,25 @@ html.light .agent-control-surface {
   box-shadow: var(--ac-shadow-lg);
 }
 
+/* The desktop prototype floats the control sheet at 20 px, while the 1024
+   sheet starts below the real board header (spec §3.3). */
+@media (min-width: 1280px) {
+  .agent-control-surface.ac-modal {
+    top: 20px;
+    height: min(760px, calc(100dvh - 40px));
+  }
+}
+
+/* Tablet sheet: below the real header and nearly full width, like the 1024
+   prototype frame (spec §3.3). */
+@media (min-width: 761px) and (max-width: 1279px) {
+  .agent-control-surface.ac-modal {
+    top: 56px;
+    width: calc(100vw - 20px);
+    height: calc(100dvh - 70px);
+  }
+}
+
 /* Header ------------------------------------------------------------------ */
 .agent-control-surface .ac-head {
   position: relative;
@@ -814,6 +833,20 @@ html[lang="ru"] .agent-control-surface .ac-title {
   align-items: center;
   gap: 8px;
   min-height: 50px;
+}
+
+/* The approval detail owns its action footer (it depends on the selected
+   request). At desktop it spans the whole modal like the prototype; on mobile
+   it stays in the detail pane so the back/detail layout keeps its own scroll. */
+@media (min-width: 761px) {
+  .agent-control-surface .ac-foot-approval {
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    min-height: 50px;
+  }
 }
 
 .agent-control-surface .ac-foot .ac-foot-note {

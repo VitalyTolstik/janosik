@@ -537,7 +537,9 @@ export function ApprovalDecisionForm({
 
   return (
     <>
-      <div className={cn(layout === "inline" && "flex items-center gap-2")}>
+      <div
+        className={cn(layout === "inline" && "flex w-full items-center gap-2")}
+      >
         <p
           className={cn(
             "mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground",
@@ -583,7 +585,7 @@ export function ApprovalDecisionForm({
               data-testid="approval-next-pending"
               onClick={onNextPending}
               disabled={busy}
-              className="h-8 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
+              className="h-7 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
               title={t("agents.approvals.nextPendingHint")}
             >
               {t("agents.approvals.nextPending")}
@@ -597,8 +599,10 @@ export function ApprovalDecisionForm({
             onClick={() => setMode("reject")}
             disabled={busy}
             className={cn(
-              "h-8 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11",
-              layout === "inline" ? "flex-none" : "flex-1",
+              "min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] leading-none font-[650] max-md:min-h-11",
+              layout === "inline"
+                ? "h-7 flex-none px-[9px] text-[11px]"
+                : "h-8 flex-1 px-[11px] text-[11.5px]",
             )}
           >
             {t("agentControl.approvals.reject")}
@@ -610,8 +614,10 @@ export function ApprovalDecisionForm({
             onClick={() => setApproveOpen(true)}
             disabled={busy}
             className={cn(
-              "h-8 min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] px-[11px] text-[11.5px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
-              layout === "inline" ? "flex-none" : "flex-1",
+              "min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
+              layout === "inline"
+                ? "h-7 flex-none px-[9px] text-[11px]"
+                : "h-8 flex-1 px-[11px] text-[11.5px]",
             )}
           >
             {t("agents.approvals.confirmApprove")}

@@ -34,6 +34,7 @@ import {
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { loadCommandSummaries } from "./run-summary";
 import type { RevertRunDto, RunListQueryDto } from "./dto/run.dto";
 
 /** Current row state used to compare a run's post-state with the board. */
@@ -148,7 +149,17 @@ export class RunsService {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
     });
-    return rows.map(runToDto);
+    const summaries = await loadCommandSummaries(
+      this.prisma,
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => {
+      const summary = summaries.get(row.id);
+      return {
+        ...runToDto(row),
+        ...(summary === undefined ? {} : { commandSummary: summary }),
+      };
+    });
   }
 
   async get(

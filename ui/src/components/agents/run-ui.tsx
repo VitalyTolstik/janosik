@@ -190,7 +190,7 @@ export function RunList({
                         )}
                       >
                         <b className="block truncate text-[11px] leading-[1.4] font-semibold">
-                          {runTitle(run, t)}
+                          {runTitle(run, t, token)}
                         </b>
                         <span className="mt-1 block truncate text-[11px] leading-[1.4] text-muted-foreground">
                           {token} ·{" "}
@@ -226,7 +226,7 @@ export function RunList({
                       <span className="min-w-0">
                         <span className="flex min-w-0 items-center gap-1.5">
                           <b className="min-w-0 truncate text-[11.5px] leading-[1.25] font-[650]">
-                            {runTitle(run, t)}
+                            {runTitle(run, t, token)}
                           </b>
                         </span>
                         <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-[1.4] text-muted-foreground">
@@ -555,7 +555,13 @@ export function RunDetail({
             </p>
           ) : null}
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
-            {runTitle(run, t)}
+            {runTitle(
+              run,
+              t,
+              run.apiTokenId === null
+                ? undefined
+                : (tokenLabel?.(run.apiTokenId) ?? undefined),
+            )}
           </h2>
           <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
             {variant === "board" ? (
