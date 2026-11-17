@@ -65,6 +65,11 @@ Screenshots:
   approver field, localized destructive copy.
 - `attention-loading-1440-dark-en.png`, `inbox-loading-1440-dark-en.png` —
   card/row skeletons and loading dashes.
+- Light-theme counterparts: `approve-dialog-1440-light-en.png`,
+  `runs-head-1440-light-en.png`, `runs-head-1024-light-en.png`,
+  `header-1440-light-en.png`, `decided-footer-1440-light-en.png`,
+  `board-settings-agents-1440-light-en.png`,
+  `sessions-head-390-light-ru.png`, `sessions-head-390-light-en.png`.
 
 ## Verification
 
