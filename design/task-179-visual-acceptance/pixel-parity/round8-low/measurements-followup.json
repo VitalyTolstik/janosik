@@ -1,0 +1,80 @@
+{
+  "searchIcon1440": {
+    "w": 32,
+    "h": 32,
+    "text": "Global search",
+    "svg": {
+      "w": 16,
+      "h": 16
+    },
+    "cls": "inline-flex items-center whitespace-nowrap font-medium disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:bg-hover h-8 rounded-md px-3 text-xs gap-1.5 text-muted-foreground transition-colors hover:text-foreground w-8 justify-center !px-0 max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 max-md:justify-center max-md:px-0"
+  },
+  "searchIcon1024": {
+    "w": 32,
+    "h": 32,
+    "text": "Global search",
+    "svg": {
+      "w": 16,
+      "h": 16
+    },
+    "cls": "inline-flex items-center whitespace-nowrap font-medium disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:bg-hover h-8 rounded-md px-3 text-xs gap-1.5 text-muted-foreground transition-colors hover:text-foreground w-8 justify-center !px-0 max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 max-md:justify-center max-md:px-0"
+  },
+  "searchLabeled1440": {
+    "w": 118,
+    "h": 32,
+    "text": "Global search",
+    "svg": {
+      "w": 16,
+      "h": 16
+    },
+    "cls": "inline-flex items-center justify-center whitespace-nowrap font-medium disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:bg-hover h-8 rounded-md px-3 text-xs gap-1.5 text-muted-foreground transition-colors hover:text-foreground pr-2.5 max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 max-md:justify-center max-md:px-0"
+  },
+  "tokenChips": [
+    {
+      "testid": "agents-token-chip-px-token-claude",
+      "text": "px-token-claude",
+      "title": "px-token-claude"
+    },
+    {
+      "testid": "agents-token-chip-px-token-ci",
+      "text": "px-token-ci",
+      "title": "px-token-ci"
+    },
+    {
+      "testid": "agents-token-chip-px-token-docs",
+      "text": "px-token-docs",
+      "title": "px-token-docs"
+    },
+    {
+      "testid": "agents-token-chip-px-token-release",
+      "text": "px-token…elease",
+      "title": "px-token-release"
+    }
+  ],
+  "fallbackDetail": {
+    "text": "Refresh the heartbeat copyExpiredMedium riskAgent Ops DemoExpired before a decision. Ask the agent to request it again.px-token…rchive asks to run UPDATE_CARD on Agent Ops Demo. Approving authorizes only the commands below — the agent still applies it.RequestBoardAgent Ops DemoRequested bypx-token…rchiveAgentpx-token…rchiveSessionNo sessionTargetcard · Session heartbeat copyRequestedToday, 12:22 AMPlan1 commandRefresh the heartbeat copyUPDATE_CARDSession heartbeat copyExact commands and known targets from the plan.Integrityexact hash3eb86bc2ad38f5f8504127654269db5ba2bb16189f5e…The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.Decision historyRequested by Audit AdminToday, 12:22 AM · risk Medium · TTL 278 minExpiredToday, 5:00 AMRelatedOpen boardToken: px-token…rchive (other member)Copy linkTechnical details · plan JSON{ \"commands\": [ { \"ac",
+    "hasFull": false,
+    "hasShort": true,
+    "staticToken": "Token: px-token…rchive (other member)"
+  },
+  "globalClose1440": {
+    "w": 100.1,
+    "h": 32,
+    "cls": "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background border border-input bg-transparent hover:bg-hover hover:text-foreground min-h-0 rounded-[6px] font-[650] max-md:min-h-11 h-8 px-[11px] text-[11.5px]"
+  },
+  "globalClose1024": {
+    "w": 100.1,
+    "h": 32,
+    "cls": "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background border border-input bg-transparent hover:bg-hover hover:text-foreground min-h-0 rounded-[6px] font-[650] max-md:min-h-11 h-8 px-[11px] text-[11.5px]"
+  },
+  "globalClose390": {
+    "w": 100.1,
+    "h": 44,
+    "cls": "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background border border-input bg-transparent hover:bg-hover hover:text-foreground min-h-0 rounded-[6px] font-[650] max-md:min-h-11 h-8 px-[11px] text-[11.5px]"
+  },
+  "boardClose1440": {
+    "w": 53.4,
+    "h": 28,
+    "cls": "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background border border-input bg-transparent hover:bg-hover hover:text-foreground min-h-0 rounded-[6px] font-[650] max-md:min-h-11 h-7 px-[9px] text-[11px]"
+  }
+}

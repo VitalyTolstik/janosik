@@ -82,3 +82,26 @@ Screenshots:
 - ESLint on every changed file — no errors (one pre-existing
   `react-hooks/set-state-in-effect` warning in `NotificationsBell.tsx`).
 - Prettier `--check` on every changed file — clean.
+
+## Follow-up — Low-gate review (AE/AF/AG)
+
+The three Low change reviewers returned four confirmed items. All are fixed
+here; the rest of the low pass is unchanged.
+
+| Item | Result |
+| --- | --- |
+| 1. Icon-only Global search 38×32 | The `/agents` icon-only trigger is now **32×32** with a **16×16** glyph at 1440 and 1024; the board-route labeled trigger stays **118×32**. |
+| 2. Token group chip | The token group header renders `shortTokenId`; `px-token-release` → **`px-token…elease`**, full id kept in `title`. |
+| 3. Approval fallback token ids | Global and board detail lead, REQUESTED BY, AGENT and Related now use `shortTokenId`; the board inbox passes `fallbackAgentName`, so `/board/…?agents=inbox&approval=px-approval-expired` shows **`px-token…rchive`** and **`Token: px-token…rchive (other member)`**, never the raw id or the old 12-char form. |
+| 4. Global Close detail regression | Styling is split by variant: board footer Close **53.4×28**, global decided footer Close detail **100.1×32** at 1440/1024. At 390 both retain the base `max-md:min-h-11` 44 px touch target. |
+
+Follow-up measurements are in `measurements-followup.json`; new screenshots:
+`header-search-icon-1440-dark-en.png`, `token-group-chips-1440-dark-en.png`,
+`approval-fallback-token-1440-dark-en.png`,
+`global-close-detail-1440-dark-en.png`,
+`global-close-detail-390-dark-en.png`, `board-close-1440-dark-en.png`.
+
+Regression tests: GlobalSearch icon-only class contract; long token group chip;
+fallback id in board attention detail; board inbox fallback id; global/board
+Close class split.
+
