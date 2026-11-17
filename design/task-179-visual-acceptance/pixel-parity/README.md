@@ -348,3 +348,23 @@ at `fix/agents-pixel-parity` on top of `035ee2ea`.
   consistently when a policy was never saved, and the RU approver field wraps
   instead of truncating.
 
+## Final five-agent review (2026-11-18)
+
+Five independent reviewers re-checked the live app against the tracked mockups
+at 1440/1024/390, light/dark, EN/RU and ADMIN/MEMBER. Final UI HEAD:
+`4eed2531`; evidence commit `64c9ed32`. **Verdict: 5/5 CLEAN.**
+
+| Scope | Final result | Notable closures |
+| --- | --- | --- |
+| `/agents` Attention + approval detail | CLEAN | admin no-approval state is “Nothing selected”; member preview row is selected; unreadable member `?approval=` keeps the list; 390 footer is balanced |
+| `/agents` Sessions | CLEAN | single-row 57.9 px head at 1440/1024; resume-specific copy; mockup group-by styling; raw danger tones |
+| `/agents` Runs + rollback | CLEAN | 210 px filter menus; RU footer one line; reverted ADMIN pre-images; human deleted-card target for MEMBER via `Command.details`; token-less “No token” titles; text-only conflict chip; 8 px mobile popover inset |
+| Board Inbox + approval detail | CLEAN | filtered-empty search recovery; 44 px mobile action; 8/9 px responsive row density; detail rhythm/chip geometry; 390 approve-dialog row |
+| Board Live + Runs + settings | CLEAN | Live rows 56.94/55.94 px; no regressions across Board Runs/Inbox |
+
+The review fixes are in `73a75dc9`, `20967c64` and `4eed2531`. Reviewer captures
+were disposable; the tracked screenshots, measurements and round notes above
+remain the reproducible record. The additive board-level attribution,
+`commandSummary` and command `detail` fields are documented in the published
+OpenAPI contract.
+
