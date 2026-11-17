@@ -756,7 +756,7 @@ export function RunDetail({
                         {actionSummary(
                           command.action,
                           board,
-                          preimageLabel(preimage),
+                          preimageLabel(preimage) ?? command.detail,
                         )}
                       </span>
                     </div>

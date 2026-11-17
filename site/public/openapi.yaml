@@ -3603,6 +3603,9 @@ components:
           type: [string, "null"]
         agentName:
           type: [string, "null"]
+        detail:
+          type: string
+          description: Frozen human display detail (for example a deleted card title).
         at:
           type: integer
     BoardAction:

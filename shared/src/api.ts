@@ -311,6 +311,11 @@ export interface CommandDeltaEntry {
   runId?: string | null;
   /** Token-name snapshot at write time (`ApiToken.name`). */
   agentName?: string;
+  /**
+   * Human display detail frozen at apply time (for example the deleted card
+   * title). Safe for every board reader; pre-images remain ADMIN-only.
+   */
+  detail?: string;
 }
 
 /** Server-sent event describing a committed command (TASK-30). */

@@ -93,6 +93,7 @@ export function SelectField<T extends string>({
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        collisionPadding={8}
         onOpenAutoFocus={(event) => event.preventDefault()}
         // A Dialog's focus trap can move focus back into the dialog right
         // after the portalled listbox opens. That is not an intentional

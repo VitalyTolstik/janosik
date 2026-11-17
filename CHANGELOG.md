@@ -36,9 +36,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and mobile coverage was extended without weakening existing expectations.
 
 - TASK-179 final pixel-parity reads expose additive display names on
-  board-level sessions and runs (`tokenName`, `sessionName`, `actorName`) and a
-  read-only `commandSummary` hint for the runs list. Existing clients that
-  ignore unknown fields are unaffected; no MCP tool or write contract changes.
+  board-level sessions and runs (`tokenName`, `sessionName`, `actorName`), a
+  read-only `commandSummary` hint for the runs list, and a frozen `detail` on
+  command deltas so a member run view can name a deleted card without
+  pre-images. Existing clients that ignore unknown fields are unaffected; no
+  MCP tool or write contract changes.
 
 - TASK-176.5 + TASK-176.6 admin URL state and addressable filters: every
   admin entity list keeps `search/status/period/limit/offset` in the URL and
