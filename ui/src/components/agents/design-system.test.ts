@@ -100,6 +100,16 @@ describe("agent design system (TASK-179.9)", () => {
     expect(boardSettingsShell).toContain("md:top-[56px]");
   });
 
+  it("adds the large-screen modal width only at >=1600", () => {
+    expect(agentControlCss).toContain("@media (min-width: 1600px)");
+    expect(agentControlCss).toContain("width: min(1400px, calc(100vw - 96px))");
+    expect(agentControlCss).toContain(
+      "height: min(860px, calc(100dvh - 96px))",
+    );
+    expect(agentControlCss).toContain("width: 220px");
+    expect(agentControlCss).toContain("width: 360px");
+  });
+
   it("gives every primary control a 44 px mobile target", () => {
     const controls = [
       [pausePanel, "agent-live-refresh"],

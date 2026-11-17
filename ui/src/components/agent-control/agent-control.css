@@ -1261,3 +1261,26 @@ html[lang="ru"] .agent-control-surface .ac-title {
     font-size: 10px;
   }
 }
+
+/* Large screens: keep the 1440 mockup intact below 1600, then let the board
+   control use the available canvas instead of a 1120×760 island. */
+@media (min-width: 1600px) {
+  .agent-control-surface.ac-modal {
+    top: 0;
+    bottom: 0;
+    width: min(1400px, calc(100vw - 96px));
+    height: min(860px, calc(100dvh - 96px));
+  }
+
+  .agent-control-surface .ac-rail {
+    width: 220px;
+  }
+
+  .agent-control-surface .ac-list {
+    width: 360px;
+  }
+
+  .agent-control-surface .ac-content [data-testid="agent-run-list"] {
+    width: 360px;
+  }
+}
