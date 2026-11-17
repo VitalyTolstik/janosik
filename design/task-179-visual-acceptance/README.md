@@ -8,6 +8,9 @@ the spec, the spec wins (see
 [`docs/TASK-179-agent-surfaces-redesign.md`](../../docs/TASK-179-agent-surfaces-redesign.md)
 §0, §3 and §11).
 
+The follow-up pixel-parity pass, its measured deviations and the round-by-round
+evidence live in [`pixel-parity/README.md`](./pixel-parity/README.md).
+
 ## Method
 
 - Chromium (Playwright) against the Vite build of

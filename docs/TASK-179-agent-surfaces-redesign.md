@@ -1,6 +1,6 @@
 # TASK-179 — Agent surfaces redesign
 
-**Status:** planned; independent review accepted — §11 overrides the prototype where they still conflict  
+**Status:** shipped (PR #270); final pixel-parity follow-up on `fix/agents-pixel-parity` — §11 overrides the prototype where they still conflict  
 **Priority:** P1 (IA, one entry, approvals truth, permissions, API boundary, prototype sync), P2 (runs, policy, mobile, docs)  
 **Code baseline:** `main` = `fc6c3e7` (166.17 and 178 merged).  
 **Spec/report commit:** `7cb0405`; current docs main `fc6c3e7`.  
@@ -355,6 +355,13 @@ Three clear layers:
 - **Status (2026-11-13):** shipped in PR #270; migration table, EN/RU docs,
   CHANGELOG, ROADMAP and the 1440/1024/390 visual acceptance are in place.
   Evidence: [`design/task-179-visual-acceptance/README.md`](../design/task-179-visual-acceptance/README.md).
+- **Final pixel-parity follow-up (2026-11-18):** `fix/agents-pixel-parity`
+  closes the remaining 1440/1024/390 gaps against the tracked pixel-parity
+  mockup, including approval/detail rhythm, mobile dialogs and hit targets,
+  Live row density, filtered-empty Inbox recovery, reverted pre-images and
+  human run/command attribution. Evidence:
+  [`design/task-179-visual-acceptance/pixel-parity/README.md`](../design/task-179-visual-acceptance/pixel-parity/README.md).
+  The final five-agent review must be CLEAN before merge.
 
 ### 179.12 — Sync the prototype and close the independent review (P1)
 
