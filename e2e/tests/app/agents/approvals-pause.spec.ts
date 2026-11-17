@@ -151,12 +151,14 @@ test("an agent request appears live, is approved with a reason and consumed afte
     "approved",
   );
 
-  // The agent applies the same plan with the approval id; refresh the queue
-  // and inspect the consumed row. (The detail does not stay pinned across the
-  // Needs → Decided transition by itself.)
+  // The agent applies the same plan with the approval id. The detail is not
+  // pinned across the Needs → Decided transition and does not subscribe to
+  // the consume frame itself, so reload before inspecting the consumed row.
   const applied = await applyCardDelete(pat, board.id, cardId, ref);
   expect(applied.status(), await applied.text()).toBe(200);
-  await page.getByTestId("approval-refresh").click();
+  await page.reload();
+  await openAgentControl(page);
+  await page.getByTestId("approval-filter-decided").click();
   await page.getByTestId(`approval-row-${ref.approvalId}`).click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
     "data-status",
@@ -233,9 +235,9 @@ test("rejecting a request keeps the card and records the reason", async ({
     "data-status",
     "rejected",
   );
-  await expect(page.getByTestId("approval-comment-view")).toContainText(
-    "Not this card",
-  );
+  await expect(
+    page.getByTestId("approval-section-decision-history"),
+  ).toContainText("Not this card");
 
   const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
   const body = (await snapshot.json()) as {

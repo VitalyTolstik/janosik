@@ -114,9 +114,7 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(cardDialog).toBeHidden();
 
   // Members.
-  await clickEvenIfHidden(
-    page.getByRole("button", { name: "Members", exact: true }),
-  );
+  await clickEvenIfHidden(page.locator('button[aria-label="Members"]'));
   const members = page.getByRole("dialog");
   await expectDialogFits(page, members, "members");
   await expect(page.getByTestId("board-members-box")).toBeVisible();
@@ -124,9 +122,7 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(members).toBeHidden();
 
   // Share link.
-  await clickEvenIfHidden(
-    page.getByRole("button", { name: "Share", exact: true }),
-  );
+  await clickEvenIfHidden(page.getByTestId("share-trigger"));
   const share = page.getByRole("dialog");
   await expectDialogFits(page, share, "share");
   await share.getByRole("button", { name: "Close", exact: true }).tap();
