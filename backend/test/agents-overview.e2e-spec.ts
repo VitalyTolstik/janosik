@@ -1044,7 +1044,7 @@ describe("Agents overview aggregation (e2e)", () => {
     expect(await prisma.securityAuditLog.count()).toBe(auditBefore);
   });
 
-  it("computes effective approval expiry from one slice without the writing path", async () => {
+  it("expires only undecided approvals and keeps an approved status after the apply window", async () => {
     const storedBefore = await prisma.approvalRequest.findUniqueOrThrow({
       where: { id: approvals.overduePending.id },
     });
@@ -1066,14 +1066,10 @@ describe("Agents overview aggregation (e2e)", () => {
       status: "expired",
       limit: 100,
     });
-    expect(expired.total).toBe(3);
-    expect(expired.items).toHaveLength(3);
+    expect(expired.total).toBe(2);
+    expect(expired.items).toHaveLength(2);
     expect(new Set(expired.items.map((row) => row.id))).toEqual(
-      new Set([
-        approvals.overduePending.id,
-        approvals.overdueApproved.id,
-        approvals.expiredStored.id,
-      ]),
+      new Set([approvals.overduePending.id, approvals.expiredStored.id]),
     );
     const overdue = expired.items.find(
       (row) => row.id === approvals.overduePending.id,
@@ -1082,18 +1078,21 @@ describe("Agents overview aggregation (e2e)", () => {
       status: "expired",
       storedStatus: "pending",
     });
-    const overdueApproved = expired.items.find(
-      (row) => row.id === approvals.overdueApproved.id,
-    );
-    expect(overdueApproved).toMatchObject({
-      status: "expired",
-      storedStatus: "approved",
-    });
     expect(
       expired.items.find((row) => row.id === approvals.expiredStored.id),
     ).toMatchObject({
       status: "expired",
       storedStatus: "expired",
+    });
+    const approved = await approvalsPage(owner.accessToken, {
+      status: "approved",
+      limit: 100,
+    });
+    expect(
+      approved.items.find((row) => row.id === approvals.overdueApproved.id),
+    ).toMatchObject({
+      status: "approved",
+      storedStatus: "approved",
     });
 
     for (const status of [

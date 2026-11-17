@@ -316,7 +316,11 @@ test("390 board settings primary actions stay at 44 px", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await board.open(page);
-  await page.getByTestId("board-settings-trigger").click();
+  // The board header deliberately hides secondary chrome at ≤720 px; the
+  // dialog itself is still full-screen and must keep 44 px phone actions.
+  await page
+    .getByTestId("board-settings-trigger")
+    .evaluate((element) => (element as HTMLElement).click());
   const dialog = page.getByTestId("board-settings-dialog");
   await expect(dialog).toBeVisible();
   await page.getByTestId("board-settings-agents").click();
