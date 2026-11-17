@@ -111,7 +111,7 @@ test("run history previews and reverts a PAT batch from the UI", async ({
 
   const row = page.getByTestId(`agent-run-row-${run.runId}`);
   await expect(row).toBeVisible();
-  await expect(row).toContainText("Batch");
+  await expect(row).toContainText("added 2 cards");
   await expect(page.getByTestId("agent-run-detail")).toBeVisible();
   await expect(page.getByTestId("agent-run-status")).toHaveAttribute(
     "data-status",
