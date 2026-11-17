@@ -264,13 +264,13 @@ test("surfaces a failed session request and retries it", async ({
     }),
   );
   await openAgents(page);
-  await expect(page.getByTestId("agents-error")).toBeVisible();
-  await expect(page.getByTestId("agents-error")).toContainText(
+  await expect(page.getByTestId("agents-load-error")).toBeVisible();
+  await expect(page.getByTestId("agents-load-error")).toContainText(
     "Could not load agent sessions",
   );
 
   await page.unroute("**/api/v1/boards/*/agent-sessions");
-  await page.getByTestId("agents-retry").click();
+  await page.getByTestId("agents-load-error-retry").click();
   await expect(page.getByTestId("agents-empty")).toBeVisible();
 });
 

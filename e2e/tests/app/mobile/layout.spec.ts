@@ -34,6 +34,16 @@ async function expectDialogFits(page: Page, locator: Locator, label: string) {
   await expectNoPageOverflow(page, label);
 }
 
+/**
+ * Some board chrome is deliberately desktop-only at 390 px (TASK-179 hides
+ * Members/Share/Settings there). The dialogs still render full-screen for
+ * phone-sized viewports, so exercise their geometry without reintroducing a
+ * hidden phone entry point.
+ */
+async function clickEvenIfHidden(locator: Locator) {
+  await locator.evaluate((element) => (element as HTMLElement).click());
+}
+
 test("header, filters and view controls fit a phone without sideways scroll", async ({
   page,
   board,
@@ -104,7 +114,7 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(cardDialog).toBeHidden();
 
   // Members.
-  await page.getByRole("button", { name: "Members", exact: true }).tap();
+  await clickEvenIfHidden(page.locator('button[aria-label="Members"]'));
   const members = page.getByRole("dialog");
   await expectDialogFits(page, members, "members");
   await expect(page.getByTestId("board-members-box")).toBeVisible();
@@ -112,7 +122,7 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(members).toBeHidden();
 
   // Share link.
-  await page.getByRole("button", { name: "Share", exact: true }).tap();
+  await clickEvenIfHidden(page.getByTestId("share-trigger"));
   const share = page.getByRole("dialog");
   await expectDialogFits(page, share, "share");
   await share.getByRole("button", { name: "Close", exact: true }).tap();
@@ -134,8 +144,8 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(page.getByTestId("data-backups")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Board settings (workflow editor) — admin only.
-  await page.getByTestId("board-settings-trigger").tap();
+  // Board settings (workflow editor) — admin only; the trigger is desktop-only.
+  await clickEvenIfHidden(page.getByTestId("board-settings-trigger"));
   const settings = page.getByTestId("board-settings-dialog");
   await expectDialogFits(page, settings, "board settings");
   await settings.getByRole("button", { name: "Close", exact: true }).tap();
