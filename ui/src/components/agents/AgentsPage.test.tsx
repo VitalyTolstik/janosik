@@ -961,6 +961,28 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("resolves board=all to the approval's concrete board", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem()]),
+    );
+    hoisted.getApproval.mockResolvedValue(approval());
+    renderPage("/agents?section=attention&board=all&approval=approval-1");
+
+    await waitFor(() =>
+      expect(hoisted.getApproval).toHaveBeenCalledWith("board-1", "approval-1"),
+    );
+  });
+
+  it("resolves board=all to the selected run's concrete board", async () => {
+    hoisted.listRuns.mockResolvedValue([run()]);
+    hoisted.getRun.mockResolvedValue(runDetail());
+    renderPage("/agents?section=runs&board=all&run=run-1");
+
+    await waitFor(() =>
+      expect(hoisted.getRun).toHaveBeenCalledWith("board-1", "run-1"),
+    );
+  });
+
   it("does not offer a session link for an approval without a session", async () => {
     const row = approval({ agentSessionId: null });
     hoisted.getApproval.mockResolvedValue(row);

@@ -663,14 +663,15 @@ export function AgentsPage() {
   const sessionCount = scopedRows.length;
 
   const selectedRunId = params.get("run");
+  // `board=all` is the All-boards scope, never a board id. A detail still
+  // needs the concrete board of the selected row.
+  const requestedBoard = params.get("board");
+  const scopedBoard = requestedBoard === "all" ? null : requestedBoard;
   const selectedApprovalBase =
     visibleApprovalId === null
       ? undefined
       : pending.rows.find((row) => row.id === visibleApprovalId);
-  const approvalBoardId =
-    selectedApprovalId !== null
-      ? params.get("board")
-      : (params.get("board") ?? selectedApprovalBase?.boardId ?? null);
+  const approvalBoardId = scopedBoard ?? selectedApprovalBase?.boardId ?? null;
   const selectedRunRow =
     selectedRunId === null
       ? undefined
@@ -684,7 +685,7 @@ export function AgentsPage() {
   const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
   const runDetailBoardId =
     selectedRunId !== null
-      ? (params.get("board") ?? "all")
+      ? (scopedBoard ?? selectedRunRow?.boardId ?? "all")
       : (autoRunRow?.boardId ?? runFilter.board);
   const runBoardRole =
     roleForRunBoard(state.boards, runDetailBoardId) ??
