@@ -10,6 +10,7 @@ import type {
 
 import { I18nProvider } from "@/i18n";
 import { overviewItem } from "@/test/agents-overview";
+import { AgentControlFooterContext } from "@/components/agents/agent-control-footer-context";
 
 const hoisted = vi.hoisted(() => ({
   getApproval: vi.fn(),
@@ -171,21 +172,26 @@ function renderList(overrides: Partial<AttentionApprovalRow> = {}) {
 
 function renderDetail(
   detail: ApprovalRequestDto = approval(),
-  fallbackAgentName = AGENT,
+  fallbackAgentName: string | null = AGENT,
   variant: "global" | "board" = "global",
+  onBack?: () => void,
+  footerHost: HTMLElement | null = null,
 ) {
   hoisted.getApproval.mockResolvedValue(detail);
   return render(
     <MemoryRouter>
       <I18nProvider>
-        <AttentionApprovalDetail
-          boardId="board-1"
-          approvalId={detail.id}
-          boardTitle="Launch"
-          fallbackAgentName={fallbackAgentName}
-          variant={variant}
-          onChanged={() => {}}
-        />
+        <AgentControlFooterContext.Provider value={footerHost}>
+          <AttentionApprovalDetail
+            boardId="board-1"
+            approvalId={detail.id}
+            boardTitle="Launch"
+            fallbackAgentName={fallbackAgentName ?? undefined}
+            variant={variant}
+            onBack={onBack}
+            onChanged={() => {}}
+          />
+        </AgentControlFooterContext.Provider>
       </I18nProvider>
     </MemoryRouter>,
   );
@@ -372,5 +378,69 @@ describe("AttentionApprovals", () => {
     expect(within(detail).getAllByText("Docs agent").length).toBeGreaterThan(1);
     expect(within(detail).getByText("Session")).toBeInTheDocument();
     expect(within(detail).getByText("Docs build")).toBeInTheDocument();
+  });
+
+  it("shortens a fallback token id in the board attribution and related link", async () => {
+    const longToken = "px-token-release-archive";
+    renderDetail(
+      approval({
+        requestedByTokenId: longToken,
+        agentSessionId: null,
+      }),
+      null,
+      "board",
+    );
+
+    const detail = await screen.findByTestId("agents-approval-detail");
+    expect(detail).toHaveTextContent("px-token…rchive");
+    expect(detail).not.toHaveTextContent(longToken);
+    const staticToken = await screen.findByTestId("approval-token-static");
+    expect(staticToken).toHaveTextContent("Token: px-token…rchive");
+    expect(staticToken).not.toHaveTextContent("px-token-rele…");
+  });
+
+  it("keeps the global decided footer Close detail at 32 px", async () => {
+    renderDetail(
+      approval({
+        status: "approved",
+        decidedBy: "user-1",
+        decidedAt: Date.now(),
+      }),
+      AGENT,
+      "global",
+      () => {},
+    );
+
+    const close = await screen.findByRole("button", { name: "Close detail" });
+    expect(close.className).toContain("h-8");
+    expect(close.className).toContain("px-[11px]");
+    expect(close.className).toContain("text-[11.5px]");
+    expect(close.className).not.toContain("h-7");
+  });
+
+  it("keeps the board decided footer Close at 28 px", async () => {
+    const host = document.createElement("div");
+    renderDetail(
+      approval({
+        status: "approved",
+        decidedBy: "user-1",
+        decidedAt: Date.now(),
+      }),
+      AGENT,
+      "board",
+      () => {},
+      host,
+    );
+
+    await screen.findByTestId("agents-approval-detail");
+    await waitFor(() => expect(host.textContent).toContain("Close"));
+    const close = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Close",
+    );
+    expect(close).toBeDefined();
+    expect(close?.className).toContain("h-7");
+    expect(close?.className).toContain("px-[9px]");
+    expect(close?.className).toContain("text-[11px]");
+    expect(close?.className).not.toContain("h-8");
   });
 });

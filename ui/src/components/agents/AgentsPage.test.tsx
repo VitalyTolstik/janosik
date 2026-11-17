@@ -2379,6 +2379,32 @@ describe("AgentsPage", () => {
     expect(tokenChip.className).toContain("font-mono");
   });
 
+  it("shortens a long token id in the token group chip", async () => {
+    const longToken = "px-token-release-archive";
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-1"
+          ? [
+              session({
+                apiTokenId: longToken,
+                currentRunId: null,
+              }),
+            ]
+          : [],
+      ),
+    );
+    renderPage("/agents?section=sessions&group=token");
+
+    const group = await screen.findByTestId(`agents-token-group-${longToken}`);
+    const tokenChip = within(group).getByTestId(
+      `agents-token-chip-${longToken}`,
+    );
+    expect(tokenChip).toHaveTextContent("px-token…rchive");
+    expect(tokenChip).not.toHaveTextContent(longToken);
+    expect(tokenChip).toHaveAttribute("title", longToken);
+    expect(tokenChip.className).toContain("font-mono");
+  });
+
   it("keeps the master-detail sheet and 44px actions on mobile", async () => {
     renderPage("/agents?section=sessions&board=board-1&session=session-1");
 

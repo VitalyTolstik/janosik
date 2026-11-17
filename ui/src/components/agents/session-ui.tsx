@@ -322,7 +322,7 @@ function SessionGroupHeader({
           title={group.tokenId}
           className="inline-flex h-[21px] max-w-[150px] shrink-0 items-center rounded-[3px] border border-border bg-background px-1 font-mono text-[11px] text-muted-foreground"
         >
-          <span className="truncate">{group.tokenId}</span>
+          <span className="truncate">{shortTokenId(group.tokenId)}</span>
         </span>
       ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (

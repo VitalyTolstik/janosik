@@ -160,6 +160,10 @@ export function ApprovalsPanel({
   };
 
   const queue = useMemo(() => rows ?? [], [rows]);
+  const selectedRow =
+    selectedId === null
+      ? undefined
+      : queue.find((row) => row.id === selectedId);
   const counts = useMemo(() => {
     let needs = 0;
     for (const row of queue) {
@@ -535,6 +539,11 @@ export function ApprovalsPanel({
                 approvalId={selectedId}
                 boardTitle={board?.title ?? boardId}
                 variant="board"
+                fallbackAgentName={
+                  selectedRow === undefined
+                    ? undefined
+                    : agentNameFor(selectedRow)
+                }
                 footerActive={!mobile || mobileDetailOpen}
                 onBack={() => setMobileDetailOpen(false)}
                 onChanged={() => {

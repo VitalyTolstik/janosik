@@ -631,8 +631,7 @@ export function AttentionApprovalDetail({
     tokenName ??
     session?.tokenName ??
     fallbackAgentName ??
-    detail?.requestedByTokenId ??
-    "";
+    (detail === null ? "" : shortTokenId(detail.requestedByTokenId));
   const tokenOwnership =
     detail === null
       ? "unknown"
@@ -800,7 +799,12 @@ export function AttentionApprovalDetail({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
+                  className={cn(
+                    "min-h-0 rounded-[6px] leading-none font-[650] max-md:min-h-11",
+                    variant === "board"
+                      ? "h-7 px-[9px] text-[11px]"
+                      : "h-8 px-[11px] text-[11.5px]",
+                  )}
                   onClick={onBack}
                 >
                   {variant === "global"
@@ -933,7 +937,7 @@ export function AttentionApprovalDetail({
                 </RequestMeta>
                 <RequestMeta label={t("agents.approvals.agent")}>
                   {session?.name === undefined &&
-                  agentName === detail.requestedByTokenId ? (
+                  agentName === shortTokenId(detail.requestedByTokenId) ? (
                     <span className="font-mono text-[11px]">{agentName}</span>
                   ) : (
                     agentName

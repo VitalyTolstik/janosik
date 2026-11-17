@@ -192,6 +192,24 @@ describe("agent control (TASK-166.14)", () => {
     vi.restoreAllMocks();
   });
 
+  it("shortens a fallback token id in the board inbox detail", async () => {
+    const longToken = "px-token-release-archive";
+    const row = approval({
+      requestedByTokenId: longToken,
+      agentSessionId: null,
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog("/board/board-1?agents=inbox");
+
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    const detail = await screen.findByTestId("approval-detail");
+    expect(detail).toHaveTextContent("px-token…rchive");
+    expect(detail).not.toHaveTextContent(longToken);
+    expect(detail).not.toHaveTextContent("px-token-rele…");
+  });
+
   it("loads the queue and approves the exact plan hash", async () => {
     const row = approval();
     const decided = approval({

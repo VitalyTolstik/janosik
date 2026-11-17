@@ -20,6 +20,7 @@ import type {
 } from "@janosik/shared";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { shortTokenId } from "@/components/agents/agent-model";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -260,10 +261,6 @@ export function ApprovalHash({
   );
 }
 
-function shorten(value: string, max = 12): string {
-  return value.length > max ? `${value.slice(0, max)}…` : value;
-}
-
 /** Deep links always carry the board id; the token opens an info dialog. */
 export function ApprovalLinks({
   approval,
@@ -299,7 +296,7 @@ export function ApprovalLinks({
     tokenName.trim() !== "" &&
     tokenName !== approval.requestedByTokenId
       ? tokenName
-      : shorten(approval.requestedByTokenId);
+      : shortTokenId(approval.requestedByTokenId);
 
   const copyLink = () => {
     const clipboard = navigator.clipboard;
