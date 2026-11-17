@@ -289,7 +289,9 @@ export function useAgentRuns(
   const current = snapshot?.key === filterKey ? snapshot : null;
   return {
     rows: current?.rows ?? [],
-    loading: enabled && (current === null || (boardsLoading && scopedBoards.length === 0)),
+    loading:
+      enabled &&
+      (current === null || (boardsLoading && scopedBoards.length === 0)),
     loadingMore,
     error: current?.error ?? false,
     errorBoardIds: current?.errorBoardIds ?? [],
