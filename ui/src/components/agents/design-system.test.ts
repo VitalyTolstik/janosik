@@ -101,13 +101,20 @@ describe("agent design system (TASK-179.9)", () => {
   });
 
   it("adds the large-screen modal width only at >=1600", () => {
-    expect(agentControlCss).toContain("@media (min-width: 1600px)");
-    expect(agentControlCss).toContain("width: min(1400px, calc(100vw - 96px))");
-    expect(agentControlCss).toContain(
-      "height: min(860px, calc(100dvh - 96px))",
-    );
-    expect(agentControlCss).toContain("width: 220px");
-    expect(agentControlCss).toContain("width: 360px");
+    const marker = "@media (min-width: 1600px)";
+    const start = agentControlCss.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    const block = agentControlCss.slice(start);
+    expect(block).toContain(".agent-control-surface.ac-modal");
+    expect(block).toContain("top: 0");
+    expect(block).toContain("bottom: 0");
+    expect(block).toContain("width: min(1400px, calc(100vw - 96px))");
+    expect(block).toContain("height: min(860px, calc(100dvh - 96px))");
+    expect(block).toContain(".agent-control-surface .ac-rail");
+    expect(block).toContain("width: 220px");
+    expect(block).toContain(".agent-control-surface .ac-list");
+    expect(block).toContain('data-testid="agent-run-list"');
+    expect(block).toContain("width: 360px");
   });
 
   it("gives every primary control a 44 px mobile target", () => {
