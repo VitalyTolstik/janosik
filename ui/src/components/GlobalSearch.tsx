@@ -44,6 +44,8 @@ interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */
   onOpenChange?: (open: boolean) => void;
   iconOnly?: boolean;
+  /** Responsive label visibility for a header with its own breakpoints. */
+  labelClassName?: string;
 }
 
 /**
@@ -57,6 +59,7 @@ interface GlobalSearchProps {
 export function GlobalSearch({
   onOpenChange,
   iconOnly = false,
+  labelClassName,
 }: GlobalSearchProps) {
   const { t } = useI18n();
 
@@ -95,17 +98,22 @@ export function GlobalSearch({
             size="sm"
             aria-label={t("search.aria")}
             onClick={() => setOpenBoth(true)}
-            className="gap-1.5 pr-2.5 text-muted-foreground transition-colors hover:text-foreground"
+            className={cn(
+              "gap-1.5 text-muted-foreground transition-colors hover:text-foreground",
+              iconOnly && "w-8 justify-center !px-0",
+              !iconOnly && "pr-2.5",
+              "max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 max-md:justify-center max-md:px-0",
+            )}
           >
             <span
               className={cn(
-                "hidden text-xs font-medium",
-                !iconOnly && "sm:inline",
+                "text-xs font-medium",
+                labelClassName ?? cn("hidden", !iconOnly && "sm:inline"),
               )}
             >
               {t("search.label")}
             </span>
-            <LazyAnimatedIcon name="search" size={20} />
+            <LazyAnimatedIcon name="search" size={16} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>

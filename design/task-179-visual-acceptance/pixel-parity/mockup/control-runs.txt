@@ -1,0 +1,184 @@
+Janosik
+Agent Ops Demo
+Agents
+2
+AA
+Board
+Calendar
+Table
+Watch
+Backlog
+4
+backlog
+Card claim visibility
+
+Approval pending
+
+2 ·
+1/3 ·
+AA
+backlog
+Old onboarding draft
+
+Delete approved
+
+2 ·
+1/3 ·
+AA
++ Add card
+In progress
+4
+in progress
+Approval inbox polish
+
+Claude Code
+
+2 ·
+1/3 ·
+AA
+in progress
+MCP write contract
+
+Docs agent
+
+2 ·
+1/3 ·
+AA
++ Add card
+Review
+4
+review
+Session heartbeat copy
+
+Release bot
+
+2 ·
+1/3 ·
+AA
+review
+Landing page rewrite
+
+Claude Code
+
+2 ·
+1/3 ·
+AA
++ Add card
+Done
+4
+backlog
+MCP callouts
+
+Docs agent
+
+2 ·
+1/3 ·
+AA
+backlog
+Pricing page copy
+
+Release bot
+
+2 ·
+1/3 ·
+AA
++ Add card
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+2 waiting
+All agents
+THIS BOARD
+Inbox
+2
+Live
+2
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Runs
+5 of 5 · board history
+All statuses
+All kinds
+All agents
+All sessions
+Clear all
+TODAY
+Release bot added 2 cards
+Release bot · 2 commands · 5:24 PM
+Applied
+Docs agent updated the API reference
+Docs agent · 1 command · 4:51 PM
+Applied
+Release bot deleted “Old onboarding draft”
+Release bot · 1 command · 11:09 AM
+Reverted
+Docs agent could not sync MCP callouts
+Docs agent · 2 commands · Yesterday
+Failed
+Docs agent added API notes
+Docs agent · 1 command · Yesterday
+Applied
+5 of 5 runs
+Load more
+Release bot added 2 cards
+run-128 · batch · 2 commands · 5:24 PM
+Applied
+batch
+2 commands
+Agent Ops Demo
+Attribution
+ACTOR
+Release bot
+TOKEN
+Release bot
+SESSION
+Release checklist
+DURATION
+1.2s
+RUN
+run-128 · client-8f3a
+APPROVAL
+ap-1
+Timeline
+Created
+Today, 5:24:12 PM
+Applied
+Today, 5:24:13 PM
+Commands
+2 applied
+ADD_CARD
+Approval inbox polish
+BEFORE
+—
+AFTER
+Created in Review
+ADD_CARD
+Session heartbeat copy
+BEFORE
+—
+AFTER
+Created in Backlog
+Technical details · pre-images
+Rollback
+Rollback preview
+
+Re-applies 2 pre-images atomically. No conflicts found. A separate audit run records the revert.
+
+Preview again
+Revert run
+plan a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8…
+Open board
+Session
+Copy run link
+History is read-only. Rollback requires a board admin and an applied run without conflicts.
+Open all runs

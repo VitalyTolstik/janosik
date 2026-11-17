@@ -35,6 +35,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   EN/RU docs cover the new surfaces, permissions and deep links. Unit, browser
   and mobile coverage was extended without weakening existing expectations.
 
+- TASK-179 final pixel-parity reads expose additive display names on
+  board-level sessions and runs (`tokenName`, `sessionName`, `actorName`), a
+  read-only `commandSummary` hint for the runs list, and a frozen `detail` on
+  command deltas so a member run view can name a deleted card without
+  pre-images. Existing clients that ignore unknown fields are unaffected; no
+  MCP tool or write contract changes.
+
 - TASK-176.5 + TASK-176.6 admin URL state and addressable filters: every
   admin entity list keeps `search/status/period/limit/offset` in the URL and
   restores it on load and browser back/forward, preserving the hub `tab`. Row
@@ -598,6 +605,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   old one and could abort that navigation, leaving the tab on the old build
   with the banner still up. A bounded fallback covers an already-active
   worker, which emits no `controllerchange`.
+
+### Fixed
+
+- TASK-179 final pixel-parity pass: Runs filter popovers no longer truncate
+  long token/session labels; the Sessions head keeps its actions on one row at
+  1440/1024; the group-by control, danger status tones, resume copy, Attention
+  no-selection/member states, Inbox filtered-empty recovery, approval-detail
+  rhythm, command chips, mobile Inbox/approve-dialog geometry and Live row
+  density now match the tracked mockup. Reverted ADMIN runs keep the pre-image
+  disclosure, deleted-card commands show the human card title, token-less
+  audit runs keep the “No token” subject, and the conflict chip is text-only.
+  The five-agent final review and its evidence are recorded in
+  [`design/task-179-visual-acceptance/pixel-parity/README.md`](design/task-179-visual-acceptance/pixel-parity/README.md).
 
 ## [0.2.0] - 2026-11-08
 

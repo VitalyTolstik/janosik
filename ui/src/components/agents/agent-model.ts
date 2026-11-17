@@ -95,14 +95,15 @@ export function readAgentGroup(params: URLSearchParams): AgentGroupMode {
  * `Intl.RelativeTimeFormat` is deliberately not used here: the prototype's
  * heartbeat cell is a dense two-word signal, not a sentence.
  */
-export function compactAge(ms: number): string {
+export function compactAge(ms: number, lang = "en"): string {
+  const units = lang === "ru" ? ["с", "м", "ч", "д"] : ["s", "m", "h", "d"];
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 60) return `${seconds}${units[0]}`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}${units[1]}`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+  if (hours < 24) return `${hours}${units[2]}`;
+  return `${Math.floor(hours / 24)}${units[3]}`;
 }
 
 /** Heartbeat age in ms; never negative even if a clock skews backwards. */
@@ -160,13 +161,12 @@ export function isTerminalStatus(status: AgentSessionStatus): boolean {
 export type SessionDisplayStatus = AgentSessionStatus | "paused";
 
 export function sessionDisplayStatus(
-  session: Pick<AgentSessionDto, "status" | "pausedAt">,
+  session: Pick<AgentSessionDto, "status" | "pausedAt" | "stale">,
 ): SessionDisplayStatus {
-  // A terminal row never presents as paused, even if a malformed payload
-  // leaves `pausedAt` behind.
-  return !isTerminalStatus(session.status) && session.pausedAt !== null
-    ? "paused"
-    : session.status;
+  // A human pause takes precedence over the stored lifecycle; heartbeat is separate.
+  if (isTerminalStatus(session.status)) return session.status;
+  if (session.pausedAt !== null) return "paused";
+  return session.status;
 }
 
 /**
@@ -201,10 +201,13 @@ export function lastSeenAt(session: AgentSessionDto): number {
 }
 
 export function agentLabel(row: AgentSessionRow): string {
+  // A session name describes the work, not the agent. Token names are now
+  // disclosed in board context; when one is unavailable, the client name is
+  // the honest fallback, and the session stays in its own column/card.
   return (
     row.tokenName ??
-    row.name ??
     row.clientName ??
+    row.name ??
     `Agent ${row.apiTokenId.slice(0, 8)}`
   );
 }
@@ -324,7 +327,20 @@ export function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
 }
 
-/** `run-128` → `128`, so the dense label reads `Run 128`. */
+/**
+ * Dense token id for metadata rows: `cmwc7a7y…pz4qe6`. Both ends stay
+ * recognisable; a 12-character head alone made every seeded token look the
+ * same (`px-token-doc…`).
+ */
+export function shortTokenId(id: string): string {
+  return id.length > 15 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+}
+
+/** `run-128` → `#128`, so the dense label reads `Run #128`. */
 export function runNumber(id: string): string {
-  return id.replace(/^run-/, "");
+  const explicit = /^run-(\d+)$/.exec(id);
+  if (explicit !== null) return `#${explicit[1]}`;
+  const trailing = /(\d+)$/.exec(id);
+  if (trailing !== null) return `#${trailing[1]}`;
+  return `#${id.slice(0, 6)}`;
 }

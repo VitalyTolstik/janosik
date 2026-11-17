@@ -1,0 +1,290 @@
+[
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "light",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "light",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "light",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "light",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "light",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "light",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "dark",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "dark",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "light",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "light",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "light",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "light",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "light",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "light",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "dark",
+    "lang": "en",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "dark",
+    "lang": "ru",
+    "checks": [
+      "board freshness",
+      "all-board detail scope",
+      "approval filtered-empty copy",
+      "approval loading"
+    ]
+  }
+]

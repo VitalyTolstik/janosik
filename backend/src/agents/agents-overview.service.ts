@@ -34,6 +34,7 @@ import { approvalImpacts } from "@/approvals/approval-impact";
 import { activeMembershipWhere } from "@/common/membership";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { runToDto } from "@/runs/runs.service";
+import { loadCommandSummaries } from "@/runs/run-summary";
 import type { AgentsOverviewQueryDto } from "./dto/agents-overview.dto";
 import {
   decodeOverviewCursor,
@@ -1008,24 +1009,29 @@ export class AgentsOverviewService {
       ),
     ];
     const actorIds = [...new Set(rows.map((row) => row.actorId))];
-    const [tokens, sessions, visibleMembers] = await Promise.all([
-      tokenIds.length === 0
-        ? Promise.resolve([])
-        : this.prisma.apiToken.findMany({
-            where: { id: { in: tokenIds }, userId: context.userId },
-            select: { id: true, name: true },
-          }),
-      sessionIds.length === 0
-        ? Promise.resolve([])
-        : this.prisma.agentSession.findMany({
-            where: {
-              id: { in: sessionIds },
-              boardId: { in: context.boardIds },
-            },
-            select: { id: true, name: true, clientName: true },
-          }),
-      this.visibleMembers(context.boardIds, actorIds, context.now),
-    ]);
+    const [tokens, sessions, visibleMembers, commandSummaries] =
+      await Promise.all([
+        tokenIds.length === 0
+          ? Promise.resolve([])
+          : this.prisma.apiToken.findMany({
+              where: { id: { in: tokenIds }, userId: context.userId },
+              select: { id: true, name: true },
+            }),
+        sessionIds.length === 0
+          ? Promise.resolve([])
+          : this.prisma.agentSession.findMany({
+              where: {
+                id: { in: sessionIds },
+                boardId: { in: context.boardIds },
+              },
+              select: { id: true, name: true, clientName: true },
+            }),
+        this.visibleMembers(context.boardIds, actorIds, context.now),
+        loadCommandSummaries(
+          this.prisma,
+          rows.map((row) => row.id),
+        ),
+      ]);
     const tokenNames = new Map(tokens.map((row) => [row.id, row.name]));
     const sessionNames = new Map(
       sessions.map((row) => [row.id, row.name ?? row.clientName]),
@@ -1038,6 +1044,9 @@ export class AgentsOverviewService {
       return [
         {
           ...runToDto(row),
+          ...(commandSummaries.get(row.id) === undefined
+            ? {}
+            : { commandSummary: commandSummaries.get(row.id) }),
           boardTitle: board.board.title,
           boardRole: board.role,
           tokenName:
@@ -1498,7 +1507,7 @@ function approvalStatusWhere(
     case "pending":
       return { status: "pending", expiresAt: { gt: now } };
     case "approved":
-      return { status: "approved", expiresAt: { gt: now } };
+      return { status: "approved" };
     case "rejected":
       return { status: "rejected" };
     case "cancelled":
@@ -1509,7 +1518,7 @@ function approvalStatusWhere(
       return {
         OR: [
           { status: "expired" },
-          { status: { in: ["pending", "approved"] }, expiresAt: { lte: now } },
+          { status: "pending", expiresAt: { lte: now } },
         ],
       };
     case "decided":

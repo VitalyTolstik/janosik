@@ -85,6 +85,14 @@ export {
   actionFingerprint,
 } from "./command-validation";
 
+/** The frozen human display detail stored with a command, if present. */
+function commandDetail(details: Prisma.JsonValue | null): string | undefined {
+  if (typeof details !== "object" || details === null || Array.isArray(details))
+    return undefined;
+  const detail = (details as { detail?: unknown }).detail;
+  return typeof detail === "string" ? detail : undefined;
+}
+
 /**
  * Command-log transport (§7.4, TASK-26).
  *
@@ -1078,29 +1086,35 @@ export class CommandsService {
         agentName: true,
         payload: true,
         touches: true,
+        details: true,
       },
     });
     const truncated = rows.length > max;
     return {
-      entries: (truncated ? rows.slice(0, max) : rows).map((row) => ({
-        seq: Number(row.seq),
-        // Rows written before ingress stamping may lack `boardId`; replay them
-        // scoped to the queried board so the UI's realtime bridge keeps them.
-        action: {
-          ...(row.payload as Record<string, unknown>),
-          boardId,
-        } as BoardAction,
-        actorId: row.actorId,
-        actorType: row.actorType as ActorType,
-        commandId: row.id,
-        touches: row.touches,
-        ...attributionFields({
-          apiTokenId: row.apiTokenId,
-          agentSessionId: row.agentSessionId,
-          runId: row.runId,
-          agentName: row.agentName,
-        }),
-      })),
+      entries: (truncated ? rows.slice(0, max) : rows).map((row) => {
+        const detail = commandDetail(row.details);
+        return {
+          seq: Number(row.seq),
+          // Rows written before ingress stamping may lack `boardId`; replay
+          // them scoped to the queried board so the UI's realtime bridge keeps
+          // them.
+          action: {
+            ...(row.payload as Record<string, unknown>),
+            boardId,
+          } as BoardAction,
+          actorId: row.actorId,
+          actorType: row.actorType as ActorType,
+          commandId: row.id,
+          touches: row.touches,
+          ...(detail === undefined ? {} : { detail }),
+          ...attributionFields({
+            apiTokenId: row.apiTokenId,
+            agentSessionId: row.agentSessionId,
+            runId: row.runId,
+            agentName: row.agentName,
+          }),
+        };
+      }),
       resync: truncated,
     };
   }

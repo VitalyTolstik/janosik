@@ -34,6 +34,7 @@ import {
   readAgentFilter,
   readAgentGroup,
   shortId,
+  shortTokenId,
   type AgentFilter,
   type AgentSessionRow,
   type AgentStatusFilter,
@@ -57,7 +58,9 @@ import {
 } from "./AttentionApprovals";
 import { BoardScopeSelect } from "./BoardScopeSelect";
 import { RunDetail, RunList } from "./run-ui";
+import { useRunConflictPreviews } from "./use-run-conflict-previews";
 import {
+  EMPTY_RUN_FILTER,
   hasRunFilter,
   readRunFilter,
   runBoardRole as roleForRunBoard,
@@ -100,8 +103,21 @@ export function AgentsPage() {
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
   const { boards: loadedBoards } = useBoard();
-  const filter = useMemo(() => readAgentFilter(params), [params]);
-  const runFilter = useMemo(() => readRunFilter(params), [params]);
+  const allDetailScope = params.get("scope") === "all";
+  const filter = useMemo(
+    () => ({
+      ...readAgentFilter(params),
+      ...(allDetailScope ? { board: "all" } : {}),
+    }),
+    [params, allDetailScope],
+  );
+  const runFilter = useMemo(
+    () => ({
+      ...readRunFilter(params),
+      ...(allDetailScope ? { board: "all" } : {}),
+    }),
+    [params, allDetailScope],
+  );
   const groupMode = readAgentGroup(params);
   const sectionParam = params.get("section");
   const section: Section = SECTIONS.includes(sectionParam as Section)
@@ -114,6 +130,7 @@ export function AgentsPage() {
     () => new Map(),
   );
   const [autoRunId, setAutoRunId] = useState<string | null>(null);
+  const [runVisibleCount, setRunVisibleCount] = useState(7);
 
   useEffect(() => {
     const previous = document.title;
@@ -143,6 +160,7 @@ export function AgentsPage() {
           const search = new URLSearchParams(current);
           const next = { ...readAgentFilter(search), ...patch };
           setOrDelete(search, "board", next.board, "all");
+          if ("board" in patch) search.delete("scope");
           if ("token" in patch) {
             // `?agent=` is canonical; the old `?token=` spelling stays readable
             // but a filter change normalises the URL to the new name.
@@ -153,13 +171,12 @@ export function AgentsPage() {
           setOrDelete(search, "status", next.status, "all");
           setOrDelete(search, "time", next.time, "any");
           setOrDelete(search, "q", next.query, "");
-          // A filter change can hide the selected row; closing the detail
-          // avoids an orphaned master-detail pane.
+          // A filter change can hide the selected row; closing every detail
+          // avoids an orphaned master-detail pane and lets Attention fall
+          // back to the first pending request in the new scope.
           search.delete("session");
-          if ("board" in patch) {
-            search.delete("approval");
-            search.delete("run");
-          }
+          search.delete("approval");
+          search.delete("run");
           return search;
         },
         { replace: true },
@@ -174,6 +191,7 @@ export function AgentsPage() {
           const search = new URLSearchParams(current);
           const next = { ...readRunFilter(search), ...patch };
           writeRunFilter(search, next);
+          if ("board" in patch) search.delete("scope");
           search.set("section", "runs");
           search.delete("run");
           search.delete("approval");
@@ -214,6 +232,8 @@ export function AgentsPage() {
         (current) => {
           const next = new URLSearchParams(current);
           next.set("section", "runs");
+          if (!current.has("board") || current.get("scope") === "all")
+            next.set("scope", "all");
           next.set("board", run.boardId);
           next.set("run", run.id);
           next.delete("approval");
@@ -229,6 +249,10 @@ export function AgentsPage() {
       (current) => {
         const next = new URLSearchParams(current);
         next.delete("run");
+        if (next.get("scope") === "all") {
+          next.delete("scope");
+          next.delete("board");
+        }
         return next;
       },
       { replace: true },
@@ -298,6 +322,10 @@ export function AgentsPage() {
       setOrDelete(search, "section", value, "attention");
       // Section switches close a detail selection, but board/token filters
       // stay in the URL: `agent`/`token` both name the token filter.
+      if (search.get("scope") === "all") {
+        search.delete("scope");
+        search.delete("board");
+      }
       for (const key of ["session", "approval", "run"]) search.delete(key);
       // Normalise values that belong to the other section so the URL never
       // claims a filter the visible list is not applying.
@@ -326,6 +354,8 @@ export function AgentsPage() {
         (current) => {
           const next = new URLSearchParams(current);
           next.set("section", "attention");
+          if (!current.has("board") || current.get("scope") === "all")
+            next.set("scope", "all");
           next.set("board", row.boardId);
           next.set("approval", row.id);
           next.delete("session");
@@ -344,6 +374,10 @@ export function AgentsPage() {
       (current) => {
         const next = new URLSearchParams(current);
         next.delete("approval");
+        if (next.get("scope") === "all") {
+          next.delete("scope");
+          next.delete("board");
+        }
         return next;
       },
       { replace: true },
@@ -374,6 +408,7 @@ export function AgentsPage() {
         const next = new URLSearchParams(current);
         for (const key of [
           "board",
+          "scope",
           "token",
           "agent",
           "status",
@@ -391,15 +426,84 @@ export function AgentsPage() {
     );
   }, [setParams]);
 
+  const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
+  const isAttentionAdmin =
+    filter.board === "all"
+      ? hasAdminBoard
+      : state.boards.find((board) => board.id === filter.board)?.role ===
+        "ADMIN";
+  // A board-scoped URL can point at a board where the caller is only a
+  // MEMBER. Approvals stay unavailable there, but the rail still shows the
+  // caller's cross-board pending counts from the ADMIN boards they can read.
+  const needsCrossBoardCounts =
+    filter.board !== "all" && !isAttentionAdmin && hasAdminBoard;
+  const crossBoardPending = usePendingApprovals({
+    boardId: null,
+    boards: state.boards,
+    enabled: !state.isAgentToken && needsCrossBoardCounts,
+  });
   const pending = usePendingApprovals({
     boardId: filter.board === "all" ? null : filter.board,
     boards: state.boards,
     enabled: !state.isAgentToken,
   });
+  const pendingCounts = needsCrossBoardCounts
+    ? crossBoardPending.counts
+    : pending.counts;
+  const pendingAll = needsCrossBoardCounts
+    ? crossBoardPending.totalCount
+    : pending.totalCount;
   const runs = useAgentRuns(state.boards, {
-    enabled: section === "runs",
+    enabled: !state.isAgentToken,
+    boardsLoading: state.loading,
     filter: runFilter,
   });
+  const countFilter = useMemo(
+    () => ({ ...EMPTY_RUN_FILTER, board: filter.board }),
+    [filter.board],
+  );
+  const runCount = useAgentRuns(state.boards, {
+    enabled: !state.isAgentToken,
+    boardsLoading: state.loading,
+    filter: countFilter,
+  });
+  const {
+    loading: countLoading,
+    loadingMore: countLoadingMore,
+    hasMore: countHasMore,
+    error: countError,
+    loadMore: loadMoreCount,
+  } = runCount;
+  useEffect(() => {
+    if (!countLoading && !countLoadingMore && countHasMore && !countError)
+      void loadMoreCount();
+  }, [countLoading, countLoadingMore, countHasMore, countError, loadMoreCount]);
+  useEffect(() => {
+    // A new filter starts at the mockup's first page of seven.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the visible page on filter change
+    setRunVisibleCount(7);
+  }, [
+    runFilter.board,
+    runFilter.kind,
+    runFilter.session,
+    runFilter.status,
+    runFilter.time,
+    runFilter.token,
+  ]);
+  const visibleRunRows = useMemo(
+    () => runs.rows.slice(0, runVisibleCount),
+    [runVisibleCount, runs.rows],
+  );
+  // The list must surface rollback blockers before a run is opened. Previews
+  // are read-only; the detail's own preview wins when both have an answer.
+  const precomputedConflicts = useRunConflictPreviews(
+    section === "runs" ? visibleRunRows : [],
+    section === "runs",
+  );
+  const displayedConflicts = useMemo(
+    () => new Map([...precomputedConflicts, ...runConflicts]),
+    [precomputedConflicts, runConflicts],
+  );
   // The master-detail opens the newest run until the URL pins one. Remember
   // which run that was so a refresh that prepends the new `revert` audit run
   // does not steal the open pane. A filter/no-rows change falls back again.
@@ -415,12 +519,54 @@ export function AgentsPage() {
   }, [section, runs.rows]);
   const [approvalFilter, setApprovalFilter] =
     useState<AttentionApprovalFilter>("needs");
-  const approvalAgentNames = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const token of state.tokens) names.set(token.id, token.name);
-    for (const row of state.rows) names.set(row.apiTokenId, agentLabel(row));
-    return names;
-  }, [state.rows, state.tokens]);
+  const changeApprovalFilter = useCallback(
+    (next: AttentionApprovalFilter) => {
+      setApprovalFilter(next);
+      setParams(
+        (current) => {
+          const search = new URLSearchParams(current);
+          search.delete("approval");
+          return search;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+  const approvalAgentNames = useMemo(
+    () => new Map(state.tokens.map((token) => [token.id, token.name])),
+    [state.tokens],
+  );
+  const approvalSessionTokenNames = useMemo(
+    () =>
+      new Map(
+        state.rows.flatMap((row) =>
+          row.tokenName === null ? [] : [[row.id, row.tokenName] as const],
+        ),
+      ),
+    [state.rows],
+  );
+  // The exact session is safer than a token→session guess: one token can own
+  // several sessions, and the last one in the list is not the requester. The
+  // agent label is the token name (own or disclosed by the board session),
+  // then the token id; the session name is a separate field and never the
+  // agent attribution.
+  const approvalNameFor = useCallback(
+    (
+      row: Pick<
+        AttentionApprovalRow,
+        "requestedByTokenId" | "agentSessionId" | "sessionName" | "tokenName"
+      >,
+    ): string =>
+      row.tokenName ??
+      approvalAgentNames.get(row.requestedByTokenId) ??
+      (row.agentSessionId === null
+        ? undefined
+        : approvalSessionTokenNames.get(row.agentSessionId)) ??
+      shortTokenId(row.requestedByTokenId),
+    [approvalAgentNames, approvalSessionTokenNames],
+  );
+  const selectedApprovalId = params.get("approval");
   const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
     const query = filter.query.trim().toLowerCase();
     return pending.rows
@@ -447,15 +593,20 @@ export function AgentsPage() {
       })
       .map((row) => ({
         ...row,
-        agentName: approvalAgentNames.get(row.requestedByTokenId),
+        agentName: approvalNameFor(row),
       }));
-  }, [
-    approvalAgentNames,
-    filter.board,
-    filter.query,
-    filter.token,
-    pending.rows,
-  ]);
+  }, [approvalNameFor, filter.board, filter.query, filter.token, pending.rows]);
+  const approvalRowsForFilter = useMemo(
+    () =>
+      scopedApprovalRows.filter((row) => {
+        const pending =
+          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
+        if (approvalFilter === "needs") return pending;
+        if (approvalFilter === "decided") return !pending;
+        return true;
+      }),
+    [approvalFilter, now, scopedApprovalRows],
+  );
   const scopedPendingCount = useMemo(
     () =>
       scopedApprovalRows.filter(
@@ -464,11 +615,40 @@ export function AgentsPage() {
       ).length,
     [now, scopedApprovalRows],
   );
-  const pendingAll = pending.totalCount;
+  const defaultApprovalId =
+    approvalRowsForFilter.find(
+      (row) =>
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+    )?.id ??
+    approvalRowsForFilter[0]?.id ??
+    null;
+  const selectedSession = params.get("session");
+  // An explicit `?approval=` link is a deliberate deep link; it wins over the
+  // current filter and may point at a decided/expired row. Otherwise the
+  // detail auto-follows the first visible pending row — unless the user has
+  // explicitly opened a session from the same Attention list, which must win
+  // over the default approval selection.
+  const visibleApprovalId =
+    selectedApprovalId ?? (selectedSession === null ? defaultApprovalId : null);
+  const nextPendingApproval = useMemo(() => {
+    if (visibleApprovalId === null) return null;
+    // Decided is a history filter, not a reason to lose the pending peers:
+    // an approved detail opened from Recently decided still offers the next
+    // request waiting for a decision.
+    const pendingRows = scopedApprovalRows.filter(
+      (row) =>
+        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
+    );
+    if (pendingRows.length === 0) return null;
+    const index = pendingRows.findIndex((row) => row.id === visibleApprovalId);
+    // The open row is decided: offer the first pending peer. A pending row
+    // only gets a "next" when at least one other request is waiting.
+    if (index === -1) return pendingRows[0] ?? null;
+    if (pendingRows.length < 2) return null;
+    return pendingRows[(index + 1) % pendingRows.length] ?? null;
+  }, [now, scopedApprovalRows, visibleApprovalId]);
   const pendingForScope =
-    filter.board === "all"
-      ? pendingAll
-      : (pending.counts[filter.board] ?? null);
+    filter.board === "all" ? pendingAll : (pendingCounts[filter.board] ?? null);
   const scopedRows = useMemo(
     () =>
       filter.board === "all"
@@ -476,22 +656,21 @@ export function AgentsPage() {
         : state.rows.filter((row) => row.boardId === filter.board),
     [filter.board, state.rows],
   );
-  const hasAdminBoard = state.boards.some((board) => board.role === "ADMIN");
-  const isAttentionAdmin =
-    filter.board === "all"
-      ? hasAdminBoard
-      : state.boards.find((board) => board.id === filter.board)?.role ===
-        "ADMIN";
   // TASK-179.8: the Attention badge is the pending-decision count, never a
   // mixed approvals+stale total. Stale sessions stay visible in the list but
   // do not inflate this number (the mockup uses `scopePending()`).
   const attentionCount = isAttentionAdmin ? pendingForScope : null;
   const sessionCount = scopedRows.length;
 
-  const selectedSession = params.get("session");
-  const selectedApprovalId = params.get("approval");
   const selectedRunId = params.get("run");
-  const approvalBoardId = params.get("board");
+  const selectedApprovalBase =
+    visibleApprovalId === null
+      ? undefined
+      : pending.rows.find((row) => row.id === visibleApprovalId);
+  const approvalBoardId =
+    selectedApprovalId !== null
+      ? params.get("board")
+      : (params.get("board") ?? selectedApprovalBase?.boardId ?? null);
   const selectedRunRow =
     selectedRunId === null
       ? undefined
@@ -505,7 +684,7 @@ export function AgentsPage() {
   const runDetailRunId = selectedRunId ?? autoRunRow?.id ?? null;
   const runDetailBoardId =
     selectedRunId !== null
-      ? runFilter.board
+      ? (params.get("board") ?? "all")
       : (autoRunRow?.boardId ?? runFilter.board);
   const runBoardRole =
     roleForRunBoard(state.boards, runDetailBoardId) ??
@@ -526,7 +705,7 @@ export function AgentsPage() {
     }
     for (const row of runs.rows) {
       if (row.apiTokenId === null || names.has(row.apiTokenId)) continue;
-      names.set(row.apiTokenId, shortId(row.apiTokenId));
+      names.set(row.apiTokenId, row.tokenName ?? shortTokenId(row.apiTokenId));
     }
     return names;
   }, [runs.rows, state.rows, state.tokens]);
@@ -538,14 +717,13 @@ export function AgentsPage() {
     for (const row of runs.rows) {
       if (row.agentSessionId === null || names.has(row.agentSessionId))
         continue;
-      names.set(row.agentSessionId, shortId(row.agentSessionId));
+      names.set(
+        row.agentSessionId,
+        row.sessionName ?? shortId(row.agentSessionId),
+      );
     }
     return names;
   }, [runs.rows, state.rows]);
-  const selectedApprovalBase =
-    selectedApprovalId === null
-      ? undefined
-      : pending.rows.find((row) => row.id === selectedApprovalId);
   const approvalBoardTitle =
     selectedApprovalBase?.boardTitle ??
     state.boards.find((board) => board.id === approvalBoardId)?.title ??
@@ -560,16 +738,20 @@ export function AgentsPage() {
     return groups.map((group) => ({
       ...group,
       pending:
-        group.boardId === undefined ? 0 : (pending.counts[group.boardId] ?? 0),
+        group.boardId === undefined ? 0 : (pendingCounts[group.boardId] ?? 0),
     }));
-  }, [filtered, groupMode, pending.counts]);
+  }, [filtered, groupMode, pendingCounts]);
   const sessionDetailRow = useMemo(() => {
     if (section !== "sessions" && section !== "attention") return undefined;
     if (selectedSession !== null) {
       return filtered.find((row) => row.id === selectedSession);
     }
-    return section === "sessions" ? filtered[0] : undefined;
-  }, [filtered, section, selectedSession]);
+    // A board admin without an approval selection keeps the mockup's
+    // "Nothing selected" pane. A member has no approval queue, so Attention
+    // still previews the first visible session and highlights its row.
+    if (section === "attention" && isAttentionAdmin) return undefined;
+    return filtered[0];
+  }, [filtered, isAttentionAdmin, section, selectedSession]);
   const sessionMissing =
     !state.loading &&
     selectedSession !== null &&
@@ -615,7 +797,7 @@ export function AgentsPage() {
       .sort((a, b) => a.label.localeCompare(b.label)),
     ...(filter.token !== "all" &&
     !state.rows.some((row) => row.apiTokenId === filter.token)
-      ? [{ value: filter.token, label: shortId(filter.token) }]
+      ? [{ value: filter.token, label: shortTokenId(filter.token) }]
       : []),
   ];
   const statusOptions = AGENT_STATUS_FILTERS.map((value) => ({
@@ -637,7 +819,7 @@ export function AgentsPage() {
         .map(([value, label]) => ({ value, label }))
         .sort((a, b) => a.label.localeCompare(b.label)),
       ...(runFilter.token !== "all" && !runTokenNames.has(runFilter.token)
-        ? [{ value: runFilter.token, label: shortId(runFilter.token) }]
+        ? [{ value: runFilter.token, label: shortTokenId(runFilter.token) }]
         : []),
     ],
     [runFilter.token, runTokenNames, t],
@@ -683,7 +865,57 @@ export function AgentsPage() {
     (!state.boards.some((board) => board.id === filter.board) ||
       (section === "runs" && runs.revokedBoardIds.includes(filter.board)));
   const missingScope =
-    filter.board === "all" && (params.has("approval") || params.has("run"));
+    !params.has("board") && (params.has("approval") || params.has("run"));
+  // A failed approvals request means the Attention timestamp cannot claim
+  // freshness, even when the board/session fetch succeeded.
+  const freshnessStale =
+    state.error ||
+    offline ||
+    (section === "attention" && pending.error) ||
+    (section === "runs" && runs.error);
+  // The page-head description must stay on one line at 1440/1024. Full board
+  // titles (“Agent Ops Demo · Website Relaunch…”) pushed it to a second line,
+  // so the summary uses the mockup's compact labels while the tooltip keeps
+  // the full names.
+  const freshnessText = freshnessStale
+    ? t("agents.shell.freshnessUnknown")
+    : state.lastLoadedAt === null
+      ? ""
+      : state.boards
+          .filter(
+            (board) => filter.board === "all" || board.id === filter.board,
+          )
+          .map((board) =>
+            state.boardLoadedAt[board.id] === undefined
+              ? null
+              : `${compactBoardTitle(board.title)} ${t("agents.shell.updatedAge", { seconds: Math.max(0, Math.floor((now - state.boardLoadedAt[board.id]) / 1000)) })}`,
+          )
+          .filter(Boolean)
+          .join(" · ") ||
+        t("agents.shell.updated", {
+          seconds: Math.max(0, Math.floor((now - state.lastLoadedAt) / 1000)),
+        });
+  const freshnessFull = state.boards
+    .filter((board) => filter.board === "all" || board.id === filter.board)
+    .map((board) => board.title)
+    .join(" · ");
+  // One partial-error banner on Runs, even when both the session fan-out and
+  // the run fan-out failed. The board names come from either source and the
+  // Retry refreshes both, so the retained rows cannot claim to be fresh.
+  const unavailableRunBoardIds = useMemo(() => {
+    const ids = new Set<string>(runs.errorBoardIds);
+    if (state.error) for (const id of state.staleBoardIds) ids.add(id);
+    return [...ids];
+  }, [runs.errorBoardIds, state.error, state.staleBoardIds]);
+  const unavailableRunBoards = unavailableRunBoardIds
+    .map((id) => state.boards.find((board) => board.id === id)?.title ?? id)
+    .join(", ");
+  // Exactly one banner per failure mode on Runs:
+  // - runs failed -> runs banner (names session-only failures too);
+  // - only sessions failed -> the generic sessions banner;
+  // - both -> the runs banner is the single consolidated one.
+  const showRunsPartialError =
+    section === "runs" && runs.rows.length > 0 && runs.error;
   const openTokens = () =>
     window.dispatchEvent(new Event("janosik:open-api-keys"));
 
@@ -702,7 +934,7 @@ export function AgentsPage() {
       className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface text-[13px] leading-[1.45] md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
-      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[208px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
+      <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[198px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
         <div className="hidden px-1.5 pb-3 md:block">
           <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}
@@ -729,7 +961,12 @@ export function AgentsPage() {
                 ? attentionCount
                 : item === "sessions"
                   ? sessionCount
-                  : runs.rows.length;
+                  : runCount.loading ||
+                      runCount.loadingMore ||
+                      runCount.hasMore ||
+                      runCount.error
+                    ? null
+                    : runCount.total;
             return (
               <button
                 key={item}
@@ -754,7 +991,16 @@ export function AgentsPage() {
                   aria-hidden
                 />
                 {t(`agents.shell.${item}`)}
-                {count !== null && count > 0 ? (
+                {state.loading ? (
+                  <span
+                    className="ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-hover px-1 text-[11px] font-[650] tabular-nums text-muted-foreground"
+                    data-state="loading"
+                    title={t("common.loading")}
+                    aria-hidden
+                  >
+                    —
+                  </span>
+                ) : count !== null && count > 0 ? (
                   <span
                     data-testid={`agents-count-${item}`}
                     data-state={
@@ -788,8 +1034,8 @@ export function AgentsPage() {
         <div className="mt-[18px] hidden md:block">
           <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-[650] uppercase tracking-[0.07em] text-muted-foreground">
             <span>{t("agents.shell.boards")}</span>
-            <span>
-              {isAttentionAdmin
+            <span data-testid="agents-boards-scope">
+              {hasAdminBoard
                 ? t("agents.shell.pending")
                 : t("agents.shell.scope")}
             </span>
@@ -799,7 +1045,7 @@ export function AgentsPage() {
               const count =
                 board.value === "all"
                   ? pendingAll
-                  : (pending.counts[board.value] ?? null);
+                  : (pendingCounts[board.value] ?? null);
               return (
                 <button
                   key={board.value}
@@ -827,6 +1073,18 @@ export function AgentsPage() {
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate">{board.label}</span>
+                  {state.staleBoardIds.includes(board.value) ? (
+                    <span
+                      title={t("agents.shell.staleData")}
+                      aria-label={t("agents.shell.staleData")}
+                      data-testid={`agents-board-stale-${board.value}`}
+                    >
+                      <AlertTriangle
+                        className="h-3 w-3 text-[color:var(--agent-tone-warning)]"
+                        aria-hidden
+                      />
+                    </span>
+                  ) : null}
                   {count !== null && count > 0 ? (
                     <span
                       className="inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-[11px] font-[650] tabular-nums text-[color:var(--warning)]"
@@ -862,8 +1120,8 @@ export function AgentsPage() {
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
-          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px]">
-            <div className="min-w-0">
+          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px] max-md:flex-wrap">
+            <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px] md:max-w-[390px]">
               <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em] max-md:text-[17px]">
                 {t(`agents.shell.${section}`)}
               </h2>
@@ -875,12 +1133,13 @@ export function AgentsPage() {
                     : t("agents.shell.runsDescription")}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-[7px]">
+            <div className="flex shrink-0 items-center gap-[7px] max-md:ml-auto max-md:flex-wrap max-md:justify-end">
               <span
                 className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:inline-flex"
                 data-testid="agents-updated"
+                style={unknownBoard ? { visibility: "hidden" } : undefined}
                 data-state={
-                  state.error || offline
+                  freshnessStale
                     ? "stale"
                     : state.lastLoadedAt === null
                       ? "idle"
@@ -892,25 +1151,14 @@ export function AgentsPage() {
                   aria-hidden
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    state.error || offline
+                    freshnessStale
                       ? "bg-warning"
                       : state.lastLoadedAt === null
                         ? "bg-muted-foreground"
                         : "bg-success",
                   )}
                 />
-                <span>
-                  {state.error || offline
-                    ? t("agents.shell.freshnessUnknown")
-                    : state.lastLoadedAt === null
-                      ? ""
-                      : t("agents.shell.updated", {
-                          seconds: Math.max(
-                            0,
-                            Math.floor((now - state.lastLoadedAt) / 1000),
-                          ),
-                        })}
-                </span>
+                <span title={freshnessFull || undefined}>{freshnessText}</span>
               </span>
               <Button
                 variant="outline"
@@ -918,6 +1166,7 @@ export function AgentsPage() {
                 onClick={() => {
                   state.reload();
                   pending.reload();
+                  runCount.reload();
                   if (section === "runs") runs.reload();
                 }}
                 disabled={
@@ -990,7 +1239,7 @@ export function AgentsPage() {
                   onChange={(token) => setFilter({ token })}
                   ariaLabel={t("agents.filters.token")}
                   testId="agents-filter-token"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1001,7 +1250,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agents.filters.status")}
                   testId="agents-filter-status"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <BoardScopeSelect
@@ -1015,7 +1264,7 @@ export function AgentsPage() {
                   testId="agents-filter-board"
                   variant="filter"
                   className="w-auto min-w-0"
-                  counts={pending.counts}
+                  counts={pendingCounts}
                   totalCount={pendingAll}
                   stale={pending.stale}
                 />
@@ -1030,7 +1279,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agentControl.runs.filter.status")}
                   testId="agents-run-filter-status"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1041,7 +1290,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agentControl.runs.filter.kind")}
                   testId="agents-run-filter-kind"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1052,7 +1301,7 @@ export function AgentsPage() {
                   }
                   ariaLabel={t("agentControl.runs.filter.time")}
                   testId="agents-run-filter-time"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1061,7 +1310,7 @@ export function AgentsPage() {
                   onChange={(token) => setRunFilter({ token })}
                   ariaLabel={t("agentControl.runs.filter.token")}
                   testId="agents-run-filter-token"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
                 <SelectField
@@ -1070,21 +1319,50 @@ export function AgentsPage() {
                   onChange={(session) => setRunFilter({ session })}
                   ariaLabel={t("agentControl.runs.filter.session")}
                   testId="agents-run-filter-session"
-                  chevronClassName="h-[11px] w-[11px]"
+                  chevronClassName="h-3 w-3"
                   className={TOOLBAR_SELECT_CLASS}
                 />
-                <span
-                  className="ml-auto text-[11px] text-muted-foreground"
-                  data-testid="agents-runs-total"
-                  data-total={runs.total}
-                  data-has-more={runs.hasMore ? "true" : "false"}
-                >
-                  {runs.hasMore
-                    ? t("agents.runs.totalMore", { count: runs.total })
-                    : t("agents.runs.shown", { count: runs.total })}
-                </span>
+                {!missingScope ? (
+                  <span
+                    className="ml-auto text-[11px] text-muted-foreground"
+                    data-testid="agents-runs-total"
+                    data-shown={visibleRunRows.length}
+                    data-total={runs.total}
+                    data-has-more={runs.hasMore ? "true" : "false"}
+                    data-state={
+                      runs.loading ? "loading" : runs.error ? "error" : "ready"
+                    }
+                  >
+                    {runs.loading || runs.error
+                      ? "—"
+                      : t("agents.runs.shown", {
+                          count: visibleRunRows.length,
+                        })}
+                  </span>
+                ) : null}
               </>
             )}
+            {section === "runs" ? (
+              hasRunFilter(runFilter) ? (
+                <button
+                  type="button"
+                  onClick={clearRunFilters}
+                  data-testid="agents-toolbar-clear"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                >
+                  {t("agents.clearFilters")}
+                </button>
+              ) : null
+            ) : filteredActive ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                data-testid="agents-toolbar-clear"
+                className="ml-auto inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+              >
+                {t("agents.clearFilters")}
+              </button>
+            ) : null}
           </div>
           {section === "sessions" &&
           (state.loading || state.rows.length > 0) ? (
@@ -1116,7 +1394,7 @@ export function AgentsPage() {
                 <div
                   role="group"
                   aria-label={t("agents.groups.groupBy")}
-                  className="inline-flex items-center rounded-md border border-border bg-surface/58 p-0.5"
+                  className="inline-flex items-center gap-0.5 rounded-[8px] border border-border bg-[color-mix(in_oklab,var(--card)_70%,transparent)] p-0.5"
                 >
                   <button
                     type="button"
@@ -1124,9 +1402,9 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "board"}
                     onClick={() => setGroupMode("board")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-[10.5px] font-[600] text-muted-foreground md:h-[25px]",
                       groupMode === "board" &&
-                        "bg-hover text-foreground shadow-sm",
+                        "bg-[var(--surface)] text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_20%,transparent)]",
                     )}
                   >
                     <Folder className="h-[11px] w-[11px]" aria-hidden />
@@ -1138,9 +1416,9 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "token"}
                     onClick={() => setGroupMode("token")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-[10.5px] font-[600] text-muted-foreground md:h-[25px]",
                       groupMode === "token" &&
-                        "bg-hover text-foreground shadow-sm",
+                        "bg-[var(--surface)] text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_20%,transparent)]",
                     )}
                   >
                     <KeyRound className="h-[11px] w-[11px]" aria-hidden />
@@ -1148,60 +1426,83 @@ export function AgentsPage() {
                   </button>
                 </div>
                 <span className="ml-auto text-[11px] text-muted-foreground">
-                  {t("agents.groups.summary", {
-                    count: filtered.length,
-                    live: filtered.filter(isLiveSession).length,
-                  })}
+                  {state.loading
+                    ? "—"
+                    : t("agents.groups.summary", {
+                        count: filtered.length,
+                        live: filtered.filter(isLiveSession).length,
+                      })}
                 </span>
               </div>
             </>
           ) : null}
-          {(state.error || offline) && (
-            <div
-              className={cn(
-                "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
-                state.rows.length === 0
-                  ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
-                  : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
-              )}
-              data-testid="agents-error"
-              role="alert"
-            >
-              <AlertTriangle
+          {(state.error || offline) &&
+            state.rows.length > 0 &&
+            !(section === "runs" && runs.error) && (
+              <div
                 className={cn(
-                  "mt-px h-3.5 w-3.5 shrink-0",
+                  "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                   state.rows.length === 0
-                    ? "text-[color:var(--agent-tone-danger)]"
-                    : "text-[color:var(--agent-tone-warning)]",
+                    ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
+                    : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
                 )}
-                aria-hidden
-              />
-              <span className="min-w-0 flex-1">
-                {offline ? (
-                  t("agents.shell.offline")
-                ) : state.rows.length === 0 ? (
-                  t("agents.error.title")
-                ) : (
-                  <>
-                    <strong className="font-[650]">
-                      {t("agents.shell.partialErrorTitle")}
-                    </strong>{" "}
-                    {t("agents.shell.partialError")}
-                  </>
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={state.reload}
-                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
-                data-testid="agents-retry"
+                data-testid="agents-error"
+                role="alert"
               >
-                <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
-                {t("agents.retry")}
-              </button>
-            </div>
-          )}
-          {section === "attention" && pending.error ? (
+                <AlertTriangle
+                  className={cn(
+                    "mt-px h-3.5 w-3.5 shrink-0",
+                    state.rows.length === 0
+                      ? "text-[color:var(--agent-tone-danger)]"
+                      : "text-[color:var(--agent-tone-warning)]",
+                  )}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1">
+                  {offline ? (
+                    t("agents.shell.offline")
+                  ) : state.rows.length === 0 ? (
+                    t("agents.error.title")
+                  ) : (
+                    <>
+                      <strong className="font-[650]">
+                        {t("agents.shell.partialErrorTitle")}
+                      </strong>{" "}
+                      {t("agents.shell.partialError", {
+                        boards: state.staleBoardIds
+                          .map(
+                            (id) =>
+                              state.boards.find((board) => board.id === id)
+                                ?.title ?? id,
+                          )
+                          .join(", "),
+                      })}
+                      {Object.entries(state.boardLoadedAt ?? {})
+                        .filter(([id]) =>
+                          state.rows.some((row) => row.boardId === id),
+                        )
+                        .map(
+                          ([id, loaded]) =>
+                            ` ${t("agents.shell.lastLoadedBoard", { board: state.boards.find((board) => board.id === id)?.title ?? id, seconds: Math.max(0, Math.floor((now - loaded) / 1000)) })}`,
+                        )
+                        .join("")}
+                    </>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={state.reload}
+                  className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
+                  data-testid="agents-retry"
+                >
+                  <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
+                  {t("agents.retry")}
+                </button>
+              </div>
+            )}
+          {section === "attention" &&
+          pending.error &&
+          !(state.error && state.rows.length === 0) ? (
             <div
               className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
               data-testid="agents-approvals-error"
@@ -1217,6 +1518,46 @@ export function AgentsPage() {
               </button>
             </div>
           ) : null}
+          {showRunsPartialError ? (
+            <div
+              className="mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.45] text-foreground"
+              role="alert"
+              data-testid="agents-runs-stale"
+            >
+              <AlertTriangle
+                className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
+                {offline ? (
+                  t("agents.shell.offline")
+                ) : (
+                  <>
+                    <strong className="font-[650]">
+                      {t("agents.shell.partialErrorTitle")}
+                    </strong>{" "}
+                    {t("agents.runs.partialError", {
+                      boards:
+                        unavailableRunBoards || t("agents.filters.allBoards"),
+                    })}
+                  </>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  state.reload();
+                  runs.reload();
+                  runCount.reload();
+                }}
+                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
+                data-testid="agents-runs-retry"
+              >
+                <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
+                {t("agents.retry")}
+              </button>
+            </div>
+          ) : null}
           <div
             className="min-h-0 flex-1 md:overflow-y-auto"
             aria-busy={state.refreshing}
@@ -1227,11 +1568,9 @@ export function AgentsPage() {
                 testId="agents-loading"
                 contentClassName="space-y-2"
               >
-                {Array.from({ length: 5 }, (_, index) => (
-                  <div key={index} className="border-b border-border p-4">
-                    <Skeleton variant="text" lines={2} />
-                  </div>
-                ))}
+                <AgentListSkeleton
+                  section={section === "attention" ? "attention" : "sessions"}
+                />
               </SkeletonRegion>
             ) : unknownBoard ? (
               <EmptyState
@@ -1252,6 +1591,8 @@ export function AgentsPage() {
                   </Button>
                 }
               />
+            ) : state.error && state.rows.length === 0 ? (
+              <LoadError onRetry={state.reload} />
             ) : missingScope ? (
               <EmptyState
                 testId="agents-missing-scope"
@@ -1265,11 +1606,7 @@ export function AgentsPage() {
                   testId="agents-runs-loading"
                   contentClassName="space-y-2"
                 >
-                  {Array.from({ length: 5 }, (_, index) => (
-                    <div key={index} className="border-b border-border p-4">
-                      <Skeleton variant="text" lines={2} />
-                    </div>
-                  ))}
+                  <AgentListSkeleton section="runs" />
                 </SkeletonRegion>
               ) : runs.error && runs.rows.length === 0 ? (
                 <EmptyState
@@ -1326,25 +1663,8 @@ export function AgentsPage() {
                 )
               ) : (
                 <>
-                  {runs.error ? (
-                    <div
-                      className="mb-2.5 flex flex-wrap items-center gap-3 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
-                      role="alert"
-                      data-testid="agents-runs-stale"
-                    >
-                      <span>{t("agents.runs.stale")}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={runs.reload}
-                        className={`${SMALL_OUTLINE_CLASS} max-md:h-11 max-md:min-h-11`}
-                      >
-                        {t("agents.retry")}
-                      </Button>
-                    </div>
-                  ) : null}
                   <RunList
-                    rows={runs.rows}
+                    rows={visibleRunRows}
                     selectedId={runDetailRunId}
                     onSelect={openRun}
                     now={now}
@@ -1358,34 +1678,45 @@ export function AgentsPage() {
                     tokenLabel={(tokenId) =>
                       tokenId === null
                         ? t("agentControl.runs.noToken")
-                        : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+                        : (runTokenNames.get(tokenId) ?? shortTokenId(tokenId))
                     }
-                    conflicts={runConflicts}
+                    conflicts={displayedConflicts}
                   />
                   <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-[11px] text-muted-foreground">
                     <span data-testid="agents-runs-footer-total">
-                      {runs.hasMore
-                        ? t("agents.runs.totalMore", { count: runs.total })
-                        : t("agents.runs.footerCount", { count: runs.total })}
+                      {t("agents.runs.footerShown", {
+                        shown: visibleRunRows.length,
+                        total: runs.rows.length,
+                      })}
                     </span>
-                    {runs.hasMore ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        data-testid="agents-runs-more"
-                        disabled={runs.loadingMore}
-                        onClick={() => void runs.loadMore()}
-                        className={`${SMALL_BUTTON_CLASS} max-md:h-11 max-md:min-h-11`}
-                      >
-                        {runs.loadingMore ? (
-                          <RefreshCw
-                            className="h-3.5 w-3.5 animate-spin"
-                            aria-hidden
-                          />
-                        ) : null}
-                        {t("agentControl.runs.loadMore")}
-                      </Button>
-                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="agents-runs-more"
+                      disabled={
+                        runs.loadingMore ||
+                        (visibleRunRows.length >= runs.rows.length &&
+                          !runs.hasMore)
+                      }
+                      onClick={() => {
+                        if (visibleRunRows.length < runs.rows.length) {
+                          setRunVisibleCount((value) => value + 7);
+                        } else {
+                          void runs.loadMore().then(() => {
+                            setRunVisibleCount((value) => value + 7);
+                          });
+                        }
+                      }}
+                      className={`${SMALL_BUTTON_CLASS} max-md:h-11 max-md:min-h-11`}
+                    >
+                      {runs.loadingMore ? (
+                        <RefreshCw
+                          className="h-3.5 w-3.5 animate-spin"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {t("agentControl.runs.loadMore")}
+                    </Button>
                   </div>
                 </>
               )
@@ -1396,7 +1727,9 @@ export function AgentsPage() {
                 ) : (
                   <>
                     {!isAttentionAdmin ? (
-                      <MemberAttentionBanner />
+                      <MemberAttentionBanner
+                        allBoards={filter.board === "all"}
+                      />
                     ) : (
                       <>
                         {showAllClear ? (
@@ -1405,10 +1738,11 @@ export function AgentsPage() {
                           />
                         ) : (
                           <AttentionApprovalList
+                            loading={pending.loading}
                             rows={scopedApprovalRows}
                             filter={approvalFilter}
-                            onFilterChange={setApprovalFilter}
-                            selectedId={selectedApprovalId}
+                            onFilterChange={changeApprovalFilter}
+                            selectedId={visibleApprovalId}
                             onSelect={openApproval}
                             onReject={(row) => openApproval(row, "reject")}
                             now={now}
@@ -1419,21 +1753,21 @@ export function AgentsPage() {
                     {state.rows.length === 0 && !filteredActive ? (
                       <AttentionEmpty onOpenTokens={openTokens} lang={lang} />
                     ) : filtered.length === 0 ? (
-                      filteredActive ? (
-                        <FilteredEmpty onClear={clearFilters} />
+                      filteredActive && scopedApprovalRows.length === 0 ? (
+                        <FilteredEmpty onClear={clearFilters} approvals />
                       ) : null
                     ) : (
                       <>
                         <AttentionStaleSessions
                           rows={filtered}
                           now={now}
-                          selectedId={selectedSession}
+                          selectedId={sessionDetailRow?.id ?? null}
                           onSelect={openSession}
                         />
                         <AttentionLiveSessions
                           rows={filtered}
                           now={now}
-                          selectedId={selectedSession}
+                          selectedId={sessionDetailRow?.id ?? null}
                           onSelect={openSession}
                           onViewAll={() => setSection("sessions")}
                         />
@@ -1457,6 +1791,7 @@ export function AgentsPage() {
                     selectedId={sessionDetailRow?.id ?? null}
                     now={now}
                     staleBoardIds={state.staleBoardIds}
+                    boardLoadedAt={state.boardLoadedAt}
                     onSelect={openSession}
                   />
                 )}
@@ -1465,6 +1800,15 @@ export function AgentsPage() {
           </div>
         </div>
       </section>
+      {approvalSheetOpen ? (
+        <button
+          type="button"
+          aria-label={t("agents.approvals.back")}
+          data-testid="agents-approval-sheet-scrim"
+          onClick={closeApproval}
+          className="absolute inset-0 z-40 bg-black/28 min-[1061px]:hidden"
+        />
+      ) : null}
       {sessionSheetOpen ? (
         <button
           type="button"
@@ -1487,7 +1831,9 @@ export function AgentsPage() {
         data-testid="agents-detail-panel"
         className={cn(
           "hidden shrink-0 flex-col border-l border-border bg-[color-mix(in_oklab,var(--surface)_48%,var(--background))] min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
+          (missingScope || unknownBoard) && "!hidden",
           ((section === "attention" &&
+            isAttentionAdmin &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
             sessionSheetOpen ||
@@ -1496,7 +1842,19 @@ export function AgentsPage() {
         )}
         aria-label={t("agents.shell.details")}
       >
-        {section === "runs" ? (
+        {missingScope || unknownBoard ? (
+          <GenericDetailEmpty />
+        ) : state.loading ? (
+          <div className="p-4" data-testid="agents-detail-loading">
+            <Skeleton variant="text" lines={3} />
+          </div>
+        ) : state.error && state.rows.length === 0 ? (
+          <GenericDetailEmpty />
+        ) : section === "sessions" &&
+          filteredActive &&
+          filtered.length === 0 ? (
+          <GenericDetailEmpty />
+        ) : section === "runs" ? (
           runDetailRunId !== null && runBoardKnown ? (
             <RunDetail
               boardId={runDetailBoardId}
@@ -1508,7 +1866,7 @@ export function AgentsPage() {
               tokenLabel={(tokenId) =>
                 tokenId === null
                   ? t("agentControl.runs.noToken")
-                  : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+                  : (runTokenNames.get(tokenId) ?? shortTokenId(tokenId))
               }
               sessionLabel={(sessionId) =>
                 sessionId === null
@@ -1516,7 +1874,10 @@ export function AgentsPage() {
                   : (runSessionNames.get(sessionId) ?? shortId(sessionId))
               }
               onClose={closeRun}
-              onChanged={() => runs.reload()}
+              onChanged={() => {
+                runs.reload();
+                runCount.reload();
+              }}
               onPreview={noteRunConflicts}
               onOpenSession={openRunSession}
             />
@@ -1536,26 +1897,35 @@ export function AgentsPage() {
           )
         ) : section === "attention" &&
           isAttentionAdmin &&
-          selectedApprovalId !== null &&
+          visibleApprovalId !== null &&
           approvalBoardId !== null ? (
           <AttentionApprovalDetail
             boardId={approvalBoardId}
-            approvalId={selectedApprovalId}
+            approvalId={visibleApprovalId}
             boardTitle={approvalBoardTitle}
             fallbackAgentName={
               selectedApprovalBase === undefined
                 ? undefined
-                : approvalAgentNames.get(
-                    selectedApprovalBase.requestedByTokenId,
-                  )
+                : approvalNameFor(selectedApprovalBase)
             }
             fallbackCardTitle={selectedApprovalBase?.cardTitle ?? undefined}
             initialMode={approvalIntent}
             onChanged={pending.reload}
             onBack={closeApproval}
+            onNextPending={
+              nextPendingApproval === null
+                ? undefined
+                : () => {
+                    // Decided is a history view; moving to a pending peer must
+                    // also move the list back to Needs so the selected detail
+                    // is visibly in the queue.
+                    setApprovalFilter("needs");
+                    openApproval(nextPendingApproval);
+                  }
+            }
           />
         ) : section === "sessions" ||
-          (section === "attention" && selectedSession !== null) ? (
+          (section === "attention" && sessionDetailRow !== undefined) ? (
           <SessionDetail
             row={sessionDetailRow}
             missingId={sessionMissing ? selectedSession : null}
@@ -1818,7 +2188,22 @@ function AttentionLiveSessions({
   );
 }
 
-function MemberAttentionBanner() {
+/**
+ * A display-only compact board label for the page-head freshness summary:
+ * “Agent Ops Demo” → “Agent Ops”, “Website Relaunch” → “Website”. The full
+ * title stays available as the summary tooltip. Boards whose first word is
+ * already too long keep an ellipsis instead of vanishing.
+ */
+function compactBoardTitle(title: string, max = 12): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= max) return trimmed;
+  const head = trimmed.slice(0, max + 1);
+  const boundary = head.lastIndexOf(" ");
+  if (boundary > 0) return head.slice(0, boundary).trimEnd();
+  return `${trimmed.slice(0, max)}…`;
+}
+
+function MemberAttentionBanner({ allBoards }: { allBoards: boolean }) {
   const { t } = useI18n();
   return (
     <div
@@ -1831,7 +2216,11 @@ function MemberAttentionBanner() {
       </span>
       <p className="min-w-0 pt-0.5 text-[11.5px] leading-[1.55] text-muted-foreground">
         <span className="font-semibold text-foreground">
-          {t("agents.shell.memberNoteTitle")}
+          {t(
+            allBoards
+              ? "agents.shell.memberNoteTitleAll"
+              : "agents.shell.memberNoteTitleBoard",
+          )}
         </span>{" "}
         {t("agents.shell.memberNoteBody")}
       </p>
@@ -1913,14 +2302,86 @@ function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
   );
 }
 
-function FilteredEmpty({ onClear }: { onClear: () => void }) {
+/**
+ * The mockup's loading shapes: approval cards on Attention, session/run rows
+ * elsewhere. The rail reserves a dash instead of popping a fake 0 count.
+ */
+function AgentListSkeleton({
+  section,
+}: {
+  section: "attention" | "sessions" | "runs";
+}) {
+  if (section === "attention") {
+    return (
+      <div className="space-y-2" aria-hidden>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <Skeleton width={170} height={12} />
+          <Skeleton width={96} height={11} />
+        </div>
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            className="rounded-[8px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-3 pt-[11px] pb-2.5"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Skeleton width={112} height={10} />
+              <Skeleton width={64} height={10} />
+              <Skeleton width={72} height={10} />
+            </div>
+            <Skeleton className="mt-2" width="72%" height={13} />
+            <Skeleton className="mt-1.5" width="92%" height={10} />
+            <div className="mt-2 flex items-center gap-1.5">
+              <Skeleton width={62} height={20} className="rounded-[5px]" />
+              <Skeleton width={82} height={20} className="rounded-[5px]" />
+            </div>
+          </div>
+        ))}
+        <div className="space-y-1.5 pt-2">
+          <Skeleton width="52%" height={10} />
+          <Skeleton width="68%" height={10} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1" aria-hidden>
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          key={index}
+          className="flex items-center gap-2.5 border-b border-border px-4 py-3"
+        >
+          <Skeleton width={26} height={26} className="rounded-[6px]" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton width="55%" height={11} />
+            <Skeleton width="78%" height={10} />
+          </div>
+          <Skeleton width={68} height={22} className="rounded-[5px]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FilteredEmpty({
+  onClear,
+  approvals = false,
+}: {
+  onClear: () => void;
+  approvals?: boolean;
+}) {
   const { t } = useI18n();
   return (
     <EmptyState
       testId="agents-filtered-empty"
       icon={<Search className="h-[18px] w-[18px]" />}
-      title={t("agents.emptyFiltered")}
-      body={t("agents.emptyFilteredBody")}
+      title={t(
+        approvals ? "agents.approvals.emptyFiltered" : "agents.emptyFiltered",
+      )}
+      body={t(
+        approvals
+          ? "agents.approvals.emptyFilteredBody"
+          : "agents.emptyFilteredBody",
+      )}
       action={
         <Button
           variant="outline"

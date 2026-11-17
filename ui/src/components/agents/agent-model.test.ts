@@ -13,7 +13,9 @@ import {
   needsNudge,
   readAgentFilter,
   readAgentGroup,
+  runNumber,
   sessionDisplayStatus,
+  shortTokenId,
   type AgentSessionRow,
 } from "@/components/agents/agent-model";
 
@@ -183,6 +185,8 @@ describe("agent session filters", () => {
 describe("session liveness helpers", () => {
   it("formats compact heartbeat ages without inventing a lifecycle status", () => {
     expect(compactAge(0)).toBe("0s");
+    expect(compactAge(14 * 60_000, "ru")).toBe("14м");
+    expect(compactAge(3_600_000, "ru")).toBe("1ч");
     expect(compactAge(12_000)).toBe("12s");
     expect(compactAge(6 * 60_000)).toBe("6m");
     expect(compactAge(3 * 3_600_000)).toBe("3h");
@@ -200,6 +204,25 @@ describe("session liveness helpers", () => {
     expect(agentStatusTone("completed")).toBe("primary");
     expect(agentStatusTone("idle")).toBe("muted");
     expect(agentStatusTone("cancelled")).toBe("muted");
+  });
+});
+
+describe("run numbers", () => {
+  it("renders readable run ids without the raw prefix", () => {
+    expect(runNumber("run-128")).toBe("#128");
+    expect(runNumber("cmwj5enl100hoiduzapojq7vj42")).toBe("#42");
+    expect(runNumber("external")).toBe("#extern");
+  });
+});
+
+describe("token metadata ids", () => {
+  it("keeps the first 8 and last 6 characters", () => {
+    expect(shortTokenId("cmwc7a7y0000abcdefghipz4qe6")).toBe("cmwc7a7y…pz4qe6");
+    expect(shortTokenId("px-token-claude-code-audit")).toBe("px-token…-audit");
+  });
+
+  it("leaves ids short enough to read unchanged", () => {
+    expect(shortTokenId("token-1")).toBe("token-1");
   });
 });
 
@@ -239,11 +262,11 @@ describe("agent grouping", () => {
     expect(latestLiveSession(groups[0])?.id).toBe("b");
   });
 
-  it("falls back to the session name when the token name is private", () => {
+  it("falls back to the client name, not the session name, when the token is private", () => {
     const groups = groupAgents([
-      row({ tokenName: null, name: "Nightly triage" }),
+      row({ tokenName: null, name: "Nightly triage", clientName: "opencode" }),
     ]);
-    expect(groups[0].name).toBe("Nightly triage");
+    expect(groups[0].name).toBe("opencode");
   });
 });
 
@@ -258,6 +281,16 @@ describe("pause presentation", () => {
     });
     expect(sessionDisplayStatus(session)).toBe("paused");
     expect(isSessionPaused(session)).toBe(true);
+  });
+
+  it("keeps the lifecycle for a stale session", () => {
+    expect(
+      sessionDisplayStatus({
+        status: "idle",
+        pausedAt: null,
+        stale: true,
+      }),
+    ).toBe("idle");
   });
 
   it("keeps an unpaused session on its lifecycle during a board pause", () => {

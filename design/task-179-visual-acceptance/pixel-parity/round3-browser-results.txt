@@ -1,0 +1,10 @@
+run-128: HTTP 200, canRevert=true
+run-126: HTTP 200, canRevert=true
+run-121: HTTP 200, canRevert=false
+dark 1440: reject form 1094px, textarea 1094px
+dark 1024: reject form 976px, textarea 976px
+dark 390: reject form 372px, textarea 372px
+light 1440: reject form 1094px, textarea 1094px
+light 1024: reject form 976px, textarea 976px
+light 390: reject form 372px, textarea 372px
+member Live: no pause/end actions; expired approval: no session link; RU filtered-empty: no create-key detail

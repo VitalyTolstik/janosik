@@ -3603,6 +3603,9 @@ components:
           type: [string, "null"]
         agentName:
           type: [string, "null"]
+        detail:
+          type: string
+          description: Frozen human display detail (for example a deleted card title).
         at:
           type: integer
     BoardAction:
@@ -4722,6 +4725,9 @@ components:
           type: string
         apiTokenId:
           type: string
+        tokenName:
+          type: [string, "null"]
+          description: Token display name for board attribution; null when not disclosed.
         boardId:
           type: string
         name:
@@ -4800,6 +4806,18 @@ components:
     AgentRunStatus:
       type: string
       enum: [applied, reverted, failed]
+    AgentRunCommandSummary:
+      type: object
+      required: [actionTypes, title]
+      properties:
+        actionTypes:
+          type: array
+          items:
+            type: string
+          description: Distinct action types in command order.
+        title:
+          type: [string, "null"]
+          description: First human title carried by a command (add/update), if any.
     AgentRun:
       type: object
       required:
@@ -4829,10 +4847,19 @@ components:
           type: string
         apiTokenId:
           type: [string, "null"]
+        tokenName:
+          type: [string, "null"]
+          description: Token display name for board attribution; null when not disclosed.
         agentSessionId:
           type: [string, "null"]
+        sessionName:
+          type: [string, "null"]
+          description: Session display name for the run→session link.
         actorId:
           type: string
+        actorName:
+          type: [string, "null"]
+          description: Board actor display name when the caller can see the roster.
         kind:
           $ref: "#/components/schemas/AgentRunKind"
         status:
@@ -4857,6 +4884,8 @@ components:
           type: integer
         revertedAt:
           type: [integer, "null"]
+        commandSummary:
+          $ref: "#/components/schemas/AgentRunCommandSummary"
     RunDetail:
       type: object
       required: [run, commands]

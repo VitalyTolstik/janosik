@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -198,10 +198,12 @@ function PolicyNumberField({
 export function AgentsAutomation({
   role,
   onDirtyChange,
+  onNeverSavedChange,
   onOpenLiveControls,
 }: {
   role: BoardRole | undefined;
   onDirtyChange?: (dirty: boolean) => void;
+  onNeverSavedChange?: (neverSaved: boolean) => void;
   onOpenLiveControls?: () => void;
 }) {
   const { t, lang } = useI18n();
@@ -241,6 +243,14 @@ export function AgentsAutomation({
         policy.state?.pauseReason ??
         board?.agentsPauseReason ??
         null);
+  // The shell prints the same idle status for both sections. A never-saved
+  // policy is not a save; let it show "Safe defaults" instead of the shell's
+  // default "All changes saved".
+  const neverSaved =
+    policy.state?.policy === null && (policy.state?.version ?? 0) <= 1;
+  useEffect(() => {
+    onNeverSavedChange?.(neverSaved);
+  }, [neverSaved, onNeverSavedChange]);
 
   if (!isApiEnabled()) {
     return (
@@ -326,7 +336,6 @@ export function AgentsAutomation({
   // never-saved board when the authoritative policy is still the untouched
   // default. A stored policy or a bumped version gets a neutral fallback
   // instead of a false "safe defaults apply".
-  const neverSaved = state?.policy === null && (state?.version ?? 0) <= 1;
   const footerStatus = policy.saving
     ? t("board.settings.agents.saving")
     : conflict
@@ -713,9 +722,9 @@ export function AgentsAutomation({
                 role="textbox"
                 aria-readonly="true"
                 aria-label={t("board.settings.agents.approverRoles")}
-                className="flex h-7 w-full cursor-not-allowed items-center justify-between gap-1.5 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,var(--background))] px-2 text-[11px] leading-[1.2] text-foreground opacity-[0.52] max-md:h-11"
+                className="flex min-h-7 w-full cursor-not-allowed items-center justify-between gap-1.5 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,var(--background))] px-2 py-1 text-[11px] leading-[1.3] text-foreground opacity-[0.52] max-md:min-h-11"
               >
-                <span className="min-w-0 truncate">
+                <span className="min-w-0">
                   {t("board.settings.agents.approverRolesFixed")}
                 </span>
                 <ChevronDown

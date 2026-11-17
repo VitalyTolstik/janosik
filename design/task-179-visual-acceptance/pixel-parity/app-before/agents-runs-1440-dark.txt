@@ -1,0 +1,172 @@
+Janosik
+All boards
+Agents
+Global view
+Agents
+1
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+1
+Sessions
+10
+Runs
+8
+
+BOARDS
+PENDING
+
+All boards
+1
+Agent Ops Demo
+1
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Runs
+
+What agents changed, with a way back. History is grouped by day.
+
+Updated 0s ago
+Refresh
+Clear all
+All statuses
+All kinds
+Any time
+All agents
+All sessions
+7 runs shown
+TODAY
+Deploy notes added 2 cards
+Deploy notes
+Agent Ops Demo
+2 commands
+Batch
+Applied
+11:59 AM
+cmwj2j8j…
+API reference sweep updated 1 card
+API reference sweep
+Agent Ops Demo
+1 command
+Single
+Applied
+11:26 AM
+cmwj2j8m…
+Release checklist deleted 1 card
+Release checklist
+Agent Ops Demo
+1 command
+Single
+Reverted
+5:44 AM
+cmwj2j8o…
+Release checklist updated “Landing page rewrite”
+Release checklist
+Agent Ops Demo
+2 commands
+Plan
+Applied
+5:17 AM
+cmwj2j8q…
+YESTERDAY
+API reference sweep could not apply 2 commands
+API reference sweep
+Agent Ops Demo
+2 commands
+Batch
+Failed
+Yesterday
+cmwj2j8s…
+Deploy notes moved 3 cards
+Deploy notes
+Website Relaunch
+3 commands
+Batch
+Applied
+Yesterday
+cmwj2j8u…
+API reference sweep updated 1 card
+API reference sweep
+Website Relaunch
+1 command
+Single
+Applied
+Yesterday
+cmwj2j8x…
+7 of 8 runs · history is append-only
+Load more
+
+RUN · AGENT OPS DEMO
+
+Deploy notes added 2 cards
+Applied
+Batch
+2 commands
+Agent Ops Demo
+Attribution
+ACTOR
+px-user-member
+TOKEN
+Deploy notes
+SESSION
+No session
+DURATION
+0 ms
+RUN
+cmwj2j8jg0061id7cc5zyoh1e · seed-run-128
+APPROVAL
+Not approval-gated
+Timeline
+Created
+Today, 11:59:58 AM
+Applied
+Today, 11:59:58 AM
+Commands
+2 applied
+#96
+ADD_CARD
+Approval inbox polish
+
+Agent · Release agent (CI)
+
+BEFORE
+In progress
+AFTER
+Created
+Pre-image (board admin only)
+#97
+ADD_CARD
+Session heartbeat copy
+
+Agent · Release agent (CI)
+
+BEFORE
+Review
+AFTER
+Created
+Pre-image (board admin only)
+Technical details · pre-images
+Rollback
+
+Rollback is conditional: conflicts, missing pre-images or the retention window can block it. It is not a guaranteed recovery.
+
+Rollback preview
+
+No conflicts found. Re-applies 2 pre-images atomically. A separate audit run records the revert.
+
+Diff (board admin only)
+Preview again
+Revert run
+Open board
+Copy link
+
+Runs are history. Rollback is available only for applied runs without conflicts.
+
+Open board
+Copy link

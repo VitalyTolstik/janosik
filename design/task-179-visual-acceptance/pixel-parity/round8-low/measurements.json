@@ -1,0 +1,227 @@
+{
+  "loggedIn": true,
+  "sessionFooter": {
+    "resume": null,
+    "resumeSvg": null,
+    "pause": null,
+    "pauseSvg": null
+  },
+  "approveDialog": {
+    "buttons": [
+      {
+        "text": "Cancel",
+        "w": 61.1,
+        "h": 28,
+        "pad": "8px 10px",
+        "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif"
+      },
+      {
+        "text": "Approve plan",
+        "w": 102.6,
+        "h": 28,
+        "pad": "8px 10px",
+        "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif"
+      }
+    ]
+  },
+  "decidedClose": [
+    {
+      "w": 53.4,
+      "h": 28,
+      "cls": "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background border border-input bg-transparent hover:bg-hover hover:text-foreground h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11",
+      "footer": "ac-foot ac-foot-static shrink-0 border-t border-border ac-foot-approval bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-3 py-[9px]",
+      "host": "flex w-full items-center gap-2"
+    }
+  ],
+  "decidedDetail": "Move “Approval inbox polish” to doneAppliedLow riskAgent Ops DemoApplied by the agent. An approval is consumed once and cannot be replayed.Release agent (CI) asks to run MOVE_CARD on Agent Ops Demo. Approving authorizes only the commands below — the agent still applies it.RequestBoardAgent Ops DemoRequested byRelease agent (CI)AgentRelease agent (CI)SessionRelease notes deployTargetcard · Approval inbox polishRequestedToday, 2:18 AMPlan1 commandMove “Approval inbox polish” to doneMOVE_CARDApprov",
+  "runs1440": {
+    "freshness": {
+      "w": 204.1,
+      "h": 15.9,
+      "x": 695.9,
+      "y": 74,
+      "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "size": "11px",
+      "weight": "400",
+      "pad": "0px",
+      "text": "Agent Ops 0s ago · Website 0s ago"
+    },
+    "description": {
+      "h": 16.7,
+      "w": 383.8,
+      "line": "16.675px",
+      "text": "What agents changed, with a way back. History is grouped by day."
+    }
+  },
+  "runs1024": {
+    "freshness": {
+      "w": 204.1,
+      "h": 15.9,
+      "x": 635.9,
+      "y": 74,
+      "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "size": "11px",
+      "weight": "400",
+      "pad": "0px",
+      "text": "Agent Ops 0s ago · Website 0s ago"
+    },
+    "description": {
+      "h": 16.7,
+      "w": 383.8,
+      "line": "16.675px",
+      "text": "What agents changed, with a way back. History is grouped by day."
+    }
+  },
+  "runConflict": {
+    "row": "Release bot updated “Landing page rewrite”\nRelease bot\nAgent Ops Demo\n2 commands\nplan\n1 conflict\nApplied\nYesterday\nrun-121",
+    "text": "card “Landing page rewrite — final” · changed · v3 → v4",
+    "html": "<li class=\"rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]\"><span class=\"font-[650]\">card “Landing page rewrite — final”</span> · changed · v3 → v4</li>"
+  },
+  "header1440": {
+    "chevron": {
+      "w": 12,
+      "h": 12
+    },
+    "bell": {
+      "w": 32,
+      "h": 32,
+      "x": 1240.5,
+      "y": 9.5,
+      "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "size": "14px",
+      "weight": "500",
+      "pad": "0px",
+      "text": ""
+    },
+    "agents": {
+      "w": 107.5,
+      "h": 30,
+      "x": 1274.5,
+      "y": 10.5,
+      "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "size": "11.5px",
+      "weight": "600",
+      "pad": "0px 8px",
+      "text": "Agents2"
+    },
+    "scope": {
+      "w": 111,
+      "h": 30,
+      "x": 123,
+      "y": 10.5,
+      "font": "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif",
+      "size": "13px",
+      "weight": "600",
+      "pad": "0px 8px",
+      "text": "All boards"
+    }
+  },
+  "websiteDot": {
+    "cls": "h-1.5 w-1.5 shrink-0 rounded-[2px] bg-teal",
+    "bg": "rgb(45, 212, 191)"
+  },
+  "sessionTokenMeta": [],
+  "boardHeader1440": {
+    "gear": {
+      "w": 32,
+      "h": 32,
+      "x": 539.7,
+      "y": 9.5,
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", \"Noto Sans\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "size": "14px",
+      "weight": "500",
+      "pad": "0px",
+      "text": ""
+    },
+    "bell": {
+      "w": 32,
+      "h": 32,
+      "x": 283.3,
+      "y": 9.5,
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", \"Noto Sans\", Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+      "size": "14px",
+      "weight": "500",
+      "pad": "0px",
+      "text": ""
+    }
+  },
+  "ru390": {
+    "header": {
+      "w": 370,
+      "h": 111.3,
+      "x": 10,
+      "y": 129,
+      "text": "СессииСгруппировано по доскам. Пульс — сигнал активности, а не статус жизненного цикла.Age"
+    },
+    "titleBlock": {
+      "w": 370,
+      "h": 55.3,
+      "x": 10,
+      "y": 129,
+      "text": "СессииСгруппировано по доскам. Пульс — сигнал активности, а не статус жизненного цикла."
+    },
+    "actions": {
+      "w": 262.5,
+      "h": 44,
+      "x": 117.5,
+      "y": 196.3,
+      "text": "Agent Ops 0 с назад · Website 0 с назадОбновитьУправление ключами"
+    },
+    "desc": {
+      "w": 370,
+      "h": 31.9,
+      "x": 10,
+      "y": 152.4,
+      "text": "Сгруппировано по доскам. Пульс — сигнал активности, а не статус жизненного цикла."
+    },
+    "scrollW": 390,
+    "clientW": 390,
+    "bodyLang": "ru"
+  },
+  "ruSettings": {
+    "hasSafeDefaults": true,
+    "hasAllSaved": true,
+    "hasNeverSaved": true,
+    "hasDestructiveEnglish": true,
+    "approver": {
+      "w": 387.3,
+      "h": 38.6,
+      "text": "Только администраторы доски (фиксировано в этом релизе)",
+      "overflow": "visible",
+      "textOverflow": "clip",
+      "whiteSpace": "normal",
+      "scrollW": 385,
+      "clientW": 385
+    },
+    "approverSpan": {
+      "w": 351.3,
+      "h": 28.6,
+      "text": "Только администраторы доски (фиксировано в этом релизе)",
+      "overflow": "visible",
+      "textOverflow": "clip",
+      "whiteSpace": "normal",
+      "scrollW": 351,
+      "clientW": 351
+    },
+    "snippet": "Настройки доскиAgent Ops DemoРабочий процесс и правила для агентов этой доски.Безопасные значенияНастройкиПроцессАгенты и автоматизация2Единое окно настроекРабочий процесс и правила агентов живут в одном окне. Участники и доступ остаются в диалоге доски; API-ключи — в аккаунте.По колонкамМатрицаКонтроль выключенBacklog0 правил1In progress0 правил1Review0 правил2Done0 правил2Разрешено из «Backlog»0 из 3Нажмите на колонку справа, чтобы открыть правило. Выключенное правило остаётся в списке, но не пропускает карточки.In progressвперёдзапрещеноРазрешитьReviewвперёдзапрещеноРазрешитьDoneвперёдзапрещеноРазрешитьРазрешите первый переход — нажмите «Разрешить» справа от колонки.*Из любой колонкиПока нет сквозных переходов.ДобавитьСтарт и готовностьСтартовая колонкаПервая колонка (по умолчанию)Колонки готовностиBacklogIn progressReviewDoneПодсказка для отчётов и агентов. Не ограничивает создание карточек.Вне процесса: Backlog, In progress, Review, DoneПравилоВыберите правилоНажмите на колонку в списке, чтобы открыть её переход.Все изменения сохраненыИзменения применятся сразу после сохраненияВернутьСохранитьАгенты и автоматизацияПравила для агентских записей на доске. Это конфигурация; она не одобряет ожидающие запросы.Сбросить…Область: Agent Ops Demo. Правки здесь меняют только политику доски. Решения по ожидающим запросам принимаются в Agent control → Inbox.Агенты работаютПауза доски выключенаОткрыть LiveПолитика v1·только администраторы доскиРазрушительные действияУдаление карточки, колонки, участника, отзыв ссылки.Требовать согласованиеТочный план требует решения администратора д",
+    "lang": "ru"
+  },
+  "headerGlyphs": {
+    "bell": {
+      "w": 16,
+      "h": 16
+    },
+    "search": {
+      "w": 16,
+      "h": 16
+    },
+    "chevron": {
+      "w": 13,
+      "h": 13
+    },
+    "agents": {
+      "w": 15,
+      "h": 15
+    }
+  }
+}

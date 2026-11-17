@@ -208,6 +208,10 @@ test("a run deep link includes the board and survives reload and history back", 
   await expect(
     page.getByTestId("agent-run-footer-open-board").locator("svg"),
   ).toHaveCount(0);
+  await expect(page.getByTestId("agent-run-footer-open-board")).toHaveAttribute(
+    "href",
+    /agents=runs$/,
+  );
   await expect(
     page.getByTestId("agent-run-footer-copy-link").locator("svg"),
   ).toHaveClass(/lucide-link/);

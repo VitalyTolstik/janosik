@@ -20,6 +20,7 @@ import type {
 } from "@janosik/shared";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { shortTokenId } from "@/components/agents/agent-model";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,11 +29,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
 import { StatusBadge, type StatusTone } from "@/components/agents/status-badge";
+import { TokenInfoDialog } from "@/components/agents/TokenInfoDialog";
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,9 @@ import { APPROVAL_RISK_KEYS, APPROVAL_STATUS_KEYS } from "@/utils/approval";
 
 const RELATED_CLASS =
   "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:min-h-11";
+
+const RELATED_STATIC_CLASS =
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground max-md:min-h-11";
 
 const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
   pending: "warn",
@@ -137,7 +141,7 @@ export function ApprovalPlanBlock({
         </p>
       ) : null}
       {commands.length > 0 ? (
-        <ol className="space-y-1.5">
+        <ol className="w-full space-y-1.5">
           {commands.map((command, index) => (
             <li
               key={command.commandId}
@@ -257,25 +261,28 @@ export function ApprovalHash({
   );
 }
 
-function shorten(value: string, max = 12): string {
-  return value.length > max ? `${value.slice(0, max)}…` : value;
-}
-
 /** Deep links always carry the board id; the token opens an info dialog. */
 export function ApprovalLinks({
   approval,
   tokenName,
+  tokenOwnership = "unknown",
 }: {
   approval: ApprovalRequestDto;
   /** Resolved agent/token name; the short id is the fallback. */
   tokenName?: string | null;
+  /**
+   * `own` opens the owner-only token-info dialog. `other` keeps the token
+   * read-only and adds the prototype's explicit attribution. `unknown`
+   * fails closed: a token name/id is shown, but no settings action.
+   */
+  tokenOwnership?: "own" | "other" | "unknown";
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const base = `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=attention`;
   const sessionHref =
     approval.agentSessionId === null
-      ? `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&token=${encodeURIComponent(approval.requestedByTokenId)}`
+      ? null
       : `${routes.agents}?board=${encodeURIComponent(approval.boardId)}&section=sessions&session=${encodeURIComponent(approval.agentSessionId)}`;
   const runHref =
     approval.runId === null
@@ -289,7 +296,7 @@ export function ApprovalLinks({
     tokenName.trim() !== "" &&
     tokenName !== approval.requestedByTokenId
       ? tokenName
-      : shorten(approval.requestedByTokenId);
+      : shortTokenId(approval.requestedByTokenId);
 
   const copyLink = () => {
     const clipboard = navigator.clipboard;
@@ -306,24 +313,26 @@ export function ApprovalLinks({
   };
 
   return (
-    <Dialog open={tokenOpen} onOpenChange={setTokenOpen}>
+    <>
       <div className="flex flex-wrap gap-1.5" data-testid="approval-links">
         <Link
-          to={routes.board(approval.boardId)}
+          to={routes.agentControl(approval.boardId, "inbox")}
           className={RELATED_CLASS}
           data-testid="approval-board-link"
         >
           <Folder className="h-2.5 w-2.5" aria-hidden />
           {t("agents.approvals.openBoard")}
         </Link>
-        <Link
-          to={sessionHref}
-          className={RELATED_CLASS}
-          data-testid="approval-session-link"
-        >
-          <Activity className="h-2.5 w-2.5" aria-hidden />
-          {t("agentControl.approvals.openSession")}
-        </Link>
+        {sessionHref !== null ? (
+          <Link
+            to={sessionHref}
+            className={RELATED_CLASS}
+            data-testid="approval-session-link"
+          >
+            <Activity className="h-2.5 w-2.5" aria-hidden />
+            {t("agentControl.approvals.openSession")}
+          </Link>
+        ) : null}
         {runHref !== null ? (
           <Link
             to={runHref}
@@ -334,16 +343,30 @@ export function ApprovalLinks({
             {t("agentControl.approvals.openRun")}
           </Link>
         ) : null}
-        <DialogTrigger asChild>
+        {tokenOwnership === "own" ? (
           <button
             type="button"
             className={RELATED_CLASS}
             data-testid="approval-token-link"
+            onClick={() => setTokenOpen(true)}
           >
             <KeyRound className="h-2.5 w-2.5" aria-hidden />
             {t("agents.approvals.tokenLabel", { token: resolvedToken })}
           </button>
-        </DialogTrigger>
+        ) : (
+          <span
+            className={RELATED_STATIC_CLASS}
+            data-testid="approval-token-static"
+            data-ownership={tokenOwnership}
+          >
+            <KeyRound className="h-2.5 w-2.5" aria-hidden />
+            {tokenOwnership === "other"
+              ? t("agents.approvals.tokenOtherLabel", {
+                  token: resolvedToken,
+                })
+              : t("agents.approvals.tokenLabel", { token: resolvedToken })}
+          </span>
+        )}
         <button
           type="button"
           onClick={copyLink}
@@ -365,57 +388,18 @@ export function ApprovalLinks({
         {copied ? t("agentControl.approvals.copied") : ""}
       </span>
 
-      <DialogContent
-        className="w-[min(420px,calc(100vw-1.5rem))] max-w-[420px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0"
-        data-testid="approval-token-dialog"
-        hideClose
-      >
-        <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-          <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--warning)]">
-            <KeyRound className="h-[15px] w-[15px]" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
-              {t("agents.approvals.tokenInfoTitle", {
-                token: resolvedToken,
-              })}
-            </DialogTitle>
-            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
-              {t("agents.approvals.tokenInfoDescription")}
-            </DialogDescription>
-          </div>
-        </DialogHeader>
-        <div className="px-4 pb-0.5">
-          <p
-            data-testid="approval-token-impact"
-            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-muted-foreground"
-          >
-            {t("agents.approvals.tokenInfoBody")}
-          </p>
-        </div>
-        <DialogFooter className="px-4 pt-3 pb-3.5">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setTokenOpen(false)}
-            className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            type="button"
-            data-testid="approval-token-open-account"
-            onClick={() => {
-              setTokenOpen(false);
-              window.dispatchEvent(new Event("janosik:open-api-keys"));
-            }}
-            className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
-          >
-            {t("agents.approvals.tokenInfoOpen")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {tokenOwnership === "own" ? (
+        <TokenInfoDialog
+          open={tokenOpen}
+          onOpenChange={setTokenOpen}
+          tokenName={resolvedToken}
+          testIdPrefix="approval-token"
+          onOpenAccount={() =>
+            window.dispatchEvent(new Event("janosik:open-api-keys"))
+          }
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -426,6 +410,9 @@ export function ApprovalDecisionForm({
   impactText,
   initialMode = null,
   onDecide,
+  onNextPending,
+  footerHash,
+  layout = "stacked",
 }: {
   busy: boolean;
   planHash: string;
@@ -438,6 +425,12 @@ export function ApprovalDecisionForm({
     decision: "approve" | "reject",
     comment: string,
   ) => Promise<boolean>;
+  /** Select the next pending request, as the mockup's footer does. */
+  onNextPending?: () => void;
+  /** Board panel shows the exact hash; the global panel keeps the wording. */
+  footerHash?: string;
+  /** Board detail keeps helper and actions on one row, like the mockup. */
+  layout?: "stacked" | "inline";
 }) {
   const { t } = useI18n();
   const [mode, setMode] = useState<"reject" | null>(initialMode);
@@ -479,10 +472,10 @@ export function ApprovalDecisionForm({
       <form noValidate onSubmit={submitReject} className="space-y-1.5">
         <label
           htmlFor="approval-comment"
-          className="block text-[11px] font-semibold text-foreground"
+          className="block text-[10.5px] font-semibold text-foreground"
         >
           {t("agents.approvals.rejectReason")}{" "}
-          <span className="font-normal text-muted-foreground">
+          <span className="font-semibold text-muted-foreground">
             {t("agents.approvals.required")}
           </span>
         </label>
@@ -494,7 +487,7 @@ export function ApprovalDecisionForm({
           rows={2}
           maxLength={2000}
           placeholder={t("agentControl.approvals.rejectReasonPlaceholder")}
-          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px]"
+          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
           autoFocus
         />
         <div className="flex items-center justify-end gap-1.5">
@@ -504,7 +497,7 @@ export function ApprovalDecisionForm({
             variant="ghost"
             onClick={resetReject}
             disabled={submitting}
-            className="h-7 min-h-0 px-2 text-[11px] text-muted-foreground max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -514,7 +507,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="h-7 min-h-0 px-2.5 text-[11px] font-[650] max-md:min-h-11"
+            className="!py-0 h-7 min-h-0 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] disabled:opacity-40 max-md:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -528,51 +521,111 @@ export function ApprovalDecisionForm({
 
   return (
     <>
-      <p className="mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground">
-        <ShieldCheck
-          className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
-          aria-hidden
-        />
-        <span>
-          {t("agents.approvals.footerBefore")}{" "}
-          <b className="font-semibold text-foreground">
-            {t("agents.approvals.footerHash")}
-          </b>
-          {t("agents.approvals.footerAfter")}
-        </span>
-      </p>
-      <div className="flex items-center gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="approval-reject"
-          onClick={() => setMode("reject")}
-          disabled={busy}
-          className="h-8 min-h-0 flex-1 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11"
+      <div
+        className={cn(
+          layout === "inline" &&
+            "flex w-full items-center gap-2 max-[760px]:flex-col max-[760px]:items-stretch",
+        )}
+      >
+        <p
+          className={cn(
+            "mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground",
+            layout === "inline" && "mb-0 min-w-0 flex-1",
+          )}
         >
-          {t("agentControl.approvals.reject")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          data-testid="approval-approve"
-          onClick={() => setApproveOpen(true)}
-          disabled={busy}
-          className="h-8 min-h-0 flex-1 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] px-[11px] text-[11.5px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11"
+          <ShieldCheck
+            className="mt-px h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
+            aria-hidden
+          />
+          {footerHash !== undefined ? (
+            <>
+              <span>
+                {t("agents.approvals.footerBefore")}{" "}
+                {t("agents.approvals.only")}
+              </span>
+              <b className="font-semibold text-foreground">
+                {footerHash.slice(0, 10)}…
+              </b>
+              <span>{t("agents.approvals.footerBoardAfter")}</span>
+            </>
+          ) : (
+            <span>
+              {t("agents.approvals.footerBefore")}{" "}
+              <b className="font-semibold text-foreground">
+                {t("agents.approvals.footerHash")}
+              </b>
+              {t("agents.approvals.footerAfter")}
+            </span>
+          )}
+        </p>
+        <div
+          className={cn(
+            "flex items-center gap-1.5",
+            layout === "inline" &&
+              "shrink-0 max-[760px]:w-full [&>button]:max-[760px]:flex-1",
+          )}
         >
-          {t("agents.approvals.confirmApprove")}
-        </Button>
+          {onNextPending !== undefined ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid="approval-next-pending"
+              onClick={onNextPending}
+              disabled={busy}
+              className={cn(
+                "h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11",
+                layout === "inline"
+                  ? "shrink-0"
+                  : "max-md:flex-1 max-md:basis-0",
+              )}
+              title={t("agents.approvals.nextPendingHint")}
+            >
+              {t("agents.approvals.nextPending")}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="approval-reject"
+            onClick={() => setMode("reject")}
+            disabled={busy}
+            className={cn(
+              "min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] !leading-[11px] font-[650] max-md:min-h-11",
+              layout === "inline"
+                ? "h-7 flex-none px-[9px] text-[11px]"
+                : "h-8 flex-1 px-[11px] text-[11.5px]",
+            )}
+          >
+            {t("agentControl.approvals.reject")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            data-testid="approval-approve"
+            onClick={() => setApproveOpen(true)}
+            disabled={busy}
+            className={cn(
+              "min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] !leading-[11px] font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
+              layout === "inline"
+                ? "h-7 flex-none px-[9px] text-[11px]"
+                : "h-8 flex-1 px-[11px] text-[11.5px]",
+            )}
+          >
+            {t("agents.approvals.confirmApprove")}
+          </Button>
+        </div>
       </div>
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent
-          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0"
+          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 font-agent-surface sm:rounded-[10px]"
           data-testid="approval-approve-dialog"
           hideClose
         >
-          <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-2.5 text-left">
-            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-[color:var(--agent-tone-warning)]">
+          <DialogHeader className="flex flex-row items-start gap-2.5 px-4 pt-3.5 pb-[6.3px] text-left">
+            <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border border-border bg-background/40 text-muted-foreground">
               <ShieldCheck className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <div className="min-w-0">
@@ -586,10 +639,10 @@ export function ApprovalDecisionForm({
           </DialogHeader>
           <div className="px-4 pb-0.5">
             <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] text-foreground">
-              <b className="block font-[650]">
-                {impactTitle ?? t("agents.approvals.approveImpactTitle")}
-              </b>
-              <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
+              <p className="text-[11px] leading-[1.5] text-foreground">
+                <b className="font-[650]">
+                  {impactTitle ?? t("agents.approvals.approveImpactTitle")}
+                </b>{" "}
                 {impactText ?? t("agents.approvals.approveImpactBody")}
               </p>
             </div>
@@ -602,13 +655,13 @@ export function ApprovalDecisionForm({
               </code>
             </div>
           </div>
-          <DialogFooter className="px-4 pt-3 pb-3.5">
+          <DialogFooter className="!flex-row items-center justify-end gap-1.5 px-4 pt-3 pb-3.5">
             <Button
               type="button"
               variant="ghost"
               onClick={() => setApproveOpen(false)}
               disabled={submitting}
-              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
+              className="h-7 min-h-0 rounded-[6px] px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11 max-md:min-w-[61px]"
             >
               {t("common.cancel")}
             </Button>
@@ -617,7 +670,7 @@ export function ApprovalDecisionForm({
               data-testid="approval-confirm"
               onClick={() => void submitApprove()}
               disabled={submitting || busy}
-              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
+              className="h-7 min-h-0 rounded-[6px] px-2.5 text-[11px] font-[650] max-md:min-h-11 max-md:min-w-[103px]"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

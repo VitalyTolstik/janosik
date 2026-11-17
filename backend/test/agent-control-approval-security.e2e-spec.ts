@@ -326,7 +326,7 @@ describe("Agent approval and plan security (e2e)", () => {
     });
   });
 
-  it("refuses an approval that expired after it was approved, applying nothing", async () => {
+  it("refuses an approval whose apply window expired after it was approved, applying nothing", async () => {
     const boardId = await createBoard("Approval expiry");
     const columnId = await createColumn(boardId);
     const cardId = await createCard(boardId, columnId, "Expiry card");
@@ -359,7 +359,9 @@ describe("Agent approval and plan security (e2e)", () => {
       await prisma.approvalRequest.findUniqueOrThrow({
         where: { id: request.approvalId },
       }),
-    ).toMatchObject({ status: "expired", runId: null });
+      // The decision itself is still approved; only the apply window lapsed.
+      // The row must not be rewritten to expired by the apply refusal.
+    ).toMatchObject({ status: "approved", runId: null });
     expect((await aggregate(boardId)).cards[cardId]?.title).toBe("Expiry card");
     expect(
       await prisma.command.count({

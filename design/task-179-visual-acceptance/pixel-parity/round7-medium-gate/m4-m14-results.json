@@ -1,0 +1,36 @@
+{
+  "sessions": {
+    "alerts": 1,
+    "text": [
+      "Some boards are unavailable. Boards: Website Relaunch. Showing the last loaded sessions; they may be out of date. Last loaded: Agent Ops Demo 0s ago.Retry"
+    ],
+    "sessions": true,
+    "runs": false,
+    "repeatedUnavailable": false
+  },
+  "runs": {
+    "alerts": 1,
+    "text": [
+      "Some boards are unavailable. Boards: Website Relaunch. Showing the last loaded runs; they may be out of date.Retry"
+    ],
+    "sessions": false,
+    "runs": true,
+    "repeatedUnavailable": false
+  },
+  "both": {
+    "alerts": 1,
+    "text": [
+      "Some boards are unavailable. Boards: Website Relaunch. Showing the last loaded runs; they may be out of date.Retry"
+    ],
+    "sessions": false,
+    "runs": true,
+    "repeatedUnavailable": false
+  },
+  "m14": {
+    "needsPressed": "true",
+    "decidedPressed": "false",
+    "pendingSelected": "true",
+    "detailStatus": "pending",
+    "listText": "Approval · needs decision·Agent Ops Demo·expires in 4271 minMedium riskDelete card “Card claim visibility”Docs agent asks to run DELETE_CARD. This removes 1 card — “Card claim visibility” and its hist"
+  }
+}

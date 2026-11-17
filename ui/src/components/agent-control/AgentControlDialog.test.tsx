@@ -144,10 +144,10 @@ function token(overrides: Partial<UserTokenDto> = {}): UserTokenDto {
 let live: BoardLive;
 let onOpenChange: (open: boolean) => void;
 
-function renderDialog() {
+function renderDialog(path = "/board/board-1") {
   onOpenChange = vi.fn();
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <I18nProvider>
         <ToastProvider>
           <BoardLiveProvider live={live}>
@@ -192,6 +192,24 @@ describe("agent control (TASK-166.14)", () => {
     vi.restoreAllMocks();
   });
 
+  it("shortens a fallback token id in the board inbox detail", async () => {
+    const longToken = "px-token-release-archive";
+    const row = approval({
+      requestedByTokenId: longToken,
+      agentSessionId: null,
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog("/board/board-1?agents=inbox");
+
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    const detail = await screen.findByTestId("approval-detail");
+    expect(detail).toHaveTextContent("px-token…rchive");
+    expect(detail).not.toHaveTextContent(longToken);
+    expect(detail).not.toHaveTextContent("px-token-rele…");
+  });
+
   it("loads the queue and approves the exact plan hash", async () => {
     const row = approval();
     const decided = approval({
@@ -213,7 +231,7 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
 
     expect(await screen.findByTestId("approval-plan-hash")).toHaveTextContent(
-      row.planHash,
+      row.planHash.slice(0, 44),
     );
     expect(screen.getByTestId("approval-plan-command")).toHaveTextContent(
       "DELETE_CARD",
@@ -232,6 +250,139 @@ describe("agent control (TASK-166.14)", () => {
       }),
     );
     expect(await screen.findByText("Approval granted")).toBeInTheDocument();
+  });
+
+  it("groups the queue and names the requesting agent from the token list", async () => {
+    const row = approval();
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+    vi.spyOn(api, "listTokens").mockResolvedValue([token()]);
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+
+    renderDialog();
+
+    const queue = await screen.findByTestId("approval-queue");
+    expect(within(queue).getByText("Needs decision")).toBeInTheDocument();
+    expect(
+      within(queue).getByText("QA agent · Remove stale card"),
+    ).toBeInTheDocument();
+    expect(
+      within(queue).getByTestId(`approval-row-${row.id}`),
+    ).toHaveTextContent("expires in 30 min");
+    expect(within(queue).getByTestId("approval-row-status")).toHaveTextContent(
+      "Pending",
+    );
+  });
+
+  it("shows the mockup header cancel action and inline footer", async () => {
+    const row = approval();
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+    const cancel = vi
+      .spyOn(api, "cancelApproval")
+      .mockResolvedValue(approval({ status: "cancelled" }));
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    expect(await screen.findByTestId("approval-cancel-menu")).toBeVisible();
+    expect(
+      screen.getAllByText(/Approving authorizes only/).length,
+    ).toBeGreaterThan(0);
+    const footerHost = screen.getByTestId("agent-control-footer");
+    expect(within(footerHost).getByTestId("approval-reject")).toBeVisible();
+    expect(within(footerHost).getByTestId("approval-approve")).toBeVisible();
+    expect(
+      screen.getByTestId("approval-detail").querySelector("footer"),
+    ).toBeNull();
+    expect(screen.queryByTestId("approval-next-pending")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("approval-cancel-menu"));
+    const confirmTitle = await screen.findByText("Cancel this request?");
+    const dialog = confirmTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel request" }),
+    );
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("board-1", row.id));
+  });
+
+  it("selects the first pending request from the visible Needs queue, not an expired head row", async () => {
+    const expired = approval({
+      id: "approval-expired",
+      summary: "Expired landing move",
+      expiresAt: Date.now() - 60_000,
+    });
+    const pending = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([expired, pending]);
+    vi.spyOn(api, "getApproval").mockImplementation((_boardId, id) =>
+      Promise.resolve(id === pending.id ? pending : expired),
+    );
+
+    renderDialog();
+
+    expect(await screen.findByText("Pending delete claim")).toBeInTheDocument();
+    expect(await screen.findByTestId("approval-approve")).toBeVisible();
+    expect(screen.queryByText("Expired landing move")).toBeNull();
+  });
+
+  it("moves the detail to the visible queue when the filter changes", async () => {
+    const pending = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    const decided = approval({
+      id: "approval-decided",
+      summary: "Approved landing move",
+      status: "approved",
+      decidedBy: "Auditor",
+      decidedAt: Date.now() - 60_000,
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([pending, decided]);
+    vi.spyOn(api, "getApproval").mockImplementation((_boardId, id) =>
+      Promise.resolve(id === decided.id ? decided : pending),
+    );
+
+    renderDialog();
+    expect(await screen.findByText("Pending delete claim")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("approval-filter-decided"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("approval-detail")).toHaveTextContent(
+        "Approved landing move",
+      ),
+    );
+    expect(screen.queryByText("Pending delete claim")).toBeNull();
+    // Decided rows show an absolute decision moment, never “X minutes ago”.
+    expect(screen.getByTestId(`approval-row-${decided.id}`)).toHaveTextContent(
+      /Today, /,
+    );
+    expect(
+      screen.getByTestId(`approval-row-${decided.id}`),
+    ).not.toHaveTextContent(/ago/);
+  });
+
+  it("honors an explicit ?approval deep link even when the row is decided", async () => {
+    const expired = approval({
+      id: "approval-expired",
+      summary: "Expired landing move",
+      expiresAt: Date.now() - 60_000,
+    });
+    const pending = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([expired, pending]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(expired);
+
+    renderDialog("/board/board-1?agents=inbox&approval=approval-expired");
+
+    expect(
+      await screen.findByRole("heading", { name: "Expired landing move" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
   });
 
   it("requires a reason and sends the plan hash when rejecting", async () => {
@@ -330,16 +481,47 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       await screen.findByText("Could not load the approval queue"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-approvals-error-card")).toHaveTextContent(
+      "Retry does not drop the filters",
+    );
+    expect(screen.queryByTestId("approval-detail-empty")).toBeNull();
+    expect(screen.queryByText("Select an approval")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
-    expect(
-      screen.getByText("Only a board admin can decide. This queue is empty."),
-    ).toBeInTheDocument();
     expect(screen.getByText("Select an approval")).toBeInTheDocument();
-    // One request from the Inbox panel, one from the rail/header counter,
-    // plus the manual retry.
-    expect(list).toHaveBeenCalledTimes(3);
+    // One request from the Inbox panel, one from the rail/header counter
+    // (both failed), then the manual retry plus the counter refresh it
+    // triggers.
+    expect(list).toHaveBeenCalledTimes(4);
+  });
+
+  it("refreshes the header pending count after an inbox retry", async () => {
+    const row = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    let fail = true;
+    vi.spyOn(api, "listApprovals").mockImplementation(() =>
+      fail ? Promise.reject(new Error("down")) : Promise.resolve([row]),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog("/board/board-1?agents=inbox");
+    expect(
+      await screen.findByText("Could not load the approval queue"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-approvals-count")).toBeNull();
+
+    fail = false;
+    await userEvent.click(screen.getByTestId("agent-approvals-retry"));
+
+    expect(await screen.findByTestId("approval-queue")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-approvals-count")).toHaveTextContent(
+        "1",
+      ),
+    );
   });
 
   it("refetches the queue on an approval SSE frame without a reload", async () => {
@@ -503,9 +685,14 @@ describe("agent control (TASK-166.14)", () => {
       ),
     );
 
+    const pausedRow = await screen.findByTestId("agent-session-row-session-1");
     expect(
-      await screen.findByTestId("agent-session-paused"),
-    ).toBeInTheDocument();
+      within(pausedRow).getByTestId("agent-status-paused"),
+    ).toHaveTextContent("Paused");
+    // One paused pill: no duplicate "Session pause" chip and no row-level
+    // reason; the reason lives in the detail surface.
+    expect(within(pausedRow).queryByTestId("agent-session-paused")).toBeNull();
+    expect(pausedRow).not.toHaveTextContent("Reason: Review");
     await userEvent.click(screen.getByTestId("agent-session-resume"));
     await userEvent.click(await screen.findByTestId("agent-action-confirm"));
     await waitFor(() =>
@@ -543,9 +730,8 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       within(staleRow).getByTestId("agent-status-active"),
     ).toHaveTextContent("Active");
-    expect(staleRow).toHaveTextContent("6m ago");
-    expect(staleRow).not.toHaveTextContent("No heartbeat ·");
-    expect(within(staleRow).queryByText("Stale")).toBeNull();
+    expect(staleRow).toHaveTextContent("No heartbeat · 6m");
+    expect(within(staleRow).queryByTestId("agent-status-stale")).toBeNull();
     const terminalRow = screen.getByTestId("agent-session-row-completed");
     expect(
       within(terminalRow).getByTestId("agent-status-completed"),
@@ -639,6 +825,27 @@ describe("agent control (TASK-166.14)", () => {
     expect(
       screen.getByText("Could not load agent sessions"),
     ).toBeInTheDocument();
+    const errorCard = screen.getByTestId("agent-live-error-card");
+    expect(errorCard).toHaveTextContent("Retry does not drop the filters");
+    expect(screen.getByTestId("agent-live-panel")).not.toHaveTextContent(
+      "0 sessions",
+    );
+  });
+
+  it("keeps the stale age in the subline, not the No heartbeat chip", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([
+      session({ stale: true, lastHeartbeatAt: Date.now() - 53 * 60_000 }),
+    ]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    const row = await screen.findByTestId("agent-session-row-session-1");
+    const chip = within(row).getByTestId("agent-session-no-heartbeat");
+    expect(chip).toHaveTextContent(/^No heartbeat$/);
+    expect(chip).not.toHaveTextContent("53m");
+    expect(within(row).getByTestId("agent-heartbeat")).toHaveTextContent(
+      "No heartbeat · 53m",
+    );
   });
 
   it("keeps the board pause dialog open with an inline error", async () => {
@@ -674,9 +881,7 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.click(screen.getByTestId("agent-pause-tab"));
     const row = await screen.findByTestId("agent-session-row-session-1");
     await userEvent.click(within(row).getByTestId("agent-session-end"));
-    expect(
-      await screen.findByText("End this agent session?"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("End this session?")).toBeInTheDocument();
     await userEvent.click(screen.getByTestId("agent-action-confirm"));
 
     await waitFor(() =>
@@ -733,6 +938,9 @@ describe("agent control (TASK-166.14)", () => {
         "Choose a request to see its impact, hash and decision.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-control-footer")).toHaveTextContent(
+      "Only a board admin can decide. This queue is empty.",
+    );
     expect(screen.getByTestId("approval-search")).toHaveAttribute(
       "placeholder",
       "Search approvals…",
@@ -774,6 +982,28 @@ describe("agent control (TASK-166.14)", () => {
     await userEvent.clear(screen.getByTestId("approval-search"));
     expect(screen.getByTestId(`approval-row-${first.id}`)).toBeInTheDocument();
     expect(screen.getByTestId(`approval-row-${second.id}`)).toBeInTheDocument();
+  });
+
+  it("uses filtered-empty copy and clears the search", async () => {
+    const row = approval();
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog();
+    await screen.findByTestId("approval-queue");
+    const search = screen.getByTestId("approval-search");
+    await userEvent.type(search, "zzzz-no-match");
+
+    expect(
+      await screen.findByText("No approvals match these filters"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No approvals waiting")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear filters" }),
+    );
+
+    expect(await screen.findByTestId("approval-queue")).toBeInTheDocument();
+    expect(search).toHaveValue("");
   });
 
   it("shows the prototype empty Live state and pause footer", async () => {

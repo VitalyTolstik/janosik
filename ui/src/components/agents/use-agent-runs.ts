@@ -60,9 +60,14 @@ export interface AgentRunsState {
  */
 export function useAgentRuns(
   boards: readonly RunBoardScope[],
-  options: { enabled: boolean; filter: AgentRunFilter },
+  options: {
+    enabled: boolean;
+    filter: AgentRunFilter;
+    /** The board list itself is still loading; do not publish an empty run set. */
+    boardsLoading?: boolean;
+  },
 ): AgentRunsState {
-  const { enabled, filter } = options;
+  const { enabled, filter, boardsLoading = false } = options;
   const live = useBoardLive();
   const [snapshot, setSnapshot] = useState<RunsSnapshot | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -101,6 +106,10 @@ export function useAgentRuns(
 
   const load = useCallback(async (): Promise<void> => {
     if (!enabled || !isApiEnabled()) return;
+    // The board list is still loading: an empty fan-out would publish a false
+    // "no runs" snapshot before any board answered. Once it has loaded, an
+    // empty board list is a real empty state and is allowed through.
+    if (boardsLoading && scopedBoards.length === 0) return;
     const request = ++generation.current;
     const previous =
       pagesRef.current.key === filterKey
@@ -169,7 +178,7 @@ export function useAgentRuns(
       revokedBoardIds,
       lastLoadedAt: errorBoardIds.length === 0 ? Date.now() : null,
     });
-  }, [enabled, filterKey, queryFor, scopedBoards]);
+  }, [boardsLoading, enabled, filterKey, queryFor, scopedBoards]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -280,7 +289,7 @@ export function useAgentRuns(
   const current = snapshot?.key === filterKey ? snapshot : null;
   return {
     rows: current?.rows ?? [],
-    loading: enabled && current === null,
+    loading: enabled && (current === null || (boardsLoading && scopedBoards.length === 0)),
     loadingMore,
     error: current?.error ?? false,
     errorBoardIds: current?.errorBoardIds ?? [],

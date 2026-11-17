@@ -62,6 +62,23 @@ describe("CommandsService.deltaSince", () => {
     });
   });
 
+  it("carries the frozen display detail but not pre-images", async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        ...row(7),
+        details: {
+          detail: "Old onboarding draft",
+          changes: [{ field: "title", from: "Old", to: null }],
+        },
+      },
+    ]);
+    const delta = await service(findMany).deltaSince("board-1", 0);
+    expect(delta.entries[0]).toEqual(
+      expect.objectContaining({ detail: "Old onboarding draft" }),
+    );
+    expect(delta.entries[0]).not.toHaveProperty("preimages");
+  });
+
   it("flags resync and drops the partial page when the cap is hit", async () => {
     const findMany = jest.fn().mockResolvedValue([row(1), row(2), row(3)]);
     const delta = await service(findMany).deltaSince("board-1", 0, 2);

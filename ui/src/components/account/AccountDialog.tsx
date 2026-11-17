@@ -111,8 +111,14 @@ export function AccountDialog({
               size="sm"
               data-testid="account-trigger"
               aria-label={t("account.aria")}
-              className="gap-2 px-1.5 sm:px-2"
+              className="gap-2 px-1.5 max-md:h-11 max-md:min-w-11 max-md:justify-center max-md:px-0 sm:px-2"
             >
+              {/* The 390 mockup has no avatar in the header. Keep the account
+                  reachable with the same 44 px target and a neutral glyph. */}
+              <UserRound
+                className="hidden h-[18px] w-[18px] max-[760px]:block"
+                aria-hidden
+              />
               <UserAvatar
                 userId={user.id}
                 displayName={user.displayName}
@@ -120,7 +126,10 @@ export function AccountDialog({
                 color={user.avatarColor}
                 avatarPath={user.avatarPath}
                 size="sm"
-                className={compact ? "h-[26px] w-[26px]" : undefined}
+                className={cn(
+                  "max-[760px]:hidden",
+                  compact && "h-[26px] w-[26px]",
+                )}
               />
               <span
                 className={cn(

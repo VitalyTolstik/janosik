@@ -18,7 +18,6 @@ import {
   Lock,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
   Terminal,
 } from "lucide-react";
 import type {
@@ -34,14 +33,7 @@ import type {
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { AgentConfirmDialog } from "./AgentConfirmDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDate, formatDateOnly, useHour12, useI18n } from "@/i18n";
@@ -94,7 +86,7 @@ export function RunStatusBadge({
 export function RunKindChip({ kind }: { kind: AgentRunKind }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground">
+    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold whitespace-nowrap lowercase text-muted-foreground">
       {t(RUN_KIND_KEYS[kind])}
     </span>
   );
@@ -103,8 +95,7 @@ export function RunKindChip({ kind }: { kind: AgentRunKind }) {
 export function RunConflictChip({ count }: { count: number }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center gap-1 rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
-      <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
+    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
       {t("agents.runs.conflictChip", { count })}
     </span>
   );
@@ -121,6 +112,8 @@ export interface RunListProps {
   boardTitle?: (run: RunSummaryDto) => string;
   tokenLabel?: (tokenId: string | null) => string;
   conflicts?: ReadonlyMap<string, number>;
+  /** Board Runs uses the mockup's single `Today` group; `/agents` keeps days. */
+  groupMode?: "day" | "single";
 }
 
 /**
@@ -139,9 +132,21 @@ export function RunList({
   boardTitle,
   tokenLabel,
   conflicts,
+  groupMode = "day",
 }: RunListProps) {
   const { t, lang } = useI18n();
-  const days = useMemo(() => groupRunsByDay(rows), [rows]);
+  const days = useMemo(() => {
+    if (groupMode === "single") {
+      return [
+        {
+          key: "today",
+          timestamp: now,
+          rows: [...rows],
+        },
+      ];
+    }
+    return groupRunsByDay(rows);
+  }, [groupMode, now, rows]);
   const today = startOfDay(now);
   const yesterday = today - 24 * 60 * 60 * 1000;
 
@@ -162,7 +167,9 @@ export function RunList({
             <div
               className={cn(
                 "border-b border-border/70 px-2 text-[11px] font-[650] tracking-[0.06em] uppercase text-muted-foreground",
-                variant === "global" ? "pt-2.5 pb-1" : "pt-2 pb-1",
+                variant === "global"
+                  ? "pt-2.5 pb-1"
+                  : "!px-2.5 pt-[7px] pb-[3px]",
               )}
             >
               {label}
@@ -173,8 +180,13 @@ export function RunList({
                 const token =
                   run.apiTokenId === null
                     ? t("agentControl.runs.noToken")
-                    : (tokenLabel?.(run.apiTokenId) ?? shortId(run.apiTokenId));
-                const conflictCount = conflicts?.get(run.id) ?? 0;
+                    : (run.tokenName ??
+                      tokenLabel?.(run.apiTokenId) ??
+                      shortTokenId(run.apiTokenId));
+                const conflictCount =
+                  run.status === "applied" && run.kind !== "revert"
+                    ? (conflicts?.get(run.id) ?? 0)
+                    : 0;
                 if (variant === "board") {
                   return (
                     <li key={run.id}>
@@ -190,25 +202,21 @@ export function RunList({
                             "bg-primary/6 shadow-[inset_2px_0_0_var(--primary)]",
                         )}
                       >
-                        <span className="flex min-w-0 items-start justify-between gap-2">
-                          <span className="min-w-0">
-                            <b className="block truncate text-[11px] leading-[1.4] font-semibold">
-                              {runTitle(run, t)}
-                            </b>
-                            <span className="mt-0.5 block truncate text-[11px] leading-[1.4] text-muted-foreground">
-                              {token} ·{" "}
-                              {t("agents.runs.commandCount", {
-                                count: run.commandCount,
-                              })}{" "}
-                              · {clockLabel(runTime(run), today, lang, t)}
-                            </span>
-                          </span>
-                          <span className="flex shrink-0 flex-col items-end gap-1">
-                            <RunStatusBadge status={run.status} />
-                            {conflictCount > 0 ? (
-                              <RunConflictChip count={conflictCount} />
-                            ) : null}
-                          </span>
+                        <b className="block truncate text-[11px] leading-[1.4] font-semibold">
+                          {runTitle(run, t, token)}
+                        </b>
+                        <span className="mt-1 block truncate text-[11px] leading-[1.4] text-muted-foreground">
+                          {token} ·{" "}
+                          {t("agents.runs.commandCount", {
+                            count: run.commandCount,
+                          })}{" "}
+                          · {clockLabel(runTime(run), today, lang, t)}
+                        </span>
+                        <span className="mt-1 flex flex-wrap items-center gap-1">
+                          <RunStatusBadge status={run.status} />
+                          {conflictCount > 0 ? (
+                            <RunConflictChip count={conflictCount} />
+                          ) : null}
                         </span>
                       </button>
                     </li>
@@ -231,7 +239,7 @@ export function RunList({
                       <span className="min-w-0">
                         <span className="flex min-w-0 items-center gap-1.5">
                           <b className="min-w-0 truncate text-[11.5px] leading-[1.25] font-[650]">
-                            {runTitle(run, t)}
+                            {runTitle(run, t, token)}
                           </b>
                         </span>
                         <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-[1.4] text-muted-foreground">
@@ -247,7 +255,9 @@ export function RunList({
                             })}
                           </span>
                           <Dot />
-                          <span>{t(RUN_KIND_KEYS[run.kind])}</span>
+                          <span className="lowercase">
+                            {t(RUN_KIND_KEYS[run.kind])}
+                          </span>
                           {conflictCount > 0 ? (
                             <RunConflictChip count={conflictCount} />
                           ) : null}
@@ -262,8 +272,11 @@ export function RunList({
                           >
                             {clockLabel(runTime(run), today, lang, t)}
                           </time>
-                          <span className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden">
-                            {shortId(run.id)}
+                          <span
+                            className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden"
+                            title={run.id}
+                          >
+                            {shortId(run.id, 12)}
                           </span>
                         </span>
                       </span>
@@ -509,6 +522,13 @@ export function RunDetail({
   }
 
   const run = detail.run;
+  const titleToken =
+    run.apiTokenId === null
+      ? t("agentControl.runs.noToken")
+      : (run.tokenName ??
+        tokenLabel?.(run.apiTokenId) ??
+        shortTokenId(run.apiTokenId));
+  const today = startOfDay(now);
   const conflicts = preview?.conflicts ?? [];
   const rollbackEligible = run.status === "applied" && run.kind !== "revert";
   // `run_expired` means the API has no stored commands/pre-images for this
@@ -526,7 +546,6 @@ export function RunDetail({
             stored: storedCommands,
             total: run.commandCount,
           });
-  const entitiesTouched = uniqueTouches(detail);
   const duration = Math.max(0, run.appliedAt - run.createdAt);
 
   return (
@@ -551,18 +570,27 @@ export function RunDetail({
           </button>
         ) : null}
         <div className="min-w-0 flex-1">
-          <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
-            {t("agents.runs.detailEyebrow", {
-              board: boardTitle ?? run.boardId,
-            })}
-          </p>
+          {variant === "global" ? (
+            <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+              {t("agents.runs.detailEyebrow", {
+                board: boardTitle ?? run.boardId,
+              })}
+            </p>
+          ) : null}
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
-            {runTitle(run, t)}
+            {runTitle(run, t, titleToken)}
           </h2>
-          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-            {run.id}
-            {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
-          </p>
+          {variant === "board" ? (
+            <p
+              className="mt-0.5 font-mono text-[11px] text-muted-foreground"
+              title={run.id}
+            >
+              {shortId(run.id, 12)} ·{" "}
+              <span className="lowercase">{t(RUN_KIND_KEYS[run.kind])}</span> ·{" "}
+              {t("agents.runs.commandCount", { count: run.commandCount })} ·{" "}
+              {clockLabel(runTime(run), today, lang, t)}
+            </p>
+          ) : null}
         </div>
       </header>
 
@@ -607,16 +635,6 @@ export function RunDetail({
             {t("agents.runs.conflictBody")}
           </Banner>
         ) : null}
-        {!admin ? (
-          <div
-            data-testid="agent-run-admin-only-note"
-            className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground"
-          >
-            <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>{t("agents.runs.adminOnlyNote")}</span>
-          </div>
-        ) : null}
-
         <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
           <RunStatusBadge status={run.status} testId="agent-run-status" />
           <RunKindChip kind={run.kind} />
@@ -637,14 +655,18 @@ export function RunDetail({
           icon={<GitBranch aria-hidden />}
         >
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <MetaField label={t("agents.runs.actor")}>{run.actorId}</MetaField>
+            <MetaField label={t("agents.runs.actor")}>
+              {run.actorName ?? run.actorId}
+            </MetaField>
             <MetaField label={t("agentControl.runs.token")}>
-              {tokenLabel?.(run.apiTokenId) ??
+              {run.tokenName ??
+                tokenLabel?.(run.apiTokenId) ??
                 run.apiTokenId ??
                 t("agentControl.runs.noToken")}
             </MetaField>
             <MetaField label={t("agentControl.runs.session")}>
-              {sessionLabel?.(run.agentSessionId) ??
+              {run.sessionName ??
+                sessionLabel?.(run.agentSessionId) ??
                 run.agentSessionId ??
                 t("agentControl.runs.noSession")}
             </MetaField>
@@ -652,10 +674,18 @@ export function RunDetail({
               {formatDuration(duration)}
             </MetaField>
             <MetaField label={t("agents.runs.runId")}>
-              <span className="font-mono">
-                {run.id}
-                {run.clientRunId === null ? "" : ` · ${run.clientRunId}`}
+              <span className="font-mono" title={run.id}>
+                {shortId(run.id, 12)}
               </span>
+              {run.clientRunId !== null && run.clientRunId !== "" ? (
+                <span
+                  className="font-mono text-muted-foreground"
+                  title={run.clientRunId}
+                >
+                  {" "}
+                  · {run.clientRunId}
+                </span>
+              ) : null}
             </MetaField>
             <MetaField label={t("agentControl.runs.approval")}>
               {run.approvalId ?? t("agents.runs.notApprovalGated")}
@@ -719,23 +749,19 @@ export function RunDetail({
                     className="rounded-md border border-border bg-background/30 px-2 py-1.5"
                   >
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[18px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold">
-                        #{command.seq}
-                      </span>
                       <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[11px]">
                         {command.action.type}
                       </code>
                       <span className="min-w-0 truncate">
-                        {actionSummary(command.action, board)}
+                        {actionSummary(
+                          command.action,
+                          board,
+                          preimageLabel(preimage) ?? command.detail,
+                        )}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                      {command.actorType === "agent"
-                        ? t("agentControl.runs.actorAgent")
-                        : t("agentControl.runs.actorHuman")}{" "}
-                      · {command.agentName ?? command.actorId}
-                    </p>
-                    {admin ? (
+                    {admin &&
+                    (run.status === "applied" || run.status === "reverted") ? (
                       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                         <DiffBox
                           label={t("agents.runs.before")}
@@ -751,25 +777,46 @@ export function RunDetail({
                         />
                       </div>
                     ) : null}
-                    {admin && preimage !== undefined ? (
-                      <details
-                        data-testid="agent-run-preimage"
-                        className="mt-1.5"
-                      >
-                        <summary className="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
-                          <ChevronRight className="h-2.5 w-2.5" aria-hidden />
-                          {t("agentControl.runs.preimage")}
-                        </summary>
-                        <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
-                          {JSON.stringify(preimage, null, 2)}
-                        </pre>
-                      </details>
+                    {run.status === "failed" ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {t("agents.runs.commandNotApplied")}
+                      </p>
                     ) : null}
                   </li>
                 );
               })}
             </ul>
           )}
+          {!admin ? (
+            <div
+              data-testid="agent-run-admin-only-note"
+              className="mt-2 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground"
+            >
+              <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{t("agents.runs.adminOnlyNote")}</span>
+            </div>
+          ) : null}
+          {admin &&
+          (run.status === "applied" || run.status === "reverted") &&
+          Object.keys(detail.preimages).length > 0 ? (
+            <details
+              className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
+              data-testid="agent-run-preimages"
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+                <ChevronRight
+                  className="h-[11px] w-[11px] transition-transform group-open:rotate-90"
+                  aria-hidden
+                />
+                {t("agents.runs.technicalPreimages", {
+                  count: Object.keys(detail.preimages).length,
+                })}
+              </summary>
+              <pre className="m-0 max-h-64 overflow-auto border-t border-border p-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
+                {JSON.stringify(detail.preimages, null, 2)}
+              </pre>
+            </details>
+          ) : null}
         </Section>
 
         <Section
@@ -777,10 +824,6 @@ export function RunDetail({
           icon={<RotateCcw aria-hidden />}
           testId="agent-run-revert"
         >
-          <p className="mb-2 text-[11px] leading-[1.5] text-muted-foreground">
-            {t("agents.runs.rollbackConditional")}
-          </p>
-
           {rollbackEligible ? (
             previewing && preview === null ? (
               <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -815,10 +858,7 @@ export function RunDetail({
               <div
                 data-testid="agent-run-rollback-card"
                 className={cn(
-                  "space-y-2 rounded-[7px] border px-2.5 py-2",
-                  preview.canRevert
-                    ? "border-[color-mix(in_oklab,var(--success)_30%,var(--border))] bg-success/5"
-                    : "border-warning/35 bg-warning/6",
+                  "space-y-2 border-t border-border bg-transparent pt-2",
                 )}
               >
                 <div className="flex items-center gap-1.5">
@@ -855,22 +895,22 @@ export function RunDetail({
                         key={conflict.touch}
                         className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]"
                       >
-                        <span className="font-mono">{conflict.touch}</span> ·{" "}
-                        {conflict.reason} · {conflict.expectedVersion} →{" "}
-                        {conflict.currentVersion}
+                        <span className="font-[650]">
+                          {conflictEntityLabel(
+                            conflict,
+                            board,
+                            detail.preimages,
+                            t,
+                          )}
+                        </span>{" "}
+                        · {conflictReasonLabel(conflict.reason, t)} ·{" "}
+                        {t("agents.runs.conflictVersion", {
+                          expected: conflict.expectedVersion,
+                          current: conflict.currentVersion,
+                        })}
                       </li>
                     ))}
                   </ul>
-                ) : null}
-                {admin && preview.diff !== undefined ? (
-                  <details data-testid="agent-run-diff">
-                    <summary className="cursor-pointer text-[11px] text-muted-foreground">
-                      {t("agentControl.runs.diff")}
-                    </summary>
-                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
-                      {JSON.stringify(preview.diff, null, 2)}
-                    </pre>
-                  </details>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -879,9 +919,9 @@ export function RunDetail({
                     data-testid="agent-run-preview"
                     disabled={previewing}
                     onClick={() => void requestPreview()}
-                    className="max-md:min-h-11"
+                    className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-[11px] font-[650] max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                   >
-                    <Eye className="h-3.5 w-3.5" aria-hidden />
+                    <Eye className="h-[13px] w-[13px]" aria-hidden />
                     {t("agents.runs.previewAgain")}
                   </Button>
                   {admin ? (
@@ -898,9 +938,9 @@ export function RunDetail({
                             : t("agentControl.runs.cannotRevert")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 max-md:min-h-11"
+                      className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-[11px] font-[650] border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                      <RotateCcw className="h-[13px] w-[13px]" aria-hidden />
                       {!preview.canRevert
                         ? t("agents.runs.revertBlocked")
                         : t("agentControl.runs.revert")}
@@ -950,24 +990,7 @@ export function RunDetail({
           ) : null}
         </Section>
 
-        {admin && Object.keys(detail.preimages).length > 0 ? (
-          <Section
-            title={t("agentControl.runs.preimagesTitle")}
-            icon={<ShieldCheck aria-hidden />}
-            testId="agent-run-preimages"
-          >
-            <p className="mb-1.5 text-[11px] text-muted-foreground">
-              {t("agents.runs.preimagesAdminHint", {
-                count: Object.keys(detail.preimages).length,
-              })}
-            </p>
-            <pre className="max-h-64 overflow-auto rounded bg-muted/50 p-1.5 text-[11px]">
-              {JSON.stringify(detail.preimages, null, 2)}
-            </pre>
-          </Section>
-        ) : null}
-
-        {admin && run.planHash !== null ? (
+        {admin && run.status === "applied" && run.planHash !== null ? (
           <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
             <code
               data-testid="agent-run-plan-hash"
@@ -999,11 +1022,11 @@ export function RunDetail({
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <Link
-            to={routes.board(boardId)}
+            to={routes.agentControl(boardId, "runs")}
             data-testid="agent-run-open-board"
-            className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
-            <Folder className="h-3 w-3" aria-hidden />
+            <Folder className="h-2.5 w-2.5" aria-hidden />
             {t("agents.runs.openBoard")}
           </Link>
           {run.agentSessionId !== null ? (
@@ -1012,9 +1035,9 @@ export function RunDetail({
                 type="button"
                 data-testid="agent-run-open-session"
                 onClick={() => onOpenSession(run.agentSessionId ?? "")}
-                className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
-                <Activity className="h-3 w-3" aria-hidden />
+                <Activity className="h-2.5 w-2.5" aria-hidden />
                 {t("agents.runs.openSession")}
               </button>
             ) : (
@@ -1025,9 +1048,9 @@ export function RunDetail({
                   session: run.agentSessionId,
                 }).toString()}`}
                 data-testid="agent-run-open-session"
-                className="inline-flex h-7 max-w-full items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
-                <Activity className="h-3 w-3" aria-hidden />
+                <Activity className="h-2.5 w-2.5" aria-hidden />
                 {t("agents.runs.openSession")}
               </Link>
             )
@@ -1037,36 +1060,39 @@ export function RunDetail({
             onClick={() => void copyLink()}
             data-testid="agent-run-copy-link"
             data-copy-url={runLink(boardId, runId)}
-            className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+            className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
             {linkCopied ? (
               <Check
-                className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                className="h-2.5 w-2.5 text-[color:var(--agent-tone-success)]"
                 aria-hidden
               />
             ) : (
-              <LinkIcon className="h-3 w-3" aria-hidden />
+              <LinkIcon className="h-2.5 w-2.5" aria-hidden />
             )}
-            {t("agents.runs.copyLink")}
+            {t("agents.runs.copyRunLink")}
           </button>
         </div>
       </div>
 
       {variant === "global" ? (
-        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface/80 px-3.5 py-2 text-[11px] leading-[1.45] text-muted-foreground">
+        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground max-md:px-3 max-md:py-[9px]">
           <p className="m-0 flex items-start gap-1.5">
-            <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+            <Info
+              className="mt-[2px] h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
+              aria-hidden
+            />
             <span className="min-w-0">
               {admin
                 ? t("agents.runs.footerAdmin")
                 : t("agents.runs.footerMember")}
             </span>
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Link
-              to={routes.board(boardId)}
+              to={routes.agentControl(boardId, "runs")}
               data-testid="agent-run-footer-open-board"
-              className="inline-flex h-7 items-center rounded-[5px] border border-border bg-surface/58 px-2 text-[11px] text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] whitespace-nowrap text-foreground hover:bg-hover max-md:min-h-11"
             >
               {t("agents.runs.openBoard")}
             </Link>
@@ -1074,15 +1100,15 @@ export function RunDetail({
               type="button"
               onClick={() => void copyLink()}
               data-testid="agent-run-footer-copy-link"
-              className="inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[11px] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-transparent px-[11px] text-[11.5px] leading-none font-[650] whitespace-nowrap text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
             >
               {linkCopied ? (
                 <Check
-                  className="h-3 w-3 text-[color:var(--agent-tone-success)]"
+                  className="h-[13px] w-[13px] text-[color:var(--agent-tone-success)]"
                   aria-hidden
                 />
               ) : (
-                <LinkIcon className="h-3 w-3" aria-hidden />
+                <LinkIcon className="h-[13px] w-[13px]" aria-hidden />
               )}
               {t("agents.runs.copyLink")}
             </button>
@@ -1090,72 +1116,26 @@ export function RunDetail({
         </footer>
       ) : null}
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-md" data-testid="run-revert-dialog">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle
-                className="h-4 w-4 text-[color:var(--agent-tone-danger)]"
-                aria-hidden
-              />
-              {t("agents.runs.confirmTitle")}
-            </DialogTitle>
-            <DialogDescription>
-              {t("agents.runs.confirmBody", {
-                count: detail.commands.length,
-                board: boardTitle ?? boardId,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 text-[11px] text-muted-foreground">
-            <div className="grid grid-cols-2 gap-1.5">
-              <Impact
-                label={t("agents.runs.impactCommands")}
-                value={String(detail.commands.length)}
-              />
-              <Impact
-                label={t("agents.runs.impactEntities")}
-                value={String(entitiesTouched)}
-              />
-            </div>
-            <p>{t("agents.runs.confirmImpact")}</p>
-            <p className="rounded-[5px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[color:var(--agent-tone-warning)]">
-              {t("agents.runs.confirmConditional")}
-            </p>
-            {conflicts.length > 0 ? (
-              <p className="text-[color:var(--agent-tone-warning)]">
-                {t("agents.runs.confirmConflicts", { count: conflicts.length })}
-              </p>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={reverting}
-              onClick={() => setConfirmOpen(false)}
-              className="min-h-11"
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              data-testid="run-revert-confirm"
-              disabled={reverting || !preview?.canRevert}
-              onClick={() => void applyRevert()}
-              className="min-h-11"
-            >
-              {reverting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              ) : (
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-              )}
-              {t("agents.runs.confirmApply")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AgentConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        icon={RotateCcw}
+        tone="danger"
+        title={t("agents.runs.confirmTitle")}
+        description={t("agents.runs.confirmDescription")}
+        confirmLabel={t("agents.runs.confirmApply")}
+        onConfirm={() => void applyRevert()}
+        busy={reverting}
+        testId="run-revert-dialog"
+        confirmTestId="run-revert-confirm"
+      >
+        <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-foreground">
+          <b className="font-[650]">
+            {t("agents.runs.confirmCount", { count: detail.commands.length })}
+          </b>{" "}
+          {runTitle(run, t, titleToken)}. {t("agents.runs.confirmNoConflicts")}
+        </div>
+      </AgentConfirmDialog>
     </div>
   );
 }
@@ -1300,17 +1280,6 @@ function DiffBox({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Impact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[5px] border border-border bg-background/35 px-2 py-1.5">
-      <span className="block text-[11px] text-muted-foreground">{label}</span>
-      <b className="mt-0.5 block text-[13px] font-[650] text-foreground">
-        {value}
-      </b>
-    </div>
-  );
-}
-
 function errorCodeOf(error: unknown): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   const body = error.body;
@@ -1364,14 +1333,6 @@ function runErrorText(error: unknown, t: Translate): string {
   return t("agentControl.error.generic");
 }
 
-function uniqueTouches(detail: RunDetailDto): number {
-  return new Set(
-    detail.commands.flatMap((command) =>
-      Array.isArray(command.touches) ? command.touches : [],
-    ),
-  ).size;
-}
-
 function preimageLabel(preimage: unknown): string | null {
   if (typeof preimage !== "object" || preimage === null) return null;
   const entities = (preimage as { entities?: unknown }).entities;
@@ -1381,10 +1342,123 @@ function preimageLabel(preimage: unknown): string | null {
     const snapshot = (entity as { snapshot?: unknown }).snapshot;
     if (typeof snapshot !== "object" || snapshot === null) continue;
     const record = snapshot as Record<string, unknown>;
-    const label = record.title ?? record.name ?? record.text ?? record.id;
+    const label = record.title ?? record.name ?? record.text;
     if (typeof label === "string" && label !== "") return label;
   }
   return null;
+}
+
+/** The human name of a `kind:id` pre-image touch, if this board still has it. */
+function touchNameOnBoard(
+  board: Board | undefined,
+  kind: string,
+  id: string,
+): string | null {
+  if (board === undefined) return null;
+  switch (kind) {
+    case "board":
+      return board.id === id ? board.title : null;
+    case "column":
+      return board.columns.find((column) => column.id === id)?.title ?? null;
+    case "card":
+      return board.cards[id]?.title ?? null;
+    case "label":
+      return board.labels.find((label) => label.id === id)?.name ?? null;
+    case "checklist":
+    case "checklistItem":
+      for (const card of Object.values(board.cards)) {
+        for (const checklist of card.checklists ?? []) {
+          if (kind === "checklist" && checklist.id === id) {
+            return checklist.title;
+          }
+          if (kind === "checklistItem") {
+            const item = checklist.items.find((entry) => entry.id === id);
+            if (item !== undefined) return item.text;
+          }
+        }
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Deleted entities are gone from the board; their pre-image keeps a name. */
+function touchNameInPreimages(
+  preimages: Record<string, unknown>,
+  touch: string,
+): string | null {
+  for (const preimage of Object.values(preimages)) {
+    if (typeof preimage !== "object" || preimage === null) continue;
+    const entities = (preimage as { entities?: unknown }).entities;
+    if (!Array.isArray(entities)) continue;
+    for (const entity of entities) {
+      if (typeof entity !== "object" || entity === null) continue;
+      if ((entity as { touch?: unknown }).touch !== touch) continue;
+      const snapshot = (entity as { snapshot?: unknown }).snapshot;
+      if (typeof snapshot !== "object" || snapshot === null) continue;
+      const record = snapshot as Record<string, unknown>;
+      const label = record.title ?? record.name ?? record.text;
+      if (typeof label === "string" && label !== "") return label;
+    }
+  }
+  return null;
+}
+
+function touchKindLabel(kind: string, t: Translate): string {
+  switch (kind) {
+    case "card":
+      return t("agents.runs.conflictEntity.card");
+    case "column":
+      return t("agents.runs.conflictEntity.column");
+    case "label":
+      return t("agents.runs.conflictEntity.label");
+    case "checklist":
+      return t("agents.runs.conflictEntity.checklist");
+    case "checklistItem":
+      return t("agents.runs.conflictEntity.checklistItem");
+    case "board":
+      return t("agents.runs.conflictEntity.board");
+    case "command":
+      return t("agents.runs.conflictEntity.command");
+    default:
+      return t("agents.runs.conflictEntity.entity");
+  }
+}
+
+function conflictEntityLabel(
+  conflict: { touch: string },
+  board: Board | undefined,
+  preimages: Record<string, unknown>,
+  t: Translate,
+): string {
+  const separator = conflict.touch.indexOf(":");
+  const kind = separator === -1 ? "entity" : conflict.touch.slice(0, separator);
+  const id = separator === -1 ? "" : conflict.touch.slice(separator + 1);
+  const label = touchKindLabel(kind, t);
+  const name =
+    touchNameOnBoard(board, kind, id) ??
+    touchNameInPreimages(preimages, conflict.touch);
+  return name === null ? label : `${label} “${name}”`;
+}
+
+function conflictReasonLabel(reason: string, t: Translate): string {
+  switch (reason) {
+    case "recreated":
+      return t("agents.runs.conflictReason.recreated");
+    case "version_changed":
+      return t("agents.runs.conflictReason.versionChanged");
+    case "deleted":
+      return t("agents.runs.conflictReason.deleted");
+    case "restored":
+      return t("agents.runs.conflictReason.restored");
+    case "deleted_at_changed":
+      return t("agents.runs.conflictReason.deletedAtChanged");
+    case "missing":
+      return t("agents.runs.conflictReason.missing");
+    default:
+      return t("agents.runs.conflictReason.changed");
+  }
 }
 
 function afterLabel(
@@ -1402,20 +1476,10 @@ function afterLabel(
   if (type.startsWith("MOVE_")) return t("agents.runs.after.moved");
   if (type.startsWith("RENAME_")) return t("agents.runs.after.renamed");
   if (type.startsWith("UPDATE_")) return t("agents.runs.after.updated");
-  const entity = entityIdOf(action);
-  if (entity !== null) {
-    const record =
-      typeof preimage === "object" && preimage !== null
-        ? (preimage as { entities?: unknown }).entities
-        : undefined;
-    if (Array.isArray(record)) {
-      for (const entry of record) {
-        if (typeof entry !== "object" || entry === null) continue;
-        const postVersion = (entry as { postVersion?: unknown }).postVersion;
-        if (typeof postVersion === "number") return `v${postVersion}`;
-      }
-    }
-    return entity.id;
+  // An unknown action never exposes its internal id or a raw version number:
+  // the human diff only needs to say that the entity changed.
+  if (entityIdOf(action) !== null || preimage !== undefined) {
+    return t("agents.runs.after.changed");
   }
   return "—";
 }
@@ -1483,6 +1547,11 @@ function clockLabel(
 
 function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
+}
+
+/** Token metadata keeps both ends: `cmwc7a7y…pz4qe6`. */
+function shortTokenId(id: string): string {
+  return id.length > 15 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }
 
 function absoluteUrl(path: string): string {

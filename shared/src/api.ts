@@ -311,6 +311,11 @@ export interface CommandDeltaEntry {
   runId?: string | null;
   /** Token-name snapshot at write time (`ApiToken.name`). */
   agentName?: string;
+  /**
+   * Human display detail frozen at apply time (for example the deleted card
+   * title). Safe for every board reader; pre-images remain ADMIN-only.
+   */
+  detail?: string;
 }
 
 /** Server-sent event describing a committed command (TASK-30). */
@@ -684,6 +689,8 @@ export interface AgentSessionDto {
   id: string;
   userId: string;
   apiTokenId: string;
+  /** Token display name for board attribution; null when not disclosed. */
+  tokenName?: string | null;
   boardId: string;
   name: string | null;
   clientName: string | null;
@@ -1300,12 +1307,25 @@ export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
  * belongs to exactly one board; `clientRunId` is the optional idempotency key
  * scoped to that board. `firstSeq`/`lastSeq` are the `Command.seq` range.
  */
+export interface AgentRunCommandSummary {
+  /** Distinct action types in command order. */
+  actionTypes: string[];
+  /** First human title carried by a command (add/update), if any. */
+  title: string | null;
+}
+
 export interface AgentRunDto {
   id: string;
   boardId: string;
   apiTokenId: string | null;
+  /** Token display name for board attribution; null when not disclosed. */
+  tokenName?: string | null;
   agentSessionId: string | null;
+  /** Session display name for the run→session link. */
+  sessionName?: string | null;
   actorId: string;
+  /** Board actor display name when the caller can see the roster. */
+  actorName?: string | null;
   kind: AgentRunKind;
   status: AgentRunStatus;
   clientRunId: string | null;
@@ -1318,6 +1338,8 @@ export interface AgentRunDto {
   createdAt: number;
   appliedAt: number;
   revertedAt: number | null;
+  /** Additive read-only hint for the list title; absent on legacy rows. */
+  commandSummary?: AgentRunCommandSummary;
 }
 
 /** `GET /boards/:id/runs` returns summaries: no commands or preimages. */

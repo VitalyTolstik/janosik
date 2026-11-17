@@ -33,6 +33,8 @@ export interface BoardSettingsShellProps {
   /** Dirty state is owned by the dialog so both sections share one guard. */
   dirty: boolean;
   saving?: boolean;
+  /** Truthful idle status for the active section; defaults to “All changes saved”. */
+  savedLabel?: string;
   discardTitle: string;
   discardDescription: string;
   discardConfirmLabel: string;
@@ -56,6 +58,7 @@ export function BoardSettingsShell({
   onSectionChange,
   dirty,
   saving = false,
+  savedLabel,
   discardTitle,
   discardDescription,
   discardConfirmLabel,
@@ -87,7 +90,7 @@ export function BoardSettingsShell({
     ? t("board.settings.shell.saving")
     : dirty
       ? t("board.settings.shell.unsaved")
-      : t("board.settings.shell.saved");
+      : (savedLabel ?? t("board.settings.shell.saved"));
   const statusTone = saving
     ? "bg-primary"
     : dirty

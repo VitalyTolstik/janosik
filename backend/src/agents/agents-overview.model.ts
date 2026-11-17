@@ -9,17 +9,18 @@ import type {
 } from "@janosik/shared";
 
 /**
- * TASK-179.10 effective expiry: `pending` and `approved` rows past their
- * `expiresAt` are shown as `expired` without writing the row. A stored
- * terminal status is never rewritten. `now` must be the request's single time
- * slice, shared by items, filters, totals and counts.
+ * TASK-179.10 effective expiry: only an undecided `pending` row past its
+ * `expiresAt` is shown as `expired` without writing the row. An approved plan
+ * keeps its approved status; a lapsed apply window is an apply-time refusal,
+ * not a decision state. `now` must be the request's single time slice, shared
+ * by items, filters, totals and counts.
  */
 export function effectiveApprovalStatus(
   status: ApprovalStatus,
   expiresAt: Date | number,
   now: Date | number,
 ): ApprovalStatus {
-  if (status !== "pending" && status !== "approved") return status;
+  if (status !== "pending") return status;
   const expiresAtMs =
     expiresAt instanceof Date ? expiresAt.getTime() : expiresAt;
   const nowMs = now instanceof Date ? now.getTime() : now;

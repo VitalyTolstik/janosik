@@ -48,6 +48,7 @@ export function BoardSettingsDialog({
   const [saving, setSaving] = useState(false);
   const [workflowDirty, setWorkflowDirty] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
+  const [policyNeverSaved, setPolicyNeverSaved] = useState(false);
   const [liveConfirmOpen, setLiveConfirmOpen] = useState(false);
   const [section, setSection] =
     useState<BoardSettingsSectionId>(initialSection);
@@ -169,6 +170,11 @@ export function BoardSettingsDialog({
         onSectionChange={selectSection}
         dirty={dirty}
         saving={saving}
+        savedLabel={
+          section === "agents" && policyNeverSaved
+            ? t("board.settings.agents.defaultsStatus")
+            : undefined
+        }
         discardTitle={discardTitle}
         discardDescription={discardDescription}
         discardConfirmLabel={t("workflow.discard")}
@@ -210,6 +216,7 @@ export function BoardSettingsDialog({
             <AgentsAutomationSettings
               role={role}
               onDirtyChange={setPolicyDirty}
+              onNeverSavedChange={setPolicyNeverSaved}
               onOpenLiveControls={openLiveControls}
             />
           </div>

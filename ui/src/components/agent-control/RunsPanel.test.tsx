@@ -281,8 +281,8 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     await userEvent.click(screen.getByTestId("agent-run-revert-apply"));
     const dialog = await screen.findByTestId("run-revert-dialog");
-    expect(dialog).toHaveTextContent("This is a destructive");
-    expect(dialog).toHaveTextContent("1");
+    expect(dialog).toHaveTextContent("re-applies pre-images atomically");
+    expect(dialog).toHaveTextContent("1 command will be reverted");
     await userEvent.click(screen.getByTestId("run-revert-confirm"));
 
     await waitFor(() =>
@@ -304,6 +304,8 @@ describe("RunsPanel (TASK-179.5)", () => {
       "reverted",
     );
     expect(screen.getByTestId("agent-run-reverted-at")).toBeVisible();
+    // Reverted runs keep the ADMIN-only pre-image disclosure.
+    expect(screen.getByTestId("agent-run-preimages")).toBeInTheDocument();
     await waitFor(() => expect(api.listRuns).toHaveBeenCalledTimes(2));
   });
 
@@ -331,7 +333,7 @@ describe("RunsPanel (TASK-179.5)", () => {
     renderPanel();
 
     expect(await screen.findByTestId("agent-run-conflicts")).toHaveTextContent(
-      "card:card-1",
+      "card “Release notes” · changed · v1 → v3",
     );
     expect(screen.getByTestId("agent-run-can-revert")).toHaveAttribute(
       "data-can-revert",
@@ -348,6 +350,9 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(screen.getByTestId("agent-run-admin-only-note")).toHaveTextContent(
       "Pre-images and diffs",
     );
+    expect(screen.getByTestId("agent-run-command-5")).not.toHaveTextContent(
+      "Release bot",
+    );
     expect(screen.queryByTestId("agent-run-plan-hash")).toBeNull();
   });
 
@@ -363,6 +368,11 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(
       await screen.findByText("Could not load the run history"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("agent-runs-error")).toHaveTextContent(
+      "Retry does not drop the filters",
+    );
+    expect(screen.queryByText("Select a run")).toBeNull();
+    expect(screen.queryByTestId("run-filter-status")).toBeNull();
     await userEvent.click(screen.getByTestId("agent-runs-retry"));
 
     expect(await screen.findByText("No runs yet")).toBeInTheDocument();
@@ -453,12 +463,13 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(get).toHaveBeenLastCalledWith("board-1", RUN.id);
   });
 
-  it("drives the server query from status, kind and time filters and clears them", async () => {
+  it("drives the server query from the mockup's status and kind filters and clears them", async () => {
     mockHappyPath();
     const list = vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
 
     renderPanel();
     await screen.findByTestId(`agent-run-row-${RUN.id}`);
+    expect(screen.queryByTestId("run-filter-time")).toBeNull();
 
     await userEvent.click(screen.getByTestId("run-filter-status"));
     await userEvent.click(
@@ -480,15 +491,6 @@ describe("RunsPanel (TASK-179.5)", () => {
       ),
     );
 
-    await userEvent.click(screen.getByTestId("run-filter-time"));
-    await userEvent.click(screen.getByTestId("run-filter-time-option-24h"));
-    await waitFor(() =>
-      expect(list).toHaveBeenLastCalledWith(
-        "board-1",
-        expect.objectContaining({ from: expect.any(Number) }),
-      ),
-    );
-
     await userEvent.click(screen.getByTestId("agent-runs-clear-filters"));
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith(
@@ -502,8 +504,28 @@ describe("RunsPanel (TASK-179.5)", () => {
     );
   });
 
+  it("uses the mockup's four filters, one Today group and actor-led row titles", async () => {
+    mockHappyPath();
+    vi.spyOn(api, "listRuns").mockResolvedValue([
+      run({ commandSummary: { actionTypes: ["ADD_CARD"], title: null } }),
+      run({
+        id: "run-old",
+        createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+        appliedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+      }),
+    ]);
+
+    renderPanel();
+    const row = await screen.findByTestId(`agent-run-row-${RUN.id}`);
+    expect(screen.queryByTestId("run-filter-time")).toBeNull();
+    expect(screen.getAllByText("Today")).toHaveLength(1);
+    expect(screen.queryByText("Yesterday")).toBeNull();
+    expect(row).toHaveTextContent("QA agent");
+    expect(row).toHaveTextContent("added 1 card");
+  });
+
   it("shows a total and appends the next page with Load more", async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -523,19 +545,23 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     renderPanel();
     const total = await screen.findByTestId("agent-runs-total");
-    expect(total).toHaveTextContent("100 runs");
+    expect(total).toHaveTextContent("5 of 10 runs");
     expect(total).toHaveAttribute("data-has-more", "true");
+    const more = screen.getByTestId("agent-runs-more");
+    expect(more.className).toContain("max-md:h-11");
+    await userEvent.click(more);
+    await waitFor(() => expect(total).toHaveTextContent("10 of 10 runs"));
     await userEvent.click(screen.getByTestId("agent-runs-more"));
 
-    await waitFor(() => expect(total).toHaveTextContent("101 runs"));
+    await waitFor(() => expect(total).toHaveTextContent("11 of 11 runs"));
     expect(list).toHaveBeenLastCalledWith(
       "board-1",
-      expect.objectContaining({ cursor: "run-99" }),
+      expect.objectContaining({ cursor: "run-9" }),
     );
   });
 
   it("does not leave Load more disabled when a reload races the page request", async () => {
-    const firstPage = Array.from({ length: 100 }, (_, index) =>
+    const firstPage = Array.from({ length: 10 }, (_, index) =>
       run({
         id: `run-${index}`,
         createdAt: Date.now() - index * 1000,
@@ -558,6 +584,12 @@ describe("RunsPanel (TASK-179.5)", () => {
 
     renderPanel();
     const more = await screen.findByTestId("agent-runs-more");
+    await userEvent.click(more);
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-runs-total")).toHaveTextContent(
+        "10 of 10 runs",
+      ),
+    );
     await userEvent.click(more);
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
 
@@ -603,7 +635,7 @@ describe("RunsPanel (TASK-179.5)", () => {
     renderPanel();
     expect(
       await screen.findByTestId("agent-run-preview-unavailable"),
-    ).toHaveTextContent("stored commands or pre-images are missing");
+    ).toHaveTextContent("Retention removed the run or its pre-images");
     expect(screen.queryByTestId("agent-run-expired")).toBeNull();
     expect(screen.queryByTestId("agent-run-revert-apply")).toBeNull();
   });

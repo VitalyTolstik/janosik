@@ -103,7 +103,7 @@ export function BoardScopeSelect({
             aria-hidden
             className={cn(
               "shrink-0 text-muted-foreground",
-              variant === "header" ? "h-[13px] w-[13px]" : "h-[11px] w-[11px]",
+              variant === "header" ? "h-[13px] w-[13px]" : "h-3 w-3",
             )}
           />
         </button>

@@ -21,6 +21,13 @@ export const routes = {
   /** Detail of one agent token and its sessions. */
   agentPattern: "/agents/:tokenId",
   agent: (tokenId: string) => `/agents/${encodeURIComponent(tokenId)}`,
+  /**
+   * Board route with the board-scoped Agent control dialog opened on a tab.
+   * `Open board` on the agent surfaces must land on the control plane, never
+   * on the card board (TASK-179 pixel parity).
+   */
+  agentControl: (boardId: string, tab: "inbox" | "live" | "runs" = "inbox") =>
+    `/board/${encodeURIComponent(boardId)}?agents=${tab}`,
   /** Master panel (TASK-36) — lazy-loaded, never linked from user UI. */
   admin: "/admin",
   adminPattern: "/admin/*",

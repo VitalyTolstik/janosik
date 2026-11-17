@@ -1,0 +1,139 @@
+Janosik
+All boards
+Agents
+Global view
+Agents
+2
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+2
+Sessions
+6
+Runs
+7
+BOARDS
+PENDING
+All boards
+2
+Agent Ops Demo
+2
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Sessions
+
+Grouped by board. Heartbeat is a liveness signal, not a lifecycle status.
+
+Agent Ops 12s ago · Website 8s ago
+Refresh
+Manage tokens
+All agents
+All statuses
+All boards
+Heartbeat is separate from status. A session can be Active and still have no heartbeat. Expired heartbeats do not rewrite the lifecycle.
+GROUP BY
+Board
+Agent (token)
+6 sessions · 6 live
+Agent Ops Demo
+2 approvals
+3 sessions · 1 no heartbeat · Updated 12s ago
+AGENT / TOKEN
+SESSION
+CURRENT CARD / RUN
+HEARTBEAT
+STATUS
+Claude Code — audit
+opencode · deepseek-v4.1
+Refactor approval flow
+Agent Ops Demo
+Approval inbox polish
+Run #128
+12s ago
+Waiting
+Claude Code — audit
+opencode · gpt-5.2
+Landing page rewrite
+Agent Ops Demo
+—
+No current run
+No heartbeat · 6m
+Active
+Docs agent
+terminal · claude-haiku-4.5
+API reference sweep
+Agent Ops Demo
+MCP write contract
+Run #119
+1m ago
+Active
+Website Relaunch
+3 sessions · 1 no heartbeat · Updated 8s ago
+AGENT / TOKEN
+SESSION
+CURRENT CARD / RUN
+HEARTBEAT
+STATUS
+Release bot
+cursor · claude-sonnet-4.5
+Release checklist
+Website Relaunch
+Pricing page copy
+Run #204
+34s ago
+Paused
+Release agent (CI)
+github-actions · gpt-5.2
+Deploy notes
+Website Relaunch
+—
+No current run
+No heartbeat · 18m
+Active
+Docs agent
+terminal · claude-haiku-4.5
+Pricing copy references
+Website Relaunch
+Pricing page copy
+Run #201
+2m ago
+Active
+
+SESSION · AGENT OPS DEMO
+
+Claude Code — audit
+The session is waiting for a board decision. It can still read and heartbeat.
+Waiting for approval
+12s ago
+Agent Ops Demo
+Session
+AGENT
+Claude Code — audit
+CLIENT / MODEL
+opencode · deepseek-v4.1
+TOKEN
+cmwc7a7y…pz4qe6
+STARTED
+42 min ago
+CURRENT CARD
+Approval inbox polish
+CURRENT RUN
+#128
+Current work
+Approval inbox polish
+Run #128
+Pause semantics
+
+Pausing a session finishes in-flight commands and blocks new writes with 403 agent_paused. Claims are not released. Ending the session releases claims and is final.
+
+Pause finishes in-flight work; End releases claims and is final.
+
+Open board
+Pause
+End

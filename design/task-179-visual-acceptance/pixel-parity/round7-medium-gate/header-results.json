@@ -1,0 +1,398 @@
+{
+  "390": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 48,
+      "right": 199.7,
+      "w": 151.7,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 251.7,
+      "right": 360.2,
+      "w": 108.5,
+      "h": 44
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 0,
+      "right": 0,
+      "w": 0,
+      "h": 0
+    },
+    "switcher": {
+      "x": 203.7,
+      "right": 247.7,
+      "w": 44,
+      "h": 44
+    },
+    "account": {
+      "x": 334,
+      "right": 378,
+      "w": 44,
+      "h": 44
+    },
+    "searchButton": {
+      "x": 0,
+      "right": 0,
+      "w": 0,
+      "h": 0
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "719": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 303.3,
+      "right": 411.7,
+      "w": 108.5,
+      "h": 44
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 0,
+      "right": 0,
+      "w": 0,
+      "h": 0
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 291.3,
+      "w": 44,
+      "h": 44
+    },
+    "account": {
+      "x": 556.3,
+      "right": 695,
+      "w": 138.7,
+      "h": 44
+    },
+    "searchButton": {
+      "x": 0,
+      "right": 0,
+      "w": 0,
+      "h": 0
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "720": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 303.3,
+      "right": 411.7,
+      "w": 108.5,
+      "h": 44
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 0,
+      "right": 0,
+      "w": 0,
+      "h": 0
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 291.3,
+      "w": 44,
+      "h": 44
+    },
+    "account": {
+      "x": 557.3,
+      "right": 696,
+      "w": 138.7,
+      "h": 44
+    },
+    "searchButton": {
+      "x": 0,
+      "right": 0,
+      "w": 0,
+      "h": 0
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "721": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 339.3,
+      "right": 447.7,
+      "w": 108.5,
+      "h": 44
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 459.7,
+      "right": 495.7,
+      "w": 36,
+      "h": 36
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 271.3,
+      "w": 24,
+      "h": 32
+    },
+    "account": {
+      "x": 558.3,
+      "right": 697,
+      "w": 138.7,
+      "h": 44
+    },
+    "searchButton": {
+      "x": 512.3,
+      "right": 556.3,
+      "w": 44,
+      "h": 44
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "768": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 331.3,
+      "right": 439.7,
+      "w": 108.5,
+      "h": 30
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 451.7,
+      "right": 487.7,
+      "w": 36,
+      "h": 36
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 271.3,
+      "w": 24,
+      "h": 32
+    },
+    "account": {
+      "x": 597.3,
+      "right": 744,
+      "w": 146.7,
+      "h": 32
+    },
+    "searchButton": {
+      "x": 557.3,
+      "right": 595.3,
+      "w": 38,
+      "h": 32
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "800": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 331.3,
+      "right": 439.7,
+      "w": 108.5,
+      "h": 30
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 451.7,
+      "right": 487.7,
+      "w": 36,
+      "h": 36
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 271.3,
+      "w": 24,
+      "h": 32
+    },
+    "account": {
+      "x": 629.3,
+      "right": 776,
+      "w": 146.7,
+      "h": 32
+    },
+    "searchButton": {
+      "x": 589.3,
+      "right": 627.3,
+      "w": 38,
+      "h": 32
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "900": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 331.3,
+      "right": 439.7,
+      "w": 108.5,
+      "h": 30
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 451.7,
+      "right": 487.7,
+      "w": 36,
+      "h": 36
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 271.3,
+      "w": 24,
+      "h": 32
+    },
+    "account": {
+      "x": 729.3,
+      "right": 876,
+      "w": 146.7,
+      "h": 32
+    },
+    "searchButton": {
+      "x": 689.3,
+      "right": 727.3,
+      "w": 38,
+      "h": 32
+    },
+    "searchLabelVisible": false,
+    "titleBeforeAgent": true
+  },
+  "1024": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 423.3,
+      "right": 531.7,
+      "w": 108.5,
+      "h": 30
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 543.7,
+      "right": 579.7,
+      "w": 36,
+      "h": 36
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 271.3,
+      "w": 24,
+      "h": 32
+    },
+    "account": {
+      "x": 853.3,
+      "right": 1000,
+      "w": 146.7,
+      "h": 32
+    },
+    "searchButton": {
+      "x": 619.2,
+      "right": 737.3,
+      "w": 118,
+      "h": 32
+    },
+    "searchLabelVisible": true,
+    "titleBeforeAgent": true
+  },
+  "1440": {
+    "headerOverflow": 0,
+    "title": "Agent Ops Demo",
+    "titleRect": {
+      "x": 68,
+      "right": 235.3,
+      "w": 167.3,
+      "h": 32
+    },
+    "titleTruncated": false,
+    "agentRect": {
+      "x": 423.3,
+      "right": 531.7,
+      "w": 108.5,
+      "h": 30
+    },
+    "agentHit": true,
+    "settings": {
+      "x": 543.7,
+      "right": 579.7,
+      "w": 36,
+      "h": 36
+    },
+    "switcher": {
+      "x": 247.3,
+      "right": 271.3,
+      "w": 24,
+      "h": 32
+    },
+    "account": {
+      "x": 1269.3,
+      "right": 1416,
+      "w": 146.7,
+      "h": 32
+    },
+    "searchButton": {
+      "x": 997.2,
+      "right": 1115.3,
+      "w": 118,
+      "h": 32
+    },
+    "searchLabelVisible": true,
+    "titleBeforeAgent": true
+  }
+}

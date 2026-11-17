@@ -1,0 +1,160 @@
+{
+  "paused": {
+    "board": {
+      "width": 440,
+      "height": 244,
+      "labelFont": "10px",
+      "labelHeight": 15.5,
+      "textareaHeight": 70,
+      "footerButtonTop": 201,
+      "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.78) 0px 28px 80px -32px, rgba(0, 0, 0, 0.22) 0px 2px 8px 0px",
+      "iconBg": "rgb(23, 32, 51)"
+    },
+    "session": {
+      "width": 440,
+      "height": 244,
+      "footerButtonTop": 201
+    }
+  },
+  "token": {
+    "width": 440,
+    "height": 195.69,
+    "title": "Your token · Claude Code — audit",
+    "body": "This link is shown only for your own token. Other members' tokens stay read-only and expose no settings action.",
+    "accountOpen": false
+  },
+  "live": {
+    "ui": {
+      "claims": "Ending a session releases its claims. Token pause, stop-all and revoke are owner actions in Account → API keys; this board surface only links there.",
+      "groupText": [
+        "Agent writes are allowed ·  · Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends. ·  · Pause all agents · Manage tokens",
+        "Claude Code — audit · px-token-cla… · 2 live · Token settings · Idle heartbeat check · Idle"
+      ],
+      "tokenStyle": {
+        "w": 121,
+        "h": 24,
+        "font": "10.5px/650",
+        "pad": "0px 7px",
+        "icon": 13
+      }
+    }
+  },
+  "scrim": {
+    "bg": "rgba(15, 23, 42, 0.36)",
+    "blur": "blur(2px)",
+    "top": 52,
+    "height": 848
+  },
+  "decided": {
+    "heading": "Recently decided",
+    "subtitle": "Read-only history. Decisions cannot be changed.",
+    "rejectCount": 0,
+    "reviewCount": 5
+  },
+  "mobile": {
+    "hash": {
+      "w": 44,
+      "h": 44
+    },
+    "sessionLinks": [
+      {
+        "text": "MCP write contract",
+        "w": 140.1,
+        "h": 44
+      },
+      {
+        "text": "Run #108",
+        "w": 88.8,
+        "h": 44
+      }
+    ]
+  },
+  "ru": {
+    "status1440": [
+      {
+        "text": "Простаивает",
+        "sw": 81,
+        "cw": 81
+      },
+      {
+        "text": "Завершена",
+        "sw": 72,
+        "cw": 72
+      },
+      {
+        "text": "Активна",
+        "sw": 52,
+        "cw": 52
+      }
+    ],
+    "status1024": [
+      {
+        "text": "Простаивает",
+        "sw": 81,
+        "cw": 81
+      },
+      {
+        "text": "Завершена",
+        "sw": 72,
+        "cw": 72
+      },
+      {
+        "text": "Активна",
+        "sw": 52,
+        "cw": 52
+      }
+    ],
+    "rail390": {
+      "sw": 390,
+      "cw": 390,
+      "items": [
+        "Запросы 2",
+        "Активность 5",
+        "Запуски 6",
+        "Открыть настройки",
+        "Агенты на всех досках"
+      ]
+    }
+  },
+  "header": {
+    "mobile": {
+      "header": 105,
+      "agents": {
+        "w": 108.5,
+        "h": 44,
+        "text": "Agents\n2"
+      },
+      "bell": {
+        "w": 44,
+        "h": 44,
+        "text": ""
+      },
+      "account": {
+        "w": 44,
+        "h": 44,
+        "text": ""
+      },
+      "avatarVisible": false,
+      "overflow": false
+    },
+    "desktop": {
+      "header": 52,
+      "rail": 222
+    },
+    "tablet": {
+      "header": 52,
+      "rail": 198,
+      "main": 826
+    }
+  },
+  "run": {
+    "beforeAfter": true,
+    "clientRunId": true,
+    "perCommandPreimage": 0,
+    "technicalPreimages": 0
+  },
+  "member": {
+    "detail": "SELECTED APPROVAL\n\nRefresh the Website pricing copy\nWaiting for a board admin. The request expires in 4283 min.\n\nPricing",
+    "nothingSelected": false
+  }
+}

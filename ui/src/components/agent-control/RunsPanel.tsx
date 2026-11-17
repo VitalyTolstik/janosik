@@ -24,10 +24,11 @@ import {
   type RunBoardScope,
   type RunKindFilter,
   type RunStatusFilter,
-  type RunTimeFilter,
 } from "../agents/run-model";
 import { RunDetail, RunList } from "../agents/run-ui";
 import { useAgentRuns } from "../agents/use-agent-runs";
+import { useRunConflictPreviews } from "../agents/use-run-conflict-previews";
+import { AgentControlError } from "./AgentControlError";
 
 type Role = BoardRole | undefined;
 
@@ -90,19 +91,52 @@ export function RunsPanel({ role }: { role: Role }) {
     enabled: board !== undefined && isApiEnabled(),
     filter,
   });
+  const [visibleCount, setVisibleCount] = useState(5);
+  useEffect(() => {
+    // Filtering starts a fresh page of five, like the mockup's board history.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the visible page on filter change
+    setVisibleCount(5);
+  }, [filter]);
+  const visibleRows = useMemo(
+    () => runs.rows.slice(0, visibleCount),
+    [runs.rows, visibleCount],
+  );
+  const previewedConflicts = useRunConflictPreviews(visibleRows);
+  const displayedConflicts = useMemo(
+    () => new Map([...previewedConflicts, ...conflicts]),
+    [conflicts, previewedConflicts],
+  );
+  const shown = visibleRows.length;
+  const total = runs.rows.length;
+  const canLoadMore = shown < total || runs.hasMore;
+  const loadMore = async () => {
+    if (shown < total) {
+      setVisibleCount((value) => value + 5);
+      return;
+    }
+    await runs.loadMore();
+    setVisibleCount((value) => value + 5);
+  };
   const options = useMemo(() => runFilterOptions(t), [t]);
   const tokenNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const token of tokens) names.set(token.id, token.name);
+    for (const run of runs.rows) {
+      if (run.apiTokenId === null || run.tokenName == null) continue;
+      names.set(run.apiTokenId, run.tokenName);
+    }
     for (const session of sessions) {
       if (names.has(session.apiTokenId)) continue;
       names.set(
         session.apiTokenId,
-        session.name ?? session.clientName ?? shortId(session.apiTokenId),
+        session.tokenName ??
+          session.clientName ??
+          session.name ??
+          shortTokenId(session.apiTokenId),
       );
     }
     return names;
-  }, [sessions, tokens]);
+  }, [runs.rows, sessions, tokens]);
   const sessionNames = useMemo(
     () =>
       new Map(
@@ -116,7 +150,7 @@ export function RunsPanel({ role }: { role: Role }) {
   const tokenLabel = (tokenId: string | null): string =>
     tokenId === null
       ? t("agentControl.runs.noToken")
-      : (tokenNames.get(tokenId) ?? shortId(tokenId));
+      : (tokenNames.get(tokenId) ?? shortTokenId(tokenId));
   const sessionLabel = (sessionId: string | null): string =>
     sessionId === null
       ? t("agentControl.runs.noSession")
@@ -128,7 +162,7 @@ export function RunsPanel({ role }: { role: Role }) {
         .map(([value, label]) => ({ value, label }))
         .sort((a, b) => a.label.localeCompare(b.label)),
       ...(filter.token !== "all" && !tokenNames.has(filter.token)
-        ? [{ value: filter.token, label: shortId(filter.token) }]
+        ? [{ value: filter.token, label: shortTokenId(filter.token) }]
         : []),
     ],
     [filter.token, t, tokenNames],
@@ -241,6 +275,29 @@ export function RunsPanel({ role }: { role: Role }) {
     );
   }
 
+  if (!runs.loading && runs.error && runs.rows.length === 0) {
+    return (
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-testid="agent-runs-panel"
+      >
+        <div className="ac-toolbar">
+          <h3>{t("agents.shell.runs")}</h3>
+          <span className="meta">—</span>
+        </div>
+        <div className="ac-panel-scroll">
+          <AgentControlError
+            title={t("agentControl.runs.loadError")}
+            body={t("agentControl.runs.loadErrorBody")}
+            onRetry={runs.reload}
+            testId="agent-runs-error"
+            retryTestId="agent-runs-retry"
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex h-full min-h-0 flex-col"
@@ -251,9 +308,12 @@ export function RunsPanel({ role }: { role: Role }) {
         <span className="meta">
           {runs.loading
             ? t("agentControl.runs.loading")
-            : t("agents.runs.boardHistory", {
-                count: runs.total,
-              })}
+            : runs.error
+              ? "—"
+              : t("agents.runs.boardHistoryOf", {
+                  shown,
+                  total,
+                })}
         </span>
         <button
           type="button"
@@ -287,14 +347,6 @@ export function RunsPanel({ role }: { role: Role }) {
           ariaLabel={t("agentControl.runs.filter.kind")}
           testId="run-filter-kind"
           className="h-11 w-auto min-w-[96px] text-[11px] md:h-[26px] md:min-h-[26px]"
-        />
-        <SelectField
-          value={filter.time}
-          options={options.time}
-          onChange={(value) => patch({ time: value as RunTimeFilter })}
-          ariaLabel={t("agentControl.runs.filter.time")}
-          testId="run-filter-time"
-          className="h-11 w-auto min-w-[92px] text-[11px] md:h-[26px] md:min-h-[26px]"
         />
         <SelectField
           value={filter.token}
@@ -427,7 +479,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 </div>
               ) : null}
               <RunList
-                rows={runs.rows}
+                rows={visibleRows}
                 selectedId={selected?.id ?? null}
                 onSelect={(run) => {
                   setSelectedId(run.id);
@@ -438,36 +490,31 @@ export function RunsPanel({ role }: { role: Role }) {
                 testIdPrefix="agent-run"
                 listTestId="agent-run-rows"
                 tokenLabel={tokenLabel}
-                conflicts={conflicts}
+                conflicts={displayedConflicts}
+                groupMode="day"
               />
               <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
                 <span
                   data-testid="agent-runs-total"
-                  data-total={runs.total}
-                  data-has-more={runs.hasMore ? "true" : "false"}
+                  data-shown={shown}
+                  data-total={total}
+                  data-has-more={canLoadMore ? "true" : "false"}
                 >
-                  {runs.hasMore
-                    ? t("agents.runs.totalMore", { count: runs.total })
-                    : t("agents.runs.shown", { count: runs.total })}
+                  {t("agents.runs.shownOf", { shown, total })}
                 </span>
-                {runs.hasMore ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-testid="agent-runs-more"
-                    disabled={runs.loadingMore}
-                    onClick={() => void runs.loadMore()}
-                    className="max-md:min-h-11"
-                  >
-                    {runs.loadingMore ? (
-                      <Loader2
-                        className="h-3.5 w-3.5 animate-spin"
-                        aria-hidden
-                      />
-                    ) : null}
-                    {t("agentControl.runs.loadMore")}
-                  </Button>
-                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  data-testid="agent-runs-more"
+                  disabled={runs.loadingMore || !canLoadMore}
+                  onClick={() => void loadMore()}
+                  className="h-6 min-h-0 rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none max-md:h-11 max-md:min-h-11"
+                >
+                  {runs.loadingMore ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : null}
+                  {t("agentControl.runs.loadMore")}
+                </Button>
               </div>
             </>
           )}
@@ -516,4 +563,9 @@ export function RunsPanel({ role }: { role: Role }) {
 
 function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
+}
+
+/** Token metadata keeps both ends: `cmwc7a7y…pz4qe6`, never a 12-char head. */
+function shortTokenId(id: string): string {
+  return id.length > 15 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }

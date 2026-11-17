@@ -60,19 +60,19 @@ export function AgentControlButton({
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
-          size="icon"
           aria-label={label}
           data-testid={admin ? "agent-control-trigger" : "agent-runs-trigger"}
           onClick={(event) => onOpen(event.currentTarget)}
-          className="relative max-md:h-11 max-md:w-11"
+          className="inline-flex h-11 min-h-11 items-center gap-1.5 rounded-[6px] border border-[color-mix(in_oklab,var(--primary)_26%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-2 font-agent-surface text-[11.5px] font-[600] leading-[1.45] text-foreground hover:bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] min-[761px]:h-[30px] min-[761px]:min-h-[30px]"
         >
-          <LazyAnimatedIcon name="bot" size={20} aria-hidden />
+          <LazyAnimatedIcon name="bot" size={16} aria-hidden />
+          <span>{label}</span>
           {admin && pendingCount !== null && pendingCount > 0 ? (
             <span
               data-testid="agent-control-pending-count"
               data-state={pending.stale ? "stale" : "fresh"}
               title={pending.stale ? t("agents.pending.stale") : undefined}
-              className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger px-1 text-[11px] font-semibold leading-4 text-white"
+              className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-[11px] font-bold leading-none tabular-nums text-[#1b1305]"
             >
               {pendingCount > 99 ? "99+" : pendingCount}
             </span>

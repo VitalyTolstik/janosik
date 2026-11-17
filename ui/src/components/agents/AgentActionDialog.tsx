@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Loader2, Pause, Play, Square } from "lucide-react";
 
 import type { AgentSessionDto } from "@janosik/shared";
 
@@ -9,13 +10,12 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SelectField } from "@/components/ui/select-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 export type AgentSessionAction = "pause" | "resume" | "end";
 
@@ -31,18 +31,19 @@ export interface AgentActionTarget {
   name: string | null;
   boardTitle: string;
   tokenName: string | null;
+  /** Display label for the agent/token, when the caller already resolved one. */
+  agentLabel?: string | null;
+  /** Current card title, shown in the end confirmation like the mockup. */
+  cardTitle?: string | null;
 }
 
-const END_STATUSES = ["completed", "failed", "cancelled"] as const;
-type EndStatus = (typeof END_STATUSES)[number];
-
 const REASON_MAX = 500;
-const SUMMARY_MAX = 2000;
 
 /**
  * Human control of one session (TASK-166.3): pause/resume with an optional
- * reason, or end the run context with a final status and summary. Mounted
- * only while open, so the draft cannot leak between sessions.
+ * reason, or end the run context. The layout follows the tracked mockup:
+ * a compact icon header, one field (pause) or one target row (end), and the
+ * two footer actions — no final-status select or summary field.
  */
 export function AgentActionDialog({
   action,
@@ -59,8 +60,6 @@ export function AgentActionDialog({
   const toast = useToast();
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const [reason, setReason] = useState("");
-  const [summary, setSummary] = useState("");
-  const [status, setStatus] = useState<EndStatus>("completed");
   const [busy, setBusy] = useState(false);
 
   // The dialog is mounted/unmounted by the parent action state, so restore
@@ -101,6 +100,12 @@ export function AgentActionDialog({
       : action === "resume"
         ? t("agents.action.confirmResume")
         : t("agents.action.confirmEnd");
+  const Icon = action === "pause" ? Pause : action === "resume" ? Play : Square;
+  const agentLabel = row.agentLabel ?? row.tokenName ?? row.name ?? row.id;
+  const reasonPlaceholder =
+    action === "resume"
+      ? t("agents.action.resumeReasonPlaceholder")
+      : t("agents.action.reasonPlaceholder");
 
   const submit = async (): Promise<void> => {
     setBusy(true);
@@ -119,8 +124,7 @@ export function AgentActionDialog({
                 reason.trim() || undefined,
               )
             : await api.endAgentSession(row.boardId, row.id, {
-                status,
-                ...(summary.trim() === "" ? {} : { summary: summary.trim() }),
+                status: "completed",
               });
       onSaved(updated);
       toast.success(
@@ -159,85 +163,98 @@ export function AgentActionDialog({
         if (!open && !busy) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            {row.name ?? row.tokenName ?? row.id} · {row.boardTitle}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 text-sm text-muted-foreground">
-          <p className="text-xs leading-5">{body}</p>
+      <DialogContent
+        hideClose
+        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 font-agent-surface !shadow-[var(--agent-shadow-lg)] sm:rounded-[10px]"
+        data-testid="agent-action-dialog"
+      >
+        <div className="flex items-start gap-2.5 px-4 pt-3.5 pb-2.5">
+          <span
+            className={cn(
+              "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-surface",
+              action === "end"
+                ? "border-danger/40 text-[color:var(--danger)]"
+                : "border-border text-muted-foreground",
+            )}
+            aria-hidden
+          >
+            <Icon className="h-[15px] w-[15px]" />
+          </span>
+          <div className="min-w-0">
+            <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
+              {title}
+            </DialogTitle>
+            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+              {body}
+            </DialogDescription>
+          </div>
+        </div>
+
+        <div className="px-4 pb-0.5">
           {action === "end" ? (
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">
-                {t("agents.action.finalStatus")}
-              </span>
-              <SelectField<EndStatus>
-                value={status}
-                onChange={setStatus}
-                options={END_STATUSES.map((value) => ({
-                  value,
-                  label: t(`agents.action.${value}`),
-                }))}
-                ariaLabel={t("agents.action.finalStatus")}
-                testId="agent-end-status"
-              />
-            </label>
+            <p
+              data-testid="agent-end-target"
+              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7.25px] text-[11px] leading-[1.5] text-foreground"
+            >
+              {agentLabel}
+              {row.name !== null && row.name !== agentLabel
+                ? ` · ${row.name}`
+                : ""}
+              {row.cardTitle != null && row.cardTitle !== ""
+                ? ` · ${row.cardTitle}`
+                : ""}
+            </p>
           ) : (
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">
+            // The field keeps the prototype's line box around the inline-block
+            // textarea; that baseline gap is part of the 244 px dialog height.
+            <div className="mt-[10px] mb-[2px] text-[11.5px] leading-[1.55]">
+              <label
+                htmlFor="agent-action-reason"
+                className="block text-[10px] leading-[15.5px] font-semibold text-muted-foreground"
+              >
                 {t("agents.action.reason")}
-              </span>
+              </label>
               <Textarea
+                id="agent-action-reason"
                 value={reason}
                 maxLength={REASON_MAX}
-                rows={3}
+                rows={2}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder={t("agents.action.reasonPlaceholder")}
+                placeholder={reasonPlaceholder}
                 data-testid="agent-action-reason"
+                className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+                autoFocus
               />
-            </label>
+            </div>
           )}
-          <label className="block space-y-1">
-            <span className="text-xs font-medium text-foreground">
-              {t(
-                action === "end"
-                  ? "agents.action.summaryOrReason"
-                  : "agents.action.summary",
-              )}
-            </span>
-            <Textarea
-              value={summary}
-              maxLength={SUMMARY_MAX}
-              rows={3}
-              onChange={(event) => setSummary(event.target.value)}
-              placeholder={t(
-                action === "end"
-                  ? "agents.action.summaryOrReasonPlaceholder"
-                  : "agents.action.summaryPlaceholder",
-              )}
-              data-testid="agent-action-summary"
-            />
-          </label>
         </div>
-        <DialogFooter>
+
+        <DialogFooter className="!flex-row items-center justify-end gap-[7px] px-4 pt-3 pb-3.5">
           <Button
-            variant="outline"
+            variant="ghost"
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
-            className="min-h-11 sm:min-h-9"
+            className="!gap-[6px] h-7 min-h-0 min-w-[61px] !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
           <Button
-            variant={action === "end" ? "destructive" : "default"}
+            variant="default"
             disabled={busy}
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
-            className="min-h-11 sm:min-h-9"
+            className={cn(
+              "!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-md:min-h-11",
+              action === "end" ? "min-w-[93px]" : "min-w-[107px]",
+              action === "end"
+                ? "!bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)]"
+                : "!bg-[var(--agent-primary-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)]",
+            )}
           >
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
             {busy ? t("agents.action.busy") : confirmLabel}
           </Button>
         </DialogFooter>

@@ -1,0 +1,159 @@
+Janosik
+All boards
+Agents
+Global view
+Agents
+2
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+2
+Sessions
+6
+Runs
+7
+BOARDS
+PENDING
+All boards
+2
+Agent Ops Demo
+2
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Runs
+
+What agents changed, with a way back. History is grouped by day.
+
+Agent Ops 12s ago · Website 8s ago
+Refresh
+Clear all
+All statuses
+All kinds
+Any time
+All agents
+All sessions
+7 runs shown
+TODAY
+Release bot added 2 cards
+Release bot
+Agent Ops Demo
+2 commands
+batch
+Applied
+5:24 PM
+run-128
+Docs agent updated the API reference
+Docs agent
+Agent Ops Demo
+1 command
+single
+Applied
+4:51 PM
+run-126
+Release bot deleted “Old onboarding draft”
+Release bot
+Agent Ops Demo
+1 command
+single
+Reverted
+11:09 AM
+run-124
+Release bot re-applied “Pricing page copy”
+Release bot
+Website Relaunch
+2 commands
+plan
+1 conflict
+Applied
+10:42 AM
+run-121
+YESTERDAY
+Docs agent could not sync MCP callouts
+Docs agent
+Agent Ops Demo
+2 commands
+batch
+Failed
+Yesterday
+run-118
+Release agent moved 3 cards to Done
+Release agent (CI)
+Website Relaunch
+3 commands
+batch
+Applied
+Yesterday
+run-115
+Docs agent added API notes
+Docs agent
+Agent Ops Demo
+1 command
+single
+Applied
+Yesterday
+run-112
+7 of 7 runs · history is append-only
+Load more
+
+RUN · AGENT OPS DEMO
+
+Release bot added 2 cards
+Applied
+batch
+2 commands
+Agent Ops Demo
+Attribution
+ACTOR
+Release bot
+TOKEN
+Release bot
+SESSION
+Release checklist
+DURATION
+1.2s
+RUN
+run-128 · client-8f3a
+APPROVAL
+ap-1
+Timeline
+Created
+Today, 5:24:12 PM
+Applied
+Today, 5:24:13 PM
+Commands
+2 applied
+ADD_CARD
+Approval inbox polish
+BEFORE
+—
+AFTER
+Created in Review
+ADD_CARD
+Session heartbeat copy
+BEFORE
+—
+AFTER
+Created in Backlog
+Technical details · pre-images
+Rollback
+Rollback preview
+
+Re-applies 2 pre-images atomically. No conflicts found. A separate audit run records the revert.
+
+Preview again
+Revert run
+plan a91e5f0c4d2b76e8c1a3f9d60b7e24c5a8…
+Open board
+Session
+Copy run link
+
+Runs are history. Rollback is available only for applied runs without conflicts.
+
+Open board
+Copy link

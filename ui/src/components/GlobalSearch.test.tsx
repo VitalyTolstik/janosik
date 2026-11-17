@@ -65,7 +65,10 @@ function LocationProbe() {
   );
 }
 
-function renderSearch(initialUrl = routes.board("b-1")) {
+function renderSearch(
+  initialUrl = routes.board("b-1"),
+  { iconOnly = false }: { iconOnly?: boolean } = {},
+) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -74,7 +77,7 @@ function renderSearch(initialUrl = routes.board("b-1")) {
             <TooltipProvider>
               <MemoryRouter initialEntries={[initialUrl]}>
                 <BoardProvider>
-                  <GlobalSearch />
+                  <GlobalSearch iconOnly={iconOnly} />
                   <LocationProbe />
                   <Routes>
                     <Route path={routes.home} element={<div>home</div>} />
@@ -123,6 +126,26 @@ describe("GlobalSearch", () => {
         { id: "c-3", title: "Retro notes" },
       ])}]`,
     );
+  });
+
+  it("keeps the icon-only header trigger at 32x32", () => {
+    renderSearch(routes.board("b-1"), { iconOnly: true });
+    const trigger = screen.getByRole("button", {
+      name: "Search cards and boards",
+    });
+    expect(trigger.className).toContain("w-8");
+    expect(trigger.className).toContain("!px-0");
+    expect(trigger.className).toContain("justify-center");
+    expect(trigger.className).not.toContain("pr-2.5");
+  });
+
+  it("keeps the labeled trigger wider than the icon-only one", () => {
+    renderSearch();
+    const trigger = screen.getByRole("button", {
+      name: "Search cards and boards",
+    });
+    expect(trigger.className).toContain("pr-2.5");
+    expect(trigger.className).not.toContain("!px-0");
   });
 
   it("finds a card by description and highlights the match", async () => {

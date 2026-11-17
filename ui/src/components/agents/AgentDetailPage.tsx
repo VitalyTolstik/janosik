@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -8,8 +8,6 @@ import {
   Play,
   Square,
 } from "lucide-react";
-
-import type { AgentSessionStatus } from "@janosik/shared";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
@@ -41,6 +39,13 @@ export function AgentDetailPage() {
   const { tokenId = "" } = useParams();
   const { t } = useI18n();
   const state = useAgentSessions();
+  useEffect(() => {
+    const previous = document.title;
+    document.title = `${t("agents.title")} — Janosik`;
+    return () => {
+      document.title = previous;
+    };
+  }, [t]);
   const rows = useMemo(
     () => state.rows.filter((row) => row.apiTokenId === tokenId),
     [state.rows, tokenId],
@@ -310,6 +315,7 @@ function SessionCard({
     row.currentCardId === null
       ? routes.board(row.boardId)
       : `${routes.board(row.boardId)}?card=${encodeURIComponent(row.currentCardId)}`;
+  const agentControlHref = routes.agentControl(row.boardId, "live");
 
   return (
     <li
@@ -327,7 +333,7 @@ function SessionCard({
               {row.boardTitle}
             </Link>
             <SessionStatePill session={row} />
-            {row.stale && !isTerminal(row.status) ? <AgentStaleBadge /> : null}
+            {row.stale && live && !row.paused ? <AgentStaleBadge /> : null}
             {row.paused &&
             row.pauseScope !== null &&
             row.pauseScope !== "session" ? (
@@ -386,7 +392,7 @@ function SessionCard({
           ) : null}
           <Button variant="ghost" size="sm" asChild className="max-md:min-h-11">
             <Link
-              to={boardHref}
+              to={agentControlHref}
               data-testid="agent-session-open-board"
               title={t("agents.openBoard")}
             >
@@ -460,12 +466,6 @@ function SessionCard({
         />
       </div>
     </li>
-  );
-}
-
-function isTerminal(status: AgentSessionStatus): boolean {
-  return (
-    status === "completed" || status === "failed" || status === "cancelled"
   );
 }
 

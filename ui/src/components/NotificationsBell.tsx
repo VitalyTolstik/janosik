@@ -94,13 +94,13 @@ export function NotificationsBell() {
           aria-label={t("notifications.aria")}
           data-testid="notifications-bell"
           className={cn(
-            "relative",
+            "relative max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 md:h-8 md:w-8 md:min-w-8",
             count > 0
               ? "text-primary hover:text-primary"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <LazyAnimatedIcon name="bell" size={20} />
+          <LazyAnimatedIcon name="bell" size={16} />
           {count > 0 ? (
             <span
               data-testid="notifications-badge"

@@ -1,6 +1,12 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "@janosik/shared";
 
@@ -38,10 +44,48 @@ const boardTwo: Board = {
 
 function RouteProbe() {
   const location = useLocation();
-  return <output data-testid="location">{location.pathname}</output>;
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+    </output>
+  );
 }
 
-function renderHeader(path: string, server: FakeServer) {
+function HistoryControls() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="history-back"
+        onClick={() => navigate(-1)}
+      >
+        history back
+      </button>
+      <button
+        type="button"
+        data-testid="history-forward"
+        onClick={() => navigate(1)}
+      >
+        history forward
+      </button>
+      <button
+        type="button"
+        data-testid="open-board"
+        onClick={() => navigate("/board/board-1?agents=live")}
+      >
+        open board
+      </button>
+    </>
+  );
+}
+
+function renderHeader(
+  path: string,
+  server: FakeServer,
+  history?: { entries: string[]; index: number },
+) {
   vi.stubGlobal("fetch", server.handle);
   return render(
     <ThemeProvider>
@@ -50,11 +94,15 @@ function renderHeader(path: string, server: FakeServer) {
           <I18nProvider>
             <TooltipProvider>
               <ToastProvider>
-                <MemoryRouter initialEntries={[path]}>
+                <MemoryRouter
+                  initialEntries={history?.entries ?? [path]}
+                  initialIndex={history?.index}
+                >
                   <AuthProvider>
                     <BoardProvider>
                       <Header />
                       <RouteProbe />
+                      <HistoryControls />
                     </BoardProvider>
                   </AuthProvider>
                 </MemoryRouter>
@@ -93,6 +141,97 @@ describe("agent entry points in the header", () => {
       within(dialog).getByRole("button", { name: "Close" }),
     );
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("keeps ?agents= durable and syncs tab changes back to the URL", async () => {
+    renderHeader("/board/board-1?agents=live", new FakeServer([board]));
+    const dialog = await screen.findByTestId("agent-control-dialog");
+    expect(dialog).toBeVisible();
+    expect(screen.getByTestId("agent-pause-tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("location")).toHaveTextContent("agents=live");
+
+    await userEvent.click(screen.getByTestId("agent-runs-tab"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("agents=runs"),
+    );
+  });
+
+  it("closes the board dialog on browser Back and restores the Agents entry", async () => {
+    renderHeader("/board/board-1?agents=live", new FakeServer([board]), {
+      entries: [
+        "/agents?section=sessions&session=session-1",
+        "/board/board-1?agents=live",
+      ],
+      index: 1,
+    });
+    expect(await screen.findByTestId("agent-control-dialog")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("history-back"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/agents?section=sessions&session=session-1",
+      ),
+    );
+    expect(screen.queryByTestId("agent-control-dialog")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-trigger")).toHaveFocus(),
+    );
+
+    // Forward reopens the same board tab from the durable ?agents= param.
+    fireEvent.click(screen.getByTestId("history-forward"));
+    const reopened = await screen.findByTestId("agent-control-dialog");
+    expect(reopened).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent("agents=live");
+
+    // Escaping the reopened modal must focus the freshly mounted board
+    // trigger, not the detached one from before Back and not BODY.
+    const boardTrigger = screen.getByTestId("agent-control-trigger");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-control-dialog")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).not.toHaveTextContent("agents="),
+    );
+    await waitFor(() => expect(boardTrigger).toHaveFocus());
+  });
+
+  it("restores the board trigger after Back, reopen and the dialog X", async () => {
+    renderHeader(
+      "/agents?section=sessions&session=session-1",
+      new FakeServer([board]),
+    );
+    await screen.findByTestId("agents-trigger");
+
+    await userEvent.click(screen.getByTestId("open-board"));
+    expect(await screen.findByTestId("agent-control-dialog")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("history-back"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/agents?section=sessions&session=session-1",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-trigger")).toHaveFocus(),
+    );
+
+    await userEvent.click(screen.getByTestId("open-board"));
+    const dialog = await screen.findByTestId("agent-control-dialog");
+    const boardTrigger = screen.getByTestId("agent-control-trigger");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Close" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-control-dialog")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).not.toHaveTextContent("agents="),
+    );
+    await waitFor(() => expect(boardTrigger).toHaveFocus());
   });
 
   it("opens the global console from board control", async () => {
@@ -157,19 +296,23 @@ describe("agent entry points in the header", () => {
     },
   );
 
-  it("keeps the app-wide header height and font on /agents", async () => {
+  it("keeps the app-wide header geometry and font on /agents", async () => {
     const { container } = renderHeader("/agents", new FakeServer([board]));
     const header = container.querySelector("header");
     expect(await screen.findByTestId("agents-trigger")).toBeInTheDocument();
-    expect(header?.className).toContain("min-h-14");
-    expect(header?.className).toContain("sm:h-14");
-    expect(header?.className).not.toContain("h-[52px]");
+    expect(header?.className).toContain("min-h-[61px]");
+    expect(header?.className).toContain("sm:h-[52px]");
+    expect(header?.className).toContain("sm:min-h-[52px]");
     const wordmark = screen.getByTestId("agents-wordmark");
     // The tracked prototype uses the Space Grotesk display face for the
     // Latin wordmark; only Cyrillic headings fall back to the body stack.
     expect(wordmark.className).toContain("font-agent-display");
     expect(wordmark.className).not.toContain("font-display ");
-    expect(container.querySelector("svg.lucide-chevron-right")).toBeNull();
+    const crumbChevron = container.querySelector(
+      'nav[aria-label="Agents navigation"] svg.lucide-chevron-right',
+    );
+    expect(crumbChevron).not.toBeNull();
+    expect(crumbChevron?.getAttribute("class")).toContain("sm:block");
     expect(screen.getByTestId("account-trigger")).toBeInTheDocument();
   });
 
@@ -205,6 +348,29 @@ describe("agent entry points in the header", () => {
     );
   });
 
+  it("keeps the header scope on All boards when a detail adds ?scope=all&board=", async () => {
+    const server = new FakeServer([board, boardTwo]);
+    renderHeader(
+      "/agents?section=runs&scope=all&board=board-2&run=run-1",
+      server,
+    );
+
+    const trigger = await screen.findByTestId("agents-header-scope");
+    expect(trigger).toHaveTextContent("All boards");
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/api/v1/agents/overview",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      server.requests.filter(
+        (request) => request.path === "/api/v1/agents/overview",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("sums All boards, renders 99+ and leaves the bell invitations-only", async () => {
     const server = new FakeServer([board, boardTwo]);
     server.pendingApprovals.set("board-1", 60);
@@ -228,9 +394,10 @@ describe("agent entry points in the header", () => {
     ).toHaveTextContent("40");
   });
 
-  it("never requests approvals in a member board scope", async () => {
+  it("uses cross-board counts when a member board scope cannot read approvals", async () => {
     const server = new FakeServer([board, boardTwo]);
     server.roles.set("board-2", "MEMBER");
+    server.pendingApprovals.set("board-1", 3);
     server.pendingApprovals.set("board-2", 5);
     renderHeader("/agents?board=board-2", server);
 
@@ -241,12 +408,26 @@ describe("agent entry points in the header", () => {
           .length,
       ).toBeGreaterThan(0),
     );
-    expect(
-      server.requests.some(
-        (request) => request.path === "/api/v1/agents/overview",
-      ),
-    ).toBe(false);
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/api/v1/agents/overview",
+        ),
+      ).toBe(true),
+    );
+    // The scoped board badge stays unknown for a member, but the combobox
+    // keeps the ADMIN-board counts the rail already shows.
     expect(screen.queryByTestId("agents-pending-count")).toBeNull();
+    await userEvent.click(screen.getByTestId("agents-header-scope"));
+    expect(
+      screen.getByTestId("agents-header-scope-option-all"),
+    ).toHaveTextContent("3");
+    expect(
+      screen.getByTestId("agents-header-scope-option-board-1"),
+    ).toHaveTextContent("3");
+    expect(
+      screen.getByTestId("agents-header-scope-option-board-2"),
+    ).not.toHaveTextContent("5");
   });
 
   it("does not show undo or redo to a board viewer", async () => {

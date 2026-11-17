@@ -32,13 +32,30 @@ describe("one status badge primitive (TASK-179.9)", () => {
     );
   });
 
+  it("uses the mockup raw danger tone for a bad status", () => {
+    withI18n(<StatusBadge label="Failed" tone="bad" testId="badge" />);
+    expect(screen.getByTestId("badge").className).toContain(
+      "text-[color:var(--danger)]",
+    );
+  });
+
+  it("never ellipsizes a lifecycle label", () => {
+    withI18n(<SessionStatusPill status="completed" />);
+    const badge = screen.getByTestId("agent-status-completed");
+    const label = badge.lastElementChild;
+    expect(badge.className).not.toContain("overflow-hidden");
+    expect(label?.className).not.toContain("truncate");
+    expect(label).toHaveTextContent("Completed");
+    expect(badge).toHaveTextContent("Completed");
+  });
+
   it.each([
     ["pending", "Pending"],
     ["approved", "Approved"],
     ["rejected", "Rejected"],
     ["expired", "Expired"],
     ["cancelled", "Cancelled"],
-    ["consumed", "Consumed"],
+    ["consumed", "Applied"],
   ] as const)("renders the approval status %s", (status, label) => {
     withI18n(<ApprovalStatusBadge status={status} testId="approval" />);
     const badge = screen.getByTestId("approval");
@@ -74,7 +91,9 @@ describe("one status badge primitive (TASK-179.9)", () => {
 
   it("presents a session-level pause instead of its stored Idle lifecycle", () => {
     withI18n(
-      <SessionStatePill session={{ status: "idle", pausedAt: Date.now() }} />,
+      <SessionStatePill
+        session={{ status: "idle", pausedAt: Date.now(), stale: true }}
+      />,
     );
     const badge = screen.getByTestId("agent-status-paused");
     expect(badge).toHaveAttribute("data-status", "paused");
@@ -84,9 +103,25 @@ describe("one status badge primitive (TASK-179.9)", () => {
   });
 
   it("keeps an unpaused session on its lifecycle", () => {
-    withI18n(<SessionStatePill session={{ status: "idle", pausedAt: null }} />);
+    withI18n(
+      <SessionStatePill
+        session={{ status: "idle", pausedAt: null, stale: false }}
+      />,
+    );
     expect(screen.getByTestId("agent-status-idle")).toHaveTextContent("Idle");
     expect(screen.queryByTestId("agent-status-paused")).toBeNull();
+  });
+
+  it("keeps the Idle lifecycle when the heartbeat is stale", () => {
+    withI18n(
+      <SessionStatePill
+        session={{ status: "idle", pausedAt: null, stale: true }}
+      />,
+    );
+    const badge = screen.getByTestId("agent-status-idle");
+    expect(badge).toHaveAttribute("data-status", "idle");
+    expect(badge).toHaveAttribute("data-lifecycle", "true");
+    expect(screen.queryByTestId("agent-status-stale")).toBeNull();
   });
 
   it("keeps the agent badge on the same primitive", () => {

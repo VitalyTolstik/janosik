@@ -1,5 +1,5 @@
 import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
-import { Info, Loader2 } from "lucide-react";
+import { ChevronRight, Info, Loader2 } from "lucide-react";
 
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
@@ -51,6 +51,13 @@ const AgentControlDialog = lazy(() =>
   })),
 );
 
+const AGENT_TRIGGER_SELECTOR =
+  '[data-testid="agent-control-trigger"], [data-testid="agent-runs-trigger"]';
+
+function findAgentTrigger(): HTMLButtonElement | null {
+  return document.querySelector<HTMLButtonElement>(AGENT_TRIGGER_SELECTOR);
+}
+
 /** Header: brand, board switcher, search, undo/redo, data and the account. */
 export function Header() {
   const { t } = useI18n();
@@ -68,21 +75,43 @@ export function Header() {
   const { role } = useBoardAccess();
   const { boards } = useBoard();
   const scopeParam = new URLSearchParams(location.search).get("board");
+  // Opening a detail from All boards keeps `scope=all` and adds the row's
+  // `board` for the deep link. The visible scope stays All boards; the board
+  // param belongs to the detail, not to the header combobox or its counts.
+  const allDetailScope =
+    new URLSearchParams(location.search).get("scope") === "all";
+  const headerBoardId = allDetailScope ? null : scopeParam;
   const pendingBoards = boards.map((board) => ({
     id: board.id,
     role: roleOf(board.id),
     archivedAt: board.archivedAt,
   }));
+  // A member-only board scope keeps cross-board counts in the rail; the
+  // header combobox must read the same ADMIN-board snapshot instead of
+  // asking for an approvals scope the member cannot see.
+  const scopedBoardReadable =
+    headerBoardId !== null &&
+    pendingBoards.some(
+      (board) =>
+        board.id === headerBoardId &&
+        board.role === "ADMIN" &&
+        board.archivedAt === undefined,
+    );
+  const hasAdminBoard = pendingBoards.some(
+    (board) => board.role === "ADMIN" && board.archivedAt === undefined,
+  );
+  const needsCrossBoardCounts =
+    headerBoardId !== null && !scopedBoardReadable && hasAdminBoard;
   const pendingApprovals = usePendingApprovals({
-    boardId: scopeParam,
+    boardId: needsCrossBoardCounts ? null : headerBoardId,
     boards: pendingBoards,
     enabled: isAgentsRoute,
   });
   const pendingAll = pendingApprovals.totalCount;
   const pendingForScope =
-    scopeParam === null
+    headerBoardId === null
       ? pendingAll
-      : (pendingApprovals.counts[scopeParam] ?? null);
+      : (pendingApprovals.counts[headerBoardId] ?? null);
   const pendingBadge = pendingForScope;
   // A VIEWER has no mutating affordances, undo included: a stale local stack
   // after a live demotion would only offer commands the server refuses.
@@ -98,9 +127,21 @@ export function Header() {
     useState<AgentControlTab>("approvals");
 
   const restoreAgentTrigger = (event: Event) => {
-    if (agentTrigger.current?.isConnected) {
+    const trigger = agentTrigger.current?.isConnected
+      ? agentTrigger.current
+      : findAgentTrigger();
+    if (trigger !== null) {
       event.preventDefault();
-      agentTrigger.current.focus();
+      agentTrigger.current = trigger;
+      trigger.focus();
+      return;
+    }
+    // Browser Back replaced the board header: its trigger is detached. Hand
+    // focus to the mounted global entry instead of letting Radix drop it on
+    // BODY.
+    if (isAgentsRoute) {
+      event.preventDefault();
+      agentsLink.current?.focus();
     }
   };
   const openAllAgents = () => {
@@ -114,12 +155,112 @@ export function Header() {
     }
   }, [isAgentsRoute, location.key, location.state]);
 
+  const agentsParam = isBoardRoute
+    ? new URLSearchParams(location.search).get("agents")
+    : null;
+  const tabForAgentsParam = (value: string): AgentControlTab =>
+    value === "live" ? "pause" : value === "runs" ? "runs" : "approvals";
+  const agentsValueForTab = (value: AgentControlTab): string =>
+    value === "pause" ? "live" : value === "runs" ? "runs" : "inbox";
+  const writeAgentsParam = (value: AgentControlTab | null) => {
+    const next = new URLSearchParams(location.search);
+    if (value === null) {
+      next.delete("agents");
+      next.delete("approval");
+    } else {
+      next.set("agents", agentsValueForTab(value));
+      if (value !== "approvals") next.delete("approval");
+    }
+    navigate(
+      { pathname: location.pathname, search: next.toString() },
+      { replace: true },
+    );
+  };
+  const openAgentControl = (value: AgentControlTab) => {
+    setAgentControlTab(value);
+    setAgentControlOpen(true);
+    writeAgentsParam(value);
+  };
+  const closeAgentControl = () => {
+    setAgentControlOpen(false);
+    writeAgentsParam(null);
+  };
+
+  // `Open board` on the agent surfaces deep-links into the board-scoped Agent
+  // control dialog (TASK-179 pixel parity): `?agents=inbox|live|runs`.
+  // The param stays in the URL so reload/back/forward reopen the same tab.
+  const lastAgentsParam = useRef<string | null>(agentsParam);
+  const restoreAgentsFocus = useRef(false);
+  useEffect(() => {
+    if (!isBoardRoute) {
+      // The board header unmounts with its trigger; the dialog state lives on
+      // this shared Header. Reset it so Back to /agents cannot orphan the
+      // board-scoped modal over the global page.
+      lastAgentsParam.current = null;
+      return;
+    }
+    if (agentsParam === null) {
+      // Browser Back from a pinned tab closes the dialog again; the initial
+      // board load without a param must stay closed.
+      if (lastAgentsParam.current !== null) {
+        setAgentControlOpen(false);
+      }
+    } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
+      setAgentControlTab(tabForAgentsParam(agentsParam));
+      setAgentControlOpen(true);
+    }
+    lastAgentsParam.current = agentsParam;
+  }, [agentsParam, isBoardRoute]);
+
+  // A route change away from a board is not a Dialog close event: Radix never
+  // sees `onOpenChange`, and the old trigger is already detached. Close here
+  // so the board-scoped modal cannot outlive its route, then restore focus to
+  // the global Agents entry one task later (after Radix's own focus cleanup).
+  useEffect(() => {
+    if (isBoardRoute) return;
+    if (agentControlOpen) {
+      restoreAgentsFocus.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- leaving the board must unmount the modal
+      setAgentControlOpen(false);
+    }
+    // The board trigger unmounts with its header. Dropping the stale node
+    // lets the reopen resolver attach the freshly mounted button.
+    agentTrigger.current = null;
+  }, [agentControlOpen, isBoardRoute]);
+
+  useEffect(() => {
+    if (!restoreAgentsFocus.current || agentControlOpen) return;
+    if (!isAgentsRoute) {
+      restoreAgentsFocus.current = false;
+      return;
+    }
+    const focusEntry = () => {
+      restoreAgentsFocus.current = false;
+      agentsLink.current?.focus();
+    };
+    // Run after Radix's own close-auto-focus task, which would otherwise drop
+    // focus on BODY because the board trigger is detached.
+    const timer = window.setTimeout(focusEntry, 0);
+    return () => window.clearTimeout(timer);
+  }, [agentControlOpen, isAgentsRoute]);
+
+  // A `?agents=` deep link opens the dialog without a click, so the return
+  // trigger was never stored. Resolve the header entry once it is mounted so
+  // Escape returns focus there instead of leaving it on BODY. A stale ref from
+  // the previous board visit is detached; replace it with the live button.
+  useEffect(() => {
+    if (!agentControlOpen || agentTrigger.current?.isConnected) return;
+    const trigger = findAgentTrigger();
+    if (trigger !== null) agentTrigger.current = trigger;
+  }, [agentControlOpen, agentsParam, location.pathname]);
+
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex min-h-14 shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-14 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0",
+        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-[52px] sm:min-h-[52px] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0",
         isAgentsRoute &&
-          "min-h-14 flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-14 sm:px-[14px]",
+          "min-h-[61px] flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-[52px] sm:min-h-[52px] sm:px-[14px]",
       )}
     >
       <div
@@ -155,6 +296,8 @@ export function Header() {
         {isBoardRoute ? (
           <>
             <BoardTitle />
+            {/* The compact chevron stays on the phone header: switching
+                boards is navigation, not secondary chrome. */}
             <BoardSwitcher />
           </>
         ) : isAgentsRoute ? (
@@ -164,9 +307,7 @@ export function Header() {
           >
             <div className="max-w-[150px] min-w-0 sm:max-w-[240px]">
               <BoardScopeSelect
-                value={
-                  new URLSearchParams(location.search).get("board") ?? "all"
-                }
+                value={headerBoardId ?? "all"}
                 boards={boards
                   .filter((board) => !board.archivedAt)
                   .map((board) => ({ id: board.id, title: board.title }))}
@@ -174,6 +315,7 @@ export function Header() {
                   const query = new URLSearchParams(location.search);
                   if (boardId === "all") query.delete("board");
                   else query.set("board", boardId);
+                  query.delete("scope");
                   query.delete("approval");
                   query.delete("run");
                   query.delete("session");
@@ -190,6 +332,10 @@ export function Header() {
                 stale={pendingApprovals.stale}
               />
             </div>
+            <ChevronRight
+              aria-hidden
+              className="hidden h-3 w-3 shrink-0 text-muted-foreground sm:block"
+            />
             <span className="hidden font-agent-surface text-[12px] font-medium leading-[1.45] text-foreground sm:inline">
               {t("agents.open")}
             </span>
@@ -199,41 +345,51 @@ export function Header() {
             </span>
           </nav>
         ) : null}
-        {!isAgentsRoute ? <NotificationsBell /> : null}
+        {!isAgentsRoute ? (
+          <div className={cn(isBoardRoute && "max-[720.98px]:hidden")}>
+            <NotificationsBell />
+          </div>
+        ) : null}
         {isBoardRoute ? (
           <>
-            <BoardMembersDialog />
-            <ShareDialog />
+            <div className="hidden min-[1024px]:block">
+              <BoardMembersDialog />
+            </div>
+            <div className="hidden min-[1024px]:block">
+              <ShareDialog />
+            </div>
             <AgentControlButton
               onOpen={(trigger) => {
                 agentTrigger.current = trigger;
                 // Members start on read-only Live; admins start in Inbox.
-                setAgentControlTab(role === "ADMIN" ? "approvals" : "pause");
-                setAgentControlOpen(true);
+                openAgentControl(role === "ADMIN" ? "approvals" : "pause");
               }}
             />
             {role === "ADMIN" ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t("board.settings.button")}
-                    data-testid="board-settings-trigger"
-                    onClick={() => {
-                      setSettingsSection("workflow");
-                      setSettingsOpen(true);
-                    }}
-                  >
-                    <LazyAnimatedIcon name="settings" size={20} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("board.settings.button")}</TooltipContent>
-              </Tooltip>
+              <div className="max-[720.98px]:hidden">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t("board.settings.button")}
+                      data-testid="board-settings-trigger"
+                      className="md:h-8 md:w-8 md:min-w-8"
+                      onClick={() => {
+                        setSettingsSection("workflow");
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <LazyAnimatedIcon name="settings" size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("board.settings.button")}</TooltipContent>
+                </Tooltip>
+              </div>
             ) : null}
-            {/* The presence stack needs more width than a phone header can
-            give; the roster stays reachable from the members dialog. */}
-            <div className="hidden sm:block">
+            {/* The presence stack needs the widest header; below 1200 px the
+                roster stays reachable from the members dialog. */}
+            <div className="hidden min-[1200px]:block">
               <PresenceStack />
             </div>
           </>
@@ -250,10 +406,24 @@ export function Header() {
           <div className="hidden sm:block">
             <GlobalSearch iconOnly />
           </div>
+        ) : isBoardRoute ? (
+          // The icon returns at 721 px; the label waits for the full header
+          // at 1024 px so it cannot paint over the title or Agents.
+          <div className="hidden min-[721px]:block">
+            <GlobalSearch labelClassName="hidden min-[1024px]:inline" />
+          </div>
         ) : (
           <GlobalSearch />
         )}
-        {isAgentsRoute ? <NotificationsBell /> : <HelpMenu />}
+        {isAgentsRoute ? (
+          <NotificationsBell />
+        ) : isBoardRoute ? (
+          <div className="hidden min-[1200px]:block">
+            <HelpMenu />
+          </div>
+        ) : (
+          <HelpMenu />
+        )}
         {isAgentsRoute ? (
           <Link
             to={routes.agents}
@@ -287,7 +457,7 @@ export function Header() {
         ) : null}
 
         {isBoardRoute && !readOnly ? (
-          <>
+          <div className="hidden items-center gap-0.5 min-[1024px]:flex">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -296,8 +466,9 @@ export function Header() {
                   aria-label={t("undo.aria")}
                   disabled={!canUndo}
                   onClick={undo}
+                  className="md:h-8 md:w-8 md:min-w-8"
                 >
-                  <LazyAnimatedIcon name="arrow-left" size={20} />
+                  <LazyAnimatedIcon name="arrow-left" size={16} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("undo.tooltip")}</TooltipContent>
@@ -311,16 +482,21 @@ export function Header() {
                   aria-label={t("redo.aria")}
                   disabled={!canRedo}
                   onClick={redo}
+                  className="md:h-8 md:w-8 md:min-w-8"
                 >
-                  <LazyAnimatedIcon name="arrow-right" size={20} />
+                  <LazyAnimatedIcon name="arrow-right" size={16} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("redo.tooltip")}</TooltipContent>
             </Tooltip>
-          </>
+          </div>
         ) : null}
 
-        {isBoardRoute ? <DataMenu /> : null}
+        {isBoardRoute ? (
+          <div className="hidden min-[1024px]:block">
+            <DataMenu />
+          </div>
+        ) : null}
 
         <AccountDialog onOpenAgents={openAllAgents} compact={isAgentsRoute} />
       </div>
@@ -331,10 +507,9 @@ export function Header() {
           onOpenChange={setSettingsOpen}
           initialSection={settingsSection}
           onOpenLiveControls={() => {
-            // Board Settings closes first (with its dirty guard); the current
-            // board route and its query string stay untouched.
-            setAgentControlTab("pause");
-            setAgentControlOpen(true);
+            // Board Settings closes first (with its dirty guard); keep the
+            // board route and expose the same durable Live deep link.
+            openAgentControl("pause");
           }}
         />
       ) : null}
@@ -362,11 +537,15 @@ export function Header() {
         >
           <AgentControlDialog
             open={agentControlOpen}
-            onOpenChange={setAgentControlOpen}
+            onOpenChange={(open) => {
+              if (open) setAgentControlOpen(true);
+              else closeAgentControl();
+            }}
+            onTabChange={(next) => writeAgentsParam(next)}
             initialTab={agentControlTab}
             onOpenAllAgents={openAllAgents}
             onOpenPolicy={() => {
-              setAgentControlOpen(false);
+              closeAgentControl();
               setSettingsSection("agents");
               setSettingsOpen(true);
             }}

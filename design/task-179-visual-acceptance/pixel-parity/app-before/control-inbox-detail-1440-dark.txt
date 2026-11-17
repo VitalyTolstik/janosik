@@ -1,0 +1,157 @@
+Agent Ops Demo
+1
+Global search
+AA
+Audit Admin
+Filters
+Board
+Calendar
+Table
+Watch
+
+Backlog
+1
+Add a card
+
+Card claim visibility
+
+Medium
+Add a card
+Add a card
+In progress
+3
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+
+MCP write contract
+
+Medium
+Add a card
+
+Approval inbox polish
+
+Medium
+Add a card
+Add a card
+Review
+3
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+
+Landing page rewrite — final
+
+Medium
+Add a card
+
+Session heartbeat copy
+
+Medium
+Add a card
+Add a card
+Done
+1
+Add a card
+
+MCP callouts
+
+Medium
+Add a card
+Add a card
+Add column
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+1 waiting
+All agents
+THIS BOARD
+Inbox
+1
+Live
+4
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Approvals
+Needs
+1
+Decided
+6
+All
+7
+NEEDS DECISION
+EXPIRES FIRST
+Delete card “Card claim visibility”
+Pending
+Medium risk
+DESTRUCTIVE
+#Card claim visibility · 24 minutes ago
+Delete card “Card claim visibility”
+Pending
+Medium risk
+Agent Ops Demo
+Waiting for a board admin. The request expires in 37 min.
+
+API reference sweep asks to run DELETE_CARD on Agent Ops Demo. Approving authorizes only the plan below — the agent still applies it.
+
+Request
+BOARD
+Agent Ops Demo
+REQUESTED BY
+Riley Member
+AGENT
+API reference sweep
+SESSION
+API reference sweep
+TARGET
+card · Card claim visibility
+EXPIRES
+in 37 min
+Plan
+1 command
+
+Delete card “Card claim visibility”
+
+DELETE_CARD
+Card claim visibility
+
+Exact commands and known targets from the plan.
+
+Integrity
+exact hash
+61eb467fe99a9bf54264dea6d4d3f0c0407c827af902…
+
+The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.
+
+Decision history
+Requested by Riley Member
+Today, 12:27 PM · risk medium · TTL 60 min
+Waiting for a board admin
+Expires in 37 min. A decision is one-time.
+Related
+Open board
+Agent session
+Token: API reference sweep
+Copy link
+Technical details · plan JSON
+
+Approving authorizes only 61eb467fe9…. The agent applies the exact plan.
+
+Reject
+Approve plan

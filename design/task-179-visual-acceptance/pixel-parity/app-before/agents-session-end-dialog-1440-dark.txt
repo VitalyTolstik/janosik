@@ -1,0 +1,141 @@
+Janosik
+Agent Ops Demo
+Agents
+Global view
+Agents
+1
+AA
+Agents
+
+What needs a human. What runs now.
+
+Attention
+1
+Sessions
+6
+Runs
+
+BOARDS
+PENDING
+
+All boards
+1
+Agent Ops Demo
+1
+Website Relaunch
+
+Agents are personal API tokens. Board policy lives in Board Settings → Agents & automation.
+
+Manage tokens
+Sessions
+
+Grouped by board. Heartbeat is a liveness signal, not a lifecycle status.
+
+Updated 0s ago
+Refresh
+Manage tokens
+All agents
+All statuses
+Agent Ops Demo
+Heartbeat is separate from status. A session can be Active and still have no heartbeat. Expired heartbeats do not rewrite the lifecycle.
+GROUP BY
+Board
+Agent (token)
+6 sessions · 4 live
+Agent Ops Demo
+1 approval
+6 sessions · 4 no heartbeat
+AGENT / TOKEN
+SESSION
+CURRENT CARD / RUN
+HEARTBEAT
+STATUS
+API reference sweep
+terminal · claude-haiku-4.5
+API reference sweep
+Agent Ops Demo
+MCP write contract
+Run cmwj2j8mk0062id7c15pnxq27
+16m ago
+Active
+Claude Code — audit
+opencode · deepseek-v4.1
+Refactor approval flow
+Agent Ops Demo
+Approval inbox polish
+Run cmwj2j8jg0061id7cc5zyoh1e
+15m ago
+Waiting
+Claude Code — audit
+opencode · deepseek-v4.1
+Idle heartbeat check
+Agent Ops Demo
+—
+No current run
+15m ago
+Idle
+Claude Code — audit
+opencode · gpt-5.2
+Landing page rewrite
+Agent Ops Demo
+Landing page rewrite — final
+No current run
+21m ago
+Active
+Claude Code — audit
+opencode · deepseek-v4.1
+Compose release notes
+Agent Ops Demo
+—
+Run cmwj2j8jg0061id7cc5zyoh1e
+4h ago
+Completed
+Claude Code — audit
+opencode · deepseek-v4.1
+Archive cleanup
+Agent Ops Demo
+—
+No current run
+8h ago
+Cancelled
+
+SESSION · AGENT OPS DEMO
+
+API reference sweep
+No heartbeat for 16m. The last known lifecycle status is Active.
+Active
+16m ago
+Agent Ops Demo
+Session
+AGENT
+API reference sweep
+CLIENT / MODEL
+terminal · claude-haiku-4.5
+TOKEN
+px-token-doc…
+STARTED
+34m ago
+CURRENT CARD
+MCP write contract
+CURRENT RUN
+cmwj2j8mk0062id7c15pnxq27
+Current work
+MCP write contract
+Run cmwj2j8m…
+Pause semantics
+
+Pausing a session finishes in-flight commands and blocks new writes with 403 agent_paused. Claims are not released. Ending the session releases claims and is final.
+
+Pause finishes in-flight work; End releases claims and is final.
+
+Open board
+Pause
+End
+End this session?
+
+Ending is final for this session. It releases claims and cannot be resumed.
+
+API reference sweep · MCP write contract
+
+Cancel
+End session

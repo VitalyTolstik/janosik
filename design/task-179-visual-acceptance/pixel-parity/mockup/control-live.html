@@ -1,0 +1,185 @@
+
+    <div class="scene">
+      
+    <div class="board-scene" inert="" aria-hidden="true">
+      
+    <header class="app-header">
+      <span class="app-brand"><span class="brand-tile" aria-hidden="true"><svg class="icon " aria-hidden="true"><use href="#i-feather"></use></svg></span><span class="app-wordmark">Janosik</span></span>
+      <span class="header-divider" aria-hidden="true"></span>
+      <span class="board-title">Agent Ops Demo <svg class="icon " aria-hidden="true"><use href="#i-chevron-down"></use></svg></span>
+      <div class="header-actions">
+        <button type="button" class="header-btn hide-mobile" data-action="bell" aria-label="Notifications, invitations only" title="Invitations only — approval attention lives in Agents"><svg class="icon " aria-hidden="true"><use href="#i-bell"></use></svg></button>
+        <button type="button" class="header-btn hide-mobile" data-action="members" aria-label="Members"><svg class="icon " aria-hidden="true"><use href="#i-users"></use></svg></button>
+        <button type="button" class="header-btn hide-mobile" data-action="share" aria-label="Share"><svg class="icon " aria-hidden="true"><use href="#i-share"></use></svg></button>
+        <button type="button" class="agents-trigger" id="agent-control-trigger" data-action="open-control" aria-label="Agent control, 2 approvals waiting" aria-expanded="true">
+          <svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg><span>Agents</span><span class="count-badge">2</span>
+        </button>
+        <button type="button" class="header-btn" id="board-settings-trigger" data-action="open-settings" aria-label="Board settings" title="Board settings"><svg class="icon " aria-hidden="true"><use href="#i-settings"></use></svg></button>
+        <span class="avatar" title="Audit Admin">AA</span>
+      </div>
+    </header>
+      <div class="board-scene-toolbar">
+        <div class="view-tabs" role="tablist" aria-label="Board views">
+          <button type="button" class="view-tab is-active" role="tab" aria-selected="true"><svg class="icon " aria-hidden="true"><use href="#i-folder"></use></svg>Board</button>
+          <button type="button" class="view-tab" role="tab" aria-selected="false" data-action="board-view"><svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg>Calendar</button>
+          <button type="button" class="view-tab" role="tab" aria-selected="false" data-action="board-view"><svg class="icon " aria-hidden="true"><use href="#i-database"></use></svg>Table</button>
+          <button type="button" class="view-tab" role="tab" aria-selected="false" data-action="board-view"><svg class="icon " aria-hidden="true"><use href="#i-eye"></use></svg>Watch</button>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" class="header-btn" data-action="board-display" aria-label="Board display" title="Board display — column style, density, glass"><svg class="icon " aria-hidden="true"><use href="#i-menu"></use></svg></button>
+      </div>
+      <div class="board-columns">
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot "></span>Backlog<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label amber">backlog</span></div><b>Card claim visibility</b><p>Approval pending</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label ">backlog</span></div><b>Old onboarding draft</b><p>Delete approved</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div>
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot "></span>In progress<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label ">in progress</span></div><b>Approval inbox polish</b><p>Claude Code</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label teal">in progress</span></div><b>MCP write contract</b><p>Docs agent</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div>
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot teal"></span>Review<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label ">review</span></div><b>Session heartbeat copy</b><p>Release bot</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label amber">review</span></div><b>Landing page rewrite</b><p>Claude Code</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div>
+    <div class="board-column">
+      <div class="column-head"><span class="board-dot "></span>Done<span class="count">4</span></div>
+      <div class="column-cards">
+        <div class="mini-card"><div class="label-row"><span class="mini-label ">backlog</span></div><b>MCP callouts</b><p>Docs agent</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div><div class="mini-card"><div class="label-row"><span class="mini-label teal">backlog</span></div><b>Pricing page copy</b><p>Release bot</p><div class="mini-card-foot"><svg class="icon " aria-hidden="true"><use href="#i-message"></use></svg> 2 · <svg class="icon " aria-hidden="true"><use href="#i-list-checks"></use></svg> 1/3 · <span class="avatar" title="Audit Admin">AA</span></div></div>
+        <div class="mini-card" style="border-style:dashed;background:transparent;color:var(--muted-foreground)"><b style="font-weight:500;color:var(--muted-foreground)">+ Add card</b></div>
+      </div>
+    </div></div>
+      
+    </div>
+      <div class="scene-scrim is-open" data-action="close-control"></div>
+      
+    <section class="ac-modal " role="dialog" aria-modal="true" aria-labelledby="ac-title">
+      <header class="ac-head">
+        <span class="bot-tile" aria-hidden="true"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span>
+        <div class="ac-title-wrap">
+          <h2 id="ac-title">Agents on Agent Ops Demo</h2>
+          <p>Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.</p>
+        </div>
+        <div class="ac-head-right">
+          <span class="ac-head-chip ok"><span class="status-dot ok"></span>Running</span>
+          <span class="ac-head-chip warn"><svg class="icon " aria-hidden="true"><use href="#i-inbox"></use></svg>2 waiting</span>
+          <button type="button" class="ac-head-link" data-action="section" data-section="agents">All agents <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button>
+          <button type="button" class="ac-close" id="ac-close" data-action="close-control" aria-label="Close agent control"><svg class="icon " aria-hidden="true"><use href="#i-x"></use></svg></button>
+        </div>
+      </header>
+      <div class="ac-body">
+        <nav class="ac-rail" aria-label="Agent control sections">
+          <div class="ac-rail-label">This board</div>
+          <div class="ac-rail-tabs" role="tablist" aria-label="Agent control sections" data-tablist="ac" aria-orientation="vertical">
+            
+    <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-inbox" aria-selected="false" aria-controls="ac-panel" tabindex="-1" data-action="ac-tab" data-tab="inbox">
+      <svg class="icon " aria-hidden="true"><use href="#i-inbox"></use></svg><span>Inbox</span><span class="count-badge">2</span>
+    </button>
+            
+    <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-live" aria-selected="true" aria-controls="ac-panel" tabindex="0" data-action="ac-tab" data-tab="live">
+      <svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg><span>Live</span><span class="rail-count">2</span>
+    </button>
+            
+    <button type="button" class="ac-rail-tab" role="tab" id="ac-tab-runs" aria-selected="false" aria-controls="ac-panel" tabindex="-1" data-action="ac-tab" data-tab="runs">
+      <svg class="icon " aria-hidden="true"><use href="#i-history"></use></svg><span>Runs</span><span class="rail-count">5</span>
+    </button>
+          </div>
+          
+            <div class="ac-rail-divider"></div>
+            <div class="ac-rail-note"><strong>Agent policy ↗</strong>Approval rules, limits and destructive actions live in Board settings → Agents &amp; automation.</div>
+            <button type="button" class="ac-rail-link" data-action="open-settings"><svg class="icon " aria-hidden="true"><use href="#i-settings"></use></svg>Open policy settings</button>
+          <div class="ac-rail-footer">
+            <b>Across all boards</b>
+            <p>Global sessions, approvals and run history live on /agents.</p>
+            <button type="button" class="ac-rail-link" data-action="section" data-section="agents"><svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>All agents across boards</button>
+          </div>
+        </nav>
+        <div class="ac-content" id="ac-panel" role="tabpanel" aria-labelledby="ac-tab-live">
+          
+    <div class="ac-toolbar"><h3>Live</h3><span class="meta">3 sessions · 2 tokens · 1 no heartbeat</span><button type="button" class="icon-btn-sm" data-action="refresh-control" aria-label="Refresh sessions" style="margin-left:auto"><svg class="icon " aria-hidden="true"><use href="#i-refresh"></use></svg></button></div>
+    <div class="ac-panel-scroll">
+      
+    <div class="live-status-card ">
+      <span class="live-icon"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg></span>
+      <div class="live-status-main">
+        <b>Agent writes are allowed</b>
+        <p>Pausing stops every token on this board. In-flight requests finish; new writes get 403; claims stay until a session ends.</p>
+      </div>
+      <div class="live-status-actions">
+        <button type="button" class="btn btn-danger-outline btn-sm" data-action="board-pause"><svg class="icon " aria-hidden="true"><use href="#i-pause"></use></svg>Pause all agents</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="manage-tokens"><svg class="icon " aria-hidden="true"><use href="#i-key"></use></svg>Manage tokens <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button>
+      </div>
+    </div>
+      <div class="session-group">
+      <div class="session-group-head">
+        <span class="bot-tile"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span><b>Claude Code — audit</b><span class="session-token">cmwc7a7y…pz4qe6</span><span class="meta">2 live</span>
+        <span class="group-actions">
+          <button type="button" class="btn btn-ghost btn-xs" data-action="token-info" data-token="Claude Code — audit">Token settings <svg class="icon " aria-hidden="true"><use href="#i-arrow-up-right"></use></svg></button>
+        </span>
+      </div>
+      
+        <div class="live-session-row">
+          <div class="live-session-main">
+            <div class="live-session-name"><b>Refactor approval flow</b><span class="status-pill warn"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Waiting for approval</span></span></div>
+            <div class="live-session-sub"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>12s ago<span class="sep">·</span><span>opencode · deepseek-v4.1</span><span class="sep">·</span><span>42 min ago</span></div>
+          </div>
+          <div class="live-session-card"><b>Approval inbox polish</b><span>Run #128</span></div>
+          <div class="live-session-actions">
+            <button type="button" class="btn btn-outline" data-action="session-pause" data-id="s1"><svg class="icon " aria-hidden="true"><use href="#i-pause"></use></svg>Pause</button>
+            <button type="button" class="icon-btn-sm" data-action="session-end" data-id="s1" aria-label="End session" title="End session and release claims"><svg class="icon " aria-hidden="true"><use href="#i-stop"></use></svg></button>
+          </div>
+        </div>
+        <div class="live-session-row">
+          <div class="live-session-main">
+            <div class="live-session-name"><b>Landing page rewrite</b><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Active</span></span><span class="chip warn ">No heartbeat</span></div>
+            <div class="live-session-sub"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>No heartbeat · 6m<span class="sep">·</span><span>opencode · gpt-5.2</span><span class="sep">·</span><span>3 h ago</span></div>
+          </div>
+          <div class="live-session-card"><b>No current card</b><span>No current run</span></div>
+          <div class="live-session-actions">
+            <button type="button" class="btn btn-outline" data-action="session-pause" data-id="s2"><svg class="icon " aria-hidden="true"><use href="#i-pause"></use></svg>Pause</button>
+            <button type="button" class="icon-btn-sm" data-action="session-end" data-id="s2" aria-label="End session" title="End session and release claims"><svg class="icon " aria-hidden="true"><use href="#i-stop"></use></svg></button>
+          </div>
+        </div>
+    </div><div class="session-group">
+      <div class="session-group-head">
+        <span class="bot-tile"><svg class="icon " aria-hidden="true"><use href="#i-bot"></use></svg></span><b>Docs agent</b><span class="session-token">cmwc7aab…x7c1a9</span><span class="meta">1 live</span>
+        <span class="group-actions">
+          <span class="meta token-owner"><svg class="icon " aria-hidden="true"><use href="#i-lock"></use></svg>Other member's token</span>
+        </span>
+      </div>
+      
+        <div class="live-session-row">
+          <div class="live-session-main">
+            <div class="live-session-name"><b>API reference sweep</b><span class="status-pill ok"><span class="status-mark" aria-hidden="true"></span><span class="status-label">Active</span></span></div>
+            <div class="live-session-sub"><svg class="icon " aria-hidden="true"><use href="#i-activity"></use></svg>1m ago<span class="sep">·</span><span>terminal · claude-haiku-4.5</span><span class="sep">·</span><span>19 min ago</span></div>
+          </div>
+          <div class="live-session-card"><b>MCP write contract</b><span>Run #119</span></div>
+          <div class="live-session-actions">
+            <button type="button" class="btn btn-outline" data-action="session-pause" data-id="s3"><svg class="icon " aria-hidden="true"><use href="#i-pause"></use></svg>Pause</button>
+            <button type="button" class="icon-btn-sm" data-action="session-end" data-id="s3" aria-label="End session" title="End session and release claims"><svg class="icon " aria-hidden="true"><use href="#i-stop"></use></svg></button>
+          </div>
+        </div>
+    </div>
+      
+      <p class="meta" style="margin:9px 0 0">Ending a session releases its claims. Token pause, stop-all and revoke are owner actions in Account → API keys; this board surface only links there.</p>
+    </div>
+        </div>
+      </div>
+      <footer class="ac-foot">
+      <span class="ac-foot-note"><svg class="icon " aria-hidden="true"><use href="#i-shield"></use></svg>Pause is a board-wide safety switch, not a policy change. In-flight finishes; claims stay.</span>
+      <div class="ac-foot-actions">
+        <button type="button" class="btn btn-outline btn-sm" data-action="board-pause"><svg class="icon " aria-hidden="true"><use href="#i-pause"></use></svg>Pause all agents</button>
+      </div>
+    </footer>
+    </section>
+      
+      
+    </div>

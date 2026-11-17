@@ -67,8 +67,9 @@ export function HelpMenu() {
                 size="icon"
                 data-testid="help-trigger"
                 aria-label={t("help.aria")}
+                className="md:h-8 md:w-8 md:min-w-8"
               >
-                <LazyAnimatedIcon name="keyboard" size={20} />
+                <LazyAnimatedIcon name="keyboard" size={16} />
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>

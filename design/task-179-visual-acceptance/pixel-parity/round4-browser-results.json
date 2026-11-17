@@ -1,0 +1,410 @@
+[
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "light",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "light",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "light",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "light",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "light",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "light",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "dark",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "admin",
+    "width": 390,
+    "theme": "dark",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle",
+      "approval confirmation",
+      "reject form"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "light",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "light",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1440,
+    "theme": "dark",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "light",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "light",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 1024,
+    "theme": "dark",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "light",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "light",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "dark",
+    "lang": "en",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  },
+  {
+    "role": "member",
+    "width": 390,
+    "theme": "dark",
+    "lang": "ru",
+    "boardRunCount": 6,
+    "checks": [
+      "unfiltered badge",
+      "failed run",
+      "equal footer widths",
+      "rollback styling",
+      "missing board",
+      "unknown board",
+      "stale lifecycle"
+    ]
+  }
+]

@@ -261,25 +261,23 @@ describe("BoardMembersPanel (TASK-35)", () => {
       },
       { timeout: 15_000 },
     );
-    const target = [
-      ...document.querySelectorAll<HTMLElement>("button[data-day]"),
-    ].find(
-      (button) =>
-        button.textContent === "15" &&
-        !button.closest("td")?.hasAttribute("data-outside"),
-    );
+    const days = [
+      ...document.querySelectorAll<HTMLElement>(
+        "td[data-day] button:not([disabled])",
+      ),
+    ].filter((button) => !button.closest("td")?.hasAttribute("data-outside"));
+    const target =
+      days.find((button) => {
+        const value = button.closest("td")?.getAttribute("data-day");
+        return value != null && new Date(`${value}T12:00:00`) > new Date();
+      }) ?? days[days.length - 1];
+    const day = target.closest("td")?.getAttribute("data-day");
+    const chosen = new Date(`${day}T12:00:00`);
     fireEvent.click(target as HTMLElement);
 
     await waitFor(() => expect(update).toHaveBeenCalled());
-    const now = new Date();
     expect(update).toHaveBeenCalledWith("board-1", "user-2", {
-      expiresAt: new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        15,
-        12,
-        0,
-      ).toISOString(),
+      expiresAt: chosen.toISOString(),
     });
   });
 

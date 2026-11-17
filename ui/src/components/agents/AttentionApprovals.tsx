@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  AlertTriangle,
   ArrowLeft,
-  ArrowRight,
   Check,
   CheckCircle2,
   ChevronRight,
   CircleSlash,
   Clock,
   Copy,
-  FileDiff,
   History,
   Link as LinkIcon,
+  MoreHorizontal,
   Shield,
+  Terminal,
   X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -25,27 +24,29 @@ import type {
 } from "@janosik/shared";
 
 import { api, ApiError } from "@/api/client";
-import {
-  destructiveCardImpactText,
-  deleteCardImpactSentence,
-} from "@/components/approvals/approval-impact";
+import { deleteCardImpactSentence } from "@/components/approvals/approval-impact";
 import {
   ApprovalDecisionForm,
   ApprovalDetailError,
   ApprovalLinks,
   ApprovalRiskBadge,
+  ApprovalStatusBadge,
 } from "@/components/approvals/approval-ui";
+import { AgentConfirmDialog } from "./AgentConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
-import { formatDate, useI18n, type MessageKey } from "@/i18n";
+import { useI18n, type MessageKey } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
   APPROVAL_STATUS_KEYS,
   effectiveApprovalStatus,
+  formatApprovalMoment,
 } from "@/utils/approval";
-import { shortId } from "./agent-model";
+import { runNumber, shortTokenId } from "./agent-model";
+import { actionSummary } from "./run-model";
+import { AgentControlFooterPortal } from "./AgentControlFooterPortal";
 
 export type AttentionApprovalFilter = "needs" | "decided" | "all";
 
@@ -56,32 +57,6 @@ export type AttentionApprovalRow = AgentsOverviewApprovalItem & {
 
 type ApprovalStatus = keyof typeof APPROVAL_STATUS_KEYS;
 
-const ACTION_LABEL_KEYS: Record<string, string> = {
-  ADD_CARD: "agents.approvals.action.addCard",
-  UPDATE_CARD: "agents.approvals.action.updateCard",
-  DELETE_CARD: "agents.approvals.action.deleteCard",
-  MOVE_CARD: "agents.approvals.action.moveCard",
-  DUPLICATE_CARD: "agents.approvals.action.duplicateCard",
-  ARCHIVE_CARD: "agents.approvals.action.archiveCard",
-  RESTORE_CARD: "agents.approvals.action.restoreCard",
-  ADD_COLUMN: "agents.approvals.action.addColumn",
-  RENAME_COLUMN: "agents.approvals.action.renameColumn",
-  DELETE_COLUMN: "agents.approvals.action.deleteColumn",
-  MOVE_COLUMN: "agents.approvals.action.moveColumn",
-  ADD_LABEL: "agents.approvals.action.addLabel",
-  RENAME_LABEL: "agents.approvals.action.renameLabel",
-  DELETE_LABEL: "agents.approvals.action.deleteLabel",
-  batch: "agents.approvals.action.batch",
-  revert: "agents.approvals.action.revert",
-};
-
-/** Result wording for the "Exact action" box; it describes the effect, not
- * the command verb. Only actions whose result is materially different from
- * the verb get an entry. */
-const RESULT_LABEL_KEYS: Record<string, string> = {
-  DELETE_CARD: "agents.approvals.result.deleteCard",
-};
-
 const RISK_SHORT_KEYS: Record<ApprovalRequestDto["risk"], string> = {
   low: "agents.approvals.risk.low",
   medium: "agents.approvals.risk.medium",
@@ -90,33 +65,6 @@ const RISK_SHORT_KEYS: Record<ApprovalRequestDto["risk"], string> = {
 
 function minutesLeft(expiresAt: number, now: number): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 60_000));
-}
-
-function actionLabel(actionType: string, t: Translate): string {
-  const key = ACTION_LABEL_KEYS[actionType];
-  if (key !== undefined) return t(key as MessageKey);
-  const words = actionType.toLowerCase().replaceAll("_", " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-function resultLabel(actionType: string, t: Translate): string {
-  const key = RESULT_LABEL_KEYS[actionType];
-  return key !== undefined ? t(key as MessageKey) : actionLabel(actionType, t);
-}
-
-function formatHistoryTime(ts: number, lang: string, t: Translate): string {
-  const date = new Date(ts);
-  const now = new Date();
-  const startOfDay = (value: Date) =>
-    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
-  const time = new Intl.DateTimeFormat(lang === "ru" ? "ru-RU" : "en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-  if (days === 0) return t("agents.approvals.todayAt", { time });
-  if (days === 1) return t("agents.approvals.yesterdayAt", { time });
-  return formatDate(ts, lang);
 }
 
 function lengthOfPlan(approval: ApprovalRequestDto): number {
@@ -139,6 +87,20 @@ function titleForApproval(
     return t("agents.approvals.deleteCardTitle", { card: cardTitle });
   }
   return approval.summary;
+}
+
+/** The human target of one plan command: the card/column the plan names. */
+function planCommandTarget(
+  action: Record<string, unknown> & { type: string },
+  board: Board | null,
+): string {
+  const target = actionSummary(
+    action as unknown as Parameters<typeof actionSummary>[0],
+    board ?? undefined,
+  );
+  if (target !== "") return target;
+  const title = action.title;
+  return typeof title === "string" ? title : action.type;
 }
 
 function statusHint(
@@ -196,16 +158,22 @@ function DetailSection({
   aside,
   children,
   last = false,
+  first = false,
 }: {
   title: string;
   icon?: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
   last?: boolean;
+  first?: boolean;
 }) {
   return (
     <section
-      className={cn("py-2.5", !last && "border-b border-border/60")}
+      className={cn(
+        "py-2.5",
+        first && "mt-2.5",
+        !last && "border-b border-border/60",
+      )}
       data-testid={`approval-section-${title.toLowerCase().replaceAll(" ", "-")}`}
     >
       <div className="mb-1.5 flex items-center gap-1.5">
@@ -214,7 +182,7 @@ function DetailSection({
             {icon}
           </span>
         ) : null}
-        <h3 className="text-[11.5px] font-[650] tracking-[0.03em]">{title}</h3>
+        <h3 className="text-[11px] font-[650] tracking-[0.03em]">{title}</h3>
         {aside !== undefined ? <span className="ml-auto">{aside}</span> : null}
       </div>
       {children}
@@ -271,6 +239,7 @@ export function AttentionApprovalList({
   onSelect,
   onReject,
   now,
+  loading = false,
 }: {
   rows: readonly AttentionApprovalRow[];
   filter: AttentionApprovalFilter;
@@ -279,6 +248,7 @@ export function AttentionApprovalList({
   onSelect: (row: AttentionApprovalRow) => void;
   onReject: (row: AttentionApprovalRow) => void;
   now: number;
+  loading?: boolean;
 }) {
   const { t, tp, lang } = useI18n();
   const counts = useMemo(() => {
@@ -304,10 +274,48 @@ export function AttentionApprovalList({
     [filter, now, rows],
   );
 
+  if (loading && rows.length === 0)
+    return (
+      <section
+        aria-busy="true"
+        data-testid="agents-approvals-loading"
+        className="space-y-2"
+      >
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <Skeleton width={170} height={12} />
+          <Skeleton width={96} height={11} />
+        </div>
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            aria-hidden
+            className="rounded-[8px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-3 pt-[11px] pb-2.5"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Skeleton width={112} height={10} />
+              <Skeleton width={64} height={10} />
+              <Skeleton width={72} height={10} />
+            </div>
+            <Skeleton className="mt-2" width="72%" height={13} />
+            <Skeleton className="mt-1.5" width="92%" height={10} />
+            <div className="mt-2 flex items-center gap-1.5">
+              <Skeleton width={62} height={20} className="rounded-[5px]" />
+              <Skeleton width={82} height={20} className="rounded-[5px]" />
+            </div>
+          </div>
+        ))}
+        <div className="space-y-1.5 pt-2" aria-hidden>
+          <Skeleton width="52%" height={10} />
+          <Skeleton width="68%" height={10} />
+        </div>
+      </section>
+    );
   if (rows.length === 0) return null;
 
-  const heading =
-    counts.needs === 1
+  const decidedView = filter === "decided";
+  const heading = decidedView
+    ? t("agents.approvals.decidedHeading")
+    : counts.needs === 1
       ? t("agents.approvals.oneWaiting")
       : counts.needs > 1
         ? t("agents.approvals.manyWaiting", { count: counts.needs })
@@ -325,7 +333,9 @@ export function AttentionApprovalList({
         />
         <h2 className="text-[12.5px] font-[650]">{heading}</h2>
         <span className="text-[11px] text-muted-foreground">
-          {t("agents.approvals.sortedByExpiry")}
+          {decidedView
+            ? t("agents.approvals.decidedSubtitle")
+            : t("agents.approvals.sortedByExpiry")}
         </span>
         <div
           role="group"
@@ -378,10 +388,10 @@ export function AttentionApprovalList({
             const title = titleForApproval(row, row.cardTitle ?? null, t);
             const timeLabel =
               effective === "pending"
-                ? t("agents.approvals.minLeft", {
+                ? t("agents.approvals.expiresIn", {
                     count: minutesLeft(row.expiresAt, now),
                   })
-                : formatDate(row.decidedAt ?? row.expiresAt, lang);
+                : formatApprovalMoment(row.decidedAt ?? row.expiresAt, lang, t);
             const cardKindKey =
               row.kind === "destructive"
                 ? row.cardTitle !== null
@@ -431,7 +441,7 @@ export function AttentionApprovalList({
                     </span>
                     <span className="block text-[11.5px] leading-[1.5] text-muted-foreground">
                       <b className="font-semibold text-foreground">
-                        {row.agentName ?? shortId(row.requestedByTokenId, 12)}
+                        {row.agentName ?? shortTokenId(row.requestedByTokenId)}
                       </b>{" "}
                       {t("agents.approvals.asksPrefix")}{" "}
                       <code className="font-mono text-[11.5px]">
@@ -453,7 +463,9 @@ export function AttentionApprovalList({
                           {" "}
                           {t("agents.approvals.asksOn")}{" "}
                           <b className="font-semibold text-foreground">
-                            {row.boardTitle}
+                            {row.cardTitle == null
+                              ? row.boardTitle
+                              : `${t("agents.approvals.targetCard")} ${row.cardTitle}`}
                           </b>
                           {row.kind === "custom" ? null : (
                             <>
@@ -474,15 +486,17 @@ export function AttentionApprovalList({
                     >
                       {t("agents.approvals.reviewPlan")}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onReject(row)}
-                      data-testid={`agents-approval-reject-${row.id}`}
-                      className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
-                    >
-                      {t("agents.approvals.reject")}
-                    </Button>
+                    {effective === "pending" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReject(row)}
+                        data-testid={`agents-approval-reject-${row.id}`}
+                        className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
+                      >
+                        {t("agents.approvals.reject")}
+                      </Button>
+                    ) : null}
                     <code className="ml-auto hidden truncate font-mono text-[11px] text-muted-foreground md:block">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
@@ -506,8 +520,12 @@ export function AttentionApprovalDetail({
   fallbackAgentName,
   fallbackCardTitle,
   initialMode = null,
+  variant = "global",
+  footerActive = true,
   onChanged,
   onBack,
+  onNextPending,
+  onCancelRequest,
 }: {
   boardId: string;
   approvalId: string;
@@ -516,19 +534,34 @@ export function AttentionApprovalDetail({
   fallbackCardTitle?: string;
   /** Quick-reject from the list opens the footer reject form directly. */
   initialMode?: "reject" | null;
+  /** Global panel keeps list context; the board panel shows the cancel action. */
+  variant?: "global" | "board";
+  /** Mobile list-only state hides the board footer until a detail is open. */
+  footerActive?: boolean;
   onChanged: () => void;
   onBack?: () => void;
+  onNextPending?: () => void;
+  onCancelRequest?: () => Promise<boolean>;
 }) {
-  const { t, tp, lang } = useI18n();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const [detail, setDetail] = useState<ApprovalRequestDto | null>(null);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [hashCopied, setHashCopied] = useState(false);
   const [board, setBoard] = useState<Board | null>(null);
   const [members, setMembers] = useState<BoardMemberDto[]>([]);
   const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
+  const [tokenNames, setTokenNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  // `GET /users/me/tokens` is owner-only. A fulfilled read is the ownership
+  // boundary: an id missing from it belongs to another member, so the token
+  // stays read-only. A failed read is unknown and also fails closed.
+  const [ownTokensKnown, setOwnTokensKnown] = useState(false);
   const now = useNow();
 
   useEffect(() => {
@@ -556,12 +589,21 @@ export function AttentionApprovalDetail({
       api.getBoard(boardId),
       api.listMembers(boardId),
       api.listAgentSessions(boardId),
-    ]).then(([boardResult, membersResult, sessionsResult]) => {
+      typeof api.listTokens === "function"
+        ? api.listTokens()
+        : Promise.resolve([]),
+    ]).then(([boardResult, membersResult, sessionsResult, tokensResult]) => {
       if (!alive) return;
       if (boardResult.status === "fulfilled") setBoard(boardResult.value);
       if (membersResult.status === "fulfilled") setMembers(membersResult.value);
       if (sessionsResult.status === "fulfilled")
         setSessions(sessionsResult.value);
+      if (tokensResult.status === "fulfilled") {
+        setTokenNames(
+          new Map(tokensResult.value.map((token) => [token.id, token.name])),
+        );
+        setOwnTokensKnown(true);
+      }
     });
     return () => {
       alive = false;
@@ -587,22 +629,27 @@ export function AttentionApprovalDetail({
       : detail.agentSessionId !== null
         ? sessions.find((row) => row.id === detail.agentSessionId)
         : sessions.find((row) => row.apiTokenId === detail.requestedByTokenId);
+  const tokenName =
+    detail === null ? undefined : tokenNames.get(detail.requestedByTokenId);
+  // Attribution is the token (name first, id second), never the session:
+  // one token can drive several sessions, and the session has its own field.
   const agentName =
+    tokenName ??
+    session?.tokenName ??
     fallbackAgentName ??
-    session?.name ??
-    session?.clientName ??
-    detail?.requestedByTokenId ??
-    "";
+    (detail === null ? "" : shortTokenId(detail.requestedByTokenId));
+  const tokenOwnership =
+    detail === null
+      ? "unknown"
+      : tokenNames.has(detail.requestedByTokenId)
+        ? "own"
+        : ownTokensKnown
+          ? "other"
+          : "unknown";
   const boardLabel = board?.title ?? boardTitle;
   const boardCard =
     detail?.cardId != null ? board?.cards[detail.cardId] : undefined;
   const cardTitle = boardCard?.title ?? fallbackCardTitle ?? null;
-  const destructiveCard =
-    detail?.actionType === "DELETE_CARD" && cardTitle !== null;
-  const destructiveImpactText =
-    detail !== null && destructiveCard
-      ? destructiveCardImpactText(cardTitle ?? "", detail.impact, t, tp, lang)
-      : null;
   const requestedBy =
     memberName(detail?.requestedBy ?? null) ?? detail?.requestedBy ?? "";
   const decidedBy =
@@ -676,33 +723,180 @@ export function AttentionApprovalDetail({
       "border-border bg-muted/40 text-muted-foreground [&_svg]:text-muted-foreground",
   } as const;
 
+  const cancelRequest = async (): Promise<boolean> => {
+    if (detail === null) return false;
+    setCancelBusy(true);
+    try {
+      if (onCancelRequest !== undefined) {
+        const ok = await onCancelRequest();
+        if (!ok) return false;
+      } else {
+        const updated = await api.cancelApproval(boardId, detail.id);
+        setDetail({ ...updated, impact: updated.impact ?? detail.impact });
+      }
+      onChanged();
+      toast.success(t("agentControl.approvals.cancelledToast"));
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError && error.offline
+          ? t("agentControl.error.offline")
+          : t("agentControl.approvals.cancelError"),
+      );
+      return false;
+    } finally {
+      setCancelBusy(false);
+      setCancelOpen(false);
+    }
+  };
+
+  const footerNode =
+    detail !== null && effectiveStatus !== undefined && hint !== null ? (
+      <footer
+        className={cn(
+          "ac-foot ac-foot-static shrink-0 border-t border-border",
+          variant === "board"
+            ? "ac-foot-approval bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-3 py-[9px]"
+            : "bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 max-md:px-3 max-md:py-[9px]",
+        )}
+      >
+        {canDecide ? (
+          <ApprovalDecisionForm
+            key={`${detail.id}-${initialMode ?? "idle"}`}
+            busy={busy}
+            planHash={detail.planHash}
+            footerHash={variant === "board" ? detail.planHash : undefined}
+            layout={variant === "board" ? "inline" : "stacked"}
+            onNextPending={
+              variant === "board" || onNextPending === undefined
+                ? undefined
+                : onNextPending
+            }
+            impactTitle={
+              t("agents.runs.commandCount", { count: commandCount }) + "."
+            }
+            impactText={`${detail.summary.replace(/[.\s]+$/, "")}.${cardTitle === null ? "" : ` ${t("agents.approvals.targetLabel", { target: cardTitle })}`}`}
+            initialMode={initialMode}
+            onDecide={decide}
+          />
+        ) : (
+          <div className="flex w-full items-center gap-2">
+            <p className="flex flex-1 items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
+              <span className="mt-px shrink-0">{hint.icon}</span>
+              <span>{hint.text}</span>
+            </p>
+            {variant === "global" &&
+            effectiveStatus === "approved" &&
+            onNextPending !== undefined ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                data-testid="approval-next-pending"
+                onClick={onNextPending}
+                className="h-7 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
+              >
+                {t("agents.approvals.nextPending")}
+              </Button>
+            ) : null}
+            {onBack !== undefined ? (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "min-h-0 rounded-[6px] leading-none font-[650] max-md:min-h-11",
+                    variant === "board"
+                      ? "h-7 px-[9px] text-[11px]"
+                      : "h-8 px-[11px] text-[11.5px]",
+                  )}
+                  onClick={onBack}
+                >
+                  {variant === "global"
+                    ? t("agents.approvals.closeDetail")
+                    : t("common.close")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </footer>
+    ) : null;
+
   return (
     <div
       className="flex min-h-0 flex-1 flex-col"
       data-testid="agents-approval-detail"
     >
-      <header className="shrink-0 border-b border-border px-3.5 pt-3 pb-2">
+      <header
+        className={cn(
+          "shrink-0 border-b border-border px-3.5",
+          variant === "board" ? "pt-[11px] pb-[9px]" : "pt-3 pb-2",
+        )}
+      >
         <div className="flex items-start gap-2">
           {onBack ? (
             <button
               type="button"
               onClick={onBack}
               aria-label={t("agents.approvals.back")}
-              className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground min-[1061px]:hidden"
+              className={cn(
+                "mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded border border-border text-muted-foreground hover:bg-hover hover:text-foreground",
+                variant === "board"
+                  ? "min-[761px]:hidden"
+                  : "min-[1061px]:hidden",
+              )}
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             </button>
           ) : null}
-          <div className="min-w-0">
-            <p className="mb-[3px] text-[11px] font-[650] uppercase tracking-[0.04em] text-muted-foreground">
-              {t("agents.approvals.selected")}
-            </p>
-            <h2 className="text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
+          <div className="min-w-0 flex-1">
+            {variant === "global" ? (
+              <p className="mb-[3px] text-[11px] font-[650] uppercase tracking-[0.04em] text-muted-foreground">
+                {t("agents.approvals.selected")}
+              </p>
+            ) : null}
+            <h2
+              className={cn(
+                "break-words tracking-[-0.01em]",
+                variant === "board"
+                  ? "font-agent-display text-[15px] font-[700] leading-[1.3]"
+                  : "text-[13px] font-[650] leading-[1.35]",
+              )}
+            >
               {detail === null
                 ? t("agents.approvals.loading")
                 : titleForApproval(detail, cardTitle, t)}
             </h2>
+            {variant === "board" && detail !== null ? (
+              <div className="-mt-0.5 mb-2 flex flex-wrap items-center gap-1.5">
+                {effectiveStatus !== undefined ? (
+                  <ApprovalStatusBadge
+                    status={effectiveStatus}
+                    testId="approval-detail-status"
+                  />
+                ) : null}
+                <ApprovalRiskBadge risk={detail.risk} />
+                <span className="inline-flex h-[21px] items-center rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[7px] text-[11px] font-semibold leading-none text-muted-foreground">
+                  {boardLabel}
+                </span>
+              </div>
+            ) : null}
           </div>
+          {variant === "board" && effectiveStatus === "pending" ? (
+            <button
+              type="button"
+              onClick={() => setCancelOpen(true)}
+              disabled={cancelBusy}
+              data-testid="approval-cancel-menu"
+              aria-label={t("agentControl.approvals.cancelRequest")}
+              title={t("agentControl.approvals.cancelRequest")}
+              className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[5px] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
+            >
+              <MoreHorizontal className="!h-3.5 !w-3.5" aria-hidden />
+            </button>
+          ) : null}
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-4">
@@ -739,38 +933,17 @@ export function AttentionApprovalDetail({
               {t("agents.approvals.asksSuffix")}
             </p>
 
-            {detail.kind === "destructive" ? (
-              <div
-                className="mt-2 rounded-r-[5px] border-l-2 border-danger bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] px-2.5 py-2"
-                data-testid="agents-approval-impact"
-              >
-                <p className="flex items-center gap-1.5 text-[11px] font-[650] text-foreground">
-                  <AlertTriangle
-                    className="h-3 w-3 text-[color:var(--agent-tone-danger)]"
-                    aria-hidden
-                  />
-                  {destructiveCard
-                    ? t("agents.approvals.destructiveCardTitle")
-                    : t("agents.approvals.destructiveTitle")}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-[1.5] text-muted-foreground">
-                  {destructiveImpactText ??
-                    t("agents.approvals.destructiveBody")}
-                </p>
-              </div>
-            ) : null}
-
-            <DetailSection title={t("agents.approvals.request")}>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <DetailSection title={t("agents.approvals.request")} first>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-[9px]">
                 <RequestMeta label={t("agentControl.approvals.board")}>
                   {boardLabel}
                 </RequestMeta>
                 <RequestMeta label={t("agents.approvals.requestedBy")}>
-                  {requestedBy}
+                  {agentName}
                 </RequestMeta>
                 <RequestMeta label={t("agents.approvals.agent")}>
                   {session?.name === undefined &&
-                  agentName === detail.requestedByTokenId ? (
+                  agentName === shortTokenId(detail.requestedByTokenId) ? (
                     <span className="font-mono text-[11px]">{agentName}</span>
                   ) : (
                     agentName
@@ -787,76 +960,107 @@ export function AttentionApprovalDetail({
                     </span>
                   )}
                 </RequestMeta>
-                <RequestMeta label={t("agentControl.approvals.card")}>
+                <RequestMeta label={t("agents.approvals.target")}>
                   {detail.cardId === null ? (
-                    t("agentControl.approvals.noCard")
+                    `${t("agents.approvals.targetBoard")} · ${boardLabel}`
                   ) : (
                     <Link
                       to={`${routes.board(boardId)}?card=${encodeURIComponent(detail.cardId)}`}
                       className="hover:text-foreground hover:underline"
                       data-testid="agents-approval-card"
                     >
-                      {cardTitle ?? detail.cardId}
+                      {`${t("agents.approvals.targetCard")} · ${cardTitle ?? detail.cardId}`}
                     </Link>
                   )}
                 </RequestMeta>
-                <RequestMeta label={t("agents.approvals.expiresLabel")}>
-                  {t("agents.approvals.inMinutes", {
-                    count: minutesLeft(detail.expiresAt, now),
-                  })}
+                <RequestMeta
+                  label={
+                    effectiveStatus === "pending"
+                      ? t("agents.approvals.expiresLabel")
+                      : t("agents.approvals.requested")
+                  }
+                >
+                  {effectiveStatus === "pending"
+                    ? t("agents.approvals.inMinutes", {
+                        count: minutesLeft(detail.expiresAt, now),
+                      })
+                    : formatApprovalMoment(detail.createdAt, lang, t)}
                 </RequestMeta>
               </div>
             </DetailSection>
 
             <DetailSection
-              title={t("agents.approvals.whatWillChange")}
-              icon={<FileDiff aria-hidden />}
+              title={t("agentControl.approvals.plan")}
+              icon={<Terminal aria-hidden />}
               aside={
                 <Chip>
                   {t("agents.approvals.commands", { count: commandCount })}
                 </Chip>
               }
             >
-              <div className="grid grid-cols-[minmax(0,1fr)_20px_minmax(0,1fr)] items-center gap-1.5">
-                <div className="min-w-0 rounded-md border border-border bg-background/35 px-2 py-1.5">
-                  <span className="block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
-                    {t("agents.approvals.knownTarget")}
-                  </span>
-                  <b className="mt-0.5 block text-[11px] leading-[1.4] font-semibold break-words">
-                    {cardTitle ?? boardLabel}
-                  </b>
-                </div>
-                <ArrowRight
-                  className="h-3 w-3 justify-self-center text-muted-foreground"
-                  aria-hidden
-                />
-                <div
-                  className={cn(
-                    "min-w-0 rounded-md border px-2 py-1.5",
-                    detail.risk === "high" || detail.kind === "destructive"
-                      ? "border-danger/30 bg-danger/5"
-                      : detail.risk === "medium"
-                        ? "border-warning/30 bg-warning/5"
-                        : "border-border bg-background/35",
-                  )}
-                >
-                  <span className="block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
-                    {t("agents.approvals.exactAction")}
-                  </span>
-                  <b
-                    className={cn(
-                      "mt-0.5 block text-[11px] leading-[1.4] font-semibold break-words",
-                      detail.risk === "high" || detail.kind === "destructive"
-                        ? "text-[color:var(--agent-tone-danger)]"
-                        : detail.risk === "medium"
-                          ? "text-[color:var(--agent-tone-warning)]"
-                          : "text-foreground",
-                    )}
+              <p className="mb-1.5 text-[11.5px] leading-[1.5] text-foreground">
+                {detail.summary}
+              </p>
+              <div
+                className="flex flex-col gap-1.5"
+                data-testid="approval-plan"
+              >
+                {(detail.plan?.commands ?? []).map((command) => (
+                  <div
+                    key={command.commandId}
+                    className="rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--background)_28%,transparent)] px-2 py-[7px]"
+                    data-testid="approval-plan-command"
                   >
-                    {resultLabel(detail.actionType, t)}
-                  </b>
-                </div>
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
+                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-[11px] font-[600] text-foreground">
+                        {String(command.action.type)}
+                      </span>
+                      <span className="min-w-0 truncate text-[11px] text-foreground">
+                        {planCommandTarget(command.action, board)}
+                      </span>
+                      {command.action.type === "MOVE_CARD" && board !== null
+                        ? (() => {
+                            const action = command.action as Record<
+                              string,
+                              unknown
+                            >;
+                            const column = board.columns.find(
+                              (entry) => entry.id === action.toColumnId,
+                            );
+                            return column === undefined ? null : (
+                              <span>
+                                {t("agents.approvals.toColumn", {
+                                  column: column.title,
+                                })}
+                              </span>
+                            );
+                          })()
+                        : null}
+                    </div>
+                  </div>
+                ))}
+                {(detail.plan?.operations ?? []).map((operation, index) => (
+                  <div
+                    key={`${operation.op}-${index}`}
+                    className="rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--background)_28%,transparent)] px-2 py-[7px]"
+                    data-testid="approval-plan-operation"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
+                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-[11px] font-[600] text-foreground">
+                        {operation.op}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {commandCount === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("agentControl.approvals.noPlan")}
+                  </p>
+                ) : null}
               </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {t("agents.approvals.planHint")}
+              </p>
             </DetailSection>
 
             <DetailSection
@@ -874,7 +1078,7 @@ export function AttentionApprovalDetail({
                 </code>
                 <button
                   type="button"
-                  className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center self-center rounded-[5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:h-11 max-md:w-11"
                   onClick={() => void copyHash()}
                   aria-label={t("agentControl.approvals.copyHash")}
                   data-testid="approval-copy-hash"
@@ -905,7 +1109,7 @@ export function AttentionApprovalDetail({
                     name: requestedBy,
                   })}
                   detail={t("agents.approvals.historyMeta", {
-                    time: formatHistoryTime(detail.createdAt, lang, t),
+                    time: formatApprovalMoment(detail.createdAt, lang, t),
                     risk: t(RISK_SHORT_KEYS[detail.risk] as MessageKey),
                     ttl: ttlMinutes,
                   })}
@@ -937,7 +1141,7 @@ export function AttentionApprovalDetail({
                           })
                         : t(APPROVAL_STATUS_KEYS[effectiveStatus])
                     }
-                    detail={`${formatHistoryTime(
+                    detail={`${formatApprovalMoment(
                       detail.decidedAt ?? detail.expiresAt,
                       lang,
                       t,
@@ -951,8 +1155,16 @@ export function AttentionApprovalDetail({
                 {detail.consumedAt !== null ? (
                   <HistoryItem
                     tone="primary"
-                    title={t("agents.approvals.historyApplied")}
-                    detail={formatHistoryTime(detail.consumedAt, lang, t)}
+                    title={
+                      detail.runId === null
+                        ? t("agents.approvals.historyApplied")
+                        : t("agents.approvals.historyAppliedRun", {
+                            run: t("agents.runHash", {
+                              id: runNumber(detail.runId),
+                            }),
+                          })
+                    }
+                    detail={`${formatApprovalMoment(detail.consumedAt, lang, t)} · ${detail.summary}`}
                   />
                 ) : null}
               </div>
@@ -962,7 +1174,11 @@ export function AttentionApprovalDetail({
               title={t("agents.approvals.related")}
               icon={<LinkIcon aria-hidden />}
             >
-              <ApprovalLinks approval={detail} tokenName={agentName} />
+              <ApprovalLinks
+                approval={detail}
+                tokenName={agentName}
+                tokenOwnership={tokenOwnership}
+              />
             </DetailSection>
 
             <details
@@ -985,44 +1201,35 @@ export function AttentionApprovalDetail({
           </div>
         )}
       </div>
-      {detail !== null && effectiveStatus !== undefined && hint !== null ? (
-        <footer className="shrink-0 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5">
-          {canDecide ? (
-            <ApprovalDecisionForm
-              key={`${detail.id}-${initialMode ?? "idle"}`}
-              busy={busy}
-              planHash={detail.planHash}
-              impactTitle={
-                destructiveCard
-                  ? t("agents.approvals.destructiveCardTitle")
-                  : undefined
-              }
-              impactText={destructiveImpactText ?? detail.summary}
-              initialMode={initialMode}
-              onDecide={decide}
-            />
-          ) : (
-            <>
-              <p className="mb-2 flex items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
-                <span className="mt-px shrink-0">{hint.icon}</span>
-                <span>{hint.text}</span>
-              </p>
-              {onBack !== undefined ? (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
-                    onClick={onBack}
-                  >
-                    {t("agents.approvals.closeDetail")}
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </footer>
+      {variant === "board" ? (
+        <AgentControlFooterPortal active={footerActive}>
+          {footerNode}
+        </AgentControlFooterPortal>
+      ) : (
+        footerNode
+      )}
+      {variant === "board" ? (
+        <AgentConfirmDialog
+          open={cancelOpen}
+          onOpenChange={setCancelOpen}
+          icon={CircleSlash}
+          tone="danger"
+          title={t("agentControl.approvals.cancelTitle")}
+          description={t("agentControl.approvals.cancelDescription")}
+          confirmLabel={t("agentControl.approvals.cancelConfirm")}
+          onConfirm={() => {
+            void cancelRequest();
+          }}
+          busy={cancelBusy}
+          testId="approval-cancel-dialog"
+          confirmTestId="approval-cancel-confirm"
+          cancelTestId="approval-cancel-cancel"
+          confirmClassName="min-w-[107px]"
+        >
+          <p className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-foreground">
+            {detail === null ? null : `${detail.summary} · ${agentName}`}
+          </p>
+        </AgentConfirmDialog>
       ) : null}
     </div>
   );

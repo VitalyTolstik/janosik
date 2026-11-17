@@ -44,6 +44,8 @@ const ALL_STATUSES = new Set<AgentSessionStatus>([
 /** Why a session is paused (overlay; the DB stores each level separately). */
 export interface PauseContext {
   tokenPaused: boolean;
+  /** Non-secret display name used for board attribution. */
+  tokenName?: string | null;
   boardPausedAt: Date | null;
 }
 
@@ -581,7 +583,10 @@ export class AgentSessionsService {
       toAgentSessionDto(
         row,
         {
-          tokenPaused: tokens.get(row.apiTokenId) ?? false,
+          ...(tokens.get(row.apiTokenId) ?? {
+            tokenPaused: false,
+            tokenName: null,
+          }),
           boardPausedAt: board.agentsPausedAt,
         },
         Date.now(),
@@ -673,6 +678,7 @@ export class AgentSessionsService {
   ): PauseContext {
     return {
       tokenPaused: principal?.tokenIdentity?.paused ?? false,
+      tokenName: principal?.apiTokenName ?? null,
       boardPausedAt: null,
     };
   }
@@ -682,25 +688,31 @@ export class AgentSessionsService {
   ): Promise<PauseContext> {
     const token = await this.prisma.apiToken.findUnique({
       where: { id: apiTokenId },
-      select: { individualPausedAt: true, stopAllPausedAt: true },
+      select: {
+        name: true,
+        individualPausedAt: true,
+        stopAllPausedAt: true,
+      },
     });
     return {
       tokenPaused:
         token !== null &&
         (token.individualPausedAt !== null || token.stopAllPausedAt !== null),
+      tokenName: token?.name ?? null,
       boardPausedAt: null,
     };
   }
 
   private async tokenPauseContexts(
     apiTokenIds: string[],
-  ): Promise<Map<string, boolean>> {
+  ): Promise<Map<string, PauseContext>> {
     const unique = [...new Set(apiTokenIds)];
     if (unique.length === 0) return new Map();
     const tokens = await this.prisma.apiToken.findMany({
       where: { id: { in: unique } },
       select: {
         id: true,
+        name: true,
         individualPausedAt: true,
         stopAllPausedAt: true,
       },
@@ -708,7 +720,12 @@ export class AgentSessionsService {
     return new Map(
       tokens.map((token) => [
         token.id,
-        token.individualPausedAt !== null || token.stopAllPausedAt !== null,
+        {
+          tokenPaused:
+            token.individualPausedAt !== null || token.stopAllPausedAt !== null,
+          tokenName: token.name,
+          boardPausedAt: null,
+        },
       ]),
     );
   }
@@ -749,6 +766,7 @@ export function toAgentSessionDto(
     id: row.id,
     userId: row.userId,
     apiTokenId: row.apiTokenId,
+    tokenName: pause.tokenName ?? null,
     boardId: row.boardId,
     name: row.name,
     clientName: row.clientName,

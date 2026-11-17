@@ -77,7 +77,8 @@ export const RUN_TIME_WINDOWS_MS: Record<
 };
 
 /** How many rows one board page asks for. The API caps a page at 100. */
-export const RUN_PAGE_SIZE = 100;
+/** One server page per board; small enough to exercise Load more. */
+export const RUN_PAGE_SIZE = 10;
 
 /** The `createdAt` lower bound for a time filter, or `undefined`. */
 export function runFrom(
@@ -207,7 +208,44 @@ export function runBoardRole(
 }
 
 /** The list title used where the API has no stored human summary. */
-export function runTitle(run: RunSummaryDto, t: Translate): string {
+export function runTitle(
+  run: RunSummaryDto,
+  t: Translate,
+  token?: string,
+): string {
+  const summary = run.commandSummary;
+  if (summary !== undefined && summary.actionTypes.length > 0) {
+    const types = new Set(summary.actionTypes);
+    const count = run.commandCount;
+    let action: string | null = null;
+    if (types.size === 1) {
+      const type = summary.actionTypes[0];
+      if (type === "ADD_CARD") {
+        action = t("agents.runs.title.addedCards", { count });
+      } else if (type === "UPDATE_CARD") {
+        action =
+          summary.title === null
+            ? t("agents.runs.title.updatedCards", { count })
+            : t("agents.runs.title.updatedCard", { title: summary.title });
+      } else if (type === "DELETE_CARD") {
+        action = t("agents.runs.title.deletedCards", { count });
+      } else if (type === "MOVE_CARD") {
+        action = t("agents.runs.title.movedCards", { count });
+      } else if (type === "ARCHIVE_CARD") {
+        action = t("agents.runs.title.archivedCards", { count });
+      }
+    }
+    if (action === null) {
+      action = t("agents.runs.title.appliedCommands", { count });
+    }
+    const phrase =
+      run.status === "failed"
+        ? t("agents.runs.title.failed", { count })
+        : action;
+    return token === undefined || token === "" || token.endsWith("…")
+      ? phrase
+      : `${token} ${phrase}`;
+  }
   return t("agents.runs.rowTitle", {
     kind: t(RUN_KIND_KEYS[run.kind]),
     count: run.commandCount,
@@ -271,6 +309,7 @@ export function entityIdOf(
 export function actionSummary(
   action: BoardAction,
   board: Board | undefined,
+  fallbackTitle?: string | null,
 ): string {
   const entity = entityIdOf(action);
   if (entity === null) {
@@ -278,7 +317,7 @@ export function actionSummary(
     return typeof title === "string" ? title : "";
   }
   if (entity.field.toLowerCase().includes("card")) {
-    return board?.cards[entity.id]?.title ?? entity.id;
+    return board?.cards[entity.id]?.title ?? fallbackTitle ?? entity.id;
   }
   if (entity.field.toLowerCase().includes("column")) {
     return (

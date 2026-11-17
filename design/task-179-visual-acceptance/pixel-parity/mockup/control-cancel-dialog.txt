@@ -1,0 +1,186 @@
+Janosik
+Agent Ops Demo
+Agents
+2
+AA
+Board
+Calendar
+Table
+Watch
+Backlog
+4
+backlog
+Card claim visibility
+
+Approval pending
+
+2 ·
+1/3 ·
+AA
+backlog
+Old onboarding draft
+
+Delete approved
+
+2 ·
+1/3 ·
+AA
++ Add card
+In progress
+4
+in progress
+Approval inbox polish
+
+Claude Code
+
+2 ·
+1/3 ·
+AA
+in progress
+MCP write contract
+
+Docs agent
+
+2 ·
+1/3 ·
+AA
++ Add card
+Review
+4
+review
+Session heartbeat copy
+
+Release bot
+
+2 ·
+1/3 ·
+AA
+review
+Landing page rewrite
+
+Claude Code
+
+2 ·
+1/3 ·
+AA
++ Add card
+Done
+4
+backlog
+MCP callouts
+
+Docs agent
+
+2 ·
+1/3 ·
+AA
+backlog
+Pricing page copy
+
+Release bot
+
+2 ·
+1/3 ·
+AA
++ Add card
+Agents on Agent Ops Demo
+
+Decide what agents may change, watch live work, and recover from a run. Policy lives in Board settings.
+
+Running
+2 waiting
+All agents
+THIS BOARD
+Inbox
+2
+Live
+2
+Runs
+5
+Agent policy ↗
+Approval rules, limits and destructive actions live in Board settings → Agents & automation.
+Open policy settings
+Across all boards
+
+Global sessions, approvals and run history live on /agents.
+
+All agents across boards
+Approvals
+Needs
+2
+Decided
+3
+All
+5
+NEEDS DECISION
+EXPIRES FIRST
+NEEDS DECISION
+2
+
+Move “Landing page rewrite” to Review
+
+Claude Code — audit · Landing page rewrite
+Pending
+Medium risk
+expires in 7 min
+
+Delete card “Card claim visibility”
+
+Claude Code — audit · Card claim visibility
+Pending
+Medium risk
+expires in 52 min
+Move “Landing page rewrite” to Review
+Pending
+Medium risk
+Agent Ops Demo
+Waiting for a board admin. The request expires in 7 min.
+
+Claude Code — audit asks to run MOVE_CARD on Agent Ops Demo. Approving authorizes only the commands below — the agent still applies them.
+
+Request
+BOARD
+Agent Ops Demo
+REQUESTED BY
+Claude Code — audit
+AGENT
+Claude Code — audit
+SESSION
+Landing page rewrite
+TARGET
+card · Landing page rewrite
+EXPIRES
+in 7 min
+Plan
+1 command
+
+Move “Landing page rewrite” to Review
+
+MOVE_CARD
+Landing page rewrite
+to Review
+
+Exact commands and known targets from the plan.
+
+Integrity
+exact hash
+4b6d8f0a2c4e6f8b0d2f4a6c8e0b2d4f6a8c0e2f4a6b…
+
+The server checks this hash again when the agent applies the plan. A mismatch rejects the approval.
+
+Decision history
+Requested by Claude Code — audit
+Today, 5:26 PM · risk Medium · TTL 60 min
+Waiting for a board admin
+Expires in 7 min. A decision is one-time.
+Related
+Open board
+Agent session
+Token: Claude Code — audit
+Copy link
+Technical details · plan JSON
+Approving authorizes only
+4b6d8f0a2c…
+. The agent applies the exact plan.
+Reject
+Approve plan
