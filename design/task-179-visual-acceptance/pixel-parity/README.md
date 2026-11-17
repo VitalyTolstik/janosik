@@ -321,3 +321,30 @@ the three partial-error modes.
   “unavailable”.
 - The compact board switcher is back on the 390 header at a 44 × 44 target,
   with the full title and primary actions still fitting.
+
+## Round 8 — Low-severity pass
+
+[`round8-low/`](./round8-low) closes the low-risk findings from the P/O/R/Q
+reports and the Medium-review lows. Measurements and screenshots are captured
+at `fix/agents-pixel-parity` on top of `035ee2ea`.
+
+- Pause/Resume footer icons are 13 px inside the unchanged 103.7 × 32 button;
+  the approve dialog buttons are 61.1 × 28 and 102.6 × 28; the decided board
+  Close is 28 px.
+- The approve/action/confirm/token dialogs use the agent font stack. Consumed
+  approvals read **Applied/Применено**; member notes name the scope; decided
+  rows show absolute times; RU error bodies quote **Повторить**.
+- Runs freshness is `Agent Ops 0s ago · Website 0s ago`, so the description is
+  one line at 1440 and 1024. At RU 390 the Sessions head wraps the actions below
+  a readable title instead of squeezing it to 95 px.
+- Token metadata is `first8…last6`; the Website board dot is teal; run conflicts
+  resolve entity names and localized reasons instead of `kind:id` /
+  `version_changed`.
+- Loading states use approval card and session-row skeletons, reserve `—` for
+  the first rail/tab counts, and Inbox filter counts stay `—` until the queue
+  lands. Inbox Retry refreshes the shell counter without waiting for SSE.
+- The header breadcrumb has its `›` and desktop action buttons are 32 px; the
+  M9 44 px phone targets are unchanged. Board Settings shows **Safe defaults**
+  consistently when a policy was never saved, and the RU approver field wraps
+  instead of truncating.
+
