@@ -27,7 +27,7 @@ this round does not change their behavior.
 | 14 | Header cross-board counts | A member-only scope requests the ADMIN-board snapshot instead of an unreadable scoped approvals call; the combobox keeps the rail counts, while the scoped badge stays unknown. |
 | 16 | Board Settings saved/never-saved | The shell accepts a truthful idle label. On a never-saved policy it shows **Safe defaults** (header and footer agree); dirty/saving still win. |
 | 17 | RU Board Settings mixed/truncated | Destructive copy, workflow action, scope note and approver role are localized; the approver field wraps (**38.6 px**, 2 lines) instead of truncating. |
-| 18 | Header breadcrumb/actions | Added the `›` chevron between the scope and Agents (sm+). Desktop header icon buttons are **32 × 32** (bell/gear/help/undo/redo); 44 px targets below 768 px are unchanged. |
+| 18 | Header breadcrumb/actions | Added the `›` chevron between the scope and Agents (sm+). Desktop header icon buttons are **32 × 32** with **16 × 16** glyphs (bell/search/help/gear/undo/redo); 44 px targets below 768 px are unchanged. |
 
 ## Deferred / accepted (with reason)
 

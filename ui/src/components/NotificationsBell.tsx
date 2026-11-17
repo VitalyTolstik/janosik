@@ -100,7 +100,7 @@ export function NotificationsBell() {
               : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <LazyAnimatedIcon name="bell" size={20} />
+          <LazyAnimatedIcon name="bell" size={16} />
           {count > 0 ? (
             <span
               data-testid="notifications-badge"

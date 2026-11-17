@@ -380,7 +380,7 @@ export function Header() {
                         setSettingsOpen(true);
                       }}
                     >
-                      <LazyAnimatedIcon name="settings" size={20} />
+                      <LazyAnimatedIcon name="settings" size={16} />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>{t("board.settings.button")}</TooltipContent>
@@ -468,7 +468,7 @@ export function Header() {
                   onClick={undo}
                   className="md:h-8 md:w-8 md:min-w-8"
                 >
-                  <LazyAnimatedIcon name="arrow-left" size={20} />
+                  <LazyAnimatedIcon name="arrow-left" size={16} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("undo.tooltip")}</TooltipContent>
@@ -484,7 +484,7 @@ export function Header() {
                   onClick={redo}
                   className="md:h-8 md:w-8 md:min-w-8"
                 >
-                  <LazyAnimatedIcon name="arrow-right" size={20} />
+                  <LazyAnimatedIcon name="arrow-right" size={16} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("redo.tooltip")}</TooltipContent>

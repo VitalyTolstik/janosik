@@ -108,7 +108,7 @@ export function GlobalSearch({
             >
               {t("search.label")}
             </span>
-            <LazyAnimatedIcon name="search" size={20} />
+            <LazyAnimatedIcon name="search" size={16} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
