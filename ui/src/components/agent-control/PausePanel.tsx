@@ -40,6 +40,7 @@ import {
   isTerminalStatus,
   runNumber,
   shortId,
+  shortTokenId,
 } from "@/components/agents/agent-model";
 
 /**
@@ -146,7 +147,7 @@ function LiveSessionRow({
           <span className="truncate">
             {[session.clientName, session.model]
               .filter((value): value is string => Boolean(value))
-              .join(" · ") || shortId(session.apiTokenId)}
+              .join(" · ") || shortTokenId(session.apiTokenId)}
           </span>
           <span aria-hidden>·</span>
           <span>
@@ -575,7 +576,7 @@ export function PausePanel({
           tokenNames.get(session.apiTokenId) ??
           session.clientName ??
           session.name ??
-          `Token ${shortId(session.apiTokenId)}`,
+          `Token ${shortTokenId(session.apiTokenId)}`,
         rows: [session],
       });
     }
@@ -712,7 +713,7 @@ export function PausePanel({
                     {group.name}
                   </b>
                   <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
-                    {shortId(group.tokenId, 12)}
+                    {shortTokenId(group.tokenId)}
                   </span>
                   <span className="text-[11px] text-muted-foreground">
                     {t("agentControl.live.groupLive", {

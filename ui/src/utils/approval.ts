@@ -4,7 +4,38 @@ import type {
   ApprovalStatus,
 } from "@janosik/shared";
 
+import { formatDate } from "@/i18n/i18n";
 import type { MessageKey } from "@/i18n/i18n";
+
+type Translate = (
+  key: MessageKey,
+  options?: Record<string, string | number>,
+) => string;
+
+/**
+ * The mockup's absolute decision moment: `Today, 5:15 PM`, `Yesterday, …`, or
+ * the compact locale date for older rows. Decided rows never show "2 hours
+ * ago"; the relative age only belongs to a pending TTL.
+ */
+export function formatApprovalMoment(
+  timestamp: number,
+  lang: string,
+  t: Translate,
+  nowMs = Date.now(),
+): string {
+  const date = new Date(timestamp);
+  const now = new Date(nowMs);
+  const startOfDay = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const time = new Intl.DateTimeFormat(lang === "ru" ? "ru-RU" : "en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+  if (days === 0) return t("agents.approvals.todayAt", { time });
+  if (days === 1) return t("agents.approvals.yesterdayAt", { time });
+  return formatDate(timestamp, lang);
+}
 
 export const APPROVAL_STATUS_KEYS: Record<ApprovalStatus, MessageKey> = {
   pending: "agentControl.status.pending",

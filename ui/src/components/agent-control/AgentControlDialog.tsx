@@ -379,7 +379,10 @@ export function AgentControlDialog({
               className="ac-content"
             >
               {tab === "approvals" && role === "ADMIN" ? (
-                <ApprovalsPanel role={role} />
+                <ApprovalsPanel
+                  role={role}
+                  onChanged={() => setCountRevision((value) => value + 1)}
+                />
               ) : tab === "pause" ? (
                 <PausePanel role={role} onClose={() => onOpenChange(false)} />
               ) : (

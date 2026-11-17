@@ -461,7 +461,7 @@ describe("AgentsPage", () => {
     renderPage("/agents?board=board-2");
 
     expect(await screen.findByTestId("agents-member-note")).toHaveTextContent(
-      "Approvals are handled by board admins.",
+      "Approvals are handled by board admins on this board.",
     );
     expect(screen.queryByTestId("agents-attention-clear")).toBeNull();
     expect(screen.getByTestId("agents-boards-scope")).toHaveTextContent(
@@ -1918,6 +1918,25 @@ describe("AgentsPage", () => {
     // heartbeat window, so it proves the time filter is applied.
     expect(screen.queryByTestId("agent-session-row-session-old")).toBeNull();
     expect(screen.queryByTestId("agent-session-row-session-3")).toBeNull();
+  });
+
+  it("uses approvals copy for the Attention filtered empty state", async () => {
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 0 },
+        pendingTotal: 0,
+        totalApprovals: 0,
+      }),
+    );
+    renderPage("/agents?section=attention&board=board-1&q=no-match");
+
+    const empty = await screen.findByTestId("agents-filtered-empty");
+    expect(empty).toHaveTextContent("No approvals match these filters");
+    expect(empty).toHaveTextContent(
+      "The queue is empty for this scope and search.",
+    );
+    expect(empty).not.toHaveTextContent("No sessions match these filters");
   });
 
   it("shows the filtered empty state and clears it", async () => {

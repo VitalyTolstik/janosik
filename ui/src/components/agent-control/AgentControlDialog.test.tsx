@@ -337,6 +337,13 @@ describe("agent control (TASK-166.14)", () => {
       ),
     );
     expect(screen.queryByText("Pending delete claim")).toBeNull();
+    // Decided rows show an absolute decision moment, never “X minutes ago”.
+    expect(screen.getByTestId(`approval-row-${decided.id}`)).toHaveTextContent(
+      /Today, /,
+    );
+    expect(
+      screen.getByTestId(`approval-row-${decided.id}`),
+    ).not.toHaveTextContent(/ago/);
   });
 
   it("honors an explicit ?approval deep link even when the row is decided", async () => {
@@ -465,9 +472,38 @@ describe("agent control (TASK-166.14)", () => {
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
     expect(screen.getByText("Select an approval")).toBeInTheDocument();
-    // One request from the Inbox panel, one from the rail/header counter,
-    // plus the manual retry.
-    expect(list).toHaveBeenCalledTimes(3);
+    // One request from the Inbox panel, one from the rail/header counter
+    // (both failed), then the manual retry plus the counter refresh it
+    // triggers.
+    expect(list).toHaveBeenCalledTimes(4);
+  });
+
+  it("refreshes the header pending count after an inbox retry", async () => {
+    const row = approval({
+      id: "approval-pending",
+      summary: "Pending delete claim",
+    });
+    let fail = true;
+    vi.spyOn(api, "listApprovals").mockImplementation(() =>
+      fail ? Promise.reject(new Error("down")) : Promise.resolve([row]),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog("/board/board-1?agents=inbox");
+    expect(
+      await screen.findByText("Could not load the approval queue"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-approvals-count")).toBeNull();
+
+    fail = false;
+    await userEvent.click(screen.getByTestId("agent-approvals-retry"));
+
+    expect(await screen.findByTestId("approval-queue")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-approvals-count")).toHaveTextContent(
+        "1",
+      ),
+    );
   });
 
   it("refetches the queue on an approval SSE frame without a reload", async () => {

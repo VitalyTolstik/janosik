@@ -327,6 +327,15 @@ export function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
 }
 
+/**
+ * Dense token id for metadata rows: `cmwc7a7y…pz4qe6`. Both ends stay
+ * recognisable; a 12-character head alone made every seeded token look the
+ * same (`px-token-doc…`).
+ */
+export function shortTokenId(id: string): string {
+  return id.length > 15 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+}
+
 /** `run-128` → `#128`, so the dense label reads `Run #128`. */
 export function runNumber(id: string): string {
   const explicit = /^run-(\d+)$/.exec(id);

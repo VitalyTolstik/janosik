@@ -41,6 +41,7 @@ import {
   runNumber,
   sessionDisplayStatus,
   shortId,
+  shortTokenId,
   type AgentGroupMode,
   type AgentSessionRow,
 } from "./agent-model";
@@ -416,7 +417,7 @@ export function SessionRow({
           <span className="mt-px block truncate text-[11px] leading-[1.35] text-muted-foreground">
             {[row.clientName, row.model]
               .filter((value): value is string => Boolean(value))
-              .join(" · ") || shortId(row.apiTokenId)}
+              .join(" · ") || shortTokenId(row.apiTokenId)}
           </span>
         </span>
       </span>
@@ -425,7 +426,7 @@ export function SessionRow({
           {row.name ?? shortId(row.id)}
         </b>
         <span className="mt-px block truncate text-[11px] text-muted-foreground max-[760px]:hidden">
-          {mode === "board" ? row.boardTitle : shortId(row.apiTokenId, 12)}
+          {mode === "board" ? row.boardTitle : shortTokenId(row.apiTokenId)}
         </span>
       </span>
       <span className="hidden min-w-0 min-[1181px]:block max-[760px]:col-start-1 max-[760px]:row-start-2 max-[760px]:block">
@@ -808,7 +809,7 @@ export function SessionDetail({
                 className="block truncate font-mono text-[11px] text-muted-foreground"
                 title={row.apiTokenId}
               >
-                {shortId(row.apiTokenId, 12)}
+                {shortTokenId(row.apiTokenId)}
               </span>
             </MetaField>
             <MetaField label={t("agents.started")}>
@@ -949,7 +950,7 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className={`${FOOTER_BUTTON_CLASS} border-border-soft bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
+                className={`${FOOTER_BUTTON_CLASS} border-border-soft bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))] [&_svg]:!h-[13px] [&_svg]:!w-[13px]`}
                 data-testid="agents-session-resume"
                 onClick={() => setAction("resume")}
               >
@@ -961,7 +962,7 @@ export function SessionDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className={`${FOOTER_BUTTON_CLASS} border-border-soft bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))]`}
+                className={`${FOOTER_BUTTON_CLASS} border-border-soft bg-hover text-foreground hover:bg-[color-mix(in_oklab,var(--hover)_70%,var(--border))] [&_svg]:!h-[13px] [&_svg]:!w-[13px]`}
                 data-testid="agents-session-pause"
                 onClick={() => setAction("pause")}
               >

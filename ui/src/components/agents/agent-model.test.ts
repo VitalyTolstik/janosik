@@ -15,6 +15,7 @@ import {
   readAgentGroup,
   runNumber,
   sessionDisplayStatus,
+  shortTokenId,
   type AgentSessionRow,
 } from "@/components/agents/agent-model";
 
@@ -211,6 +212,17 @@ describe("run numbers", () => {
     expect(runNumber("run-128")).toBe("#128");
     expect(runNumber("cmwj5enl100hoiduzapojq7vj42")).toBe("#42");
     expect(runNumber("external")).toBe("#extern");
+  });
+});
+
+describe("token metadata ids", () => {
+  it("keeps the first 8 and last 6 characters", () => {
+    expect(shortTokenId("cmwc7a7y0000abcdefghipz4qe6")).toBe("cmwc7a7y…pz4qe6");
+    expect(shortTokenId("px-token-claude-code-audit")).toBe("px-token…-audit");
+  });
+
+  it("leaves ids short enough to read unchanged", () => {
+    expect(shortTokenId("token-1")).toBe("token-1");
   });
 });
 

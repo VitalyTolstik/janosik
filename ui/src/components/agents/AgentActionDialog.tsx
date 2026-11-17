@@ -161,7 +161,7 @@ export function AgentActionDialog({
     >
       <DialogContent
         hideClose
-        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 !shadow-[var(--agent-shadow-lg)] sm:rounded-[10px]"
+        className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 font-agent-surface !shadow-[var(--agent-shadow-lg)] sm:rounded-[10px]"
         data-testid="agent-action-dialog"
       >
         <div className="flex items-start gap-2.5 px-4 pt-3.5 pb-2.5">

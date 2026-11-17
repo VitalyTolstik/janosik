@@ -34,6 +34,7 @@ import {
   readAgentFilter,
   readAgentGroup,
   shortId,
+  shortTokenId,
   type AgentFilter,
   type AgentSessionRow,
   type AgentStatusFilter,
@@ -562,7 +563,7 @@ export function AgentsPage() {
       (row.agentSessionId === null
         ? undefined
         : approvalSessionTokenNames.get(row.agentSessionId)) ??
-      shortId(row.requestedByTokenId, 12),
+      shortTokenId(row.requestedByTokenId),
     [approvalAgentNames, approvalSessionTokenNames],
   );
   const selectedApprovalId = params.get("approval");
@@ -704,7 +705,7 @@ export function AgentsPage() {
     }
     for (const row of runs.rows) {
       if (row.apiTokenId === null || names.has(row.apiTokenId)) continue;
-      names.set(row.apiTokenId, row.tokenName ?? shortId(row.apiTokenId));
+      names.set(row.apiTokenId, row.tokenName ?? shortTokenId(row.apiTokenId));
     }
     return names;
   }, [runs.rows, state.rows, state.tokens]);
@@ -792,7 +793,7 @@ export function AgentsPage() {
       .sort((a, b) => a.label.localeCompare(b.label)),
     ...(filter.token !== "all" &&
     !state.rows.some((row) => row.apiTokenId === filter.token)
-      ? [{ value: filter.token, label: shortId(filter.token) }]
+      ? [{ value: filter.token, label: shortTokenId(filter.token) }]
       : []),
   ];
   const statusOptions = AGENT_STATUS_FILTERS.map((value) => ({
@@ -814,7 +815,7 @@ export function AgentsPage() {
         .map(([value, label]) => ({ value, label }))
         .sort((a, b) => a.label.localeCompare(b.label)),
       ...(runFilter.token !== "all" && !runTokenNames.has(runFilter.token)
-        ? [{ value: runFilter.token, label: shortId(runFilter.token) }]
+        ? [{ value: runFilter.token, label: shortTokenId(runFilter.token) }]
         : []),
     ],
     [runFilter.token, runTokenNames, t],
@@ -868,6 +869,32 @@ export function AgentsPage() {
     offline ||
     (section === "attention" && pending.error) ||
     (section === "runs" && runs.error);
+  // The page-head description must stay on one line at 1440/1024. Full board
+  // titles (“Agent Ops Demo · Website Relaunch…”) pushed it to a second line,
+  // so the summary uses the mockup's compact labels while the tooltip keeps
+  // the full names.
+  const freshnessText = freshnessStale
+    ? t("agents.shell.freshnessUnknown")
+    : state.lastLoadedAt === null
+      ? ""
+      : state.boards
+          .filter(
+            (board) => filter.board === "all" || board.id === filter.board,
+          )
+          .map((board) =>
+            state.boardLoadedAt[board.id] === undefined
+              ? null
+              : `${compactBoardTitle(board.title)} ${t("agents.shell.updatedAge", { seconds: Math.max(0, Math.floor((now - state.boardLoadedAt[board.id]) / 1000)) })}`,
+          )
+          .filter(Boolean)
+          .join(" · ") ||
+        t("agents.shell.updated", {
+          seconds: Math.max(0, Math.floor((now - state.lastLoadedAt) / 1000)),
+        });
+  const freshnessFull = state.boards
+    .filter((board) => filter.board === "all" || board.id === filter.board)
+    .map((board) => board.title)
+    .join(" · ");
   // One partial-error banner on Runs, even when both the session fan-out and
   // the run fan-out failed. The board names come from either source and the
   // Retry refreshes both, so the retained rows cannot claim to be fresh.
@@ -960,7 +987,16 @@ export function AgentsPage() {
                   aria-hidden
                 />
                 {t(`agents.shell.${item}`)}
-                {count !== null && count > 0 ? (
+                {state.loading ? (
+                  <span
+                    className="ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-hover px-1 text-[11px] font-[650] tabular-nums text-muted-foreground"
+                    data-state="loading"
+                    title={t("common.loading")}
+                    aria-hidden
+                  >
+                    —
+                  </span>
+                ) : count !== null && count > 0 ? (
                   <span
                     data-testid={`agents-count-${item}`}
                     data-state={
@@ -1080,8 +1116,8 @@ export function AgentsPage() {
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
-          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px]">
-            <div className="min-w-0">
+          <header className="mb-3 flex flex-wrap items-start justify-between gap-3 max-md:mb-[9px]">
+            <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px]">
               <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em] max-md:text-[17px]">
                 {t(`agents.shell.${section}`)}
               </h2>
@@ -1093,7 +1129,7 @@ export function AgentsPage() {
                     : t("agents.shell.runsDescription")}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-[7px]">
+            <div className="flex shrink-0 items-center gap-[7px] max-md:ml-auto max-md:flex-wrap max-md:justify-end">
               <span
                 className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:inline-flex"
                 data-testid="agents-updated"
@@ -1118,31 +1154,7 @@ export function AgentsPage() {
                         : "bg-success",
                   )}
                 />
-                <span>
-                  {freshnessStale
-                    ? t("agents.shell.freshnessUnknown")
-                    : state.lastLoadedAt === null
-                      ? ""
-                      : state.boards
-                          .filter(
-                            (board) =>
-                              filter.board === "all" ||
-                              board.id === filter.board,
-                          )
-                          .map((board) =>
-                            state.boardLoadedAt[board.id] === undefined
-                              ? null
-                              : `${board.title} ${t("agents.shell.updatedAge", { seconds: Math.max(0, Math.floor((now - state.boardLoadedAt[board.id]) / 1000)) })}`,
-                          )
-                          .filter(Boolean)
-                          .join(" · ") ||
-                        t("agents.shell.updated", {
-                          seconds: Math.max(
-                            0,
-                            Math.floor((now - state.lastLoadedAt) / 1000),
-                          ),
-                        })}
-                </span>
+                <span title={freshnessFull || undefined}>{freshnessText}</span>
               </span>
               <Button
                 variant="outline"
@@ -1552,11 +1564,9 @@ export function AgentsPage() {
                 testId="agents-loading"
                 contentClassName="space-y-2"
               >
-                {Array.from({ length: 5 }, (_, index) => (
-                  <div key={index} className="border-b border-border p-4">
-                    <Skeleton variant="text" lines={2} />
-                  </div>
-                ))}
+                <AgentListSkeleton
+                  section={section === "attention" ? "attention" : "sessions"}
+                />
               </SkeletonRegion>
             ) : unknownBoard ? (
               <EmptyState
@@ -1592,11 +1602,7 @@ export function AgentsPage() {
                   testId="agents-runs-loading"
                   contentClassName="space-y-2"
                 >
-                  {Array.from({ length: 5 }, (_, index) => (
-                    <div key={index} className="border-b border-border p-4">
-                      <Skeleton variant="text" lines={2} />
-                    </div>
-                  ))}
+                  <AgentListSkeleton section="runs" />
                 </SkeletonRegion>
               ) : runs.error && runs.rows.length === 0 ? (
                 <EmptyState
@@ -1668,7 +1674,7 @@ export function AgentsPage() {
                     tokenLabel={(tokenId) =>
                       tokenId === null
                         ? t("agentControl.runs.noToken")
-                        : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+                        : (runTokenNames.get(tokenId) ?? shortTokenId(tokenId))
                     }
                     conflicts={displayedConflicts}
                   />
@@ -1717,7 +1723,9 @@ export function AgentsPage() {
                 ) : (
                   <>
                     {!isAttentionAdmin ? (
-                      <MemberAttentionBanner />
+                      <MemberAttentionBanner
+                        allBoards={filter.board === "all"}
+                      />
                     ) : (
                       <>
                         {showAllClear ? (
@@ -1853,7 +1861,7 @@ export function AgentsPage() {
               tokenLabel={(tokenId) =>
                 tokenId === null
                   ? t("agentControl.runs.noToken")
-                  : (runTokenNames.get(tokenId) ?? shortId(tokenId))
+                  : (runTokenNames.get(tokenId) ?? shortTokenId(tokenId))
               }
               sessionLabel={(sessionId) =>
                 sessionId === null
@@ -2175,7 +2183,22 @@ function AttentionLiveSessions({
   );
 }
 
-function MemberAttentionBanner() {
+/**
+ * A display-only compact board label for the page-head freshness summary:
+ * “Agent Ops Demo” → “Agent Ops”, “Website Relaunch” → “Website”. The full
+ * title stays available as the summary tooltip. Boards whose first word is
+ * already too long keep an ellipsis instead of vanishing.
+ */
+function compactBoardTitle(title: string, max = 12): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= max) return trimmed;
+  const head = trimmed.slice(0, max + 1);
+  const boundary = head.lastIndexOf(" ");
+  if (boundary > 0) return head.slice(0, boundary).trimEnd();
+  return `${trimmed.slice(0, max)}…`;
+}
+
+function MemberAttentionBanner({ allBoards }: { allBoards: boolean }) {
   const { t } = useI18n();
   return (
     <div
@@ -2188,7 +2211,11 @@ function MemberAttentionBanner() {
       </span>
       <p className="min-w-0 pt-0.5 text-[11.5px] leading-[1.55] text-muted-foreground">
         <span className="font-semibold text-foreground">
-          {t("agents.shell.memberNoteTitle")}
+          {t(
+            allBoards
+              ? "agents.shell.memberNoteTitleAll"
+              : "agents.shell.memberNoteTitleBoard",
+          )}
         </span>{" "}
         {t("agents.shell.memberNoteBody")}
       </p>
@@ -2267,6 +2294,66 @@ function RunFilteredEmpty({ onClear }: { onClear: () => void }) {
         </Button>
       }
     />
+  );
+}
+
+/**
+ * The mockup's loading shapes: approval cards on Attention, session/run rows
+ * elsewhere. The rail reserves a dash instead of popping a fake 0 count.
+ */
+function AgentListSkeleton({
+  section,
+}: {
+  section: "attention" | "sessions" | "runs";
+}) {
+  if (section === "attention") {
+    return (
+      <div className="space-y-2" aria-hidden>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <Skeleton width={170} height={12} />
+          <Skeleton width={96} height={11} />
+        </div>
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            className="rounded-[8px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-3 pt-[11px] pb-2.5"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Skeleton width={112} height={10} />
+              <Skeleton width={64} height={10} />
+              <Skeleton width={72} height={10} />
+            </div>
+            <Skeleton className="mt-2" width="72%" height={13} />
+            <Skeleton className="mt-1.5" width="92%" height={10} />
+            <div className="mt-2 flex items-center gap-1.5">
+              <Skeleton width={62} height={20} className="rounded-[5px]" />
+              <Skeleton width={82} height={20} className="rounded-[5px]" />
+            </div>
+          </div>
+        ))}
+        <div className="space-y-1.5 pt-2">
+          <Skeleton width="52%" height={10} />
+          <Skeleton width="68%" height={10} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1" aria-hidden>
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          key={index}
+          className="flex items-center gap-2.5 border-b border-border px-4 py-3"
+        >
+          <Skeleton width={26} height={26} className="rounded-[6px]" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton width="55%" height={11} />
+            <Skeleton width="78%" height={10} />
+          </div>
+          <Skeleton width={68} height={22} className="rounded-[5px]" />
+        </div>
+      ))}
+    </div>
   );
 }
 

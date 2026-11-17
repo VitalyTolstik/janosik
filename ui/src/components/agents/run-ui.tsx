@@ -183,7 +183,7 @@ export function RunList({
                     ? t("agentControl.runs.noToken")
                     : (run.tokenName ??
                       tokenLabel?.(run.apiTokenId) ??
-                      shortId(run.apiTokenId));
+                      shortTokenId(run.apiTokenId));
                 const conflictCount =
                   run.status === "applied" && run.kind !== "revert"
                     ? (conflicts?.get(run.id) ?? 0)
@@ -892,9 +892,19 @@ export function RunDetail({
                         key={conflict.touch}
                         className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]"
                       >
-                        <span className="font-mono">{conflict.touch}</span> ·{" "}
-                        {conflict.reason} · {conflict.expectedVersion} →{" "}
-                        {conflict.currentVersion}
+                        <span className="font-[650]">
+                          {conflictEntityLabel(
+                            conflict,
+                            board,
+                            detail.preimages,
+                            t,
+                          )}
+                        </span>{" "}
+                        · {conflictReasonLabel(conflict.reason, t)} ·{" "}
+                        {t("agents.runs.conflictVersion", {
+                          expected: conflict.expectedVersion,
+                          current: conflict.currentVersion,
+                        })}
                       </li>
                     ))}
                   </ul>
@@ -1330,10 +1340,123 @@ function preimageLabel(preimage: unknown): string | null {
     const snapshot = (entity as { snapshot?: unknown }).snapshot;
     if (typeof snapshot !== "object" || snapshot === null) continue;
     const record = snapshot as Record<string, unknown>;
-    const label = record.title ?? record.name ?? record.text ?? record.id;
+    const label = record.title ?? record.name ?? record.text;
     if (typeof label === "string" && label !== "") return label;
   }
   return null;
+}
+
+/** The human name of a `kind:id` pre-image touch, if this board still has it. */
+function touchNameOnBoard(
+  board: Board | undefined,
+  kind: string,
+  id: string,
+): string | null {
+  if (board === undefined) return null;
+  switch (kind) {
+    case "board":
+      return board.id === id ? board.title : null;
+    case "column":
+      return board.columns.find((column) => column.id === id)?.title ?? null;
+    case "card":
+      return board.cards[id]?.title ?? null;
+    case "label":
+      return board.labels.find((label) => label.id === id)?.name ?? null;
+    case "checklist":
+    case "checklistItem":
+      for (const card of Object.values(board.cards)) {
+        for (const checklist of card.checklists ?? []) {
+          if (kind === "checklist" && checklist.id === id) {
+            return checklist.title;
+          }
+          if (kind === "checklistItem") {
+            const item = checklist.items.find((entry) => entry.id === id);
+            if (item !== undefined) return item.text;
+          }
+        }
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Deleted entities are gone from the board; their pre-image keeps a name. */
+function touchNameInPreimages(
+  preimages: Record<string, unknown>,
+  touch: string,
+): string | null {
+  for (const preimage of Object.values(preimages)) {
+    if (typeof preimage !== "object" || preimage === null) continue;
+    const entities = (preimage as { entities?: unknown }).entities;
+    if (!Array.isArray(entities)) continue;
+    for (const entity of entities) {
+      if (typeof entity !== "object" || entity === null) continue;
+      if ((entity as { touch?: unknown }).touch !== touch) continue;
+      const snapshot = (entity as { snapshot?: unknown }).snapshot;
+      if (typeof snapshot !== "object" || snapshot === null) continue;
+      const record = snapshot as Record<string, unknown>;
+      const label = record.title ?? record.name ?? record.text;
+      if (typeof label === "string" && label !== "") return label;
+    }
+  }
+  return null;
+}
+
+function touchKindLabel(kind: string, t: Translate): string {
+  switch (kind) {
+    case "card":
+      return t("agents.runs.conflictEntity.card");
+    case "column":
+      return t("agents.runs.conflictEntity.column");
+    case "label":
+      return t("agents.runs.conflictEntity.label");
+    case "checklist":
+      return t("agents.runs.conflictEntity.checklist");
+    case "checklistItem":
+      return t("agents.runs.conflictEntity.checklistItem");
+    case "board":
+      return t("agents.runs.conflictEntity.board");
+    case "command":
+      return t("agents.runs.conflictEntity.command");
+    default:
+      return t("agents.runs.conflictEntity.entity");
+  }
+}
+
+function conflictEntityLabel(
+  conflict: { touch: string },
+  board: Board | undefined,
+  preimages: Record<string, unknown>,
+  t: Translate,
+): string {
+  const separator = conflict.touch.indexOf(":");
+  const kind = separator === -1 ? "entity" : conflict.touch.slice(0, separator);
+  const id = separator === -1 ? "" : conflict.touch.slice(separator + 1);
+  const label = touchKindLabel(kind, t);
+  const name =
+    touchNameOnBoard(board, kind, id) ??
+    touchNameInPreimages(preimages, conflict.touch);
+  return name === null ? label : `${label} “${name}”`;
+}
+
+function conflictReasonLabel(reason: string, t: Translate): string {
+  switch (reason) {
+    case "recreated":
+      return t("agents.runs.conflictReason.recreated");
+    case "version_changed":
+      return t("agents.runs.conflictReason.versionChanged");
+    case "deleted":
+      return t("agents.runs.conflictReason.deleted");
+    case "restored":
+      return t("agents.runs.conflictReason.restored");
+    case "deleted_at_changed":
+      return t("agents.runs.conflictReason.deletedAtChanged");
+    case "missing":
+      return t("agents.runs.conflictReason.missing");
+    default:
+      return t("agents.runs.conflictReason.changed");
+  }
 }
 
 function afterLabel(
@@ -1351,20 +1474,10 @@ function afterLabel(
   if (type.startsWith("MOVE_")) return t("agents.runs.after.moved");
   if (type.startsWith("RENAME_")) return t("agents.runs.after.renamed");
   if (type.startsWith("UPDATE_")) return t("agents.runs.after.updated");
-  const entity = entityIdOf(action);
-  if (entity !== null) {
-    const record =
-      typeof preimage === "object" && preimage !== null
-        ? (preimage as { entities?: unknown }).entities
-        : undefined;
-    if (Array.isArray(record)) {
-      for (const entry of record) {
-        if (typeof entry !== "object" || entry === null) continue;
-        const postVersion = (entry as { postVersion?: unknown }).postVersion;
-        if (typeof postVersion === "number") return `v${postVersion}`;
-      }
-    }
-    return entity.id;
+  // An unknown action never exposes its internal id or a raw version number:
+  // the human diff only needs to say that the entity changed.
+  if (entityIdOf(action) !== null || preimage !== undefined) {
+    return t("agents.runs.after.changed");
   }
   return "—";
 }
@@ -1432,6 +1545,11 @@ function clockLabel(
 
 function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
+}
+
+/** Token metadata keeps both ends: `cmwc7a7y…pz4qe6`. */
+function shortTokenId(id: string): string {
+  return id.length > 15 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }
 
 function absoluteUrl(path: string): string {

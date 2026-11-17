@@ -132,7 +132,7 @@ export function RunsPanel({ role }: { role: Role }) {
         session.tokenName ??
           session.clientName ??
           session.name ??
-          shortId(session.apiTokenId),
+          shortTokenId(session.apiTokenId),
       );
     }
     return names;
@@ -150,7 +150,7 @@ export function RunsPanel({ role }: { role: Role }) {
   const tokenLabel = (tokenId: string | null): string =>
     tokenId === null
       ? t("agentControl.runs.noToken")
-      : (tokenNames.get(tokenId) ?? shortId(tokenId));
+      : (tokenNames.get(tokenId) ?? shortTokenId(tokenId));
   const sessionLabel = (sessionId: string | null): string =>
     sessionId === null
       ? t("agentControl.runs.noSession")
@@ -162,7 +162,7 @@ export function RunsPanel({ role }: { role: Role }) {
         .map(([value, label]) => ({ value, label }))
         .sort((a, b) => a.label.localeCompare(b.label)),
       ...(filter.token !== "all" && !tokenNames.has(filter.token)
-        ? [{ value: filter.token, label: shortId(filter.token) }]
+        ? [{ value: filter.token, label: shortTokenId(filter.token) }]
         : []),
     ],
     [filter.token, t, tokenNames],
@@ -563,4 +563,9 @@ export function RunsPanel({ role }: { role: Role }) {
 
 function shortId(id: string, length = 8): string {
   return id.length > length ? `${id.slice(0, length)}…` : id;
+}
+
+/** Token metadata keeps both ends: `cmwc7a7y…pz4qe6`, never a 12-char head. */
+function shortTokenId(id: string): string {
+  return id.length > 15 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }

@@ -94,7 +94,7 @@ export function NotificationsBell() {
           aria-label={t("notifications.aria")}
           data-testid="notifications-bell"
           className={cn(
-            "relative max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0",
+            "relative max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 md:h-8 md:w-8 md:min-w-8",
             count > 0
               ? "text-primary hover:text-primary"
               : "text-muted-foreground hover:text-foreground",

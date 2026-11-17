@@ -12,16 +12,19 @@ import { AgentsAutomation } from "./AgentsAutomation";
 export function AgentsAutomationSettings({
   role,
   onDirtyChange,
+  onNeverSavedChange,
   onOpenLiveControls,
 }: {
   role: BoardRole | undefined;
   onDirtyChange?: (dirty: boolean) => void;
+  onNeverSavedChange?: (neverSaved: boolean) => void;
   onOpenLiveControls?: () => void;
 }) {
   return (
     <AgentsAutomation
       role={role}
       onDirtyChange={onDirtyChange}
+      onNeverSavedChange={onNeverSavedChange}
       onOpenLiveControls={onOpenLiveControls}
     />
   );

@@ -331,7 +331,7 @@ describe("RunsPanel (TASK-179.5)", () => {
     renderPanel();
 
     expect(await screen.findByTestId("agent-run-conflicts")).toHaveTextContent(
-      "card:card-1",
+      "card “Release notes” · changed · v1 → v3",
     );
     expect(screen.getByTestId("agent-run-can-revert")).toHaveAttribute(
       "data-can-revert",

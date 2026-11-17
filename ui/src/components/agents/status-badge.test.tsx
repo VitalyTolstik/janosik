@@ -48,7 +48,7 @@ describe("one status badge primitive (TASK-179.9)", () => {
     ["rejected", "Rejected"],
     ["expired", "Expired"],
     ["cancelled", "Cancelled"],
-    ["consumed", "Consumed"],
+    ["consumed", "Applied"],
   ] as const)("renders the approval status %s", (status, label) => {
     withI18n(<ApprovalStatusBadge status={status} testId="approval" />);
     const badge = screen.getByTestId("approval");

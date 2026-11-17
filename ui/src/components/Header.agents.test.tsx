@@ -308,7 +308,11 @@ describe("agent entry points in the header", () => {
     // Latin wordmark; only Cyrillic headings fall back to the body stack.
     expect(wordmark.className).toContain("font-agent-display");
     expect(wordmark.className).not.toContain("font-display ");
-    expect(container.querySelector("svg.lucide-chevron-right")).toBeNull();
+    const crumbChevron = container.querySelector(
+      'nav[aria-label="Agents navigation"] svg.lucide-chevron-right',
+    );
+    expect(crumbChevron).not.toBeNull();
+    expect(crumbChevron?.getAttribute("class")).toContain("sm:block");
     expect(screen.getByTestId("account-trigger")).toBeInTheDocument();
   });
 
@@ -390,9 +394,10 @@ describe("agent entry points in the header", () => {
     ).toHaveTextContent("40");
   });
 
-  it("never requests approvals in a member board scope", async () => {
+  it("uses cross-board counts when a member board scope cannot read approvals", async () => {
     const server = new FakeServer([board, boardTwo]);
     server.roles.set("board-2", "MEMBER");
+    server.pendingApprovals.set("board-1", 3);
     server.pendingApprovals.set("board-2", 5);
     renderHeader("/agents?board=board-2", server);
 
@@ -403,12 +408,26 @@ describe("agent entry points in the header", () => {
           .length,
       ).toBeGreaterThan(0),
     );
-    expect(
-      server.requests.some(
-        (request) => request.path === "/api/v1/agents/overview",
-      ),
-    ).toBe(false);
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/api/v1/agents/overview",
+        ),
+      ).toBe(true),
+    );
+    // The scoped board badge stays unknown for a member, but the combobox
+    // keeps the ADMIN-board counts the rail already shows.
     expect(screen.queryByTestId("agents-pending-count")).toBeNull();
+    await userEvent.click(screen.getByTestId("agents-header-scope"));
+    expect(
+      screen.getByTestId("agents-header-scope-option-all"),
+    ).toHaveTextContent("3");
+    expect(
+      screen.getByTestId("agents-header-scope-option-board-1"),
+    ).toHaveTextContent("3");
+    expect(
+      screen.getByTestId("agents-header-scope-option-board-2"),
+    ).not.toHaveTextContent("5");
   });
 
   it("does not show undo or redo to a board viewer", async () => {

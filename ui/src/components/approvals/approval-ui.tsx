@@ -618,7 +618,7 @@ export function ApprovalDecisionForm({
 
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent
-          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 sm:rounded-[10px]"
+          className="w-[min(440px,calc(100vw-1.5rem))] max-w-[440px] gap-0 overflow-hidden rounded-[10px] border-border bg-surface p-0 font-agent-surface sm:rounded-[10px]"
           data-testid="approval-approve-dialog"
           hideClose
         >

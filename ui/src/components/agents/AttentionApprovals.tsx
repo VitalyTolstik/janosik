@@ -36,14 +36,15 @@ import { AgentConfirmDialog } from "./AgentConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
-import { formatDate, useI18n, type MessageKey } from "@/i18n";
+import { useI18n, type MessageKey } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
   APPROVAL_STATUS_KEYS,
   effectiveApprovalStatus,
+  formatApprovalMoment,
 } from "@/utils/approval";
-import { runNumber, shortId } from "./agent-model";
+import { runNumber, shortTokenId } from "./agent-model";
 import { actionSummary } from "./run-model";
 import { AgentControlFooterPortal } from "./AgentControlFooterPortal";
 
@@ -64,21 +65,6 @@ const RISK_SHORT_KEYS: Record<ApprovalRequestDto["risk"], string> = {
 
 function minutesLeft(expiresAt: number, now: number): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 60_000));
-}
-
-function formatHistoryTime(ts: number, lang: string, t: Translate): string {
-  const date = new Date(ts);
-  const now = new Date();
-  const startOfDay = (value: Date) =>
-    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
-  const time = new Intl.DateTimeFormat(lang === "ru" ? "ru-RU" : "en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-  if (days === 0) return t("agents.approvals.todayAt", { time });
-  if (days === 1) return t("agents.approvals.yesterdayAt", { time });
-  return formatDate(ts, lang);
 }
 
 function lengthOfPlan(approval: ApprovalRequestDto): number {
@@ -284,9 +270,38 @@ export function AttentionApprovalList({
 
   if (loading && rows.length === 0)
     return (
-      <section aria-busy="true" data-testid="agents-approvals-loading">
-        <Skeleton variant="text" lines={2} />
-        <Skeleton variant="card" height={90} />
+      <section
+        aria-busy="true"
+        data-testid="agents-approvals-loading"
+        className="space-y-2"
+      >
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <Skeleton width={170} height={12} />
+          <Skeleton width={96} height={11} />
+        </div>
+        {[0, 1].map((index) => (
+          <div
+            key={index}
+            aria-hidden
+            className="rounded-[8px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-3 pt-[11px] pb-2.5"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Skeleton width={112} height={10} />
+              <Skeleton width={64} height={10} />
+              <Skeleton width={72} height={10} />
+            </div>
+            <Skeleton className="mt-2" width="72%" height={13} />
+            <Skeleton className="mt-1.5" width="92%" height={10} />
+            <div className="mt-2 flex items-center gap-1.5">
+              <Skeleton width={62} height={20} className="rounded-[5px]" />
+              <Skeleton width={82} height={20} className="rounded-[5px]" />
+            </div>
+          </div>
+        ))}
+        <div className="space-y-1.5 pt-2" aria-hidden>
+          <Skeleton width="52%" height={10} />
+          <Skeleton width="68%" height={10} />
+        </div>
       </section>
     );
   if (rows.length === 0) return null;
@@ -370,7 +385,7 @@ export function AttentionApprovalList({
                 ? t("agents.approvals.expiresIn", {
                     count: minutesLeft(row.expiresAt, now),
                   })
-                : formatDate(row.decidedAt ?? row.expiresAt, lang);
+                : formatApprovalMoment(row.decidedAt ?? row.expiresAt, lang, t);
             const cardKindKey =
               row.kind === "destructive"
                 ? row.cardTitle !== null
@@ -420,7 +435,7 @@ export function AttentionApprovalList({
                     </span>
                     <span className="block text-[11.5px] leading-[1.5] text-muted-foreground">
                       <b className="font-semibold text-foreground">
-                        {row.agentName ?? shortId(row.requestedByTokenId, 12)}
+                        {row.agentName ?? shortTokenId(row.requestedByTokenId)}
                       </b>{" "}
                       {t("agents.approvals.asksPrefix")}{" "}
                       <code className="font-mono text-[11.5px]">
@@ -785,7 +800,7 @@ export function AttentionApprovalDetail({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 min-h-0 rounded-[6px] px-[11px] text-[11.5px] leading-none font-[650] max-md:min-h-11"
+                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
                   onClick={onBack}
                 >
                   {variant === "global"
@@ -959,7 +974,7 @@ export function AttentionApprovalDetail({
                     ? t("agents.approvals.inMinutes", {
                         count: minutesLeft(detail.expiresAt, now),
                       })
-                    : formatHistoryTime(detail.createdAt, lang, t)}
+                    : formatApprovalMoment(detail.createdAt, lang, t)}
                 </RequestMeta>
               </div>
             </DetailSection>
@@ -1084,7 +1099,7 @@ export function AttentionApprovalDetail({
                     name: requestedBy,
                   })}
                   detail={t("agents.approvals.historyMeta", {
-                    time: formatHistoryTime(detail.createdAt, lang, t),
+                    time: formatApprovalMoment(detail.createdAt, lang, t),
                     risk: t(RISK_SHORT_KEYS[detail.risk] as MessageKey),
                     ttl: ttlMinutes,
                   })}
@@ -1116,7 +1131,7 @@ export function AttentionApprovalDetail({
                           })
                         : t(APPROVAL_STATUS_KEYS[effectiveStatus])
                     }
-                    detail={`${formatHistoryTime(
+                    detail={`${formatApprovalMoment(
                       detail.decidedAt ?? detail.expiresAt,
                       lang,
                       t,
@@ -1139,7 +1154,7 @@ export function AttentionApprovalDetail({
                             }),
                           })
                     }
-                    detail={`${formatHistoryTime(detail.consumedAt, lang, t)} · ${detail.summary}`}
+                    detail={`${formatApprovalMoment(detail.consumedAt, lang, t)} · ${detail.summary}`}
                   />
                 ) : null}
               </div>

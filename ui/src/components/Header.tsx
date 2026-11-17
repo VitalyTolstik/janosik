@@ -1,5 +1,5 @@
 import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
-import { Info, Loader2 } from "lucide-react";
+import { ChevronRight, Info, Loader2 } from "lucide-react";
 
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
@@ -86,8 +86,24 @@ export function Header() {
     role: roleOf(board.id),
     archivedAt: board.archivedAt,
   }));
+  // A member-only board scope keeps cross-board counts in the rail; the
+  // header combobox must read the same ADMIN-board snapshot instead of
+  // asking for an approvals scope the member cannot see.
+  const scopedBoardReadable =
+    headerBoardId !== null &&
+    pendingBoards.some(
+      (board) =>
+        board.id === headerBoardId &&
+        board.role === "ADMIN" &&
+        board.archivedAt === undefined,
+    );
+  const hasAdminBoard = pendingBoards.some(
+    (board) => board.role === "ADMIN" && board.archivedAt === undefined,
+  );
+  const needsCrossBoardCounts =
+    headerBoardId !== null && !scopedBoardReadable && hasAdminBoard;
   const pendingApprovals = usePendingApprovals({
-    boardId: headerBoardId,
+    boardId: needsCrossBoardCounts ? null : headerBoardId,
     boards: pendingBoards,
     enabled: isAgentsRoute,
   });
@@ -316,6 +332,10 @@ export function Header() {
                 stale={pendingApprovals.stale}
               />
             </div>
+            <ChevronRight
+              aria-hidden
+              className="hidden h-3 w-3 shrink-0 text-muted-foreground sm:block"
+            />
             <span className="hidden font-agent-surface text-[12px] font-medium leading-[1.45] text-foreground sm:inline">
               {t("agents.open")}
             </span>
@@ -354,6 +374,7 @@ export function Header() {
                       size="icon"
                       aria-label={t("board.settings.button")}
                       data-testid="board-settings-trigger"
+                      className="md:h-8 md:w-8 md:min-w-8"
                       onClick={() => {
                         setSettingsSection("workflow");
                         setSettingsOpen(true);
@@ -445,6 +466,7 @@ export function Header() {
                   aria-label={t("undo.aria")}
                   disabled={!canUndo}
                   onClick={undo}
+                  className="md:h-8 md:w-8 md:min-w-8"
                 >
                   <LazyAnimatedIcon name="arrow-left" size={20} />
                 </Button>
@@ -460,6 +482,7 @@ export function Header() {
                   aria-label={t("redo.aria")}
                   disabled={!canRedo}
                   onClick={redo}
+                  className="md:h-8 md:w-8 md:min-w-8"
                 >
                   <LazyAnimatedIcon name="arrow-right" size={20} />
                 </Button>

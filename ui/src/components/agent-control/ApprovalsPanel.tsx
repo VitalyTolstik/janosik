@@ -11,13 +11,17 @@ import type {
 import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
-import { formatRelative, useI18n } from "@/i18n";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { effectiveApprovalStatus } from "@/utils/approval";
+import {
+  effectiveApprovalStatus,
+  formatApprovalMoment,
+} from "@/utils/approval";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
 import { ApprovalStatusBadge } from "@/components/approvals/approval-ui";
 import { AttentionApprovalDetail } from "@/components/agents/AttentionApprovals";
+import { shortTokenId } from "@/components/agents/agent-model";
 import { AgentControlFooterPortal } from "@/components/agents/AgentControlFooterPortal";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { AgentControlError } from "./AgentControlError";
@@ -55,9 +59,13 @@ function QueueSkeleton() {
     >
       <div className="space-y-2" aria-hidden="true">
         {Array.from({ length: 3 }, (_, index) => (
-          <div key={index} className="space-y-1.5 rounded-lg border p-3">
-            <Skeleton width={140} height={12} />
-            <Skeleton width={200} height={10} />
+          <div key={index} className="space-y-2 rounded-lg border p-2.5">
+            <Skeleton width="74%" height={12} />
+            <Skeleton width="58%" height={10} />
+            <div className="flex items-center gap-1.5">
+              <Skeleton width={58} height={20} className="rounded-[5px]" />
+              <Skeleton width={72} height={10} />
+            </div>
           </div>
         ))}
       </div>
@@ -147,7 +155,7 @@ export function ApprovalsPanel({
       session?.tokenName ??
       session?.name ??
       session?.clientName ??
-      row.requestedByTokenId.slice(0, 12)
+      shortTokenId(row.requestedByTokenId)
     );
   };
 
@@ -252,7 +260,10 @@ export function ApprovalsPanel({
           <AgentControlError
             title={t("agentControl.approvals.loadError")}
             body={t("agentControl.approvals.loadErrorBody")}
-            onRetry={() => setRevision((value) => value + 1)}
+            onRetry={() => {
+              setRevision((value) => value + 1);
+              onChanged?.();
+            }}
             testId="agent-approvals-error-card"
             retryTestId="agent-approvals-retry"
           />
@@ -348,7 +359,7 @@ export function ApprovalsPanel({
               ? t("agents.approvals.expiresIn", {
                   count: Math.max(0, Math.ceil((row.expiresAt - now) / 60_000)),
                 })
-              : formatRelative(row.decidedAt ?? row.expiresAt, lang, now)}
+              : formatApprovalMoment(row.decidedAt ?? row.expiresAt, lang, t)}
           </span>
         </span>
       </button>
@@ -381,7 +392,9 @@ export function ApprovalsPanel({
               className={cn("chip", filter === value && "primary")}
             >
               {t(key)}
-              <b className="tabular-nums">{counts[countKey]}</b>
+              <b className="tabular-nums">
+                {loadingList ? "—" : counts[countKey]}
+              </b>
             </button>
           ))}
         </div>
@@ -402,7 +415,10 @@ export function ApprovalsPanel({
           className="icon-btn-sm"
           data-testid="approval-refresh"
           aria-label={t("agentControl.approvals.refresh")}
-          onClick={() => setRevision((value) => value + 1)}
+          onClick={() => {
+            setRevision((value) => value + 1);
+            onChanged?.();
+          }}
         >
           <RefreshCw className="icon" aria-hidden="true" />
         </button>
