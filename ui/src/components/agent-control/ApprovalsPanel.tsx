@@ -333,7 +333,7 @@ export function ApprovalsPanel({
         aria-current={selectedId === row.id}
         onClick={() => selectApproval(row.id)}
         className={cn(
-          "block w-full border-b border-border-soft px-2.5 py-[9px] text-left transition-colors",
+          "block w-full border-b border-border-soft px-2.5 py-[9px] text-left transition-colors min-[761px]:py-2",
           pending && "bg-warning/3",
           selectedId === row.id
             ? pending
