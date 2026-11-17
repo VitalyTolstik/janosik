@@ -1119,7 +1119,7 @@ export function AgentsPage() {
         aria-labelledby={`agents-tab-${section}`}
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
-        <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
+        <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] min-[1600px]:max-w-[1200px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
           <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px] max-md:flex-wrap">
             <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px] md:max-w-[390px]">
               <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em] max-md:text-[17px]">
@@ -1830,7 +1830,7 @@ export function AgentsPage() {
       <aside
         data-testid="agents-detail-panel"
         className={cn(
-          "hidden shrink-0 flex-col border-l border-border bg-[color-mix(in_oklab,var(--surface)_48%,var(--background))] min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
+          "hidden shrink-0 flex-col border-l border-border bg-[color-mix(in_oklab,var(--surface)_48%,var(--background))] min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px] min-[1600px]:w-[400px]",
           (missingScope || unknownBoard) && "!hidden",
           ((section === "attention" &&
             isAttentionAdmin &&

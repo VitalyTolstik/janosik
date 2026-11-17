@@ -100,6 +100,13 @@ describe("agent design system (TASK-179.9)", () => {
     expect(boardSettingsShell).toContain("md:top-[56px]");
   });
 
+  it("uses the large-screen width caps on the global agents page", () => {
+    expect(agentsPage).toContain("max-w-[980px]");
+    expect(agentsPage).toContain("min-[1600px]:max-w-[1200px]");
+    expect(agentsPage).toContain("min-[1181px]:w-[352px]");
+    expect(agentsPage).toContain("min-[1600px]:w-[400px]");
+  });
+
   it("adds the large-screen modal width only at >=1600", () => {
     const marker = "@media (min-width: 1600px)";
     const start = agentControlCss.indexOf(marker);
