@@ -344,10 +344,46 @@ describe("AgentsPage", () => {
     const banner = await screen.findByTestId("agents-runs-stale");
     expect(banner).toHaveTextContent("Docs");
     expect(banner).toHaveTextContent("Some boards are unavailable");
+    expect(banner).toHaveTextContent("Boards: Docs");
+    expect(banner).not.toHaveTextContent("Unavailable:");
     expect(screen.queryByTestId("agents-error")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(
       screen.getByTestId("agents-run-row-run-board-1"),
     ).toBeInTheDocument();
+  });
+
+  it("shows only the sessions banner on Runs when runs still succeed", async () => {
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      boardId === "board-2"
+        ? Promise.reject({ status: 503 })
+        : Promise.resolve([session()]),
+    );
+    hoisted.listRuns.mockImplementation((boardId: string) =>
+      Promise.resolve([run({ id: `run-${boardId}`, boardId })]),
+    );
+    renderPage("/agents?section=runs");
+
+    const banner = await screen.findByTestId("agents-error");
+    expect(banner).toHaveTextContent("Boards: Docs");
+    expect(banner).not.toHaveTextContent("Unavailable:");
+    expect(screen.queryByTestId("agents-runs-stale")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("shows only the runs banner on Runs when sessions still succeed", async () => {
+    hoisted.listRuns.mockImplementation((boardId: string) =>
+      boardId === "board-2"
+        ? Promise.reject({ status: 503 })
+        : Promise.resolve([run({ id: `run-${boardId}`, boardId })]),
+    );
+    renderPage("/agents?section=runs");
+
+    const banner = await screen.findByTestId("agents-runs-stale");
+    expect(banner).toHaveTextContent("Boards: Docs");
+    expect(banner).not.toHaveTextContent("Unavailable:");
+    expect(screen.queryByTestId("agents-error")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("warns and retains the last known sessions when one board fails", async () => {
@@ -1669,6 +1705,18 @@ describe("AgentsPage", () => {
         "data-status",
         "pending",
       ),
+    );
+    // The list follows the detail: Needs is active and the pending row is
+    // visibly selected instead of leaving an off-list detail under Decided.
+    expect(screen.getByTestId("agents-approvals-filter-needs")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.getByTestId("agents-approval-approval-pending"),
+    ).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("agents-approval-list")).toHaveTextContent(
+      /needs decision/i,
     );
   });
 

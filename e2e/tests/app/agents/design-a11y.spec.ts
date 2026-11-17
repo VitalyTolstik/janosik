@@ -108,6 +108,87 @@ test("one status badge keeps the mark and label on the same centre", async ({
   }
 });
 
+test("board header keeps the title and Agents action usable at tablet widths", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  for (const width of [390, 719, 720, 721, 768, 800, 900, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const header = page.locator("header").first();
+    await expect(header).toBeVisible();
+    await expect(page.getByTestId("agent-control-trigger")).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const headerEl = document.querySelector("header")!;
+      const title = headerEl.querySelector("h2");
+      const agent = document.querySelector<HTMLElement>(
+        '[data-testid="agent-control-trigger"]',
+      );
+      const titleRect = title?.getBoundingClientRect();
+      const agentRect = agent?.getBoundingClientRect();
+      const point = agentRect
+        ? {
+            x: agentRect.left + agentRect.width / 2,
+            y: agentRect.top + agentRect.height / 2,
+          }
+        : null;
+      const hit = point ? document.elementFromPoint(point.x, point.y) : null;
+      return {
+        headerOverflow: headerEl.scrollWidth - headerEl.clientWidth,
+        title: title?.textContent?.trim() ?? "",
+        titleRight: titleRect?.right ?? null,
+        titleWidth: titleRect?.width ?? 0,
+        agentLeft: agentRect?.left ?? null,
+        agentWidth: agentRect?.width ?? 0,
+        agentHeight: agentRect?.height ?? 0,
+        hitInsideAgent:
+          agent !== null && hit !== null ? agent.contains(hit) : false,
+      };
+    });
+
+    expect(layout.headerOverflow).toBeLessThanOrEqual(0);
+    expect(layout.title).not.toBe("");
+    expect(layout.titleWidth).toBeGreaterThan(0);
+    expect(layout.hitInsideAgent).toBe(true);
+    expect(layout.titleRight).not.toBeNull();
+    expect(layout.agentLeft).not.toBeNull();
+    expect(layout.titleRight!).toBeLessThanOrEqual(layout.agentLeft! + 1);
+    if (width <= 720) expect(layout.agentHeight).toBeGreaterThanOrEqual(44);
+    if (width <= 720) {
+      await expect(page.getByTestId("board-settings-trigger")).toBeHidden();
+    } else {
+      await expect(page.getByTestId("board-settings-trigger")).toBeVisible();
+    }
+
+    if (width === 390) {
+      await expect(
+        page.getByRole("button", { name: "Switch board" }),
+      ).toBeVisible();
+      expect(layout.agentHeight).toBeGreaterThanOrEqual(44);
+    }
+    const search = page.getByRole("button", {
+      name: "Search cards and boards",
+    });
+    if (width === 720) {
+      await expect(search).toBeHidden();
+      await expect(page.getByText("Global search")).toBeHidden();
+    }
+    if (width === 721) {
+      await expect(
+        page.getByRole("button", { name: "Switch board" }),
+      ).toBeVisible();
+      await expect(search).toBeVisible();
+      await expect(page.getByText("Global search")).toBeHidden();
+    }
+    if (width >= 1024) {
+      await expect(page.getByText("Global search")).toBeVisible();
+    }
+  }
+});
+
 test("1024 sheet starts below the real board header", async ({
   page,
   board,

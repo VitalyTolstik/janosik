@@ -44,6 +44,8 @@ interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */
   onOpenChange?: (open: boolean) => void;
   iconOnly?: boolean;
+  /** Responsive label visibility for a header with its own breakpoints. */
+  labelClassName?: string;
 }
 
 /**
@@ -57,6 +59,7 @@ interface GlobalSearchProps {
 export function GlobalSearch({
   onOpenChange,
   iconOnly = false,
+  labelClassName,
 }: GlobalSearchProps) {
   const { t } = useI18n();
 
@@ -99,8 +102,8 @@ export function GlobalSearch({
           >
             <span
               className={cn(
-                "hidden text-xs font-medium",
-                !iconOnly && "sm:inline",
+                "text-xs font-medium",
+                labelClassName ?? cn("hidden", !iconOnly && "sm:inline"),
               )}
             >
               {t("search.label")}

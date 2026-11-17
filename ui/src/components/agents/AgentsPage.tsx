@@ -879,10 +879,12 @@ export function AgentsPage() {
   const unavailableRunBoards = unavailableRunBoardIds
     .map((id) => state.boards.find((board) => board.id === id)?.title ?? id)
     .join(", ");
+  // Exactly one banner per failure mode on Runs:
+  // - runs failed -> runs banner (names session-only failures too);
+  // - only sessions failed -> the generic sessions banner;
+  // - both -> the runs banner is the single consolidated one.
   const showRunsPartialError =
-    section === "runs" &&
-    runs.rows.length > 0 &&
-    (runs.error || state.error || offline);
+    section === "runs" && runs.rows.length > 0 && runs.error;
   const openTokens = () =>
     window.dispatchEvent(new Event("janosik:open-api-keys"));
 
@@ -1420,7 +1422,7 @@ export function AgentsPage() {
           ) : null}
           {(state.error || offline) &&
             state.rows.length > 0 &&
-            !(section === "runs" && (runs.error || offline)) && (
+            !(section === "runs" && runs.error) && (
               <div
                 className={cn(
                   "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
@@ -1900,7 +1902,13 @@ export function AgentsPage() {
             onNextPending={
               nextPendingApproval === null
                 ? undefined
-                : () => openApproval(nextPendingApproval)
+                : () => {
+                    // Decided is a history view; moving to a pending peer must
+                    // also move the list back to Needs so the selected detail
+                    // is visibly in the queue.
+                    setApprovalFilter("needs");
+                    openApproval(nextPendingApproval);
+                  }
             }
           />
         ) : section === "sessions" ||

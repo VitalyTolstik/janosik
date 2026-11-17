@@ -280,9 +280,9 @@ export function Header() {
         {isBoardRoute ? (
           <>
             <BoardTitle />
-            <div className="max-[720px]:hidden">
-              <BoardSwitcher />
-            </div>
+            {/* The compact chevron stays on the phone header: switching
+                boards is navigation, not secondary chrome. */}
+            <BoardSwitcher />
           </>
         ) : isAgentsRoute ? (
           <nav
@@ -326,16 +326,16 @@ export function Header() {
           </nav>
         ) : null}
         {!isAgentsRoute ? (
-          <div className={cn(isBoardRoute && "max-[720px]:hidden")}>
+          <div className={cn(isBoardRoute && "max-[720.98px]:hidden")}>
             <NotificationsBell />
           </div>
         ) : null}
         {isBoardRoute ? (
           <>
-            <div className="max-[720px]:hidden">
+            <div className="hidden min-[1024px]:block">
               <BoardMembersDialog />
             </div>
-            <div className="max-[720px]:hidden">
+            <div className="hidden min-[1024px]:block">
               <ShareDialog />
             </div>
             <AgentControlButton
@@ -346,7 +346,7 @@ export function Header() {
               }}
             />
             {role === "ADMIN" ? (
-              <div className="max-[720px]:hidden">
+              <div className="max-[720.98px]:hidden">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -366,9 +366,9 @@ export function Header() {
                 </Tooltip>
               </div>
             ) : null}
-            {/* The presence stack needs more width than a phone header can
-            give; the roster stays reachable from the members dialog. */}
-            <div className="hidden sm:block">
+            {/* The presence stack needs the widest header; below 1200 px the
+                roster stays reachable from the members dialog. */}
+            <div className="hidden min-[1200px]:block">
               <PresenceStack />
             </div>
           </>
@@ -385,17 +385,23 @@ export function Header() {
           <div className="hidden sm:block">
             <GlobalSearch iconOnly />
           </div>
-        ) : (
-          <div className={cn(isBoardRoute && "max-[720px]:hidden")}>
-            <GlobalSearch iconOnly={isBoardRoute} />
+        ) : isBoardRoute ? (
+          // The icon returns at 721 px; the label waits for the full header
+          // at 1024 px so it cannot paint over the title or Agents.
+          <div className="hidden min-[721px]:block">
+            <GlobalSearch labelClassName="hidden min-[1024px]:inline" />
           </div>
+        ) : (
+          <GlobalSearch />
         )}
         {isAgentsRoute ? (
           <NotificationsBell />
-        ) : (
-          <div className={cn(isBoardRoute && "max-[720px]:hidden")}>
+        ) : isBoardRoute ? (
+          <div className="hidden min-[1200px]:block">
             <HelpMenu />
           </div>
+        ) : (
+          <HelpMenu />
         )}
         {isAgentsRoute ? (
           <Link
@@ -430,7 +436,7 @@ export function Header() {
         ) : null}
 
         {isBoardRoute && !readOnly ? (
-          <div className="flex items-center gap-0.5 max-[720px]:hidden">
+          <div className="hidden items-center gap-0.5 min-[1024px]:flex">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -464,7 +470,7 @@ export function Header() {
         ) : null}
 
         {isBoardRoute ? (
-          <div className="max-[720px]:hidden">
+          <div className="hidden min-[1024px]:block">
             <DataMenu />
           </div>
         ) : null}
