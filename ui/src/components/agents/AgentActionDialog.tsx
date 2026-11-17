@@ -102,6 +102,10 @@ export function AgentActionDialog({
         : t("agents.action.confirmEnd");
   const Icon = action === "pause" ? Pause : action === "resume" ? Play : Square;
   const agentLabel = row.agentLabel ?? row.tokenName ?? row.name ?? row.id;
+  const reasonPlaceholder =
+    action === "resume"
+      ? t("agents.action.resumeReasonPlaceholder")
+      : t("agents.action.reasonPlaceholder");
 
   const submit = async (): Promise<void> => {
     setBusy(true);
@@ -169,7 +173,7 @@ export function AgentActionDialog({
             className={cn(
               "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[7px] border bg-surface",
               action === "end"
-                ? "border-danger/40 text-[color:var(--agent-tone-danger)]"
+                ? "border-danger/40 text-[color:var(--danger)]"
                 : "border-border text-muted-foreground",
             )}
             aria-hidden
@@ -216,7 +220,7 @@ export function AgentActionDialog({
                 maxLength={REASON_MAX}
                 rows={2}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder={t("agents.action.reasonPlaceholder")}
+                placeholder={reasonPlaceholder}
                 data-testid="agent-action-reason"
                 className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
                 autoFocus

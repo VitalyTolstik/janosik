@@ -32,6 +32,13 @@ describe("one status badge primitive (TASK-179.9)", () => {
     );
   });
 
+  it("uses the mockup raw danger tone for a bad status", () => {
+    withI18n(<StatusBadge label="Failed" tone="bad" testId="badge" />);
+    expect(screen.getByTestId("badge").className).toContain(
+      "text-[color:var(--danger)]",
+    );
+  });
+
   it("never ellipsizes a lifecycle label", () => {
     withI18n(<SessionStatusPill status="completed" />);
     const badge = screen.getByTestId("agent-status-completed");

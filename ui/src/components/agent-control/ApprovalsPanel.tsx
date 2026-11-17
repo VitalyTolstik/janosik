@@ -201,6 +201,7 @@ export function ApprovalsPanel({
       return haystack.includes(needle);
     });
   }, [board?.cards, filter, now, queue, search]);
+  const searchActive = search.trim() !== "";
   const requestedApprovalId = params.get("approval");
   useEffect(() => {
     // Selection follows the visible list: never keep a detail that the active
@@ -306,6 +307,11 @@ export function ApprovalsPanel({
     dropApprovalParam();
   };
 
+  const clearSearchAndFilter = () => {
+    changeSearch("");
+    changeFilter("needs");
+  };
+
   const selectApproval = (id: string) => {
     setSelectedId(id);
     setMobileDetailOpen(true);
@@ -327,7 +333,7 @@ export function ApprovalsPanel({
         aria-current={selectedId === row.id}
         onClick={() => selectApproval(row.id)}
         className={cn(
-          "block w-full border-b border-border-soft px-2.5 py-2 text-left transition-colors",
+          "block w-full border-b border-border-soft px-2.5 py-[9px] text-left transition-colors",
           pending && "bg-warning/3",
           selectedId === row.id
             ? pending
@@ -475,22 +481,30 @@ export function ApprovalsPanel({
                 <Inbox className="icon" aria-hidden="true" />
               </span>
               <h3>
-                {filter === "needs"
-                  ? t("agentControl.approvals.emptyPending")
-                  : t("agentControl.approvals.emptyOther")}
+                {searchActive
+                  ? t("agents.approvals.emptyFiltered")
+                  : filter === "needs"
+                    ? t("agentControl.approvals.emptyPending")
+                    : t("agentControl.approvals.emptyOther")}
               </h3>
               <p>
-                {filter === "needs"
-                  ? t("agentControl.approvals.emptyPendingBody")
-                  : t("agentControl.approvals.emptyOtherBody")}
+                {searchActive
+                  ? t("agents.approvals.emptyFilteredBody")
+                  : filter === "needs"
+                    ? t("agentControl.approvals.emptyPendingBody")
+                    : t("agentControl.approvals.emptyOtherBody")}
               </p>
               <div className="empty-actions">
                 <button
                   type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={() => changeFilter("all")}
+                  className="btn btn-outline btn-sm max-md:min-h-11"
+                  onClick={() =>
+                    searchActive ? clearSearchAndFilter() : changeFilter("all")
+                  }
                 >
-                  {t("agentControl.approvals.viewAll")}
+                  {searchActive
+                    ? t("agents.clearFilters")
+                    : t("agentControl.approvals.viewAll")}
                 </button>
               </div>
             </div>
@@ -560,7 +574,7 @@ export function ApprovalsPanel({
           </div>
         ) : null}
       </div>
-      {!loadingList && !listError && filtered.length === 0 ? (
+      {!loadingList && !listError && filtered.length === 0 && !searchActive ? (
         <AgentControlFooterPortal>
           <footer className="ac-foot ac-foot-static">
             <span className="ac-foot-note">

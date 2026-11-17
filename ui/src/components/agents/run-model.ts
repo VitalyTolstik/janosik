@@ -309,6 +309,7 @@ export function entityIdOf(
 export function actionSummary(
   action: BoardAction,
   board: Board | undefined,
+  fallbackTitle?: string | null,
 ): string {
   const entity = entityIdOf(action);
   if (entity === null) {
@@ -316,7 +317,7 @@ export function actionSummary(
     return typeof title === "string" ? title : "";
   }
   if (entity.field.toLowerCase().includes("card")) {
-    return board?.cards[entity.id]?.title ?? entity.id;
+    return board?.cards[entity.id]?.title ?? fallbackTitle ?? entity.id;
   }
   if (entity.field.toLowerCase().includes("column")) {
     return (

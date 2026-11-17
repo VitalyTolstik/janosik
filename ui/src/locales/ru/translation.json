@@ -2177,6 +2177,7 @@
   "agents.action.finalStatus": "Финальный статус",
   "agents.action.reason": "Причина (необязательно)",
   "agents.action.reasonPlaceholder": "Почему вы ставите сессию на паузу?",
+  "agents.action.resumeReasonPlaceholder": "Почему вы возобновляете сессию?",
   "agents.action.summary": "Итог (необязательно)",
   "agents.action.summaryPlaceholder": "Что успел сделать агент?",
   "agents.action.completed": "Завершена",

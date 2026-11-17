@@ -483,6 +483,13 @@ describe("AgentsPage", () => {
     expect(hoisted.listApprovals).not.toHaveBeenCalled();
   });
 
+  it("keeps the admin Attention detail empty when no approval is visible", async () => {
+    renderPage("/agents?section=attention&board=board-1");
+
+    expect(await screen.findByText("Nothing selected")).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-session-detail-hint")).toBeNull();
+  });
+
   it("never opens an approval detail from a member deep link", async () => {
     renderPage("/agents?section=attention&board=board-2&approval=approval-1");
 
@@ -2253,6 +2260,10 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agent-status-active")).toBeNull();
 
     await userEvent.click(screen.getByTestId("agents-session-resume"));
+    expect(await screen.findByTestId("agent-action-reason")).toHaveAttribute(
+      "placeholder",
+      "Why are you resuming this session?",
+    );
     await userEvent.click(await screen.findByTestId("agent-action-confirm"));
     await waitFor(() =>
       expect(hoisted.resumeAgentSession).toHaveBeenCalledWith(

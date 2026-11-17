@@ -984,6 +984,28 @@ describe("agent control (TASK-166.14)", () => {
     expect(screen.getByTestId(`approval-row-${second.id}`)).toBeInTheDocument();
   });
 
+  it("uses filtered-empty copy and clears the search", async () => {
+    const row = approval();
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog();
+    await screen.findByTestId("approval-queue");
+    const search = screen.getByTestId("approval-search");
+    await userEvent.type(search, "zzzz-no-match");
+
+    expect(
+      await screen.findByText("No approvals match these filters"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No approvals waiting")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear filters" }),
+    );
+
+    expect(await screen.findByTestId("approval-queue")).toBeInTheDocument();
+    expect(search).toHaveValue("");
+  });
+
   it("shows the prototype empty Live state and pause footer", async () => {
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
     renderDialog();

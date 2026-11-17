@@ -304,6 +304,8 @@ describe("RunsPanel (TASK-179.5)", () => {
       "reverted",
     );
     expect(screen.getByTestId("agent-run-reverted-at")).toBeVisible();
+    // Reverted runs keep the ADMIN-only pre-image disclosure.
+    expect(screen.getByTestId("agent-run-preimages")).toBeInTheDocument();
     await waitFor(() => expect(api.listRuns).toHaveBeenCalledTimes(2));
   });
 

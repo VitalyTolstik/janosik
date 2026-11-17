@@ -113,7 +113,7 @@ function LiveSessionRow({
       data-testid={`agent-session-row-${session.id}`}
       data-status={session.status}
       data-paused={session.paused ? "true" : "false"}
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft py-1 last:border-b-0 min-[761px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1.25fr)_auto] min-[761px]:gap-2"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft py-2 last:border-b-0 min-[761px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1.25fr)_auto] min-[761px]:gap-2"
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">

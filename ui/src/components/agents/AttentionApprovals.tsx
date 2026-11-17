@@ -158,16 +158,22 @@ function DetailSection({
   aside,
   children,
   last = false,
+  first = false,
 }: {
   title: string;
   icon?: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
   last?: boolean;
+  first?: boolean;
 }) {
   return (
     <section
-      className={cn("py-2.5", !last && "border-b border-border/60")}
+      className={cn(
+        "py-2.5",
+        first && "mt-2.5",
+        !last && "border-b border-border/60",
+      )}
       data-testid={`approval-section-${title.toLowerCase().replaceAll(" ", "-")}`}
     >
       <div className="mb-1.5 flex items-center gap-1.5">
@@ -176,7 +182,7 @@ function DetailSection({
             {icon}
           </span>
         ) : null}
-        <h3 className="text-[11.5px] font-[650] tracking-[0.03em]">{title}</h3>
+        <h3 className="text-[11px] font-[650] tracking-[0.03em]">{title}</h3>
         {aside !== undefined ? <span className="ml-auto">{aside}</span> : null}
       </div>
       {children}
@@ -927,8 +933,8 @@ export function AttentionApprovalDetail({
               {t("agents.approvals.asksSuffix")}
             </p>
 
-            <DetailSection title={t("agents.approvals.request")}>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <DetailSection title={t("agents.approvals.request")} first>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-[9px]">
                 <RequestMeta label={t("agentControl.approvals.board")}>
                   {boardLabel}
                 </RequestMeta>
@@ -1006,7 +1012,7 @@ export function AttentionApprovalDetail({
                     data-testid="approval-plan-command"
                   >
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[18px] items-center rounded border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 font-mono text-[11px] font-semibold text-foreground">
+                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-[11px] font-[600] text-foreground">
                         {String(command.action.type)}
                       </span>
                       <span className="min-w-0 truncate text-[11px] text-foreground">
@@ -1040,7 +1046,7 @@ export function AttentionApprovalDetail({
                     data-testid="approval-plan-operation"
                   >
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[18px] items-center rounded border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 font-mono text-[11px] font-semibold text-foreground">
+                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-[11px] font-[600] text-foreground">
                         {operation.op}
                       </span>
                     </div>

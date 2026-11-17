@@ -95,8 +95,7 @@ export function RunKindChip({ kind }: { kind: AgentRunKind }) {
 export function RunConflictChip({ count }: { count: number }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center gap-1 rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
-      <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
+    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
       {t("agents.runs.conflictChip", { count })}
     </span>
   );
@@ -523,6 +522,12 @@ export function RunDetail({
   }
 
   const run = detail.run;
+  const titleToken =
+    run.apiTokenId === null
+      ? t("agentControl.runs.noToken")
+      : (run.tokenName ??
+        tokenLabel?.(run.apiTokenId) ??
+        shortTokenId(run.apiTokenId));
   const today = startOfDay(now);
   const conflicts = preview?.conflicts ?? [];
   const rollbackEligible = run.status === "applied" && run.kind !== "revert";
@@ -573,13 +578,7 @@ export function RunDetail({
             </p>
           ) : null}
           <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
-            {runTitle(
-              run,
-              t,
-              run.apiTokenId === null
-                ? undefined
-                : (run.tokenName ?? tokenLabel?.(run.apiTokenId) ?? undefined),
-            )}
+            {runTitle(run, t, titleToken)}
           </h2>
           {variant === "board" ? (
             <p
@@ -754,7 +753,11 @@ export function RunDetail({
                         {command.action.type}
                       </code>
                       <span className="min-w-0 truncate">
-                        {actionSummary(command.action, board)}
+                        {actionSummary(
+                          command.action,
+                          board,
+                          preimageLabel(preimage),
+                        )}
                       </span>
                     </div>
                     {admin &&
@@ -794,7 +797,7 @@ export function RunDetail({
             </div>
           ) : null}
           {admin &&
-          run.status === "applied" &&
+          (run.status === "applied" || run.status === "reverted") &&
           Object.keys(detail.preimages).length > 0 ? (
             <details
               className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
@@ -1089,7 +1092,7 @@ export function RunDetail({
             <Link
               to={routes.agentControl(boardId, "runs")}
               data-testid="agent-run-footer-open-board"
-              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] whitespace-nowrap text-foreground hover:bg-hover max-md:min-h-11"
             >
               {t("agents.runs.openBoard")}
             </Link>
@@ -1097,7 +1100,7 @@ export function RunDetail({
               type="button"
               onClick={() => void copyLink()}
               data-testid="agent-run-footer-copy-link"
-              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-transparent px-[11px] text-[11.5px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-transparent px-[11px] text-[11.5px] leading-none font-[650] whitespace-nowrap text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
             >
               {linkCopied ? (
                 <Check
@@ -1130,8 +1133,7 @@ export function RunDetail({
           <b className="font-[650]">
             {t("agents.runs.confirmCount", { count: detail.commands.length })}
           </b>{" "}
-          {runTitle(run, t, run.tokenName ?? undefined)}.{" "}
-          {t("agents.runs.confirmNoConflicts")}
+          {runTitle(run, t, titleToken)}. {t("agents.runs.confirmNoConflicts")}
         </div>
       </AgentConfirmDialog>
     </div>

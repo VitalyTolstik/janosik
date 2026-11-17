@@ -2096,6 +2096,7 @@
   "agents.action.finalStatus": "Final status",
   "agents.action.reason": "Reason (optional)",
   "agents.action.reasonPlaceholder": "Why are you pausing this session?",
+  "agents.action.resumeReasonPlaceholder": "Why are you resuming this session?",
   "agents.action.summary": "Summary (optional)",
   "agents.action.summaryPlaceholder": "What did the agent do?",
   "agents.action.completed": "Completed",

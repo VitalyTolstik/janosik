@@ -573,7 +573,12 @@ export function ApprovalDecisionForm({
               data-testid="approval-next-pending"
               onClick={onNextPending}
               disabled={busy}
-              className="h-7 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
+              className={cn(
+                "h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11",
+                layout === "inline"
+                  ? "shrink-0"
+                  : "max-md:flex-1 max-md:basis-0",
+              )}
               title={t("agents.approvals.nextPendingHint")}
             >
               {t("agents.approvals.nextPending")}
@@ -650,13 +655,13 @@ export function ApprovalDecisionForm({
               </code>
             </div>
           </div>
-          <DialogFooter className="px-4 pt-3 pb-3.5">
+          <DialogFooter className="!flex-row items-center justify-end gap-1.5 px-4 pt-3 pb-3.5">
             <Button
               type="button"
               variant="ghost"
               onClick={() => setApproveOpen(false)}
               disabled={submitting}
-              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
+              className="h-7 min-h-0 rounded-[6px] px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11 max-md:min-w-[61px]"
             >
               {t("common.cancel")}
             </Button>
@@ -665,7 +670,7 @@ export function ApprovalDecisionForm({
               data-testid="approval-confirm"
               onClick={() => void submitApprove()}
               disabled={submitting || busy}
-              className="h-7 min-h-0 rounded-md px-2.5 text-[11px] font-[650] max-md:min-h-11"
+              className="h-7 min-h-0 rounded-[6px] px-2.5 text-[11px] font-[650] max-md:min-h-11 max-md:min-w-[103px]"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />

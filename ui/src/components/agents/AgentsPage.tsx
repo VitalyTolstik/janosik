@@ -746,8 +746,12 @@ export function AgentsPage() {
     if (selectedSession !== null) {
       return filtered.find((row) => row.id === selectedSession);
     }
+    // A board admin without an approval selection keeps the mockup's
+    // "Nothing selected" pane. A member has no approval queue, so Attention
+    // still previews the first visible session and highlights its row.
+    if (section === "attention" && isAttentionAdmin) return undefined;
     return filtered[0];
-  }, [filtered, section, selectedSession]);
+  }, [filtered, isAttentionAdmin, section, selectedSession]);
   const sessionMissing =
     !state.loading &&
     selectedSession !== null &&
@@ -1116,8 +1120,8 @@ export function AgentsPage() {
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
-          <header className="mb-3 flex flex-wrap items-start justify-between gap-3 max-md:mb-[9px]">
-            <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px]">
+          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px] max-md:flex-wrap">
+            <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px] md:max-w-[390px]">
               <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em] max-md:text-[17px]">
                 {t(`agents.shell.${section}`)}
               </h2>
@@ -1390,7 +1394,7 @@ export function AgentsPage() {
                 <div
                   role="group"
                   aria-label={t("agents.groups.groupBy")}
-                  className="inline-flex items-center rounded-md border border-border bg-surface/58 p-0.5"
+                  className="inline-flex items-center gap-0.5 rounded-[8px] border border-border bg-[color-mix(in_oklab,var(--card)_70%,transparent)] p-0.5"
                 >
                   <button
                     type="button"
@@ -1398,9 +1402,9 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "board"}
                     onClick={() => setGroupMode("board")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-[10.5px] font-[600] text-muted-foreground md:h-[25px]",
                       groupMode === "board" &&
-                        "bg-hover text-foreground shadow-sm",
+                        "bg-[var(--surface)] text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_20%,transparent)]",
                     )}
                   >
                     <Folder className="h-[11px] w-[11px]" aria-hidden />
@@ -1412,9 +1416,9 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "token"}
                     onClick={() => setGroupMode("token")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[4px] px-2 text-[11px] font-[550] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-[10.5px] font-[600] text-muted-foreground md:h-[25px]",
                       groupMode === "token" &&
-                        "bg-hover text-foreground shadow-sm",
+                        "bg-[var(--surface)] text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_20%,transparent)]",
                     )}
                   >
                     <KeyRound className="h-[11px] w-[11px]" aria-hidden />
@@ -1757,13 +1761,13 @@ export function AgentsPage() {
                         <AttentionStaleSessions
                           rows={filtered}
                           now={now}
-                          selectedId={selectedSession}
+                          selectedId={sessionDetailRow?.id ?? null}
                           onSelect={openSession}
                         />
                         <AttentionLiveSessions
                           rows={filtered}
                           now={now}
-                          selectedId={selectedSession}
+                          selectedId={sessionDetailRow?.id ?? null}
                           onSelect={openSession}
                           onViewAll={() => setSection("sessions")}
                         />
@@ -1829,6 +1833,7 @@ export function AgentsPage() {
           "hidden shrink-0 flex-col border-l border-border bg-[color-mix(in_oklab,var(--surface)_48%,var(--background))] min-[1061px]:flex min-[1061px]:w-[324px] min-[1181px]:w-[352px]",
           (missingScope || unknownBoard) && "!hidden",
           ((section === "attention" &&
+            isAttentionAdmin &&
             selectedApprovalId !== null &&
             approvalBoardId !== null) ||
             sessionSheetOpen ||
