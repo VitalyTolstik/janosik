@@ -299,3 +299,25 @@ Headline measurements after the fixes:
 - `Next pending` works from an approved row under the Decided filter.
 - Member run detail moves the read-only note into Commands and uses 33.9 px
   command rows; no top banner, attribution stays in its own section.
+
+## Round 7 — Medium-gate regressions (Y/Z/AA)
+
+The three Medium change reviewers found seven regressions in the round-6
+diff. Evidence is in [`round7-medium-gate/`](./round7-medium-gate):
+`header-results.json`, `m4-m14-results.json`, the 390–1440 header captures and
+the three partial-error modes.
+
+- Runs shows exactly one banner per failure mode: sessions-only uses the
+  sessions banner, runs-only uses the runs banner, both use one consolidated
+  runs banner naming the unavailable boards.
+- The board header no longer overlaps at 721–900 px: title full, Agents hit
+  test true, header scroll width equals client width. Search returns as an icon
+  at 721, gets its **Global search** label at 1024/1440 and stays hidden at 390.
+- Secondary chrome is hidden at exactly 720 px and returns at 721 where the
+  layout has room.
+- `Next pending` from an approved Decided row switches the list to Needs and
+  visibly selects the pending row.
+- Partial-error copy names the boards once (`Boards: …`) instead of repeating
+  “unavailable”.
+- The compact board switcher is back on the 390 header at a 44 × 44 target,
+  with the full title and primary actions still fitting.
