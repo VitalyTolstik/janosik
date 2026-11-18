@@ -49,6 +49,7 @@ import {
   LabelChip,
   SizeCell,
 } from "./cells";
+import { CardFieldsPanel } from "./CardFieldsPanel";
 import { RowActions, type EntityAction } from "./row-actions";
 
 const userHref = (id: string) => `/admin/users/${id}`;
@@ -530,7 +531,9 @@ export function CardDetailPage() {
           </Badge>
         )}
         {card.priority !== null ? (
-          <Badge variant="primary">{card.priority}</Badge>
+          <Badge variant="primary" data-testid="admin-card-priority-badge">
+            {card.priority}
+          </Badge>
         ) : null}
         {card.dueDate !== null ? (
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -591,6 +594,14 @@ export function CardDetailPage() {
           />
         </MetaItem>
       </Panel>
+
+      {card.deletedAt === null ? (
+        <CardFieldsPanel
+          card={card}
+          cardLabels={detail.labels}
+          onSaved={reload}
+        />
+      ) : null}
 
       {card.description ? (
         <Panel className="p-3" data-testid="admin-card-detail-description">

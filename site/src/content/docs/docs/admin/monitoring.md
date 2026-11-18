@@ -109,7 +109,10 @@ master-issued board command; the command log and the card timeline link to
 this exact view. `board.command` details carry `commandId`, `masterId` and
 `masterEmail` alongside the owner-facing `actorEmail`, so the real master is
 never hidden behind the owner attribution. The filter is the command id, not
-the audit row id, and it also requires `action=board.command`.
+the audit row id, and it also requires `action=board.command`. Card field edits
+from `/admin/cards/:id` use the same `board.command` row: `UPDATE_CARD`,
+`SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`, `SET_CARD_COVER`
+and `SET_CARD_LABEL` each carry their own `commandId` and master attribution.
 
 ### Audit actions
 

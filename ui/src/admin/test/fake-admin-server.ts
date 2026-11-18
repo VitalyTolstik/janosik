@@ -3,6 +3,7 @@ import {
   completeness,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
+  LIMITS,
   OAUTH_PROVIDER_IDS,
 } from "@janosik/shared";
 import type {
@@ -79,6 +80,10 @@ export interface FakeAdminState {
   cardLastActors: Record<string, { id: string; email: string | null }>;
   /** Description per card id, updated by admin UPDATE_CARD commands. */
   cardDescriptions: Record<string, string | null>;
+  /** Cover per card id, updated by admin SET_CARD_COVER commands. */
+  cardCovers: Record<string, { type: string; value: string } | null>;
+  /** Attached label ids per card id, updated by SET_CARD_LABEL. */
+  cardLabelIds: Record<string, string[]>;
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
@@ -101,6 +106,8 @@ export function emptyAdminState(): FakeAdminState {
     memberships: [],
     cardLastActors: {},
     cardDescriptions: {},
+    cardCovers: {},
+    cardLabelIds: {},
     contentBoard: null,
   };
 }
@@ -298,6 +305,23 @@ export function boardMember(
     invitedById: null,
     invitedByEmail: null,
     createdAt: now,
+    ...overrides,
+  };
+}
+
+export function adminLabel(
+  overrides: Partial<AdminLabelRowDto> = {},
+): AdminLabelRowDto {
+  return {
+    id: "label-1",
+    boardId: "b-1",
+    boardTitle: "Roadmap",
+    name: "Label",
+    color: "red",
+    position: 0,
+    cardCount: 0,
+    deletedAt: null,
+    version: 0,
     ...overrides,
   };
 }
@@ -824,18 +848,88 @@ export class FakeAdminServer {
     if (boardCommand && method === "POST") {
       const action = (jsonBody?.action ?? {}) as BoardAction;
       const actionCardId = (action as { cardId?: string }).cardId;
+      const requestedCommandId =
+        typeof jsonBody?.commandId === "string" && jsonBody.commandId !== ""
+          ? jsonBody.commandId
+          : undefined;
+      // Idempotent replay: the backend returns the stored result before any
+      // fresh-command precondition runs, so a retry after a delete still
+      // succeeds and never creates a second audit row.
+      const replay =
+        requestedCommandId === undefined
+          ? undefined
+          : this.state.commands.find(
+              (command) => command.id === requestedCommandId,
+            );
+      if (replay !== undefined) {
+        return this.json({ seq: replay.seq, versions: {} });
+      }
+
+      const cardActionTypes = new Set<string>([
+        "UPDATE_CARD",
+        "MOVE_CARD",
+        "SET_CARD_ASSIGN",
+        "SET_CARD_DUE_DATE",
+        "SET_CARD_PRIORITY",
+        "SET_CARD_COVER",
+        "SET_CARD_LABEL",
+      ]);
       if (
-        (action.type === "UPDATE_CARD" || action.type === "MOVE_CARD") &&
+        cardActionTypes.has(action.type) &&
         typeof actionCardId === "string"
       ) {
         const target = this.state.cards.find(
           (card) => card.id === actionCardId,
         );
-        if (target === undefined || target.deletedAt !== null) {
+        if (
+          target === undefined ||
+          target.deletedAt !== null ||
+          target.boardId !== boardCommand[1]
+        ) {
           return this.json({ message: "Card not found" }, 404);
         }
         if (action.type === "MOVE_CARD" && target.archivedAt !== null) {
           return this.json({ message: "Archived cards cannot be moved" }, 409);
+        }
+        if (action.type === "SET_CARD_ASSIGN") {
+          const assigneeId = (action as { assigneeId?: string | null })
+            .assigneeId;
+          if (assigneeId !== null && assigneeId !== undefined) {
+            const member = (this.boardMembers[boardCommand[1]] ?? []).find(
+              (entry) =>
+                entry.userId === assigneeId &&
+                entry.acceptedAt !== null &&
+                (entry.expiresAt === null || entry.expiresAt > now),
+            );
+            if (member === undefined) {
+              return this.json(
+                {
+                  message: "Assignee must be an active board member",
+                  field: "action.assigneeId",
+                },
+                400,
+              );
+            }
+          }
+        }
+        if (action.type === "SET_CARD_LABEL") {
+          const labelId = (action as { labelId?: string }).labelId;
+          const on = (action as { on?: boolean }).on === true;
+          const label = (this.boardLabels[boardCommand[1]] ?? []).find(
+            (entry) => entry.id === labelId && entry.deletedAt === null,
+          );
+          if (label === undefined) {
+            return this.json({ message: "Label not found" }, 404);
+          }
+          const selected = this.state.cardLabelIds[actionCardId] ?? [];
+          if (
+            on &&
+            labelId !== undefined &&
+            !selected.includes(labelId) &&
+            selected.length >= LIMITS.labelsPerCard
+          ) {
+            return this.json({ message: "Too many labels on the card" }, 409);
+          }
         }
       }
       const current = this.state.contentBoard ?? contentBoard();
@@ -893,23 +987,63 @@ export class FakeAdminServer {
               row.columnTitle = column.title;
             }
           }
-          if (
-            action.type === "UPDATE_CARD" &&
-            "description" in (action as unknown as Record<string, unknown>)
-          ) {
-            this.state.cardDescriptions[cardId] =
-              aggregateCard?.description ??
-              (action as { description?: string }).description ??
-              null;
+          if (action.type === "UPDATE_CARD") {
+            if (typeof (action as { title?: string }).title === "string") {
+              row.title = (action as { title: string }).title;
+            }
+            if (
+              "description" in (action as unknown as Record<string, unknown>)
+            ) {
+              this.state.cardDescriptions[cardId] =
+                aggregateCard?.description ??
+                (action as { description?: string }).description ??
+                null;
+            }
+          }
+          if (action.type === "SET_CARD_ASSIGN") {
+            const assigneeId = (action as { assigneeId?: string | null })
+              .assigneeId;
+            row.assigneeId = assigneeId ?? null;
+            const member = (this.boardMembers[row.boardId] ?? []).find(
+              (entry) => entry.userId === assigneeId,
+            );
+            row.assigneeEmail = member?.userEmail ?? null;
+          }
+          if (action.type === "SET_CARD_DUE_DATE") {
+            const dueDate = (action as { dueDate?: number }).dueDate;
+            row.dueDate = typeof dueDate === "number" ? dueDate : null;
+          }
+          if (action.type === "SET_CARD_PRIORITY") {
+            const priority = (action as { priority?: string }).priority;
+            row.priority =
+              typeof priority === "string" && priority !== "medium"
+                ? priority
+                : null;
+          }
+          if (action.type === "SET_CARD_COVER") {
+            const cover = (
+              action as {
+                cover?: { type: string; value: string };
+              }
+            ).cover;
+            this.state.cardCovers[cardId] = cover ?? null;
+          }
+          if (action.type === "SET_CARD_LABEL") {
+            const labelId = (action as { labelId?: string }).labelId;
+            const on = (action as { on?: boolean }).on === true;
+            if (typeof labelId === "string") {
+              const labels = new Set(this.state.cardLabelIds[cardId] ?? []);
+              if (on) labels.add(labelId);
+              else labels.delete(labelId);
+              this.state.cardLabelIds[cardId] = [...labels];
+            }
           }
         }
       }
 
       // TASK-176.10: a master-issued command adds one correlated audit row.
       const commandId =
-        typeof jsonBody?.commandId === "string" && jsonBody.commandId !== ""
-          ? jsonBody.commandId
-          : `command-${this.state.commands.length + 1}`;
+        requestedCommandId ?? `command-${this.state.commands.length + 1}`;
       const seq =
         this.state.commands.reduce(
           (max, command) => Math.max(max, command.seq),
@@ -1942,22 +2076,37 @@ export class FakeAdminServer {
       anchor: anchorId,
     });
 
+    const cover = this.state.cardCovers[card.id] ?? null;
+    const cardLabelIds = this.state.cardLabelIds[card.id] ?? [];
+    const assignee = (this.boardMembers[card.boardId] ?? []).find(
+      (member) => member.userId === card.assigneeId,
+    );
     return {
       card: {
         ...card,
         description: this.state.cardDescriptions[card.id] ?? null,
-        dueDate: null,
-        priority: null,
-        assigneeDisplayName: null,
-        coverType: null,
-        coverValue: null,
+        dueDate: card.dueDate,
+        priority: card.priority,
+        assigneeDisplayName: assignee?.userDisplayName ?? null,
+        coverType: cover?.type ?? null,
+        coverValue: cover?.value ?? null,
         version: 0,
         attachmentCount: liveAttachments.length,
         lastActorId: this.state.cardLastActors[card.id]?.id ?? null,
         lastActorEmail: this.state.cardLastActors[card.id]?.email ?? null,
         commentIds: liveComments.map((comment) => comment.id),
       },
-      labels: [],
+      labels: (this.boardLabels[card.boardId] ?? [])
+        .filter(
+          (label) =>
+            cardLabelIds.includes(label.id) && label.deletedAt === null,
+        )
+        .map((label) => ({
+          id: label.id,
+          name: label.name,
+          color: label.color,
+          position: label.position,
+        })),
       checklists: [],
       linksOut: [],
       linksIn: [],

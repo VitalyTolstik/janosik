@@ -199,6 +199,24 @@ A card has no separate creator field, so `Created by` is derived from the first
 `ADD_CARD` or `DUPLICATE_CARD` command whose payload names the card. It is a
 dash for cards imported before the command log.
 
+### Properties
+
+Non-deleted cards show a compact `Properties` panel: title, assignee, due date,
+priority, cover and labels. Each saved change is its own command —
+`UPDATE_CARD`, `SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`,
+`SET_CARD_COVER`, or one `SET_CARD_LABEL` per toggled label — sent with a fresh
+`commandId` under the same owner-attribution banner. Unchanged values are not
+sent. Archived cards keep the panel because their fields remain editable;
+deleted cards hide it.
+
+Clearing the assignee sends `assigneeId: null`; clearing the due date or cover
+omits the field. Priority `medium` is the default and is stored as an absent
+value. The assignee list contains accepted, unexpired members; disabled users
+are hidden from new choices for UX (a current disabled assignee stays visible
+as the current value), although the backend would still accept an active
+membership. Labels are the board's live labels only, and a card is capped at
+20. Checklists and links stay read-only here.
+
 ### Sections
 
 - Description, when present, shown as preformatted text. The card Actions menu
