@@ -471,6 +471,9 @@ export class RunsService {
         {
           actorType: "human",
           actorRole: Role.ADMIN,
+          // M13: internal only. A restore command issued by this run revert
+          // may put back rows past the board's current WIP/collection caps.
+          exemptRestoreLimits: true,
           guard: revalidate,
           run: {
             kind: "revert",
@@ -717,6 +720,11 @@ export class RunsService {
         boardId,
         inverses,
         client,
+        // The revert path restores rows the run itself removed; that is the
+        // only caller allowed past the current restore limits (M13). Non-
+        // restore inverses (MOVE/UNARCHIVE) are still checked, so the M22
+        // WIP preview keeps refusing them.
+        { exemptRestoreLimits: true },
       );
     for (const failure of preconditionFailures) {
       conflicts.push({

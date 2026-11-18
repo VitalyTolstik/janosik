@@ -1075,6 +1075,159 @@ describe("Commands API (e2e)", () => {
       expect(restored.columns[0].cardIds).toContain("card-w1");
     });
 
+    it("refuses RESTORE_CARD into a full WIP column (M13)", async () => {
+      const boardId = await createBoard("Restore WIP board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rw-a",
+          title: "A",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rw-b",
+          title: "B",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rw-a",
+          wipLimit: 1,
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rw-victim",
+          columnId: "col-rw-b",
+          title: "Victim",
+        }),
+      );
+      const beforeDelete = await getAggregate(boardId);
+      const snapshot = beforeDelete.cards["card-rw-victim"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "DELETE_CARD", cardId: "card-rw-victim" }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rw-filler",
+          columnId: "col-rw-a",
+          title: "Filler",
+        }),
+      );
+
+      // A forged inverse must not bypass the destination's WIP limit.
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CARD",
+          card: snapshot,
+          columnId: "col-rw-a",
+          index: 0,
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body.conflict).toBe("wip");
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards["card-rw-victim"]).toBeUndefined();
+      expect(
+        aggregate.columns.find((c) => c.id === "col-rw-a")?.cardIds,
+      ).toEqual(["card-rw-filler"]);
+
+      // The same restore is still a normal undo when the destination has room.
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CARD",
+          card: snapshot,
+          columnId: "col-rw-b",
+          index: 0,
+          inverse: true,
+        }),
+      );
+    });
+
+    it("refuses RESTORE_COLUMN_CARDS that would exceed WIP (M13)", async () => {
+      const boardId = await createBoard("Restore cards WIP board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rc",
+          title: "C",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rc",
+          wipLimit: 2,
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rc-1",
+          columnId: "col-rc",
+          title: "One",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rc-2",
+          columnId: "col-rc",
+          title: "Two",
+        }),
+      );
+      const beforeArchive = await getAggregate(boardId);
+      const restoreSnapshot = beforeArchive.cards["card-rc-2"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "ARCHIVE_CARD", cardId: "card-rc-2" }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rc",
+          wipLimit: 1,
+        }),
+      );
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-rc",
+          cardIds: ["card-rc-1", "card-rc-2"],
+          cards: [restoreSnapshot],
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body.conflict).toBe("wip");
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards["card-rc-2"].archivedAt).toEqual(
+        expect.any(Number),
+      );
+      expect(aggregate.columns.find((c) => c.id === "col-rc")?.cardIds).toEqual(
+        ["card-rc-1"],
+      );
+    });
+
     it("409s a stale ifMatch with conflict 'version' and currentVersion", async () => {
       const boardId = await createBoard("ifMatch board");
       const first = await apply(

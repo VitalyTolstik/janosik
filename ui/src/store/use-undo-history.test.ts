@@ -302,3 +302,217 @@ describe("useUndoHistory — overlapping presses in server mode", () => {
     expect(result.current.canRedo).toBe(true);
   });
 });
+
+describe("useUndoHistory — WIP-sensitive undo (TASK-180.2 M16)", () => {
+  it("does not apply a MOVE_CARD undo optimistically and keeps the step on refusal", async () => {
+    const { boardReducer } = await import("@janosik/shared");
+    const base: Board = {
+      id: "b-1",
+      title: "WIP",
+      columns: [
+        { id: "col-1", title: "One", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-2", title: "Two", cardIds: [], createdAt: 1 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Card",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const move = {
+      type: "MOVE_CARD",
+      boardId: "b-1",
+      cardId: "card-1",
+      fromColumnId: "col-1",
+      fromIndex: 0,
+      toColumnId: "col-2",
+      toIndex: 0,
+      at: 2,
+    } as BoardAction;
+    const after = boardReducer([base], move)[0]!;
+    const state = { current: after };
+    const apply = vi.fn((action: BoardAction) => {
+      state.current = boardReducer([state.current], action)[0] ?? state.current;
+    });
+    const onSendFailed = vi.fn();
+    const send = vi.fn().mockResolvedValue({
+      ok: false,
+      failure: { kind: "wip" },
+    });
+    const { result } = renderHook(() =>
+      useUndoHistory({
+        getBoard: () => state.current,
+        getActiveBoardId: () => "b-1",
+        apply,
+        send,
+        onSendFailed,
+      }),
+    );
+    act(() => {
+      result.current.record("b-1", base, move);
+    });
+
+    await act(async () => {
+      result.current.undo();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // No optimistic move happened: the board never flashed the refused card
+    // back into the source column.
+    expect(state.current).toBe(after);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(onSendFailed).toHaveBeenCalledWith({ kind: "wip" });
+    // The refused step stays on the stack.
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+  });
+
+  it("preflights a full WIP column before sending an UNARCHIVE undo", async () => {
+    const { boardReducer } = await import("@janosik/shared");
+    const base: Board = {
+      id: "b-1",
+      title: "WIP",
+      columns: [
+        {
+          id: "col-1",
+          title: "One",
+          cardIds: ["card-1"],
+          wipLimit: 1,
+          createdAt: 1,
+        },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Card",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const archive = {
+      type: "ARCHIVE_CARD",
+      boardId: "b-1",
+      cardId: "card-1",
+      at: 2,
+    } as BoardAction;
+    const archived = boardReducer([base], archive)[0]!;
+    const state = { current: archived };
+    const apply = vi.fn((action: BoardAction) => {
+      state.current = boardReducer([state.current], action)[0] ?? state.current;
+    });
+    const send = vi.fn().mockResolvedValue({ ok: true, versions: {}, seq: 3 });
+    const onSendFailed = vi.fn();
+    const { result } = renderHook(() =>
+      useUndoHistory({
+        getBoard: () => state.current,
+        getActiveBoardId: () => "b-1",
+        apply,
+        send,
+        onSendFailed,
+      }),
+    );
+    act(() => {
+      result.current.record("b-1", base, archive);
+    });
+    // A teammate fills the freed WIP slot after the archive.
+    state.current = boardReducer(
+      [state.current],
+      {
+        type: "ADD_CARD",
+        boardId: "b-1",
+        newCardId: "card-2",
+        columnId: "col-1",
+        title: "Filler",
+        at: 3,
+      },
+      { withActivity: false },
+    )[0]!;
+
+    await act(async () => {
+      result.current.undo();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(onSendFailed).toHaveBeenCalledWith({ kind: "wip" });
+    expect(result.current.canUndo).toBe(true);
+    expect(state.current.cards["card-1"].archivedAt).toEqual(
+      expect.any(Number),
+    );
+  });
+
+  it("applies the MOVE_CARD undo only after the server confirms it", async () => {
+    const { boardReducer } = await import("@janosik/shared");
+    const base: Board = {
+      id: "b-1",
+      title: "WIP",
+      columns: [
+        { id: "col-1", title: "One", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-2", title: "Two", cardIds: [], createdAt: 1 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Card",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const move = {
+      type: "MOVE_CARD",
+      boardId: "b-1",
+      cardId: "card-1",
+      fromColumnId: "col-1",
+      fromIndex: 0,
+      toColumnId: "col-2",
+      toIndex: 0,
+      at: 2,
+    } as BoardAction;
+    const after = boardReducer([base], move)[0]!;
+    const state = { current: after };
+    const apply = vi.fn((action: BoardAction) => {
+      state.current = boardReducer([state.current], action)[0] ?? state.current;
+    });
+    const send = vi.fn().mockResolvedValue({ ok: true, versions: {}, seq: 3 });
+    const { result } = renderHook(() =>
+      useUndoHistory({
+        getBoard: () => state.current,
+        getActiveBoardId: () => "b-1",
+        apply,
+        send,
+      }),
+    );
+    act(() => {
+      result.current.record("b-1", base, move);
+    });
+
+    await act(async () => {
+      result.current.undo();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(state.current.columns[0].cardIds).toEqual(["card-1"]);
+    expect(state.current.columns[1].cardIds).toEqual([]);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(true);
+  });
+});

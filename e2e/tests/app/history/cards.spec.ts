@@ -608,3 +608,91 @@ test("undo and redo removing a card link", async ({ page, board }) => {
   await openCard(page, "Source task");
   await expect(dialog.getByTestId("card-link-row")).toHaveCount(0);
 });
+
+test("refuses a WIP-blocked move undo and keeps the step (M16)", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  const doing = await board.column("Doing");
+  await board.card(todo, "Move me");
+  await board.card(doing, "Occupant");
+  await board.open(page);
+
+  const source = await columnSection(page, "Todo")
+    .getByTestId("card-title")
+    .filter({ hasText: "Move me" })
+    .boundingBox();
+  const target = await columnSection(page, "Doing")
+    .getByTestId("column-card-scroll")
+    .boundingBox();
+  if (!source || !target) throw new Error("Card or target column is missing");
+  await page.mouse.move(
+    source.x + source.width / 2,
+    source.y + source.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    source.x + source.width / 2 + 10,
+    source.y + source.height / 2,
+    { steps: 3 },
+  );
+  await page.mouse.move(target.x + target.width / 2, target.y + 50, {
+    steps: 20,
+  });
+  await page.mouse.up();
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toBeVisible();
+
+  // Freeze the source column at its WIP limit before the undo goes back.
+  await board.command({
+    type: "SET_COLUMN_WIP_LIMIT",
+    columnId: todo,
+    wipLimit: 1,
+  });
+  const fillerId = randomUUID();
+  await board.command({
+    type: "ADD_CARD",
+    newCardId: fillerId,
+    columnId: todo,
+    title: "Filler",
+  });
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title").filter({
+      hasText: "Filler",
+    }),
+  ).toBeVisible();
+
+  await expectHistory(page, { undo: true, redo: false });
+  await undo(page);
+  // No optimistic move: the card stayed in Doing and the undo step survived.
+  await expect(page.getByText(/WIP limit/i)).toBeVisible();
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toBeVisible();
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toHaveCount(0);
+  await expectHistory(page, { undo: true, redo: false });
+
+  // The same step still works once the WIP slot is free.
+  await board.command({ type: "DELETE_CARD", cardId: fillerId });
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title").filter({
+      hasText: "Filler",
+    }),
+  ).toHaveCount(0);
+  await undo(page);
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toBeVisible();
+});

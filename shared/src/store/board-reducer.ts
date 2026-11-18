@@ -235,20 +235,18 @@ export interface BoardScopedAction {
   /**
    * Set by `invert()`: this command undoes another one (TASK-21.7d).
    *
-   * Collection guards — `LIMITS` on cards/columns/labels/checklists and the
-   * WIP limit — exist to stop *new* content from growing past what the app
-   * can hold. An inverse adds nothing new: it puts back what was just taken
-   * away, so it is never refused. A refused undo is the worst outcome
-   * available — Ctrl+Z silently does nothing and the card the user deleted
-   * by accident is gone for good; a column briefly over its limit is a
-   * state the app already has (an import, or a limit lowered under the
-   * current count) and shows honestly with a red counter until it is back
-   * under. Text clamps still apply: they bound a field, not a collection.
+   * The flag keeps the *local* reducer responsive during an undo, but it is
+   * not proof of anything: TASK-180.2 M13 made the server check every
+   * `RESTORE_*` (and MOVE/UNARCHIVE) against the current WIP/collection
+   * limits, ignoring a client-supplied `inverse:true`. Client undo of
+   * `MOVE_CARD`/`UNARCHIVE_CARD` waits for that server answer instead of
+   * applying optimistically (M16), and a refusal keeps the undo step.
    *
-   * Two structural caps hold even here: `columnsPerBoard` and
-   * `cardsPerColumn`. The flag comes from the client, so without them a
-   * crafted "inverse" restore could grow a board without bound; and a
-   * restore never overwrites an id that is still on the board.
+   * Two structural caps hold even in the reducer: `columnsPerBoard` and
+   * `cardsPerColumn`; a restore never overwrites an id that is still on the
+   * board. Text clamps still apply: they bound a field, not a collection.
+   * The only caller allowed past the server's restore limits is the internal
+   * run-revert path, which passes its own non-wire option.
    */
   inverse?: boolean;
   /**

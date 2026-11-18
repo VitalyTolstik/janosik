@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Board, BoardAction } from "@janosik/shared";
-import { invert } from "@janosik/shared";
+import { invert, isColumnFull } from "@janosik/shared";
 import { BoardHistory, type RollbackOutcome } from "@/store/history";
 import type { SendFailure, SendOutcome } from "@/store/server-sync";
 import { createId } from "@/utils/id";
@@ -50,6 +50,27 @@ export interface UndoHistory {
    * undo will skip them instead of clobbering the other writer's edit.
    */
   markForeign: (boardId: string, ids: readonly string[]) => void;
+}
+
+/**
+ * TASK-180.2 M16/M13: an undo of MOVE_CARD/UNARCHIVE_CARD re-adds a card to
+ * a column, and the server now checks that column's WIP/absolute cap exactly
+ * like a fresh add (client `inverse:true` buys no exemption). Give the user
+ * the refusal before their board flickers: preflight the same predicate.
+ */
+function undoWouldExceedWip(board: Board, action: BoardAction): boolean {
+  if (action.type === "MOVE_CARD") {
+    if (action.fromColumnId === action.toColumnId) return false;
+    const to = board.columns.find((column) => column.id === action.toColumnId);
+    return to !== undefined && isColumnFull(to);
+  }
+  if (action.type === "UNARCHIVE_CARD") {
+    const to =
+      board.columns.find((column) => column.id === action.columnId) ??
+      board.columns[0];
+    return to !== undefined && isColumnFull(to);
+  }
+  return false;
 }
 
 interface Options {
@@ -117,16 +138,19 @@ export function useUndoHistory({
    * Dispatch one side of a step, and keep going until the board actually
    * changes: a press of Ctrl+Z either undoes something visible or there is
    * genuinely nothing left to undo. A step can only turn out empty when the
-   * thing it touched is gone (limits never refuse an inverse — see
-   * `BoardScopedAction.inverse`), and such a step is worth nothing to
-   * anybody, so it is dropped rather than left to swallow the next press.
+   * thing it touched is gone, and such a step is worth nothing to anybody,
+   * so it is dropped rather than left to swallow the next press.
    *
-   * On the server (TASK-29) the command is sent after the optimistic apply;
-   * a refusal reverts the apply (the inverse of the inverse is the original
-   * command, computed against the pre-apply board), puts the stack entry
-   * back where it came from and reports the failure for a toast — undo/redo
-   * silently succeeding locally while the server rejected it would desync
-   * the board.
+   * On the server (TASK-29) most commands are sent after the optimistic
+   * apply; a refusal reverts the apply (the inverse of the inverse is the
+   * original command, computed against the pre-apply board), puts the stack
+   * entry back where it came from and reports the failure for a toast.
+   *
+   * TASK-180.2 M16: undo of `MOVE_CARD`/`UNARCHIVE_CARD` is not applied
+   * optimistically. The server no longer exempts an inverse from the WIP
+   * check, so the board would visibly add the card and then take it back.
+   * These two wait for the server answer (after a local WIP preflight); a
+   * refusal leaves the board untouched and keeps the undo step in place.
    */
   // Server mode: the tail of the running undo/redo presses. Each press
   // waits for the previous one to be answered — two presses racing over the
@@ -160,6 +184,30 @@ export function useUndoHistory({
           ...(direction === "undo" ? { at: Date.now() } : {}),
           commandId: createId(),
         } as BoardAction;
+        // M16: wait for the server for the two inverse kinds that can be
+        // refused by WIP. No optimistic apply = no rollback flicker, and the
+        // stack entry is explicitly restored on every refusal.
+        const deferredUndo =
+          send !== undefined &&
+          direction === "undo" &&
+          (applied.type === "MOVE_CARD" || applied.type === "UNARCHIVE_CARD");
+        if (deferredUndo) {
+          if (before !== undefined && undoWouldExceedWip(before, applied)) {
+            stack.restoreUndone();
+            onSendFailed?.({ kind: "wip" });
+            sync();
+            return;
+          }
+          const outcome = await send!(boardId, applied);
+          if (!outcome.ok) {
+            stack.restoreUndone();
+            onSendFailed?.(outcome.failure);
+            sync();
+            return;
+          }
+          apply(applied);
+          break;
+        }
         apply(applied);
         if (before !== undefined && getBoard(boardId) !== before) {
           if (send !== undefined) {

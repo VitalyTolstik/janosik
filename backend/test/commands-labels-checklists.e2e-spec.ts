@@ -1006,7 +1006,7 @@ describe("Commands API — labels & checklists (e2e)", () => {
       );
     });
 
-    it("409s the 51st label on the board but never an inverse", async () => {
+    it("409s the 51st label and an over-cap RESTORE (M13)", async () => {
       const boardId = await importBoard("Board label limit", {
         labels: Array.from({ length: LIMITS.labelsPerBoard }, (_, index) => ({
           id: `l-${index}`,
@@ -1025,8 +1025,10 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ).expect(409);
       expect(res.body.conflict).toBe("wip");
 
-      // An inverse adds nothing new (undo of a delete): always allowed.
-      await applyAndAssert(
+      // A client-forged inverse buys no exemption: a fresh restore that
+      // would be the 51st label is refused just like ADD_LABEL.
+      const beforeRestore = await getAggregate(boardId);
+      const overCap = await post(
         boardId,
         scoped(boardId, {
           type: "RESTORE_LABEL",
@@ -1034,13 +1036,32 @@ describe("Commands API — labels & checklists (e2e)", () => {
           index: 0,
           inverse: true,
         }),
+      ).expect(409);
+      expect(overCap.body.conflict).toBe("wip");
+
+      // Genuine undo: delete a real label (50 -> 49), then restore it.
+      const victim = beforeRestore.labels[0];
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, { type: "DELETE_LABEL", labelId: victim.id }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_LABEL",
+          label: victim,
+          index: 0,
+          inverse: true,
+        }),
       );
       const aggregate = await getAggregate(boardId);
-      expect(aggregate.labels).toHaveLength(LIMITS.labelsPerBoard + 1);
-      expect(aggregate.labels[0].id).toBe("l-restored");
+      expect(aggregate.labels).toHaveLength(LIMITS.labelsPerBoard);
+      expect(aggregate.labels.some((label) => label.id === victim.id)).toBe(
+        true,
+      );
     });
 
-    it("409s the 21st checklist and the 101st item, but never an inverse", async () => {
+    it("409s the 21st checklist/101st item and over-cap RESTOREs (M13)", async () => {
       const boardId = await importBoard("Checklist limits", {
         card: {
           checklists: Array.from(
@@ -1078,22 +1099,10 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ).expect(409);
       expect(checklist.body.conflict).toBe("wip");
 
-      // Import remaps ids, so the full checklist is taken from the aggregate.
+      // Import remaps ids, so the rows are taken from the aggregate.
       const imported = await getAggregate(boardId);
-      const fullChecklistId = imported.cards[cardId].checklists![0].id;
-      const item = await post(
-        boardId,
-        scoped(boardId, {
-          type: "ADD_CHECKLIST_ITEM",
-          cardId,
-          checklistId: fullChecklistId,
-          newItemId: "it-extra",
-          text: "Extra",
-        }),
-      ).expect(409);
-      expect(item.body.conflict).toBe("wip");
-
-      await applyAndAssert(
+      const fullChecklist = imported.cards[cardId].checklists![0];
+      const overCapChecklist = await post(
         boardId,
         scoped(boardId, {
           type: "RESTORE_CHECKLIST",
@@ -1102,12 +1111,85 @@ describe("Commands API — labels & checklists (e2e)", () => {
           index: 0,
           inverse: true,
         }),
+      ).expect(409);
+      expect(overCapChecklist.body.conflict).toBe("wip");
+
+      // Genuine undo of a checklist delete: 20 -> 19 -> 20.
+      const victimChecklist = imported.cards[cardId].checklists![1];
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId,
+          checklistId: victimChecklist.id,
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CHECKLIST",
+          cardId,
+          checklist: victimChecklist,
+          index: 1,
+          inverse: true,
+        }),
+      );
+
+      const item = await post(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          newItemId: "it-extra",
+          text: "Extra",
+        }),
+      ).expect(409);
+      expect(item.body.conflict).toBe("wip");
+
+      const overCapItem = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          item: { id: "it-restored", text: "Restored", done: false },
+          index: 0,
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(overCapItem.body.conflict).toBe("wip");
+
+      const victimItem = fullChecklist.items[0];
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          itemId: victimItem.id,
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          item: victimItem,
+          index: 0,
+          inverse: true,
+        }),
       );
       const aggregate = await getAggregate(boardId);
       expect(aggregate.cards[cardId].checklists).toHaveLength(
-        LIMITS.checklistsPerCard + 1,
+        LIMITS.checklistsPerCard,
       );
-      expect(aggregate.cards[cardId].checklists?.[0].id).toBe("cl-restored");
+      expect(
+        aggregate.cards[cardId].checklists?.find(
+          (entry) => entry.id === fullChecklist.id,
+        )?.items,
+      ).toHaveLength(LIMITS.itemsPerChecklist);
     });
 
     it("lets a non-admin member attach labels and check checklists", async () => {

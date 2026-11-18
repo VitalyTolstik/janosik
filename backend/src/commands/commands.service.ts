@@ -252,6 +252,13 @@ export interface ApplyOptions {
    * an admin retry stays idempotent even after the target card changed state.
    */
   beforeApplyFresh?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /**
+   * TASK-180.2 M13: the internal run-revert path may restore a deleted entity
+   * past the *current* WIP/collection limits (it is putting back what the run
+   * removed). Never accepted from a request body — the command controller
+   * does not populate it; only `RunsService` does.
+   */
+  exemptRestoreLimits?: boolean;
   /** TASK-166.7 internal post-apply hook, inside the board transaction. */
   afterRun?: (
     tx: Prisma.TransactionClient,
@@ -723,6 +730,7 @@ export class CommandsService {
             attribution: applyAttribution,
             entry,
             board: running,
+            exemptRestoreLimits: options.exemptRestoreLimits === true,
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -860,6 +868,7 @@ export class CommandsService {
     boardId: string,
     actions: readonly BoardAction[],
     client: Prisma.TransactionClient | PrismaService = this.prisma,
+    options: { exemptRestoreLimits?: boolean } = {},
   ): Promise<InversePreconditionFailure[]> {
     let board = await loadBoardAggregate(client, boardId);
     if (board === null) return [];
@@ -877,7 +886,12 @@ export class CommandsService {
         continue;
       }
       try {
-        this.assertNoWipConflict(board, action, currentVersion);
+        this.assertNoWipConflict(
+          board,
+          action,
+          currentVersion,
+          options.exemptRestoreLimits === true,
+        );
       } catch (error) {
         if (error instanceof ConflictException) {
           const response = error.getResponse();
@@ -1098,6 +1112,7 @@ export class CommandsService {
       attribution: RequestAttribution;
       entry: PreparedCommand;
       board: Board;
+      exemptRestoreLimits?: boolean;
     },
   ): Promise<{
     response: CommandResponse;
@@ -1147,7 +1162,12 @@ export class CommandsService {
       currentVersion,
     );
     this.assertWorkflowReferences(board, action);
-    this.assertNoWipConflict(board, action, currentVersion);
+    this.assertNoWipConflict(
+      board,
+      action,
+      currentVersion,
+      params.exemptRestoreLimits === true,
+    );
 
     const at = (action as BoardScopedAction).at;
     const state = boardReducer(
@@ -2009,15 +2029,22 @@ export class CommandsService {
    * Mirror the reducer's collection guards. A command that would grow a
    * collection past a `LIMITS` bound or a column past its WIP limit is
    * refused with `409 { conflict: "wip" }` — the same `atWipLimit` predicate
-   * the client uses. TASK-80: only the `RESTORE_*` family is exempt (undo of
-   * a delete); a client-supplied `inverse` flag buys nothing.
+   * the client uses.
+   *
+   * TASK-80 used to exempt the whole `RESTORE_*` family because it is the
+   * shape of an undo. TASK-180.2 M13: the flag/type comes from the client,
+   * so a forged restore could add a 51st label, a 21st checklist, a 101st
+   * item or a card into a full column. Restores are now checked exactly like
+   * the fresh add they perform. The one exemption is internal: a run revert
+   * restoring a deleted entity may exceed the current limit, and the run
+   * path sets `exemptRestoreLimits` itself (never a wire field).
    */
   private assertNoWipConflict(
     board: Board,
     action: BoardAction,
     currentVersion: number,
+    exemptRestoreLimits = false,
   ): void {
-    if (RESTORE_ACTIONS.has(action.type)) return;
     const reject = (): never => {
       throw new ConflictException({
         conflict: "wip",
@@ -2028,6 +2055,18 @@ export class CommandsService {
       column !== undefined &&
       (column.cardIds.length >= LIMITS.cardsPerColumn ||
         atWipLimit(column, true));
+    const restoreExempt =
+      exemptRestoreLimits && RESTORE_ACTIONS.has(action.type);
+    const checkRestoredCard = (card: {
+      labelIds: string[];
+      checklists?: Board["cards"][string]["checklists"];
+    }): void => {
+      if (card.labelIds.length > LIMITS.labelsPerCard) reject();
+      if ((card.checklists ?? []).length > LIMITS.checklistsPerCard) reject();
+      for (const checklist of card.checklists ?? []) {
+        if (checklist.items.length > LIMITS.itemsPerChecklist) reject();
+      }
+    };
 
     switch (action.type) {
       case "ADD_CARD": {
@@ -2121,6 +2160,81 @@ export class CommandsService {
           card.checklists?.find((c) => c.id === action.checklistId)?.items ??
           [];
         if (items.some((item) => item.id === action.newItemId)) return;
+        if (items.length >= LIMITS.itemsPerChecklist) reject();
+        return;
+      }
+      case "RESTORE_CARD": {
+        if (restoreExempt) return;
+        // A live id is a reducer no-op; a column-less restore lands nowhere.
+        if (Object.hasOwn(board.cards, action.card.id)) return;
+        if (action.columnId === undefined) return;
+        const column = board.columns.find((c) => c.id === action.columnId);
+        if (!column) return;
+        if (columnBlocked(column)) reject();
+        checkRestoredCard(action.card);
+        return;
+      }
+      case "RESTORE_COLUMN": {
+        if (restoreExempt) return;
+        if (board.columns.some((c) => c.id === action.column.id)) return;
+        if (board.columns.length >= LIMITS.columnsPerBoard) reject();
+        if (action.column.cardIds.length > LIMITS.cardsPerColumn) reject();
+        if (
+          action.column.wipLimit !== undefined &&
+          action.column.cardIds.length > action.column.wipLimit
+        ) {
+          reject();
+        }
+        for (const card of action.cards) checkRestoredCard(card);
+        return;
+      }
+      case "RESTORE_COLUMN_CARDS": {
+        if (restoreExempt) return;
+        const column = board.columns.find((c) => c.id === action.columnId);
+        if (!column) return;
+        // Only a card this command actually puts back can grow the column;
+        // a payload of cards already there is a no-op.
+        const addsCard = action.cardIds.some(
+          (id) => !column.cardIds.includes(id),
+        );
+        if (addsCard && columnBlocked(column)) reject();
+        for (const card of action.cards) checkRestoredCard(card);
+        return;
+      }
+      case "RESTORE_LABEL": {
+        if (restoreExempt) return;
+        if (board.labels.some((label) => label.id === action.label.id)) return;
+        if (board.labels.length >= LIMITS.labelsPerBoard) reject();
+        for (const { cardId } of action.assignments ?? []) {
+          const card = cardOf(board, cardId);
+          if (
+            card &&
+            !card.labelIds.includes(action.label.id) &&
+            card.labelIds.length >= LIMITS.labelsPerCard
+          ) {
+            reject();
+          }
+        }
+        return;
+      }
+      case "RESTORE_CHECKLIST": {
+        if (restoreExempt) return;
+        const card = cardOf(board, action.cardId);
+        if (!card) return;
+        const checklists = card.checklists ?? [];
+        if (checklists.some((c) => c.id === action.checklist.id)) return;
+        if (checklists.length >= LIMITS.checklistsPerCard) reject();
+        if (action.checklist.items.length > LIMITS.itemsPerChecklist) reject();
+        return;
+      }
+      case "RESTORE_CHECKLIST_ITEM": {
+        if (restoreExempt) return;
+        const card = cardOf(board, action.cardId);
+        if (!card) return;
+        const items =
+          card.checklists?.find((c) => c.id === action.checklistId)?.items ??
+          [];
+        if (items.some((item) => item.id === action.item.id)) return;
         if (items.length >= LIMITS.itemsPerChecklist) reject();
         return;
       }
