@@ -209,6 +209,12 @@ export interface ApplyOptions {
    * check and the inverse writes.
    */
   guard?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /**
+   * TASK-176.8: run a fresh-command precondition after the idempotency lookup.
+   * An exact replay returns its stored result and never calls this hook, so
+   * an admin retry stays idempotent even after the target card changed state.
+   */
+  beforeApplyFresh?: (tx: Prisma.TransactionClient) => Promise<void>;
   /** TASK-166.7 internal post-apply hook, inside the board transaction. */
   afterRun?: (
     tx: Prisma.TransactionClient,
@@ -491,6 +497,12 @@ export class CommandsService {
         const fresh = prepared.filter(
           (entry) => !existingById.has(entry.dto.commandId),
         );
+        // Replay-safe precondition: only a command that will actually write
+        // gets checked against the current entity state (TASK-176.8). An
+        // exact retry returns `existingById` above and skips this hook.
+        if (fresh.length > 0 && options.beforeApplyFresh !== undefined) {
+          await options.beforeApplyFresh(tx);
+        }
         if (
           fresh.length > 0 &&
           (options.principal?.via === "pat" || options.enforcePlanLimits)

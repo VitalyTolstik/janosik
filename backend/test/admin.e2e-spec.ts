@@ -702,7 +702,12 @@ describe("Admin API (e2e)", () => {
       });
       await prisma.board.deleteMany({ where: { id: fixture.boardId } });
       await prisma.adminAuditLog.deleteMany({
-        where: { targetType: "board", targetId: fixture.boardId },
+        where: {
+          OR: [
+            { targetType: "board", targetId: fixture.boardId },
+            { targetType: "card", targetId: fixture.cardId },
+          ],
+        },
       });
       await prisma.refreshToken.deleteMany({
         where: { userId: fixture.ownerId },
@@ -1157,7 +1162,122 @@ describe("Admin API (e2e)", () => {
       await cleanupCommandFixture(fixture);
     });
 
-    it("validates the admin commandId and ignores an empty read filter", async () => {
+    it("rejects malformed cardId in admin edit/move actions with 400", async () => {
+      const fixture = await commandFixture("malformed");
+      const malformed: unknown[] = [undefined, {}, null, "", "   "];
+      for (const type of ["UPDATE_CARD", "MOVE_CARD"] as const) {
+        for (const cardId of malformed) {
+          const action: Record<string, unknown> = {
+            type,
+            cardId,
+            at: Date.now(),
+          };
+          if (type === "UPDATE_CARD") {
+            action.description = "Never applied";
+          } else {
+            action.fromColumnId = fixture.sourceId;
+            action.fromIndex = 0;
+            action.toColumnId = fixture.targetId;
+            action.toIndex = 0;
+          }
+          await server()
+            .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+            .set("Authorization", `Bearer ${adminToken}`)
+            .send({ action })
+            .expect(400);
+        }
+      }
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(0);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("replays stored results after the card is archived or deleted (TASK-176.8/176.10)", async () => {
+      const fixture = await commandFixture("replay-state");
+      const moveId = randomUUID();
+      const moveAction = {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.sourceId,
+        fromIndex: 0,
+        toColumnId: fixture.targetId,
+        toIndex: 0,
+        at: Date.now(),
+      };
+      const moved = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: moveId, action: moveAction })
+        .expect(201);
+      await server()
+        .post(`/api/v1/admin/cards/${fixture.cardId}/archive`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const moveRetry = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: moveId, action: moveAction })
+        .expect(201);
+      expect(moveRetry.body.seq).toBe(moved.body.seq);
+      expect(await prisma.command.count({ where: { id: moveId } })).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: moveId },
+          },
+        }),
+      ).toBe(1);
+
+      await server()
+        .post(`/api/v1/admin/cards/${fixture.cardId}/unarchive`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const updateId = randomUUID();
+      const updateAction = {
+        type: "UPDATE_CARD",
+        cardId: fixture.cardId,
+        description: "Stored before delete",
+        at: Date.now(),
+      };
+      const updated = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: updateId, action: updateAction })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/admin/cards/${fixture.cardId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const updateRetry = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: updateId, action: updateAction })
+        .expect(201);
+      expect(updateRetry.body.seq).toBe(updated.body.seq);
+      expect(await prisma.command.count({ where: { id: updateId } })).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: updateId },
+          },
+        }),
+      ).toBe(1);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("validates the admin commandId on writes and reads", async () => {
       const fixture = await commandFixture("validation");
       for (const commandId of ["", "   ", "bad id", "a".repeat(65)]) {
         await server()
@@ -1175,13 +1295,18 @@ describe("Admin API (e2e)", () => {
           .expect(400);
       }
 
-      // The read filter trims an empty value to "no filter" and never reaches
-      // Prisma with a malformed predicate.
-      const all = await server()
-        .get("/api/v1/admin/commands?commandId=")
-        .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-      expect(all.body.total).toBeGreaterThan(0);
+      // The read filter must reject empty/whitespace/malformed ids instead of
+      // silently dropping the predicate and returning the whole log.
+      for (const commandId of ["", "   ", "bad%24id", "a".repeat(65)]) {
+        await server()
+          .get(`/api/v1/admin/commands?commandId=${commandId}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(400);
+        await server()
+          .get(`/api/v1/admin/audit?commandId=${commandId}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(400);
+      }
 
       // Defensive pin: a `commandId` on a non-board.command row is not a link.
       await prisma.adminAuditLog.create({

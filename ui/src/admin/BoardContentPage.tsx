@@ -136,6 +136,8 @@ export function BoardContentPage() {
       setBusy(true);
       try {
         await adminApi.sendBoardCommand(boardId, {
+          // Every content edit is retry-safe on its own id (TASK-176.8).
+          commandId: crypto.randomUUID(),
           // `at` is the command clock the reducer stamps into the board;
           // the strict validator requires it on every board-scoped action.
           action: { ...action, at: Date.now() } as never,
@@ -350,7 +352,7 @@ export function BoardContentPage() {
                     </button>
                   )}
                   {renaming?.id !== column.id ? (
-                    <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100">
                       <button
                         type="button"
                         aria-label={t("admin.boardContent.rename")}
@@ -482,7 +484,7 @@ export function BoardContentPage() {
                         <IdChip id={card.id} className="shrink-0" />
                       </span>
                     )}
-                    <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100">
                       <button
                         type="button"
                         aria-label={t("admin.boardContent.rename")}

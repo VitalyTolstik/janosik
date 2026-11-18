@@ -851,6 +851,33 @@ export class FakeAdminServer {
       }
 
       const board = this.state.contentBoard ?? current;
+      if (action.type === "ADD_CARD") {
+        const newCardId = (action as { newCardId?: string }).newCardId;
+        const aggregateCard =
+          newCardId === undefined ? undefined : board.cards[newCardId];
+        const column =
+          newCardId === undefined
+            ? undefined
+            : board.columns.find((entry) => entry.cardIds.includes(newCardId));
+        if (
+          newCardId !== undefined &&
+          aggregateCard !== undefined &&
+          column !== undefined &&
+          !this.state.cards.some((card) => card.id === newCardId)
+        ) {
+          this.state.cards.push(
+            adminCard({
+              id: newCardId,
+              title: aggregateCard.title,
+              boardId: boardCommand[1],
+              boardTitle: board.title,
+              columnId: column.id,
+              columnTitle: column.title,
+              commentIds: [],
+            }),
+          );
+        }
+      }
       const cardId = (action as { cardId?: string }).cardId;
       if (typeof cardId === "string") {
         const aggregateCard = board.cards[cardId];

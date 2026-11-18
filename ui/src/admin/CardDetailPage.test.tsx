@@ -542,7 +542,11 @@ describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
     });
     const sent = server.requests
       .filter((request) => request.path.endsWith("/commands"))
-      .at(-1)?.body as { action: Record<string, unknown> };
+      .at(-1)?.body as {
+      commandId?: string;
+      action: Record<string, unknown>;
+    };
+    expect(sent.commandId).toEqual(expect.any(String));
     expect(sent.action).toMatchObject({
       type: "UPDATE_CARD",
       cardId: "card-1",
@@ -583,12 +587,71 @@ describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
     const link = await screen.findByTestId(
       "admin-card-timeline-audit-command-cmd-1",
     );
-    expect(link).toHaveAttribute(
-      "href",
-      "/admin/audit?tab=audit&commandId=cmd-1",
-    );
+    const url = new URL(link.getAttribute("href") ?? "", "http://admin.test");
+    expect(url.pathname).toBe("/admin/audit");
+    expect(url.searchParams.get("tab")).toBe("audit");
+    expect(url.searchParams.get("commandId")).toBe("cmd-1");
+    expect(url.searchParams.get("returnTo")).toBe("/admin/cards/card-1");
     expect(link).toHaveAccessibleName("Audit command cmd-1 for card card-1");
     expect(link).toHaveTextContent("Audit");
+  });
+
+  it("keeps the description dialog open when saving fails", async () => {
+    const state = emptyAdminState();
+    state.cards = [adminCard({ id: "card-1", commentIds: [] })];
+    state.cardDescriptions["card-1"] = "Old support note";
+    const server = new FakeAdminServer(state);
+    server.failNextStatuses.push({ path: "/commands", status: 409 });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    await screen.findByTestId("admin-card-detail-description");
+    fireEvent.pointerDown(screen.getByTestId("admin-card-detail-actions"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByTestId("admin-card-edit-description"));
+    const dialog = await screen.findByTestId("admin-card-description-dialog");
+    fireEvent.change(
+      within(dialog).getByTestId("admin-card-description-input"),
+      { target: { value: "Will not save" } },
+    );
+    fireEvent.click(
+      within(dialog).getByTestId("admin-card-description-submit"),
+    );
+
+    expect(
+      await screen.findByTestId("admin-card-description-error"),
+    ).toHaveTextContent("denied");
+    expect(screen.getByTestId("admin-card-description-dialog")).toBeTruthy();
+    expect(
+      screen.getByTestId("admin-card-detail-description"),
+    ).toHaveTextContent("Old support note");
+  });
+
+  it("does not send an unchanged description", async () => {
+    const state = emptyAdminState();
+    state.cards = [adminCard({ id: "card-1", commentIds: [] })];
+    state.cardDescriptions["card-1"] = "Same note";
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    await screen.findByTestId("admin-card-detail-description");
+    fireEvent.pointerDown(screen.getByTestId("admin-card-detail-actions"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByTestId("admin-card-edit-description"));
+    const dialog = await screen.findByTestId("admin-card-description-dialog");
+    fireEvent.click(
+      within(dialog).getByTestId("admin-card-description-submit"),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("admin-card-description-dialog")).toBeNull();
+    });
+    expect(
+      server.requests.filter((request) => request.path.endsWith("/commands")),
+    ).toHaveLength(0);
   });
 
   it("supports clearing the description", async () => {

@@ -1439,14 +1439,6 @@ export class AdminEntitiesService {
       attachmentsLive + (includeDeleted ? attachmentsDeleted : 0);
     const sessionsTotal = sessionsLive + (includeDeleted ? sessionsHidden : 0);
     const tokensTotal = tokensLive + (includeDeleted ? tokensHidden : 0);
-    const recentCommandAuditIds = await auditIdsForCommands(
-      this.prisma,
-      recentCommands.map((command) => ({
-        id: command.id,
-        boardId: command.boardId,
-        seq: Number(command.seq),
-      })),
-    );
 
     return {
       user: userRow,
@@ -1549,9 +1541,7 @@ export class AdminEntitiesService {
       attachments: attachments.map(toAttachmentRow),
       sessions: sessions.map(toSessionRow),
       tokens: tokens.map(toTokenRow),
-      recentCommands: recentCommands.map((command) =>
-        toCommandRow(command, recentCommandAuditIds.get(command.id) ?? null),
-      ),
+      recentCommands: recentCommands.map(toCommandRow),
       recentActivity: recentActivity.map(toActivityRow),
     };
   }
@@ -2337,10 +2327,7 @@ type CommandJoin = {
   actor: { email: string };
 };
 
-function toCommandRow(
-  command: CommandJoin,
-  auditId: string | null = null,
-): AdminCommandRowDto {
+function toCommandRow(command: CommandJoin): AdminCommandRowDto {
   return {
     id: command.id,
     boardId: command.boardId,
@@ -2351,7 +2338,9 @@ function toCommandRow(
     seq: Number(command.seq),
     createdAt: command.createdAt.getTime(),
     payload: (command.payload as Record<string, unknown> | null) ?? null,
-    auditId,
+    // The user-profile block renders no audit link; correlation is resolved
+    // only on the command log and the card timeline.
+    auditId: null,
   };
 }
 

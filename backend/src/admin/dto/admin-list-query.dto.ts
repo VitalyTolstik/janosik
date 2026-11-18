@@ -27,6 +27,10 @@ const trimOptionalId = ({ value }: { value: unknown }): unknown =>
       : value.trim()
     : value;
 
+/** Trim but keep an empty string so `Matches` rejects `?commandId=`. */
+const trimRequiredId = ({ value }: { value: unknown }): unknown =>
+  typeof value === "string" ? value.trim() : value;
+
 export class AdminListQueryDto {
   @IsOptional()
   @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
@@ -104,7 +108,7 @@ export class AdminListQueryDto {
    * trail, so both lists can deep-link to the same row.
    */
   @IsOptional()
-  @Transform(trimOptionalId)
+  @Transform(trimRequiredId)
   @IsString()
   @MaxLength(64)
   @Matches(ADMIN_ID_PATTERN)

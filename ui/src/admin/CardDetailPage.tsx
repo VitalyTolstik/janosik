@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
 import { ADMIN_DETAIL_LIMITS, LIMITS } from "@janosik/shared";
 import type {
@@ -26,7 +31,12 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
-import { adminAuditEntryHref, readReturnTo } from "./admin-navigation";
+import {
+  adminAuditEntryHref,
+  currentAdminPath,
+  readReturnTo,
+  withReturnTo,
+} from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import {
   AttachmentDownloadButton,
@@ -137,6 +147,7 @@ export function CardDetailPage() {
   const toast = useToast();
   const { lang } = useI18n();
   const hour12 = useHour12();
+  const location = useLocation();
   const [detail, setDetail] = useState<AdminCardDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -258,10 +269,16 @@ export function CardDetailPage() {
   const saveDescription = async (event: React.FormEvent) => {
     event.preventDefault();
     if (descriptionBusy) return;
+    if (descriptionDraft.trim() === (card.description ?? "").trim()) {
+      setDescriptionOpen(false);
+      setDescriptionError(null);
+      return;
+    }
     setDescriptionBusy(true);
     setDescriptionError(null);
     try {
       await adminApi.sendBoardCommand(card.boardId, {
+        commandId: crypto.randomUUID(),
         action: {
           type: "UPDATE_CARD",
           cardId: card.id,
@@ -421,7 +438,10 @@ export function CardDetailPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
+    <div
+      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4"
+      data-testid="admin-card-detail-scroll"
+    >
       <div className="flex items-center gap-2">
         <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
           <Link
@@ -939,7 +959,10 @@ export function CardDetailPage() {
                 <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-[11px] text-muted-foreground">
                   {event.kind === "command" && event.auditId ? (
                     <Link
-                      to={adminAuditEntryHref(event.id)}
+                      to={withReturnTo(
+                        adminAuditEntryHref(event.id),
+                        currentAdminPath(location),
+                      )}
                       data-testid={`admin-card-timeline-audit-command-${event.id}`}
                       aria-label={t("admin.cardDetail.timelineAuditLabel", {
                         commandId: event.id,

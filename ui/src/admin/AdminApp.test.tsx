@@ -467,7 +467,9 @@ describe("AdminApp", () => {
     expect(auditUrl.searchParams.get("tab")).toBe("audit");
     // The filter is the command id; `auditId` is only the "correlated" flag.
     expect(auditUrl.searchParams.get("commandId")).toBe("c-1");
-    expect(auditUrl.searchParams.get("returnTo")).toBeNull();
+    expect(auditUrl.searchParams.get("returnTo")).toBe(
+      "/admin/audit?tab=commands",
+    );
     expect(auditLink).toHaveAccessibleName("Audit command c-1 (ADD_CARD)");
 
     view.unmount();
@@ -921,7 +923,11 @@ describe("admin content and security pages", () => {
     });
     const sent = server.requests
       .filter((request) => request.path.endsWith("/commands"))
-      .at(-1)?.body as { action: Record<string, unknown> };
+      .at(-1)?.body as {
+      commandId?: string;
+      action: Record<string, unknown>;
+    };
+    expect(sent.commandId).toEqual(expect.any(String));
     expect(sent.action).toMatchObject({
       type: "MOVE_CARD",
       cardId: "card-1",

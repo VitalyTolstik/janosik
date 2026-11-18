@@ -21,9 +21,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   id), and `GET /admin/audit` plus `GET /admin/commands` accept the same
   exact validated `commandId`; the audit query is pinned to `board.command`.
   `/admin/audit?tab=audit&commandId=<command id>` is a shareable deep link.
-  The admin command path rejects soft-deleted/missing cards with `404` and
-  archived-card moves with `409`, and a replay of an existing `commandId`
-  never fabricates a second master audit row. No feature flag is added:
+  The admin `UPDATE_CARD` / `MOVE_CARD` path rejects soft-deleted/missing cards
+  with `404` and archived-card moves with `409`, and a replay of an existing
+  `commandId` never fabricates a second master audit row. No feature flag is
+  added:
   product sign-off is recorded in TASK-176.8/176.10. EN/RU admin docs record
   the new controls and links.
 

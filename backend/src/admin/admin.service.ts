@@ -1037,28 +1037,6 @@ export class AdminService {
     if (!board || board.deletedAt !== null) {
       throw new NotFoundException("Board not found");
     }
-
-    // TASK-176.8: the board aggregate deliberately excludes deleted cards,
-    // so an admin edit of one would be a no-op with a "saved" toast and a
-    // fabricated command/audit row. Reject it before the command log.
-    if (dto.action.type === "UPDATE_CARD" || dto.action.type === "MOVE_CARD") {
-      const card = await this.prisma.card.findUnique({
-        where: { id: dto.action.cardId },
-        select: {
-          id: true,
-          deletedAt: true,
-          archivedAt: true,
-          column: { select: { boardId: true } },
-        },
-      });
-      if (!card || card.deletedAt !== null || card.column.boardId !== boardId) {
-        throw new NotFoundException("Card not found");
-      }
-      if (dto.action.type === "MOVE_CARD" && card.archivedAt !== null) {
-        throw new ConflictException("Archived cards cannot be moved");
-      }
-    }
-
     const owner = await this.prisma.boardMember.findFirst({
       where: { boardId, role: "ADMIN", acceptedAt: { not: null } },
       orderBy: { createdAt: "asc" },
@@ -1079,7 +1057,41 @@ export class AdminService {
         // validator owns its shape); the wire type is already a BoardAction.
         action: dto.action as unknown as Record<string, unknown>,
       },
-      { actorType: "admin" },
+      {
+        actorType: "admin",
+        beforeApplyFresh: async (tx) => {
+          // TASK-176.8: the board aggregate deliberately excludes deleted
+          // cards, so a fresh admin edit of one would be a no-op with a
+          // "saved" toast and a fabricated command/audit row. Reject it only
+          // when the command is fresh: an exact replay already returned from
+          // the idempotency lookup above and must keep its stored result.
+          if (
+            dto.action.type !== "UPDATE_CARD" &&
+            dto.action.type !== "MOVE_CARD"
+          ) {
+            return;
+          }
+          const card = await tx.card.findUnique({
+            where: { id: dto.action.cardId },
+            select: {
+              id: true,
+              deletedAt: true,
+              archivedAt: true,
+              column: { select: { boardId: true } },
+            },
+          });
+          if (
+            !card ||
+            card.deletedAt !== null ||
+            card.column.boardId !== boardId
+          ) {
+            throw new NotFoundException("Card not found");
+          }
+          if (dto.action.type === "MOVE_CARD" && card.archivedAt !== null) {
+            throw new ConflictException("Archived cards cannot be moved");
+          }
+        },
+      },
     );
     // An idempotent replay must not fabricate a master audit row: the command
     // may have been issued by a normal user (or audited by an earlier admin

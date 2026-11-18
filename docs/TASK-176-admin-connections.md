@@ -322,9 +322,11 @@ superseded). `/admin/cards/:id` edits the description and the board content
 editor moves cards through `UPDATE_CARD` / `MOVE_CARD`; both dialogs show the
 owner-attribution banner. The command log and board history still name the
 owner, while the audit row records `commandId`, `masterId` and `masterEmail`.
-Deleted cards are rejected before the command log, missing cards answer `404`
-and archived-card moves answer `409`; the admin replay of an existing
-`commandId` does not create a second audit row. Implemented in commit
+Deleted cards are rejected before a fresh `UPDATE_CARD` / `MOVE_CARD` is
+logged, missing cards answer `404` and archived-card moves answer `409`; an
+exact admin replay of an existing `commandId` still returns its stored result
+even after the card is archived or deleted, and does not create a second audit
+row. Implemented in commit
 `d04dd441` plus this review-fix follow-up.
 
 ---

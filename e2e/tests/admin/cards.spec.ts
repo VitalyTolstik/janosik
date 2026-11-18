@@ -252,10 +252,16 @@ test("C6: the card timeline and audit link stay inside 1440/1024/390", async ({
     await expect(
       page.getByTestId(`admin-card-timeline-audit-command-${commandId}`),
     ).toBeVisible();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
-    ).toBe(true);
+    const scroller = page.getByTestId("admin-card-detail-scroll");
+    const timeline = page
+      .getByTestId("admin-card-detail-timeline")
+      .locator("ul");
+    for (const box of [scroller, timeline]) {
+      expect(
+        await box.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
+        ),
+      ).toBe(true);
+    }
   }
 });
