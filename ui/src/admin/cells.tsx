@@ -327,7 +327,7 @@ export function JsonCell({
   const raw = JSON.stringify(value);
   const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
-    <span className="block">
+    <span className="block min-w-0 max-w-[20rem]">
       <button
         type="button"
         data-testid={testId ? `${testId}-expand` : undefined}
@@ -337,13 +337,12 @@ export function JsonCell({
           event.stopPropagation();
           setExpanded((current) => !current);
         }}
-        className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full min-w-0 items-center gap-1 text-left text-muted-foreground transition-colors hover:text-foreground"
       >
         <Chevron className="h-3.5 w-3.5 shrink-0" aria-hidden />
         {!expanded ? (
           <code
-            className="block truncate font-mono text-[11px]"
-            style={{ maxWidth: "20rem" }}
+            className="block min-w-0 flex-1 truncate font-mono text-[11px]"
             title={raw}
           >
             {raw}

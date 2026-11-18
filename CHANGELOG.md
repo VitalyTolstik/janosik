@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.8 + TASK-176.10 admin editing pilot and command ↔ audit
+  correlation: `/admin/cards/:id` can edit the card description through an
+  `UPDATE_CARD` command, and the board content editor can move a card to
+  another column through `MOVE_CARD`. Both dialogs show the explicit
+  owner-attribution banner; the command log and board history still name the
+  board owner, while `AdminAuditLog.details` now carries `commandId`,
+  `masterId` and `masterEmail` for the real master. Command rows and card
+  timeline commands expose `auditId` when correlated (historical and normal
+  user commands stay `null`), adding an `Audit` link in the command log and
+  card timeline. The link filters by the **command id** (not the audit row
+  id), and `GET /admin/audit` plus `GET /admin/commands` accept the same
+  exact validated `commandId`; the audit query is pinned to `board.command`.
+  `/admin/audit?tab=audit&commandId=<command id>` is a shareable deep link.
+  The admin `UPDATE_CARD` / `MOVE_CARD` path rejects soft-deleted/missing cards
+  with `404` and archived-card moves with `409`, and a replay of an existing
+  `commandId` never fabricates a second master audit row. No feature flag is
+  added:
+  product sign-off is recorded in TASK-176.8/176.10. EN/RU admin docs record
+  the new controls and links.
+
 - TASK-179 large-screen layout: at `min-width: 1600px` the board-scoped Agent
   Control modal grows to a 1400×860 canvas at 1920 (rail 220, list 360,
   detail 818), and the global `/agents` content cap and detail rail grow from

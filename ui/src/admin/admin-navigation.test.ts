@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   adminActivityHref,
   adminAttachmentsHref,
+  adminAuditEntryHref,
   adminCardsHref,
   adminCommentsHref,
   adminCommandsHref,
@@ -34,6 +35,9 @@ describe("admin navigation", () => {
     );
     expect(adminActivityHref("b-1")).toBe(
       "/admin/audit?tab=activity&boardId=b-1",
+    );
+    expect(adminAuditEntryHref("cmd-1")).toBe(
+      "/admin/audit?tab=audit&commandId=cmd-1",
     );
   });
 

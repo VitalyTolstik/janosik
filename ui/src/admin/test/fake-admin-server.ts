@@ -77,6 +77,8 @@ export interface FakeAdminState {
   memberships: AdminUserMembershipDto[];
   /** Last actor per card id, served by the card-detail DTO. */
   cardLastActors: Record<string, { id: string; email: string | null }>;
+  /** Description per card id, updated by admin UPDATE_CARD commands. */
+  cardDescriptions: Record<string, string | null>;
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
@@ -98,6 +100,7 @@ export function emptyAdminState(): FakeAdminState {
     activity: [],
     memberships: [],
     cardLastActors: {},
+    cardDescriptions: {},
     contentBoard: null,
   };
 }
@@ -820,6 +823,21 @@ export class FakeAdminServer {
     const boardCommand = path.match(/^\/admin\/boards\/([^/]+)\/commands$/);
     if (boardCommand && method === "POST") {
       const action = (jsonBody?.action ?? {}) as BoardAction;
+      const actionCardId = (action as { cardId?: string }).cardId;
+      if (
+        (action.type === "UPDATE_CARD" || action.type === "MOVE_CARD") &&
+        typeof actionCardId === "string"
+      ) {
+        const target = this.state.cards.find(
+          (card) => card.id === actionCardId,
+        );
+        if (target === undefined || target.deletedAt !== null) {
+          return this.json({ message: "Card not found" }, 404);
+        }
+        if (action.type === "MOVE_CARD" && target.archivedAt !== null) {
+          return this.json({ message: "Archived cards cannot be moved" }, 409);
+        }
+      }
       const current = this.state.contentBoard ?? contentBoard();
       try {
         const next = boardReducer([current], {
@@ -831,7 +849,117 @@ export class FakeAdminServer {
       } catch (error) {
         return this.json({ message: String(error) }, 400);
       }
-      return this.json({ seq: 1, versions: {} });
+
+      const board = this.state.contentBoard ?? current;
+      if (action.type === "ADD_CARD") {
+        const newCardId = (action as { newCardId?: string }).newCardId;
+        const aggregateCard =
+          newCardId === undefined ? undefined : board.cards[newCardId];
+        const column =
+          newCardId === undefined
+            ? undefined
+            : board.columns.find((entry) => entry.cardIds.includes(newCardId));
+        if (
+          newCardId !== undefined &&
+          aggregateCard !== undefined &&
+          column !== undefined &&
+          !this.state.cards.some((card) => card.id === newCardId)
+        ) {
+          this.state.cards.push(
+            adminCard({
+              id: newCardId,
+              title: aggregateCard.title,
+              boardId: boardCommand[1],
+              boardTitle: board.title,
+              columnId: column.id,
+              columnTitle: column.title,
+              commentIds: [],
+            }),
+          );
+        }
+      }
+      const cardId = (action as { cardId?: string }).cardId;
+      if (typeof cardId === "string") {
+        const aggregateCard = board.cards[cardId];
+        const row = this.state.cards.find((card) => card.id === cardId);
+        if (row) {
+          if (aggregateCard) {
+            row.title = aggregateCard.title;
+            const column = board.columns.find((entry) =>
+              entry.cardIds.includes(cardId),
+            );
+            if (column) {
+              row.columnId = column.id;
+              row.columnTitle = column.title;
+            }
+          }
+          if (
+            action.type === "UPDATE_CARD" &&
+            "description" in (action as unknown as Record<string, unknown>)
+          ) {
+            this.state.cardDescriptions[cardId] =
+              aggregateCard?.description ??
+              (action as { description?: string }).description ??
+              null;
+          }
+        }
+      }
+
+      // TASK-176.10: a master-issued command adds one correlated audit row.
+      const commandId =
+        typeof jsonBody?.commandId === "string" && jsonBody.commandId !== ""
+          ? jsonBody.commandId
+          : `command-${this.state.commands.length + 1}`;
+      const seq =
+        this.state.commands.reduce(
+          (max, command) => Math.max(max, command.seq),
+          0,
+        ) + 1;
+      const createdAt = now + this.state.commands.length + 1;
+      const boardRow = this.state.boards.find(
+        (entry) => entry.id === boardCommand[1],
+      );
+      const actorId = boardRow?.userId ?? "u-1";
+      const actorEmail = boardRow?.ownerEmail ?? "member@example.com";
+      const auditId = `audit-${commandId}`;
+      this.state.commands = [
+        {
+          id: commandId,
+          boardId: boardCommand[1],
+          boardTitle: board.title,
+          actorId,
+          actorEmail,
+          type: action.type,
+          seq,
+          createdAt,
+          payload: action as unknown as Record<string, unknown>,
+          auditId,
+        },
+        ...this.state.commands,
+      ];
+      this.state.audit = [
+        {
+          id: auditId,
+          adminId: admin.id,
+          adminEmail: admin.email,
+          action: "board.command",
+          targetType: "board",
+          targetId: boardCommand[1],
+          targetExists: true,
+          details: {
+            commandId,
+            masterId: admin.id,
+            masterEmail: admin.email,
+            title: board.title,
+            type: action.type,
+            actorEmail,
+            seq,
+          },
+          createdAt,
+        },
+        ...this.state.audit,
+      ];
+      return this.json({ seq, versions: {} });
     }
 
     if (path === "/admin/cards" && method === "GET") {
@@ -900,10 +1028,10 @@ export class FakeAdminServer {
     }
 
     if (path === "/admin/commands") {
-      return this.json(this.page(this.state.commands, url));
+      return this.json(this.page(this.state.commands, url, "id"));
     }
     if (path === "/admin/audit") {
-      return this.json(this.page(this.state.audit, url));
+      return this.json(this.page(this.state.audit, url, "details"));
     }
 
     // Email service settings (TASK-52): view for any signed-in master,
@@ -1624,7 +1752,13 @@ export class FakeAdminServer {
         activity: this.state.activity,
         announcements: this.announcements,
       };
-      return this.json(this.page(map[entity[1]] ?? [], url));
+      const commandMatch =
+        entity[1] === "commands"
+          ? "id"
+          : entity[1] === "audit"
+            ? "details"
+            : "auto";
+      return this.json(this.page(map[entity[1]] ?? [], url, commandMatch));
     }
     const userDetail = path.match(/^\/admin\/users\/([^/]+)\/detail$/);
     if (userDetail && method === "GET") {
@@ -1738,17 +1872,32 @@ export class FakeAdminServer {
     const activity = this.state.activity.filter(
       (entry) => entry.cardId === card.id,
     );
-    const timeline = [...activity]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map((entry) => ({
+    const commands = this.state.commands.filter((command) => {
+      const payload = command.payload as Record<string, unknown> | null;
+      return payload?.cardId === card.id || payload?.newCardId === card.id;
+    });
+    const timeline = [
+      ...activity.map((entry) => ({
         id: entry.id,
         kind: "activity" as const,
         type: entry.type,
         actorId: entry.actorId,
         actorEmail: entry.actorEmail,
+        auditId: null,
         details: entry.details,
         createdAt: entry.createdAt,
-      }));
+      })),
+      ...commands.map((command) => ({
+        id: command.id,
+        kind: "command" as const,
+        type: command.type,
+        actorId: command.actorId,
+        actorEmail: command.actorEmail,
+        auditId: command.auditId ?? null,
+        details: command.payload,
+        createdAt: command.createdAt,
+      })),
+    ].sort((a, b) => b.createdAt - a.createdAt);
 
     const anchorComment =
       anchor === null
@@ -1796,7 +1945,7 @@ export class FakeAdminServer {
     return {
       card: {
         ...card,
-        description: null,
+        description: this.state.cardDescriptions[card.id] ?? null,
         dueDate: null,
         priority: null,
         assigneeDisplayName: null,
@@ -1969,6 +2118,7 @@ export class FakeAdminServer {
   private page<T>(
     items: T[],
     url: URL,
+    commandMatch: "id" | "details" | "auto" = "auto",
   ): {
     items: T[];
     total: number;
@@ -1979,6 +2129,7 @@ export class FakeAdminServer {
     const boardId = url.searchParams.get("boardId");
     const columnId = url.searchParams.get("columnId");
     const cardId = url.searchParams.get("cardId");
+    const commandId = url.searchParams.get("commandId");
     const filtered = items.filter((item) => {
       const record = item as Record<string, unknown>;
       // Mirrors the server's structural filters enough to catch a cross-board
@@ -1989,6 +2140,16 @@ export class FakeAdminServer {
       if (columnId && record.columnId !== columnId) return false;
       if (cardId && record.cardId !== cardId && record.id !== cardId) {
         return false;
+      }
+      if (commandId) {
+        const details = record.details as Record<string, unknown> | null;
+        const matched =
+          commandMatch === "details"
+            ? details?.commandId === commandId
+            : commandMatch === "id"
+              ? record.id === commandId
+              : details?.commandId === commandId || record.id === commandId;
+        if (!matched) return false;
       }
       return search
         ? JSON.stringify(item).toLowerCase().includes(search)

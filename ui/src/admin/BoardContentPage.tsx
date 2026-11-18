@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Check,
   Columns3,
+  MoveRight,
   Pencil,
   Plus,
   RotateCw,
@@ -19,6 +20,16 @@ import {
 import type { BoardAggregate } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select-field";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
@@ -31,7 +42,15 @@ import {
   withReturnTo,
 } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
-import { ConfirmDialog, ErrorState, IdChip, PageHeader, Panel } from "./ui";
+import {
+  ConfirmDialog,
+  ErrorState,
+  Field,
+  IdChip,
+  OwnerAttributionNotice,
+  PageHeader,
+  Panel,
+} from "./ui";
 import { BoardEditorSkeleton } from "./skeletons";
 
 /**
@@ -70,6 +89,12 @@ export function BoardContentPage() {
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
     title: string;
+  } | null>(null);
+  const [movingCard, setMovingCard] = useState<{
+    id: string;
+    title: string;
+    fromColumnId: string;
+    targetColumnId: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -111,6 +136,8 @@ export function BoardContentPage() {
       setBusy(true);
       try {
         await adminApi.sendBoardCommand(boardId, {
+          // Every content edit is retry-safe on its own id (TASK-176.8).
+          commandId: crypto.randomUUID(),
           // `at` is the command clock the reducer stamps into the board;
           // the strict validator requires it on every board-scoped action.
           action: { ...action, at: Date.now() } as never,
@@ -123,12 +150,14 @@ export function BoardContentPage() {
         setSelectedColumnId(
           (current) => current ?? next.columns[0]?.id ?? null,
         );
+        return true;
       } catch (error) {
         toast.error(
           error instanceof ApiError
             ? error.messageText
             : t("admin.common.error"),
         );
+        return false;
       } finally {
         setBusy(false);
       }
@@ -147,6 +176,14 @@ export function BoardContentPage() {
         .map((cardId) => board.cards[cardId])
         .filter((card) => card !== undefined)
     : [];
+  const movingFromColumn =
+    movingCard === null
+      ? undefined
+      : board.columns.find((column) => column.id === movingCard.fromColumnId);
+  const moveTargets =
+    movingCard === null
+      ? []
+      : board.columns.filter((column) => column.id !== movingCard.fromColumnId);
 
   const addColumn = () => {
     const title = newColumn.trim();
@@ -180,6 +217,44 @@ export function BoardContentPage() {
         : { type: "UPDATE_CARD", cardId: renaming.id, title },
       t("admin.boardContent.toast.saved"),
     );
+  };
+
+  const openMove = (card: { id: string; title: string }) => {
+    if (selected === undefined) return;
+    const target = board.columns.find((column) => column.id !== selected.id);
+    if (target === undefined) return;
+    setMovingCard({
+      id: card.id,
+      title: card.title,
+      fromColumnId: selected.id,
+      targetColumnId: target.id,
+    });
+  };
+
+  const submitMove = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (movingCard === null) return;
+    const from = board.columns.find(
+      (column) => column.id === movingCard.fromColumnId,
+    );
+    const target = board.columns.find(
+      (column) => column.id === movingCard.targetColumnId,
+    );
+    if (from === undefined || target === undefined) return;
+    const fromIndex = from.cardIds.indexOf(movingCard.id);
+    if (fromIndex < 0) return;
+    const moved = await send(
+      {
+        type: "MOVE_CARD",
+        cardId: movingCard.id,
+        fromColumnId: from.id,
+        fromIndex,
+        toColumnId: target.id,
+        toIndex: target.cardIds.length,
+      },
+      t("admin.boardContent.toast.cardMoved"),
+    );
+    if (moved) setMovingCard(null);
   };
 
   return (
@@ -277,7 +352,7 @@ export function BoardContentPage() {
                     </button>
                   )}
                   {renaming?.id !== column.id ? (
-                    <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100">
                       <button
                         type="button"
                         aria-label={t("admin.boardContent.rename")}
@@ -409,7 +484,7 @@ export function BoardContentPage() {
                         <IdChip id={card.id} className="shrink-0" />
                       </span>
                     )}
-                    <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100">
                       <button
                         type="button"
                         aria-label={t("admin.boardContent.rename")}
@@ -420,6 +495,19 @@ export function BoardContentPage() {
                         className="text-muted-foreground hover:text-foreground"
                       >
                         <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t("admin.boardContent.move")}
+                        data-testid={`admin-card-move-${card.id}`}
+                        disabled={
+                          board.columns.length < 2 ||
+                          card.archivedAt !== undefined
+                        }
+                        onClick={() => openMove(card)}
+                        className="rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <MoveRight className="h-3.5 w-3.5" aria-hidden />
                       </button>
                       <button
                         type="button"
@@ -466,6 +554,89 @@ export function BoardContentPage() {
           )}
         </Panel>
       </div>
+
+      <Dialog
+        open={movingCard !== null}
+        onOpenChange={(next) => {
+          if (!next) setMovingCard(null);
+        }}
+      >
+        <DialogContent
+          className="max-w-sm"
+          data-testid="admin-move-card-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {t("admin.boardContent.move.title")}
+            </DialogTitle>
+            {movingCard !== null ? (
+              <DialogDescription className="text-xs">
+                {t("admin.boardContent.move.body", {
+                  title: movingCard.title,
+                })}
+              </DialogDescription>
+            ) : null}
+          </DialogHeader>
+          <form noValidate onSubmit={submitMove} className="space-y-3">
+            <OwnerAttributionNotice testId="admin-move-card-owner-notice" />
+            <Field
+              htmlFor="admin-move-card-current"
+              label={t("admin.boardContent.move.currentColumn")}
+            >
+              <Input
+                id="admin-move-card-current"
+                data-testid="admin-move-card-current"
+                value={movingFromColumn?.title ?? ""}
+                disabled
+              />
+            </Field>
+            <Field
+              htmlFor="admin-move-card-target"
+              label={t("admin.boardContent.move.targetColumn")}
+            >
+              <SelectField
+                id="admin-move-card-target"
+                testId="admin-move-card-target"
+                value={movingCard?.targetColumnId ?? ""}
+                options={moveTargets.map((column) => ({
+                  value: column.id,
+                  label: column.title,
+                }))}
+                onChange={(value) =>
+                  setMovingCard((current) =>
+                    current === null
+                      ? current
+                      : { ...current, targetColumnId: value },
+                  )
+                }
+              />
+            </Field>
+            <DialogFooter className="gap-2">
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setMovingCard(null)}
+              >
+                {t("admin.common.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                data-testid="admin-move-card-submit"
+                disabled={
+                  busy ||
+                  movingCard === null ||
+                  movingCard.targetColumnId === movingCard.fromColumnId
+                }
+              >
+                {t("admin.boardContent.move.submit")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={pendingDelete !== null}

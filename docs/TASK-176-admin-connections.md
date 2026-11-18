@@ -316,6 +316,19 @@ This is the smallest useful admin content edit. It does **not** open the full ed
 
 Do not proceed without owner sign-off. If approved, ship separately from 176.1–176.7.
 
+**Delivered (2026-11-18, TASK-176.8):** owner sign-off is recorded for this task, so
+the pilot ships **without a product flag** (the flag sentence above is
+superseded). `/admin/cards/:id` edits the description and the board content
+editor moves cards through `UPDATE_CARD` / `MOVE_CARD`; both dialogs show the
+owner-attribution banner. The command log and board history still name the
+owner, while the audit row records `commandId`, `masterId` and `masterEmail`.
+Deleted cards are rejected before a fresh `UPDATE_CARD` / `MOVE_CARD` is
+logged, missing cards answer `404` and archived-card moves answer `409`; an
+exact admin replay of an existing `commandId` still returns its stored result
+even after the card is archived or deleted, and does not create a second audit
+row. Implemented in commit
+`d04dd441` plus this review-fix follow-up.
+
 ---
 
 ## 12. 176.9 — Broader admin card editing (P3, L) — product decision
@@ -339,6 +352,15 @@ Master-authored comments/uploads are also a separate product decision: decide th
 - Add an internal “open audit entry” link from the command row and the card timeline.
 - Surface the actual master and the technical actor without changing board-facing attribution unless the product decides to expose master actions to board members.
 - Test historical rows without the correlation, deleted boards/cards and OPERATOR access.
+
+**Delivered (2026-11-18, TASK-176.10):** `board.command` audit details carry
+`commandId`, `masterId` and `masterEmail`; command rows and card timeline
+commands expose `auditId` only for correlated master-issued commands, with an
+`Audit` link that filters `/admin/audit?tab=audit&commandId=<command id>`
+(the command id, not the audit row id). `GET /admin/commands` and
+`GET /admin/audit` accept the same validated `commandId`; the audit filter is
+pinned to `board.command`. Replays never fabricate a master audit row, and
+historical/user commands stay `null`. No backfill was attempted.
 
 ---
 

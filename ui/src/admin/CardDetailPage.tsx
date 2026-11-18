@@ -1,13 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
-import { ADMIN_DETAIL_LIMITS } from "@janosik/shared";
+import { ADMIN_DETAIL_LIMITS, LIMITS } from "@janosik/shared";
 import type {
   AdminCardDetailDto,
   AdminCardDetailSection,
 } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +31,12 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
-import { readReturnTo } from "./admin-navigation";
+import {
+  adminAuditEntryHref,
+  currentAdminPath,
+  readReturnTo,
+  withReturnTo,
+} from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import {
   AttachmentDownloadButton,
@@ -35,11 +54,14 @@ import { RowActions, type EntityAction } from "./row-actions";
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
   Badge,
+  CharCount,
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  Field,
   FilterTabs,
   ListWindowFooter,
+  OwnerAttributionNotice,
   PageHeader,
   Panel,
   Table,
@@ -125,9 +147,14 @@ export function CardDetailPage() {
   const toast = useToast();
   const { lang } = useI18n();
   const hour12 = useHour12();
+  const location = useLocation();
   const [detail, setDetail] = useState<AdminCardDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [descriptionBusy, setDescriptionBusy] = useState(false);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [sectionLoading, setSectionLoading] =
     useState<AdminCardDetailSection | null>(null);
 
@@ -232,6 +259,46 @@ export function CardDetailPage() {
 
   const { card } = detail;
   const reload = load;
+
+  const openDescriptionEditor = () => {
+    setDescriptionDraft(card.description ?? "");
+    setDescriptionError(null);
+    setDescriptionOpen(true);
+  };
+
+  const saveDescription = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (descriptionBusy) return;
+    if (descriptionDraft.trim() === (card.description ?? "").trim()) {
+      setDescriptionOpen(false);
+      setDescriptionError(null);
+      return;
+    }
+    setDescriptionBusy(true);
+    setDescriptionError(null);
+    try {
+      await adminApi.sendBoardCommand(card.boardId, {
+        commandId: crypto.randomUUID(),
+        action: {
+          type: "UPDATE_CARD",
+          cardId: card.id,
+          description: descriptionDraft,
+          at: Date.now(),
+        },
+      });
+      toast.success(t("admin.cards.toast.descriptionSaved"));
+      setDescriptionOpen(false);
+      reload();
+    } catch (cause) {
+      setDescriptionError(
+        cause instanceof ApiError && cause.messageText
+          ? cause.messageText
+          : t("admin.common.actionFailed"),
+      );
+    } finally {
+      setDescriptionBusy(false);
+    }
+  };
 
   const footer = (section: AdminCardDetailSection, shown: number) => {
     const window = detail.windows[section];
@@ -371,9 +438,17 @@ export function CardDetailPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
-      <div className="flex items-center gap-2">
-        <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
+    <div
+      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4"
+      data-testid="admin-card-detail-scroll"
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          asChild
+        >
           <Link
             to={requestedBack ?? boardHref(card.boardId)}
             aria-label={t("admin.common.back")}
@@ -381,52 +456,62 @@ export function CardDetailPage() {
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
         </Button>
-        <PageHeader
-          title={card.title}
-          subtitle={`${card.boardTitle} · ${card.columnTitle}`}
-          actions={
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid="admin-card-detail-actions"
-                >
-                  {t("admin.common.actions")}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {card.archivedAt === null ? (
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      void run(t("admin.cards.action.archive"), () =>
-                        adminApi.archiveCard(card.id),
-                      )
-                    }
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            title={card.title}
+            subtitle={`${card.boardTitle} · ${card.columnTitle}`}
+            actions={
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="admin-card-detail-actions"
                   >
-                    {t("admin.cards.action.archive")}
-                  </DropdownMenuItem>
-                ) : (
+                    {t("admin.common.actions")}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {card.deletedAt === null ? (
+                    <DropdownMenuItem
+                      data-testid="admin-card-edit-description"
+                      onSelect={openDescriptionEditor}
+                    >
+                      {t("admin.cards.action.editDescription")}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {card.archivedAt === null ? (
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        void run(t("admin.cards.action.archive"), () =>
+                          adminApi.archiveCard(card.id),
+                        )
+                      }
+                    >
+                      {t("admin.cards.action.archive")}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        void run(t("admin.cards.action.unarchive"), () =>
+                          adminApi.unarchiveCard(card.id),
+                        )
+                      }
+                    >
+                      {t("admin.cards.action.unarchive")}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
-                    onSelect={() =>
-                      void run(t("admin.cards.action.unarchive"), () =>
-                        adminApi.unarchiveCard(card.id),
-                      )
-                    }
+                    className="text-danger focus:text-danger"
+                    onSelect={() => setConfirmDelete(true)}
                   >
-                    {t("admin.cards.action.unarchive")}
+                    {t("admin.cards.action.delete")}
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="text-danger focus:text-danger"
-                  onSelect={() => setConfirmDelete(true)}
-                >
-                  {t("admin.cards.action.delete")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          }
-        />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -857,7 +942,7 @@ export function CardDetailPage() {
             {detail.timeline.map((event) => (
               <li
                 key={`${event.kind}-${event.id}`}
-                className="flex items-start gap-2 text-xs"
+                className="flex flex-wrap items-start gap-2 text-xs"
               >
                 <span
                   className={
@@ -868,7 +953,7 @@ export function CardDetailPage() {
                 >
                   {event.type}
                 </span>
-                <span className="text-muted-foreground">
+                <span className="min-w-0 break-words text-muted-foreground">
                   <EntityLink
                     to={userHref(event.actorId)}
                     copyValue={event.actorEmail}
@@ -878,7 +963,23 @@ export function CardDetailPage() {
                   </EntityLink>
                 </span>
                 {event.details ? <JsonCell value={event.details} /> : null}
-                <span className="ml-auto tabular-nums text-[11px] text-muted-foreground">
+                <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-[11px] text-muted-foreground">
+                  {event.kind === "command" && event.auditId ? (
+                    <Link
+                      to={withReturnTo(
+                        adminAuditEntryHref(event.id),
+                        currentAdminPath(location),
+                      )}
+                      data-testid={`admin-card-timeline-audit-command-${event.id}`}
+                      aria-label={t("admin.cardDetail.timelineAuditLabel", {
+                        commandId: event.id,
+                        cardId: card.id,
+                      })}
+                      className="shrink-0 whitespace-nowrap font-medium text-primary underline-offset-2 hover:underline"
+                    >
+                      {t("admin.cardDetail.timelineAudit")}
+                    </Link>
+                  ) : null}
                   {formatDate(event.createdAt, lang, hour12)}
                 </span>
               </li>
@@ -889,6 +990,80 @@ export function CardDetailPage() {
           ? footer("timeline", detail.timeline.length)
           : null}
       </Panel>
+
+      <Dialog
+        open={descriptionOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            setDescriptionOpen(false);
+            setDescriptionError(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-lg"
+          data-testid="admin-card-description-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {t("admin.cards.description.title")}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {card.title}
+            </DialogDescription>
+          </DialogHeader>
+          <form noValidate onSubmit={saveDescription} className="space-y-3">
+            <OwnerAttributionNotice testId="admin-card-description-owner-notice" />
+            <Field
+              htmlFor="admin-card-description"
+              label={t("admin.cards.description.label")}
+              counter={
+                <CharCount value={descriptionDraft} max={LIMITS.description} />
+              }
+            >
+              <Textarea
+                id="admin-card-description"
+                data-testid="admin-card-description-input"
+                value={descriptionDraft}
+                maxLength={LIMITS.description}
+                rows={6}
+                onChange={(event) => setDescriptionDraft(event.target.value)}
+              />
+            </Field>
+            {descriptionError !== null ? (
+              <p
+                role="alert"
+                data-testid="admin-card-description-error"
+                className="text-xs text-danger"
+              >
+                {descriptionError}
+              </p>
+            ) : null}
+            <DialogFooter className="gap-2">
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                disabled={descriptionBusy}
+                onClick={() => setDescriptionOpen(false)}
+              >
+                {t("admin.common.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                data-testid="admin-card-description-submit"
+                disabled={
+                  descriptionBusy ||
+                  descriptionDraft.length > LIMITS.description
+                }
+              >
+                {t("admin.cards.description.submit")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmDelete}

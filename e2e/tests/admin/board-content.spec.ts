@@ -164,3 +164,86 @@ test("B14: deleting a column with cards removes both and records DELETE_COLUMN",
       .first(),
   ).toBeVisible();
 });
+
+test("B15: moving a card appends MOVE_CARD and links its audit row", async ({
+  page,
+  admin,
+  board,
+}) => {
+  const sourceId = await board.column(uniqueToken("move-source"));
+  const targetId = await board.column(uniqueToken("move-target"));
+  const cardTitle = uniqueToken("move-card");
+  const cardId = await board.card(sourceId, cardTitle);
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`boards/${board.id}/content`), {
+    waitUntil: "domcontentloaded",
+  });
+
+  await page.getByTestId(`admin-column-${sourceId}`).click();
+  await page.getByTestId(`admin-card-move-${cardId}`).click();
+  const dialog = page.getByTestId("admin-move-card-dialog");
+  await expect(
+    dialog.getByTestId("admin-move-card-owner-notice"),
+  ).toContainText(
+    "You are acting as the board owner; this change appears as the owner in the board history.",
+  );
+  await expect(dialog.getByTestId("admin-move-card-current")).toHaveValue(
+    new RegExp("move-source"),
+  );
+  await dialog.getByTestId("admin-move-card-target").click();
+  await page.getByTestId(`admin-move-card-target-option-${targetId}`).click();
+  await dialog.getByTestId("admin-move-card-submit").click();
+  await expectToast(page, "Card moved");
+
+  const contentResponse = await admin.get(
+    `/api/v1/admin/boards/${board.id}/content`,
+  );
+  expect(contentResponse.ok(), await contentResponse.text()).toBeTruthy();
+  const content = (await contentResponse.json()) as {
+    columns: Array<{ id: string; cardIds: string[] }>;
+  };
+  expect(
+    content.columns.find((column) => column.id === sourceId)?.cardIds,
+  ).not.toContain(cardId);
+  expect(
+    content.columns.find((column) => column.id === targetId)?.cardIds,
+  ).toContain(cardId);
+
+  const auditResponse = await admin.get(
+    `/api/v1/admin/audit?limit=100&search=${encodeURIComponent(board.id)}`,
+  );
+  expect(auditResponse.ok(), await auditResponse.text()).toBeTruthy();
+  const audit = (await auditResponse.json()) as {
+    items: Array<{
+      id: string;
+      action: string;
+      details: Record<string, unknown> | null;
+    }>;
+  };
+  const row = audit.items.find(
+    (entry) =>
+      entry.action === "board.command" &&
+      entry.details?.type === "MOVE_CARD" &&
+      entry.details?.masterEmail === ownerCredentials().email,
+  );
+  expect(row).toBeDefined();
+  const commandId = String(row?.details?.commandId);
+
+  await page.goto(adminPath("commands"), { waitUntil: "domcontentloaded" });
+  await searchAdminList(page, "commands", board.title);
+  const commandRow = page
+    .getByRole("row")
+    .filter({ hasText: board.title })
+    .filter({ hasText: "MOVE_CARD" })
+    .first();
+  await expect(commandRow).toBeVisible();
+  await commandRow.getByTestId(`admin-command-audit-${commandId}`).click();
+  await expect(page).toHaveURL((url) => {
+    return (
+      url.pathname.endsWith("/admin/audit") &&
+      url.searchParams.get("tab") === "audit" &&
+      url.searchParams.get("commandId") === commandId
+    );
+  });
+  await expect(page.getByTestId("admin-filter-clear-commandId")).toBeVisible();
+});

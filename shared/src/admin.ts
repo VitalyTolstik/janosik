@@ -266,6 +266,12 @@ export interface AdminCommandRowDto {
   createdAt: number;
   /** Free JSON payload the command carried (new card title, move targets…). */
   payload: Record<string, unknown> | null;
+  /**
+   * `AdminAuditLog` row that recorded this command when a master issued it
+   * (TASK-176.10); `null` for normal board commands and historical rows that
+   * predate the correlation. The UI only links rows with a non-null value.
+   */
+  auditId: string | null;
 }
 
 /** A row of `GET /admin/audit` — who did what in the admin panel. */
@@ -1085,6 +1091,8 @@ export interface AdminCardDetailDto {
     type: string;
     actorId: string;
     actorEmail: string;
+    /** TASK-176.10: audit row for a master-issued command; `null` otherwise. */
+    auditId: string | null;
     details: Record<string, unknown> | null;
     createdAt: number;
   }>;

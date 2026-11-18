@@ -1,5 +1,6 @@
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
+import { AdminBoardCommandDto } from "./admin-board-command.dto";
 import { AdminListQueryDto } from "./admin-list-query.dto";
 
 /**
@@ -53,5 +54,43 @@ describe("AdminListQueryDto structural filters", () => {
       offset: String(1_000_001),
     });
     expect(errors.map((error) => error.property)).toEqual(["offset"]);
+  });
+
+  it("validates the commandId read filter like every other id", async () => {
+    const valid = plainToInstance(AdminListQueryDto, {
+      commandId: "  0f8fad5b-d9cb-469f-a165-70867728950e  ",
+    });
+    expect(await validate(valid)).toHaveLength(0);
+    expect(valid.commandId).toBe("0f8fad5b-d9cb-469f-a165-70867728950e");
+
+    for (const commandId of ["", "   ", "bad$id", "a".repeat(65)]) {
+      const dto = plainToInstance(AdminListQueryDto, { commandId });
+      const errors = await validate(dto);
+      expect(errors.map((error) => error.property)).toContain("commandId");
+    }
+  });
+});
+
+describe("AdminBoardCommandDto commandId", () => {
+  const action = { type: "UPDATE_CARD", cardId: "card-1", at: 1 };
+
+  it("trims and accepts a valid idempotency key", async () => {
+    const dto = plainToInstance(AdminBoardCommandDto, {
+      commandId: "  cmd_1  ",
+      action,
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.commandId).toBe("cmd_1");
+  });
+
+  it("rejects empty, whitespace, oversized and non-id command ids", async () => {
+    for (const commandId of ["", "   ", "a".repeat(65), "bad$id"]) {
+      const dto = plainToInstance(AdminBoardCommandDto, {
+        commandId,
+        action,
+      });
+      const errors = await validate(dto);
+      expect(errors.map((error) => error.property)).toContain("commandId");
+    }
   });
 });

@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { JwtService } from "@nestjs/jwt";
 import { argon2id, hash as argonHash } from "argon2";
+import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { boardReducer } from "@janosik/shared";
 import type { BoardAction } from "@janosik/shared";
@@ -11,6 +12,8 @@ import { env } from "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
+import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
+import { securityStamp } from "@/auth/security-stamp";
 import {
   ADMIN_QUEUES_JWT_AUDIENCE,
   ADMIN_QUEUES_TOKEN_TYPE,
@@ -618,6 +621,711 @@ describe("Admin API (e2e)", () => {
         data: { userId, name: "moderation", tokenHash: "mod-token-hash" },
       });
       tokenId = token.id;
+    });
+
+    /** A two-column board with its own owner user for correlation tests. */
+    const commandFixture = async (label: string) => {
+      const ownerEmail = `command-owner-${randomUUID()}@example.com`;
+      const owner = await prisma.user.create({
+        data: {
+          email: ownerEmail,
+          displayName: `Command owner ${label}`,
+          emailVerifiedAt: new Date(),
+        },
+      });
+      const jwt = app.get(JwtService);
+      const ownerToken = await jwt.signAsync(
+        { sub: owner.id, authMethod: "password", stamp: securityStamp(owner) },
+        { audience: USER_JWT_AUDIENCE },
+      );
+
+      const board = await prisma.board.create({
+        data: { title: `Command board ${label}` },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: board.id,
+          userId: owner.id,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      const source = await prisma.column.create({
+        data: {
+          id: `src-${randomUUID()}`,
+          boardId: board.id,
+          title: "Source",
+          position: 0,
+        },
+      });
+      const target = await prisma.column.create({
+        data: {
+          id: `dst-${randomUUID()}`,
+          boardId: board.id,
+          title: "Target",
+          position: 1,
+        },
+      });
+      const card = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: source.id,
+          title: `Card ${label}`,
+          position: 0,
+        },
+      });
+      return {
+        boardId: board.id,
+        sourceId: source.id,
+        targetId: target.id,
+        cardId: card.id,
+        ownerId: owner.id,
+        ownerToken,
+        ownerEmail,
+      };
+    };
+
+    /**
+     * Remove a command fixture without leaving rows other list tests count:
+     * command/audit rows, the board subtree and the local owner user.
+     */
+    const cleanupCommandFixture = async (fixture: {
+      boardId: string;
+      cardId: string;
+      ownerId: string;
+    }) => {
+      await prisma.command.deleteMany({ where: { boardId: fixture.boardId } });
+      await prisma.card.deleteMany({ where: { id: fixture.cardId } });
+      await prisma.column.deleteMany({ where: { boardId: fixture.boardId } });
+      await prisma.boardMember.deleteMany({
+        where: { boardId: fixture.boardId },
+      });
+      await prisma.board.deleteMany({ where: { id: fixture.boardId } });
+      await prisma.adminAuditLog.deleteMany({
+        where: {
+          OR: [
+            { targetType: "board", targetId: fixture.boardId },
+            { targetType: "card", targetId: fixture.cardId },
+          ],
+        },
+      });
+      await prisma.refreshToken.deleteMany({
+        where: { userId: fixture.ownerId },
+      });
+      await prisma.user.deleteMany({ where: { id: fixture.ownerId } });
+    };
+
+    it("correlates a master's description edit and move with the audit row (TASK-176.8/176.10)", async () => {
+      const fixture = await commandFixture("edit");
+      const commandId = randomUUID();
+      const update = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId,
+          action: {
+            type: "UPDATE_CARD",
+            cardId: fixture.cardId,
+            description: "Master note",
+            at: Date.now(),
+          },
+        })
+        .expect(201);
+      expect(typeof update.body.seq).toBe("number");
+
+      // Board-facing attribution is still the owner; the master is in audit.
+      const stored = await prisma.command.findUniqueOrThrow({
+        where: { id: commandId },
+      });
+      expect(stored.actorId).toBe(fixture.ownerId);
+      expect(stored.actorType).toBe("admin");
+
+      const moveId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: moveId,
+          action: {
+            type: "MOVE_CARD",
+            cardId: fixture.cardId,
+            fromColumnId: fixture.sourceId,
+            fromIndex: 0,
+            toColumnId: fixture.targetId,
+            toIndex: 0,
+            at: Date.now(),
+          },
+        })
+        .expect(201);
+
+      const content = await server()
+        .get(`/api/v1/admin/boards/${fixture.boardId}/content`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(content.body.columns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: fixture.sourceId,
+            cardIds: [],
+          }),
+          expect.objectContaining({
+            id: fixture.targetId,
+            cardIds: [fixture.cardId],
+          }),
+        ]),
+      );
+
+      const detail = await server()
+        .get(`/api/v1/admin/cards/${fixture.cardId}/detail`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(detail.body.card.description).toBe("Master note");
+      const updateEvent = detail.body.timeline.find(
+        (event: { id: string }) => event.id === commandId,
+      );
+      expect(updateEvent).toMatchObject({
+        kind: "command",
+        type: "UPDATE_CARD",
+        auditId: expect.any(String),
+      });
+
+      const commands = await server()
+        .get(`/api/v1/admin/commands?commandId=${commandId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(commands.body.total).toBe(1);
+      expect(commands.body.items[0]).toMatchObject({
+        id: commandId,
+        type: "UPDATE_CARD",
+        auditId: updateEvent.auditId,
+      });
+
+      const moveCommands = await server()
+        .get(`/api/v1/admin/commands?commandId=${moveId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(moveCommands.body.total).toBe(1);
+      expect(moveCommands.body.items[0].auditId).toEqual(expect.any(String));
+
+      const audit = await server()
+        .get(`/api/v1/admin/audit?commandId=${commandId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(audit.body.total).toBe(1);
+      expect(audit.body.items[0]).toMatchObject({
+        id: updateEvent.auditId,
+        action: "board.command",
+        targetType: "board",
+        targetId: fixture.boardId,
+        details: {
+          commandId,
+          masterId: adminId,
+          masterEmail: ADMIN_EMAIL,
+          actorEmail: fixture.ownerEmail,
+          type: "UPDATE_CARD",
+          seq: update.body.seq,
+        },
+      });
+
+      const moveAudit = await server()
+        .get(`/api/v1/admin/audit?commandId=${moveId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(moveAudit.body.total).toBe(1);
+      expect(moveAudit.body.items[0].details).toMatchObject({
+        commandId: moveId,
+        masterId: adminId,
+        masterEmail: ADMIN_EMAIL,
+        type: "MOVE_CARD",
+      });
+
+      // Exact filters: an unknown id matches neither list, a malformed one
+      // is rejected by the shared DTO instead of reaching Prisma.
+      for (const path of ["commands", "audit"]) {
+        const empty = await server()
+          .get(`/api/v1/admin/${path}?commandId=${randomUUID()}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(200);
+        expect(empty.body.total).toBe(0);
+
+        await server()
+          .get(`/api/v1/admin/${path}?commandId=bad%24id`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(400);
+      }
+
+      // An OPERATOR may execute and read the same correlation.
+      const operatorEmail = `operator-176-${randomUUID()}@example.com`;
+      const operator = await server()
+        .post("/api/v1/admin/admins")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ email: operatorEmail, displayName: "Operator 176" })
+        .expect(201);
+      const operatorId = operator.body.admin.id as string;
+      const login = await server()
+        .post("/api/v1/admin/auth/login")
+        .send({
+          email: operatorEmail,
+          password: operator.body.temporaryPassword,
+        })
+        .expect(200);
+      const operatorToken = login.body.accessToken as string;
+      const operatorCommandId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${operatorToken}`)
+        .send({
+          commandId: operatorCommandId,
+          action: {
+            type: "UPDATE_CARD",
+            cardId: fixture.cardId,
+            description: "Operator note",
+            at: Date.now(),
+          },
+        })
+        .expect(201);
+
+      const operatorAudit = await server()
+        .get(`/api/v1/admin/audit?commandId=${operatorCommandId}`)
+        .set("Authorization", `Bearer ${operatorToken}`)
+        .expect(200);
+      expect(operatorAudit.body.total).toBe(1);
+      expect(operatorAudit.body.items[0].details).toMatchObject({
+        commandId: operatorCommandId,
+        masterId: operatorId,
+        masterEmail: operatorEmail,
+      });
+      const operatorCommands = await server()
+        .get(`/api/v1/admin/commands?commandId=${operatorCommandId}`)
+        .set("Authorization", `Bearer ${operatorToken}`)
+        .expect(200);
+      expect(operatorCommands.body.total).toBe(1);
+
+      await server()
+        .delete(`/api/v1/admin/admins/${operatorId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      await prisma.adminAuditLog.deleteMany({
+        where: {
+          OR: [
+            { targetId: operatorId },
+            { adminId: operatorId },
+            { adminEmail: operatorEmail },
+          ],
+        },
+      });
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("answers null for historical commands and survives a deleted target (TASK-176.10)", async () => {
+      const fixture = await commandFixture("history");
+      const historyId = `history-${randomUUID()}`;
+      await prisma.command.create({
+        data: {
+          id: historyId,
+          boardId: fixture.boardId,
+          actorId: fixture.ownerId,
+          type: "UPDATE_CARD",
+          payload: {
+            type: "UPDATE_CARD",
+            cardId: fixture.cardId,
+            description: "User edit",
+            at: Date.now(),
+          },
+          result: { seq: 0, versions: {} },
+          touches: [`card:${fixture.cardId}`],
+        },
+      });
+
+      const historical = await server()
+        .get(`/api/v1/admin/commands?commandId=${historyId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(historical.body.total).toBe(1);
+      expect(historical.body.items[0]).toMatchObject({
+        id: historyId,
+        auditId: null,
+      });
+
+      const detail = await server()
+        .get(`/api/v1/admin/cards/${fixture.cardId}/detail`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        detail.body.timeline.find(
+          (event: { id: string }) => event.id === historyId,
+        ),
+      ).toMatchObject({ kind: "command", auditId: null });
+
+      // No audit row exists for a normal user command: the exact filter is
+      // simply empty, and the historical command still renders.
+      const emptyAudit = await server()
+        .get(`/api/v1/admin/audit?commandId=${historyId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(emptyAudit.body.total).toBe(0);
+
+      // A soft-deleted card/board must not break correlation reads.
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: new Date() },
+      });
+      await server()
+        .get(`/api/v1/admin/commands?commandId=${historyId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+
+      // A purged card is gone, but the command/audit correlation is not part
+      // of the card row: the historical command still answers `auditId: null`.
+      await prisma.card.delete({ where: { id: fixture.cardId } });
+      const afterCardPurge = await server()
+        .get(`/api/v1/admin/commands?commandId=${historyId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(afterCardPurge.body.total).toBe(1);
+      expect(afterCardPurge.body.items[0].auditId).toBeNull();
+
+      await prisma.board.update({
+        where: { id: fixture.boardId },
+        data: { deletedAt: new Date() },
+      });
+      const afterDelete = await server()
+        .get(`/api/v1/admin/commands?commandId=${historyId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(afterDelete.body.total).toBe(1);
+      expect(afterDelete.body.items[0].auditId).toBeNull();
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("does not fabricate a master audit row when replaying a normal user command (TASK-176.10)", async () => {
+      const fixture = await commandFixture("replay");
+      const commandId = randomUUID();
+      const action = {
+        type: "UPDATE_CARD",
+        cardId: fixture.cardId,
+        description: "User edit",
+        at: Date.now(),
+      };
+      const user = await server()
+        .post(`/api/v1/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${fixture.ownerToken}`)
+        .send({ commandId, action })
+        .expect(200);
+      const before = await prisma.command.findUniqueOrThrow({
+        where: { id: commandId },
+      });
+      expect(before.actorId).toBe(fixture.ownerId);
+      expect(before.actorType).toBe("human");
+      expect(before.seq).toBe(BigInt(user.body.seq));
+
+      const replay = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId, action })
+        .expect(201);
+      expect(replay.body.seq).toBe(user.body.seq);
+      const after = await prisma.command.findUniqueOrThrow({
+        where: { id: commandId },
+      });
+      expect(after.seq).toBe(before.seq);
+      expect(after.actorId).toBe(fixture.ownerId);
+      expect(after.actorType).toBe("human");
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: commandId },
+          },
+        }),
+      ).toBe(0);
+
+      const listed = await server()
+        .get(`/api/v1/admin/commands?commandId=${commandId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(listed.body.total).toBe(1);
+      expect(listed.body.items[0].auditId).toBeNull();
+
+      // A second master retry of its own fresh command is also a replay: the
+      // command and its one audit row stay exactly one row each.
+      const adminCommandId = randomUUID();
+      const adminAction = {
+        type: "UPDATE_CARD",
+        cardId: fixture.cardId,
+        description: "Master edit",
+        at: Date.now(),
+      };
+      const first = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: adminCommandId, action: adminAction })
+        .expect(201);
+      const second = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: adminCommandId, action: adminAction })
+        .expect(201);
+      expect(second.body.seq).toBe(first.body.seq);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: adminCommandId },
+          },
+        }),
+      ).toBe(1);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("rejects deleted/missing card edits and archived-card moves before the command log (TASK-176.8)", async () => {
+      const fixture = await commandFixture("guards");
+      const deletedUpdateId = randomUUID();
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: new Date() },
+      });
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: deletedUpdateId,
+          action: {
+            type: "UPDATE_CARD",
+            cardId: fixture.cardId,
+            description: "Should not land",
+            at: Date.now(),
+          },
+        })
+        .expect(404);
+      expect(
+        await prisma.command.count({ where: { id: deletedUpdateId } }),
+      ).toBe(0);
+
+      const missingId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: missingId,
+          action: {
+            type: "MOVE_CARD",
+            cardId: `missing-${randomUUID()}`,
+            fromColumnId: fixture.sourceId,
+            fromIndex: 0,
+            toColumnId: fixture.targetId,
+            toIndex: 0,
+            at: Date.now(),
+          },
+        })
+        .expect(404);
+      expect(await prisma.command.count({ where: { id: missingId } })).toBe(0);
+
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: null, archivedAt: new Date() },
+      });
+      const archivedMoveId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: archivedMoveId,
+          action: {
+            type: "MOVE_CARD",
+            cardId: fixture.cardId,
+            fromColumnId: fixture.sourceId,
+            fromIndex: 0,
+            toColumnId: fixture.targetId,
+            toIndex: 0,
+            at: Date.now(),
+          },
+        })
+        .expect(409);
+      expect(
+        await prisma.command.count({ where: { id: archivedMoveId } }),
+      ).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+          },
+        }),
+      ).toBe(0);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("rejects malformed cardId in admin edit/move actions with 400", async () => {
+      const fixture = await commandFixture("malformed");
+      const malformed: unknown[] = [undefined, {}, null, "", "   "];
+      for (const type of ["UPDATE_CARD", "MOVE_CARD"] as const) {
+        for (const cardId of malformed) {
+          const action: Record<string, unknown> = {
+            type,
+            cardId,
+            at: Date.now(),
+          };
+          if (type === "UPDATE_CARD") {
+            action.description = "Never applied";
+          } else {
+            action.fromColumnId = fixture.sourceId;
+            action.fromIndex = 0;
+            action.toColumnId = fixture.targetId;
+            action.toIndex = 0;
+          }
+          await server()
+            .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+            .set("Authorization", `Bearer ${adminToken}`)
+            .send({ action })
+            .expect(400);
+        }
+      }
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(0);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("replays stored results after the card is archived or deleted (TASK-176.8/176.10)", async () => {
+      const fixture = await commandFixture("replay-state");
+      const moveId = randomUUID();
+      const moveAction = {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.sourceId,
+        fromIndex: 0,
+        toColumnId: fixture.targetId,
+        toIndex: 0,
+        at: Date.now(),
+      };
+      const moved = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: moveId, action: moveAction })
+        .expect(201);
+      await server()
+        .post(`/api/v1/admin/cards/${fixture.cardId}/archive`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const moveRetry = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: moveId, action: moveAction })
+        .expect(201);
+      expect(moveRetry.body.seq).toBe(moved.body.seq);
+      expect(await prisma.command.count({ where: { id: moveId } })).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: moveId },
+          },
+        }),
+      ).toBe(1);
+
+      await server()
+        .post(`/api/v1/admin/cards/${fixture.cardId}/unarchive`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(201);
+      const updateId = randomUUID();
+      const updateAction = {
+        type: "UPDATE_CARD",
+        cardId: fixture.cardId,
+        description: "Stored before delete",
+        at: Date.now(),
+      };
+      const updated = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: updateId, action: updateAction })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/admin/cards/${fixture.cardId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const updateRetry = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: updateId, action: updateAction })
+        .expect(201);
+      expect(updateRetry.body.seq).toBe(updated.body.seq);
+      expect(await prisma.command.count({ where: { id: updateId } })).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: updateId },
+          },
+        }),
+      ).toBe(1);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("validates the admin commandId on writes and reads", async () => {
+      const fixture = await commandFixture("validation");
+      for (const commandId of ["", "   ", "bad id", "a".repeat(65)]) {
+        await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({
+            commandId,
+            action: {
+              type: "UPDATE_CARD",
+              cardId: fixture.cardId,
+              description: "Invalid id",
+              at: Date.now(),
+            },
+          })
+          .expect(400);
+      }
+
+      // The read filter must reject empty/whitespace/malformed ids instead of
+      // silently dropping the predicate and returning the whole log.
+      for (const commandId of ["", "   ", "bad%24id", "a".repeat(65)]) {
+        await server()
+          .get(`/api/v1/admin/commands?commandId=${commandId}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(400);
+        await server()
+          .get(`/api/v1/admin/audit?commandId=${commandId}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .expect(400);
+      }
+
+      // Defensive pin: a `commandId` on a non-board.command row is not a link.
+      await prisma.adminAuditLog.create({
+        data: {
+          adminId,
+          adminEmail: ADMIN_EMAIL,
+          action: "user.update",
+          targetType: "board",
+          targetId: fixture.boardId,
+          details: { commandId: "decoy-command", seq: 1 },
+        },
+      });
+      const decoy = await server()
+        .get("/api/v1/admin/audit?commandId=decoy-command")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(decoy.body.total).toBe(0);
+
+      await cleanupCommandFixture(fixture);
     });
 
     it("streams an attachment to a master for analysis", async () => {

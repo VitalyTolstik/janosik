@@ -13,13 +13,15 @@ import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
  * window, never a token, password or one-time code.
  */
 
-export type AdminListFilterKey = "boardId" | "columnId" | "labelId" | "cardId";
+export type AdminListFilterKey =
+  "boardId" | "columnId" | "labelId" | "cardId" | "commandId";
 
 export interface AdminListFilters {
   boardId: string | null;
   columnId: string | null;
   labelId: string | null;
   cardId: string | null;
+  commandId: string | null;
 }
 
 export interface AdminListQueryState {
@@ -46,6 +48,7 @@ export const EMPTY_ADMIN_LIST_FILTERS: AdminListFilters = {
   columnId: null,
   labelId: null,
   cardId: null,
+  commandId: null,
 };
 
 export const ADMIN_LIST_FILTER_KEYS: readonly AdminListFilterKey[] = [
@@ -53,6 +56,7 @@ export const ADMIN_LIST_FILTER_KEYS: readonly AdminListFilterKey[] = [
   "columnId",
   "labelId",
   "cardId",
+  "commandId",
 ];
 
 /** Period tabs and their windows; the parser and the fetcher share this set. */
@@ -114,6 +118,7 @@ export function readAdminListQuery(
       columnId: readId(params.get("columnId")),
       labelId: readId(params.get("labelId")),
       cardId: readId(params.get("cardId")),
+      commandId: readId(params.get("commandId")),
     },
   };
 }

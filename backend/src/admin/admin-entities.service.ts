@@ -37,6 +37,7 @@ import type {
   AdminUserDetailQueryDto,
 } from "./dto/admin-detail-query.dto";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import { auditIdsForCommands } from "./audit-correlation";
 import { AdminService } from "./admin.service";
 import { CommsService } from "./comms.service";
 
@@ -1821,6 +1822,7 @@ export class AdminEntitiesService {
         type: entry.type,
         actorId: entry.actorId,
         actorEmail: entry.actor.email,
+        auditId: null,
         details: (entry.details as Record<string, unknown> | null) ?? null,
         createdAt: entry.createdAt.getTime(),
       })),
@@ -1830,12 +1832,43 @@ export class AdminEntitiesService {
         type: entry.type,
         actorId: entry.actorId,
         actorEmail: entry.actor.email,
+        auditId: null,
         details: (entry.details as Record<string, unknown> | null) ?? null,
         createdAt: entry.createdAt.getTime(),
       })),
     ]
       .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
       .slice(requestedOffset, requestedOffset + limit);
+    // Resolve correlation only for the rows this page returns (the window can
+    // be large while the page stays at most `limit` rows). Historical rows
+    // stay `null`; there is no backfill.
+    const timelineCommandsById = new Map(
+      commands.map((command) => [command.id, command] as const),
+    );
+    const timelineAuditIds = await auditIdsForCommands(
+      this.prisma,
+      timeline
+        .filter((entry) => entry.kind === "command")
+        .flatMap((entry) => {
+          const command = timelineCommandsById.get(entry.id);
+          return command === undefined
+            ? []
+            : [
+                {
+                  id: command.id,
+                  boardId: command.boardId,
+                  seq: Number(command.seq),
+                },
+              ];
+        }),
+    );
+    const timelineWithAudit = timeline.map((entry) => ({
+      ...entry,
+      auditId:
+        entry.kind === "command"
+          ? (timelineAuditIds.get(entry.id) ?? null)
+          : null,
+    }));
     const timelineTotal = activityTotal + commandTotal;
     const commentsTotal =
       commentsLive + (includeDeletedComments ? commentsDeleted : 0);
@@ -1934,7 +1967,7 @@ export class AdminEntitiesService {
       },
       comments: comments.map(toCommentRow),
       attachments: attachments.map(toAttachmentRow),
-      timeline,
+      timeline: timelineWithAudit,
       createdBy,
     };
   }
@@ -2305,6 +2338,9 @@ function toCommandRow(command: CommandJoin): AdminCommandRowDto {
     seq: Number(command.seq),
     createdAt: command.createdAt.getTime(),
     payload: (command.payload as Record<string, unknown> | null) ?? null,
+    // The user-profile block renders no audit link; correlation is resolved
+    // only on the command log and the card timeline.
+    auditId: null,
   };
 }
 

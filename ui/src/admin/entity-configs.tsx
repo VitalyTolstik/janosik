@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import type {
   AdminActivityRowDto,
   AdminAnnouncementDto,
@@ -21,7 +21,12 @@ import type {
 } from "@janosik/shared";
 import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
-import { adminCardsHref } from "./admin-navigation";
+import {
+  adminAuditEntryHref,
+  adminCardsHref,
+  currentAdminPath,
+  withReturnTo,
+} from "./admin-navigation";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { Badge } from "./ui";
@@ -75,6 +80,7 @@ type AnyConfig = EntityListConfig<any>;
 export function useEntityConfig(entity: AdminEntity): AnyConfig {
   const t = useAdminT();
   const navigate = useNavigate();
+  const location = useLocation();
   const isOwner = useAdminAuth().admin?.role === "OWNER";
 
   const statusLabels = {
@@ -1146,6 +1152,28 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 testId={`admin-command-payload-${command.id}`}
               />
             ),
+          },
+          {
+            label: t("admin.commands.column.audit"),
+            render: (command) =>
+              command.auditId === null ? (
+                <span className="text-muted-foreground">—</span>
+              ) : (
+                <Link
+                  to={withReturnTo(
+                    adminAuditEntryHref(command.id),
+                    currentAdminPath(location),
+                  )}
+                  data-testid={`admin-command-audit-${command.id}`}
+                  aria-label={t("admin.commands.auditLabel", {
+                    commandId: command.id,
+                    type: command.type,
+                  })}
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  {t("admin.commands.column.audit")}
+                </Link>
+              ),
           },
           {
             label: t("admin.commands.column.created"),

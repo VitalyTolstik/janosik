@@ -125,6 +125,7 @@ export function useAdminList<T>(
         ...(filters.columnId === null ? {} : { columnId: filters.columnId }),
         ...(filters.labelId === null ? {} : { labelId: filters.labelId }),
         ...(filters.cardId === null ? {} : { cardId: filters.cardId }),
+        ...(filters.commandId === null ? {} : { commandId: filters.commandId }),
       })
       .then((page) => {
         if (cancelled) return;

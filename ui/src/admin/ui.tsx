@@ -48,6 +48,24 @@ export function Panel({
   );
 }
 
+/**
+ * TASK-176.8 — the explicit attribution banner every master content edit
+ * shows: the command log still names the board owner, so the master must know
+ * the change will appear as the owner's in board history.
+ */
+export function OwnerAttributionNotice({ testId }: { testId?: string }) {
+  const t = useAdminT();
+  return (
+    <div
+      role="note"
+      data-testid={testId}
+      className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground"
+    >
+      {t("admin.common.actingAsOwner")}
+    </div>
+  );
+}
+
 export function PageHeader({
   title,
   subtitle,
@@ -64,8 +82,8 @@ export function PageHeader({
   meta?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0 space-y-0.5">
+    <div className="flex min-w-0 max-w-full flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0 flex-1 space-y-0.5">
         {eyebrow ? (
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             {eyebrow}
@@ -75,16 +93,23 @@ export function PageHeader({
           {title}
         </h1>
         {subtitle ? (
-          <p className="text-xs leading-5 text-muted-foreground">{subtitle}</p>
+          <p
+            title={subtitle}
+            className="truncate text-xs leading-5 text-muted-foreground"
+          >
+            {subtitle}
+          </p>
         ) : null}
         {meta ? (
-          <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
             {meta}
           </div>
         ) : null}
       </div>
       {actions ? (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {actions}
+        </div>
       ) : null}
     </div>
   );

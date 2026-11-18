@@ -61,4 +61,70 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     expect(close?.className).toContain("w-11");
     expect(close?.className).toContain("md:h-8");
   });
+
+  it("closes on Escape even when the dialog contains an expanded inline combobox", async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <Dialog defaultOpen>
+          <DialogContent>
+            <DialogTitle>Admin command palette</DialogTitle>
+            <DialogDescription>Inline combobox Escape probe</DialogDescription>
+            <button
+              type="button"
+              role="combobox"
+              aria-expanded="true"
+              aria-haspopup="listbox"
+            >
+              Search
+            </button>
+          </DialogContent>
+        </Dialog>
+      </I18nProvider>,
+    );
+
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("leaves Escape to an open portalled listbox instead of closing the dialog", async () => {
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-radix-popper-content-wrapper", "");
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    listbox.setAttribute("data-state", "open");
+    wrapper.appendChild(listbox);
+    document.body.appendChild(wrapper);
+
+    const user = userEvent.setup();
+    try {
+      render(
+        <I18nProvider>
+          <Dialog defaultOpen>
+            <DialogContent>
+              <DialogTitle>Agent control</DialogTitle>
+              <DialogDescription>
+                Portalled listbox Escape probe
+              </DialogDescription>
+              <button
+                type="button"
+                role="combobox"
+                aria-expanded="true"
+                aria-haspopup="listbox"
+              >
+                Status
+              </button>
+            </DialogContent>
+          </Dialog>
+        </I18nProvider>,
+      );
+
+      await screen.findByRole("dialog");
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeNull());
+    } finally {
+      wrapper.remove();
+    }
+  });
 });

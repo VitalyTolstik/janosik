@@ -18,7 +18,7 @@ import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
  * still scopes every row through Prisma's relations, so a valid id from
  * another board cannot leak a row into this board's list.
  */
-const ADMIN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export const ADMIN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 const trimOptionalId = ({ value }: { value: unknown }): unknown =>
   typeof value === "string"
@@ -26,6 +26,10 @@ const trimOptionalId = ({ value }: { value: unknown }): unknown =>
       ? undefined
       : value.trim()
     : value;
+
+/** Trim but keep an empty string so `Matches` rejects `?commandId=`. */
+const trimRequiredId = ({ value }: { value: unknown }): unknown =>
+  typeof value === "string" ? value.trim() : value;
 
 export class AdminListQueryDto {
   @IsOptional()
@@ -97,4 +101,16 @@ export class AdminListQueryDto {
   @MaxLength(64)
   @Matches(ADMIN_ID_PATTERN)
   cardId?: string;
+
+  /**
+   * Exact command ↔ audit correlation (TASK-176.10): a command id matches
+   * `Command.id` in the command log and `details.commandId` in the audit
+   * trail, so both lists can deep-link to the same row.
+   */
+  @IsOptional()
+  @Transform(trimRequiredId)
+  @IsString()
+  @MaxLength(64)
+  @Matches(ADMIN_ID_PATTERN)
+  commandId?: string;
 }

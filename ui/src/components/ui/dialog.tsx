@@ -68,6 +68,23 @@ const DialogContent = React.forwardRef<
             className,
           )}
           {...props}
+          // Radix marks the Popover's DismissableLayer as highest only in a
+          // passive effect. An immediate Escape right after opening a
+          // portalled combobox listbox can race that update and close the
+          // whole Dialog together with the listbox. Keep the shield narrow:
+          // only a portalled listbox owns Escape; inline comboboxes such as
+          // the admin command palette still close their Dialog.
+          onEscapeKeyDown={(event) => {
+            props.onEscapeKeyDown?.(event);
+            if (
+              !event.defaultPrevented &&
+              document.querySelector(
+                '[data-radix-popper-content-wrapper] [role="listbox"][data-state="open"]',
+              ) !== null
+            ) {
+              event.preventDefault();
+            }
+          }}
         >
           {children}
           {hideClose ? null : (

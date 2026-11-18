@@ -127,10 +127,11 @@ filtered by `labelId`. Both links keep the board detail as their return path.
 
 - The left panel lists columns with a card count. Each column has rename and
   delete controls; a composer at the bottom adds a column.
-- The right panel lists the cards of the selected column. Each card has rename
-  and archive controls; a composer at the bottom adds a card. The card title
-  links to `/admin/cards/:id`, and the card detail's back control returns to
-  this editor.
+- The right panel lists the cards of the selected column. Each card has rename,
+  move and archive controls; a composer at the bottom adds a card. The move
+  dialog appends the card to another column and omits the current column from
+  the destination list. The card title links to `/admin/cards/:id`, and the
+  card detail's back control returns to this editor.
 - A manual refresh button is in the header.
 - The page polls the board aggregate every 2 seconds while it is visible and
   focused, so you can monitor a running demo on this page.
@@ -140,9 +141,15 @@ Each edit is submitted as a board command through
 first accepted `ADMIN`. The server re-validates each action with the shared
 strict validator, so a rejected action (for example, due to a WIP or size limit)
 shows a notification and leaves the board unchanged. The editor sends
-`ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`,
-`UPDATE_CARD`, `ARCHIVE_CARD` and `DELETE_COLUMN`, each stamped with the
-command clock. The command log, versions and the board UI stay consistent.
+`ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`, `UPDATE_CARD`, `MOVE_CARD`,
+`ARCHIVE_CARD` and `DELETE_COLUMN`, each stamped with the command clock. The
+command log, versions and the board UI stay consistent.
+
+Moves and description edits show the explicit banner `You are acting as the
+board owner; this change appears as the owner in the board history.` The board
+history and command log keep the owner as the actor; the audit trail records
+the master who issued the command (`masterId`, `masterEmail`) and the shared
+`commandId`.
 
 A column delete is a soft delete: the column and its cards disappear for
 members. The confirm dialog states this.
@@ -194,7 +201,9 @@ dash for cards imported before the command log.
 
 ### Sections
 
-- Description, when present, shown as preformatted text.
+- Description, when present, shown as preformatted text. The card Actions menu
+  opens `Edit description`, which sends an `UPDATE_CARD` command through the
+  same owner-attribution banner and command log as the content editor.
 - Labels, as color chips.
 - Checklists, each with a title, a `done/total` count and its live items.
 - Links, both directions: outgoing links with an up-right arrow and incoming
@@ -205,7 +214,8 @@ dash for cards imported before the command log.
 - Comments table: Comment, Author (linked), Created, Status, Actions.
 - Timeline, a merged feed of activity rows and commands, each with a type
   badge, the actor email linked to the profile, the details as JSON and the
-  time.
+  time. A command issued from the panel also shows an `Audit` link to its exact
+  audit row; normal user commands have no link.
 
 Comments, attachments and the timeline are windows, not full lists. Each
 block footer reads `50 of N` and offers `Load more` while `N` is larger. The
