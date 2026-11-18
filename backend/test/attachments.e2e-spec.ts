@@ -273,7 +273,7 @@ describe("Attachments (TASK-47)", () => {
       cardId,
       description: body,
     });
-    await server()
+    const scrubComment = await server()
       .post(`/api/v1/cards/${cardId}/comments`)
       .set(auth(admin.token))
       .send({ text: `Inline image ${url(doomed.body.id)} here` })
@@ -307,6 +307,15 @@ describe("Attachments (TASK-47)", () => {
     // The surviving embed is still a live, listable attachment.
     await server()
       .get(`/api/v1/attachments/${kept.body.id as string}/content`)
+      .set(auth(admin.token))
+      .expect(200);
+    // Leave the shared fixture card as the next tests expect it.
+    await server()
+      .delete(`/api/v1/attachments/${kept.body.id as string}`)
+      .set(auth(admin.token))
+      .expect(200);
+    await server()
+      .delete(`/api/v1/comments/${scrubComment.body.id as string}`)
       .set(auth(admin.token))
       .expect(200);
   });

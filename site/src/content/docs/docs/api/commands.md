@@ -196,12 +196,18 @@ The `wip` check mirrors the reducer's collection guards: `LIMITS` on columns,
 cards per column, labels per board, labels per card, links per card, checklists
 per card and items per checklist, plus the column WIP limit. The current hard
 cap is **1000 active cards per column**; archived cards do not count toward
-it. The `RESTORE_*` family is exempt (it re-adds data that already existed). A
-client-supplied `inverse: true` flag buys no exemption.
+it. A client-supplied `inverse: true` flag buys no exemption — including for
+`RESTORE_*`: a restore that would be the 51st label, the 21st checklist, a
+101st item or a card in a full WIP column is refused like the fresh add it
+performs. Only the server's internal run-revert path may restore deleted rows
+past the current limits; that flag is never read from the request body.
 
 The `id` check exists because entity ids are global primary keys while
 commands are board-scoped: an id that already lives on another board would be
-silently rewritten by the upserts.
+silently rewritten by the upserts. On the same board an id also keeps its
+owner: a checklist/item/link id may be revived only by the card/checklist that
+already owns it. Re-parenting it answers `409 { code: "id_conflict",
+conflict: "id" }` and writes nothing.
 
 ### Other errors
 
@@ -422,11 +428,11 @@ aggregate-level actions are listed at the end and are rejected.
 | `ARCHIVE_CARD`      | `cardId`, `archivedAt` number optional                                                    | Archives the card; `archivedAt` defaults to `at`.                                                                                          |
 | `UNARCHIVE_CARD`    | `cardId`, `columnId` optional, `index` optional                                           | Restores an archived card; `columnId` defaults to the first column, omitted `index` appends. Respects the WIP limit.                       |
 | `MOVE_CARD`         | `cardId`, `fromColumnId`, `fromIndex`, `toColumnId`, `toIndex`                            | Moves a card between columns or within one.                                                                                                |
-| `DUPLICATE_CARD`    | `cardId`, `newCardId`, `title` optional                                                   | Copies a card right below the original, with fresh ids and timestamps. The copy starts unlinked.                                           |
+| `DUPLICATE_CARD`    | `cardId`, `newCardId`, `title` optional                                                   | Copies a card right below the original, with fresh ids and timestamps, including fresh checklist/item ids. The copy starts unlinked. |
 | `SET_CARD_DUE_DATE` | `cardId`, `dueDate` number optional                                                       | Sets the due date (Unix ms); `undefined` removes the field.                                                                                |
 | `SET_CARD_PRIORITY` | `cardId`, `priority` `"blocker" \| "highest" \| "high" \| "medium" \| "low" \| "lowest"`  | Sets the priority. `"medium"` is the default and drops the field.                                                                          |
 | `SET_CARD_ASSIGN`   | `cardId`, `assigneeId` string or null                                                     | Sets the assignee; `null` or a blank id clears it. The server requires an active board member.                                             |
-| `CLAIM_CARD`        | `cardId`, `claimedBy` string or null, `leaseUntil` number or null                         | Takes a temporary work lease on the card (`claimedBy: null` releases it; a lapsed lease is free again). While another member holds a live lease the command answers `400` with `field: "action.claimedBy"` — the swarm's "do not steal" rule. `leaseUntil` may not run more than `CLAIM_LEASE_MAX_MS` (24 h) past `at`. |
+| `CLAIM_CARD`        | `cardId`, `claimedBy` string or null, `leaseUntil` number or null                         | Takes a temporary work lease on the card. `claimedBy: null` releases it, but only the live holder may release: another member, another PAT of the same account, or a different kind of session answers `400` with `field: "action.claimedBy"`. A lapsed lease is free again. There is no board-ADMIN override on this command path (TASK-176/180.4 owns an explicit admin flow). `leaseUntil` may not run more than `CLAIM_LEASE_MAX_MS` (24 h) past `at`. |
 | `SET_CARD_TASK_SPEC`| `cardId`, `acceptanceCriteria` string[] optional, `definitionOfDone` string[] optional    | Sets the machine-readable task contract. Omit a field to leave it unchanged; an empty list clears it. Items are trimmed, de-blanked, capped at `LIMITS.taskSpecItems` (50) × `LIMITS.taskSpecItem` (500). |
 | `SET_CARD_LABEL`    | `cardId`, `labelId`, `on` boolean, `index` optional                                       | Attaches (`on: true`) or detaches a label. Absolute, not a toggle. Adding is capped at `LIMITS.labelsPerCard` (20).                        |
 | `SET_CARD_COVER`    | `cardId`, `cover` optional                                                                | Sets the cover; `undefined` removes it. A cover is `{ "type": "color", "value": ... }` or `{ "type": "gradient", "value": ... }`.          |
@@ -461,9 +467,12 @@ aggregate-level actions are listed at the end and are rejected.
 
 ### Restore and inverse
 
-These put back data that was deleted. They are the only actions exempt from
-the collection and WIP guards. The reducer also marks them with `inverse`
-and the inverse-only timestamp overrides.
+These put back data that was deleted. They are **not** exempt from the
+collection and WIP guards: the server checks the restore exactly like the
+fresh add, and a client's `inverse: true` flag is not trusted. A refused undo
+keeps its step in the history so the user can retry after making room. The
+reducer still marks these actions with `inverse` and the inverse-only
+timestamp overrides for local bookkeeping.
 
 | Action                   | Fields                                                     | Meaning                                                                               |
 | ------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
