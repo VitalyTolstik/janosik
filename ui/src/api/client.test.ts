@@ -31,6 +31,50 @@ function headerOf(init: RequestInit | undefined, name: string): string | null {
   return headers[name] ?? null;
 }
 
+describe("ApiClient — REST idempotency (TASK-180.2 M17)", () => {
+  it("sends an Idempotency-Key on create and reuses it on a lost response", async () => {
+    const keys: Array<string | null> = [];
+    let attempts = 0;
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (_input, init) => {
+        attempts += 1;
+        keys.push(headerOf(init, "Idempotency-Key"));
+        // The first request reached a gateway that timed out after commit.
+        if (attempts === 1) return json({ message: "timeout" }, 504);
+        return json({ id: "board-1", title: "One" }, 201);
+      },
+    });
+    const board = await client.createBoard("One");
+    expect(board.id).toBe("board-1");
+    expect(attempts).toBe(2);
+    expect(keys[0]).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it("uses a fresh key for each logical import and keeps it on retry", async () => {
+    const keys: Array<string | null> = [];
+    let attempts = 0;
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (_input, init) => {
+        attempts += 1;
+        keys.push(headerOf(init, "Idempotency-Key"));
+        if (attempts === 1) return json({ message: "busy" }, 503);
+        return json([{ id: "imported" }], 201);
+      },
+    });
+    await client.importBoards({
+      app: "janosik",
+      schemaVersion: 3,
+      exportedAt: 0,
+      boards: [],
+    } as never);
+    expect(keys[0]).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
+    expect(keys[1]).toBe(keys[0]);
+  });
+});
+
 describe("ApiClient", () => {
   it("refreshes an expired session before confirming an email change", async () => {
     const calls: string[] = [];

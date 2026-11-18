@@ -61,7 +61,7 @@ import {
   UPLOAD_TIMEOUT_MS,
 } from "./constants.js";
 import { ApiError, NoChangeError, isTransientNetworkError } from "./errors.js";
-import { newCommandId } from "./ids.js";
+import { newCommandId, newIdempotencyKey } from "./ids.js";
 
 /** `Omit` that distributes over a union, so each action keeps its own shape. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
@@ -203,7 +203,14 @@ export class JanosikClient {
    * GET that fails on the network is retried once — reads are safe to repeat.
    */
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const attempts = (options.method ?? "GET") === "GET" ? 2 : 1;
+    // Reads are safe to repeat. A write is only retried when it carries an
+    // Idempotency-Key: the server then replays the first result instead of
+    // applying the body twice (TASK-180.2 M17).
+    const attempts =
+      (options.method ?? "GET") === "GET" ||
+      options.headers?.["Idempotency-Key"] !== undefined
+        ? 2
+        : 1;
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.send<T>(path, options);
@@ -476,7 +483,10 @@ export class JanosikClient {
     return this.request("/boards");
   }
 
-  createBoard(title: string, idempotencyKey?: string): Promise<BoardAggregate> {
+  createBoard(
+    title: string,
+    idempotencyKey: string = newIdempotencyKey(),
+  ): Promise<BoardAggregate> {
     const headers = idempotencyHeaders(idempotencyKey);
     return this.request("/boards", {
       method: "POST",
@@ -487,7 +497,7 @@ export class JanosikClient {
 
   importBoards(
     envelope: BoardEnvelope,
-    idempotencyKey?: string,
+    idempotencyKey: string = newIdempotencyKey(),
   ): Promise<BoardAggregate[]> {
     const headers = idempotencyHeaders(idempotencyKey);
     return this.request("/boards/import", {
@@ -605,7 +615,7 @@ export class JanosikClient {
     cardId: string,
     text: string,
     kind?: CommentKind,
-    idempotencyKey?: string,
+    idempotencyKey: string = newIdempotencyKey(),
   ): Promise<CommentDto> {
     const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/cards/${cardId}/comments`, {
@@ -652,7 +662,7 @@ export class JanosikClient {
     fileName: string,
     mimeType: string,
     data: Buffer,
-    idempotencyKey?: string,
+    idempotencyKey: string = newIdempotencyKey(),
   ): Promise<AttachmentDto> {
     const form = new FormData();
     form.append(
@@ -699,7 +709,7 @@ export class JanosikClient {
     boardId: string,
     dto: CreateShareRequest,
     approvalId?: string,
-    idempotencyKey?: string,
+    idempotencyKey: string = newIdempotencyKey(),
   ): Promise<BoardShareDto> {
     const headers = idempotencyHeaders(idempotencyKey);
     return this.request(apiPath`/boards/${boardId}/shares`, {

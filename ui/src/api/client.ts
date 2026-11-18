@@ -187,6 +187,8 @@ interface RequestInitLike {
    * `Content-Type` boundary, so no header is added here.
    */
   form?: FormData;
+  /** Extra request headers (`Idempotency-Key`, TASK-180.2 M17). */
+  headers?: Record<string, string>;
   /** Attach the access token (and retry once after a refresh on 401). */
   auth?: boolean;
   /**
@@ -919,9 +921,10 @@ export class ApiClient {
   }
 
   createBoard(title: string): Promise<BoardAggregate> {
-    return this.request<BoardAggregate>("/boards", {
+    return this.requestIdempotent<BoardAggregate>("/boards", {
       method: "POST",
       body: { title },
+      headers: { "Idempotency-Key": createId() },
     });
   }
 
@@ -958,9 +961,10 @@ export class ApiClient {
   }
 
   importBoards(envelope: BoardEnvelope): Promise<BoardAggregate[]> {
-    return this.request<BoardAggregate[]>("/boards/import", {
+    return this.requestIdempotent<BoardAggregate[]>("/boards/import", {
       method: "POST",
       body: envelope,
+      headers: { "Idempotency-Key": createId() },
     });
   }
 
@@ -1354,6 +1358,33 @@ export class ApiClient {
   }
 
   /**
+   * TASK-180.2 M17: a POST that carries an `Idempotency-Key` may be sent
+   * again when the outcome is unknown (network failure or a gateway/lb
+   * timeout). The key lives in `init.headers`, so the retry is the *same*
+   * logical request: a committed first attempt replays its stored response
+   * instead of creating a second board/import.
+   */
+  private async requestIdempotent<T>(
+    path: string,
+    init: RequestInitLike,
+  ): Promise<T> {
+    try {
+      return await this.request<T>(path, init);
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 0 ||
+          error.status === 502 ||
+          error.status === 503 ||
+          error.status === 504)
+      ) {
+        return this.request<T>(path, init);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Binary variant of `request` (TASK-47 downloads): same token and
    * 401-refresh-retry, but the response body is handed over untouched
    * instead of being parsed as JSON.
@@ -1426,7 +1457,7 @@ export class ApiClient {
     init: RequestInitLike,
   ): Promise<{ data: T; headers: Headers }> {
     const base = this.options.baseUrl ?? apiBaseUrl();
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...(init.headers ?? {}) };
     if (init.form === undefined && init.body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
