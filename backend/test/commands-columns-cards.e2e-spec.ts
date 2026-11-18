@@ -653,6 +653,135 @@ describe("Commands API (e2e)", () => {
     });
   });
 
+  describe("duplicate content (H3)", () => {
+    it("writes duplicated card checklists with fresh ids and survives reload", async () => {
+      const boardId = await importBoard("Duplicate checklist card", {
+        checklists: [
+          {
+            id: "cl-src",
+            title: "Steps",
+            items: [{ id: "it-src", text: "One", done: false }],
+          },
+        ],
+      });
+      const sourceId = await firstCardId(boardId);
+      const before = await getAggregate(boardId);
+      const sourceChecklist = before.cards[sourceId].checklists![0];
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_CARD",
+          cardId: sourceId,
+          newCardId: "card-copy-h3",
+        }),
+      );
+      // Re-read: the copy is not allowed to lose its checklists on reload.
+      const after = await getAggregate(boardId);
+      const copy = after.cards["card-copy-h3"];
+      expect(copy.checklists).toHaveLength(1);
+      expect(copy.checklists![0].id).not.toBe(sourceChecklist.id);
+      expect(copy.checklists![0].title).toBe("Steps");
+      expect(copy.checklists![0].items[0].id).not.toBe(
+        sourceChecklist.items[0].id,
+      );
+      expect(copy.checklists![0].items[0]).toMatchObject({
+        text: "One",
+        done: false,
+      });
+      // The source row is still owned by the source card.
+      expect(after.cards[sourceId].checklists![0].id).toBe(sourceChecklist.id);
+      expect(
+        await prisma.checklist.count({
+          where: { cardId: "card-copy-h3", deletedAt: null },
+        }),
+      ).toBe(1);
+
+      const command = await prisma.command.findFirst({
+        where: { boardId, type: "DUPLICATE_CARD" },
+      });
+      expect(command?.touches).toEqual(
+        expect.arrayContaining([
+          `card:card-copy-h3`,
+          `checklist:${copy.checklists![0].id}`,
+          `checklistItem:${copy.checklists![0].items[0].id}`,
+        ]),
+      );
+
+      // Deleting the copy's checklist must leave the original intact.
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: "card-copy-h3",
+          checklistId: copy.checklists![0].id,
+        }),
+      );
+      const remaining = await getAggregate(boardId);
+      expect(remaining.cards["card-copy-h3"].checklists).toBeUndefined();
+      expect(remaining.cards[sourceId].checklists![0].id).toBe(
+        sourceChecklist.id,
+      );
+    });
+
+    it("writes duplicated column checklists with fresh ids and survives reload", async () => {
+      const boardId = await importBoard("Duplicate checklist column", {
+        checklists: [
+          {
+            id: "cl-src",
+            title: "Steps",
+            items: [{ id: "it-src", text: "One", done: false }],
+          },
+        ],
+      });
+      const before = await getAggregate(boardId);
+      const column = before.columns[0];
+      const sourceCard = before.cards[column.cardIds[0]];
+      const sourceChecklist = sourceCard.checklists![0];
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_COLUMN",
+          columnId: column.id,
+          newColumnId: "col-copy-h3",
+          newCardIds: column.cardIds.map((id) => `${id}-copy`),
+        }),
+      );
+      const after = await getAggregate(boardId);
+      const copyColumn = after.columns.find((c) => c.id === "col-copy-h3")!;
+      const copy = after.cards[copyColumn.cardIds[0]];
+      expect(copy.checklists).toHaveLength(1);
+      expect(copy.checklists![0].id).not.toBe(sourceChecklist.id);
+      expect(copy.checklists![0].items[0].id).not.toBe(
+        sourceChecklist.items[0].id,
+      );
+      expect(after.cards[sourceCard.id].checklists![0].id).toBe(
+        sourceChecklist.id,
+      );
+      expect(copy.links).toBeUndefined();
+      expect(
+        await prisma.checklist.count({
+          where: { cardId: copy.id, deletedAt: null },
+        }),
+      ).toBe(1);
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: copy.id,
+          checklistId: copy.checklists![0].id,
+        }),
+      );
+      const remaining = await getAggregate(boardId);
+      expect(remaining.cards[sourceCard.id].checklists![0].id).toBe(
+        sourceChecklist.id,
+      );
+      expect(remaining.cards[copy.id].checklists).toBeUndefined();
+    });
+  });
+
   describe("attribution: lastActorId follows the writer", () => {
     it("stamps card writes, follows a member edit, skips reorders", async () => {
       const boardId = await createBoard("Attribution board");

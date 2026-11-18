@@ -2,6 +2,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   boardReducer,
+  duplicateChecklistId,
+  duplicateChecklistItemId,
   initialBoardState,
   type BoardAction,
   type BoardState,
@@ -1212,12 +1214,65 @@ describe("boardReducer — DUPLICATE_CARD", () => {
     });
     const column = next.columns.find((c) => c.cardIds.length === 4)!;
     const copy = next.cards[column.cardIds[1]];
+    const sourceChecklists = seed.cards["card-1"].checklists!;
     expect(copy.description).toBe("Some notes");
-    expect(copy.checklists).toEqual(seed.cards["card-1"].checklists);
     expect(copy.dueDate).toBe(seed.cards["card-1"].dueDate);
     expect(copy.cover).toEqual({ type: "color", value: "blue" });
+    // Content is cloned, but checklist/item ids are fresh: reusing the
+    // source ids would let the global-id upsert re-parent the original.
+    expect(copy.checklists).toHaveLength(1);
+    expect(copy.checklists?.[0].title).toBe("Steps");
+    expect(copy.checklists?.[0].id).not.toBe(sourceChecklists[0].id);
+    expect(copy.checklists?.[0].items).toHaveLength(1);
+    expect(copy.checklists?.[0].items[0]).toMatchObject({
+      text: "First",
+      done: false,
+    });
+    expect(copy.checklists?.[0].items[0].id).not.toBe(
+      sourceChecklists[0].items[0].id,
+    );
     // Nested structures must not alias the source card.
-    expect(copy.checklists).not.toBe(seed.cards["card-1"].checklists);
+    expect(copy.checklists).not.toBe(sourceChecklists);
+    expect(copy.checklists?.[0]).not.toBe(sourceChecklists[0]);
+    expect(copy.checklists?.[0].items).not.toBe(sourceChecklists[0].items);
+    // The original is untouched.
+    expect(seed.cards["card-1"].checklists).toBe(sourceChecklists);
+  });
+
+  it("derives duplicate checklist ids from the new card id", () => {
+    const seed = freshBoard();
+    seed.cards["card-1"] = {
+      ...seed.cards["card-1"],
+      checklists: [
+        {
+          id: "cl-1",
+          title: "One",
+          items: [{ id: "cli-1", text: "First", done: false }],
+        },
+      ],
+    };
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+      newCardId: "copy-card",
+    });
+    const copy = next.cards["copy-card"];
+    expect(copy.checklists?.[0].id).toBe(duplicateChecklistId("copy-card", 0));
+    expect(copy.checklists?.[0].items[0].id).toBe(
+      duplicateChecklistItemId("copy-card", 0, 0),
+    );
+    // A second duplicate gets a different, still-deterministic id.
+    const second = reduceBoard(next, {
+      type: "DUPLICATE_CARD",
+      cardId: "copy-card",
+      newCardId: "second-copy",
+    });
+    expect(second.cards["second-copy"].checklists?.[0].id).toBe(
+      duplicateChecklistId("second-copy", 0),
+    );
+    expect(second.cards["second-copy"].checklists?.[0].id).not.toBe(
+      copy.checklists?.[0].id,
+    );
   });
 
   it("keeps the source title when no copy title is provided", () => {
@@ -1263,6 +1318,41 @@ describe("boardReducer — DUPLICATE_COLUMN", () => {
     });
     // Original cards stay referenced by the original column only.
     expect(next.columns[0].cardIds).toEqual(["card-1", "card-2", "card-6"]);
+  });
+
+  it("gives copied checklists fresh ids and starts cards unlinked", () => {
+    const seed = freshBoard();
+    seed.cards["card-1"] = {
+      ...seed.cards["card-1"],
+      checklists: [
+        {
+          id: "cl-1",
+          title: "Steps",
+          items: [{ id: "cli-1", text: "First", done: false }],
+        },
+      ],
+      links: [
+        {
+          id: "link-1",
+          targetCardId: "card-2",
+          type: "relates_to",
+        },
+      ],
+    };
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+      title: "Copy of Backlog",
+    });
+    const copy = next.columns[1];
+    const copiedCard = next.cards[copy.cardIds[0]];
+    expect(copiedCard.checklists?.[0].id).not.toBe("cl-1");
+    expect(copiedCard.checklists?.[0].id).toBe(
+      duplicateChecklistId(copy.cardIds[0]!, 0),
+    );
+    expect(copiedCard.checklists?.[0].items[0].id).not.toBe("cli-1");
+    expect(copiedCard.links).toBeUndefined();
+    expect(seed.cards["card-1"].checklists?.[0].id).toBe("cl-1");
   });
 
   it("ignores unknown column ids", () => {

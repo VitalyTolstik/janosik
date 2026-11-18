@@ -1116,10 +1116,59 @@ function archiveColumnCards(
 }
 
 /**
+ * TASK-180.2 H3: deterministic ids for the checklist/item rows a duplicate
+ * creates. They are derived from the *new card id*, which the caller already
+ * minted, so the client reducer and the server writers produce the same ids
+ * without carrying an extra id map on the wire. Reusing the source ids is
+ * wrong: the global-id upsert would re-parent the original card's checklist
+ * to the copy.
+ */
+const DUPLICATE_ID_BASE_MAX = 80;
+
+function duplicateIdBase(cardId: string): string {
+  // Keep room for the suffix under the wire's 128-character id bound, so a
+  // checklist created by this copy can later be named in ADD_CHECKLIST_ITEM.
+  return cardId.length <= DUPLICATE_ID_BASE_MAX
+    ? cardId
+    : cardId.slice(0, DUPLICATE_ID_BASE_MAX);
+}
+
+export function duplicateChecklistId(cardId: string, index: number): string {
+  // No colon: `Command.touches` labels are `kind:id` and split on the first
+  // colon, so an id carrying one would corrupt the pre-image lookup.
+  return `${duplicateIdBase(cardId)}~cl~${index}`;
+}
+
+export function duplicateChecklistItemId(
+  cardId: string,
+  checklistIndex: number,
+  itemIndex: number,
+): string {
+  return `${duplicateIdBase(cardId)}~cl~${checklistIndex}~i~${itemIndex}`;
+}
+
+/** Clone a card's checklists with fresh ids derived from the copy's card id. */
+function duplicateChecklists(
+  checklists: Checklist[] | undefined,
+  cardId: string,
+): Checklist[] | undefined {
+  if (!checklists) return undefined;
+  return checklists.map((checklist, checklistIndex) => ({
+    ...checklist,
+    id: duplicateChecklistId(cardId, checklistIndex),
+    items: checklist.items.map((item, itemIndex) => ({
+      ...item,
+      id: duplicateChecklistItemId(cardId, checklistIndex, itemIndex),
+    })),
+  }));
+}
+
+/**
  * Duplicate a card in place: the copy lands right below the original with
  * all content (description, checklists, due date, cover, labels) but fresh
- * ids and timestamps. Deep-clones nested structures so the copies don't
- * share mutable state with the source.
+ * ids and timestamps. Links are intentionally not copied: a copy starts
+ * unlinked. Deep-clones nested structures so the copies don't share mutable
+ * state with the source.
  */
 function duplicateCard(
   board: Board,
@@ -1144,9 +1193,7 @@ function duplicateCard(
     title: action.title ?? source.title,
     // Deep-copy nested content so later edits never alias the original.
     description: source.description,
-    checklists: source.checklists
-      ? (structuredClone(source.checklists) as Checklist[])
-      : undefined,
+    checklists: duplicateChecklists(source.checklists, action.newCardId),
     dueDate: source.dueDate,
     cover: source.cover
       ? (structuredClone(source.cover) as CardCover)
@@ -1187,8 +1234,9 @@ function duplicateCard(
 
 /**
  * Duplicate a column with every card in it. The copy is placed immediately
- * to the right of the original; all cards get fresh ids (their checklist
- * ids stay as-is — they are unique per card).
+ * to the right of the original; all cards and their checklists/items get
+ * fresh derived ids (TASK-180.2 H3), so the copy can never re-parent the
+ * source's rows through the global-id upserts. Links are not copied.
  */
 function duplicateColumn(
   board: Board,
@@ -1220,9 +1268,7 @@ function duplicateColumn(
     const cardCopy: Card = {
       ...sourceCard,
       id: cardIds[index],
-      checklists: sourceCard.checklists
-        ? (structuredClone(sourceCard.checklists) as Checklist[])
-        : undefined,
+      checklists: duplicateChecklists(sourceCard.checklists, cardIds[index]),
       dueDate: sourceCard.dueDate,
       cover: sourceCard.cover
         ? (structuredClone(sourceCard.cover) as CardCover)

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { INestApplication } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { Test } from "@nestjs/testing";
+import { duplicateChecklistId } from "@janosik/shared";
 import type {
   AgentRunDto,
   Board,
@@ -1198,9 +1199,22 @@ describe("Agent runs and rollback (e2e)", () => {
     await retireColumn(moveTo);
   });
 
-  it("records the DUPLICATE_CARD destination column in its preimage (H4)", async () => {
+  it("records the DUPLICATE_CARD destination column and nested checklists in its preimage (H4/H3)", async () => {
     const columnId = await createColumn("Duplicate destination");
     const sourceId = await createCard(columnId, "Duplicate source");
+    const sourceChecklistId = randomUUID();
+    const sourceItemId = randomUUID();
+    await command("ADD_CHECKLIST", {
+      cardId: sourceId,
+      newChecklistId: sourceChecklistId,
+      title: "Steps",
+    }).expect(200);
+    await command("ADD_CHECKLIST_ITEM", {
+      cardId: sourceId,
+      checklistId: sourceChecklistId,
+      newItemId: sourceItemId,
+      text: "One",
+    }).expect(200);
     const copyId = randomUUID();
     const duplicateCommandId = randomUUID();
     const created = await batch(
@@ -1247,6 +1261,33 @@ describe("Agent runs and rollback (e2e)", () => {
       snapshot: { title: "Duplicate destination" },
     });
 
+    const duplicated = await aggregate();
+    const copy = duplicated.cards[copyId]!;
+    expect(copy.checklists).toHaveLength(1);
+    const copyChecklist = copy.checklists![0];
+    const copyItem = copyChecklist.items[0];
+    expect(copyChecklist.id).toBe(duplicateChecklistId(copyId, 0));
+    // The run's pre-image must know the copy created these rows, so a revert
+    // removes exactly the copy and never the source's checklist.
+    for (const touch of [
+      `checklist:${copyChecklist.id}`,
+      `checklistItem:${copyItem.id}`,
+    ]) {
+      expect(
+        data.entities.find((entity) => entity.touch === touch),
+      ).toMatchObject({ exists: false, postVersion: expect.any(Number) });
+    }
+    const duplicateCommand = await prisma.command.findUniqueOrThrow({
+      where: { id: duplicateCommandId },
+      select: { touches: true },
+    });
+    expect(duplicateCommand.touches).toEqual(
+      expect.arrayContaining([
+        `checklist:${copyChecklist.id}`,
+        `checklistItem:${copyItem.id}`,
+      ]),
+    );
+
     const previewBody = (await preview(runId).expect(200))
       .body as RevertPreviewDto;
     expect(previewBody).toMatchObject({ canRevert: true, conflicts: [] });
@@ -1254,6 +1295,7 @@ describe("Agent runs and rollback (e2e)", () => {
     const after = await aggregate();
     expect(after.cards[sourceId]?.title).toBe("Duplicate source");
     expect(after.cards[copyId]).toBeUndefined();
+    expect(after.cards[sourceId]?.checklists?.[0].id).toBe(sourceChecklistId);
     await retireColumn(columnId);
   });
 

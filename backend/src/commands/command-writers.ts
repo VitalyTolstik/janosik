@@ -563,6 +563,14 @@ function touchCards(ids: string[]): string[] {
   return ids.map(touch.card);
 }
 
+/** Checklist + item touches for commands that create/restore whole cards. */
+function touchChecklists(checklists: Checklist[] | undefined): string[] {
+  return (checklists ?? []).flatMap((checklist) => [
+    touch.checklist(checklist.id),
+    ...checklist.items.map((item) => touch.checklistItem(item.id)),
+  ]);
+}
+
 /**
  * Apply one command's result to the normalized tables and return the
  * `Command.touches` labels (without the board, which the caller adds).
@@ -730,9 +738,20 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         if (!card) continue;
         await upsertCard(tx, card, copy.id, position, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
+        // H3: checklists/items are part of the copy. Their ids are derived
+        // from the new card id by the reducer, so writing them here keeps
+        // the reloaded aggregate equal to the optimistic board.
+        await writeChecklists(tx, card.id, card.checklists);
       }
       await writeColumnPositions(tx, after.columns);
-      return [boardTouch, touch.column(copy.id), ...touchCards(copy.cardIds)];
+      return [
+        boardTouch,
+        touch.column(copy.id),
+        ...touchCards(copy.cardIds),
+        ...copy.cardIds.flatMap((id) =>
+          touchChecklists(cardOf(after, id)?.checklists),
+        ),
+      ];
     }
 
     case "MOVE_COLUMN": {
@@ -924,7 +943,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
         await writeCardPositions(tx, column.id, column.cardIds);
-        return [boardTouch, touch.card(card.id), touch.column(column.id)];
+        return [
+          boardTouch,
+          touch.card(card.id),
+          touch.column(column.id),
+          ...touchChecklists(card.checklists),
+        ];
       }
       // No target column: the reducer puts the card back only into the
       // `cards` map and changes no `column.cardIds`. Park it in the board's
@@ -934,7 +958,11 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await upsertCard(tx, card, orphanId, 0, ctx.actorId);
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeChecklists(tx, card.id, card.checklists);
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...touchChecklists(card.checklists),
+      ];
     }
 
     case "RESTORE_COLUMN": {
@@ -975,7 +1003,10 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         await upsertCard(tx, card, action.column.id, cardPosition, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
-        touchList.push(touch.card(card.id));
+        touchList.push(
+          touch.card(card.id),
+          ...touchChecklists(card.checklists),
+        );
       }
       return touchList;
     }
@@ -995,7 +1026,10 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         );
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
-        touchList.push(touch.card(card.id));
+        touchList.push(
+          touch.card(card.id),
+          ...touchChecklists(card.checklists),
+        );
       }
       await writeCardPositions(tx, column.id, column.cardIds);
       return touchList;
@@ -1285,7 +1319,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [
         boardTouch,
         touch.card(card.id),
-        touch.checklist(action.checklist.id),
+        ...touchChecklists([action.checklist]),
       ];
     }
 
@@ -1311,8 +1345,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [
         boardTouch,
         touch.card(card.id),
-        touch.checklist(action.checklistId),
-        touch.checklistItem(action.item.id),
+        ...(checklist
+          ? touchChecklists([checklist])
+          : [
+              touch.checklist(action.checklistId),
+              touch.checklistItem(action.item.id),
+            ]),
       ];
     }
 
@@ -1357,8 +1395,14 @@ async function writeCardAction(
       ctx.actorId,
     );
     await writeCardLabels(tx, boardId, copy.id, copy.labelIds);
+    await writeChecklists(tx, copy.id, copy.checklists);
     await writeCardPositions(tx, column.id, column.cardIds);
-    return [boardTouch, touch.column(column.id), touch.card(copy.id)];
+    return [
+      boardTouch,
+      touch.column(column.id),
+      touch.card(copy.id),
+      ...touchChecklists(copy.checklists),
+    ];
   }
 
   const card = cardId ? cardOf(after, cardId) : undefined;
