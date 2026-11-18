@@ -7,15 +7,15 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
 
 | ID | Change |
 |---|---|
-| H2 | `ADD_/RESTORE_CHECKLIST`, `ADD_/RESTORE_CHECKLIST_ITEM`, `ADD_CARD_LINK` and nested `RESTORE_CARD`/`RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` snapshots now check the stored parent, not only the board. `RESTORE_CHECKLIST` checks every nested item too; duplicate-derived checklist/item ids are preflighted against the live aggregate. A same-board id owned by another card/checklist/link answers `409 { code: "id_conflict", conflict: "id" }` before the writers run. Soft-deleted rows may be revived only by their original owner. The plan preview runs the same parentage check, so apply does not fail late. The shared owner predicate and error shape live in `backend/src/commands/entity-parentage.ts`; TASK-176.9's admin `assertAdminCardRelations` uses the same `id_conflict` envelope and should import this helper when its branch merges. Admin commands remain run-free/pre-image-free (covered by `admin.e2e-spec.ts`). |
-| L18 | The idempotency check compares the exact request first. Only when the incoming `RESTORE_CARD` assignee is genuinely no longer an active board member (the case the server strips) may the comparison ignore `card.assigneeId` on both sides; a different valid assignee still answers `409 idempotency_conflict`. |
+| H2 | `ADD_/RESTORE_CHECKLIST`, `ADD_/RESTORE_CHECKLIST_ITEM`, `ADD_CARD_LINK` and nested `RESTORE_CARD`/`RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` snapshots now check the stored parent, not only the board. `RESTORE_CHECKLIST` checks every nested item too; duplicate-derived checklist/item ids are preflighted against the live aggregate. Parentage is checked **per command against the running board at that command's position**, so a batch that creates the source checklist and then duplicates it cannot bypass the guard; the plan preview uses the same positional state. A same-board id owned by another card/checklist/link answers `409 { code: "id_conflict", conflict: "id" }` before the writers run. Soft-deleted rows may be revived only by their original owner. The shared owner predicate and error shape live in `backend/src/commands/entity-parentage.ts`; TASK-176.9's admin `assertAdminCardRelations` uses the same `id_conflict` envelope and should import this helper when its branch merges. Admin commands remain run-free/pre-image-free (covered by `admin.e2e-spec.ts`). |
+| L18 | The idempotency check compares the exact request first. Only when the **stored** payload was actually stripped (no `card.assigneeId` key) and the incoming assignee is genuinely no longer an active board member may the comparison ignore `card.assigneeId` on both sides; a different valid assignee still answers `409 idempotency_conflict`. A changed non-member assignee cannot be distinguished from the original stripped request without storing a second payload copy; that residual is documented. |
 | M7 | A live claim may be released only by the holder identity that claimed it (agent session, then PAT, then legacy user id). Another member, a second PAT of the same user, or a browser session / PAT cross-release answers `400 field:"action.claimedBy"`. Lapsed leases remain free to take or clear. An internal run revert may release the exact claim the run held (non-wire `exemptClaimRelease`), with the same preview/apply result. |
 | H3 | Duplicate card/column now derive fresh checklist/item ids from the new card id (`duplicateChecklistId`/`duplicateChecklistItemId` in the shared reducer), so the optimistic client and the server writers agree without an extra id map. The base is a 128-bit FNV-1a hash of the whole card id (colon-free, no truncation collision); duplicate-derived ids are included in the parentage guard so a pre-existing victim row cannot be stolen. The duplicate writers persist checklists/items and include them in `touches`/pre-images. Links are intentionally not copied — copies start unlinked. |
 | M13 | `RESTORE_*` no longer skips WIP/collection guards based on the action type or a client `inverse:true`. Each restore is checked as the fresh add it performs (cards/columns/labels/checklists/items, including nested snapshots); `RESTORE_COLUMN_CARDS` counts the resulting column and its writer mirrors the reducer (omitted cards are parked in the invisible orphan column, not written into the restored column). Only the internal run-revert path passes `exemptRestoreLimits`; it is not a wire field. |
 | M16 | Client undo of `MOVE_CARD`/`UNARCHIVE_CARD` is no longer optimistic: it preflights the destination WIP and otherwise waits for the server. A refusal leaves the board untouched and restores the undo step for a later retry. The toast includes the destination column title and limit, and the failure carries `columnId` from the server. `inverse.ts` and `BoardScopedAction.inverse` document that the flag is local bookkeeping, not a server exemption. |
 | M17 | UI `createBoard`/`importBoards` send an `Idempotency-Key` and retry once on network/502/503/504 with the same key. MCP `create_board`, `import_board`, `create_share`, `add_comment` and `upload_attachment` generate a default key and the client retries a transient post with it. Command/batch writes keep using `commandId`. |
 | M14 | The delete-column confirmation counts `column.cardIds.length` (all cards that will be deleted), while the header badge/empty state keeps the filtered `cards.length`. |
-| L19 | Deleting an attachment scrubs its URL from live card descriptions and comments in all forms the editor emits: markdown image/link, bare URL with or without `/api/v1`, and `::image/video/audio{src="…"}` directives. It then runs `reconcileDescriptionAttachments` so other embeds and the card badge stay correct. Exact cleaned bodies are asserted in e2e; HTML `<img>` remains a documented residual. The soft-deleted row/blob still exists for retention/undo snapshots. |
+| L19 | Deleting an attachment scrubs its URL from live card descriptions and comments in all forms the editor emits: markdown image/link, bare URL with or without `/api/v1`, and `::image/video/audio{src="…"}` directives. Cleanup is line-local — only the removed reference's boundary and its own line are touched, so code-block indentation, tabs, aligned text and markdown two-space hard breaks elsewhere stay byte-identical. It then runs `reconcileDescriptionAttachments` so other embeds and the card badge stay correct. Exact cleaned bodies including a code block and hard break are asserted in e2e; HTML `<img>` remains a documented residual. The soft-deleted row/blob still exists for retention/undo snapshots. |
 | L20 | The attachment list exposes `X-Attachment-Count`, the total live budget including inline/description media. The UI uses it for the cap and maps `code:"attachment_limit"` to the cap message, not "bad file type". OpenAPI documents the header. |
 | L24 | An idempotency record is released only on the existing `markGuaranteedRollback` proof. Board create/import and `BoardWriteService` mark a P2028 from the **write transaction**; a P2028 from a post-commit `getAggregate`/list read is unmarked and keeps the record, so a committed board cannot be duplicated by a retry. |
 | L35 | The card face resolves the assignee from the live roster; a removed/expired assignee renders no avatar, matching the dialog's "Unassigned". Member-roster expiry rules stay in 180.3/M15. |
@@ -94,11 +94,13 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
   `RESTORE_CHECKLIST` snapshot), owner-only soft-delete revival, over-cap
   forged label/checklist/item restores vs genuine delete→restore.
 - `backend/test/commands-columns-cards.e2e-spec.ts`: duplicate card/column
-  checklist+item reload, derived-id victim collisions, copy checklist delete
-  leaves the original, RESTORE_CARD and multi-card RESTORE_COLUMN_CARDS WIP
-  refusals, cards/cardIds mismatch writer parity, one-card restore, duplicate
-  touches.
-- `backend/test/plans.e2e-spec.ts`: parentage conflict appears in plan preview.
+  checklist+item reload, derived-id victim collisions, positional batch
+  parentage after an earlier ADD_CHECKLIST, copy checklist delete leaves the
+  original, RESTORE_CARD and multi-card RESTORE_COLUMN_CARDS WIP refusals,
+  cards/cardIds mismatch writer parity, one-card restore, duplicate touches.
+- `backend/test/plans.e2e-spec.ts`: parentage conflict appears in plan preview;
+  duplicate-first vs duplicate-after-add parity uses the source state at the
+  command's own position.
 - `backend/test/runs.e2e-spec.ts`: PAT-held claim released by an internal run
   revert with a clean preview.
 - `backend/test/runs.e2e-spec.ts`: duplicate pre-image includes the created
@@ -137,9 +139,11 @@ Run on this branch (`feat/TASK-180.2-write-integrity`, 2026-11-19):
 - `npm run test -w mcp` — 9 files / 143 passed, 1 skipped.
 - UI focused Vitest: undo/WIP, server-sync classification, attachment cap,
   comment page-2 edit, assignee face, column views, API idempotency — passed.
-- Backend targeted e2e (single in-band run): `commands-labels-checklists`,
-  `commands-columns-cards`, `card-claim`, `card-assignee`, `write-contract`,
-  `attachments`, `runs`, `plans`, `admin` — 9 suites / 190 tests passed.
+- Backend targeted e2e (review round 2, single in-band run):
+  `commands-labels-checklists`, `commands-columns-cards`, `plans`,
+  `attachments`, `card-assignee`, `runs` — 6 suites / 114 tests passed.
+  The wider round-1 list (`card-claim`, `write-contract`, `admin`, etc.) was
+  also green before these changes; the touched paths are covered above.
 - Browser (isolated local API + Vite, Chrome): duplicate-content,
   filtered column delete, comment pagination/edit, description attachment and
   the WIP-undo refusal with exact localized toast — 8/8 passed. Drag-based

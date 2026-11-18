@@ -433,6 +433,18 @@ export class PlansService {
         failed.add(index);
       }
 
+      // H2: parentage preview must use the source state at this command's
+      // position. The final simulated board would see checklists appended by
+      // later commands and both false-positive and miss apply-time failures.
+      try {
+        await this.commands.assertPlanIds(params.boardId, [entry], running);
+      } catch (error) {
+        const conflict = planConflictOf(error, index, commandId);
+        if (conflict === null) throw error;
+        conflicts.push(conflict);
+        failed.add(index);
+      }
+
       const next =
         boardReducer([running], entry.action, {
           withActivity: false,
@@ -448,17 +460,6 @@ export class PlansService {
       running = next;
     }
 
-    try {
-      await this.commands.assertPlanIds(
-        params.boardId,
-        params.prepared,
-        running,
-      );
-    } catch (error) {
-      const conflict = planConflictOf(error);
-      if (conflict === null) throw error;
-      conflicts.push(conflict);
-    }
     return { board: running, conflicts, warnings };
   }
 

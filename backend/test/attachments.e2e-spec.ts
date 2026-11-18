@@ -275,7 +275,22 @@ describe("Attachments (TASK-47)", () => {
     const url = (id: string) => `/api/v1/attachments/${id}/content`;
     const doomedUrl = url(doomed.body.id);
     const keptUrl = url(kept.body.id);
-    const body = `Before\n\n![doomed](${doomedUrl})\n\nBare ${doomedUrl} end\n\n![kept](${keptUrl})`;
+    const body = [
+      "Before",
+      "",
+      `![doomed](${doomedUrl})`,
+      "",
+      `Bare ${doomedUrl} end`,
+      "",
+      "```text",
+      "  keep   indentation\tand tabs",
+      "```",
+      "",
+      "hard break  ",
+      "next line",
+      "",
+      `![kept](${keptUrl})`,
+    ].join("\n");
     await command({
       type: "UPDATE_CARD",
       cardId,
@@ -296,9 +311,23 @@ describe("Attachments (TASK-47)", () => {
       .get(`/api/v1/boards/${boardId}`)
       .set(auth(admin.token))
       .expect(200);
-    // Exact body: no `/api/v1` remnant, no dangling directive or markdown.
+    // Exact body: no `/api/v1` remnant or dangling markdown, while the code
+    // block indentation/tabs and the two-space hard break stay byte-identical.
     expect(board.body.cards[cardId].description).toBe(
-      `Before\n\nBare end\n\n![kept](${keptUrl})`,
+      [
+        "Before",
+        "",
+        "Bare end",
+        "",
+        "```text",
+        "  keep   indentation\tand tabs",
+        "```",
+        "",
+        "hard break  ",
+        "next line",
+        "",
+        `![kept](${keptUrl})`,
+      ].join("\n"),
     );
 
     const comments = await server()

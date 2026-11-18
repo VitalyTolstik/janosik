@@ -850,6 +850,68 @@ describe("Commands API (e2e)", () => {
       });
     });
 
+    it("checks duplicate parentage against the batch state at its position", async () => {
+      const boardId = await createBoard("Duplicate batch parentage board");
+      const columnId = `col-${randomUUID()}`;
+      const sourceId = `source-${randomUUID()}`;
+      const victimId = `victim-${randomUUID()}`;
+      const copyId = `copy-${randomUUID()}`;
+      const stolenChecklistId = duplicateChecklistId(copyId, 0);
+      for (const action of [
+        { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+        { type: "ADD_CARD", newCardId: sourceId, columnId, title: "Source" },
+        { type: "ADD_CARD", newCardId: victimId, columnId, title: "Victim" },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: victimId,
+          newChecklistId: stolenChecklistId,
+          title: "Victim steps",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+
+      // Source initially has no checklist, so a pre-batch parentage pass sees
+      // no derived ids. The first batch command creates one; the duplicate at
+      // position 1 must derive from that running state and collide with the
+      // victim's pre-existing checklist.
+      const res = await server()
+        .post(`/api/v1/boards/${boardId}/commands/batch`)
+        .set(auth(adminToken))
+        .send({
+          commands: [
+            {
+              commandId: randomUUID(),
+              action: scoped(boardId, {
+                type: "ADD_CHECKLIST",
+                cardId: sourceId,
+                newChecklistId: `src-cl-${randomUUID()}`,
+                title: "Source steps",
+              }),
+            },
+            {
+              commandId: randomUUID(),
+              action: scoped(boardId, {
+                type: "DUPLICATE_CARD",
+                cardId: sourceId,
+                newCardId: copyId,
+              }),
+            },
+          ],
+        })
+        .expect(409);
+      expect(res.body).toMatchObject({
+        code: "id_conflict",
+        conflict: "id",
+      });
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards[sourceId].checklists).toBeUndefined();
+      expect(aggregate.cards[victimId].checklists?.[0].id).toBe(
+        stolenChecklistId,
+      );
+      expect(aggregate.cards[copyId]).toBeUndefined();
+    });
+
     it("refuses duplicate-column derived ids owned by another card", async () => {
       const boardId = await createBoard("Duplicate id collision column");
       const columnId = `col-${randomUUID()}`;

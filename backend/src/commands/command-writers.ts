@@ -48,9 +48,14 @@ function escapeRegExp(value: string): string {
 
 /**
  * TASK-180.2 L19: remove every reference to a deleted attachment from a
- * markdown body. Handles image/link syntax and a bare URL (with or without
- * the `/api/v1` prefix). The id is matched exactly so deleting `a` never
- * touches `a2`.
+ * markdown body. Handles image/link syntax, `::image/video/audio` directives
+ * and a bare URL (with or without the `/api/v1` prefix). The id is matched
+ * exactly so deleting `a` never touches `a2`.
+ *
+ * The cleanup is line-local: only whitespace at the removed reference's
+ * boundary and its own line are touched. Indented code blocks, tabs, aligned
+ * text and markdown two-space hard breaks elsewhere in the body stay
+ * byte-identical.
  */
 export function stripAttachmentReference(
   text: string | undefined,
@@ -61,20 +66,66 @@ export function stripAttachmentReference(
   // Consume the optional `/api/v1` prefix as part of the URL: matching only
   // from `/attachments` left a dangling `/api/v1` behind a bare URL.
   const url = `(?:https?:\\/\\/[^\\s()<>"']*)?(?:\\/api\\/v1)?\\/attachments\\/${id}\\/content(?:\\?[^\\s()<>"']*)?`;
-  const mediaDirective = `::(?:image|video|audio)\\{[^}]*${url}[^}]*\\}`;
-  let next = text
-    .replace(new RegExp(mediaDirective, "g"), "")
-    .replace(new RegExp(`!\\[[^\\]]*\\]\\(${url}\\)`, "g"), "")
-    .replace(new RegExp(`\\[[^\\]]*\\]\\(${url}\\)`, "g"), "")
-    .replace(new RegExp(url, "g"), "");
-  // Collapse only whitespace left by the removal; keep code fences/blank
-  // lines otherwise stable.
-  next = next
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return next;
+  const reference = `(?:::(?:image|video|audio)\\{[^}]*${url}[^}]*\\}|!\\[[^\\]]*\\]\\(${url}\\)|\\[[^\\]]*\\]\\(${url}\\)|${url})`;
+  const token = new RegExp(reference, "g");
+
+  const lines = text.split("\n");
+  const removed = new Set<number>();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (!line.includes(attachmentId)) continue;
+    let cursor = 0;
+    let next = "";
+    let lastEnd = -1;
+    for (const match of line.matchAll(token)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      const before = line.slice(cursor, start);
+      let afterStart = end;
+      const after = line.slice(afterStart);
+      if (/[ \t]$/.test(before) && /^[ \t]/.test(after)) {
+        // Keep a single separator, and keep pure indentation before a
+        // reference that starts a line.
+        next += /^[ \t]*$/.test(before)
+          ? before
+          : before.replace(/[ \t]+$/, " ");
+        while (line[afterStart] === " " || line[afterStart] === "\t") {
+          afterStart += 1;
+        }
+      } else if (/[ \t]$/.test(before) && after === "") {
+        next += before.replace(/[ \t]+$/, "");
+      } else if (before === "" && /^[ \t]/.test(after)) {
+        while (line[afterStart] === " " || line[afterStart] === "\t") {
+          afterStart += 1;
+        }
+      } else {
+        next += before;
+      }
+      lastEnd = afterStart;
+      cursor = afterStart;
+    }
+    next += line.slice(cursor);
+    if (lastEnd === line.length) next = next.replace(/[ \t]+$/, "");
+    if (next.trim() === "") {
+      removed.add(index);
+    } else {
+      lines[index] = next;
+    }
+  }
+  // Drop one adjacent blank line when a reference-only line had blank lines
+  // on both sides, so a standalone image/directive does not leave a double
+  // gap. No other blank line is touched.
+  const referenceLines = [...removed];
+  for (const index of referenceLines) {
+    if (
+      lines[index - 1]?.trim() === "" &&
+      lines[index + 1]?.trim() === "" &&
+      !removed.has(index + 1)
+    ) {
+      removed.add(index + 1);
+    }
+  }
+  return lines.filter((_, index) => !removed.has(index)).join("\n");
 }
 
 /** Keep description uploads reversible: detached blobs remain readable for

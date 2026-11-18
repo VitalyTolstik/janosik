@@ -692,16 +692,6 @@ export class CommandsService {
         if (!running) {
           throw new NotFoundException("Board not found");
         }
-        // H2: a same-board id can still name another card's checklist/item or
-        // another card's link. Duplicate commands also derive nested ids from
-        // the new card id, so the live aggregate is needed to check those too.
-        // The writers upsert by id, so parentage must be checked before the
-        // reducer/writers get a chance to re-parent it.
-        await this.assertEntityParentage(
-          tx,
-          prepared.filter((entry) => !existingById.has(entry.dto.commandId)),
-          running,
-        );
 
         const responses: CommandResponse[] = [];
         const events: InternalCommandEvent[] = [];
@@ -716,6 +706,11 @@ export class CommandsService {
             });
             continue;
           }
+          // H2: parentage is positional, not batch-wide. An earlier command
+          // may create the checklist/item a later duplicate derives ids from,
+          // or create a victim row at the id a later command names. Check
+          // against `running` at this command's own position.
+          await this.assertEntityParentage(tx, [entry], running);
           // TASK-166: check the preset and destructive gate at the point the
           // command would run. `running` already includes earlier commands of
           // this batch, so a create + move is judged on the moved card. Any
@@ -1510,6 +1505,20 @@ export class CommandsService {
       return true;
     }
     if (entry.action.type !== "RESTORE_CARD") return false;
+    // The fallback exists only when the *stored* action was actually stripped.
+    // An original payload that still carries an assignee is never compared
+    // with the assignee removed, so a changed (including non-member) assignee
+    // is not silently accepted as a replay.
+    const stored = storedPayload as { card?: unknown } | null;
+    const storedCard =
+      typeof stored?.card === "object" &&
+      stored.card !== null &&
+      !Array.isArray(stored.card)
+        ? (stored.card as Record<string, unknown>)
+        : undefined;
+    if (storedCard === undefined || Object.hasOwn(storedCard, "assigneeId")) {
+      return false;
+    }
     const assigneeId = entry.action.card.assigneeId;
     if (assigneeId === undefined) return false;
     const member = await tx.boardMember.findFirst({

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { Test } from "@nestjs/testing";
+import { duplicateChecklistId } from "@janosik/shared";
 import type {
   Board,
   CreateUserTokenResponse,
@@ -1125,5 +1126,63 @@ describe("Plans and apply (e2e)", () => {
       .set(auth(workerToken))
       .send({ commands: [] });
     expect(empty.status).toBe(400);
+  });
+
+  it("previews duplicate parentage at the command's position", async () => {
+    const columnId = await createColumn("Plan duplicate parentage");
+    const sourceId = await createCard(columnId, "Source");
+    const victimId = await createCard(columnId, "Victim");
+    const sourceChecklistId = randomUUID();
+    await command("ADD_CHECKLIST", {
+      cardId: sourceId,
+      newChecklistId: sourceChecklistId,
+      title: "First",
+    }).expect(200);
+
+    const copyId = randomUUID();
+    const stolenChecklistId = duplicateChecklistId(copyId, 1);
+    await command("ADD_CHECKLIST", {
+      cardId: victimId,
+      newChecklistId: stolenChecklistId,
+      title: "Victim",
+    }).expect(200);
+
+    const secondChecklistId = randomUUID();
+    const duplicate = () =>
+      planCommand({
+        type: "DUPLICATE_CARD",
+        cardId: sourceId,
+        newCardId: copyId,
+      });
+    const addSecond = () =>
+      planCommand({
+        type: "ADD_CHECKLIST",
+        cardId: sourceId,
+        newChecklistId: secondChecklistId,
+        title: "Second",
+      });
+
+    // Duplicate first: at that position Source has only index 0, so the
+    // victim's index-1 id is irrelevant. The old final-board preview
+    // false-positived here because the later command created index 1.
+    const forward = await preview(
+      [duplicate(), addSecond()],
+      ownerSession,
+    ).expect(200);
+    expect(
+      (forward.body as PlanPreviewDto).conflicts.some(
+        (conflict) => conflict.code === "id",
+      ),
+    ).toBe(false);
+
+    // Reverse: the second checklist exists before the duplicate, so index 1
+    // is derived and must conflict in both preview and apply.
+    const reverse = await preview(
+      [addSecond(), duplicate()],
+      ownerSession,
+    ).expect(200);
+    expect((reverse.body as PlanPreviewDto).conflicts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "id" })]),
+    );
   });
 });
