@@ -1708,6 +1708,7 @@ TASK-36 и TASK-37.)*
 | 109 | TASK-178 `board-settings-rail` ✅ | `docs/TASK-178-board-settings-rail.md` → `feat/board-settings-rail-redesign` | Редизайн «Настройки доски» по направлению **01 «Рельс доски»**: один surface, рельс колонок, список правил, инспектор 316 px, матрица как вкладка, компактные global/start-done, responsive/a11y, мастер-панель без диалогового shell | **Выполнено:** PR #242, merge `360938b`; все 5 фаз, unit/browser/mobile-тесты, EN/RU user-guide, CHANGELOG. Модель `BoardWorkflow` не менялась. См. spec и `design/board-settings-redesign/REPORT.md` |
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
 | 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
+| 114 | TASK-183 `demo-label-integrity` | `docs/TASK-183-demo-label-integrity.md` → отдельные `feat/TASK-183.x-*` | §7.32: две независимые находки TASK-176 demo investigation — (1) воспроизводимый demo-fixture: манифест, reset/verify, защита от не-demo БД и удаление ручных артефактов `Card claim visibility 123`, `фывфыв`, checklist `123`; (2) `SET_CARD_LABEL` обновляет `Card.updatedAt` вместе с версией, аудит `DELETE_LABEL`/`RESTORE_LABEL`, inverse-таймстемпы и тесты | **Запланировано:** docs-only spec; 183.1 demo hygiene, 183.2 label timestamp; без изменений admin demo runner и TASK-176.9; номера 112–113 и §7.30–§7.31 зарезервированы под параллельные задачи. См. §7.32 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5093,6 +5094,82 @@ backend unit/e2e (включая security-contract), `tsc -b`, build, OpenAPI и
 browser matrix зелёные. **H11:** после #276 `approved` после истечения
 apply-window — намеренное поведение; e2e уже обновлён; не возвращать silent
 `expired`.
+
+---
+
+### 7.32. Demo fixture hygiene и timestamp метки карточки (TASK-183)
+
+> **Статус:** запланировано (docs-only, 2026-11-19).
+> **Полный spec:** [`docs/TASK-183-demo-label-integrity.md`](docs/TASK-183-demo-label-integrity.md).
+> **Источник:** TASK-176 demo investigation + read-only проверка `janosik_task176_demo` 2026-11-19.
+> **Не входит:** TASK-176.9 (редактор карточки) и admin demo runner (TASK-57/69; H9 принадлежит TASK-180.7). Новых схем, API и production-кода в этой docs-only задаче нет.
+
+**Зачем.** Обнаружены две независимые проблемы. Demo-база
+`janosik_task176_demo` больше не воспроизводится из committed seed: на карточке
+`px-card-card-claim` появились ручные `Card claim visibility 123`, `фывфыв` и
+checklist `123` с пунктом `1`; при этом нужные TASK-176 label, checklist и
+named links тоже нигде не закоммичены. Это не corruption — aggregate читается и
+API валиден, — но чистый demo нельзя пересоздать, а ручные правки молча
+накапливаются. Отдельно `SET_CARD_LABEL` меняет `labelIds` и версию, но не
+двигает `Card.updatedAt`: reducer не ставит `cardStamp`, а `bumpCard`
+записывает старое значение из after-state. Low-severity, но «Updated» и
+focus-diff врут.
+
+**183.1 — demo fixture hygiene (P2).**
+
+- Единственный committed seed — `scripts/seed-agent-pixel-demo.mjs`: фиксированные
+  ID, две доски, восемь колонок, двенадцать card rows (одна позже soft-deleted
+  reverting-run'ом), `Card claim visibility`, каноническое описание через run 126,
+  **без** card checklist. Guard только `SEED_ALLOW=1`, без проверки имени БД, без
+  verify и без npm-скрипта.
+- `TASK-176 acceptance` checklist, `TASK-176 demo` label и named
+  `px-link-task176-*` links в БД отсутствуют в seed — вероятно, ручная
+  заготовка. Сначала решить, канонические ли они; затем закоммитить их в
+  манифест или убрать. Не делать reset до решения, иначе они потеряются.
+- Добавить `scripts/fixtures/task176-demo.*` (stable IDs/titles/descriptions/
+  checklist set), `npm run demo:task176:reset` и `demo:task176:verify`.
+  Reset требует явный demo URL, печатает цель, отказывает не-demo БД, после
+  seed запускает verify. Verify read-only: ловит `123`, `фывфыв`, лишний
+  checklist/label/random link и отсутствие ожидаемых строк; таймстемпы
+  игнорирует.
+- Ручные правки → verify fail → reset; каноническая demo — reset-only,
+  эксперименты — в clone/отдельной доске. Targeted SQL cleanup не делать.
+
+**183.2 — label timestamp (P3).**
+
+- `shared/src/store/board-reducer.ts:1267-1308`: `setCardLabel` не ставит
+  `updatedAt: cardStamp(action)`.
+- `backend/src/commands/command-writers.ts:371-378`: `bumpCard` пишет
+  `new Date(card.updatedAt)`, то есть старое значение; `:973-978` вызывает его
+  для `SET_CARD_LABEL`. Версия растёт, timestamp — нет.
+- `shared/src/store/invert.ts:449-462`: inverse не несёт `cardUpdatedAt`, поэтому
+  после фикса undo не восстановит старый timestamp.
+- `ui/src/store/board-diff.ts:58-70` и тест `:123` уже обходят это сравнением
+  `labelIds` (TASK-156); после фикса обновить комментарий/тест, fallback можно
+  оставить как compatibility guard.
+- Аудит: `DELETE_LABEL` (`command-writers.ts:1059`, reducer `:1361`) и
+  `RESTORE_LABEL` (`:1118`, reducer `:2277`) — тот же класс для карточек,
+  теряющих/получающих метку; multi-card, нужен per-card timestamp в
+  `RestoreLabelAction.assignments` либо named follow-up с тестом. Rename/color
+  метки карточный timestamp не меняют — зафиксировать это.
+
+**Подзадачи.**
+
+| ID | Что делаем | Приоритет |
+| --- | --- | --- |
+| 183.1 | Fixture manifest, reset/verify, DB-name guard, docs; удалить ручные артефакты через reset | P2 |
+| 183.2 | `SET_CARD_LABEL` stamp + inverse `cardUpdatedAt`; persisted-row/undo тесты; аудит label-действий | P3 |
+
+**DoD.** Demo пересоздаётся одной документированной командой; verify проходит
+после reset и падает на артефактах (`Card claim visibility 123`, `фывфыв`,
+checklist `123`, random-UUID link); повторный reset идемпотентен; seed не ломает
+pixel parity. `SET_CARD_LABEL` двигает `updatedAt` и `version` один раз, undo
+восстанавливает прежний timestamp, no-op ничего не меняет; audit table закрыт
+тестами или явным follow-up. Без изменений admin demo runner, H9 и TASK-176.9.
+
+**Зависимости.** TASK-156 (label-only workaround), TASK-150 (focus diff),
+TASK-21.7d (inverse timestamps); TASK-180.7 — только координация по demo data
+lifecycle, не поглощение H9. Backend-схемы и API-контракта не меняем.
 
 ---
 
