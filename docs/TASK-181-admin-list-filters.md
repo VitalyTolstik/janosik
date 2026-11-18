@@ -2,8 +2,8 @@
 
 **Status:** planned
 
-**Revision:** 2 (2026-11-19) — review blockers 1–10 and the non-blocking notes
-are addressed; see the resolved decisions in §14.
+**Revision:** 3 (2026-11-19) — product/technical review blockers and the
+non-blocking notes are addressed; see the resolved decisions in §14.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -111,7 +111,8 @@ and must stay the only source of result counts.
 - Exact structural filters, including same-name boards (TASK-176.6 e2e).
 - Bulk selection: survives pagination, cleared by a result-set change
   (TASK-176.1). New filters must join its scope key.
-- Honest `N of M` totals and `Load more` windows (TASK-176.3).
+- Exact server totals with **Page X of Y** pagination on global lists. Detail
+  windows are unchanged by this task.
 - The panel's support vocabulary: ids are clickable/copyable, labels are
   secondary; filters must not replace exact ids with name-only matching.
 
@@ -227,7 +228,7 @@ Route: `/admin/boards?tab=…`.
 | Assignee | `assigneeId` (repeated) + `unassigned=true` | Find a person's work, unassigned/stuck cards, handoffs | 181.3 |
 | Priority | `priority` (repeated; `medium` includes unset) | Triage blockers/highest; aligns with product default | 181.3 |
 | Due | `due=overdue\|soon\|none` | Deadline triage; `soon` = next 24 h, same as the board filter | 181.3 |
-| Attachments | `hasAttachments=true\|false` | Find cards with evidence or missing evidence | 181.3 |
+| Attachments | `hasAttachments=true\|false` | Find cards with/without card-face files; excludes inline and `descriptionDetached=true` rows | 181.3 |
 | Status | `status=active\|archived\|deleted` | Existing primary axis | existing |
 | Period | `period=24h\|7d\|30d` over `createdAt` | Recent work / incident window; this task adds `periods: true` and `where.createdAt = dateRange(query)` | 181.3 |
 | Card id | `cardId` (advanced, paste/URL) | Exact deep link, including from global search | existing |
@@ -326,10 +327,14 @@ support value.
 | Period | `period` over `createdAt` | Recent uploads / retention window; 181.4 adds `periods: true` and `where.createdAt = dateRange(query)` | 181.4 |
 | Transcode | `transcode=pending\|failed\|done\|none` | Find stuck/failed video encodes | 181.4 |
 
-Not offered: column/label (indirect; existing server scopes stay for old links),
-inline filter in v1. Inline attachments are currently included in the admin
-list; add an `inline` badge/filter only after the list clearly separates them
-(§14, Q5).
+Not offered: column/label (indirect; existing server scopes stay for old links).
+**Inline decision (v1):** the admin attachments tab keeps inline rows visible
+with an explicit `Inline` badge (and `Detached` for `descriptionDetached=true`),
+so they can be moderated/downloaded; there is no inline filter in v1. The card
+`hasAttachments` filter still reflects card-face files only (non-inline,
+`descriptionDetached=false`), so an inline-only card can appear here while its
+`No card attachments` chip is active. This is documented and tested, not a
+counter mismatch.
 
 ### 5.5 Audit & activity hub
 
@@ -385,13 +390,14 @@ comment edits/deletes and agent-control events.
 
 ### 5.6 Access, communications and detail surfaces
 
-These are **not** filter targets in v1. They remain in the inventory so the
-decision is explicit and does not get reinvented later.
+These are **no new filter targets** in v1. They remain in the inventory so the
+decision is explicit and does not get reinvented later. Existing period tabs on
+Sessions/Tokens stay and are regression-tested.
 
 | Surface | Decision | Reason / owner |
 | --- | --- | --- |
-| Sessions (`/admin/access?tab=sessions`) | Defer user/period; no status filter | The list hard-codes live sessions (`revokedAt: null`, future expiry). A status filter would imply revoked/expired rows exist in the list; make the list truthful first (separate truthfulness task). |
-| Tokens (`/admin/access?tab=tokens`) | Defer user/status/period | Backend supports status; the page currently has no status tabs. A small follow-up can reuse the same filter kit after cards prove it. |
+| Sessions (`/admin/access?tab=sessions`) | Keep existing period tab; no new user/status filters | The list hard-codes live sessions (`revokedAt: null`, future expiry). A status filter would imply revoked/expired rows exist; make the list truthful first (separate task). |
+| Tokens (`/admin/access?tab=tokens`) | Keep existing period tab; no new user/status filters | Backend supports status, but the page has no status tabs; a small follow-up can reuse the filter kit later. |
 | Masters (`/admin/access?tab=masters`) | No filters | Owner-only, small roster; search would be more useful than filters. |
 | Shares (`/admin/communications?tab=shares`) | Defer to TASK-177.5 | TASK-177.5 owns truthful pagination/expiry. Adding filters before the list is honest would compound the problem. A later pass can add board/mode/status/creator. |
 | Announcements history | Keep status only | Small list; status already exists. Period/locale/level filters are speculative. |
@@ -426,7 +432,7 @@ decision is explicit and does not get reinvented later.
 surface that has it. Cards, users and attachments gain `periods: true` and the
 `from`/`to` predicate in their subtasks; comments already have the predicate and
 gain the tab. Period is not counted in the Filters badge and is cleared by
-Clear all.
+Clear search and filters.
 
 **Speculative / deferred (not implemented without evidence):**
 
@@ -467,8 +473,8 @@ before the request by the UI parser.
 | activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |
 | commands | `boardId`, `columnId`, `cardId`, `commandId` (176.10), `from`/`to` | `actorId`, `type` | board, actor, type, card, column, commandId, period |
 | audit | `commandId` (176.10), `from`/`to` | `adminId`, `action`, `targetType`, `targetId` | audit actor, action, targetType, targetId, commandId, period |
-| sessions | `from`/`to` | — | none v1 (status is not truthful yet) |
-| tokens | `status`, `from`/`to` | — | none v1 |
+| sessions | `from`/`to` | — | period only (existing) |
+| tokens | `status`, `from`/`to` | — | period only (existing) |
 | shares | `boardId`, `from`/`to` | — | none (TASK-177.5) |
 | announcements | `status` | — | status only |
 | boardMembers | `boardId`, `status` | — | none |
@@ -486,7 +492,7 @@ form.
 
 ```
 Cards                                             [Search…] [All][Active][Archived][Deleted]
-[ Filters (2) ]  [Board: Design system ×] [Label: urgent ×] [Clear all]
+[ Filters (2) ]  [Board: Design system · 7f3a ×] [Label: urgent ×] [Clear search and filters]
 13 total · Page 1 of 1
 ```
 
@@ -497,13 +503,14 @@ Cards                                             [Search…] [All][Active][Arch
   task adds it to cards, users and attachments (`periods: true` + `from`/`to`)
   and to comments (`periods: true`; the backend predicate already exists).
   Activity, commands, audit, sessions and tokens keep their existing tabs.
-  Period is cleared by Clear all and is not counted in the Filters badge.
+  Period is cleared by Clear search and filters and is not counted in the Filters
+badge.
 - Add a **Filters** button next to the header controls with a filter icon and a
   badge showing the number of active advanced facets (not the number of values).
 - Put active advanced filters on their own row below the header. Each value is
   a removable chip. The row wraps; it never scrolls horizontally.
-- Show a **Clear all** text button at the end of the chip row. It clears search,
-  status, period and every advanced filter (same as today's
+- Show a **Clear search and filters** text button at the end of the chip row.
+  It clears search, status, period and every advanced filter (same as today's
   `clearAllFilters`), with one history entry.
 - Keep the existing exact total footer (`13 total`, page size, prev/next). Do
   not add filter-option counts.
@@ -540,9 +547,14 @@ Cards                                             [Search…] [All][Active][Arch
 - **Board change contract.** Changing (or clearing) `boardId` clears the
   dependent structural filters `columnId`, `labelId`, `labelMatch`, `cardId`
   and `checklistId` in one committed change, and announces how many were
-  cleared. A deep link that already contains a conflicting combination keeps
-  the filters (the server returns zero) and shows a visible conflict banner with
-  a Remove action for each dependent chip; it never silently widens the result.
+  cleared.
+- **Conflict detection on deep links.** Resolve each dependent chip with
+  `filter-options` scoped to the active `boardId` (and `columnId` for cards).
+  A parent id that differs from the active board/column, or an id returned in
+  `missing`, is a conflict: keep every filter, show a visible banner naming the
+  conflicting facet(s), and offer a Remove action per dependent chip. A
+  combination whose parents match may legitimately return `total:0`; that is a
+  normal empty state, not a conflict. The server never widens the query.
 - If lookup fails, keep existing chips and the list; show an inline retry. Do
   not silently remove a filter or show an empty list as if it matched.
 
@@ -556,11 +568,11 @@ chip model; they are not free-text pickers.
 | Facet | Control | Stored value | Visible chip | Aria label / remove label |
 | --- | --- | --- | --- | --- |
 | Assignee “Unassigned” | checkbox at the end of the assignee picker | `unassigned=true` | `Unassigned` | `Unassigned assignee` / `Remove filter: Unassigned` |
-| Attachments | radio group: Any / Has attachments / No attachments | `hasAttachments=true\|false` | `Has attachments` / `No attachments` | `Attachment filter` / `Remove filter: Has attachments` |
+| Attachments | radio group: Any / Has card attachments / No card attachments | `hasAttachments=true\|false` | `Has card attachments` / `No card attachments` | `Card attachment filter` / `Remove filter: Has card attachments` |
 | Verified | radio group: Any / Verified / Unverified | `verified=true\|false` | `Verified` / `Unverified` | `Email verification filter` / `Remove filter: Verified` |
 | Due | radio group: Any / Overdue / Due in 24 hours / No due date | `due=overdue\|soon\|none` | `Overdue` / `Due in 24 hours` / `No due date` | `Due date filter` / `Remove filter: Overdue` |
 | MIME type | radio group: Any / Images / Videos / Audio / PDF / Documents / Other | `mime=image\|video\|audio\|pdf\|document\|other` | localized type label | `File type filter` / `Remove filter: Images` |
-| Transcode | radio group: Any / Pending / Failed / Done / Not a video | `transcode=pending\|failed\|done\|none` | localized state label | `Video processing filter` / `Remove filter: Failed` |
+| Transcode | radio group: Any / Pending / Failed / Done / No transcoding | `transcode=pending\|failed\|done\|none` | localized state label (`No transcoding` for `none`) | `Video processing filter` / `Remove filter: Failed` |
 
 - “Any” is the unset state: selecting it removes the param and the chip. There
   is no chip for Any.
@@ -568,17 +580,27 @@ chip model; they are not free-text pickers.
   Enter selects, Escape closes the popover and returns focus. A checkbox toggles
   with Space.
 - Each chip removes only its own facet (`setFilter(key, null)` or the boolean
-  equivalent), resets offset and clears bulk selection. Clear all clears them
-  with the rest.
+  equivalent), resets offset and clears bulk selection. Clear search and filters
+  clears them with the rest.
 - Component tests assert the control type, exact chip text, URL add/remove,
   keyboard selection, aria-label and EN/RU copy for every row above.
 
+**Commit model (resolved Q2).** Radio choice facets (`due`, `mime`,
+`transcode`) apply **immediately on selection**, close the popover and announce
+the exact result count after the response. `Any` also applies immediately and
+removes the chip. The `Unassigned` checkbox inside the assignee picker and the
+Any/All control inside the labels picker are part of that picker's **draft**:
+they commit only with **Apply**; Cancel/Escape discards the draft. Removing the
+`Unassigned`/`Label match: All` chip itself applies immediately. Tests cover
+Add, Apply, Cancel and Escape for both draft pickers, plus immediate radio
+changes and URL/selection-reset behavior.
+
 Exact RU chip copy (use one noun form per state, no plural engine):
-`Без исполнителя`, `С файлами` / `Без файлов`, `Подтверждён` /
+`Без исполнителя`, `С файлами карточки` / `Без файлов карточки`, `Подтверждён` /
 `Не подтверждён`, `Просрочено` / `Срок в течение 24 часов` / `Без срока`,
 `Изображения` / `Видео` / `Аудио` / `PDF` / `Документы` / `Другое`,
 `Обработка: в очереди` / `Обработка: ошибка` / `Обработка: готово` /
-`Не видео`, and the label-match chip `Совпадение меток: все`. RU tests assert
+`Без перекодирования`, and the label-match chip `Совпадение меток: все`. RU tests assert
 the same add/remove/aria behavior, not only the English strings.
 
 **Label match mode (cards)**
@@ -586,7 +608,8 @@ the same add/remove/aria behavior, not only the English strings.
 - The Labels picker contains a segmented radio group **Any label / All labels**
   between the section title and the label checkboxes. It is shown only when at
   least two labels are selected; with 0–1 labels the mode is `any`, the control
-  is hidden and the URL has no `labelMatch`.
+  is hidden and the URL has no `labelMatch`. It is part of the labels draft and
+  commits only with Apply; Cancel/Escape restores the previous mode.
 - Stored value `labelMatch=any|all`; `any` is the default and is removed from
   the URL. Toggling to All adds `labelMatch=all`; toggling back to Any removes
   it. Removing labels until fewer than two remain resets to Any.
@@ -608,11 +631,11 @@ inherently an id.
 | Filter | Visible chip | Secondary text |
 | --- | --- | --- |
 | Board | board title + **visible muted short id** (`Design system · 7f3a`) | `(archived)`/`(deleted)` suffix; full id in tooltip |
-| Column | column title + board title | short id in tooltip |
-| Label | color dot + label name + board title | `(deleted)` suffix; short id in tooltip |
-| Card | card title + board/column | short id in tooltip |
+| Column | column title + board title + **board short id** | full ids in tooltip |
+| Label | color dot + label name + board title + **board short id** | `(deleted)` suffix; full ids in tooltip |
+| Card | card title + board title + **board short id** + column | full ids in tooltip |
 | User (assignee/author/uploader/actor) | display name, else email | email when name is shown; `(disabled)` suffix |
-| Checklist | checklist title + card title | board title |
+| Checklist | checklist title + card title + board title + **board short id** | full ids in tooltip |
 | Command id | `Command 7f3a…` | full id in tooltip; copy action |
 | Label match | `Label match: All` (only for `labelMatch=all`) | resets to Any; `aria-label="Remove filter: Label match — All"` |
 | Enum (`kind`, `type`, `action`, `targetType`, `priority`, `due`) | localized label where the catalog owns it; otherwise the canonical code | no id |
@@ -629,6 +652,10 @@ inherently an id.
   tooltip, so two boards with the same title are distinguishable. Other
   structural chips carry their board/card context; the full id stays in the
   tooltip.
+- Dependent chips use the resolved parent ids, not the title: a column/label/
+  card/checklist chip shows its `boardId` short suffix; a card chip also shows
+  its `columnId` context. This is what makes two same-title boards
+  distinguishable and what classifies a cross-board conflict.
 - If an entity is archived/deleted, still show its name with a suffix. The chip
   is removable; it is not an error.
 - The remove button has an accessible name that includes the human label:
@@ -638,8 +665,9 @@ inherently an id.
 
 ### 6.5 Clear, empty and error states
 
-- **Clear all** resets search, status, period and advanced filters; it does not
-  clear the page size (existing behavior) and does not navigate away.
+- **Clear search and filters** resets search, status, period and advanced
+  filters; it does not clear the page size (existing behavior) and does not
+  navigate away.
 - Removing the last active filter removes the chip row but keeps the default
   list. Do not show an empty “filters” container.
 - Empty state:
@@ -673,7 +701,8 @@ inherently an id.
   it is not part of the advanced filter keys or chip row.
 - Hub tab switches:
   - preserve `boardId` (and only `boardId`) across tabs that support it
-    (Boards hub content tabs, moderation Comments↔Attachments);
+    (Boards hub content tabs, moderation Comments↔Attachments, audit
+    Audit↔Commands↔Activity);
   - drop search/status/period/columnId/labelId/labelMatch/cardId/checklistId
     on a tab switch unless the target explicitly supports them;
   - preserve unrelated `returnTo`.
@@ -692,7 +721,8 @@ inherently an id.
 ### 6.7 Pagination, counts and selection
 
 - `AdminPage.total` is the only result count. Never derive “13 cards” from the
-  loaded page.
+  loaded page. The footer evidence is `N total` + `Page X of Y`, not a loaded-
+  row sample.
 - Every filter change, including status/period tab changes and choice facets,
   resets `offset` to 0; a deep link may carry an offset and must be restored
   as-is.
@@ -717,7 +747,9 @@ inherently an id.
   emails truncate with `title`/accessible full text. The status/period
   `FilterTabs` strip becomes horizontally scrollable with visible edges (fixes
   the current clipped tabs); no page-level horizontal overflow
-  (`scrollWidth <= innerWidth`).
+  (`scrollWidth <= innerWidth`). The 390 test must also assert every tab, chip
+  and sheet control is visible/reachable with a bounding box inside the
+  viewport — `scrollWidth` alone is not evidence.
 - Touch targets: at least 32×32 px in the dense desktop panel; at least 44 px
   rows/buttons inside the mobile sheet (TASK-179.9 precedent). The remove `X`
   on a chip must be at least 24×24 px and have a larger hit area.
@@ -790,14 +822,14 @@ new contract.
 | `unassigned` | `true\|false` | cards | OR with `assigneeId`; omitted when false |
 | `priority` | repeated enum (max 6) | cards | OR; `medium` also matches `null` (default priority) |
 | `due` | `overdue\|soon\|none` | cards | Server `now`; `soon` = next 24 h; no timezone day buckets |
-| `hasAttachments` | `true\|false` | cards | `attachmentCount > 0` / `= 0`; excludes inline and description-embedded files until detached; documented/tested |
+| `hasAttachments` | `true\|false` | cards | `attachmentCount > 0` / `= 0`; counter = live, non-inline files with `descriptionDetached=false`. Inline and `descriptionDetached=true` (detached/hidden) files are excluded |
 | `adminMemberId` | single user id | boards | `members.some` with role ADMIN and acceptedAt not null; not the displayed first-admin label |
 | `verified` | `true\|false` | users | `emailVerifiedAt` null/not |
 | `authorId` | repeated user id (max 20) | comments | OR |
 | `kind` | repeated enum (max 6) | comments | note/status/question/blocker/evidence/handoff |
 | `uploadedById` | repeated user id (max 20) | attachments | OR |
 | `mime` | single enum | attachments | image/video/audio/pdf/document/other |
-| `transcode` | single enum | attachments | none/pending/done/failed |
+| `transcode` | single enum | attachments | none/pending/done/failed; `none` also covers videos when transcoding is disabled |
 | `actorId` | repeated user id (max 20) | commands, activity | OR |
 | `type` | repeated exact code (max 20) | commands, activity, card links | OR; command/activity options from server distinct values; card-link values are the static `CARD_LINK_TYPES` |
 | `action` | repeated exact code (max 20) | audit | OR; options from server distinct values |
@@ -832,10 +864,12 @@ is a validation error rather than first-value-wins.
   is `< now`; `none` is `IS NULL`. Archived/deleted rows are included according
   to `status`, not because of the due facet.
 - `hasAttachments=true` means `attachmentCount > 0`; `false` means `= 0`.
-  `attachmentCount` excludes inline files and description-embedded files until
-  they are detached to the card list; a detached description upload counts. This
-  is the same number the card face shows and must be documented/tested against
-  the attachment rows. Do not silently switch to an “any attachment” predicate.
+  `attachmentCount` is maintained from live, non-inline rows with
+  `descriptionDetached=false`. `descriptionDetached=true` means detached/hidden
+  from the card and is **not** counted; inline files are also not counted. This
+  is the same number the card face shows. Document the labels as “Has card
+  attachments” / “No card attachments” and test the four cases: plain live
+  file, inline-only, description-referenced (`false`), detached (`true`).
 - Status semantics stay per entity: cards `active` excludes archived/deleted,
   `archived` excludes deleted, `deleted` is any soft-deleted row (including a
   formerly archived one). The default `All` continues to include
@@ -870,6 +904,19 @@ is a validation error rather than first-value-wins.
   server ever rejects one (should not happen with atomic deployment), the UI
   shows the explicit unsupported state with Remove; it never leaves a chip over
   an unfiltered list.
+- **Per-entity status allowlists:** one shared `ENTITY_STATUS_VALUES` map drives
+  the DTO guard: users `active/disabled`; boards/cards `active/archived/deleted`;
+  columns/labels/checklists/checklistItems/cardLinks/comments/attachments
+  `active/deleted`; tokens/boardMembers `active/disabled`; announcements
+  `active/disabled/deleted`; audit/commands/activity/sessions/shares have no
+  status filter. The same strict guard is called by the generic
+  `/admin/entities/:entity` route and every specialized list route
+  (`/admin/cards`, `/admin/comments`, …); e2e covers both families.
+- `unsupported_filter` response shape:
+  `{ statusCode: 400, error: "Bad Request", code: "unsupported_filter",
+  filter: "<offending key>", message: "Filter <key> is not supported for
+  <entity>" }`. The UI test asserts the Remove action clears the chip/param
+  and retries the list.
 - Combined query length: cap at 32 values or 2 KB of filter state; the UI shows
   a readable “too many filters” message before navigation.
 
@@ -901,6 +948,10 @@ interface AdminFilterOptionDto {
   state: string | null;
   /** Label palette key only for labels. */
   color?: string;
+  /** Parent board for columns/labels/cards/checklists; null for boards/users/actors. */
+  boardId: string | null;
+  /** Parent column for cards; null otherwise. */
+  columnId: string | null;
 }
 
 interface AdminFilterOptionsDto {
@@ -918,6 +969,17 @@ Behavior:
   matches rank first, then label order; deterministic.
 - `ids` resolves chips; it never returns unrelated rows. `missing` lists
   hard-deleted ids so the UI can render an explicit fallback.
+- **Parent context:** `boardId` is set for column/label/card/checklist
+  options; `columnId` is set for card options; both are null for boards, users
+  and audit actors. Resolve dependent filters with the active scope, e.g.
+  `type=column&boardId=<active>&ids=…`,
+  `type=label&boardId=<active>&ids=…`,
+  `type=card&boardId=<active>&ids=…` (and `columnId` when present),
+  `type=checklist&boardId=<active>&ids=…`. Each item carries `boardId` and, for
+  cards, `columnId`. A returned parent id that differs from the active filter,
+  or an id reported in `missing`, is a **conflict**, not a zero-result list.
+  The UI shows the conflict banner; a valid combination with matching parents
+  and `total:0` is a normal empty state.
 - `limit` default 20, max 50. No total count; `hasMore` is a boolean.
 - `boardId` narrows columns/labels/cards/checklists where provided. `cardId`
   narrows checklists.
@@ -965,9 +1027,13 @@ Behavior:
 
 - Use equality/`IN` for ids and enums, range predicates for dates. Do not use
   `contains` for id/action/type filters.
-- Measure with the existing 25k-card workload (`docs/PERF-25K-UX.md`):
-  record p50/p95 for the unfiltered list and each new facet; target no more
-  than +20% p95 for a single facet and no sequential scan over 10k+ rows.
+- **Measured harness:** extend the `docs/PERF-25K-UX.md` seed to 25k cards,
+  100 boards, 500 columns, 200 labels, 50k comments, 10k attachments and 10k
+  commands/activity rows. For each facet run page sizes 50 and 100, 5 cold +
+  20 warm iterations, and record p50/p95 plus `EXPLAIN (ANALYZE, BUFFERS)`.
+  Target ≤ +20% p95 for a single facet versus the unfiltered list, with no
+  sequential scan over 10k+ rows. Commit the seed/script and the raw result
+  table in the PR; “benchmark exists” is not evidence.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -992,6 +1058,8 @@ Behavior:
 - Existing `Card @@index([assigneeId])` and `@@index([dueDate])` cover the
   common single-facet paths; combined board/column+assignee may need a
   composite measured against the actual query.
+- `adminMemberId` uses the existing `BoardMember(userId, acceptedAt)` index;
+  no new index is required for the accepted-ADMIN membership lookup.
 - Add indexes in a separate migration only after the plan is recorded; note the
   lock window for self-hosters in the PR. No data backfill.
 - Lookup requests are parallel, debounced and cached in memory per admin
@@ -1025,7 +1093,7 @@ const ENTITY_FILTERS: Record<
   cards: {
     offered: [
       "boardId", "columnId", "labelId", "labelMatch", "assigneeId",
-      "unassigned", "priority", "due", "hasAttachments", "cardId",
+      "unassigned", "priority", "due", "hasAttachments",
     ],
     supported: [
       "boardId", "columnId", "labelId", "labelMatch", "assigneeId",
@@ -1052,7 +1120,9 @@ const ENTITY_FILTERS: Record<
   facets cannot reach the server.
 - The backend mirrors the matrix in §5.8 and returns an explicit
   `unsupported_filter` 400 only outside `supported`; every legacy structural
-  pair has a table-driven e2e case.
+  pair has a table-driven e2e case. A shared `assertSupportedFilters(entity,
+  query)` + `ENTITY_STATUS_VALUES` guard is called by the generic
+  `listEntity` route and every specialized list method; e2e checks both.
 - Add one shared `ADMIN_FILTER_MAX_VALUES = 20` and canonicalization helpers
   (trim, dedupe, sort, boolean/enum parsing) so client and server agree.
 
@@ -1089,8 +1159,8 @@ New files under `ui/src/admin/filters/`:
 - `AdminFilterPopover.tsx` — dialog/sheet shell, sections, Apply/Cancel.
 - `FilterFacetPicker.tsx` — single/multi listbox or checkbox list, search,
   pinned selected rows, “Use id …”.
-- `FilterChoiceGroup.tsx` — radio/boolean two-option controls for the choice
-  facets in §6.3, with Any removal and aria labels.
+- `FilterChoiceGroup.tsx` — radio/boolean choice controls (2–7 options) for the
+  choice facets in §6.3, with Any removal and aria labels.
 - `LabelMatchControl.tsx` — Any/All segmented radio inside the Labels section
   and the `labelMatch=all` mode chip.
 - `FilterChip.tsx` — icon, label, context, visible board short id, suffix,
@@ -1114,13 +1184,15 @@ Minimal, additive, but update every producer:
   card-detail comments and global-search comments; add `kind` to
   `listComments`, the user-detail mapping, `toCommentRow` (card/global) and all
   fake fixtures/tests. Do not add a required field to only one producer.
-- `AdminAttachmentRowDto.boardTitle` is hard-coded to `—` in three paths:
-  `listAttachments`, the user-detail attachment mapping, and `toAttachmentRow`
-  (card detail/global search). Extend `ATTACHMENT_SELECT` with
-  `card.column.board.title`, map it in all three, and test each path. Do not
-  leave a hard-coded dash where the board filter/chip depends on it.
-- `AdminCardRowDto.attachmentCount` is optional; the filter works without it.
-  Add it only if the row should show “N files”.
+- `AdminAttachmentRowDto` needs a readable board label and the inline state for
+  rows. `listAttachments` has its **own select path**; `ATTACHMENT_SELECT`
+  (used by `toAttachmentRow` for card detail/global search) is separate. Extend
+  both with `card.column.board.title`, `isInline` and `descriptionDetached`,
+  map them in all three producers, and render `Inline`/`Detached` badges. Do not
+  leave a hard-coded `—` where the board filter/chip depends on it.
+- `AdminCardRowDto.attachmentCount` is **absent** today (not optional). Do not
+  describe it as optional: add it only if the card row should show “N files”;
+  the filter reads the database counter, not this row DTO.
 - No schema migration for filter values except optional indexes. `Comment.kind`
   already exists.
 
@@ -1128,8 +1200,8 @@ Minimal, additive, but update every producer:
 
 - `selectionScopeKey` includes all filter values (sorted arrays, booleans and
   the label-match mode).
-- Any filter add/remove/apply (including a chip `X` or Clear all) clears the
-  selection; page/offset changes preserve it; limit changes clear it.
+- Any filter add/remove/apply (including a chip `X` or Clear search and filters)
+  clears the selection; page/offset changes preserve it; limit changes clear it.
 - The bulk contract from TASK-176.1 is unchanged: count, confirm and request use
   the same saved ids; new filters must not create a hidden selection.
 - Test browser back to a previous filter state: the selection is empty because
@@ -1150,11 +1222,21 @@ Minimal, additive, but update every producer:
 - `priority=medium`: `OR: [{ priority: "medium" }, { priority: null }]`.
 - `adminMemberId`: `members: { some: { userId, role: "ADMIN", acceptedAt: { not:
   null } } }`; do not use the first-admin display label.
-- Period: add `where.createdAt = this.dateRange(query)` to `listCards`,
-  `listUsers` and `listAttachments`; `listComments` already has it. Keep the UI
-  `period` → `from` mapping in `use-admin-list`.
-- `hasAttachments`: `attachmentCount: { gt: 0 }` / `{ equals: 0 }`; document the
-  inline/descriptionDetached rules and test against attachment rows.
+- Period: extract the `dateRange(query)` helper from `AdminService` into a
+  shared admin list utility (or import it into `AdminEntitiesService`); call it
+  in `listCards`, `listUsers` and `listAttachments`. `listAttachments` currently
+  has no such helper — do not call `this.dateRange` from the wrong service.
+  `listComments` already has the predicate. Keep the UI `period` → `from`
+  mapping in `use-admin-list`.
+- `hasAttachments`: `attachmentCount: { gt: 0 }` / `{ equals: 0 }`.
+  `attachmentCount` must be computed exactly like `command-writers` and
+  `recountCardAttachments`: `deletedAt: null`, `isInline: false`,
+  `descriptionDetached: false`. **Fix the admin recount bug**:
+  `recountCardAttachments` currently omits `descriptionDetached: false`, so
+  after admin delete/bulk a detached (`true`) description file is wrongly
+  counted. Add the predicate (or call a shared counter helper) and test admin
+  delete/bulk with a description-referenced (`false`) and a detached (`true`)
+  file.
 - `mime`:
   - image: `startsWith("image/")`
   - video: `startsWith("video/")`
@@ -1214,8 +1296,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Every legacy pair in §5.8 still returns exactly the old rows; a key outside
   the matrix is 400, not silently ignored.
 - Lookup resolves board/column/label/user/card/auditActor by id and search;
-  `type=admin` is rejected; OPERATOR gets only audit-visible actor id/email and
-  cannot enumerate roles/disabled state.
+  dependent options return parent `boardId`/`columnId`; `type=admin` is rejected;
+  OPERATOR gets only audit-visible actor id/email and cannot enumerate
+  roles/disabled state.
 - Existing 176.5/176.6 tests pass unchanged (or only extend, never weaken).
 
 ### 181.2 — Filter bar and cards pilot (P1)
@@ -1237,7 +1320,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 - A master can add “Board: Design system”, “Column: In progress”, “Label:
   urgent” without editing the URL; chips show names/colors plus the visible
-  board short id, not raw ids only.
+  board short id, not raw ids only. Two same-title boards produce distinct
+  dependent chips via their parent `boardId`.
 - Removing a chip/clear all updates the URL and the list; reload/back/forward
   restore the exact filtered view; `returnTo` still works.
 - Changing the board clears column/label/card dependents in one URL change and
@@ -1263,6 +1347,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Choice facets use the radio/two-option controls from §6.3; labels use the
   Any/All control and mode chip; query construction uses one `labels.some` per
   selected label in the AND array.
+- Fix `recountCardAttachments` to include `descriptionDetached: false` and
+  share the predicate with command-writers; add admin delete/bulk regression.
 - Backend service mapping, DTO validation, query-plan evidence, indexes only if
   measured.
 - Chips for each value; picker sections; EN/RU; tests.
@@ -1276,9 +1362,11 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   seeded fixture; this is documented in the chip/help.
 - `due=soon` uses the 24-hour window; `overdue`/`none` are exact; archived/
   deleted inclusion follows status.
-- `hasAttachments=true/false` agree with `attachmentCount` and the documented
-  inline/descriptionDetached rules; tests cover inline-only, detached
-  description file and deleted file.
+- `hasAttachments=true/false` agree with `attachmentCount`: plain live file
+  counts; inline-only does not; description-referenced (`descriptionDetached=false`)
+  counts; detached/hidden (`descriptionDetached=true`) does not. Admin
+  delete/bulk recount uses the same predicate and is tested with both
+  description states.
 - Period tab restores from URL, applies the exact `from` bound, resets offset,
   clears selection and returns an exact total (the fixture crosses a boundary).
 - Every choice facet and the label-match mode chip have exact text, aria-label,
@@ -1305,6 +1393,11 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   shows the kind badge and the total is exact.
 - Attachments can be narrowed to one uploader, one MIME family, or failed
   transcodes; image/video/pdf/document/other tests cover each branch.
+- Attachments tab shows `Inline`/`Detached` badges; an inline-only card is
+  visible here while its `No card attachments` card filter remains false, tested
+  against the counter.
+- `transcode=none` matches non-video files and videos when the transcode flag is
+  disabled; the test covers both `No transcoding` states.
 - Both tabs restore period from URL; attachments apply the `from` predicate and
   return exact totals across a seeded period boundary.
 - Switching Comments→Attachments keeps the board filter and drops the comment
@@ -1398,7 +1491,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   hasAttachments/descriptionDetached, status/archived/deleted, period boundaries
   for cards/users/comments/attachments.
 - Lookup DTO: type/query/ids/limit validation; `type=admin` rejected;
-  `auditActor` returns only id/email; no secret fields in serialized responses.
+  `auditActor` returns only id/email; dependent options return parent
+  `boardId`/`columnId`; no secret fields in serialized responses.
 - `adminFiltersKey`/selection scope includes arrays, booleans and label-match
   mode.
 - Board-change helper clears dependents; conflicting deep link keeps them and
@@ -1411,10 +1505,17 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Pickers: debounce, stale-response abort, keyboard arrows/Home/End/Enter/Space/
   Escape, focus return, “Use id …”.
 - Choice facets: every radio/boolean row from §6.3 asserts control type, exact
-  chip text, URL add/remove, aria-label and EN/RU copy.
+  chip text, URL add/remove, aria-label and EN/RU copy. Draft pickers cover
+  Add → Apply, Add → Cancel, Add → Escape; radios apply immediately and close.
 - Labels: Any/All segmented control, mode chip add/remove, reset when labels
-  drop below two, keyboard.
+  drop below two, keyboard; Add → Apply/Cancel/Escape.
+- Clear search and filters produces one history entry and resets
+  search/status/period/advanced filters; remove chip is also one entry.
+- Parent conflict: same-title boards with a mismatched dependent filter show the
+  banner; a matching parent with `total:0` shows the normal empty state.
 - Empty state: no data vs filtered vs lookup error; no fabricated count.
+- `unsupported_filter` error shows the offending filter, Remove clears the
+  chip/param and retries; no active chip remains over an unfiltered list.
 - Selection reset on filter change; preserved on paging.
 - EN/RU rendering with long labels/emails; no clipping in jsdom snapshot.
 
@@ -1426,19 +1527,37 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   comments of each kind/author, commands/activity/audit with different
   actors/actions/targets.
 - Table-driven legacy matrix: every entity/pair in §5.8 returns exactly the old
-  rows and never 400; only keys outside `supported` are 400.
+  rows and never 400; only keys outside `supported` are 400. Sessions/tokens
+  keep their existing period tabs and `from`/`to` behavior.
 - Each new facet returns only matching rows; combinations are AND; arrays are
   OR; totals exact; pagination exact.
+- Exact totals + `Page X of Y` after each filter change; `offset >= total`
+  falls back to page 1 (or explicit page-gone state), never a stale page counter.
 - Label `all` returns only cards carrying every selected label, including a card
   with selected+extra labels and excluding a card missing one; never `every`.
+- `transcode=none` returns non-video rows and videos with transcoding disabled;
+  the flag-off fixture is seeded and asserted.
 - Period exact totals for cards/comments/attachments/users across a seeded
   boundary; cards/users/attachments use the new `from` predicate.
 - Cross-board/column/label mismatch returns zero (no union).
+- Parent-context conflict: same-title boards + a dependent filter from the other
+  board are classified by parent ids/`missing`; a valid same-parent combination
+  with zero rows is a normal empty result.
+- `hasAttachments`/counter: plain live file, inline-only, description-referenced
+  (`descriptionDetached=false`) and detached/hidden (`true`); admin delete and
+  bulk delete recount with both description states.
+- Attachments tab includes inline and detached rows with badges; an inline-only
+  card appears in the tab while a `No card attachments` filter still matches it
+  for the card-face count (documented reconciliation test).
+- `unsupported_filter` response includes the offending `filter` and the UI
+  Remove action clears it and retries.
 - Multi-admin board seed: both accepted ADMINs match; MEMBER and pending ADMIN
   do not.
 - Status semantics and deleted/archived inclusion documented and tested.
 - Invalid/oversized/unknown values → 400; unsupported filter outside `supported`
-  → 400; empty single filter behavior unchanged.
+  → 400; status value outside the per-entity allowlist → 400; empty single
+  filter behavior unchanged. Test both `/admin/entities/:entity` and the
+  specialized list routes.
 - Operator: `GET /admin/admins` 403; `filter-options?type=admin` rejected;
   `auditActor` returns only audit-visible id/email, no role/disabled; no master
   roster enumeration.
@@ -1451,11 +1570,15 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 - 1440/1024/390: add board/column/label via picker, chip text is a name plus the
   visible board short id, remove, clear all, reload, back/forward, `returnTo`;
-  no horizontal overflow.
+  no horizontal overflow. At 390 assert each tab/chip/sheet control has a
+  bounding box inside the viewport and is visible/reachable, not only
+  `scrollWidth <= innerWidth`.
 - Cards: assignee/priority/due/attachments/label-all; period tab; exact total
   matches seeded count; empty state.
 - Board change clears dependent filters with announcement; conflicting deep link
-  shows the conflict banner and Remove actions.
+  shows the conflict banner and Remove actions. Same-title boards render
+  distinguishable dependent chips; a valid parent combination with zero rows
+  shows the normal empty state, not the conflict banner.
 - Moderation: comment author/kind; attachment uploader/MIME; period tabs; board
   preserved across tabs.
 - Audit: actor/action/target/period; command 176.10 deep link; OPERATOR actor
@@ -1494,12 +1617,17 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
    - TASK-176.10 lands **before 181.6** for the `commandId` chip; if not, 181.6
      ships without it and adds it in a follow-up.
    - 181.1 owns `shared/src/admin.ts`, `admin-list-query.ts`,
-     `use-admin-list*.ts` and the list DTO; 181.2 owns `EntityPage.tsx`, the new
-     `filters/` directory, `HubTabs` board propagation and the base
-     `admin-i18n` keys; 181.4/5/6 own distinct `entity-configs.tsx` blocks and
-     namespaced i18n keys; 181.4 adds the `AdminCommentRowDto.kind` producer
-     change after 181.1; 181.7 owns docs. Rebase each wave on the previous one;
-     do not edit `EntityPage.tsx`/`HubTabs.tsx` in parallel.
+     `use-admin-list*.ts`, the list DTO and `admin.controller.ts` for the
+     filter-options endpoint; 181.2 owns `EntityPage.tsx`, the new `filters/`
+     directory, `HubTabs` board propagation and the base `admin-i18n` keys;
+     181.3 owns `listCards` in `admin.service.ts`; 181.4 owns `listComments`
+     there plus `listAttachments` in `admin-entities.service.ts`; 181.5 owns
+     `listUsers`/`listBoards` plus the content lists in `admin-entities`;
+     181.6 owns `listCommands`/`listAudit` plus `listActivity`; 181.4 adds the
+     `AdminCommentRowDto.kind` producer change after 181.1; 181.7 owns docs.
+     Serialize edits to `admin.service.ts`/`admin-entities.service.ts` by wave
+     and rebase each subtask; do not edit `EntityPage.tsx`/`HubTabs.tsx` in
+     parallel.
 7. Index migration (if any) is separate, measured, and documented for
    self-hosters. No data backfill.
 8. Rollback: revert the UI/endpoint; the supported matrix keeps old URLs valid,
@@ -1514,7 +1642,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 | Raw ids reappear on new surfaces | One `FilterChip` + server resolver; tests assert human labels for every entity filter |
 | Lookup latency/N+1 | Parallel resolve, 30–60 s cache, 250 ms debounce, abort stale requests, limit 20 |
 | Extra indexes lock a large table | Measure first; separate migration; document lock window; add only proven composites |
-| Ambiguous names (same board/label) | Store ids; board chips show a visible short-id suffix; other chips carry board/card context; exact filters; test duplicates |
+| Ambiguous names (same board/label) | Store ids; board and dependent chips show a visible board short-id; labels carry board context; exact filters; test duplicates |
 | Deleted/archived semantics confuse counts | Document per entity; test `All` vs `Active`; show suffix in chips |
 | Mobile overflow/regression | Bottom sheet, wrapping chips, 390 overflow assertion, status tab scroll fix |
 | Operator privacy/403 regression | `auditActor` returns audit-visible id/email only; no master roster/roles/disabled; owner-only links stay text; e2e |
@@ -1540,34 +1668,25 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 ## 14. Open product questions
 
 **Resolved in this revision:** period is a header tab (not a chip); label match
-is a visible Any/All control plus a mode chip; OPERATOR actor resolution uses
-only audit-visible actors, never a general master directory; the board facet is
-“accepted ADMIN member”, not the first-admin owner label; the no-op/old-server
-promise is replaced by atomic deployment plus an explicit `unsupported_filter`
-state; board changes clear dependents interactively and show conflicts on deep
-links.
+is a visible Any/All control plus a mode chip; choice radios apply immediately,
+while `Unassigned`/label-match draft controls commit with Apply; inline
+attachments stay visible with an `Inline` badge (and do not affect
+`hasAttachments`); OPERATOR actor resolution uses only audit-visible actors,
+never a general master directory; the board facet is “accepted ADMIN member”,
+not the first-admin owner label; the no-op/old-server promise is replaced by
+atomic deployment plus an explicit `unsupported_filter` state; board changes
+clear dependents interactively and show conflicts on deep links; hub context
+preserves only `boardId`; deleted entities keep the name + suffix; the Clear
+copy is “Clear search and filters”; v1 shows no filter-option counts;
+sessions/tokens keep their existing period tabs and add no new user/status
+filters.
 
-1. **Hub context:** preserve only `boardId` across tabs (recommended) or reset
-   everything? If preserving, should search/status also follow?
-2. **Apply model:** draft + Apply for multi-select (recommended) or immediate
-   apply per checkbox? Immediate apply is faster but creates history spam.
-3. **Priority null:** should “Medium” include unset cards (recommended, matches
+1. **Priority null:** should “Medium” include unset cards (recommended, matches
    `DEFAULT_CARD_PRIORITY`) or should “Unset” be a separate visible option?
-4. **Inline attachments:** keep them in the admin list with a badge, hide them by
-   default, or add an `inline` facet in a follow-up? Do not let them silently
-   change `hasAttachments` counts.
-5. **Checklist items:** keep TASK-176.12 deferred (recommended) or add a tab
+2. **Checklist items:** keep TASK-176.12 deferred (recommended) or add a tab
    with board/card/checklist/done? Requires support evidence.
-6. **Sessions/tokens:** is a truthful status filter worth a separate subtask, or
-   should Access remain search/period-only in this task?
-7. **Deleted entities:** show the name with a `(deleted)` suffix and an active
-   empty result (recommended), or resolve to “unknown” immediately?
-8. **Clear all copy:** “Clear search and filters” (recommended, because it
-   resets search/status/period) or keep “Clear filters” and leave search?
-9. **Filter option counts:** confirm that v1 shows none (recommended) to avoid
-   expensive/fabricated aggregates.
-10. **Board period filter:** add a created/updated period for boards now or defer
-    until support asks?
+3. **Board period filter:** add a created/updated period for boards now or defer
+   until support asks?
 
 ## 15. Definition of Done
 
@@ -1576,15 +1695,25 @@ links.
   member), columns, labels, checklists and card links; speculative facets are
   not silently added.
 - Every ID/name filter chip is human-readable via the lookup endpoint; board
-  chips include a visible short-id suffix; missing/deleted values have an
-  explicit fallback; no raw-id chip remains where a name exists.
+  chips include a visible short-id suffix; dependent chips carry parent
+  board/column ids; missing/deleted values have an explicit fallback; no raw-id
+  chip remains where a name exists.
+- Parent-context conflicts are distinguished from legitimate zero-result lists
+  in the UI and tested for same-title boards.
 - The supported/offered matrix in §5.8 is enforced in UI and API: every legacy
   176.5/6 pair still works, 400 only outside `supported`, and no old-server
   mixed-version promise remains. Board changes clear dependents with an
   announcement; conflicting deep links show a Remove conflict.
 - Period is a header tab on cards/users/comments/attachments (with `from`/`to`
   predicates where missing), never a chip; choice facets and label-match mode
-  have exact controls, chips, aria-labels and tests.
+  have exact controls, chips, aria-labels and tests. Sessions/tokens keep their
+  existing period tabs.
+- Attachments show `Inline`/`Detached` badges; `attachmentCount` and
+  `recountCardAttachments` use `descriptionDetached=false`; admin delete/bulk
+  and inline-only reconciliation tests pass.
+- Per-entity status allowlists and `unsupported_filter` (with the offending
+  filter) are enforced by the shared guard on generic and specialized routes;
+  the UI Remove action is tested.
 - URL round-trip, deep links, `returnTo`, pagination and bulk selection remain
   truthful; filter changes reset the page and clear selection; totals are exact.
 - Multi-value/boolean/enum validation is strict; errors are actionable; no

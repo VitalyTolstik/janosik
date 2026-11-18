@@ -5099,7 +5099,7 @@ apply-window — намеренное поведение; e2e уже обнов�
 
 ### 7.30. Фильтры админских списков (TASK-181)
 
-> **Статус:** запланировано (2026-11-19; ревизия 2 после review). База — `main` @ `002a31ec`;
+> **Статус:** запланировано (2026-11-19; ревизия 3 после product/technical review). База — `main` @ `002a31ec`;
 > TASK-176.1–176.7 уже в main (176.5/176.6 — PR #268), 176.8–176.10 остаются
 > review-ветками и не блокируют остальные фильтры; `commandId`-чип появится
 > только после merge 176.10.
@@ -5127,12 +5127,14 @@ apply-window — намеренное поведение; e2e уже обнов�
 - Единый **supported/offered matrix**: UI-парсер, запрос, чипы и backend-валидация
   читают один реестр; legacy-пары 176.5/6 остаются supported, 400 — только вне
   матрицы; неподдерживаемый фильтр не может стать no-op чипом.
-- Кнопка **Filters**, popover/bottom sheet, add/remove, Clear all, клавиатура,
-  EN/RU, 390 px без горизонтального скролла.
+- Кнопка **Filters**, popover/bottom sheet, add/remove, Clear search and filters,
+  клавиатура, EN/RU, 390 px без горизонтального скролла.
 - Человеческие чипы через read-only `GET /admin/filter-options`: название
   доски/колонки/метки/карточки, имя/email пользователя, явный fallback для
-  удалённых/неизвестных id; board-чип с видимым short-id; сырой id — только для
-  command id и missing.
+  удалённых/неизвестных id; board-чип с видимым short-id, dependent-чипы — с
+  parent board/column; сырой id — только для command id и missing.
+- Inline-вложения видны в moderation tab с badge, но не входят в card-face
+  `hasAttachments`; `descriptionDetached=false` — единственный счётчик.
 - Карточки: board/column/label (any/all), assignee (+unassigned), priority,
   due (overdue/soon/none), has-attachments, status, period.
 - Период — всегда header-tab, не чип: cards/users/comments/attachments получают
@@ -5172,13 +5174,17 @@ Wave 2: **181.4 / 181.5 / 181.6** можно вести параллельно �
 
 **DoD.** Реализован подтверждённый инвентарь §5.7 spec и supported/offered
 матрица §5.8: legacy 176.5/6-пары работают, 400 только вне матрицы; чипы везде
-человеческие (board-чип с видимым short-id), no-op фильтры невозможны; период —
-header-tab на cards/users/comments/attachments с `from`/`to`; choice facets и
-label any/all имеют control/chip/aria/EN-RU; смена board чистит зависимые
-фильтры, конфликтный deep link показывает Remove; deep links/`returnTo`/
-пагинация/выделение честные; multi-value и boolean валидируются; `auditActor`
-не отдаёт roster/roles/disabled и недоступен как `type=admin`; есть
-query-plan/замеры, индексы только по необходимости; EN/RU, 1440/1024/390,
+человеческие (board-чип с видимым short-id, зависимые — с parent board/column),
+no-op фильтры невозможны; период — header-tab на cards/users/comments/attachments
+с `from`/`to`, sessions/tokens сохраняют свои period tabs; choice facets и
+label any/all имеют control/chip/aria/EN-RU; `hasAttachments`/recount учитывают
+`descriptionDetached=false`, inline rows видны с badge; смена board чистит
+зависимые фильтры, parent-conflict отличается от легитимного zero; deep links/
+`returnTo`/пагинация/выделение честные; multi-value и boolean валидируются;
+`auditActor` не отдаёт roster/roles/disabled и недоступен как `type=admin`;
+status-allowlists и `unsupported_filter` (с offending filter) общие для generic
+и specialized routes; есть query-plan/замеры на определённом seed, индексы
+только по необходимости; EN/RU, 1440/1024/390 с visibility/reachability,
 keyboard/focus/screen-reader; `format:check`, lint, tsc, unit/shared/backend
 e2e/browser зелёные без ослабления тестов.
 
@@ -5187,9 +5193,11 @@ e2e/browser зелёные без ослабления тестов.
 176.10. 177.5 остаётся владельцем shares, 180.9 — admin mobile/nav; **180.9
 мержить до 181.2** (иначе rebase + 390-прогон), **176.10 — до 181.6**. 181.1
 владеет shared/list DTO/URL-хуками; 181.2 — `EntityPage`/`HubTabs`/filters
-dir/i18n base; 181.4–6 — своими блоками `entity-configs` и namespace-keys;
-181.7 — docs. Не редактировать `EntityPage`/`HubTabs` параллельно. Индексы —
-отдельной миграцией после замера.
+dir/i18n base; **181.3 — `listCards`; 181.4 — `listComments`+`listAttachments`;
+181.5 — `listUsers`/`listBoards`+content lists; 181.6 — `listCommands`/`listAudit`+
+`listActivity`**; правки в `admin.service.ts`/`admin-entities.service.ts`
+сериализуются по волнам, `EntityPage`/`HubTabs` не редактировать параллельно;
+181.7 — docs. Индексы — отдельной миграцией после замера.
 
 ---
 
