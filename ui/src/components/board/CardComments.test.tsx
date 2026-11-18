@@ -647,4 +647,46 @@ describe("CardComments", () => {
     expect(screen.getByTestId("comment-edited")).toBeInTheDocument();
     expect(screen.queryByText("Before")).not.toBeInTheDocument();
   });
+
+  it("refreshes an edited comment that lives on a loaded older page (L36)", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const seeded = Array.from({ length: 60 }, (_, index) =>
+      comment({
+        id: `comment-${index}`,
+        text: `Comment ${index}`,
+        createdAt: 1_700_000_000_000 + index,
+      }),
+    );
+    server.seedComments("card-1", seeded);
+    renderComments(server);
+    await screen.findByText("Comment 0");
+
+    fireEvent.click(await screen.findByTestId("comments-show-older"));
+    expect(await screen.findByText("Comment 59")).toBeInTheDocument();
+    await waitStream(server);
+
+    act(() => {
+      server.seedComments(
+        "card-1",
+        seeded.map((row) =>
+          row.id === "comment-55"
+            ? { ...row, text: "Edited on page two", editedAt: Date.now() }
+            : row,
+        ),
+      );
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-4",
+        boardId: "b-1",
+        cardId: "card-1",
+        actorId: "user-1",
+        at: Date.now(),
+        kind: "comment_updated",
+        detail: "comment-55",
+      });
+    });
+
+    expect(await screen.findByText("Edited on page two")).toBeInTheDocument();
+    expect(screen.queryByText("Comment 55")).not.toBeInTheDocument();
+  });
 });
