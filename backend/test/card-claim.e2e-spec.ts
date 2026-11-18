@@ -25,6 +25,8 @@ describe("Card claim gate (e2e)", () => {
   let ownerId: string;
   let memberToken: string;
   let memberId: string;
+  let memberPatA: string;
+  let memberPatB: string;
   let boardId: string;
 
   beforeAll(async () => {
@@ -76,6 +78,9 @@ describe("Card claim gate (e2e)", () => {
       .post(`/api/v1/invitations/${invitation.id}/accept`)
       .set(auth(memberToken))
       .expect(200);
+
+    memberPatA = await createPat("claim-pat-a");
+    memberPatB = await createPat("claim-pat-b");
   });
 
   afterAll(async () => {
@@ -85,6 +90,15 @@ describe("Card claim gate (e2e)", () => {
 
   const server = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+  function createPat(name: string): Promise<string> {
+    return server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(memberToken))
+      .send({ name, expiresAt: null, scopePreset: "worker" })
+      .expect(201)
+      .then((res) => res.body.token as string);
+  }
 
   function register(email: string, displayName: string): Promise<string> {
     return server()
@@ -171,6 +185,25 @@ describe("Card claim gate (e2e)", () => {
 
   it("releases the claim", async () => {
     await claim(null, null).expect(200);
+    const current = await card();
+    expect(current.claimedBy).toBeUndefined();
+    expect(current.leaseUntil).toBeUndefined();
+  });
+
+  it("only the live holder may clear a live claim (M7)", async () => {
+    await claim(memberId, Date.now() + 900_000, memberPatA).expect(200);
+    expect((await card()).claimedBy).toBe(memberId);
+
+    // Another board member (an ADMIN here) cannot release it.
+    await claim(null, null).expect(400);
+    // The owner's browser session is still a different holder.
+    await claim(null, null, memberToken).expect(400);
+    // A second PAT of the same user is a different holder too.
+    await claim(null, null, memberPatB).expect(400);
+    expect((await card()).claimedBy).toBe(memberId);
+
+    // The token that holds the lease can clear it.
+    await claim(null, null, memberPatA).expect(200);
     const current = await card();
     expect(current.claimedBy).toBeUndefined();
     expect(current.leaseUntil).toBeUndefined();

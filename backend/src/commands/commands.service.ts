@@ -951,7 +951,13 @@ export class CommandsService {
     const { boardId, entry, board, attribution } = params;
     const db = this.prisma as unknown as Prisma.TransactionClient;
     await this.assertAssigneeIsBoardMember(db, boardId, entry.action);
-    await this.assertClaimIsFree(db, boardId, entry.action, attribution);
+    await this.assertClaimIsFree(
+      db,
+      boardId,
+      entry.action,
+      attribution,
+      params.actorId,
+    );
     await this.assertBoardManagement(
       db,
       boardId,
@@ -1111,7 +1117,7 @@ export class CommandsService {
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
-    await this.assertClaimIsFree(tx, boardId, action, attribution);
+    await this.assertClaimIsFree(tx, boardId, action, attribution, actorId);
 
     await this.assertBoardManagement(tx, boardId, actorId, action.type);
 
@@ -1642,20 +1648,29 @@ export class CommandsService {
   }
 
   /**
-   * Atomic claim guard (TASK-157): a `CLAIM_CARD` may not take a lease that
-   * another member still holds. A lapsed lease (`leaseUntil` in the past) is
-   * free — that self-healing is the point of a lease. The read and the reject
-   * run inside the same board-write transaction, so two agents racing for one
-   * card cannot both win; the loser gets a `400` naming the current holder.
+   * Atomic claim guard (TASK-157): a `CLAIM_CARD` may not take or clear a
+   * lease that another live holder still owns. A lapsed lease (`leaseUntil`
+   * in the past) is free — that self-healing is the point of a lease. The read
+   * and the reject run inside the same board-write transaction, so two agents
+   * racing for one card cannot both win; the loser gets a `400` naming the
+   * current holder.
+   *
+   * TASK-180.2 M7: a release (`claimedBy: null`) used to short-circuit before
+   * reading the row, so any board member could clear a colleague's live claim.
+   * A release is now holder-only, compared by the same identity that claimed:
+   * agent session, then API token, then the legacy user id. Two PATs of one
+   * account are distinct holders, and a browser session cannot clear a PAT's
+   * lease (or vice versa). Board-ADMIN override is intentionally not part of
+   * this command path; the admin release flow belongs to TASK-176/180.4.
    */
   private async assertClaimIsFree(
     tx: Prisma.TransactionClient,
     boardId: string,
     action: BoardAction,
     attribution: RequestAttribution,
+    actorId: string,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
-    if (action.claimedBy === null || action.leaseUntil === null) return;
     const card = await tx.card.findFirst({
       where: { id: action.cardId, column: { boardId } },
       select: {
@@ -1673,6 +1688,32 @@ export class CommandsService {
     ) {
       return;
     }
+    const releasing = action.claimedBy === null || action.leaseUntil === null;
+    const refuse = (): never => {
+      throw new BadRequestException({
+        message: `Card is claimed by another member until ${card.leaseUntil!.toISOString()}`,
+        field: "action.claimedBy",
+      });
+    };
+    if (releasing) {
+      // The stored holder and the authenticated caller must be the same
+      // *kind* of identity: a second PAT of the owner is not the holder, and
+      // neither is the owner's browser session when a PAT holds the lease.
+      const holder =
+        card.claimedBySessionId !== null
+          ? { kind: "session", id: card.claimedBySessionId }
+          : card.claimedByTokenId !== null
+            ? { kind: "token", id: card.claimedByTokenId }
+            : { kind: "user", id: card.claimedBy };
+      const caller =
+        attribution.agentSessionId !== null
+          ? { kind: "session", id: attribution.agentSessionId }
+          : attribution.apiTokenId !== null
+            ? { kind: "token", id: attribution.apiTokenId }
+            : { kind: "user", id: actorId };
+      if (holder.kind !== caller.kind || holder.id !== caller.id) refuse();
+      return;
+    }
     // TASK-166 (D23): compare the session first, then the token, then the
     // legacy user id. Two PATs of one owner are different claim holders.
     const sameHolder =
@@ -1681,12 +1722,7 @@ export class CommandsService {
         : card.claimedByTokenId !== null
           ? card.claimedByTokenId === attribution.apiTokenId
           : card.claimedBy === action.claimedBy;
-    if (!sameHolder) {
-      throw new BadRequestException({
-        message: `Card is claimed by another member until ${card.leaseUntil.toISOString()}`,
-        field: "action.claimedBy",
-      });
-    }
+    if (!sameHolder) refuse();
   }
 
   /**
