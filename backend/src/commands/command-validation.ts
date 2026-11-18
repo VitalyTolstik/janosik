@@ -208,6 +208,12 @@ function stableStringify(value: unknown): string {
  * the stored copy may carry the server-clamped value). `boardId`, when given,
  * is the route board: taking it for the stored payload too keeps an honest
  * retry matching a row written before ingress stamping existed.
+ *
+ * L18: `RESTORE_CARD` drops an assignee who is no longer a board member
+ * before it is stored. That mutation is derived from membership, not from the
+ * request, so the assignee is not part of the fingerprint on either side —
+ * otherwise the first apply stores the stripped payload and an honest retry
+ * with the original body answers a false `idempotency_conflict`.
  */
 export function actionFingerprint(action: unknown, boardId?: string): string {
   if (action === null || typeof action !== "object") {
@@ -218,6 +224,16 @@ export function actionFingerprint(action: unknown, boardId?: string): string {
   };
   if (boardId !== undefined) rest.boardId = boardId;
   delete rest.at;
+  if (
+    rest.type === "RESTORE_CARD" &&
+    typeof rest.card === "object" &&
+    rest.card !== null &&
+    !Array.isArray(rest.card)
+  ) {
+    const card: Record<string, unknown> = { ...rest.card };
+    delete card.assigneeId;
+    rest.card = card;
+  }
   return stableStringify(rest);
 }
 

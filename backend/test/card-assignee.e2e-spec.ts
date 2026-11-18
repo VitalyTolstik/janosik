@@ -198,6 +198,51 @@ describe("Card assignee gate (e2e)", () => {
     await assign(null, memberToken).expect(200);
   });
 
+  it("replays RESTORE_CARD after the removed assignee was stripped (L18)", async () => {
+    const memberId = await userIdOf(MEMBER_EMAIL);
+    await assign(memberId).expect(200);
+    const board = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(ownerToken))
+      .expect(200)
+      .then((res) => res.body as Board);
+    const snapshot = board.cards["card-1"];
+    expect(snapshot.assigneeId).toBe(memberId);
+    const columnId = board.columns.find((column) =>
+      column.cardIds.includes("card-1"),
+    )?.id;
+    expect(columnId).toBeDefined();
+
+    await command({ type: "DELETE_CARD", cardId: "card-1" });
+    await server()
+      .delete(`/api/v1/boards/${boardId}/members/${memberId}`)
+      .set(auth(ownerToken))
+      .expect(200);
+
+    const commandId = randomUUID();
+    const action = {
+      type: "RESTORE_CARD",
+      card: snapshot,
+      columnId,
+      index: 0,
+      boardId,
+      at: Date.now(),
+    } as unknown as BoardAction;
+    const send = () =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(ownerToken))
+        .send({ commandId, action });
+    const first = await send().expect(200);
+    // The stored payload was stripped server-side; the original body must
+    // still be recognized as the same command instead of a false 409.
+    const retry = await send().expect(200);
+    expect(retry.body.seq).toBe(first.body.seq);
+
+    const restored = await assignedCard();
+    expect(restored.assigneeId).toBeUndefined();
+  });
+
   async function wipe(db: PrismaService): Promise<void> {
     await db.attachment.deleteMany();
     await db.cardLink.deleteMany();
