@@ -168,6 +168,26 @@ describe("IdempotencyService (TASK-166.4)", () => {
     });
   });
 
+  it("releases the key after a proven P2028 transaction rollback (L24)", async () => {
+    const prisma = makePrisma();
+    prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });
+    const service = new IdempotencyService(prisma as unknown as PrismaService);
+    const timeout = Object.assign(new Error("Transaction already closed"), {
+      code: "P2028",
+    });
+    await expect(
+      service.run({
+        ...base,
+        run: async () => {
+          throw timeout;
+        },
+      }),
+    ).rejects.toBe(timeout);
+    expect(prisma.idempotencyRecord.delete).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+    });
+  });
+
   it("retains the key when the outcome may have committed", async () => {
     const prisma = makePrisma();
     prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });

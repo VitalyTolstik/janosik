@@ -1096,7 +1096,14 @@ export class BoardsService {
       // A large envelope can outlive the budget; that is a retryable overload,
       // not a 500 (TASK-156).
       if (isTransactionTimeout(error)) {
-        throw new ServiceUnavailableException("Import timed out; please retry");
+        // L24: the transaction rolled back; the idempotency key must be
+        // released so the caller can retry immediately instead of waiting
+        // out the 24 h in-progress TTL.
+        const timeout = new ServiceUnavailableException(
+          "Import timed out; please retry",
+        );
+        markGuaranteedRollback(timeout);
+        throw timeout;
       }
       // TASK-166.9: the board cap is also a quota attention event.
       await this.attention.notifyLimitExceeded(userId, error, {
