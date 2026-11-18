@@ -6,6 +6,7 @@ import {
   COVER_GRADIENTS,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
+  isCardLinkType,
   LIMITS,
   OAUTH_PROVIDER_IDS,
 } from "@janosik/shared";
@@ -2155,10 +2156,46 @@ export class FakeAdminServer {
       itemId?: string;
       newChecklistId?: string;
       newItemId?: string;
+      title?: string;
+      text?: string;
       linkId?: string;
       targetCardId?: string;
       linkType?: CardLinkType;
     };
+    const invalid = (
+      field: string,
+      message: string,
+    ): { status: number; body: Record<string, unknown> } => ({
+      status: 400,
+      body: { message, field },
+    });
+    if (action.type === "ADD_CHECKLIST" || action.type === "RENAME_CHECKLIST") {
+      const title = relation.title?.trim() ?? "";
+      if (title === "" || title.length > LIMITS.checklistTitle) {
+        return invalid(
+          "action.title",
+          `Checklist title must be 1-${LIMITS.checklistTitle} characters`,
+        );
+      }
+    }
+    if (
+      action.type === "ADD_CHECKLIST_ITEM" ||
+      action.type === "RENAME_CHECKLIST_ITEM"
+    ) {
+      const text = relation.text?.trim() ?? "";
+      if (text === "" || text.length > LIMITS.checklistItem) {
+        return invalid(
+          "action.text",
+          `Checklist item text must be 1-${LIMITS.checklistItem} characters`,
+        );
+      }
+    }
+    if (
+      (action.type === "ADD_CARD_LINK" || action.type === "REMOVE_CARD_LINK") &&
+      !isCardLinkType(relation.linkType)
+    ) {
+      return invalid("action.linkType", "Unknown card link type");
+    }
     const card = this.state.cards.find((entry) => entry.id === relation.cardId);
     if (
       card === undefined ||
@@ -2323,7 +2360,7 @@ export class FakeAdminServer {
           };
         }
         const liveLinks = this.state.cardLinks.filter(
-          (entry) => entry.deletedAt === null,
+          (entry) => entry.boardId === boardId && entry.deletedAt === null,
         );
         const pairKey =
           relation.cardId < target.id

@@ -59,7 +59,8 @@
         "dist/assets/AdminApp-*.js",
         "dist/assets/CardFieldsPanel-*.js",
         "dist/assets/CardRelationsPanel-*.js",
-        "dist/assets/ui-*.js"
+        "dist/assets/ui-*.js",
+        "dist/assets/links-*.js"
       ],
       "limit": "112 KB",
       "gzip": true

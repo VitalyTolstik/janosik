@@ -229,17 +229,23 @@ fresh command per change:
 | Add, toggle, rename or delete an item | `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM` |
 | Add or remove a card link | `ADD_CARD_LINK`, `REMOVE_CARD_LINK` |
 
-Checklists are capped at 20 per card and 100 items per checklist; deleted
-checklists and items are filtered out of the editor. Deleting a checklist asks
-for confirmation. Links show both directions with the stored type and a
-readable phrase: outgoing `blocks` reads as “blocks”, incoming as “is blocked
-by” (the same reverse phrasing is offered when adding: relates to, blocks, is
-blocked by, duplicates, is duplicated by). Incoming rows are removed through
-their holder card, not through the viewed card. The target combobox is loaded
-from the board content and excludes the current card, archived cards and
-already-linked pairs; a card cannot exceed 50 outgoing links, and a `blocks`
-edge that would create a cycle is refused. Dangling or soft-deleted link rows
-stay readable, and a live dangling row can still be removed to free the cap.
+Checklists are capped at 20 per card and 100 items per checklist; the server
+also refuses a fresh add at either cap with `409 conflict: "wip"` before any
+command or audit row is written. Deleted checklists and items are filtered out
+of the editor. Deleting a checklist asks for confirmation. Links show both
+directions with the stored type and a readable phrase: outgoing `blocks` reads
+as “blocks”, incoming as “is blocked by” (the same reverse phrasing is offered
+when adding: relates to, blocks, is blocked by, duplicates, is duplicated by).
+The counters separate the viewed card's live outgoing rows (which own its
+50-link cap) from incoming rows. With a reverse option the form shows the
+selected target holder's own outgoing count and cap. Incoming rows are removed
+through their holder card, not through the viewed card. The target combobox is
+loaded lazily from the board content when the link editor opens and excludes
+the current card, archived cards and already-linked pairs; a `blocks` edge that
+would create a cycle is refused. Checklist/item commands do not refetch the
+board or reset the link draft; link commands do. Dangling or soft-deleted link
+rows stay readable, and a live dangling row can still be removed to free the
+cap.
 
 Deleted cards hide the editor. Archived cards keep checklist and link editing;
 only moving an archived card is blocked. Every accepted change appears as a

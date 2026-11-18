@@ -936,8 +936,13 @@ const en = {
   "admin.cards.relations.boardFailed": "Could not load the board cards.",
   "admin.cards.relations.loadFailed":
     "Could not load the checklist and link editor. Reload the page to try again.",
-  "admin.cards.relations.linksCount":
-    "{count} of {limit} outgoing links on the holder card",
+  "admin.cards.relations.outgoingCount":
+    "{count} of {limit} outgoing links on this card",
+  "admin.cards.relations.incomingCount": "{count} incoming links",
+  "admin.cards.relations.holderCap":
+    "“{title}” holds {count} of {limit} outgoing links",
+  "admin.cards.relations.renameChecklistLabel": "Rename checklist “{title}”",
+  "admin.cards.relations.renameItemLabel": "Rename item “{text}”",
   "admin.cards.relations.remove": "Remove",
   "admin.cards.relations.removeLinkLabel": "Remove link to “{title}”",
   "admin.cards.relations.dangling": "Card deleted",
@@ -2307,8 +2312,14 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.relations.boardFailed": "Не удалось загрузить карточки доски.",
   "admin.cards.relations.loadFailed":
     "Не удалось загрузить редактор чек-листов и связей. Перезагрузите страницу.",
-  "admin.cards.relations.linksCount":
-    "{count} из {limit} исходящих связей у карточки-владельца",
+  "admin.cards.relations.outgoingCount":
+    "{count} из {limit} исходящих связей у этой карточки",
+  "admin.cards.relations.incomingCount": "{count} входящих связей",
+  "admin.cards.relations.holderCap":
+    "«{title}»: {count} из {limit} исходящих связей",
+  "admin.cards.relations.renameChecklistLabel":
+    "Переименовать чек-лист «{title}»",
+  "admin.cards.relations.renameItemLabel": "Переименовать пункт «{text}»",
   "admin.cards.relations.remove": "Убрать",
   "admin.cards.relations.removeLinkLabel": "Убрать связь с «{title}»",
   "admin.cards.relations.dangling": "Карточка удалена",

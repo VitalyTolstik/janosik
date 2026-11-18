@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowDownLeft,
@@ -135,6 +135,9 @@ const LINK_OPTIONS: LinkOption[] = [
 
 const cardHref = (id: string) => `/admin/cards/${id}`;
 
+/** Keep `Date.now()` out of the component body for the React purity lint. */
+const commandTimestamp = () => Date.now();
+
 /**
  * The checklist/item editor. Local drafts live here so the parent keeps only
  * the busy key and the command boundary. Server data is the source of truth:
@@ -174,10 +177,6 @@ function ChecklistBlock({
     id: string;
     text: string;
   } | null>(null);
-
-  useEffect(() => {
-    if (!renaming) setTitleDraft(checklist.title);
-  }, [checklist.title, renaming]);
 
   const titleValidation =
     titleDraft.trim() === ""
@@ -293,6 +292,9 @@ function ChecklistBlock({
               variant="ghost"
               className="h-6 px-1.5 text-[11px]"
               disabled={busy !== null}
+              aria-label={t("admin.cards.relations.renameChecklistLabel", {
+                title: checklist.title,
+              })}
               data-testid={`admin-checklist-rename-${checklist.id}`}
               onClick={() => {
                 setTitleDraft(checklist.title);
@@ -428,6 +430,9 @@ function ChecklistBlock({
                       variant="ghost"
                       className="h-6 px-1.5 text-[11px]"
                       disabled={busy !== null}
+                      aria-label={t("admin.cards.relations.renameItemLabel", {
+                        text: item.text,
+                      })}
                       data-testid={`admin-checklist-item-rename-${item.id}`}
                       onClick={() =>
                         setRenamingItem({ id: item.id, text: item.text })
@@ -511,9 +516,12 @@ export function CardRelationsPanel({
 
   const [board, setBoard] = useState<BoardAggregate | null>(null);
   const [boardError, setBoardError] = useState(false);
-  const [boardReloadKey, setBoardReloadKey] = useState(0);
+  const [boardLoading, setBoardLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const boardRequestRef = useRef(0);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const targetInputRef = useRef<HTMLInputElement>(null);
 
   const [newChecklist, setNewChecklist] = useState("");
   const [confirmChecklist, setConfirmChecklist] = useState<
@@ -525,23 +533,52 @@ export function CardRelationsPanel({
   const [targetId, setTargetId] = useState<string | null>(null);
   const [linkOptionKey, setLinkOptionKey] =
     useState<LinkOption["key"]>("relatesTo");
+  const [rawCursor, setCursor] = useState(0);
 
-  useEffect(() => {
-    let active = true;
-    setBoard(null);
+  /**
+   * Load the board only when the link editor needs targets. Checklist/item
+   * commands never touch this data, so they must not refetch it or reset the
+   * link draft. Link commands do refetch: the target list, pair/cap/cycle
+   * checks and dangling state all derive from the aggregate.
+   */
+  const loadBoard = () => {
+    const request = ++boardRequestRef.current;
+    setBoardLoading(true);
     setBoardError(false);
     adminApi
       .getBoardContent(card.boardId)
       .then((next) => {
-        if (active) setBoard(next);
+        if (boardRequestRef.current !== request) return;
+        setBoard(next);
+        setBoardLoading(false);
       })
       .catch(() => {
-        if (active) setBoardError(true);
+        if (boardRequestRef.current !== request) return;
+        setBoardError(true);
+        setBoardLoading(false);
       });
-    return () => {
-      active = false;
-    };
-  }, [card.boardId, boardReloadKey]);
+  };
+
+  const openLinkForm = () => {
+    setLinkOpen(true);
+    if (board === null) loadBoard();
+  };
+
+  const closeLinkForm = () => {
+    setLinkOpen(false);
+    setTargetId(null);
+    setLinkQuery("");
+    setLinkOptionKey("relatesTo");
+    setCursor(0);
+    requestAnimationFrame(() =>
+      openButtonRef.current?.focus({ preventScroll: true }),
+    );
+  };
+
+  useEffect(() => {
+    if (!linkOpen) return;
+    targetInputRef.current?.focus({ preventScroll: true });
+  }, [linkOpen]);
 
   const liveChecklists = useMemo(
     () => checklists.filter((checklist) => checklist.deletedAt === null),
@@ -569,6 +606,10 @@ export function CardRelationsPanel({
       .slice(0, 8);
   }, [board, card.id, linkQuery]);
 
+  // A query can shrink the list under the old cursor; clamp at render time
+  // instead of syncing state from an effect.
+  const cursor = Math.min(rawCursor, Math.max(0, suggestions.length - 1));
+
   const selectedTarget =
     board !== null && targetId !== null ? board.cards[targetId] : undefined;
   const holderId =
@@ -579,8 +620,16 @@ export function CardRelationsPanel({
         : selectedTarget.id;
   const holder =
     holderId === null || board === null ? undefined : board.cards[holderId];
-  const outgoingCount = holder?.links?.length ?? 0;
-  const linkAtCap = outgoingCount >= LIMITS.linksPerCard;
+
+  // The cap belongs to the *holder* row. For the viewed card the detail DTO
+  // is the freshest source (a checklist command must not touch it); for a
+  // reverse option the holder is the target and the board aggregate owns it.
+  const liveOutgoing = linksOut.filter((link) => link.deletedAt === null);
+  const liveIncoming = linksIn.filter((link) => link.deletedAt === null);
+  const holderOutgoingCount =
+    holderId === card.id ? liveOutgoing.length : (holder?.links?.length ?? 0);
+  const linkAtCap = holderOutgoingCount >= LIMITS.linksPerCard;
+  const reverseHolder = holderId !== null && holderId !== card.id;
   // A reverse option stores the row on the target: the edge runs from the
   // target back to the viewed card, not from the target to itself.
   const otherEndId =
@@ -664,12 +713,11 @@ export function CardRelationsPanel({
         action: {
           ...action,
           cardId: holderCardId,
-          at: Date.now(),
+          at: commandTimestamp(),
         } as BoardAction,
       });
       toast.success(t(successKey));
       onSaved();
-      setBoardReloadKey((value) => value + 1);
       return true;
     } catch (cause) {
       setError(errorText(cause, key));
@@ -804,23 +852,20 @@ export function CardRelationsPanel({
       setError(t("admin.cards.relations.errorCycle"));
       return;
     }
-    if (
-      await send(
-        "link:add",
-        {
-          type: "ADD_CARD_LINK",
-          linkId: crypto.randomUUID(),
-          targetCardId: holderId === card.id ? selectedTarget.id : card.id,
-          linkType: linkOption.linkType,
-        },
-        "admin.cards.relations.toast.linkAdded",
-        holderId,
-      )
-    ) {
-      setLinkOpen(false);
-      setLinkQuery("");
-      setTargetId(null);
-      setLinkOptionKey("relatesTo");
+    const saved = await send(
+      "link:add",
+      {
+        type: "ADD_CARD_LINK",
+        linkId: crypto.randomUUID(),
+        targetCardId: holderId === card.id ? selectedTarget.id : card.id,
+        linkType: linkOption.linkType,
+      },
+      "admin.cards.relations.toast.linkAdded",
+      holderId,
+    );
+    if (saved) {
+      loadBoard();
+      closeLinkForm();
     }
   };
 
@@ -831,7 +876,7 @@ export function CardRelationsPanel({
     if (!isCardLinkType(link.type)) return false;
     const holderCardId = direction === "out" ? card.id : link.otherCardId;
     const otherCardId = direction === "out" ? link.otherCardId : card.id;
-    return send(
+    const saved = await send(
       `link:remove:${link.id}`,
       {
         type: "REMOVE_CARD_LINK",
@@ -842,6 +887,8 @@ export function CardRelationsPanel({
       "admin.cards.relations.toast.linkRemoved",
       holderCardId,
     );
+    if (saved) loadBoard();
+    return saved;
   };
 
   const canRemoveLink = (
@@ -851,8 +898,9 @@ export function CardRelationsPanel({
     if (!isCardLinkType(link.type) || link.deletedAt !== null) return false;
     if (direction === "in") {
       // The row is stored on the other card; removing it needs that holder to
-      // be live. A deleted holder is readable but not removable from here.
-      return board !== null && board.cards[link.otherCardId] !== undefined;
+      // be live. Before the lazy board aggregate arrives, allow the attempt —
+      // the backend guard still refuses a deleted holder with 404.
+      return board === null || board.cards[link.otherCardId] !== undefined;
     }
     return true;
   };
@@ -871,11 +919,54 @@ export function CardRelationsPanel({
     return t("admin.cards.relations.phrase.relatesTo");
   };
 
+  const chooseTarget = (target: { id: string }) => {
+    setTargetId(target.id);
+    setLinkQuery("");
+    setCursor(0);
+  };
+
+  const handleTargetKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "ArrowDown") {
+      if (suggestions.length === 0) return;
+      event.preventDefault();
+      setCursor((rawCursor + 1) % suggestions.length);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      if (suggestions.length === 0) return;
+      event.preventDefault();
+      setCursor((rawCursor - 1 + suggestions.length) % suggestions.length);
+      return;
+    }
+    if (event.key === "Enter") {
+      // Enter picks the highlighted target; with a selection already made
+      // the form's own submit handles the command.
+      if (targetId !== null) return;
+      const hit = suggestions[cursor];
+      if (hit !== undefined) {
+        event.preventDefault();
+        chooseTarget(hit);
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (targetId !== null || linkQuery.trim() !== "") {
+        setTargetId(null);
+        setLinkQuery("");
+        setCursor(0);
+      } else {
+        closeLinkForm();
+      }
+    }
+  };
+
   const linkRows = [
     ...linksOut.map((link) => ({ direction: "out" as const, link })),
     ...linksIn.map((link) => ({ direction: "in" as const, link })),
   ];
-  const liveLinkRows = linkRows.filter((row) => row.link.deletedAt === null);
 
   return (
     <Panel className="min-w-0 space-y-4 p-3" data-testid="admin-card-relations">
@@ -991,12 +1082,17 @@ export function CardRelationsPanel({
             {t("admin.cards.relations.links")}
           </p>
           <Button
+            ref={openButtonRef}
             size="sm"
             variant="outline"
             className="h-7 px-2 text-[11px]"
             data-testid="admin-card-link-open"
+            aria-expanded={linkOpen}
             disabled={busy !== null}
-            onClick={() => setLinkOpen((open) => !open)}
+            onClick={() => {
+              if (linkOpen) closeLinkForm();
+              else openLinkForm();
+            }}
           >
             <Link2 className="h-3.5 w-3.5" aria-hidden />
             {t("admin.cards.relations.linkCard")}
@@ -1012,7 +1108,7 @@ export function CardRelationsPanel({
             <button
               type="button"
               className="font-medium text-primary underline-offset-2 hover:underline"
-              onClick={() => setLinkOpen(true)}
+              onClick={openLinkForm}
             >
               {t("admin.cards.relations.linkCard")}
             </button>
@@ -1093,12 +1189,19 @@ export function CardRelationsPanel({
             })}
           </ul>
         )}
-        <p className="text-[11px] text-muted-foreground">
-          {t("admin.cards.relations.linksCount", {
-            count: liveLinkRows.length,
-            limit: LIMITS.linksPerCard,
-          })}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <span data-testid="admin-card-links-outgoing-count">
+            {t("admin.cards.relations.outgoingCount", {
+              count: liveOutgoing.length,
+              limit: LIMITS.linksPerCard,
+            })}
+          </span>
+          <span data-testid="admin-card-links-incoming-count">
+            {t("admin.cards.relations.incomingCount", {
+              count: liveIncoming.length,
+            })}
+          </span>
+        </div>
 
         {linkOpen ? (
           <form
@@ -1135,11 +1238,17 @@ export function CardRelationsPanel({
                 label={t("admin.cards.relations.targetCard")}
               >
                 <Input
+                  ref={targetInputRef}
                   id="admin-card-link-target"
                   role="combobox"
                   aria-expanded={targetId === null && suggestions.length > 0}
                   aria-controls={targetListId}
                   aria-autocomplete="list"
+                  aria-activedescendant={
+                    targetId === null && suggestions.length > 0
+                      ? `${targetListId}-option-${cursor}`
+                      : undefined
+                  }
                   data-testid="admin-card-link-target"
                   value={
                     selectedTarget === undefined
@@ -1151,7 +1260,9 @@ export function CardRelationsPanel({
                   onChange={(event) => {
                     setTargetId(null);
                     setLinkQuery(event.target.value);
+                    setCursor(0);
                   }}
+                  onKeyDown={handleTargetKeyDown}
                   className="h-8 min-w-0 text-xs"
                 />
               </Field>
@@ -1165,18 +1276,22 @@ export function CardRelationsPanel({
                 className="max-h-48 overflow-y-auto rounded-lg border border-border bg-popover p-1"
                 data-testid="admin-card-link-suggestions"
               >
-                {suggestions.map((suggestion) => (
+                {suggestions.map((suggestion, index) => (
                   <li key={suggestion.id} role="presentation">
                     <button
                       type="button"
+                      id={`${targetListId}-option-${index}`}
                       role="option"
-                      aria-selected={false}
-                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-hover"
+                      aria-selected={index === cursor}
+                      className={cn(
+                        "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
+                        index === cursor
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-hover",
+                      )}
+                      onMouseEnter={() => setCursor(index)}
                       data-testid={`admin-card-link-suggestion-${suggestion.id}`}
-                      onClick={() => {
-                        setTargetId(suggestion.id);
-                        setLinkQuery("");
-                      }}
+                      onClick={() => chooseTarget(suggestion)}
                     >
                       <Link2
                         className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -1205,6 +1320,8 @@ export function CardRelationsPanel({
                   onClick={() => {
                     setTargetId(null);
                     setLinkQuery("");
+                    setCursor(0);
+                    targetInputRef.current?.focus({ preventScroll: true });
                   }}
                 >
                   {t("admin.common.clear")}
@@ -1227,14 +1344,30 @@ export function CardRelationsPanel({
                   variant="ghost"
                   className="h-6 px-2 text-[11px]"
                   data-testid="admin-card-links-board-retry"
-                  onClick={() => setBoardReloadKey((value) => value + 1)}
+                  onClick={loadBoard}
                 >
                   {t("admin.common.retry")}
                 </Button>
               </div>
-            ) : board === null ? (
+            ) : boardLoading || board === null ? (
               <p className="text-[11px] text-muted-foreground">
                 {t("admin.cards.relations.boardLoading")}
+              </p>
+            ) : null}
+
+            {reverseHolder && selectedTarget !== undefined ? (
+              <p
+                className={cn(
+                  "text-[11px]",
+                  linkAtCap ? "text-danger" : "text-muted-foreground",
+                )}
+                data-testid="admin-card-links-holder-cap"
+              >
+                {t("admin.cards.relations.holderCap", {
+                  title: selectedTarget.title,
+                  count: holderOutgoingCount,
+                  limit: LIMITS.linksPerCard,
+                })}
               </p>
             ) : null}
 
@@ -1281,12 +1414,7 @@ export function CardRelationsPanel({
                 className="h-8 px-2 text-[11px]"
                 data-testid="admin-card-link-cancel"
                 disabled={busy !== null}
-                onClick={() => {
-                  setLinkOpen(false);
-                  setTargetId(null);
-                  setLinkQuery("");
-                  setLinkOptionKey("relatesTo");
-                }}
+                onClick={closeLinkForm}
               >
                 {t("admin.common.cancel")}
               </Button>

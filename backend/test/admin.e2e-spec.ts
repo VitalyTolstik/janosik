@@ -2380,6 +2380,74 @@ describe("Admin API (e2e)", () => {
       await cleanupCommandFixture(fixture);
     });
 
+    it("rejects fresh checklist/item adds at the collection caps (TASK-176.9 B2)", async () => {
+      const fixture = await commandFixture("relation-caps");
+      const checklistIds = Array.from(
+        { length: 20 },
+        () => `checklist-${randomUUID()}`,
+      );
+      await prisma.checklist.createMany({
+        data: checklistIds.map((id, index) => ({
+          id,
+          cardId: fixture.cardId,
+          title: `Cap checklist ${index}`,
+          position: index,
+        })),
+      });
+      await prisma.checklistItem.createMany({
+        data: Array.from({ length: 100 }, (_, index) => ({
+          id: `item-${randomUUID()}`,
+          checklistId: checklistIds[0]!,
+          text: `Cap item ${index}`,
+          position: index,
+        })),
+      });
+
+      const reject = async (action: Record<string, unknown>): Promise<void> => {
+        const id = randomUUID();
+        await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ commandId: id, action: { ...action, at: Date.now() } })
+          .expect(409);
+        expect(await prisma.command.count({ where: { id } })).toBe(0);
+        expect(
+          await prisma.adminAuditLog.count({
+            where: {
+              action: "board.command",
+              targetId: fixture.boardId,
+              details: { path: ["commandId"], equals: id },
+            },
+          }),
+        ).toBe(0);
+      };
+
+      await reject({
+        type: "ADD_CHECKLIST",
+        cardId: fixture.cardId,
+        newChecklistId: randomUUID(),
+        title: "Over the checklist cap",
+      });
+      await reject({
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: fixture.cardId,
+        checklistId: checklistIds[0],
+        newItemId: randomUUID(),
+        text: "Over the item cap",
+      });
+
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(0);
+
+      await cleanupCommandFixture(fixture);
+    });
+
     it("validates the admin commandId on writes and reads", async () => {
       const fixture = await commandFixture("validation");
       for (const commandId of ["", "   ", "bad id", "a".repeat(65)]) {

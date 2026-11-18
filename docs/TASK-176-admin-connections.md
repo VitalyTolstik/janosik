@@ -386,17 +386,23 @@ card must be live and on the same board (`404`); checklists/items must exist on
 that card/checklist and be live (`404` on `action.checklistId` /
 `action.itemId`); a new checklist/item/link id must be free or a soft-deleted
 row owned by the same card/checklist; link targets must be live on the board
-(`404`), and self-links (`400`), existing pairs, `blocks` cycles and the
-50-link holder cap (`409`) are refused. `REMOVE_CARD_LINK` requires a live row
+(`404`), and self-links (`400`), existing pairs, `blocks` cycles, the 50-link
+holder cap and fresh adds at the 20-checklist / 100-item collection caps
+(`409 conflict: "wip"`) are refused. `REMOVE_CARD_LINK` requires a live row
 owned by `action.cardId` with a matching target/type. Rejected fresh writes
 create no command or audit row; exact replays skip the guard and stay
 idempotent. Archived cards allow checklist/link edits — only `MOVE_CARD`
 remains blocked.
 
+The relation counters separate live outgoing rows (the viewed card's holder
+cap) from live incoming rows. When a reverse option is selected, the form shows
+the selected target holder's own outgoing count and cap instead of applying
+the incoming count to the viewed card.
+
 The combined size gate now measures the real card page: `AdminApp`,
-`CardFieldsPanel`, `CardRelationsPanel` and the shared admin `ui` chunk that
-rolldown split out when the second lazy panel was added. **101.62 kB → 110.17
-kB gzip against an explicit 112 kB budget**, leaving 1.83 kB headroom. The
+`CardFieldsPanel`, `CardRelationsPanel` and the shared admin `ui`/`links`
+chunks that rolldown split out when the panel was added. **101.62 kB → 111.80
+kB gzip against an explicit 112 kB budget**, leaving 0.20 kB headroom. The
 lazy relations chunk is not omitted.
 
 Master-authored comments/uploads are also a separate product decision: decide

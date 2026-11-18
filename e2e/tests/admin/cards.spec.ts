@@ -382,6 +382,18 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
         ),
       ).toBe(true);
     }
+    if (viewport.width === 390) {
+      await page.getByTestId("admin-card-link-open").click();
+      const linkForm = page.getByTestId("admin-card-link-form");
+      await expect(linkForm).toBeVisible();
+      for (const box of [linkForm, relations]) {
+        expect(
+          await box.evaluate(
+            (element) => element.scrollWidth <= element.clientWidth,
+          ),
+        ).toBe(true);
+      }
+    }
   }
 });
 

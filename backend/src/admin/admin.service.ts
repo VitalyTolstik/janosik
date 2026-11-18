@@ -1255,6 +1255,16 @@ export class AdminService {
 
     switch (action.type) {
       case "ADD_CHECKLIST": {
+        const live = await tx.checklist.count({
+          where: { cardId: action.cardId, deletedAt: null },
+        });
+        if (live >= LIMITS.checklistsPerCard) {
+          throw new ConflictException({
+            message: "Too many checklists on the card",
+            field: "action.newChecklistId",
+            conflict: "wip",
+          });
+        }
         const existing = await tx.checklist.findUnique({
           where: { id: action.newChecklistId },
           select: { id: true, cardId: true, deletedAt: true },
@@ -1276,6 +1286,16 @@ export class AdminService {
         return;
       case "ADD_CHECKLIST_ITEM": {
         await requireChecklist(action.checklistId);
+        const live = await tx.checklistItem.count({
+          where: { checklistId: action.checklistId, deletedAt: null },
+        });
+        if (live >= LIMITS.itemsPerChecklist) {
+          throw new ConflictException({
+            message: "Too many items in the checklist",
+            field: "action.newItemId",
+            conflict: "wip",
+          });
+        }
         const existing = await tx.checklistItem.findUnique({
           where: { id: action.newItemId },
           select: { id: true, checklistId: true, deletedAt: true },
