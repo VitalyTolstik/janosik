@@ -56,9 +56,13 @@ request is limited to 500 ids; the panel refuses a larger selection with a
 message instead of truncating it. Bulk deletion requires confirmation and does
 not support ordinary undo. If the server refuses some ids, exactly those rows
 stay selected for a retry. Soft-deleted records can be restored until they are
-permanently purged. Deleting a column takes its cards down with it (they are
-soft-deleted, never left pointing at a deleted column), and restoring the
-column brings them back.
+permanently purged. Deleting a column soft-deletes its active cards but they
+keep their stored `columnId` on the deleted column; restoring the column brings
+those cards back. Archived cards are different: `DELETE_COLUMN` repoints them
+to the board's internal soft-deleted `orphan:<boardId>` column so the original
+column can purge. Those archived orphan cards remain visible and
+field-editable on `/admin/cards/:id`, but moving them is rejected because
+archived cards cannot be moved.
 
 ### Workflow
 
@@ -143,8 +147,9 @@ strict validator, so a rejected action (for example, due to a WIP or size limit)
 shows a notification and leaves the board unchanged. The move dialog re-checks
 its snapshot before sending: if the card left the source column, or the target
 column disappeared, it shows a reload message. A fresh server move with a stale
-source is rejected as `409 conflict: "version"`; a missing, deleted or foreign
-target column is `404` — both before any command or audit row. An exact retry of
+source (including a non-archived card parked in a deleted/orphan column) is
+rejected as `409 conflict: "version"`; a missing, deleted or foreign target
+column is `404` — both before any command or audit row. An exact retry of
 a stored `commandId` still returns its stored result. The editor sends
 `ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`, `UPDATE_CARD`, `MOVE_CARD`,
 `ARCHIVE_CARD` and `DELETE_COLUMN`, each stamped with the command clock. The
@@ -156,8 +161,11 @@ history and command log keep the owner as the actor; the audit trail records
 the master who issued the command (`masterId`, `masterEmail`) and the shared
 `commandId`.
 
-A column delete is a soft delete: the column and its cards disappear for
-members. The confirm dialog states this.
+A column delete is a soft delete: active cards disappear for members and keep
+their `columnId` until the column is restored or purged. Archived cards are
+repointed to the internal soft-deleted `orphan:<boardId>` column. They remain
+visible and field-editable on `/admin/cards/:id`; a move is rejected with the
+archived-card `409`. The confirm dialog states the soft-delete behavior.
 
 ## Cards
 
@@ -250,7 +258,9 @@ through their holder card, not through the viewed card. The target combobox is
 loaded lazily from the board content when the link editor opens and excludes
 the current card, archived cards and already-linked pairs; a `blocks` edge that
 would create a cycle is refused. Checklist/item commands do not refetch the
-board or reset the link draft; link commands do. Dangling or soft-deleted link
+board or close the link editor. Both link commands refetch the aggregate;
+`ADD_CARD_LINK` closes the editor after success, while `REMOVE_CARD_LINK`
+leaves it open. Dangling or soft-deleted link
 rows stay readable, and a live dangling row can still be removed to free the
 cap.
 

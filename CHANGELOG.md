@@ -35,15 +35,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Fresh checklist/item adds at 20/100 now return `409 conflict: "wip"` before a
   command or audit row exists. Rejected fresh writes create no command or audit
   row; exact replays stay idempotent. The relation counters separate live
-  outgoing rows (the holder cap) from incoming rows; a reverse link option
-  shows the target holder's own cap. The lazy relations chunk is part of the
+  outgoing rows (the holder cap) from live incoming rows; a live incoming row
+  whose holder is deleted stays readable as dangling but is not counted. A
+  reverse link option shows the target holder's own cap. The lazy relations chunk is part of the
   size gate: the second lazy panel split the shared admin `ui` chunk out of
   `AdminApp`, and the panel also loads the existing board `links` chunk, so the
   entry now measures `AdminApp` + both lazy panels + those shared chunks.
-  **101.62 kB → 112.39 kB gzip against an explicit 113 kB budget**, leaving
-  0.61 kB headroom (the DTO flag and follow-ups added about 0.59 kB; B1’s
-  102 kB budget measured only the shell + field panel). EN/RU admin content
-  docs
+  **final 112.39 kB gzip against an explicit 113 kB budget**, leaving 0.61 kB
+  headroom (the DTO flag and follow-ups added about 0.59 kB; B1’s historical
+  baseline was 101.62 kB against 102 kB and measured only the shell + field
+  panel). EN/RU admin content docs
   describe the editor and counters; the monitoring note records the audit
   correlation.
 

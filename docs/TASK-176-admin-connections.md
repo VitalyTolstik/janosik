@@ -59,7 +59,7 @@ Separately, the product has no way for a user to edit their own comment, althoug
 | 176.11 | Admin agent section / boundary documentation | P3 | S | Deliberate boundary | done (docs-only) |
 | 176.12 | Checklist-item browser / search | P3 | M | Low value | deferred |
 
-Waves are a recommendation, not a hard dependency. 176.1–176.3 are the first PR set. 176.4–176.7 can run in parallel after the first merge. 176.8–176.10 require explicit product sign-off; 176.11 is closed as a docs-only boundary.
+Waves are a recommendation, not a hard dependency. 176.1–176.3 are the first PR set. 176.4–176.7 can run in parallel after the first merge. **Historical plan (answered 2026-11-18):** 176.8–176.10 required explicit product sign-off; that sign-off is recorded above and those tasks are delivered in review branches, while 176.11 is closed as a docs-only boundary.
 
 ---
 
@@ -316,7 +316,9 @@ This is the smallest useful admin content edit. It does **not** open the full ed
 - Add `commandId` (or a correlation id) and `masterId` to the admin audit for these actions before shipping; do not silently attribute a master edit to the owner.
 - Keep it behind a product flag until attribution is accepted.
 
-Do not proceed without owner sign-off. If approved, ship separately from 176.1–176.7.
+**Historical gate (answered 2026-11-18):** do not proceed without owner
+sign-off. The owner sign-off is recorded above; the task shipped in its review
+branch, not merged.
 
 **Delivered (2026-11-18, TASK-176.8):** owner sign-off is recorded for this task, so
 the pilot ships **without a product flag** (the flag sentence above is
@@ -408,10 +410,11 @@ the incoming count to the viewed card.
 The combined size gate now measures the real card page: `AdminApp`,
 `CardFieldsPanel`, `CardRelationsPanel`, the shared admin `ui` chunk split out
 by the second lazy panel, and the existing board `links` chunk that the panel
-now loads. **101.62 kB → 112.39 kB gzip against an explicit 113 kB budget**,
-leaving 0.61 kB headroom; the DTO flag and follow-ups added about 0.59 kB, so
-the budget was adjusted from 112 kB explicitly. The lazy relations chunk is not
-omitted.
+now loads. **Final: 112.39 kB gzip against an explicit 113 kB budget**, leaving
+0.61 kB headroom. B1’s 101.62 kB / 102 kB measurement is the historical
+baseline (shell + field panel only); the DTO flag and follow-ups added about
+0.59 kB, so the budget was adjusted from 112 kB explicitly. The lazy relations
+chunk is not omitted.
 
 **Sign-off (2026-11-18):** the owner instructed “добивать 176” (complete
 TASK-176) and approved 176.9. The approved scope is the field/checklist/link
@@ -523,7 +526,7 @@ Every subtask PR must include:
 - `npm run format:check`, lint, typecheck and the relevant test suites;
 - no unrelated refactors or formatting churn.
 
-Suggested PR split:
+**Historical suggested PR split (planning-era; no merge is claimed):**
 
 1. **176.1** — one small PR, highest urgency.
 2. **176.2** — backend + shared + UI + docs in one PR (migration included).
@@ -532,6 +535,9 @@ Suggested PR split:
 5. **176.5** — one infrastructure PR; **176.6** follows.
 6. **176.8** — only after explicit product sign-off; separate PR.
 7. **176.9 / 176.10** — separate product decisions.
+
+The 2026-11-18 sign-off answers the product gates above; 176.8–176.10 are
+delivered on review branches (A/B1/B2) without merge.
 
 ## 18. Open product decisions
 

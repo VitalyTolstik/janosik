@@ -2745,8 +2745,48 @@ describe("Admin API (e2e)", () => {
         }),
       ).toBe(0);
 
-      // archive + delete-column + update + priority; the replay and the
-      // rejected move add nothing.
+      // A crafted non-archived card parked in the orphan column also has no
+      // live source column: reject it instead of writing a no-op move.
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { archivedAt: null },
+      });
+      const orphanMoveId = randomUUID();
+      const orphanMove = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: orphanMoveId,
+          action: {
+            type: "MOVE_CARD",
+            cardId: fixture.cardId,
+            fromColumnId: `orphan:${fixture.boardId}`,
+            fromIndex: 0,
+            toColumnId: fixture.targetId,
+            toIndex: 0,
+            at: Date.now(),
+          },
+        })
+        .expect(409);
+      expect(orphanMove.body).toMatchObject({
+        conflict: "version",
+        code: "move_stale",
+      });
+      expect(await prisma.command.count({ where: { id: orphanMoveId } })).toBe(
+        0,
+      );
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: orphanMoveId },
+          },
+        }),
+      ).toBe(0);
+
+      // archive + delete-column + update + priority; the replays and rejected
+      // moves add nothing.
       expect(
         await prisma.command.count({ where: { boardId: fixture.boardId } }),
       ).toBe(4);

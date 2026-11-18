@@ -1141,6 +1141,17 @@ export class AdminService {
             throw new ConflictException("Archived cards cannot be moved");
           }
           if (action.type === "MOVE_CARD") {
+            // A non-archived card parked in a soft-deleted column (crafted or
+            // repaired state) has no live source to move from. Reject it as a
+            // stale move instead of writing a no-op command/audit row.
+            if (card.column.deletedAt !== null) {
+              throw new ConflictException({
+                message: "Source column no longer exists",
+                field: "action.fromColumnId",
+                code: "move_stale",
+                conflict: "version",
+              });
+            }
             // The admin board editor can be up to one poll interval old. A
             // stale from-column would otherwise move the card from its real
             // current column (or no-op) and still write a command/audit row.
