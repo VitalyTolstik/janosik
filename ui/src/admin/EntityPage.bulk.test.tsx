@@ -145,6 +145,13 @@ describe("EntityPage bulk selection", () => {
       "Board 00",
     );
     expectCleared();
+    // Search is debounced: wait for the filtered result set before selecting,
+    // otherwise the debounced fetch can arrive after the click and reset the
+    // selection.
+    await screen.findByTestId("admin-row-board-009");
+    await waitFor(() =>
+      expect(screen.queryByTestId("admin-row-board-010")).toBeNull(),
+    );
 
     await selectFirst();
     await user.click(screen.getByRole("button", { name: "Archived" }));

@@ -156,8 +156,9 @@ test("an agent request appears live, is approved with a reason and consumed afte
   // the consume frame itself, so reload before inspecting the consumed row.
   const applied = await applyCardDelete(pat, board.id, cardId, ref);
   expect(applied.status(), await applied.text()).toBe(200);
+  // The reload keeps ?agents=inbox, so the dialog reopens by itself.
   await page.reload();
-  await openAgentControl(page);
+  await expect(page.getByTestId("agent-control-dialog")).toBeVisible();
   await page.getByTestId("approval-filter-decided").click();
   await page.getByTestId(`approval-row-${ref.approvalId}`).click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
