@@ -1708,7 +1708,7 @@ TASK-36 и TASK-37.)*
 | 109 | TASK-178 `board-settings-rail` ✅ | `docs/TASK-178-board-settings-rail.md` → `feat/board-settings-rail-redesign` | Редизайн «Настройки доски» по направлению **01 «Рельс доски»**: один surface, рельс колонок, список правил, инспектор 316 px, матрица как вкладка, компактные global/start-done, responsive/a11y, мастер-панель без диалогового shell | **Выполнено:** PR #242, merge `360938b`; все 5 фаз, unit/browser/mobile-тесты, EN/RU user-guide, CHANGELOG. Модель `BoardWorkflow` не менялась. См. spec и `design/board-settings-redesign/REPORT.md` |
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
 | 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
-| 112 | TASK-181 `admin-list-filters` | `docs/TASK-181-admin-list-filters.md` → отдельные `feat/TASK-181.x-*` | §7.30: сделать фильтры админских списков обнаруживаемыми и честными — per-surface allowlist вместо молчаливых no-op, панель «Фильтры»/чипы с человеческими названиями, карточки (board/column/label/assignee/priority/due/attachments), moderation (author/kind/uploader/MIME), audit/commands/activity (actor/action/type/target), users/boards/content lists; URL/deep links, exact totals, bulk-selection contract, EN/RU, 1440/1024/390 | **Запланировано:** 7 подзадач; wave 1 — 181.1 контракт + lookup, 181.2 панель/чипы на карточках, 181.3 полный набор карточек; wave 2 — 181.4 moderation, 181.5 content lists, 181.6 audit hub; 181.7 docs/visual/perf. Зависит от 176.5/176.6 (уже в main); shares — TASK-177.5, admin mobile/nav — TASK-180.9. См. §7.30 |
+| 112 | TASK-181 `admin-list-filters` | `docs/TASK-181-admin-list-filters.md` → отдельные `feat/TASK-181.x-*` | §7.30: сделать фильтры админских списков обнаруживаемыми и честными — supported/offered matrix вместо молчаливых no-op, панель «Фильтры»/чипы с человеческими названиями и board short-id, карточки (board/column/label any-all/assignee/priority/due/attachments/period), moderation (author/kind/uploader/MIME/period), audit/commands/activity (audit-visible actor/action/type/target), users/boards (accepted ADMIN)/content lists; URL/deep links, exact totals, bulk-selection contract, EN/RU, 1440/1024/390 | **Запланировано:** 7 подзадач; wave 1 — 181.1 контракт + lookup, 181.2 панель/чипы на карточках, 181.3 полный набор карточек; wave 2 — 181.4 moderation, 181.5 content lists, 181.6 audit hub; 181.7 docs/visual/perf. Зависит от 176.5/176.6 (уже в main); 176.10 — для `commandId`; shares — TASK-177.5; 180.9 — до 181.2. См. §7.30 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5099,7 +5099,7 @@ apply-window — намеренное поведение; e2e уже обнов�
 
 ### 7.30. Фильтры админских списков (TASK-181)
 
-> **Статус:** запланировано (2026-11-19). База — `main` @ `002a31ec`;
+> **Статус:** запланировано (2026-11-19; ревизия 2 после review). База — `main` @ `002a31ec`;
 > TASK-176.1–176.7 уже в main (176.5/176.6 — PR #268), 176.8–176.10 остаются
 > review-ветками и не блокируют остальные фильтры; `commandId`-чип появится
 > только после merge 176.10.
@@ -5124,21 +5124,27 @@ apply-window — намеренное поведение; e2e уже обнов�
 
 **Что входит.**
 
-- Единый per-surface allowlist: UI-парсер, запрос, чипы и backend-валидация
-  читают один реестр; неподдерживаемый фильтр не может стать no-op чипом.
+- Единый **supported/offered matrix**: UI-парсер, запрос, чипы и backend-валидация
+  читают один реестр; legacy-пары 176.5/6 остаются supported, 400 — только вне
+  матрицы; неподдерживаемый фильтр не может стать no-op чипом.
 - Кнопка **Filters**, popover/bottom sheet, add/remove, Clear all, клавиатура,
   EN/RU, 390 px без горизонтального скролла.
 - Человеческие чипы через read-only `GET /admin/filter-options`: название
   доски/колонки/метки/карточки, имя/email пользователя, явный fallback для
-  удалённых/неизвестных id; сырой id — только для command id и missing.
+  удалённых/неизвестных id; board-чип с видимым short-id; сырой id — только для
+  command id и missing.
 - Карточки: board/column/label (any/all), assignee (+unassigned), priority,
   due (overdue/soon/none), has-attachments, status, period.
-- Moderation: comments (board/card/author/kind), attachments
-  (board/card/uploader/MIME/transcode); board-контекст переживает смену вкладки.
-- Audit hub: audit (actor/master, action, target type/id), commands (actor,
-  type, board/card/column), activity (actor, type, board/card).
-- Content lists: users (verified/period), boards (owner), columns/labels/
-  checklists (board/card), card links (type/card).
+- Период — всегда header-tab, не чип: cards/users/comments/attachments получают
+  `periods: true` и `from`/`to`; choice facets (unassigned/hasAttachments/
+  verified/due/MIME/transcode) — radio/checkbox с точными чипами и aria.
+- Moderation: comments (board/card/author/kind/period), attachments
+  (board/card/uploader/MIME/transcode/period); board-контекст переживает смену
+  вкладки.
+- Audit hub: audit (**audit-visible actor/master**, action, target type/id),
+  commands (actor, type, board/card/column), activity (actor, type, board/card).
+- Content lists: users (verified/period), boards (**accepted ADMIN member**),
+  columns/labels/checklists (board/card), card links (type/card).
 - URL/deep links/`returnTo`, exact `total`, сброс offset, bulk-selection
   contract 176.1, пустые состояния, EN/RU docs и browser matrix.
 
@@ -5151,12 +5157,12 @@ detail-панели, board members/dashboard, saved filter views/localStorage,
 
 | ID | Что делаем | Приоритет | Волна |
 | --- | --- | --- | --- |
-| 181.1 | Контракт: per-surface registry, URL arrays/booleans/enums, строгая DTO-валидация, `GET /admin/filter-options`, общий client-кэш | P1 | 1 |
-| 181.2 | Панель Filters + popover/bottom sheet + чипы с lookup; пилот на cards: board/column/label; keyboard/a11y/390/EN-RU | P1 | 1 |
-| 181.3 | Cards полностью: assignee/unassigned, priority (null=medium), due, has-attachments, label any/all, period; query plan/индексы | P1 | 1 |
-| 181.4 | Moderation: comments author/kind, attachments uploader/MIME/transcode; сохранять boardId между вкладками | P2 | 2 |
-| 181.5 | Content lists: users verified/period, boards owner, columns/labels/checklists/links; без нового checklist-items tab | P2 | 2 |
-| 181.6 | Audit hub: actor/action/target, commands actor/type, activity actor/type; operator-safe actor lookup | P2 | 2 |
+| 181.1 | Контракт: supported/offered matrix, URL arrays/booleans/enums, строгая DTO-валидация, `GET /admin/filter-options` (auditActor, q≤200/ids≤20), общий client-кэш | P1 | 1 |
+| 181.2 | Панель Filters + popover/bottom sheet + чипы с lookup; пилот на cards: board/column/label; смена board чистит зависимые; keyboard/a11y/390/EN-RU | P1 | 1 |
+| 181.3 | Cards полностью: assignee/unassigned, priority (null=medium), due, has-attachments, label any/all + mode chip, period (`dateRange`); query plan/индексы | P1 | 1 |
+| 181.4 | Moderation: comments author/kind, attachments uploader/MIME/transcode, period; сохранять boardId между вкладками | P2 | 2 |
+| 181.5 | Content lists: users verified/period, boards accepted ADMIN member, columns/labels/checklists/links; без нового checklist-items tab | P2 | 2 |
+| 181.6 | Audit hub: actor/action/target, commands actor/type, activity actor/type; **audit-visible actor only**, OPERATOR без roster | P2 | 2 |
 | 181.7 | EN/RU admin docs, CHANGELOG, visual/a11y/perf acceptance, финальный URL/regression sweep | P2 | 3 |
 
 **Порядок.** Wave 1: **181.1 → 181.2 → 181.3** — сначала контракт и lookup,
@@ -5164,19 +5170,26 @@ detail-панели, board members/dashboard, saved filter views/localStorage,
 Wave 2: **181.4 / 181.5 / 181.6** можно вести параллельно после 181.2, по
 одной ветке/PR на подзадачу. Wave 3: **181.7** после merge всех фич.
 
-**DoD.** Реализован подтверждённый инвентарь §5.7 spec; чипы везде
-человеческие (или явный fallback), no-op фильтры невозможны; старые 176.5/6
-URL работают; deep links/`returnTo`/пагинация/выделение честные; multi-value и
-boolean валидируются; lookup не отдаёт секреты и доступен OPERATOR; есть
+**DoD.** Реализован подтверждённый инвентарь §5.7 spec и supported/offered
+матрица §5.8: legacy 176.5/6-пары работают, 400 только вне матрицы; чипы везде
+человеческие (board-чип с видимым short-id), no-op фильтры невозможны; период —
+header-tab на cards/users/comments/attachments с `from`/`to`; choice facets и
+label any/all имеют control/chip/aria/EN-RU; смена board чистит зависимые
+фильтры, конфликтный deep link показывает Remove; deep links/`returnTo`/
+пагинация/выделение честные; multi-value и boolean валидируются; `auditActor`
+не отдаёт roster/roles/disabled и недоступен как `type=admin`; есть
 query-plan/замеры, индексы только по необходимости; EN/RU, 1440/1024/390,
 keyboard/focus/screen-reader; `format:check`, lint, tsc, unit/shared/backend
 e2e/browser зелёные без ослабления тестов.
 
 **Зависимости.** Жёсткая — 176.5/176.6 (уже в main); 176.8–176.10 не нужны
 для остальных фильтров, но `commandId`-чип появляется только после merge
-176.10. 177.5 остаётся владельцем shares, 180.9 — admin mobile/nav; не
-дублировать. Фильтры не меняют backend-контракт вне list DTO и нового
-read-only lookup; индексы — отдельной миграцией после замера.
+176.10. 177.5 остаётся владельцем shares, 180.9 — admin mobile/nav; **180.9
+мержить до 181.2** (иначе rebase + 390-прогон), **176.10 — до 181.6**. 181.1
+владеет shared/list DTO/URL-хуками; 181.2 — `EntityPage`/`HubTabs`/filters
+dir/i18n base; 181.4–6 — своими блоками `entity-configs` и namespace-keys;
+181.7 — docs. Не редактировать `EntityPage`/`HubTabs` параллельно. Индексы —
+отдельной миграцией после замера.
 
 ---
 
