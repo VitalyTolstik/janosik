@@ -369,16 +369,143 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
       .getByTestId("admin-card-detail-timeline")
       .locator("ul");
     const fields = page.getByTestId("admin-card-fields");
+    const relations = page.getByTestId("admin-card-relations");
     await expect(fields).toBeVisible();
+    await expect(relations).toBeVisible();
     await expect(
       page.getByTestId(`admin-card-label-toggle-${longLabelId}`),
     ).toBeVisible();
-    for (const box of [scroller, timeline, fields]) {
+    for (const box of [scroller, timeline, fields, relations]) {
       expect(
         await box.evaluate(
           (element) => element.scrollWidth <= element.clientWidth,
         ),
       ).toBe(true);
     }
+  }
+});
+
+test("C8: a master edits checklists and links and every change has an audit row", async ({
+  page,
+  admin,
+  board,
+}) => {
+  const seeded = await seedRichCard(board, { withLink: false });
+  const targetTitle = uniqueToken("relation-target");
+  const targetId = await board.card(seeded.columnId, targetTitle);
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`cards/${seeded.cardId}`), {
+    waitUntil: "domcontentloaded",
+  });
+
+  const relations = page.getByTestId("admin-card-relations");
+  await expect(relations).toBeVisible();
+  await expect(
+    page.getByTestId("admin-card-relations-owner-notice"),
+  ).toContainText("You are acting as the board owner");
+
+  // Add, rename, item CRUD and delete a checklist.
+  const checklistTitle = uniqueToken("browser-checklist");
+  await page.getByTestId("admin-new-checklist-title").fill(checklistTitle);
+  await page.getByTestId("admin-new-checklist-add").click();
+  const checklistLocator = relations
+    .locator('[data-testid^="admin-checklist-row-"]')
+    .filter({ hasText: checklistTitle })
+    .first();
+  await expect(checklistLocator).toBeVisible();
+  const checklistTestId = await checklistLocator.getAttribute("data-testid");
+  const checklistId = String(checklistTestId).replace(
+    "admin-checklist-row-",
+    "",
+  );
+  const checklistRow = page.getByTestId(`admin-checklist-row-${checklistId}`);
+
+  await page.getByTestId(`admin-checklist-rename-${checklistId}`).click();
+  const renamedTitle = `${checklistTitle}-renamed`;
+  await page
+    .getByTestId(`admin-checklist-rename-input-${checklistId}`)
+    .fill(renamedTitle);
+  await page.getByTestId(`admin-checklist-rename-save-${checklistId}`).click();
+  await expect(checklistRow).toContainText(renamedTitle);
+
+  const itemText = uniqueToken("browser-item");
+  await page
+    .getByTestId(`admin-checklist-item-input-${checklistId}`)
+    .fill(itemText);
+  await page.getByTestId(`admin-checklist-item-add-${checklistId}`).click();
+  const itemLocator = checklistRow
+    .locator('[data-testid^="admin-checklist-item-row-"]')
+    .filter({ hasText: itemText })
+    .first();
+  await expect(itemLocator).toBeVisible();
+  const itemTestId = await itemLocator.getAttribute("data-testid");
+  const itemId = String(itemTestId).replace("admin-checklist-item-row-", "");
+  const itemRow = page.getByTestId(`admin-checklist-item-row-${itemId}`);
+  await itemRow.getByRole("checkbox").click();
+  await expect(checklistRow).toContainText("1/1");
+
+  await page.getByTestId(`admin-checklist-item-rename-${itemId}`).click();
+  const renamedItem = `${itemText}-renamed`;
+  await page
+    .getByTestId(`admin-checklist-item-rename-input-${itemId}`)
+    .fill(renamedItem);
+  await page.getByTestId(`admin-checklist-item-rename-save-${itemId}`).click();
+  await expect(itemRow).toContainText(renamedItem);
+
+  await page.getByTestId(`admin-checklist-item-delete-${itemId}`).click();
+  await expect(itemRow).toHaveCount(0);
+
+  await page.getByTestId(`admin-checklist-delete-${checklistId}`).click();
+  await confirmAction(page);
+  await expect(checklistRow).toHaveCount(0);
+
+  // Add and remove a link through the admin combobox.
+  await page.getByTestId("admin-card-link-open").click();
+  await page.getByTestId("admin-card-link-target").fill(targetTitle);
+  await page
+    .locator(`[data-testid="admin-card-link-suggestion-${targetId}"]`)
+    .click();
+  await page.getByTestId("admin-card-link-add").click();
+  const linkRow = page
+    .locator('[data-testid^="admin-card-link-row-"]')
+    .filter({ hasText: targetTitle })
+    .first();
+  await expect(linkRow).toBeVisible();
+  await linkRow.locator('[data-testid^="admin-card-link-remove-"]').click();
+  // The soft-deleted row stays readable (and loses its remove action).
+  await expect(
+    linkRow.locator('[data-testid^="admin-card-link-remove-"]'),
+  ).toHaveCount(0);
+  await expect(linkRow).toContainText("Deleted");
+
+  const auditResponse = await admin.get(
+    `/api/v1/admin/audit?limit=100&search=${encodeURIComponent(board.id)}`,
+  );
+  expect(auditResponse.ok(), await auditResponse.text()).toBeTruthy();
+  const audit = (await auditResponse.json()) as {
+    items: Array<{
+      action: string;
+      details: Record<string, unknown> | null;
+    }>;
+  };
+  const types = audit.items
+    .filter(
+      (entry) =>
+        entry.action === "board.command" &&
+        entry.details?.masterEmail === ownerCredentials().email,
+    )
+    .map((entry) => entry.details?.type);
+  for (const type of [
+    "ADD_CHECKLIST",
+    "RENAME_CHECKLIST",
+    "ADD_CHECKLIST_ITEM",
+    "SET_CHECKLIST_ITEM_DONE",
+    "RENAME_CHECKLIST_ITEM",
+    "DELETE_CHECKLIST_ITEM",
+    "DELETE_CHECKLIST",
+    "ADD_CARD_LINK",
+    "REMOVE_CARD_LINK",
+  ]) {
+    expect(types).toContain(type);
   }
 });

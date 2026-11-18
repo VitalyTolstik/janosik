@@ -709,7 +709,18 @@ describe("Admin API (e2e)", () => {
         });
       }
       await prisma.label.deleteMany({ where: { boardId: fixture.boardId } });
-      await prisma.card.deleteMany({ where: { id: fixture.cardId } });
+      await prisma.cardLink.deleteMany({ where: { boardId: fixture.boardId } });
+      await prisma.checklistItem.deleteMany({
+        where: {
+          checklist: { card: { column: { boardId: fixture.boardId } } },
+        },
+      });
+      await prisma.checklist.deleteMany({
+        where: { card: { column: { boardId: fixture.boardId } } },
+      });
+      await prisma.card.deleteMany({
+        where: { column: { boardId: fixture.boardId } },
+      });
       await prisma.column.deleteMany({ where: { boardId: fixture.boardId } });
       await prisma.boardMember.deleteMany({
         where: { boardId: fixture.boardId },
@@ -1712,6 +1723,660 @@ describe("Admin API (e2e)", () => {
           ],
         },
       });
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("applies admin checklist and link commands with owner attribution (TASK-176.9 B2)", async () => {
+      const fixture = await commandFixture("relations");
+      const targetCard = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: fixture.targetId,
+          title: "Link target",
+          position: 0,
+        },
+      });
+      const secondTarget = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: fixture.targetId,
+          title: "Second link target",
+          position: 1,
+        },
+      });
+      const checklistId = randomUUID();
+      const itemId = randomUUID();
+      const linkId = randomUUID();
+      const secondLinkId = randomUUID();
+      const sent: Array<{
+        id: string;
+        type: string;
+        action: Record<string, unknown>;
+      }> = [];
+      const post = async (
+        type: string,
+        action: Record<string, unknown>,
+      ): Promise<string> => {
+        const id = randomUUID();
+        const payload = { type, ...action, at: Date.now() };
+        sent.push({ id, type, action: payload });
+        await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ commandId: id, action: payload })
+          .expect(201);
+        return id;
+      };
+
+      await post("ADD_CHECKLIST", {
+        cardId: fixture.cardId,
+        newChecklistId: checklistId,
+        title: "Steps",
+      });
+      await post("RENAME_CHECKLIST", {
+        cardId: fixture.cardId,
+        checklistId,
+        title: "Steps renamed",
+      });
+      await post("ADD_CHECKLIST_ITEM", {
+        cardId: fixture.cardId,
+        checklistId,
+        newItemId: itemId,
+        text: "First step",
+      });
+      await post("SET_CHECKLIST_ITEM_DONE", {
+        cardId: fixture.cardId,
+        checklistId,
+        itemId,
+        done: true,
+      });
+      await post("RENAME_CHECKLIST_ITEM", {
+        cardId: fixture.cardId,
+        checklistId,
+        itemId,
+        text: "First step renamed",
+      });
+      await post("ADD_CARD_LINK", {
+        cardId: fixture.cardId,
+        linkId,
+        targetCardId: targetCard.id,
+        linkType: "blocks",
+      });
+
+      const checklist = await prisma.checklist.findUniqueOrThrow({
+        where: { id: checklistId },
+        include: { items: true },
+      });
+      expect(checklist.title).toBe("Steps renamed");
+      expect(checklist.items).toHaveLength(1);
+      expect(checklist.items[0]).toMatchObject({
+        id: itemId,
+        text: "First step renamed",
+        done: true,
+      });
+      const link = await prisma.cardLink.findUniqueOrThrow({
+        where: { id: linkId },
+      });
+      expect(link).toMatchObject({
+        boardId: fixture.boardId,
+        fromCardId: fixture.cardId,
+        toCardId: targetCard.id,
+        type: "blocks",
+        deletedAt: null,
+      });
+
+      const detail = await server()
+        .get(`/api/v1/admin/cards/${fixture.cardId}/detail`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(detail.body.checklists).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: checklistId,
+            title: "Steps renamed",
+            items: [
+              expect.objectContaining({
+                id: itemId,
+                text: "First step renamed",
+                done: true,
+              }),
+            ],
+          }),
+        ]),
+      );
+      expect(detail.body.linksOut).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: linkId,
+            otherCardId: targetCard.id,
+            otherCardTitle: "Link target",
+            type: "blocks",
+          }),
+        ]),
+      );
+
+      // Archived cards keep checklist and link editing; only moves stay
+      // blocked (covered by the field test above).
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { archivedAt: new Date() },
+      });
+      await post("RENAME_CHECKLIST", {
+        cardId: fixture.cardId,
+        checklistId,
+        title: "Archived checklist",
+      });
+      await post("ADD_CARD_LINK", {
+        cardId: fixture.cardId,
+        linkId: secondLinkId,
+        targetCardId: secondTarget.id,
+        linkType: "relates_to",
+      });
+      await post("REMOVE_CARD_LINK", {
+        cardId: fixture.cardId,
+        linkId: secondLinkId,
+        targetCardId: secondTarget.id,
+        linkType: "relates_to",
+      });
+      await post("DELETE_CHECKLIST_ITEM", {
+        cardId: fixture.cardId,
+        checklistId,
+        itemId,
+      });
+      await post("DELETE_CHECKLIST", { cardId: fixture.cardId, checklistId });
+
+      const removedLink = await prisma.cardLink.findUniqueOrThrow({
+        where: { id: secondLinkId },
+      });
+      expect(removedLink.deletedAt).not.toBeNull();
+      const deletedChecklist = await prisma.checklist.findUniqueOrThrow({
+        where: { id: checklistId },
+      });
+      expect(deletedChecklist.deletedAt).not.toBeNull();
+      const deletedItem = await prisma.checklistItem.findUniqueOrThrow({
+        where: { id: itemId },
+      });
+      expect(deletedItem.deletedAt).not.toBeNull();
+
+      expect(
+        await prisma.command.count({
+          where: { id: { in: sent.map((entry) => entry.id) } },
+        }),
+      ).toBe(sent.length);
+      for (const entry of sent) {
+        const audit = await prisma.adminAuditLog.findFirstOrThrow({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: entry.id },
+          },
+        });
+        expect(audit.details).toMatchObject({
+          commandId: entry.id,
+          masterId: adminId,
+          masterEmail: ADMIN_EMAIL,
+          actorEmail: fixture.ownerEmail,
+          type: entry.type,
+        });
+        const command = await prisma.command.findUniqueOrThrow({
+          where: { id: entry.id },
+        });
+        expect(command.actorId).toBe(fixture.ownerId);
+        expect(command.actorType).toBe("admin");
+      }
+
+      // An exact replay after the card is deleted returns the stored result
+      // and never creates a second command or audit row.
+      const replay = sent[1]!;
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: new Date() },
+      });
+      const replayResult = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: replay.id, action: replay.action })
+        .expect(201);
+      const storedReplay = await prisma.command.findUniqueOrThrow({
+        where: { id: replay.id },
+      });
+      expect(replayResult.body.seq).toBe(Number(storedReplay.seq));
+      expect(
+        await prisma.command.count({
+          where: { id: replay.id },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: replay.id },
+          },
+        }),
+      ).toBe(1);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("guards admin checklist and link commands without writes or audit rows (TASK-176.9 B2)", async () => {
+      const fixture = await commandFixture("relation-guards");
+      const targetCard = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: fixture.targetId,
+          title: "Guard target",
+          position: 0,
+        },
+      });
+      const checklistId = randomUUID();
+      const itemId = randomUUID();
+      await prisma.checklist.create({
+        data: {
+          id: checklistId,
+          cardId: fixture.cardId,
+          title: "Guard checklist",
+          position: 0,
+          items: {
+            create: {
+              id: itemId,
+              text: "Guard item",
+              position: 0,
+            },
+          },
+        },
+      });
+      const foreignChecklist = await prisma.checklist.create({
+        data: {
+          id: randomUUID(),
+          cardId: targetCard.id,
+          title: "Foreign checklist",
+          position: 0,
+        },
+      });
+      const foreignChecklistId = foreignChecklist.id;
+      const deletedChecklist = await prisma.checklist.create({
+        data: {
+          id: randomUUID(),
+          cardId: fixture.cardId,
+          title: "Deleted checklist",
+          position: 1,
+          deletedAt: new Date(),
+        },
+      });
+      const deletedItem = await prisma.checklistItem.create({
+        data: {
+          id: randomUUID(),
+          checklistId,
+          text: "Deleted item",
+          position: 1,
+          deletedAt: new Date(),
+        },
+      });
+      const otherChecklist = await prisma.checklist.create({
+        data: {
+          id: randomUUID(),
+          cardId: fixture.cardId,
+          title: "Other checklist",
+          position: 2,
+          items: {
+            create: {
+              id: randomUUID(),
+              text: "Other item",
+              position: 0,
+            },
+          },
+        },
+        include: { items: true },
+      });
+      const otherItemId = otherChecklist.items[0]!.id;
+
+      const otherBoard = await prisma.board.create({
+        data: { title: `Other relation board ${randomUUID()}` },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: otherBoard.id,
+          userId: fixture.ownerId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      const otherColumn = await prisma.column.create({
+        data: {
+          id: `col-${randomUUID()}`,
+          boardId: otherBoard.id,
+          title: "Other column",
+          position: 0,
+        },
+      });
+      const foreignCard = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: otherColumn.id,
+          title: "Foreign card",
+          position: 0,
+        },
+      });
+
+      const reject = async (
+        status: number,
+        action: Record<string, unknown>,
+      ): Promise<string> => {
+        const id = randomUUID();
+        await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ commandId: id, action: { ...action, at: Date.now() } })
+          .expect(status);
+        expect(await prisma.command.count({ where: { id } })).toBe(0);
+        expect(
+          await prisma.adminAuditLog.count({
+            where: {
+              action: "board.command",
+              targetId: fixture.boardId,
+              details: { path: ["commandId"], equals: id },
+            },
+          }),
+        ).toBe(0);
+        return id;
+      };
+
+      await reject(404, {
+        type: "ADD_CHECKLIST",
+        cardId: `missing-${randomUUID()}`,
+        newChecklistId: randomUUID(),
+        title: "Missing card",
+      });
+      await reject(404, {
+        type: "ADD_CHECKLIST",
+        cardId: foreignCard.id,
+        newChecklistId: randomUUID(),
+        title: "Wrong board",
+      });
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: new Date() },
+      });
+      await reject(404, {
+        type: "RENAME_CHECKLIST",
+        cardId: fixture.cardId,
+        checklistId,
+        title: "Deleted card",
+      });
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: null },
+      });
+
+      await reject(404, {
+        type: "RENAME_CHECKLIST",
+        cardId: fixture.cardId,
+        checklistId: `missing-${randomUUID()}`,
+        title: "Missing checklist",
+      });
+      await reject(404, {
+        type: "RENAME_CHECKLIST",
+        cardId: fixture.cardId,
+        checklistId: deletedChecklist.id,
+        title: "Deleted checklist",
+      });
+      await reject(404, {
+        type: "RENAME_CHECKLIST",
+        cardId: fixture.cardId,
+        checklistId: foreignChecklistId,
+        title: "Wrong card",
+      });
+      await reject(404, {
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: fixture.cardId,
+        checklistId,
+        itemId: `missing-${randomUUID()}`,
+        done: true,
+      });
+      await reject(404, {
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: fixture.cardId,
+        checklistId,
+        itemId: deletedItem.id,
+        done: true,
+      });
+      await reject(404, {
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: fixture.cardId,
+        checklistId,
+        itemId: otherItemId,
+        done: true,
+      });
+
+      // New ids: free or a soft-deleted row owned by this card/checklist;
+      // live and foreign rows are refused.
+      await reject(409, {
+        type: "ADD_CHECKLIST",
+        cardId: fixture.cardId,
+        newChecklistId: checklistId,
+        title: "Live id",
+      });
+      await reject(409, {
+        type: "ADD_CHECKLIST",
+        cardId: fixture.cardId,
+        newChecklistId: foreignChecklistId,
+        title: "Foreign id",
+      });
+      await reject(409, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: fixture.cardId,
+        checklistId,
+        newItemId: itemId,
+        text: "Live item id",
+      });
+      await reject(409, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: fixture.cardId,
+        checklistId,
+        newItemId: otherItemId,
+        text: "Foreign item id",
+      });
+
+      const existingLink = await prisma.cardLink.create({
+        data: {
+          id: randomUUID(),
+          boardId: fixture.boardId,
+          fromCardId: fixture.cardId,
+          toCardId: targetCard.id,
+          type: "relates_to",
+        },
+      });
+      await reject(409, {
+        type: "ADD_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: existingLink.id,
+        targetCardId: targetCard.id,
+        linkType: "relates_to",
+      });
+      const foreignLink = await prisma.cardLink.create({
+        data: {
+          id: randomUUID(),
+          boardId: fixture.boardId,
+          fromCardId: targetCard.id,
+          toCardId: fixture.cardId,
+          type: "relates_to",
+        },
+      });
+      await reject(409, {
+        type: "ADD_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: foreignLink.id,
+        targetCardId: targetCard.id,
+        linkType: "relates_to",
+      });
+      await reject(404, {
+        type: "ADD_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: randomUUID(),
+        targetCardId: `missing-${randomUUID()}`,
+        linkType: "relates_to",
+      });
+      await reject(404, {
+        type: "ADD_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: randomUUID(),
+        targetCardId: foreignCard.id,
+        linkType: "relates_to",
+      });
+      await reject(400, {
+        type: "ADD_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: randomUUID(),
+        targetCardId: fixture.cardId,
+        linkType: "relates_to",
+      });
+      await reject(409, {
+        type: "ADD_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: randomUUID(),
+        targetCardId: targetCard.id,
+        linkType: "blocks",
+      });
+
+      const cycleA = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: fixture.sourceId,
+          title: "Cycle A",
+          position: 1,
+        },
+      });
+      const cycleB = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: fixture.sourceId,
+          title: "Cycle B",
+          position: 2,
+        },
+      });
+      const cycleC = await prisma.card.create({
+        data: {
+          id: `card-${randomUUID()}`,
+          columnId: fixture.sourceId,
+          title: "Cycle C",
+          position: 3,
+        },
+      });
+      await prisma.cardLink.createMany({
+        data: [
+          {
+            id: randomUUID(),
+            boardId: fixture.boardId,
+            fromCardId: cycleB.id,
+            toCardId: cycleC.id,
+            type: "blocks",
+          },
+          {
+            id: randomUUID(),
+            boardId: fixture.boardId,
+            fromCardId: cycleC.id,
+            toCardId: cycleA.id,
+            type: "blocks",
+          },
+        ],
+      });
+      await reject(409, {
+        type: "ADD_CARD_LINK",
+        cardId: cycleA.id,
+        linkId: randomUUID(),
+        targetCardId: cycleB.id,
+        linkType: "blocks",
+      });
+
+      const capTargets = Array.from({ length: 50 }, (_, index) => ({
+        id: `card-${randomUUID()}`,
+        columnId: fixture.targetId,
+        title: `Cap target ${index}`,
+        position: index + 1,
+      }));
+      await prisma.card.createMany({ data: capTargets });
+      await prisma.cardLink.createMany({
+        data: capTargets.map((entry) => ({
+          id: randomUUID(),
+          boardId: fixture.boardId,
+          fromCardId: cycleA.id,
+          toCardId: entry.id,
+          type: "relates_to" as const,
+        })),
+      });
+      await reject(409, {
+        type: "ADD_CARD_LINK",
+        cardId: cycleA.id,
+        linkId: randomUUID(),
+        targetCardId: targetCard.id,
+        linkType: "relates_to",
+      });
+
+      await reject(404, {
+        type: "REMOVE_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: `missing-${randomUUID()}`,
+        targetCardId: targetCard.id,
+        linkType: "relates_to",
+      });
+      await prisma.cardLink.update({
+        where: { id: existingLink.id },
+        data: { deletedAt: new Date() },
+      });
+      await reject(404, {
+        type: "REMOVE_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: existingLink.id,
+        targetCardId: targetCard.id,
+        linkType: "relates_to",
+      });
+      const liveLink = await prisma.cardLink.create({
+        data: {
+          id: randomUUID(),
+          boardId: fixture.boardId,
+          fromCardId: targetCard.id,
+          toCardId: fixture.cardId,
+          type: "relates_to",
+        },
+      });
+      await reject(404, {
+        type: "REMOVE_CARD_LINK",
+        cardId: fixture.cardId,
+        linkId: liveLink.id,
+        targetCardId: fixture.cardId,
+        linkType: "relates_to",
+      });
+      await reject(409, {
+        type: "REMOVE_CARD_LINK",
+        cardId: targetCard.id,
+        linkId: liveLink.id,
+        targetCardId: fixture.cardId,
+        linkType: "blocks",
+      });
+
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(0);
+
+      await prisma.cardLink.deleteMany({ where: { boardId: otherBoard.id } });
+      await prisma.checklistItem.deleteMany({
+        where: { checklist: { cardId: foreignCard.id } },
+      });
+      await prisma.checklist.deleteMany({ where: { cardId: foreignCard.id } });
+      await prisma.card.deleteMany({
+        where: { column: { boardId: otherBoard.id } },
+      });
+      await prisma.column.deleteMany({ where: { boardId: otherBoard.id } });
+      await prisma.boardMember.deleteMany({
+        where: { boardId: otherBoard.id },
+      });
+      await prisma.board.delete({ where: { id: otherBoard.id } });
       await cleanupCommandFixture(fixture);
     });
 

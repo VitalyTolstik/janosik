@@ -363,7 +363,45 @@ was 100 kB), leaving 0.38 kB headroom. Checklists and links are deliberately
 **not** part of B1. Implemented on `feat/TASK-176.9-admin-card-fields` (base
 `05d0df30`).
 
-Master-authored comments/uploads are also a separate product decision: decide the author identity, history display and responsibility before adding the controls.
+**Delivered — B2 (2026-11-18, TASK-176.9):** `/admin/cards/:id` now shows a
+lazy `Checklists and links` panel beside the field editor on non-deleted cards.
+It is admin-native: the normal `CardChecklists`/`CardLinks` editors need
+`BoardContext`, which `/admin` never mounts, so the panel reuses the shared
+action types, limits and link invariants but sends one fresh
+owner-attributed command per change (`ADD_CHECKLIST`, `RENAME_CHECKLIST`,
+`DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`,
+`RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`, `ADD_CARD_LINK`,
+`REMOVE_CARD_LINK`). Deleted checklists/items and unchanged drafts are
+suppressed; caps are 20 checklists per card and 100 items per checklist.
+Links show both directions with the stored type and a readable phrase
+(outgoing `blocks` / incoming `is blocked by`, etc.); incoming removal targets
+the holder card, not the viewed card. The target combobox loads
+`adminApi.getBoardContent(boardId)`, excludes self, archived and already-linked
+cards, checks the holder's 50-link cap and refuses a `blocks` cycle. Deleted
+cards hide the editor; archived cards keep editing. Dangling or soft-deleted
+link rows stay readable, and live dangling rows remain removable.
+
+The backend `beforeApplyFresh` guard now covers all nine actions: the source
+card must be live and on the same board (`404`); checklists/items must exist on
+that card/checklist and be live (`404` on `action.checklistId` /
+`action.itemId`); a new checklist/item/link id must be free or a soft-deleted
+row owned by the same card/checklist; link targets must be live on the board
+(`404`), and self-links (`400`), existing pairs, `blocks` cycles and the
+50-link holder cap (`409`) are refused. `REMOVE_CARD_LINK` requires a live row
+owned by `action.cardId` with a matching target/type. Rejected fresh writes
+create no command or audit row; exact replays skip the guard and stay
+idempotent. Archived cards allow checklist/link edits — only `MOVE_CARD`
+remains blocked.
+
+The combined size gate now measures the real card page: `AdminApp`,
+`CardFieldsPanel`, `CardRelationsPanel` and the shared admin `ui` chunk that
+rolldown split out when the second lazy panel was added. **101.62 kB → 110.17
+kB gzip against an explicit 112 kB budget**, leaving 1.83 kB headroom. The
+lazy relations chunk is not omitted.
+
+Master-authored comments/uploads are also a separate product decision: decide
+the author identity, history display and responsibility before adding the
+controls.
 
 ---
 

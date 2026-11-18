@@ -113,6 +113,14 @@ the audit row id, and it also requires `action=board.command`. Card field edits
 from `/admin/cards/:id` use the same `board.command` row: `UPDATE_CARD`,
 `SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`, `SET_CARD_COVER`
 and `SET_CARD_LABEL` each carry their own `commandId` and master attribution.
+Checklist and link edits are correlated the same way: `ADD_CHECKLIST`,
+`RENAME_CHECKLIST`, `DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`,
+`SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`,
+`ADD_CARD_LINK` and `REMOVE_CARD_LINK` each produce one `board.command` row for
+an accepted fresh write. A rejected fresh write (missing/deleted row, foreign
+id, self/duplicate/cycle link or cap) creates neither a command nor an audit
+row, while a replay of a stored `commandId` returns its result without a
+second audit row.
 
 ### Audit actions
 

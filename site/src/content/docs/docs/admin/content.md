@@ -215,7 +215,37 @@ value. The assignee list contains accepted, unexpired members; disabled users
 are hidden from new choices for UX (a current disabled assignee stays visible
 as the current value), although the backend would still accept an active
 membership. Labels are the board's live labels only, and a card is capped at
-20. Checklists and links stay read-only here.
+20.
+
+### Checklists and links
+
+Non-deleted cards also show a `Checklists and links` panel beside the
+properties editor. It uses the same owner-attribution banner and sends one
+fresh command per change:
+
+| Change | Command |
+| --- | --- |
+| Add, rename or delete a checklist | `ADD_CHECKLIST`, `RENAME_CHECKLIST`, `DELETE_CHECKLIST` |
+| Add, toggle, rename or delete an item | `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM` |
+| Add or remove a card link | `ADD_CARD_LINK`, `REMOVE_CARD_LINK` |
+
+Checklists are capped at 20 per card and 100 items per checklist; deleted
+checklists and items are filtered out of the editor. Deleting a checklist asks
+for confirmation. Links show both directions with the stored type and a
+readable phrase: outgoing `blocks` reads as “blocks”, incoming as “is blocked
+by” (the same reverse phrasing is offered when adding: relates to, blocks, is
+blocked by, duplicates, is duplicated by). Incoming rows are removed through
+their holder card, not through the viewed card. The target combobox is loaded
+from the board content and excludes the current card, archived cards and
+already-linked pairs; a card cannot exceed 50 outgoing links, and a `blocks`
+edge that would create a cycle is refused. Dangling or soft-deleted link rows
+stay readable, and a live dangling row can still be removed to free the cap.
+
+Deleted cards hide the editor. Archived cards keep checklist and link editing;
+only moving an archived card is blocked. Every accepted change appears as a
+`board.command` audit row with `commandId`, `masterId` and `masterEmail`, while
+the board history still names the owner. A rejected fresh write creates no
+command or audit row.
 
 ### Sections
 
@@ -223,10 +253,12 @@ membership. Labels are the board's live labels only, and a card is capped at
   opens `Edit description`, which sends an `UPDATE_CARD` command through the
   same owner-attribution banner and command log as the content editor.
 - Labels, as color chips.
-- Checklists, each with a title, a `done/total` count and its live items.
+- Checklists, each with a title, a `done/total` progress count, its live items
+  and inline add/rename/toggle/delete controls.
 - Links, both directions: outgoing links with an up-right arrow and incoming
-  links with a down-left arrow, each with a type badge and a `Deleted` badge
-  when applicable. Types are `blocks`, `relates_to` and `duplicates`.
+  links with a down-left arrow, each with the stored `blocks`, `relates_to` or
+  `duplicates` type, a readable relation phrase, a `Deleted` badge when the
+  row is soft-deleted, and a `Card deleted` badge for a dangling target.
 - Attachments table: File (thumbnail, name, download), Size, Uploaded by,
   Created, Status, Actions.
 - Comments table: Comment, Author (linked), Created, Status, Actions.

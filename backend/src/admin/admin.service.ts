@@ -36,7 +36,12 @@ import type {
   AdminUserRowDto,
   AdminShareRowDto,
 } from "@janosik/shared";
-import { ADMIN_PAGE_LIMITS, serializeExport } from "@janosik/shared";
+import {
+  ADMIN_PAGE_LIMITS,
+  LIMITS,
+  linkPairKey,
+  serializeExport,
+} from "@janosik/shared";
 import type {
   AdminAddBoardMemberRequest,
   AdminBulkResultDto,
@@ -57,6 +62,7 @@ import {
   type AdminOAuthProviderDto,
   type AdminThrottleSettingsDto,
   type AdminTrafficDto,
+  type BoardAction,
   type CommandResponse,
   type OAuthProviderId,
 } from "@janosik/shared";
@@ -102,6 +108,23 @@ import {
   assertBundleBudget,
   BundleTooLargeException,
 } from "./export-budget";
+
+/** Fresh-write guard surface added by TASK-176.9 B2. */
+type AdminCardRelationsAction = Extract<
+  BoardAction,
+  {
+    type:
+      | "ADD_CHECKLIST"
+      | "RENAME_CHECKLIST"
+      | "DELETE_CHECKLIST"
+      | "ADD_CHECKLIST_ITEM"
+      | "SET_CHECKLIST_ITEM_DONE"
+      | "RENAME_CHECKLIST_ITEM"
+      | "DELETE_CHECKLIST_ITEM"
+      | "ADD_CARD_LINK"
+      | "REMOVE_CARD_LINK";
+  }
+>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Master-panel actions are not a PAT/browser session: system attribution. */
@@ -1075,6 +1098,17 @@ export class AdminService {
             case "SET_CARD_COVER":
             case "SET_CARD_LABEL":
               break;
+            case "ADD_CHECKLIST":
+            case "RENAME_CHECKLIST":
+            case "DELETE_CHECKLIST":
+            case "ADD_CHECKLIST_ITEM":
+            case "SET_CHECKLIST_ITEM_DONE":
+            case "RENAME_CHECKLIST_ITEM":
+            case "DELETE_CHECKLIST_ITEM":
+            case "ADD_CARD_LINK":
+            case "REMOVE_CARD_LINK":
+              await this.assertAdminCardRelations(tx, boardId, dto.action);
+              return;
             default:
               return;
           }
@@ -1135,6 +1169,298 @@ export class AdminService {
       });
     }
     return applied.response;
+  }
+
+  /**
+   * TASK-176.9 (B2): checklist and link edits need the same fresh-command
+   * guards as the field pilot. The reducer silently ignores unknown ids and
+   * several invalid links, but an admin write must not fabricate a successful
+   * command/audit row for a no-op. Replays never reach here (the idempotency
+   * lookup above returns their stored result).
+   */
+  private async assertAdminCardRelations(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    action: AdminCardRelationsAction,
+  ): Promise<void> {
+    const card = await tx.card.findUnique({
+      where: { id: action.cardId },
+      select: {
+        id: true,
+        deletedAt: true,
+        column: { select: { boardId: true } },
+      },
+    });
+    if (!card || card.deletedAt !== null || card.column.boardId !== boardId) {
+      throw new NotFoundException({
+        message: "Card not found",
+        field: "action.cardId",
+      });
+    }
+
+    const requireChecklist = async (checklistId: string): Promise<void> => {
+      const checklist = await tx.checklist.findUnique({
+        where: { id: checklistId },
+        select: { id: true, cardId: true, deletedAt: true },
+      });
+      if (
+        !checklist ||
+        checklist.deletedAt !== null ||
+        checklist.cardId !== action.cardId
+      ) {
+        throw new NotFoundException({
+          message: "Checklist not found",
+          field: "action.checklistId",
+        });
+      }
+    };
+
+    const requireItem = async (
+      checklistId: string,
+      itemId: string,
+    ): Promise<void> => {
+      const item = await tx.checklistItem.findUnique({
+        where: { id: itemId },
+        select: {
+          id: true,
+          checklistId: true,
+          deletedAt: true,
+          checklist: { select: { cardId: true } },
+        },
+      });
+      if (
+        !item ||
+        item.deletedAt !== null ||
+        item.checklistId !== checklistId ||
+        item.checklist.cardId !== action.cardId
+      ) {
+        throw new NotFoundException({
+          message: "Checklist item not found",
+          field: "action.itemId",
+        });
+      }
+    };
+
+    const checklistIdConflict = (
+      field: "action.newChecklistId" | "action.newItemId",
+      message: string,
+    ): never => {
+      throw new ConflictException({
+        message,
+        field,
+        code: "id_conflict",
+        conflict: "id",
+      });
+    };
+
+    switch (action.type) {
+      case "ADD_CHECKLIST": {
+        const existing = await tx.checklist.findUnique({
+          where: { id: action.newChecklistId },
+          select: { id: true, cardId: true, deletedAt: true },
+        });
+        if (
+          existing !== null &&
+          (existing.cardId !== action.cardId || existing.deletedAt === null)
+        ) {
+          checklistIdConflict(
+            "action.newChecklistId",
+            "Checklist id is already used",
+          );
+        }
+        return;
+      }
+      case "RENAME_CHECKLIST":
+      case "DELETE_CHECKLIST":
+        await requireChecklist(action.checklistId);
+        return;
+      case "ADD_CHECKLIST_ITEM": {
+        await requireChecklist(action.checklistId);
+        const existing = await tx.checklistItem.findUnique({
+          where: { id: action.newItemId },
+          select: { id: true, checklistId: true, deletedAt: true },
+        });
+        if (
+          existing !== null &&
+          (existing.checklistId !== action.checklistId ||
+            existing.deletedAt === null)
+        ) {
+          checklistIdConflict(
+            "action.newItemId",
+            "Checklist item id is already used",
+          );
+        }
+        return;
+      }
+      case "SET_CHECKLIST_ITEM_DONE":
+      case "RENAME_CHECKLIST_ITEM":
+      case "DELETE_CHECKLIST_ITEM":
+        await requireChecklist(action.checklistId);
+        await requireItem(action.checklistId, action.itemId);
+        return;
+      case "ADD_CARD_LINK": {
+        const existing = await tx.cardLink.findUnique({
+          where: { id: action.linkId },
+          select: {
+            id: true,
+            boardId: true,
+            fromCardId: true,
+            deletedAt: true,
+          },
+        });
+        if (
+          existing !== null &&
+          (existing.boardId !== boardId ||
+            existing.fromCardId !== action.cardId ||
+            existing.deletedAt === null)
+        ) {
+          throw new ConflictException({
+            message: "Link id is already used",
+            field: "action.linkId",
+            code: "id_conflict",
+            conflict: "id",
+          });
+        }
+
+        const target = await tx.card.findUnique({
+          where: { id: action.targetCardId },
+          select: {
+            id: true,
+            deletedAt: true,
+            column: { select: { boardId: true } },
+          },
+        });
+        if (
+          !target ||
+          target.deletedAt !== null ||
+          target.column.boardId !== boardId
+        ) {
+          throw new NotFoundException({
+            message: "Target card not found",
+            field: "action.targetCardId",
+          });
+        }
+        if (target.id === action.cardId) {
+          throw new BadRequestException({
+            message: "A card cannot link to itself",
+            field: "action.targetCardId",
+            code: "link_self",
+          });
+        }
+
+        const [cards, links] = await Promise.all([
+          tx.card.findMany({
+            where: { column: { boardId }, deletedAt: null },
+            select: { id: true },
+          }),
+          tx.cardLink.findMany({
+            where: { boardId, deletedAt: null },
+            select: { fromCardId: true, toCardId: true, type: true },
+          }),
+        ]);
+        const pair = linkPairKey(action.cardId, action.targetCardId);
+        if (
+          links.some(
+            (link) => linkPairKey(link.fromCardId, link.toCardId) === pair,
+          )
+        ) {
+          throw new ConflictException({
+            message: "Cards are already linked",
+            field: "action.targetCardId",
+            code: "link_pair_exists",
+          });
+        }
+
+        if (action.linkType === "blocks") {
+          const liveCardIds = new Set(cards.map((entry) => entry.id));
+          const adjacency = new Map<string, string[]>();
+          for (const link of links) {
+            if (
+              link.type !== "blocks" ||
+              !liveCardIds.has(link.fromCardId) ||
+              !liveCardIds.has(link.toCardId)
+            ) {
+              continue;
+            }
+            const next = adjacency.get(link.fromCardId) ?? [];
+            next.push(link.toCardId);
+            adjacency.set(link.fromCardId, next);
+          }
+          const seen = new Set<string>([action.targetCardId]);
+          const stack = [action.targetCardId];
+          let closesCycle = false;
+          while (stack.length > 0 && !closesCycle) {
+            const current = stack.pop() as string;
+            for (const next of adjacency.get(current) ?? []) {
+              if (next === action.cardId) {
+                closesCycle = true;
+                break;
+              }
+              if (seen.has(next)) continue;
+              seen.add(next);
+              stack.push(next);
+            }
+          }
+          if (closesCycle) {
+            throw new ConflictException({
+              message: "That blocking link would create a cycle",
+              field: "action.targetCardId",
+              code: "link_cycle",
+            });
+          }
+        }
+
+        const outgoing = links.filter(
+          (link) => link.fromCardId === action.cardId,
+        ).length;
+        if (outgoing >= LIMITS.linksPerCard) {
+          throw new ConflictException({
+            message: "Too many outgoing links on the card",
+            field: "action.linkId",
+            code: "link_cap",
+            conflict: "wip",
+          });
+        }
+        return;
+      }
+      case "REMOVE_CARD_LINK": {
+        const link = await tx.cardLink.findUnique({
+          where: { id: action.linkId },
+          select: {
+            id: true,
+            boardId: true,
+            fromCardId: true,
+            toCardId: true,
+            type: true,
+            deletedAt: true,
+          },
+        });
+        if (
+          !link ||
+          link.deletedAt !== null ||
+          link.boardId !== boardId ||
+          link.fromCardId !== action.cardId
+        ) {
+          throw new NotFoundException({
+            message: "Card link not found",
+            field: "action.linkId",
+          });
+        }
+        if (
+          link.toCardId !== action.targetCardId ||
+          link.type !== action.linkType
+        ) {
+          throw new ConflictException({
+            message: "Link row does not match the requested relation",
+            field: "action.linkId",
+            code: "link_mismatch",
+          });
+        }
+        return;
+      }
+      default:
+        return;
+    }
   }
 
   /**

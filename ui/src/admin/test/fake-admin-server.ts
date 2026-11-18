@@ -12,10 +12,12 @@ import {
 import type {
   BoardAction,
   BoardAggregate,
+  CardLinkType,
   AdminActivityRowDto,
   AdminAttachmentRowDto,
   AdminAuditRowDto,
   AdminBoardRowDto,
+  AdminCardChecklistDto,
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
@@ -65,6 +67,17 @@ interface FakeAdmin {
   lastLoginAt: number | null;
 }
 
+/** One directional link row persisted by the fake command endpoint. */
+export interface FakeCardLink {
+  id: string;
+  boardId: string;
+  fromCardId: string;
+  toCardId: string;
+  type: CardLinkType;
+  deletedAt: number | null;
+  createdAt: number;
+}
+
 export interface FakeAdminState {
   admins: FakeAdmin[];
   users: AdminUserRowDto[];
@@ -87,6 +100,10 @@ export interface FakeAdminState {
   cardCovers: Record<string, { type: string; value: string } | null>;
   /** Attached label ids per card id, updated by SET_CARD_LABEL. */
   cardLabelIds: Record<string, string[]>;
+  /** Checklists per card id, including soft-deleted rows. */
+  cardChecklists: Record<string, AdminCardChecklistDto[]>;
+  /** Directional card links, including soft-deleted rows. */
+  cardLinks: FakeCardLink[];
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
@@ -126,7 +143,37 @@ export function emptyAdminState(): FakeAdminState {
     cardDescriptions: {},
     cardCovers: {},
     cardLabelIds: {},
+    cardChecklists: {},
+    cardLinks: [],
     contentBoard: null,
+  };
+}
+
+export function adminChecklist(
+  overrides: Partial<AdminCardChecklistDto> = {},
+): AdminCardChecklistDto {
+  return {
+    id: "checklist-1",
+    title: "Checklist",
+    position: 0,
+    deletedAt: null,
+    items: [],
+    ...overrides,
+  };
+}
+
+export function adminCardLink(
+  overrides: Partial<FakeCardLink> = {},
+): FakeCardLink {
+  return {
+    id: "link-1",
+    boardId: "b-1",
+    fromCardId: "card-1",
+    toCardId: "card-2",
+    type: "relates_to",
+    deletedAt: null,
+    createdAt: now,
+    ...overrides,
   };
 }
 
@@ -899,6 +946,11 @@ export class FakeAdminServer {
         return this.json({ seq: replay.seq, versions: {} });
       }
 
+      const relationError = this.relationGuard(boardCommand[1], action);
+      if (relationError !== null) {
+        return this.json(relationError.body, relationError.status);
+      }
+
       const cardActionTypes = new Set<string>([
         "UPDATE_CARD",
         "MOVE_CARD",
@@ -1047,6 +1099,7 @@ export class FakeAdminServer {
       }
 
       const board = this.state.contentBoard ?? current;
+      this.applyRelationState(action);
       if (action.type === "ADD_CARD") {
         const newCardId = (action as { newCardId?: string }).newCardId;
         const aggregateCard =
@@ -2080,6 +2133,449 @@ export class FakeAdminServer {
     };
   }
 
+  private relationGuard(
+    boardId: string,
+    action: BoardAction,
+  ): { status: number; body: Record<string, unknown> } | null {
+    const relationTypes = new Set<string>([
+      "ADD_CHECKLIST",
+      "RENAME_CHECKLIST",
+      "DELETE_CHECKLIST",
+      "ADD_CHECKLIST_ITEM",
+      "SET_CHECKLIST_ITEM_DONE",
+      "RENAME_CHECKLIST_ITEM",
+      "DELETE_CHECKLIST_ITEM",
+      "ADD_CARD_LINK",
+      "REMOVE_CARD_LINK",
+    ]);
+    if (!relationTypes.has(action.type)) return null;
+    const relation = action as BoardAction & {
+      cardId: string;
+      checklistId?: string;
+      itemId?: string;
+      newChecklistId?: string;
+      newItemId?: string;
+      linkId?: string;
+      targetCardId?: string;
+      linkType?: CardLinkType;
+    };
+    const card = this.state.cards.find((entry) => entry.id === relation.cardId);
+    if (
+      card === undefined ||
+      card.deletedAt !== null ||
+      card.boardId !== boardId
+    ) {
+      return {
+        status: 404,
+        body: { message: "Card not found", field: "action.cardId" },
+      };
+    }
+
+    const checklists = this.state.cardChecklists[relation.cardId] ?? [];
+    const checklist =
+      relation.checklistId === undefined
+        ? undefined
+        : checklists.find((entry) => entry.id === relation.checklistId);
+    const requireChecklist = (): {
+      status: number;
+      body: Record<string, unknown>;
+    } | null =>
+      checklist === undefined || checklist.deletedAt !== null
+        ? {
+            status: 404,
+            body: {
+              message: "Checklist not found",
+              field: "action.checklistId",
+            },
+          }
+        : null;
+
+    const allChecklists = Object.values(this.state.cardChecklists).flat();
+    const allItems = allChecklists.flatMap((entry) => entry.items);
+    const idConflict = (
+      field: string,
+    ): {
+      status: number;
+      body: Record<string, unknown>;
+    } => ({
+      status: 409,
+      body: {
+        message: "Entity id is already used",
+        field,
+        code: "id_conflict",
+        conflict: "id",
+      },
+    });
+
+    switch (action.type) {
+      case "ADD_CHECKLIST": {
+        const existing = allChecklists.find(
+          (entry) => entry.id === relation.newChecklistId,
+        );
+        if (
+          existing !== undefined &&
+          (existing.deletedAt === null ||
+            !checklists.some((entry) => entry.id === existing.id))
+        ) {
+          return idConflict("action.newChecklistId");
+        }
+        if (
+          checklists.filter((entry) => entry.deletedAt === null).length >=
+          LIMITS.checklistsPerCard
+        ) {
+          return {
+            status: 409,
+            body: {
+              message: "Too many checklists on the card",
+              conflict: "wip",
+              currentVersion: 0,
+            },
+          };
+        }
+        return null;
+      }
+      case "RENAME_CHECKLIST":
+      case "DELETE_CHECKLIST":
+        return requireChecklist();
+      case "ADD_CHECKLIST_ITEM": {
+        const missing = requireChecklist();
+        if (missing !== null) return missing;
+        const existing = allItems.find(
+          (entry) => entry.id === relation.newItemId,
+        );
+        if (
+          existing !== undefined &&
+          (existing.deletedAt === null ||
+            !(checklist?.items ?? []).some((entry) => entry.id === existing.id))
+        ) {
+          return idConflict("action.newItemId");
+        }
+        if (
+          (checklist?.items ?? []).filter((entry) => entry.deletedAt === null)
+            .length >= LIMITS.itemsPerChecklist
+        ) {
+          return {
+            status: 409,
+            body: {
+              message: "Too many items in the checklist",
+              conflict: "wip",
+              currentVersion: 0,
+            },
+          };
+        }
+        return null;
+      }
+      case "SET_CHECKLIST_ITEM_DONE":
+      case "RENAME_CHECKLIST_ITEM":
+      case "DELETE_CHECKLIST_ITEM": {
+        const missing = requireChecklist();
+        if (missing !== null) return missing;
+        const item = checklist?.items.find(
+          (entry) => entry.id === relation.itemId,
+        );
+        if (item === undefined || item.deletedAt !== null) {
+          return {
+            status: 404,
+            body: {
+              message: "Checklist item not found",
+              field: "action.itemId",
+            },
+          };
+        }
+        return null;
+      }
+      case "ADD_CARD_LINK": {
+        const existing = this.state.cardLinks.find(
+          (entry) => entry.id === relation.linkId,
+        );
+        if (
+          existing !== undefined &&
+          (existing.boardId !== boardId ||
+            existing.fromCardId !== relation.cardId ||
+            existing.deletedAt === null)
+        ) {
+          return idConflict("action.linkId");
+        }
+        const target = this.state.cards.find(
+          (entry) => entry.id === relation.targetCardId,
+        );
+        if (
+          target === undefined ||
+          target.deletedAt !== null ||
+          target.boardId !== boardId
+        ) {
+          return {
+            status: 404,
+            body: {
+              message: "Target card not found",
+              field: "action.targetCardId",
+            },
+          };
+        }
+        if (target.id === relation.cardId) {
+          return {
+            status: 400,
+            body: {
+              message: "A card cannot link to itself",
+              field: "action.targetCardId",
+              code: "link_self",
+            },
+          };
+        }
+        const liveLinks = this.state.cardLinks.filter(
+          (entry) => entry.deletedAt === null,
+        );
+        const pairKey =
+          relation.cardId < target.id
+            ? `${relation.cardId}|${target.id}`
+            : `${target.id}|${relation.cardId}`;
+        if (
+          liveLinks.some((entry) => {
+            const key =
+              entry.fromCardId < entry.toCardId
+                ? `${entry.fromCardId}|${entry.toCardId}`
+                : `${entry.toCardId}|${entry.fromCardId}`;
+            return key === pairKey;
+          })
+        ) {
+          return {
+            status: 409,
+            body: {
+              message: "Cards are already linked",
+              field: "action.targetCardId",
+              code: "link_pair_exists",
+            },
+          };
+        }
+        if (relation.linkType === "blocks") {
+          const liveCardIds = new Set(
+            this.state.cards
+              .filter(
+                (entry) =>
+                  entry.boardId === boardId && entry.deletedAt === null,
+              )
+              .map((entry) => entry.id),
+          );
+          const adjacency = new Map<string, string[]>();
+          for (const link of liveLinks) {
+            if (
+              link.type !== "blocks" ||
+              !liveCardIds.has(link.fromCardId) ||
+              !liveCardIds.has(link.toCardId)
+            ) {
+              continue;
+            }
+            const next = adjacency.get(link.fromCardId) ?? [];
+            next.push(link.toCardId);
+            adjacency.set(link.fromCardId, next);
+          }
+          const seen = new Set<string>([target.id]);
+          const stack = [target.id];
+          while (stack.length > 0) {
+            const current = stack.pop() as string;
+            for (const next of adjacency.get(current) ?? []) {
+              if (next === relation.cardId) {
+                return {
+                  status: 409,
+                  body: {
+                    message: "That blocking link would create a cycle",
+                    field: "action.targetCardId",
+                    code: "link_cycle",
+                  },
+                };
+              }
+              if (seen.has(next)) continue;
+              seen.add(next);
+              stack.push(next);
+            }
+          }
+        }
+        if (
+          liveLinks.filter((entry) => entry.fromCardId === relation.cardId)
+            .length >= LIMITS.linksPerCard
+        ) {
+          return {
+            status: 409,
+            body: {
+              message: "Too many outgoing links on the card",
+              field: "action.linkId",
+              code: "link_cap",
+              conflict: "wip",
+              currentVersion: 0,
+            },
+          };
+        }
+        return null;
+      }
+      case "REMOVE_CARD_LINK": {
+        const link = this.state.cardLinks.find(
+          (entry) => entry.id === relation.linkId,
+        );
+        if (
+          link === undefined ||
+          link.deletedAt !== null ||
+          link.boardId !== boardId ||
+          link.fromCardId !== relation.cardId
+        ) {
+          return {
+            status: 404,
+            body: {
+              message: "Card link not found",
+              field: "action.linkId",
+            },
+          };
+        }
+        if (
+          link.toCardId !== relation.targetCardId ||
+          link.type !== relation.linkType
+        ) {
+          return {
+            status: 409,
+            body: {
+              message: "Link row does not match the requested relation",
+              field: "action.linkId",
+              code: "link_mismatch",
+            },
+          };
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  private applyRelationState(action: BoardAction): void {
+    const relation = action as BoardAction & {
+      cardId: string;
+      checklistId?: string;
+      itemId?: string;
+      newChecklistId?: string;
+      newItemId?: string;
+      title?: string;
+      text?: string;
+      done?: boolean;
+      linkId?: string;
+      targetCardId?: string;
+      linkType?: CardLinkType;
+    };
+    const checklists = this.state.cardChecklists[relation.cardId] ?? [];
+    const checklist =
+      relation.checklistId === undefined
+        ? undefined
+        : checklists.find((entry) => entry.id === relation.checklistId);
+    switch (action.type) {
+      case "ADD_CHECKLIST": {
+        const existing = checklists.find(
+          (entry) => entry.id === relation.newChecklistId,
+        );
+        if (existing !== undefined) {
+          existing.title = relation.title ?? existing.title;
+          existing.deletedAt = null;
+          return;
+        }
+        checklists.push({
+          id: relation.newChecklistId ?? `checklist-${now}`,
+          title: relation.title ?? "",
+          position: checklists.filter((entry) => entry.deletedAt === null)
+            .length,
+          deletedAt: null,
+          items: [],
+        });
+        this.state.cardChecklists[relation.cardId] = checklists;
+        return;
+      }
+      case "RENAME_CHECKLIST": {
+        if (checklist !== undefined) checklist.title = relation.title ?? "";
+        return;
+      }
+      case "DELETE_CHECKLIST": {
+        if (checklist !== undefined) {
+          checklist.deletedAt = now;
+          for (const item of checklist.items) {
+            if (item.deletedAt === null) item.deletedAt = now;
+          }
+        }
+        return;
+      }
+      case "ADD_CHECKLIST_ITEM": {
+        if (checklist === undefined) return;
+        const existing = checklist.items.find(
+          (entry) => entry.id === relation.newItemId,
+        );
+        if (existing !== undefined) {
+          existing.text = relation.text ?? existing.text;
+          existing.done = false;
+          existing.deletedAt = null;
+          return;
+        }
+        checklist.items.push({
+          id: relation.newItemId ?? `item-${now}`,
+          text: relation.text ?? "",
+          done: false,
+          position: checklist.items.filter((entry) => entry.deletedAt === null)
+            .length,
+          deletedAt: null,
+        });
+        return;
+      }
+      case "SET_CHECKLIST_ITEM_DONE": {
+        const item = checklist?.items.find(
+          (entry) => entry.id === relation.itemId,
+        );
+        if (item !== undefined) item.done = relation.done === true;
+        return;
+      }
+      case "RENAME_CHECKLIST_ITEM": {
+        const item = checklist?.items.find(
+          (entry) => entry.id === relation.itemId,
+        );
+        if (item !== undefined) item.text = relation.text ?? item.text;
+        return;
+      }
+      case "DELETE_CHECKLIST_ITEM": {
+        const item = checklist?.items.find(
+          (entry) => entry.id === relation.itemId,
+        );
+        if (item !== undefined) item.deletedAt = now;
+        return;
+      }
+      case "ADD_CARD_LINK": {
+        const existing = this.state.cardLinks.find(
+          (entry) => entry.id === relation.linkId,
+        );
+        if (existing !== undefined) {
+          existing.fromCardId = relation.cardId;
+          existing.toCardId = relation.targetCardId ?? existing.toCardId;
+          existing.type = relation.linkType ?? existing.type;
+          existing.deletedAt = null;
+          return;
+        }
+        this.state.cardLinks.push({
+          id: relation.linkId ?? `link-${now}`,
+          boardId:
+            this.state.cards.find((entry) => entry.id === relation.cardId)
+              ?.boardId ?? "b-1",
+          fromCardId: relation.cardId,
+          toCardId: relation.targetCardId ?? "",
+          type: relation.linkType ?? "relates_to",
+          deletedAt: null,
+          createdAt: now,
+        });
+        return;
+      }
+      case "REMOVE_CARD_LINK": {
+        const link = this.state.cardLinks.find(
+          (entry) => entry.id === relation.linkId,
+        );
+        if (link !== undefined) link.deletedAt = now;
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
   /** Mirror of the paged `/admin/cards/:id/detail` contract (TASK-176.3). */
   private cardDetail(card: AdminCardRowDto, url: URL) {
     const section = url.searchParams.get("section");
@@ -2209,9 +2705,36 @@ export class FakeAdminServer {
           color: label.color,
           position: label.position,
         })),
-      checklists: [],
-      linksOut: [],
-      linksIn: [],
+      checklists: (this.state.cardChecklists[card.id] ?? []).map(
+        (checklist) => ({
+          ...checklist,
+          items: checklist.items.map((item) => ({ ...item })),
+        }),
+      ),
+      linksOut: this.state.cardLinks
+        .filter((link) => link.fromCardId === card.id)
+        .map((link) => ({
+          id: link.id,
+          otherCardId: link.toCardId,
+          otherCardTitle:
+            this.state.cards.find((entry) => entry.id === link.toCardId)
+              ?.title ?? "Deleted card",
+          type: link.type,
+          deletedAt: link.deletedAt,
+          createdAt: link.createdAt,
+        })),
+      linksIn: this.state.cardLinks
+        .filter((link) => link.toCardId === card.id)
+        .map((link) => ({
+          id: link.id,
+          otherCardId: link.fromCardId,
+          otherCardTitle:
+            this.state.cards.find((entry) => entry.id === link.fromCardId)
+              ?.title ?? "Deleted card",
+          type: link.type,
+          deletedAt: link.deletedAt,
+          createdAt: link.createdAt,
+        })),
       windows: {
         comments: win(
           commentsOffset,

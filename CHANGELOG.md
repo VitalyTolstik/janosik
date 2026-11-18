@@ -8,6 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.9 B2 admin card checklists and links: `/admin/cards/:id` now shows a
+  lazy `Checklists and links` panel beside the field editor on non-deleted
+  cards. It is admin-native (no `BoardContext`), uses the same owner-attribution
+  banner, and sends one fresh `commandId` per change: `ADD_CHECKLIST`,
+  `RENAME_CHECKLIST`, `DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`,
+  `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`,
+  `ADD_CARD_LINK` and `REMOVE_CARD_LINK`. Checklists are capped at 20 per card,
+  items at 100 per checklist; unchanged drafts send nothing, deleted
+  checklists/items are filtered out, and checklist deletion asks for
+  confirmation. Links show both directions with the stored type plus a readable
+  phrase (`blocks` / `is blocked by`, `duplicates` / `is duplicated by`), and
+  incoming removal targets the holder card. The target combobox loads
+  `GET /admin/boards/:id/content`, excludes self, archived and already-linked
+  pairs, enforces the holder's 50-link cap and blocks `blocks` cycles; reverse
+  phrasing is available when adding. Dangling/soft-deleted link rows stay
+  readable and live dangling rows remain removable. Deleted cards hide the
+  editor; archived cards keep editing. The backend fresh-command guard now
+  covers all nine actions: live/same-board source card and checklist/item with
+  exact ownership (`404`), new ids free or a soft-deleted row owned by the same
+  card/checklist, live/same-board link target (`404`), self-link (`400`),
+  existing pair/cycle/cap (`409`), and a live holder-owned row for removal.
+  Rejected fresh writes create no command or audit row; exact replays stay
+  idempotent. The lazy relations chunk is part of the size gate: rolldown split
+  the shared admin `ui` chunk out when the second panel arrived, so the entry
+  now measures `AdminApp` + both lazy panels + that admin chunk. **101.62 kB →
+  110.17 kB gzip against an explicit 112 kB budget**, leaving 1.83 kB headroom
+  (the previous 102 kB budget measured only the shell + field panel). EN/RU
+  admin content and monitoring docs describe the editor and the audit
+  correlation.
+
 - TASK-176.9 B1 admin card fields: `/admin/cards/:id` now has a compact
   `Properties` panel for the card title, assignee, due date, priority, cover
   and labels. Each change is one fresh owner-attributed board command
