@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { Test } from "@nestjs/testing";
-import { duplicateChecklistId } from "@janosik/shared";
+import {
+  duplicateChecklistId,
+  duplicateChecklistItemId,
+} from "@janosik/shared";
 import type {
   Board,
   CreateUserTokenResponse,
@@ -1126,6 +1129,96 @@ describe("Plans and apply (e2e)", () => {
       .set(auth(workerToken))
       .send({ commands: [] });
     expect(empty.status).toBe(400);
+  });
+
+  it("previews parentage for entities created earlier in the plan", async () => {
+    const columnId = await createColumn("Plan cumulative parentage");
+    const sourceId = await createCard(columnId, "Source");
+    const victimId = await createCard(columnId, "Victim");
+    const sourceChecklistId = randomUUID();
+    await command("ADD_CHECKLIST", {
+      cardId: sourceId,
+      newChecklistId: sourceChecklistId,
+      title: "Source steps",
+    }).expect(200);
+    await command("ADD_CHECKLIST_ITEM", {
+      cardId: sourceId,
+      checklistId: sourceChecklistId,
+      newItemId: randomUUID(),
+      text: "Source item",
+    }).expect(200);
+
+    const duplicate = (copyId: string) =>
+      planCommand({
+        type: "DUPLICATE_CARD",
+        cardId: sourceId,
+        newCardId: copyId,
+      });
+    const victimChecklist = (copyId: string) =>
+      planCommand({
+        type: "ADD_CHECKLIST",
+        cardId: victimId,
+        newChecklistId: duplicateChecklistId(copyId, 0),
+        title: "Victim checklist",
+      });
+    const conflicts = async (commands: PlanCommand[]) => {
+      const body = (await preview(commands, ownerSession).expect(200))
+        .body as PlanPreviewDto;
+      return body.conflicts.some((conflict) => conflict.code === "id");
+    };
+
+    for (const copyId of [randomUUID(), randomUUID()]) {
+      // Victim checklist exists only in the simulated plan. Both orders must
+      // report the collision: at DUPLICATE_CARD when the victim came first,
+      // at ADD_CHECKLIST when the duplicate created the id first.
+      expect(
+        await conflicts([victimChecklist(copyId), duplicate(copyId)]),
+      ).toBe(true);
+      expect(
+        await conflicts([duplicate(copyId), victimChecklist(copyId)]),
+      ).toBe(true);
+    }
+
+    for (const copyId of [randomUUID(), randomUUID()]) {
+      const victimCl = randomUUID();
+      const addVictim = planCommand({
+        type: "ADD_CHECKLIST",
+        cardId: victimId,
+        newChecklistId: victimCl,
+        title: "Victim steps",
+      });
+      const addVictimItem = planCommand({
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: victimId,
+        checklistId: victimCl,
+        newItemId: duplicateChecklistItemId(copyId, 0, 0),
+        text: "Victim item",
+      });
+      expect(
+        await conflicts([addVictim, addVictimItem, duplicate(copyId)]),
+      ).toBe(true);
+      expect(
+        await conflicts([duplicate(copyId), addVictim, addVictimItem]),
+      ).toBe(true);
+    }
+
+    const linkId = randomUUID();
+    const victimLink = planCommand({
+      type: "ADD_CARD_LINK",
+      cardId: victimId,
+      linkId,
+      targetCardId: sourceId,
+      linkType: "relates_to",
+    });
+    const sourceLink = planCommand({
+      type: "ADD_CARD_LINK",
+      cardId: sourceId,
+      linkId,
+      targetCardId: victimId,
+      linkType: "relates_to",
+    });
+    expect(await conflicts([victimLink, sourceLink])).toBe(true);
+    expect(await conflicts([sourceLink, victimLink])).toBe(true);
   });
 
   it("previews duplicate parentage at the command's position", async () => {

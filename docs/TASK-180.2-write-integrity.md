@@ -7,9 +7,9 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
 
 | ID | Change |
 |---|---|
-| H2 | `ADD_/RESTORE_CHECKLIST`, `ADD_/RESTORE_CHECKLIST_ITEM`, `ADD_CARD_LINK` and nested `RESTORE_CARD`/`RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` snapshots now check the stored parent, not only the board. `RESTORE_CHECKLIST` checks every nested item too; duplicate-derived checklist/item ids are preflighted against the live aggregate. Parentage is checked **per command against the running board at that command's position**, so a batch that creates the source checklist and then duplicates it cannot bypass the guard; the plan preview uses the same positional state. A same-board id owned by another card/checklist/link answers `409 { code: "id_conflict", conflict: "id" }` before the writers run. Soft-deleted rows may be revived only by their original owner. The shared owner predicate and error shape live in `backend/src/commands/entity-parentage.ts`; TASK-176.9's admin `assertAdminCardRelations` uses the same `id_conflict` envelope and should import this helper when its branch merges. Admin commands remain run-free/pre-image-free (covered by `admin.e2e-spec.ts`). |
+| H2 | `ADD_/RESTORE_CHECKLIST`, `ADD_/RESTORE_CHECKLIST_ITEM`, `ADD_CARD_LINK` and nested `RESTORE_CARD`/`RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` snapshots now check the stored parent, not only the board. `RESTORE_CHECKLIST` checks every nested item too; duplicate-derived checklist/item ids are preflighted against the live aggregate. Parentage is checked **per command against the running board at that command's position**, and ownership is compared against both committed rows and that simulated board. A batch or plan that creates the source checklist/items/links earlier and then duplicates/reuses the id cannot bypass the guard; the plan preview uses the same positional state. A same-board id owned by another card/checklist/link answers `409 { code: "id_conflict", conflict: "id" }` before the writers run. Soft-deleted rows may be revived only by their original owner. The shared owner predicate and error shape live in `backend/src/commands/entity-parentage.ts`; TASK-176.9's admin `assertAdminCardRelations` uses the same `id_conflict` envelope and should import this helper when its branch merges. Admin commands remain run-free/pre-image-free (covered by `admin.e2e-spec.ts`). |
 | L18 | The idempotency check compares the exact request first. Only when the **stored** payload was actually stripped (no `card.assigneeId` key) and the incoming assignee is genuinely no longer an active board member may the comparison ignore `card.assigneeId` on both sides; a different valid assignee still answers `409 idempotency_conflict`. A changed non-member assignee cannot be distinguished from the original stripped request without storing a second payload copy; that residual is documented. |
-| M7 | A live claim may be released only by the holder identity that claimed it (agent session, then PAT, then legacy user id). Another member, a second PAT of the same user, or a browser session / PAT cross-release answers `400 field:"action.claimedBy"`. Lapsed leases remain free to take or clear. An internal run revert may release the exact claim the run held (non-wire `exemptClaimRelease`), with the same preview/apply result. |
+| M7 | A live claim may be released only by the holder identity that claimed it (agent session, then PAT, then legacy user id). Another member, a second PAT of the same user, or a browser session / PAT cross-release answers `400 field:"action.claimedBy"`. Lapsed leases remain free to take or clear. An internal run revert may restore the pre-run claim state either way — releasing a lease the run acquired, or re-acquiring the previous holder/lease after a claim over a lapsed lease — via non-wire `exemptClaimGuard`, with the same preview/apply result. |
 | H3 | Duplicate card/column now derive fresh checklist/item ids from the new card id (`duplicateChecklistId`/`duplicateChecklistItemId` in the shared reducer), so the optimistic client and the server writers agree without an extra id map. The base is a 128-bit FNV-1a hash of the whole card id (colon-free, no truncation collision); duplicate-derived ids are included in the parentage guard so a pre-existing victim row cannot be stolen. The duplicate writers persist checklists/items and include them in `touches`/pre-images. Links are intentionally not copied — copies start unlinked. |
 | M13 | `RESTORE_*` no longer skips WIP/collection guards based on the action type or a client `inverse:true`. Each restore is checked as the fresh add it performs (cards/columns/labels/checklists/items, including nested snapshots); `RESTORE_COLUMN_CARDS` counts the resulting column and its writer mirrors the reducer (omitted cards are parked in the invisible orphan column, not written into the restored column). Only the internal run-revert path passes `exemptRestoreLimits`; it is not a wire field. |
 | M16 | Client undo of `MOVE_CARD`/`UNARCHIVE_CARD` is no longer optimistic: it preflights the destination WIP and otherwise waits for the server. A refusal leaves the board untouched and restores the undo step for a later retry. The toast includes the destination column title and limit, and the failure carries `columnId` from the server. `inverse.ts` and `BoardScopedAction.inverse` document that the flag is local bookkeeping, not a server exemption. |
@@ -32,8 +32,8 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
 - **M7 admin flow:** deliberately not added. A board-ADMIN release needs an
   explicit audited operation/UI owned by TASK-176/180.4; the command path now
   enforces holder-only release and returns `400`. The internal run revert is
-  the one exception: it may release the exact claim its run held, via a
-  non-wire `exemptClaimRelease` flag.
+  the one exception: it may restore the pre-run claim holder/lease (release
+  or acquisition), via a non-wire `exemptClaimGuard` flag.
 - **M13/M16 contract:** the server is authoritative for WIP/collection caps;
   `inverse:true` and `RESTORE_*` buy nothing. `RESTORE_COLUMN_CARDS` counts
   the resulting column and the writer mirrors the reducer (omitted cards are
@@ -100,9 +100,11 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
   cards/cardIds mismatch writer parity, one-card restore, duplicate touches.
 - `backend/test/plans.e2e-spec.ts`: parentage conflict appears in plan preview;
   duplicate-first vs duplicate-after-add parity uses the source state at the
-  command's own position.
+  command's own position. Victim checklists/items/links created earlier in the
+  same plan are detected in both orders.
 - `backend/test/runs.e2e-spec.ts`: PAT-held claim released by an internal run
-  revert with a clean preview.
+  revert with a clean preview; a claim over a lapsed lease is restored to the
+  previous holder/lease by the revert.
 - `backend/test/runs.e2e-spec.ts`: duplicate pre-image includes the created
   checklist/item touches; the M22 unarchive WIP preview still refuses; existing
   run/revert suites stay green.
@@ -139,11 +141,12 @@ Run on this branch (`feat/TASK-180.2-write-integrity`, 2026-11-19):
 - `npm run test -w mcp` — 9 files / 143 passed, 1 skipped.
 - UI focused Vitest: undo/WIP, server-sync classification, attachment cap,
   comment page-2 edit, assignee face, column views, API idempotency — passed.
-- Backend targeted e2e (review round 2, single in-band run):
-  `commands-labels-checklists`, `commands-columns-cards`, `plans`,
-  `attachments`, `card-assignee`, `runs` — 6 suites / 114 tests passed.
-  The wider round-1 list (`card-claim`, `write-contract`, `admin`, etc.) was
-  also green before these changes; the touched paths are covered above.
+- Backend targeted e2e (review round 3, single in-band run):
+  `plans`, `runs`, `card-claim`, `commands-labels-checklists`,
+  `commands-columns-cards` — 5 suites / 95 tests passed.
+  Round 2 also ran `attachments`/`card-assignee` (6 suites / 114 tests); the
+  wider round-1 list (`write-contract`, `admin`, etc.) was green before these
+  changes, and the changed paths are covered above.
 - Browser (isolated local API + Vite, Chrome): duplicate-content,
   filtered column delete, comment pagination/edit, description attachment and
   the WIP-undo refusal with exact localized toast — 8/8 passed. Drag-based

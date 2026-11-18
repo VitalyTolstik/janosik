@@ -263,11 +263,13 @@ export interface ApplyOptions {
    */
   exemptRestoreLimits?: boolean;
   /**
-   * TASK-180.2 M7: a run revert may release a claim held by the token/session
-   * that originally claimed it, even though the revert itself is issued by a
-   * human ADMIN. Internal only; acquisition remains holder-checked.
+   * TASK-180.2 M7: a run revert restores the pre-run claim state. That can be
+   * a release (the run acquired the lease) or an acquisition (the run claimed
+   * over a lapsed lease and the inverse restores the old holder/lease). The
+   * revert is issued by a human ADMIN acting for the run, so the holder check
+   * steps aside here. Internal only; external CLAIM_CARD callers stay guarded.
    */
-  exemptClaimRelease?: boolean;
+  exemptClaimGuard?: boolean;
   /** TASK-166.7 internal post-apply hook, inside the board transaction. */
   afterRun?: (
     tx: Prisma.TransactionClient,
@@ -743,7 +745,7 @@ export class CommandsService {
             entry,
             board: running,
             exemptRestoreLimits: options.exemptRestoreLimits === true,
-            exemptClaimRelease: options.exemptClaimRelease === true,
+            exemptClaimGuard: options.exemptClaimGuard === true,
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -1130,7 +1132,7 @@ export class CommandsService {
       entry: PreparedCommand;
       board: Board;
       exemptRestoreLimits?: boolean;
-      exemptClaimRelease?: boolean;
+      exemptClaimGuard?: boolean;
     },
   ): Promise<{
     response: CommandResponse;
@@ -1156,7 +1158,7 @@ export class CommandsService {
       action,
       attribution,
       actorId,
-      params.exemptClaimRelease === true,
+      params.exemptClaimGuard === true,
     );
 
     await this.assertBoardManagement(tx, boardId, actorId, action.type);
@@ -1556,11 +1558,36 @@ export class CommandsService {
     const itemOwner = new Map<string, { checklistId: string; field: string }>();
     const linkOwner = new Map<string, { fromCardId: string; field: string }>();
 
+    // The committed DB is not the whole story in a plan preview: earlier
+    // commands exist only in `running`. Build the simulated owner maps as well
+    // so preview matches apply for entities the plan creates itself.
+    const simulatedChecklistOwner = new Map<string, string>();
+    const simulatedItemOwner = new Map<string, string>();
+    const simulatedLinkOwner = new Map<string, string>();
+    for (const card of Object.values(board.cards)) {
+      for (const checklist of card.checklists ?? []) {
+        simulatedChecklistOwner.set(checklist.id, card.id);
+        for (const item of checklist.items) {
+          simulatedItemOwner.set(item.id, checklist.id);
+        }
+      }
+      for (const link of card.links ?? []) {
+        simulatedLinkOwner.set(link.id, card.id);
+      }
+    }
+
     const expectChecklist = (
       id: string,
       cardId: string,
       field: string,
     ): void => {
+      const simulated = simulatedChecklistOwner.get(id);
+      if (simulated !== undefined && simulated !== cardId) {
+        parentageConflict(
+          field,
+          `Checklist id ${id} is already used by another card`,
+        );
+      }
       const known = checklistOwner.get(id);
       if (known !== undefined && known.cardId !== cardId) {
         parentageConflict(
@@ -1575,6 +1602,13 @@ export class CommandsService {
       checklistId: string,
       field: string,
     ): void => {
+      const simulated = simulatedItemOwner.get(id);
+      if (simulated !== undefined && simulated !== checklistId) {
+        parentageConflict(
+          field,
+          `Checklist item id ${id} is already used by another checklist`,
+        );
+      }
       const known = itemOwner.get(id);
       if (known !== undefined && known.checklistId !== checklistId) {
         parentageConflict(
@@ -1589,6 +1623,13 @@ export class CommandsService {
       fromCardId: string,
       field: string,
     ): void => {
+      const simulated = simulatedLinkOwner.get(id);
+      if (simulated !== undefined && simulated !== fromCardId) {
+        parentageConflict(
+          field,
+          `Link id ${id} is already used by another card`,
+        );
+      }
       const known = linkOwner.get(id);
       if (known !== undefined && known.fromCardId !== fromCardId) {
         parentageConflict(
@@ -1815,7 +1856,7 @@ export class CommandsService {
     action: BoardAction,
     attribution: RequestAttribution,
     actorId: string,
-    allowAnyRelease = false,
+    allowAnyClaimChange = false,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
     const card = await tx.card.findFirst({
@@ -1835,6 +1876,10 @@ export class CommandsService {
     ) {
       return;
     }
+    // Internal run revert restores whatever claim state the run changed:
+    // release after an acquire, or the previous holder/lease after a claim
+    // over a lapsed lease. Non-wire; only `RunsService` sets it.
+    if (allowAnyClaimChange) return;
     const releasing = action.claimedBy === null || action.leaseUntil === null;
     const refuse = (): never => {
       throw new BadRequestException({
@@ -1843,10 +1888,6 @@ export class CommandsService {
       });
     };
     if (releasing) {
-      // Internal run revert: the human ADMIN is acting for the run that took
-      // the lease, so the original token/session may be released. This is a
-      // non-wire flag set only by `RunsService`; acquisition stays guarded.
-      if (allowAnyRelease) return;
       // The stored holder and the authenticated caller must be the same
       // *kind* of identity: a second PAT of the owner is not the holder, and
       // neither is the owner's browser session when a PAT holds the lease.

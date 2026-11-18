@@ -876,6 +876,49 @@ describe("Agent runs and rollback (e2e)", () => {
     await retireColumn(columnId);
   });
 
+  it("restores a lapsed-lease holder on revert with matching preview (M7)", async () => {
+    const columnId = await createColumn("Lapsed claim revert");
+    const cardId = await createCard(columnId, "Lapsed claim");
+    const oldLease = Date.now() - 60_000;
+    await command("CLAIM_CARD", {
+      cardId,
+      claimedBy: ownerId,
+      leaseUntil: oldLease,
+    }).expect(200);
+
+    const created = await batch(
+      [
+        {
+          action: {
+            type: "CLAIM_CARD",
+            cardId,
+            claimedBy: ownerId,
+            leaseUntil: Date.now() + 600_000,
+          },
+        },
+        {
+          action: { type: "SET_CARD_PRIORITY", cardId, priority: "high" },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    expect((await aggregate()).cards[cardId].leaseUntil).toBeGreaterThan(
+      Date.now(),
+    );
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(runId).expect(200);
+    const restored = (await aggregate()).cards[cardId];
+    // The inverse is an acquisition of the pre-run holder/lease, not a
+    // release, so the internal run-revert exemption must cover it too.
+    expect(restored.claimedBy).toBe(ownerId);
+    expect(restored.leaseUntil).toBe(oldLease);
+    await retireColumn(columnId);
+  });
+
   it("previews a removed assignee before applying SET_CARD_ASSIGN (M22)", async () => {
     const columnId = await createColumn("Assignee preview");
     const cardId = await createCard(columnId, "Assigned");
