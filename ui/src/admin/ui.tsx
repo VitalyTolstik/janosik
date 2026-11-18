@@ -82,8 +82,8 @@ export function PageHeader({
   meta?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0 space-y-0.5">
+    <div className="flex min-w-0 max-w-full flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0 flex-1 space-y-0.5">
         {eyebrow ? (
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             {eyebrow}
@@ -93,16 +93,23 @@ export function PageHeader({
           {title}
         </h1>
         {subtitle ? (
-          <p className="text-xs leading-5 text-muted-foreground">{subtitle}</p>
+          <p
+            title={subtitle}
+            className="truncate text-xs leading-5 text-muted-foreground"
+          >
+            {subtitle}
+          </p>
         ) : null}
         {meta ? (
-          <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
             {meta}
           </div>
         ) : null}
       </div>
       {actions ? (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {actions}
+        </div>
       ) : null}
     </div>
   );
