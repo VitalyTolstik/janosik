@@ -20,12 +20,16 @@ This ticket covers two independent findings from the TASK-176 demo investigation
    ending in `фывфыв`, and an extra checklist `123` with item `1`. It also
    contains a `TASK-176 demo` label, a `TASK-176 acceptance` checklist and two
    named TASK-176 links that are not in any committed seed, plus 60
-   `t176-comment-*` rows (9 soft-deleted, 51 live). The board aggregate still
-   loads and the API accepts it, so this is **not corruption**; it is an
-   unreproducible demo fixture. The repository has no TASK-176 seed, reset or
-   verification command, and the existing pixel seed does not create the
-   TASK-176-specific fixture rows. A clean demo cannot currently be recreated
-   from source, and manual edits silently pollute the canonical fixture.
+   `t176-comment-*` rows (9 soft-deleted, 51 live). The app-user set has four
+   rows: the two seed users plus junk `1@t.com` and `2@t.com`; runtime/admin/
+   security tables add 3 `SecurityAuditLog`, 1 `AttentionNotification`,
+   51 `RefreshToken`, 1 `AdminUser`, 58 `AdminRefreshToken` and 67
+   `AdminAuditLog`. The board aggregate still loads and the API accepts it, so
+   this is **not corruption**; it is an unreproducible demo fixture. The
+   repository has no TASK-176 seed, reset or verification command, and the
+   existing pixel seed does not create the TASK-176-specific fixture rows. A
+   clean demo cannot currently be recreated from source, and manual edits
+   silently pollute the canonical fixture.
 
 2. **`SET_CARD_LABEL` does not update `Card.updatedAt`.** The shared reducer
    changes `labelIds` but leaves `updatedAt` unchanged
@@ -79,11 +83,28 @@ database are different things, and nothing detects the difference.
 ### 2.2 Complete observed mutation inventory
 
 The public `GET /boards/:id/commands?since=0` delta is **not a complete
-audit**: at probe time it returned 46 entries for sequence numbers 1–51. The
-inventory below combines that delta, the current card fields, the admin
-comment list (60 `t176-comment-*` rows: 9 soft-deleted, 51 live), the seed
-source and direct seed writes that bypass the command log. Any verifier must
-use all of these, not only `Command` rows.
+audit**: the Agent Ops request returned 46 entries for sequence numbers 1–51.
+It is board-scoped — seq 9–13 belong to the Website board — so 46 entries for
+one board is expected; do not assert 51 per board. The inventory below combines
+that delta, the current card fields, the admin comment list (60
+`t176-comment-*` rows: 9 soft-deleted, 51 live), the seed source and direct seed
+writes that bypass the command log. Any verifier must use all of these, not only
+`Command` rows.
+
+Representative raw probe evidence (command IDs from the Agent Ops delta):
+
+| Seq | Action | Command ID |
+| ---: | --- | --- |
+| 14 | `ADD_LABEL` | `t176-add-label-mwmij73b-muuj71` |
+| 15 | `SET_CARD_LABEL` initial attach | `t176-attach-label-mwmij74a-4y2q4i` |
+| 24 | `UPDATE_CARD` description + `фывфыв` | `84283091-d29f-4af8-99fa-b95d037e6eee` |
+| 25 | `MOVE_CARD` to `px-col-ops-done` | `1ce3303d-f978-469c-b5bc-29750dc14317` |
+| 26 | `UPDATE_CARD` title `…123` | `835eced2-c75f-4869-b972-f395525bb4b0` |
+| 29 | `SET_CARD_COVER` yellow | `f1ff934c-ac08-4452-a478-c1848828683b` |
+| 41 | `SET_CARD_PRIORITY` blocker | `37a69c95-56e0-4d69-9363-8ce0d7c918b2` |
+| 39 | `ADD_CHECKLIST` random `123` | `f238c4b1-9861-4543-af5e-673b7e6eaa51` |
+| 40 | `ADD_CHECKLIST_ITEM` item `1` | `9b758ec1-cb48-411f-972f-9e3a217f62ee` |
+| 45 | `ADD_CARD_LINK` random UUID | `3cd92bb1-90e4-4af6-b00e-efa28cb586fd` |
 
 | Observed mutation / field | Evidence | Classification | Manifest / verifier action |
 | --- | --- | --- | --- |
@@ -98,7 +119,7 @@ use all of these, not only `Command` rows.
 | `MOVE_CARD` of the fixture card to `px-col-ops-done` index 2 | seq 25 | Manual/undecided | Verify `columnId`/`position`; if not canonical, verify the seed position. |
 | `SET_CARD_COVER` yellow | seq 29 | Manual/undecided | Verify `cover`; if not canonical, verify `null`. |
 | `SET_CARD_PRIORITY` blocker | seq 41 | Manual/undecided | Verify `priority`; if not canonical, verify default/`null`. |
-| `ADD_LABEL` + initial `SET_CARD_LABEL` for `px-label-task176-demo` | seq 15; seed creates no labels | Canonical candidate | Verify exact label ID/name/color and final card label set. |
+| `ADD_LABEL` + initial `SET_CARD_LABEL` for `px-label-task176-demo` | `ADD_LABEL` seq 14; initial `SET_CARD_LABEL` seq 15; seed creates no labels | Canonical candidate | Verify exact label ID/name/color and final card label set. |
 | 18 additional `SET_CARD_LABEL` toggles on the same label | seq 30–38, 42–44, 46–51; final state is on | **Volatile/noise** | Verify final `labelIds` only; command count is not canonical. |
 | `ADD_CHECKLIST` `TASK-176 acceptance` + 3 items | seq 16–19; IDs `px-checklist-task176-demo` / `px-checkitem-task176-*` | Canonical candidate | Verify checklist ID/title/position and all items. |
 | `SET_CHECKLIST_ITEM_DONE` for all three acceptance items | seq 20, 27, 28 | Canonical candidate | Verify each item's `done` state. |
@@ -106,6 +127,10 @@ use all of these, not only `Command` rows.
 | `ADD_CARD_LINK` `px-link-task176-demo` / `px-link-task176-blocks` | seq 21–22 | Canonical candidate | Verify link IDs, types, targets and order. |
 | `ADD_CARD_LINK` random UUID to `px-card-mcp-callouts` | seq 45 | **Junk** | No random-UUID link. |
 | 60 `t176-comment-*` rows | Admin comments: total 60, 9 soft-deleted, 51 live | TASK-176.9 manual scaffolding, **separate** | Exclude from the TASK-176 canonical fixture unless a dedicated TASK-176.9 fixture is defined; reset removes them. |
+| App users | 4 total: the two seed users plus `1@t.com` and `2@t.com` (created 21:40, unverified) | Seed users canonical; the two extras **junk** | Manifest expects exactly two users and their board roles; register an extra user after reset → verify fails. |
+| `SecurityAuditLog` (3), `AttentionNotification` (1), `RefreshToken` (51) | Probe counts; runtime/security/session side effects | **Out-of-fixture** | Ignore or assert zero after reset; never use them as fixture success. |
+| `AdminUser` (1), `AdminRefreshToken` (58), `AdminAuditLog` (67) | Probe counts; admin/runtime state | **Out-of-fixture**; reset drops admin login | Recreate the master/admin account separately after reset, or define a separate TASK-176.9 admin fixture; do not treat these rows as fixture data. |
+| `IdempotencyRecord`, `ReminderSent`, `AnnouncementDismissal` | Present/possible runtime rows; not board fixture | **Out-of-fixture** | Include in the fallback fixture reset when non-zero; do not present them as canonical. |
 | `dueDate`, `acceptanceCriteria`, `definitionOfDone`, `claimedBy`, `leaseUntil`, `archivedAt` | No observed mutating command; seed leaves these unset/empty | Canonical absent unless decided otherwise | Assert absent/empty explicitly; a future value fails verify. |
 | Session heartbeats, approval TTL/timestamps, run timestamps/statuses, `createdAt`/`updatedAt` where not listed above | Runtime/volatile | Volatile | Ignore in the fixture manifest except where a stable status is part of the contract. |
 
@@ -213,11 +238,12 @@ never rely on manual SQL.**
 2. **Add a fixture manifest.** A small `scripts/fixtures/task176-demo.json` (or
    an exported object module) lists the stable fixture contract:
    board IDs/titles, column IDs/titles, card IDs/titles, the canonical
-   description, intended label IDs/names, checklist IDs/titles/items, card-link
-   IDs/types/targets, `columnId`/`position`, `priority`, `assigneeId`, `cover`,
-   explicit `dueDate`/task-spec/claim/`archivedAt` decisions, the comment-set
-   decision and expected counts. Seed and verify both read the same manifest so
-   they cannot drift.
+   description, expected app users and board roles, intended label IDs/names,
+   checklist IDs/titles/items, card-link IDs/types/targets, `columnId`/`position`,
+   `priority`, `assigneeId`, `cover`, explicit `dueDate`/task-spec/claim/
+   `archivedAt` decisions, the comment-set decision, the out-of-fixture
+   classification for security/admin/session rows and expected counts. Seed and
+   verify both read the same manifest so they cannot drift.
 
 3. **Add a reset command.** Example:
    `npm run demo:task176:reset`. It should:
@@ -227,35 +253,80 @@ never rely on manual SQL.**
      preferring one;
    - resolve one database URL, print only its host and database name, and pass
      it as `DATABASE_URL` to every child process (Prisma, migrations, seed and
-     backend);
-   - refuse to run unless the database name matches the documented demo name
-     (for example exactly `janosik_task176_demo`, or a `*_demo` pattern plus an
-     explicit allow flag);
-   - require `SEED_ALLOW=1` or a new `DEMO_RESET_ALLOW=1`;
-   - verify the API is bound to that same database **before deleting**
-     anything. Preferred: the reset launches a dedicated backend with the
-     resolved `DATABASE_URL` on a private port, waits for `/health`, checks a
-     marker/identity, then **stops it before the schema drop**; after
-     migrations it starts the backend again for the seed. An externally managed
-     API is not accepted on trust. A marker row plus a dev-only identity
-     endpoint is an alternative only if the endpoint is added and tested; do not
-     compare a board title or assume a port.
-   - reset by dropping/recreating the demo schema and applying migrations
-     (`prisma migrate reset --force --skip-seed` against the guarded database),
-     then run the seed and verifier. The demo database is disposable; this
-     avoids a brittle hand-maintained delete list as new FK children appear.
-     If product rejects schema reset, use one explicit ordered transaction for
+     backend). Keep the exact `janosik_task176_demo` name as the primary guard;
+     a `*_demo` wildcard is allowed only with an extra explicit allow flag;
+   - **force the URL past backend env precedence.** `backend/src/config/env.ts:21-32`
+     loads `.env`, `.env.${NODE_ENV}` and `.env.local` with
+     `dotenv.config({ override: true })`, so a shell `DATABASE_URL` can be
+     silently replaced by a dev `backend/.env:6`. Preferred: add a reset-only
+     last-loaded file (for example `JANOSIK_ENV_FILE=/abs/path/task176-reset.env`
+     loaded only when `JANOSIK_DEMO_RESET=1`, fail-closed otherwise) containing
+     the demo `DATABASE_URL` and required backend env; create it 0600, delete it
+     in `finally`, and normal boot must ignore it. Fallback: back up
+     `.env.local`, write the demo URL there, restore in `finally`; never rely on
+     the shell env alone;
+   - require `SEED_ALLOW=1` or `DEMO_RESET_ALLOW=1`;
+   - verify the backend really reads the demo DB **before deleting**. `/health`
+     reports only `db: up`, not identity. Preferred: after migrations, start the
+     reset-owned backend on a fresh private port and use a marker user/board +
+     minted JWT to call `GET /boards/:marker`; a random marker id/title proves
+     the API reads the demo DB. Delete the marker rows after the probe. A marker
+     table plus a dev-only identity endpoint is an alternative if explicitly
+     added and tested. Do not trust a port, board title on its own, or `/health`;
+   - **own the backend lifecycle.** Start the dedicated backend with a fresh
+     private port and the reset env file, stop it before `prisma migrate reset`
+     (open connections break the drop), start it again after migrations for the
+     seed only, stop it before the Prisma-only verifier, and stop it in
+     `finally` — wait for process exit, kill it if it does not exit, and include
+     this lifecycle in the reset-twice regression. The post-seed backend must
+     not be left running;
+   - reset by dropping/recreating the demo schema and applying existing
+     migrations (`prisma migrate reset --force --skip-seed` against the guarded
+     database), then run the seed and fixture verifier. This resets the **whole
+     demo database**, including admin/security tables; the master account is
+     recreated separately. If product rejects schema reset, the fallback is a
+     **fixture reset**, not a full admin/security/account reset: use one explicit
+     ordered transaction for
      `ChecklistItem → Checklist → CardLink → CardLabel → Comment → Attachment →
      Activity → CommandPreimage → Command → AgentRun → ApprovalRequest →
      AgentSession → ApiToken → AttentionNotification → BoardShareAuditLog →
      BoardShare → Card → Label → Column → BoardMember → Board → DemoRun →
-     DataExport → RefreshToken → User` and add the reset-twice regression below.
+     DataExport → AnnouncementDismissal → ReminderSent → IdempotencyRecord →
+     SecurityAuditLog → RefreshToken → User → AdminAuditLog →
+     AdminRefreshToken → AdminUser`. This order is FK-correct for the listed
+     tables; the earlier failure was the **missing** tables, not the ordering.
+     Add the reset-twice regression below, with non-zero rows in the fallback
+     tables;
    - exit non-zero on any mismatch, leaving the operator with a clear message
      that the database is partial and the reset must be rerun.
 
-   The seed itself must apply the same `DEMO_DATABASE_URL` / `DEMO_API_URL`
-   guard, so a direct `SEED_ALLOW=1` invocation cannot bypass the wrapper.
-   Do not add a destructive HTTP endpoint.
+   The TASK-176 seed/overlay (for example `scripts/seed-task176-demo.mjs`)
+   must apply the same `DEMO_DATABASE_URL` / `DEMO_API_URL` guard. It reads
+   `DEMO_*` exclusively, validates the database name **before** constructing
+   `PrismaClient`, and refuses ambient `DATABASE_URL`/`API_URL` mismatches. If
+   it delegates to the base pixel seed, it sets
+   `DATABASE_URL=DEMO_DATABASE_URL` and `API_URL=DEMO_API_URL` only after that
+   validation. The base
+   `seed-agent-pixel-demo.mjs` contract remains supported for pixel parity; it
+   gains the same equality check when `DEMO_*` are present, and its
+   `PrismaClient` construction moves after the guard. Direct base seed
+   invocation is documented as pixel-parity only, not a TASK-176 reset path;
+   the reset command refuses it. Direct `SEED_ALLOW=1` invocation of the
+   TASK-176 overlay without `DEMO_*` is refused. Do not add a destructive HTTP
+   endpoint.
+
+   Run from the repository root via the npm script (the script resolves cwd
+   explicitly). Document that the reset role needs schema/database create-drop
+   privileges for `prisma migrate reset`, and that `prisma migrate reset`
+   clears admin/security tables while the seed does not recreate admin users:
+   the operator recreates the master account separately or an explicit admin
+   fixture is defined.
+
+   The seed/reset output must be captured and redacted: no raw PATs,
+   passwords or connection strings on stdout/CI logs. The base seed currently
+   prints `tokens` and `login.password`; default output should contain only
+   stable IDs, board/run IDs and counts, with raw secrets available only via an
+   explicit 0600 file if parity tooling truly needs them.
 
 4. **Add a verify command.** Example:
    `npm run demo:task176:verify`. It must be read-only and assert the manifest
@@ -275,24 +346,35 @@ never rely on manual SQL.**
      exactly the separately declared TASK-176.9 fixture; never silently
      ignored.
 
-   The verifier must be genuinely read-only. Use Prisma reads or a pre-issued
-   `DEMO_API_TOKEN`; do not log in with email/password (login writes a refresh
-   token/session) and never put credentials in a URL or log. If an API read is
-   used, declare the session write or avoid it entirely. Ignore timestamps and
-   other volatile fields except where the manifest explicitly pins a stable
-   value.
+   The verifier must be genuinely read-only and **Prisma-only**: no email/password
+   login, no PAT use, no `ApiToken.lastUsedAt` mutation and no API session
+   write. The reset's separate identity probe may use the marker token; that
+   token is deleted with the marker rows and is not part of the fixture. If a
+   future API read is unavoidable, ignore `ApiToken.lastUsedAt` and re-mint a
+   known token after reset; never log credentials or tokens.
 
 5. **Document the workflow.** Add a short `docs/DEMO-FIXTURES.md` (or a section
    in the existing pixel parity README) with:
    - the database name, `DEMO_DATABASE_URL`, `DEMO_API_URL` and the no-default
      rule;
-   - the reset command and its destructive schema-recreate nature;
-   - the verify command and its read-only guarantee;
+   - the reset command and its destructive schema-recreate nature, run from the
+     repository root;
+   - the backend build/env bootstrap the reset uses: `backend/dist/main.js`
+     built, `JWT_SECRET`, `PUBLIC_ORIGIN`, `COOKIE_SECURE=false`, a fresh
+     `PORT`, `NODE_ENV`, the reset-only env file and the initial
+     `prisma migrate deploy`; the exact DB name primary guard and the
+     schema/database create-drop privilege requirement;
+   - the fact that `prisma migrate reset` clears admin/security tables and the
+     seed does not recreate admin users: recreate the master account separately
+     or define an explicit admin fixture;
+   - the verify command and its Prisma-only, read-only guarantee;
    - the rule that the canonical demo is reset-only and manual experiments use
      a cloned database or a separate board;
-   - the prerequisite `npx prisma migrate deploy -w backend` for manual setup
-     and the dedicated backend the reset starts for the command-transport part
-     of the seed;
+   - that the fallback path is a **fixture reset**, not a full admin/security or
+     account reset;
+   - the redaction rule: no raw tokens, passwords or connection strings in
+     stdout/CI; raw secrets only via an explicit 0600 file if parity tooling
+     needs them;
    - what to do when the verifier fails (capture the diff, reset, do not patch
      rows by hand).
 
@@ -303,48 +385,62 @@ never rely on manual SQL.**
    resetting one shared database, not a requirement for the first fix.
 
 **Do not** add a targeted `DELETE FROM Checklist WHERE title = '123'` cleanup.
-Manual drift can add arbitrary rows; a full deterministic reset plus a verifier
-is the only maintainable path.
+Manual drift can add arbitrary rows; a deterministic fixture reset plus a
+verifier is the only maintainable path.
 
 ### 2.5 Acceptance criteria — demo hygiene
 
 1. A fresh developer can recreate the TASK-176 demo database from committed
-   source with one documented command after the documented prerequisites.
+   source with one documented command from the repository root after the
+   documented prerequisites.
 2. The seed produces 13 card rows and 12 live cards, with stable IDs and exact
    stable values: board/column/card titles, the `px-card-card-claim`
-   description, and the intended label, checklist and card-link sets (including
-   `TASK-176 demo`, `TASK-176 acceptance` and the named `px-link-task176-*`
-   links if confirmed canonical). The manifest also pins the fixture card's
-   `columnId`/`position`, `priority`, `assigneeId` and `cover`, and explicitly
-   declares `dueDate`, task-spec, claim and `archivedAt` absent/empty.
+   description, the intended label/checklist/card-link sets, and the expected
+   two app users with their board roles (`pixel-admin@example.com` ADMIN on
+   Agent Ops / MEMBER on Website, `pixel-member@example.com` the reverse).
+   The manifest pins `columnId`/`position`, `priority`, `assigneeId` and
+   `cover`, and explicitly declares `dueDate`, task-spec, claim and
+   `archivedAt` absent/empty.
 3. Reset is rerunnable: running it twice, after first adding a checklist and a
-   card link, succeeds (no FK `RESTRICT` failure) and returns the same stable
-   fixture. Timestamps and generated runtime metadata may differ.
-4. The reset requires explicit `DEMO_DATABASE_URL` and `DEMO_API_URL` with no
-   defaults, refuses conflicting `DATABASE_URL`/`API_URL`, verifies the API is
-   bound to the same demo database before deleting, stops the dedicated backend
-   before the schema drop, and prints only host and database name — never
-   credentials.
-5. A direct `SEED_ALLOW=1` seed invocation cannot bypass the demo URL/API guard,
-   and no password or token appears in a URL or log.
-6. `demo:task176:verify` passes immediately after reset and is genuinely
-   read-only (no email/password login; a pre-issued token or Prisma reads only).
-   It checks the full manifest, including column/position, priority, assignee,
-   cover, labels, links, checklists and the comment-set decision.
-7. `demo:task176:verify` fails on the observed junk: `Card claim visibility 123`,
-   a description containing `фывфыв`, a checklist titled `123` with item `1`,
-   the random-UUID card link, and any undecided assignee/cover/priority/move
-   value that does not match the manifest.
-8. A manual edit followed by a reset restores the canonical fixture, and the
-   verifier passes again.
-9. The TASK-176 label, acceptance checklist and named links, if intended, are
-   created by the seed and are not lost by a reset; if any is not intended, it
-   is removed from the canonical fixture and the docs say so. The 60
-   `t176-comment-*` rows are either absent or moved to a separately declared
-   TASK-176.9 fixture; they are not silently ignored.
-10. No admin demo-runner code, production database or non-demo developer
-    database is touched. The docs state that the canonical fixture is
-    reset-only; manual edits go to a scratch clone or a separate board.
+   card link and with non-zero rows in `SecurityAuditLog`, `IdempotencyRecord`,
+   `ReminderSent`, `AnnouncementDismissal`, `AdminUser`, `AdminRefreshToken`
+   and `AdminAuditLog`, succeeds and returns the same stable fixture. The
+   reset-owned backend is stopped and reaped between runs; no open connection
+   blocks the next schema drop.
+4. The reset forces the demo URL **past backend env precedence**
+   (`env.ts` `.env`/`.env.NODE_ENV`/`.env.local` with `override: true` even when
+   `backend/.env:6` points at dev), uses one resolved DB URL for every child,
+   starts the backend on a fresh private port, stops it before the drop, starts
+   it again for seeding, stops it before the Prisma-only verify and guarantees
+   stop/reap in `finally`. A test starts with `backend/.env` pointing at dev and
+   `DEMO_DATABASE_URL` at the demo DB.
+5. Before any delete, the reset proves the API reads the demo DB with a real
+   identity probe (random marker user/board + minted JWT via
+   `GET /boards/:marker`, or an equivalent marker endpoint). `/health` `db: up`
+   alone is not accepted.
+6. The TASK-176 seed/overlay uses `DEMO_DATABASE_URL`/`DEMO_API_URL`
+   exclusively, validates the DB name before constructing `PrismaClient`, and
+   refuses ambient `DATABASE_URL`/`API_URL` mismatches. The base pixel seed
+   still works for parity and only gains the equality check when `DEMO_*` are
+   present; direct base-seed invocation is not a TASK-176 reset path.
+7. `demo:task176:verify` passes after reset, is Prisma-only and truly read-only
+   (no login, no PAT, no `ApiToken.lastUsedAt` mutation), and checks the full
+   manifest including users/roles, comments policy and the out-of-fixture
+   classification. Registering an extra user after reset fails verify.
+8. `demo:task176:verify` fails on the observed junk: `Card claim visibility 123`,
+   `фывфыв`, checklist `123`/`1`, random-UUID link, and any undecided
+   assignee/cover/priority/move value that does not match the manifest.
+9. `prisma migrate reset` clears admin/security tables; the docs state that the
+   master account is recreated separately or by a declared admin fixture.
+   Runtime/admin/security rows are out-of-fixture, not canonical.
+10. A manual edit followed by a reset restores the canonical fixture; the
+    intended TASK-176 label, acceptance checklist and named links are not lost.
+    The 60 `t176-comment-*` rows are absent or moved to a separately declared
+    TASK-176.9 fixture; they are not silently ignored.
+11. Reset/seed output is redacted: no raw PATs, passwords or connection strings
+    in stdout/CI logs; raw secrets only via an explicit 0600 file if parity
+    tooling needs them. No admin demo-runner code, production database or
+    non-demo developer database is touched.
 
 ---
 
@@ -517,7 +613,7 @@ forward command without its inverse.
 
 | ID | Title | Priority | Scope |
 | --- | --- | --- | --- |
-| 183.1 | Demo fixture manifest, reset and verify | P2 | Commit the TASK-176 fixture, complete mutation manifest, drop/recreate or full ordered reset, `DEMO_DATABASE_URL`/`DEMO_API_URL` binding guard, read-only verify, docs. No admin demo-runner changes. |
+| 183.1 | Demo fixture manifest, reset and verify | P2 | Commit the TASK-176 fixture, complete mutation manifest, drop/recreate or ordered fixture reset, env-precedence/API-binding/identity guards, backend lifecycle, redaction, read-only verify, docs. No admin demo-runner changes. |
 | 183.2 | Label timestamp consistency | P3 | Fix `SET_CARD_LABEL` reducer + inverse + `CARD_STAMPED_TYPES`, split reducer/persisted-row tests, audit same-class label writers. |
 
 Both subtasks are independent and can ship in separate PRs. 183.1 does not
@@ -530,14 +626,31 @@ depend on 183.2.
 ### 183.1 — demo fixture
 
 - Seed/verify unit tests (Node test runner, no database required for the
-  manifest shape): manifest includes the expected card/checklist/label/link
-  IDs and the column/position, priority, assignee, cover and explicit
-  dueDate/spec/claim/archived fields; verifier rejects a title suffix, a
-  `фывфыв` description, an unexpected checklist, an unexpected label, a
-  random-UUID link and a mismatched field.
+  manifest shape): manifest includes the expected app users/roles,
+  card/checklist/label/link IDs and the column/position, priority, assignee,
+  cover and explicit dueDate/spec/claim/archived fields; verifier rejects a
+  title suffix, a `фывфыв` description, an unexpected checklist, an unexpected
+  label, a random-UUID link and a mismatched field.
 - Integration test against a disposable database: reset → verify passes; add
   a checklist **and** a card link; reset again → must succeed (no FK
   `RESTRICT` failure) and verify passes.
+- Fallback reset test: seed non-zero `SecurityAuditLog`, `IdempotencyRecord`,
+  `ReminderSent`, `AnnouncementDismissal`, `AdminUser`, `AdminRefreshToken`,
+  `AdminAuditLog` rows; reset twice; no FK failure and the expected
+  out-of-fixture state is restored.
+- Env precedence test: `backend/.env` points at dev `janosik`, `DEMO_DATABASE_URL`
+  points at demo, `DEMO_API_URL` at the reset backend; the reset must prove the
+  backend read the demo DB, not dev. A divergent-env seed test sets
+  `DATABASE_URL`/`API_URL` to different values and expects refusal.
+- Identity test: `/health` alone is not enough; the marker user/board probe via
+  `GET /boards/:marker` succeeds only against the demo DB and the marker rows
+  are removed afterward.
+- Lifecycle test: reset-twice starts a fresh private-port backend each time,
+  stops it before the schema drop, stops it after seed and before the
+  Prisma-only verify, waits for exit and leaves no process/connection behind.
+- User-drift test: register `extra@t.com` after reset; verify fails because the
+  manifest expects exactly the two seed users. Runtime/admin/security rows are
+  classified out-of-fixture, not treated as fixture data.
 - Manual drift test: mutate the card title, description, checklist, label,
   links, column/position, priority, assignee and cover; verify fails; reset;
   verify passes.
@@ -547,9 +660,10 @@ depend on 183.2.
   refused; a direct `SEED_ALLOW=1` invocation without the demo env pair is
   refused.
 - Redaction test: reset logs contain host/database only, never a username,
-  password, full connection string or token.
-- Verify read-only test: no email/password login and no refresh-token write;
-  the verifier succeeds with Prisma reads or a pre-issued token only.
+  password, full connection string, PAT or token; the seed's raw token/password
+  output is suppressed by default and only available via an explicit 0600 file.
+- Verify read-only test: Prisma-only; no email/password login, no PAT, no
+  `ApiToken.lastUsedAt` mutation, no refresh-token write.
 - Comment-set test: the 60 `t176-comment-*` rows are absent from the TASK-176
   fixture or match a separately declared TASK-176.9 fixture; no silent ignore.
 - Idempotency: reset twice, verify both times; stable IDs/titles are identical,
@@ -606,13 +720,19 @@ with an explicit compatibility rationale.
 - **TASK-21.7d** — inverse timestamp semantics (`cardUpdatedAt`,
   `boardUpdatedAt`). The label inverse must follow the same contract and pass
   `shared/src/store/validate.ts` (`CARD_STAMPED_TYPES`).
+- **Backend env precedence** — `backend/src/config/env.ts` loads `.env`,
+  `.env.${NODE_ENV}` and `.env.local` with `override: true`; the reset needs a
+  fail-closed last-loaded reset env file or equivalent. This is the only
+  backend-runtime change outside the label fix; no schema migration.
 - **TASK-180.7** — demo/admin data lifecycle (H9). This ticket is about the
   developer demo fixture, not the admin demo runner. Coordinate only if a
   shared cleanup helper is introduced; do not absorb H9.
 - **TASK-176.9** — explicitly separate. No card-editing UI, no admin card
   editor and no attribution work belongs here.
-- **No schema or migration dependency.** The label fix is reducer/writer/test
-  only; the demo fix is scripts/docs/fixture files.
+- **No new migration.** The label fix touches the reducer, `invert.ts`,
+  `validate.ts`, the writer and tests; the demo fix touches scripts/docs/fixture
+  files and a small fail-closed backend env-precedence hook for the reset. It
+  uses the existing migrations; no schema migration is introduced.
 
 ---
 
@@ -637,15 +757,19 @@ with an explicit compatibility rationale.
 
 | Risk | Mitigation |
 | --- | --- |
-| Reset wipes the wrong database. | Explicit `DEMO_DATABASE_URL`, database-name guard, printed host/database only, `SEED_ALLOW`/`DEMO_RESET_ALLOW`, and a dry-run/verify mode. |
-| The API writer points at a different database than the reset. | Require `DEMO_API_URL` with no default; refuse conflicting env; start a dedicated backend with the resolved `DATABASE_URL` or prove identity before deleting. |
-| Schema reset fails because a backend is still connected. | The reset owns the dedicated backend and stops it before the drop; document that no other client may hold the demo DB. |
-| The current delete sequence fails on FK `RESTRICT`. | Drop/recreate the demo schema and apply migrations; if using ordered deletes, cover `ChecklistItem`, `Checklist`, `CardLink`, `CardLabel`, shares/audit and add a reset-twice test after adding a checklist and link. |
+| Reset wipes the wrong database. | Explicit `DEMO_DATABASE_URL`, exact-name guard, printed host/database only, `SEED_ALLOW`/`DEMO_RESET_ALLOW`, and a dry-run/verify mode. |
+| `backend/.env` overrides the shell URL back to dev. | Force a reset-only last-loaded env file (or temporary `.env.local` with backup/restore), and test with `backend/.env` pointing at dev and `DEMO_DATABASE_URL` at demo. |
+| The API writer points at a different database than the reset. | Require `DEMO_API_URL` with no default; refuse conflicting env; prove identity with a marker user/board + minted JWT or equivalent endpoint before deleting; `/health db: up` is not enough. |
+| The post-seed backend is left running and blocks the next reset. | Fresh private port, own the process, stop before the schema drop, stop in `finally` after verify, wait for exit and kill if needed; include the lifecycle in reset-twice. |
+| The current delete sequence fails on FK `RESTRICT`. | Drop/recreate the demo schema and apply migrations; if using ordered deletes, cover `ChecklistItem`, `Checklist`, `CardLink`, `CardLabel`, shares/audit, security/admin/idempotency/reminder/dismissal tables and add a reset-twice test with non-zero rows. |
 | The intended `TASK-176 acceptance` label/checklist/links are lost by a reset. | Decide their status before resetting; commit them to the manifest if canonical. Do not run the destructive reset until that decision is recorded. |
+| Extra app users (`1@t.com`, `2@t.com`) silently become canonical. | Manifest expects exactly the two seed users and their board roles; an extra registration after reset fails verify. |
 | The `t176-comment-*` set is accidentally treated as TASK-176 canonical. | Classify it as TASK-176.9 scaffolding, remove it from the TASK-176 fixture, or declare a separate fixture; verifier checks the decision. |
 | The seed is partial after an API/runtime failure. | Run the verifier after the seed; fail loudly; document “rerun reset” rather than hand-patching. |
 | The seed changes the existing pixel parity fixture. | Keep the base seed output stable; make TASK-176 an explicit overlay or parameter, and test both modes. |
-| Verify mutates a session or leaks a password. | Read-only Prisma verification or a pre-issued token; no email/password login and no credentials in URLs/logs. |
+| Seed/reset logs leak tokens or passwords. | Capture and redact output by default; raw secrets only via an explicit 0600 file; secret values never in stdout, URLs or CI logs. |
+| Verify mutates a session or `ApiToken.lastUsedAt`. | Prisma-only verification; no login/PAT. If an API read is ever added, ignore `lastUsedAt` and re-mint a known token. |
+| `prisma migrate reset` removes the master account. | Document that admin login is recreated separately or by a declared admin fixture; admin/security rows are out-of-fixture. |
 | The label fix breaks undo timestamps. | Add `cardUpdatedAt` to the inverse, add `SET_CARD_LABEL` to `CARD_STAMPED_TYPES`, and assert exact restore through `POST /commands`. |
 | `DELETE_LABEL`/`RESTORE_LABEL` expand the change beyond a small fix. | Decide explicitly: forward stamping plus per-card assignment timestamps and validation, or a named follow-up with a regression test. |
 | The `board-diff` fast path becomes incorrect or overly broad. | Update the comment/test; keep the `labelIds` fallback as a compatibility guard until all writers are verified. |
@@ -688,13 +812,31 @@ with an explicit compatibility rationale.
    manual acceptance; add a CI job only if a disposable Postgres service is
    already part of the pipeline.
 9. **How should the reset prove the API uses the demo database?** Recommended:
-   a dedicated backend started by the reset with the same resolved
-   `DATABASE_URL`. A marker row plus a dev-only identity endpoint is acceptable
-   only if explicitly added and tested; do not trust a port or board title.
-10. **Should the reset apply migrations?** Yes, as part of drop/recreate
-    (`prisma migrate reset --force --skip-seed` on the guarded demo DB). The
-    manual seed path still documents `prisma migrate deploy`; do not run
-    migrations against a non-demo DB.
+   reset-owned backend on a fresh private port plus a marker user/board read
+   through `GET /boards/:marker` with a minted JWT; a marker table + dev-only
+   endpoint is acceptable only if explicitly added and tested. `/health` alone
+   is not identity.
+10. **How should the reset force `DATABASE_URL` past `dotenv override: true`?**
+    Recommended: a reset-only, last-loaded `JANOSIK_ENV_FILE` guarded by
+    `JANOSIK_DEMO_RESET=1`; fallback is backup/write/restore `.env.local`.
+    Do not rely on shell env.
+11. **Should `verify` run in CI?** It needs a seeded database; the seed's
+    command transport needs a backend. Recommended: run it locally before
+    manual acceptance; add a CI job only if a disposable Postgres service is
+    already part of the pipeline.
+12. **Should the reset apply migrations?** Yes, as part of drop/recreate
+    (`prisma migrate reset --force --skip-seed` on the guarded demo DB). Existing
+    migrations only; no new migration is introduced by this ticket. The manual
+    seed path still documents `prisma migrate deploy`.
+13. **Are `1@t.com`/`2@t.com` junk and are admin/security rows out-of-fixture?**
+    Recommended: yes — expect exactly the two seed users; extra users fail
+    verify. Admin/security/session rows are out-of-fixture; recreate the master
+    account separately or declare a separate TASK-176.9 admin fixture.
+14. **Is the fallback a full reset?** No — call it a **fixture reset**. It
+    covers board/app fixture data and the listed reset tables (including
+    admin/security/idempotency/reminder/dismissal); the master account is
+    recreated separately. Announcements and unrelated global data are retained
+    only where they are deliberately excluded from the reset list.
 
 ---
 
@@ -702,14 +844,27 @@ with an explicit compatibility rationale.
 
 - The TASK-176 demo fixture is committed as stable data or a seed overlay.
 - `npm run demo:task176:reset` recreates it on a correctly named disposable
-  database after documented prerequisites, using one resolved DB URL, a
-  verified `DEMO_API_URL` and a drop/recreate or complete transactional delete.
-- Reset succeeds twice after adding a checklist and a card link; no FK
-  `RESTRICT` failure.
-- `npm run demo:task176:verify` passes after reset, is genuinely read-only, and
-  fails on the observed artifacts (`Card claim visibility 123`, `фывфыв`,
+  database after documented prerequisites, using one resolved DB URL forced
+  past `dotenv override: true`, a verified `DEMO_API_URL`, a real marker-based
+  identity probe and a drop/recreate or ordered fixture reset.
+- The reset owns the dedicated backend on a fresh private port, stops it before
+  the schema drop, restarts it for seed, stops it before the Prisma-only verify
+  and guarantees stop/reap in `finally`.
+- Reset succeeds twice after adding a checklist and a card link, with non-zero
+  `SecurityAuditLog`, `IdempotencyRecord`, `ReminderSent`,
+  `AnnouncementDismissal`, `AdminUser`, `AdminRefreshToken` and
+  `AdminAuditLog` rows; no FK `RESTRICT` failure and no open-connection failure.
+- The manifest expects exactly the two seed app users and their board roles;
+  registering an extra user fails verify. Runtime/admin/security rows are
+  explicitly out-of-fixture, and the docs say how the master account is
+  recreated after schema reset.
+- `npm run demo:task176:verify` passes after reset, is Prisma-only/read-only,
+  and fails on the observed artifacts (`Card claim visibility 123`, `фывфыв`,
   checklist `123`, random-UUID link) and on any undecided
   assignee/cover/priority/move value.
+- Reset/seed output is redacted; no raw PAT, password or connection string is
+  printed, and raw secrets are only available via an explicit 0600 file if
+  parity tooling needs them.
 - Manual edits are detected and reset; the canonical fixture is not silently
   polluted. The 60 `t176-comment-*` rows are absent or declared as a separate
   TASK-176.9 fixture.
@@ -725,5 +880,7 @@ with an explicit compatibility rationale.
   `POST /commands`, reset-twice, verifier failures and the UI fast path.
 - No existing expectation is weakened; docs and `CHANGELOG.md` describe the
   fixture workflow, the schema-reset requirement and the timestamp fix.
+- No new migration is added: the demo reset uses the existing migrations, and
+  the label fix is reducer/invert/validate/writer/tests only.
 - The ticket does not touch TASK-176.9, the admin demo runner or the board
   command contract beyond the label timestamp consistency.
