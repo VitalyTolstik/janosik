@@ -1703,7 +1703,7 @@ TASK-36 и TASK-37.)*
 | 104 | TASK-173 `agent-experience-phase2` | `feat/TASK-173.x-*` | §7.25: post-1.0 P1/P2 из agent-experience — subscriptions/webhooks, read model, claim/my work, remote attachments, entity versions, remote MCP/OAuth, limits/quotas, UX/analytics | **Отложено:** после 1.0.0; 9 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
 | 105 | TASK-174 `human-control-phase2` | `feat/TASK-174.x-*` | §7.25: post-1.0 P1/P2 из human-control — comment moderation, share privacy, 2FA/sessions, token rotation, invite email, limits/a11y, service accounts, legal/SIEM/messaging/templates | **Отложено:** после 1.0.0; 5 потоков; каждый P1/P2 имеет дом; запуск не блокирует. См. §7.25 |
 | 106 | TASK-175 `scale-phase2` | `feat/TASK-175.x-*` | §7.25: post-1.0 масштабирование — глобальный потолок команд и шардинг, multi-node/Redis fan-out, presence после TASK-145 | **Отложено:** после 1.0.0; 3 потока; не блокирует self-host-запуск. См. §7.25 |
-| 107 | TASK-176 `admin-connections` | `docs/TASK-176-admin-connections.md` → отдельные `feat/TASK-176.x-*` | §7.26: исправить подтверждённые баги и пробелы мастер-панели (bulk между страницами, честные счётчики/выборки, прямые ссылки, URL-состояние, адресуемые фильтры, per-row действия) и добавить **author-only редактирование своих комментариев** в обычном продукте | **Запланировано:** 12 подзадач; первая волна — 176.1 bulk-контракт, 176.2 редактирование комментариев, 176.3 честные счётчики; админский редактор карточки и атрибуция мастера — отдельные решения (176.8–176.10), раздел агентов — осознанно вне scope, граница закрыта в 176.11 (docs-only); **176.9 B1+B2 реализовано в ветках `feat/TASK-176.9-admin-card-fields` и `feat/TASK-176.9-admin-card-relations` (без PR/merge), 176.12 — deferred**. См. §7.26 |
+| 107 | TASK-176 `admin-connections` | `docs/TASK-176-admin-connections.md` → отдельные `feat/TASK-176.x-*` | §7.26: исправить подтверждённые баги и пробелы мастер-панели (bulk между страницами, честные счётчики/выборки, прямые ссылки, URL-состояние, адресуемые фильтры, per-row действия) и добавить **author-only редактирование своих комментариев** в обычном продукте | **Статус:** 176.1–176.7 и 176.11 в `main`; 176.8–176.10 delivered в review-ветках без merge (176.8/176.10 — `feat/TASK-176.8-admin-card-edit`; 176.9 B1 — `feat/TASK-176.9-admin-card-fields`, B2 — `feat/TASK-176.9-admin-card-relations`); 176.12 deferred. Первая волна (176.1–176.3) закрыта; админский редактор — это field/checklist/link editor на `/admin/cards/:id`, не полный board-клиент; master-authored comments/uploads остаются отдельным решением. См. §7.26 |
 | 108 | TASK-177 `human-last-mile` | `docs/TASK-177-human-last-mile.md` → отдельные `feat/TASK-177.x-*` | §7.27: закрыть **все 18** разрывов project-gaps + **9 новых** находок UI-roast — share edit, self-leave, потеря черновика, честные счётчики, task spec/claim, admin shares, notification opt-out + inbox, per-board export, «permanent» copy, detached attachments, search cap, mentions, поиск комментариев/файлов, approval truth на `/agents`, a11y, first-run, safe-area и bulk actions | **Запланировано:** 20 подзадач, все G-01…G-18 и U-01…U-09 в scope; первая волна — 177.3 draft+counts, 177.15 a11y, 177.17 delete safety; затем 177.1/177.5/177.8/177.16/177.18; 177.2/177.6/177.13/177.14; 177.10/177.11/177.12; 177.4/177.7/177.9/177.19/177.20 — с зафиксированным решением, но не вне задачи. См. §7.27 |
 | 109 | TASK-178 `board-settings-rail` ✅ | `docs/TASK-178-board-settings-rail.md` → `feat/board-settings-rail-redesign` | Редизайн «Настройки доски» по направлению **01 «Рельс доски»**: один surface, рельс колонок, список правил, инспектор 316 px, матрица как вкладка, компактные global/start-done, responsive/a11y, мастер-панель без диалогового shell | **Выполнено:** PR #242, merge `360938b`; все 5 фаз, unit/browser/mobile-тесты, EN/RU user-guide, CHANGELOG. Модель `BoardWorkflow` не менялась. См. spec и `design/board-settings-redesign/REPORT.md` |
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
@@ -4803,10 +4803,10 @@ marketplace-шаблоны — **TASK-174.5** (SSO/SCIM, marketplace) и **TASK-
 
 ### 7.26. Связи и честность мастер-панели + редактирование комментариев (TASK-176)
 
-> **Статус:** 176.1–176.9 реализовано в отдельных ветках (в `main` не смержено; 176.9 B1+B2 — `feat/TASK-176.9-admin-card-fields` и `feat/TASK-176.9-admin-card-relations`), 176.10 — correlation реализован, 176.11 закрыт docs-only, 176.12 — deferred. Не входит в TASK-166.
+> **Статус:** 176.1–176.7 + 176.11 в `main`; 176.8–176.10 — review-ветки без merge (176.8/176.10 — `feat/TASK-176.8-admin-card-edit`, 176.9 B1 — `feat/TASK-176.9-admin-card-fields`, B2 — `feat/TASK-176.9-admin-card-relations`); 176.12 — deferred. Не входит в TASK-166.
 > **Полный spec:** [`docs/TASK-176-admin-connections.md`](docs/TASK-176-admin-connections.md).
 > **Источник:** независимая проверка [`design/admin-connections-review/REVIEW.md`](design/admin-connections-review/REVIEW.md) (аудит `design/admin-ui-study/MISSING-CONNECTIONS.md`).
-> **База:** `main` = `5e0a05b`.
+> **База плана:** `main` = `5e0a05b`; фактические базы review-веток — B1 `05d0df30`, B2 `2469b1c6` (в `main` не смержено).
 
 **Зачем.** Мастер-панель задумана как контур поддержки/модерации, а не второй
 board-клиент. Но проверка подтвердила **4 реальных бага** и набор пробелов,
@@ -4819,8 +4819,9 @@ board-клиент. Но проверка подтвердила **4 реаль�
 
 **Что осознанно не входит:** право мастера редактировать чужой текст
 комментария, master-раздел агентов, отдельный браузер пунктов чек-листа. Это
-продуктовые решения/отложенные пункты, а не багфиксы. Полный редактор карточки
-реализован в 176.9 (B1+B2), 176.12 остаётся deferred.
+продуктовые решения/отложенные пункты, а не багфиксы. Редактор
+полей/чек-листов/связей карточки реализован в 176.9 (B1+B2); это не полный
+board-клиент, а 176.12 остаётся deferred.
 
 **Подзадачи.**
 
@@ -4833,9 +4834,9 @@ board-клиент. Но проверка подтвердила **4 реаль�
 | 176.5 | URL-состояние списков + `returnTo`; глобальный поиск ведёт к конкретному комментарию/файлу с якорем или страницей вокруг объекта | P2 | 2 |
 | 176.6 | Адресуемые фильтры `boardId` / `columnId` / `labelId`; ссылки со счётчиков доски, колонки и метки; точные ID, не поиск по имени | P2 | 2 |
 | 176.7 | Per-row действия в профиле/карточке: revoke одной сессии/токена, удаление одного комментария/вложения через существующие API | P2 | 2 |
-| 176.8 | Админский пилот: редактирование description и перемещение карточки через command log, с баннером «действуете от имени владельца» и audit `masterId`/`commandId` | P2 | 3, решение |
+| 176.8 | ✅ **Delivered (2026-11-18, `feat/TASK-176.8-admin-card-edit`, без merge):** редактирование description и перемещение карточки через command log, баннер атрибуции владельцу, audit `masterId`/`commandId`; sign-off «добивать 176» | P2 | 3, решение |
 | 176.9 | ✅ **B1+B2 реализовано (2026-11-18, без PR/merge):** B1 — поля карточки (assignee, due, priority, cover, labels) в ветке `feat/TASK-176.9-admin-card-fields`; B2 — чек-листы и связи в ветке `feat/TASK-176.9-admin-card-relations`; команды идут через command log с атрибуцией владельцу, audit `masterId`/`commandId`, backend guard и ленивые панели. 176.12 остаётся deferred | P3 | 3, решение |
-| 176.10 | Связка command ↔ audit и атрибуция мастера; не менять board-facing атрибуцию без решения | P3 | 3, решение |
+| 176.10 | ✅ **Delivered (2026-11-18, review-ветка 176.8, без merge):** связка command ↔ audit, `auditId` в command log/card timeline, `GET /admin/commands` и `/admin/audit` по `commandId`; board-facing атрибуция владельцу сохранена | P3 | 3, решение |
 | 176.11 | ✅ **Закрыто (docs-only, 2026-11-13):** раздел агентов в `/admin` не делаем; граница «`/admin` не управляет runs/approvals/policy» зафиксирована в admin docs EN/RU и ADR-166 §18. Кросс-борд oversight — отдельная задача с master API, моделью прав и аудитом | P3 | closed |
 | 176.12 | **Deferred (2026-11-18):** отдельный browser пунктов чек-листа не входит в 176.9; при необходимости — фильтр/поиск и якорь в карточке | P3 | deferred |
 
@@ -4849,10 +4850,11 @@ board-клиент. Но проверка подтвердила **4 реаль�
 **Вторая волна (P2).** 176.4–176.7: дешёвые ссылки, URL/поиск, фильтры и
 per-row действия. Их можно делать параллельно после первой волны.
 
-**Третья волна (решения).** 176.8–176.10 — только после ответа на вопросы:
-от чьего имени мастер правит контент, как это видно в истории доски и кто
-несёт ответственность. 176.8 — минимальный пилот; полный редактор (176.9)
-не начинать до него.
+**Третья волна (решена).** 176.8–176.10 — ответ владельца 2026-11-18
+(«добивать 176»): board history остаётся от имени владельца, мастер пишется в
+audit (`commandId`/`masterId`/`masterEmail`); 176.8/176.10 — review-ветки,
+176.9 — редактор полей/чек-листов/связей на `/admin/cards/:id`, не полный
+board-клиент; всё без merge.
 
 **DoD.** Для каждой подзадачи: тесты без ослабления ожиданий, EN/RU docs,
 CHANGELOG, audit/activity для новых записей, клавиатура/фокус, `format:check`,

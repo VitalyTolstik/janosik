@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { createId } from "@/utils/id";
 import {
   isPairLinked,
   suggestLinkTargets,
@@ -624,6 +625,13 @@ export function CardRelationsPanel({
   // instead of syncing state from an effect.
   const cursor = Math.min(rawCursor, Math.max(0, suggestions.length - 1));
 
+  useEffect(() => {
+    if (targetId !== null || suggestions.length === 0) return;
+    document
+      .getElementById(`${targetListId}-option-${cursor}`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [cursor, suggestions.length, targetId, targetListId]);
+
   const selectedTarget =
     board !== null && targetId !== null ? board.cards[targetId] : undefined;
   const holderId =
@@ -639,7 +647,11 @@ export function CardRelationsPanel({
   // is the freshest source (a checklist command must not touch it); for a
   // reverse option the holder is the target and the board aggregate owns it.
   const liveOutgoing = linksOut.filter((link) => link.deletedAt === null);
-  const liveIncoming = linksIn.filter((link) => link.deletedAt === null);
+  // A live row whose holder is deleted is readable as a dangling relation,
+  // but it is not a live incoming relation of this card.
+  const liveIncoming = linksIn.filter(
+    (link) => link.deletedAt === null && !link.otherCardDeleted,
+  );
   const holderOutgoingCount =
     holderId === card.id ? liveOutgoing.length : (holder?.links?.length ?? 0);
   const linkAtCap = holderOutgoingCount >= LIMITS.linksPerCard;
@@ -723,7 +735,7 @@ export function CardRelationsPanel({
     setError(null);
     try {
       await adminApi.sendBoardCommand(card.boardId, {
-        commandId: crypto.randomUUID(),
+        commandId: createId(),
         action: {
           ...action,
           cardId: holderCardId,
@@ -767,7 +779,7 @@ export function CardRelationsPanel({
     if (
       await send(
         "checklist:add",
-        { type: "ADD_CHECKLIST", newChecklistId: crypto.randomUUID(), title },
+        { type: "ADD_CHECKLIST", newChecklistId: createId(), title },
         "admin.cards.relations.toast.checklistAdded",
       )
     ) {
@@ -802,7 +814,7 @@ export function CardRelationsPanel({
       {
         type: "ADD_CHECKLIST_ITEM",
         checklistId,
-        newItemId: crypto.randomUUID(),
+        newItemId: createId(),
         text,
       },
       "admin.cards.relations.toast.itemAdded",
@@ -870,7 +882,7 @@ export function CardRelationsPanel({
       "link:add",
       {
         type: "ADD_CARD_LINK",
-        linkId: crypto.randomUUID(),
+        linkId: createId(),
         targetCardId: holderId === card.id ? selectedTarget.id : card.id,
         linkType: linkOption.linkType,
       },
@@ -1333,11 +1345,16 @@ export function CardRelationsPanel({
 
             {selectedTarget !== undefined ? (
               <p
-                className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"
+                className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"
                 data-testid="admin-card-link-selected"
               >
-                <Check className="h-3.5 w-3.5 text-success" aria-hidden />
-                {selectedTarget.title}
+                <Check
+                  className="h-3.5 w-3.5 shrink-0 text-success"
+                  aria-hidden
+                />
+                <span className="min-w-0 break-words">
+                  {selectedTarget.title}
+                </span>
                 <button
                   type="button"
                   className="text-primary underline-offset-2 hover:underline"
@@ -1383,7 +1400,7 @@ export function CardRelationsPanel({
             {reverseHolder && selectedTarget !== undefined ? (
               <p
                 className={cn(
-                  "text-[11px]",
+                  "min-w-0 break-words text-[11px]",
                   linkAtCap ? "text-danger" : "text-muted-foreground",
                 )}
                 data-testid="admin-card-links-holder-cap"

@@ -634,7 +634,9 @@ describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
 
     expect(
       await screen.findByTestId("admin-card-description-error"),
-    ).toHaveTextContent("denied");
+    ).toHaveTextContent(
+      adminMessage("admin.cards.description.errorConflict", "en"),
+    );
     expect(screen.getByTestId("admin-card-description-dialog")).toBeTruthy();
     expect(
       screen.getByTestId("admin-card-detail-description"),
@@ -2447,6 +2449,9 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
     expect(
       screen.queryByTestId("admin-card-link-remove-dangling-in"),
     ).toBeNull();
+    expect(
+      screen.getByTestId("admin-card-links-incoming-count"),
+    ).toHaveTextContent("0 incoming links");
     expect(
       server.requests.filter(
         (request) =>

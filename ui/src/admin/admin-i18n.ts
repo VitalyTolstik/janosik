@@ -854,6 +854,12 @@ const en = {
   "admin.cards.description.title": "Edit description",
   "admin.cards.description.label": "Description",
   "admin.cards.description.submit": "Save description",
+  "admin.cards.description.errorNotFound":
+    "The card no longer exists. Reload the page.",
+  "admin.cards.description.errorInvalid":
+    "The server rejected the description. Check it and try again.",
+  "admin.cards.description.errorConflict":
+    "The description conflicts with the current card. Reload and try again.",
   "admin.cards.toast.descriptionSaved": "Description saved",
   "admin.cards.fields.title": "Properties",
   "admin.cards.fields.hint": "Each field is its own board command.",
@@ -1020,6 +1026,8 @@ const en = {
   "admin.boardContent.move.currentColumn": "Current column",
   "admin.boardContent.move.targetColumn": "Target column",
   "admin.boardContent.move.submit": "Move card",
+  "admin.boardContent.move.stale":
+    "The board changed since this dialog opened. Reload and try again.",
   "admin.boardContent.confirmDelete.title": "Delete column “{title}”?",
   "admin.boardContent.confirmDelete.body":
     "It is a soft delete: the column and its cards disappear for members.",
@@ -2230,6 +2238,12 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.description.title": "Редактирование описания",
   "admin.cards.description.label": "Описание",
   "admin.cards.description.submit": "Сохранить описание",
+  "admin.cards.description.errorNotFound":
+    "Карточка больше не существует. Перезагрузите страницу.",
+  "admin.cards.description.errorInvalid":
+    "Сервер отклонил описание. Проверьте его и повторите попытку.",
+  "admin.cards.description.errorConflict":
+    "Описание конфликтует с текущим состоянием карточки. Перезагрузите страницу и повторите.",
   "admin.cards.toast.descriptionSaved": "Описание сохранено",
   "admin.cards.fields.title": "Свойства",
   "admin.cards.fields.hint":
@@ -2398,6 +2412,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.boardContent.move.currentColumn": "Текущая колонка",
   "admin.boardContent.move.targetColumn": "Целевая колонка",
   "admin.boardContent.move.submit": "Переместить карточку",
+  "admin.boardContent.move.stale":
+    "Доска изменилась с момента открытия диалога. Перезагрузите страницу и повторите.",
   "admin.boardContent.confirmDelete.title": "Удалить колонку «{title}»?",
   "admin.boardContent.confirmDelete.body":
     "Это мягкое удаление: колонка и её карточки исчезнут у участников.",

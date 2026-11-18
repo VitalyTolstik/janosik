@@ -1,9 +1,11 @@
 # TASK-176 — Admin connections, honest data, and comment editing
 
-**Status:** planned  
-**Base:** `main` = `a858c75`  
-**Source:** `design/admin-connections-review/REVIEW.md` (independent verification of `design/admin-ui-study/MISSING-CONNECTIONS.md`)  
-**Scope:** master panel `/admin/*`, shared admin DTOs, admin backend, comment editing in the normal user product.
+- **Status:** 176.1–176.7 merged on `main`; 176.8–176.10 delivered in review branches (not merged); 176.11 closed docs-only; 176.12 deferred.
+- **Planning base:** `main` = `a858c75` (the base this spec was written against).
+- **Delivery bases:** 176.8/176.10 — review branch `feat/TASK-176.8-admin-card-edit`; 176.9 B1 — `feat/TASK-176.9-admin-card-fields` (base `05d0df30`); 176.9 B2 — `feat/TASK-176.9-admin-card-relations` (base `2469b1c6`). None of these review branches is merged.
+- **Owner sign-off (2026-11-18):** the owner instructed “добивать 176” (complete TASK-176), approving 176.8, 176.9 and 176.10 under the owner-attribution model: the board owner stays the board-facing actor in history, while the real master is recorded in the command-linked audit (`commandId`, `masterId`, `masterEmail`).
+- **Source:** `design/admin-connections-review/REVIEW.md` (independent verification of `design/admin-ui-study/MISSING-CONNECTIONS.md`)
+- **Scope:** master panel `/admin/*`, shared admin DTOs, admin backend, comment editing in the normal user product. TASK-176.9 is the field/checklist/link editor on `/admin/cards/:id`, not a full board client; master-authored comments/uploads remain a separate product decision.
 
 This document turns the audit into an executable task. It does not re-open intentional product boundaries; those are listed in §2 and §10.
 
@@ -402,10 +404,16 @@ the incoming count to the viewed card.
 The combined size gate now measures the real card page: `AdminApp`,
 `CardFieldsPanel`, `CardRelationsPanel`, the shared admin `ui` chunk split out
 by the second lazy panel, and the existing board `links` chunk that the panel
-now loads. **101.62 kB → 111.97 kB gzip against an explicit 113 kB budget**,
-leaving 1.03 kB headroom; the DTO flag and follow-ups added about 0.17 kB, so
+now loads. **101.62 kB → 112.28 kB gzip against an explicit 113 kB budget**,
+leaving 0.72 kB headroom; the DTO flag and follow-ups added about 0.48 kB, so
 the budget was adjusted from 112 kB explicitly. The lazy relations chunk is not
 omitted.
+
+**Sign-off (2026-11-18):** the owner instructed “добивать 176” (complete
+TASK-176) and approved 176.9. The approved scope is the field/checklist/link
+editor on `/admin/cards/:id` plus the existing board-content move, not a full
+board client. Master-authored comments/uploads remain a separate product
+decision.
 
 Master-authored comments/uploads are also a separate product decision: decide
 the author identity, history display and responsibility before adding the
@@ -428,6 +436,10 @@ commands expose `auditId` only for correlated master-issued commands, with an
 `GET /admin/audit` accept the same validated `commandId`; the audit filter is
 pinned to `board.command`. Replays never fabricate a master audit row, and
 historical/user commands stay `null`. No backfill was attempted.
+
+**Sign-off (2026-11-18):** the same “добивать 176” instruction covers 176.10;
+the owner chose owner-facing board history with master correlation in this audit
+row (see §18, decision 2).
 
 ---
 
@@ -520,7 +532,7 @@ Suggested PR split:
 ## 18. Open product decisions
 
 1. Comment editing: should masters ever edit another user's comment? (Current answer: no; author-only.)
-2. Should a master edit appear as the owner or as the master in board history? (176.8 must answer before shipping.)
+2. Should a master edit appear as the owner or as the master in board history? **Answered 2026-11-18 (owner sign-off for 176.8–176.10):** the owner remains the board-facing actor in board history; the real master is recorded in the command-linked audit as `commandId`, `masterId` and `masterEmail`. The owner instructed “добивать 176” (complete TASK-176).
 3. Is cross-board agent oversight needed in `/admin`, or is `/agents` + board dialog enough? (Current answer: enough; recorded as a deliberate boundary in the admin docs and ADR-166 §18 by 176.11.)
 4. Is cross-page bulk selection the desired contract, or should selection be page-local? (176.1 recommends cross-page with a 500 guard.)
 5. Should deleted/revoked rows be hidden by default or shown with a filter? (176.3 recommends hidden by default with an explicit filter.)

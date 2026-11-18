@@ -15,15 +15,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `RENAME_CHECKLIST`, `DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`,
   `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`,
   `ADD_CARD_LINK` and `REMOVE_CARD_LINK`. Checklists are capped at 20 per card,
-  items at 100 per checklist; unchanged drafts send nothing, deleted
+  items at 100 per checklist; unchanged values send no command, deleted
   checklists/items are filtered out, and checklist deletion asks for
   confirmation. Links show both directions with the stored type plus a readable
   phrase (`blocks` / `is blocked by`, `duplicates` / `is duplicated by`), and
   incoming removal targets the holder card. The target combobox loads
   `GET /admin/boards/:id/content`, excludes self, archived and already-linked
   pairs, enforces the holder's 50-link cap and blocks `blocks` cycles; reverse
-  phrasing is available when adding. Dangling/soft-deleted link rows stay
-  readable and live dangling rows remain removable. Deleted cards hide the
+  phrasing is available when adding. Checklist/item commands neither refetch
+  board content nor clear the link draft; link commands refetch it, and
+  `ADD_CARD_LINK` closes the editor after success while `REMOVE_CARD_LINK`
+  leaves the draft open. Dangling/soft-deleted link rows stay readable and live
+  dangling rows remain removable. Deleted cards hide the
   editor; archived cards keep editing. The backend fresh-command guard now
   covers all nine actions: live/same-board source card and checklist/item with
   exact ownership (`404`), new ids free or a soft-deleted row owned by the same
@@ -37,10 +40,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   size gate: the second lazy panel split the shared admin `ui` chunk out of
   `AdminApp`, and the panel also loads the existing board `links` chunk, so the
   entry now measures `AdminApp` + both lazy panels + those shared chunks.
-  **101.62 kB → 111.97 kB gzip against an explicit 113 kB budget**, leaving
-  1.03 kB headroom (the DTO flag and follow-ups added about 0.17 kB; the
-  previous 102 kB budget measured only the shell + field panel). EN/RU admin
-  content docs
+  **101.62 kB → 112.28 kB gzip against an explicit 113 kB budget**, leaving
+  0.72 kB headroom (the DTO flag and follow-ups added about 0.48 kB; B1’s
+  102 kB budget measured only the shell + field panel). EN/RU admin content
+  docs
   describe the editor and counters; the monitoring note records the audit
   correlation.
 
@@ -71,10 +74,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   another column through `MOVE_CARD`. Both dialogs show the explicit
   owner-attribution banner; the command log and board history still name the
   board owner, while `AdminAuditLog.details` now carries `commandId`,
-  `masterId` and `masterEmail` for the real master. Command rows and card
-  timeline commands expose `auditId` when correlated (historical and normal
-  user commands stay `null`), adding an `Audit` link in the command log and
-  card timeline. The link filters by the **command id** (not the audit row
+  `masterId` and `masterEmail` for the real master. `GET /admin/commands` rows
+  and card-timeline commands expose `auditId` when correlated (historical and
+  normal user commands stay `null`), adding an `Audit` link in the command log
+  and card timeline only. The link filters by the **command id** (not the audit row
   id), and `GET /admin/audit` plus `GET /admin/commands` accept the same
   exact validated `commandId`; the audit query is pinned to `board.command`.
   `/admin/audit?tab=audit&commandId=<command id>` is a shareable deep link.

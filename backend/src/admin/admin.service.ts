@@ -1119,13 +1119,16 @@ export class AdminService {
               id: true,
               deletedAt: true,
               archivedAt: true,
-              column: { select: { boardId: true } },
+              column: {
+                select: { id: true, boardId: true, deletedAt: true },
+              },
             },
           });
           if (
             !card ||
             card.deletedAt !== null ||
-            card.column.boardId !== boardId
+            card.column.boardId !== boardId ||
+            card.column.deletedAt !== null
           ) {
             throw new NotFoundException("Card not found");
           }
@@ -1133,6 +1136,33 @@ export class AdminService {
           // card dialog allows it); only a move is impossible.
           if (action.type === "MOVE_CARD" && card.archivedAt !== null) {
             throw new ConflictException("Archived cards cannot be moved");
+          }
+          if (action.type === "MOVE_CARD") {
+            // The admin board editor can be up to one poll interval old. A
+            // stale from-column would otherwise move the card from its real
+            // current column (or no-op) and still write a command/audit row.
+            if (card.column.id !== action.fromColumnId) {
+              throw new ConflictException({
+                message: "Card moved since the page loaded",
+                field: "action.fromColumnId",
+                code: "move_stale",
+                conflict: "version",
+              });
+            }
+            const target = await tx.column.findUnique({
+              where: { id: action.toColumnId },
+              select: { id: true, boardId: true, deletedAt: true },
+            });
+            if (
+              !target ||
+              target.boardId !== boardId ||
+              target.deletedAt !== null
+            ) {
+              throw new NotFoundException({
+                message: "Target column not found",
+                field: "action.toColumnId",
+              });
+            }
           }
           // A label from another board (or a soft-deleted one) is not a
           // silent no-op: the reducer ignores it, so accepting the command

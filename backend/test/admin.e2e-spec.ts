@@ -2507,6 +2507,145 @@ describe("Admin API (e2e)", () => {
       await cleanupCommandFixture(fixture);
     });
 
+    it("rejects a stale admin move and invalid target columns before the command log (TASK-176.8)", async () => {
+      const fixture = await commandFixture("move-stale");
+      const moveId = randomUUID();
+      const moveAction = {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.sourceId,
+        fromIndex: 0,
+        toColumnId: fixture.targetId,
+        toIndex: 0,
+        at: Date.now(),
+      };
+      const moved = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: moveId, action: moveAction })
+        .expect(201);
+      expect(
+        await prisma.card.findUniqueOrThrow({
+          where: { id: fixture.cardId },
+          select: { columnId: true },
+        }),
+      ).toMatchObject({ columnId: fixture.targetId });
+
+      // The exact replay returns the stored result after the move; the fresh
+      // guard must not turn a retry into an error.
+      const replay = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: moveId, action: moveAction })
+        .expect(201);
+      expect(replay.body.seq).toBe(moved.body.seq);
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(1);
+
+      const reject = async (
+        status: number,
+        action: Record<string, unknown>,
+      ): Promise<string> => {
+        const id = randomUUID();
+        const response = await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ commandId: id, action: { ...action, at: Date.now() } })
+          .expect(status);
+        if (status === 409) {
+          expect(response.body).toMatchObject({ conflict: "version" });
+        }
+        expect(await prisma.command.count({ where: { id } })).toBe(0);
+        expect(
+          await prisma.adminAuditLog.count({
+            where: {
+              action: "board.command",
+              targetId: fixture.boardId,
+              details: { path: ["commandId"], equals: id },
+            },
+          }),
+        ).toBe(0);
+        return id;
+      };
+
+      // Stale from-column: the dialog was opened before someone moved the card.
+      await reject(409, {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.sourceId,
+        fromIndex: 0,
+        toColumnId: fixture.targetId,
+        toIndex: 0,
+      });
+      // Missing target column.
+      await reject(404, {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.targetId,
+        fromIndex: 0,
+        toColumnId: `missing-${randomUUID()}`,
+        toIndex: 0,
+      });
+      // Soft-deleted target column.
+      const deletedColumn = await prisma.column.create({
+        data: {
+          id: `col-${randomUUID()}`,
+          boardId: fixture.boardId,
+          title: "Deleted target",
+          position: 2,
+          deletedAt: new Date(),
+        },
+      });
+      await reject(404, {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.targetId,
+        fromIndex: 0,
+        toColumnId: deletedColumn.id,
+        toIndex: 0,
+      });
+      // Target column from another board.
+      const otherBoard = await prisma.board.create({
+        data: { title: `Other move board ${randomUUID()}` },
+      });
+      const foreignColumn = await prisma.column.create({
+        data: {
+          id: `col-${randomUUID()}`,
+          boardId: otherBoard.id,
+          title: "Foreign target",
+          position: 0,
+        },
+      });
+      await reject(404, {
+        type: "MOVE_CARD",
+        cardId: fixture.cardId,
+        fromColumnId: fixture.targetId,
+        fromIndex: 0,
+        toColumnId: foreignColumn.id,
+        toIndex: 0,
+      });
+      await prisma.column.deleteMany({ where: { boardId: otherBoard.id } });
+      await prisma.board.delete({ where: { id: otherBoard.id } });
+
+      // The successful move is the only command/audit row.
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(1);
+
+      await cleanupCommandFixture(fixture);
+    });
+
     it("validates the admin commandId on writes and reads", async () => {
       const fixture = await commandFixture("validation");
       for (const commandId of ["", "   ", "bad id", "a".repeat(65)]) {

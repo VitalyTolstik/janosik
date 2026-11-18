@@ -27,6 +27,7 @@ import type {
   AdminCardDetailSection,
 } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
+import { createId } from "@/utils/id";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -385,7 +386,7 @@ export function CardDetailPage() {
     setDescriptionError(null);
     try {
       await adminApi.sendBoardCommand(card.boardId, {
-        commandId: crypto.randomUUID(),
+        commandId: createId(),
         action: {
           type: "UPDATE_CARD",
           cardId: card.id,
@@ -397,11 +398,23 @@ export function CardDetailPage() {
       setDescriptionOpen(false);
       reload();
     } catch (cause) {
-      setDescriptionError(
-        cause instanceof ApiError && cause.messageText
-          ? cause.messageText
-          : t("admin.common.actionFailed"),
-      );
+      if (cause instanceof ApiError) {
+        if (cause.status === 403) {
+          setDescriptionError(t("admin.common.forbidden"));
+        } else if (cause.status === 404) {
+          setDescriptionError(t("admin.cards.description.errorNotFound"));
+        } else if (cause.status === 400) {
+          setDescriptionError(t("admin.cards.description.errorInvalid"));
+        } else if (cause.status === 409) {
+          setDescriptionError(t("admin.cards.description.errorConflict"));
+        } else if (lang === "en" && cause.messageText) {
+          setDescriptionError(cause.messageText);
+        } else {
+          setDescriptionError(t("admin.common.actionFailed"));
+        }
+      } else {
+        setDescriptionError(t("admin.common.actionFailed"));
+      }
     } finally {
       setDescriptionBusy(false);
     }

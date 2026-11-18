@@ -110,7 +110,10 @@ export function DateTimeField({
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-3">
+      <PopoverContent
+        align="start"
+        className="w-auto max-w-[calc(100vw-1rem)] overflow-x-auto p-3"
+      >
         <div className="flex gap-3">
           <Calendar
             mode="single"

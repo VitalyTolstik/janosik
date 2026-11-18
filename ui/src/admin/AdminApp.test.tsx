@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -948,6 +949,71 @@ describe("admin content and security pages", () => {
         masterEmail: "master@example.com",
       },
     });
+  });
+
+  it("shows a stale toast when the move source vanished after the poll", async () => {
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.useFakeTimers({ toFake: ["setInterval"] });
+    try {
+      const state = serverWith().state;
+      state.cards = [
+        adminCard({
+          id: "card-1",
+          title: "Movable",
+          columnId: "col-a",
+          columnTitle: "Backlog",
+        }),
+      ];
+      state.contentBoard = contentBoard({
+        columns: [
+          { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+          { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+        ],
+        cards: {
+          "card-1": {
+            id: "card-1",
+            title: "Movable",
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      });
+      const server = new FakeAdminServer(state);
+      vi.stubGlobal("fetch", server.fetchImpl);
+      renderAdmin("/admin/boards/b-1/content");
+
+      fireEvent.click(await screen.findByTestId("admin-card-move-card-1"));
+      const dialog = await screen.findByTestId("admin-move-card-dialog");
+      fireEvent.click(within(dialog).getByTestId("admin-move-card-target"));
+      fireEvent.click(
+        await screen.findByTestId("admin-move-card-target-option-col-b"),
+      );
+
+      // Someone else moves the card before the 2s poll refreshes this tab.
+      state.contentBoard.columns[0]!.cardIds = [];
+      state.contentBoard.columns[1]!.cardIds = ["card-1"];
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+        await Promise.resolve();
+      });
+      vi.useRealTimers();
+
+      fireEvent.click(within(dialog).getByTestId("admin-move-card-submit"));
+      expect(
+        await screen.findByText(t("admin.boardContent.move.stale")),
+      ).toBeTruthy();
+      expect(
+        server.requests.filter(
+          (request) =>
+            request.method === "POST" && request.path.endsWith("/commands"),
+        ),
+      ).toHaveLength(0);
+      expect(screen.queryByTestId("admin-move-card-dialog")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      hasFocus.mockRestore();
+    }
   });
 
   it("disables moving for a single-column board and an archived card", async () => {
