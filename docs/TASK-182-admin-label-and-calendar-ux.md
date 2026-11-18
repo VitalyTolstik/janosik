@@ -155,9 +155,11 @@ environment/runbook concern, not a product acceptance criterion.
   explains immediate save, click to attach/detach, and board-history visibility.
 - Make repeated label toggles produce **one refreshed confirmation**, not a
   growing stack of identical “Label updated” toasts.
-- Keep the existing `SET_CARD_LABEL` command semantics and `send()`/
-  `toggleLabel()` flow unchanged. A late label response from card A after
-  navigating to B must not show A's toast or update B.
+- Keep the `SET_CARD_LABEL` command shape, label cap and `onSaved: () => void`
+  semantics unchanged. In scope, `send()`/`toggleLabel()` gain an optional
+  label toast key, keyed clear/success, and a post-await current-card/mounted
+  guard that gates all post-await effects. A late A response must not show A's
+  toast, write A's error, call A's `onSaved`, or reset busy state on B.
 - Isolate a due-date calendar chunk/render failure to the due-date calendar in
   `CardFieldsPanel`: the rest of the Properties panel stays editable.
 - Define a field-level calendar fallback contract that can replace the
@@ -191,7 +193,7 @@ environment/runbook concern, not a product acceptance criterion.
 
 | File | Scope for TASK-182 |
 | --- | --- |
-| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; add the help button and keyed-toast calls only. Keep `onSaved: () => void` and existing command flow unchanged. Optional `calendarLoader` test seam and internal `CardCalendarFallback`. |
+| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; add the help button, optional label toast key + keyed clear/success, and a post-await current-card/mounted guard for all post-await effects. Command shape, cap, `onSaved: () => void` and command flow otherwise unchanged. Optional `calendarLoader` test seam and internal `CardCalendarFallback`. |
 | `ui/src/admin/CardCalendarFallback.tsx` (new, or a local component) | Card-local accessible native `datetime-local` fallback + Retry; replaces the calendar+time row when the calendar fails. |
 | `ui/src/admin/ui.tsx` | `Field` label rendering; add an optional label/action slot so the Labels help button is not nested in a `<label>` (phase 1 only). |
 | `ui/src/components/Toast.tsx` | `ToastProvider`, append-only `push()`, 4.5 s timers, `ToastApi`; add opt-in keys/clear, fresh append after clear, and dismissal map cleanup (phase 1). |
@@ -230,7 +232,7 @@ existing global confirmation location and has a narrow blast radius.
 
 | Option | Pros | Cons | Verdict |
 | --- | --- | --- | --- |
-| **Keyed refresh + clear-on-start/failure** (`toast.success(message, { key })`, `toast.clear(key)`) | One visible label toast; timer resets; a later failure cannot leave a stale success; unkeyed toasts stay additive; errors are untouched | Requires a small `ToastApi`/timer bookkeeping change and tests; key must include the card id | **Chosen** |
+| **Keyed refresh + clear-on-accept/failure** (`toast.success(message, { key })`, `toast.clear(key)`) | One visible label toast; timer resets; a later failure cannot leave a stale success; unkeyed toasts stay additive; errors are untouched | Requires a small `ToastApi`/timer bookkeeping change and tests; key must include the card id | **Chosen** |
 | Label-local inline status (`role="status"` under the group), no label success toast | No provider change; contextual confirmation | New label-specific state/markup; less visible; removes existing success feedback | Not selected |
 | Global dedupe by message + variant | One change fixes every repeated toast | Changes semantics for unrelated actions; identical errors would collapse or need an error special-case, which can hide a second distinct failure | No |
 | Suppress label success toasts entirely | Trivial | No confirmation that a click was accepted; user may repeat the action | No |
@@ -242,8 +244,10 @@ confirmation on card B.
 
 The lifecycle is part of the fix:
 
-1. When a label command **starts**, clear the current card's keyed toast. This
-   removes any previous success before the new outcome is known.
+1. When a label command is **accepted** (after the busy guard and request
+   start), clear the current card's keyed toast. This removes any previous
+   success before the new outcome is known. A blocked click or `send === false`
+   leaves the previous toast untouched.
 2. When the command **fails**, clear the key again (defensive) and keep the
    existing inline `errors.labels` message. No success toast may remain.
 3. When the command succeeds, append the fresh keyed success toast immediately
@@ -266,7 +270,7 @@ manual close button, 4.5-second auto-dismiss, key clear and unmount. A stale
 mapping makes a later re-add of the same key target a dead item. Add
 close→re-add and auto-dismiss→re-add tests.
 
-A keyed success **appends a fresh item after the start-of-command clear**; it
+A keyed success **appends a fresh item after the accepted-command clear**; it
 must not update the old item in place. That gives `aria-live` a removal and a
 new insertion, so an identical “Label updated” message is announced again.
 
@@ -391,20 +395,30 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
    delete the key→toast map entry; manual close and auto-dismiss must delete the
    same map entry. Test clear→success, clear→timer, close→re-add and
    auto-dismiss→re-add with fake timers.
-5. Use `admin.card.labels:${card.id}` as the key. Clear it when a label command
-   starts, clear it defensively on failure, and clear it on card change/unmount.
-   Do not key `toast.error`; do not change `showFailure` or any other caller.
-   A failed label command still lands in the inline `errors.labels` message; a
-   real command error is never swallowed and no stale success remains.
-6. Keep `send()`, `toggleLabel()`, the cap guard and `onSaved: () => void`
-   unchanged. Do not add label state, a command timeout, an in-flight flag,
-   label resync or page reload serialization. `key={card.id}` on
-   `CardFieldsPanel` plus the mounted-card guard is the only late-response
-   protection; it prevents A's toast or inline error from landing on B.
-7. Accessibility note: because the keyed toast is cleared at command start and
-   re-appended on success, the live region sees a fresh node and should announce
-   the confirmation even when the text is identical. Do not rely on updating
-   identical text in place, which `aria-live` may not re-announce.
+5. Use `admin.card.labels:${card.id}` as the key. Pass it as an optional label
+   toast key to `send()`/`toggleLabel()`: clear only **after the command is
+   accepted** (busy guard passed and request started). If `send()` returns
+   false (busy/cap), leave any previous keyed toast untouched. Clear on failure,
+   card change and unmount. Do not key `toast.error`; do not change
+   `showFailure` or any other caller. A failed label command still lands in the
+   inline `errors.labels` message; a real command error is never swallowed and
+   no stale success remains.
+6. State the narrow delta precisely:
+   - **Unchanged:** `SET_CARD_LABEL` command shape, label cap,
+     `onSaved: () => void`, no label state, no timeout/resync/dedup.
+   - **Changed in scope:** `send()`/`toggleLabel()` accept the optional label
+     toast key, call keyed clear/success, and gate every post-await effect —
+     keyed toast, `onSaved`, `setErrors` and `setBusy` — with the captured
+     card id + mounted check. A late A response must not toast, write an error,
+     call A's `onSaved` (no B reload), or reset busy state on B.
+   `key={card.id}` on `CardFieldsPanel` is the mounted-card baseline; do not add
+   label state, command timeout, in-flight flag, label resync or page reload
+   serialization.
+7. Accessibility note: because the keyed toast is cleared when the command is
+   accepted and re-appended on success, the live region sees a fresh node and
+   should announce the confirmation even when the text is identical. Do not
+   rely on updating identical text in place, which `aria-live` may not
+   re-announce.
 
 ### Phase 2 — Calendar resilience (P1, independent PR)
 
@@ -482,19 +496,24 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - The copy covers all three facts: immediate save, click attaches/detaches,
   changes appear in board history. EN and RU are both present; no raw keys.
 - Rapid successful label toggles leave at most one “Label updated” toast; it is
-  cleared at command start, replaced by a fresh toast on success, and its timer
-  is reset rather than stacked.
+  cleared when a label command is accepted, replaced by a fresh toast on
+  success, and its timer is reset rather than stacked.
+- A blocked click (`send` returns false because busy/cap) does not clear the
+  previous keyed toast and does not send a command.
 - A success followed by a failed label command removes the success toast and
   shows the inline error; no stale “Label updated” remains.
 - A late success/failure from card A after navigating to B does not show A's
-  toast or write A's inline error on B.
+  toast, write A's inline error, call A's `onSaved` (no B reload), or reset busy
+  state on B.
 - Unkeyed success toasts remain additive, and repeated identical error toasts
   remain additive; label command errors remain visible inline. Keyed toast map
   entries are removed on manual close and auto-dismiss, so a later re-add of the
   same key works.
-- `send()`, `toggleLabel()`, `SET_CARD_LABEL`, the cap guard and
-  `onSaved: () => void` semantics are unchanged. This ticket does not promise
-  one command per actual change or command deduplication; see §9.
+- The command shape `SET_CARD_LABEL`, label cap and `onSaved: () => void` remain
+  unchanged. In scope, `send()`/`toggleLabel()` gain the optional label toast
+  key, keyed clear/success, and the post-await current-card/mounted guard for
+  all post-await effects. No label state, command timeout/resync or dedup is
+  added; this ticket does not promise one command per actual change. See §9.
 - The heading, help button and popover fit at 1440, 1024 and 390 px with no
   horizontal overflow or clipped control, verified in a browser.
 
@@ -538,24 +557,32 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
   return, assert the three facts are present and localized.
 - **Toast keyed refresh test:** toggle two labels in sequence; assert two
   commands, correct state, and exactly one “Label updated” status. Assert the
-  fresh item gets a full 4.5 s timer rather than stacking.
+  fresh item gets a full 4.5 s timer rather than stacking. Spy on the toast API
+  (or assert the notification region) to prove the label path calls keyed
+  clear/success, not the generic unkeyed `toast.success(message)`.
+- **Blocked-click toast test:** with a keyed toast already visible, click while
+  busy/at the label cap so `send` returns false; assert no command and that the
+  previous keyed toast was not cleared.
 - **Clear/timer fake-timer test:** `clear(key)` removes the item, cancels its
   timer and deletes the key map entry; a later success with the same key gets a
   fresh full 4.5 s lifetime and appends a new node.
-- **Dismiss→re-add test:** `ToastProvider.dismiss(id)` must resolve the key and
-  delete the key map entry; exercise both manual close and auto-dismiss, then
+- **Dismiss→re-add test:** exercise manual close and auto-dismiss through the
+  UI (or a documented test seam; `ToastProvider.dismiss(id)` is internal), then
   re-add the same key and assert it works without targeting a stale item.
 - **Success→failure test:** first toggle succeeds and shows the toast; second
   toggle fails (fake server 409/404); assert the toast is gone, the inline error
   is visible and no stale success remains.
 - **A→B navigation test:** hold a label command, navigate away, then
-  resolve/reject it; assert no toast or inline error from A appears on B.
+  resolve/reject it; assert no A toast/error, no A `onSaved` call and no B
+  detail reload from the old closure.
 - **Unkeyed behavior tests:** two unkeyed success calls produce two toasts; two
   identical unkeyed error calls produce two toasts. This proves the key did not
   weaken global behavior.
-- **A11y note:** because the key is cleared before each command and re-added on
-  success, the live region gets a fresh insertion even for identical text. Test
-  the status region; do not rely on in-place identical text updates.
+- **A11y note:** because the key is cleared when the command is accepted and
+  re-added on success, the live region gets a fresh insertion even for identical
+  text. Test the status region; do not rely on in-place identical text updates.
+- **Browser check (Phase 1):** open the Labels help/popover at 1440/1024/390
+  and verify no overflow or clipped control.
 - **Residual behavior:** no test asserts command deduplication, one-command-per-
   change, double-click suppression, timeout handling or detail-reload ordering;
   §9 defines these as pre-existing out-of-scope behavior.
