@@ -596,7 +596,7 @@ function ColumnViewBody({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={t("column.deleteTitle")}
-        description={tp("column.deleteDescription", count, {
+        description={tp("column.deleteDescription", column.cardIds.length, {
           title: column.title,
         })}
         confirmLabel={t("column.delete")}

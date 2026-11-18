@@ -1,4 +1,5 @@
 import { test, expect } from "../../../fixtures/board.js";
+import { search } from "@/helpers/filters.js";
 import { type Page } from "@playwright/test";
 
 function column(page: Page, name: string) {
@@ -73,6 +74,30 @@ test("create, rename, reorder, duplicate and delete columns", async ({
         .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label"))),
     )
     .toEqual(["Second", "Renamed"]);
+});
+
+test("delete-column confirmation counts every card, not the filtered view", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.card(todo, "Alpha task");
+  await board.card(todo, "Beta task");
+  await board.open(page);
+
+  await search(page, "does-not-match-anything");
+  // The filter hides both cards (the badge/empty state keeps that truth)...
+  await expect(column(page, "Todo").getByTestId("card-title")).toHaveCount(0);
+
+  // ...but the destructive confirmation must still name the two cards that
+  // will actually be deleted (M14).
+  await menu(page, "Todo", "Delete column");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("2 cards");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(
+    page.getByRole("group", { name: "Todo", exact: true }),
+  ).toBeVisible();
 });
 
 test("WIP limit blocks adding cards and bulk archive retains them in archive", async ({
