@@ -9,6 +9,9 @@ order, not severity. Labels go first because that PR is tiny, isolated and can
 land while the larger calendar seam/test harness is written; the calendar is
 P1 and should not wait behind unrelated work. If strict priority order is
 preferred, swap the two PRs without changing either scope.
+Both phases touch `ui/src/admin/CardFieldsPanel.tsx` and
+`ui/src/admin/admin-i18n.ts`; if they run in parallel, phase 2 rebases on phase
+1 (or the shared changes are extracted first).
 **Baseline:** behavior observed on `feat/TASK-176.9-admin-card-relations` @
 `7bb2848b` (TASK-176.9 B1 fields + B2 relations). That is the exact known
 feature tip at proposal time; implementation must rebase on the final
@@ -190,12 +193,12 @@ environment/runbook concern, not a product acceptance criterion.
 
 | File | Scope for TASK-182 |
 | --- | --- |
-| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; add optional `calendarLoader` test seam and an internal `CardCalendarFallback` forwarded to `DateTimeField`; key panel by `card.id` from the page or reset state on card change. |
+| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; add `labelsSyncing`/delayed-reload handling, optional `calendarLoader` test seam and an internal `CardCalendarFallback` forwarded to `DateTimeField`; key panel by `card.id` from the page or reset state on card change. |
 | `ui/src/admin/CardCalendarFallback.tsx` (new, or a local component) | Card-local accessible native `datetime-local` fallback + Retry; replaces the calendar+time row when the calendar fails. |
 | `ui/src/admin/ui.tsx` | `Field` label rendering; add an optional label/action slot so the Labels help button is not nested in a `<label>` (phase 1 only). |
-| `ui/src/components/Toast.tsx` | `ToastProvider`, append-only `push()`, 4.5 s timers, `ToastApi`; add opt-in keys/clear for label success (phase 1). |
+| `ui/src/components/Toast.tsx` | `ToastProvider`, append-only `push()`, 4.5 s timers, `ToastApi`; add opt-in keys/clear, fresh append after clear, and dismissal map cleanup (phase 1). |
 | `ui/src/admin/CardDetailPage.tsx` | Lazy `CardFieldsPanel` and the outer `CardFieldsChunkBoundary`; key `CardFieldsPanel` by `card.id`; outer boundary stays for panel-level failures (phase 2 tests). |
-| `ui/src/admin/announcements/DateTimeField.tsx` | Optional `calendarLoader`, `calendarFallback` and calendar-error handling; default behavior unchanged when the card-local props are omitted. |
+| `ui/src/admin/announcements/DateTimeField.tsx` | Optional `calendarLoader`, `calendarFallback: ComponentType<CalendarFallbackState>` rendered as a component, and calendar-error handling; default behavior unchanged when the card-local props are omitted. |
 | `ui/src/components/ui/calendar-lazy.tsx` | Existing lazy calendar used by other consumers. Expose a `createCalendar(loader?)` factory (or equivalent) for retries; catch locale-import rejection; the existing `Calendar` export and default behavior stay unchanged. |
 | `ui/src/admin/announcements/AnnouncementEditorDialog.tsx` | `DateTimeField` consumer; **intentionally untouched**, keeps default calendar behavior and copy. |
 | `ui/src/components/board/CardDueDate.tsx`, `FilterBar.tsx`, `BoardMembersDialog.tsx` | Actual board `calendar-lazy` consumers; **intentionally untouched**, keep default calendar behavior and copy. `CardDialog` reaches the calendar indirectly through `CardDueDate`; `CalendarView`/`calendar-parts` do not import `calendar-lazy`. |
@@ -259,6 +262,15 @@ as well; only the label success path opts into replacement.
 item. Otherwise an old 4.5-second timer can dismiss a newer toast that reuses
 the key. Cover clear→success with fake timers.
 
+The provider's key→toast/timer map must delete the entry on every dismissal:
+manual close button, 4.5-second auto-dismiss, key clear and unmount. A stale
+mapping makes a later re-add of the same key target a dead item. Add
+close→re-add and auto-dismiss→re-add tests.
+
+A keyed success **appends a fresh item after the start-of-command clear**; it
+must not update the old item in place. That gives `aria-live` a removal and a
+new insertion, so an identical “Label updated” message is announced again.
+
 **In-flight completion is card-scoped.** `send()` currently awaits the POST and
 then unconditionally calls `toast.success`, `onSaved`, `setErrors` and
 `setBusy`; `CardFieldsPanel` is not keyed by card id. Navigate A→B while a label
@@ -282,12 +294,38 @@ in-flight ref so two click events in one frame cannot both pass the guard.
 Do not optimistically change `aria-pressed` unless the rollback path is also
 implemented and tested.
 
+**Keep labels disabled until the detail reload lands.** A successful toggle
+calls `onSaved()` and then `finally { setBusy(null) }`; `onSaved` only
+increments `reloadKey`, the `cardDetail` fetch is async, and a same-card reload
+does not remount `CardFieldsPanel` because it is keyed by `card.id`. Clearing
+`busy` therefore re-enables the buttons while `selectedLabelIds` still holds
+the old value, and a delayed half of a double-click (or a fast second click)
+sends another `SET_CARD_LABEL` with the old `on`. The synchronous in-flight ref
+only covers the request, not the reload window.
+
+Recommended fix: add `labelsSyncing`, set it when a label command starts, and
+mark a post-success "awaiting label reload" flag when the command succeeds.
+Clear `labelsSyncing` only when a `cardLabels` prop change follows that success
+(ignore same-card reloads that land before success), or clear it on command
+failure. Disable the label buttons while `busy || labelsSyncing`. If the detail
+reload itself fails, do not silently re-enable with stale labels: use the page's
+existing detail error/retry path, or show a field-level refresh retry while
+keeping the controls disabled. The alternative is to change `onSaved` to
+`() => Promise<void>`, await the detail reload in `send`, and hold `busy` until
+it resolves; choose one contract and test it.
+
+The generation token is **card identity only**. Increment it when `card.id`
+changes, not on every `card` prop/detail update; otherwise a same-card
+relations reload can mark an in-flight label command stale, skip the guarded
+`setBusy(null)` and leave the panel stuck. Add a same-card reload test with a
+label command in flight.
+
 ### 5.3 Calendar containment
 
 | Option | Pros | Cons | Verdict |
 | --- | --- | --- | --- |
 | **Card-local due-date boundary + injectable retryable calendar seam + graceful fallback** | A calendar failure is contained to the card's due-date editor; other fields remain mounted; specific card copy; retry; no announcement/board changes | Needs a small optional seam in `DateTimeField` and careful retry/focus handling | **Recommended core** |
-| Put a card-specific boundary/copy unconditionally inside shared `DateTimeField` | Fewer card-local files | Would change the blast radius and copy for announcements/board consumers; rejected. The optional, inactive-by-default fallback contract below is different: only the card passes it. | No |
+| Put a card-specific boundary/copy unconditionally inside shared `DateTimeField` | Fewer card-local files | Would change the blast radius and copy for announcements (the other `DateTimeField` consumer) and board `calendar-lazy` consumers; rejected. The optional, inactive-by-default fallback contract below is different: only the card passes it. | No |
 | Preload/retry the calendar chunk on popover intent | Can avoid the first-open failure and recover from transient network errors | Does not contain a failure if the retry also fails; does not fix the misleading whole-panel fallback by itself | Complementary, not sufficient |
 | Native `datetime-local` fallback (chosen) vs read-only due display | Native keeps the due value editable; read-only is visually consistent but cannot recover the due edit | Native follows OS locale/theme and needs formatting/timezone tests; read-only would require a different contract/copy | **Native chosen** |
 | Eagerly import the calendar / remove the lazy boundary | No lazy failure | Adds `react-day-picker`/`date-fns` to the critical path and breaks the size budget | No |
@@ -299,21 +337,16 @@ optional **field-level fallback contract** used only by the admin card:
 
 - `calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>` — fresh
   lazy import attempts; production default is the existing module import.
-- `calendarFallback?: (state: {
-  value: string;
-  onChange: (value: string) => void;
-  time: string;
-  calendarProps: {
-    mode: "single";
-    localeTag?: string;
-    selected?: Date;
-    onSelect: (date: Date | undefined) => void;
-  };
-  retry: () => void;
-}) => ReactNode` — receives the current draft value, time and calendar props, so
-  the fallback can render a native `<input type="datetime-local">` that replaces
-  the whole **calendar + time row**. It must not render a date-only control next
-  to the existing `TimePickerPanel`; that would duplicate or ignore the time.
+- `calendarFallback?: ComponentType<CalendarFallbackState>` — a component, not
+  a plain render callback; `DateTimeField` renders it as
+  `<CalendarFallback {...state} />`/`createElement`, so it may use hooks. State:
+  `{ value: string; onChange: (value: string) => void; time: string;
+  calendarProps: { mode: "single"; localeTag?: string; selected?: Date;
+  onSelect: (date: Date | undefined) => void }; retry: () => void }`.
+  It receives the draft value, time and calendar props, so it can render a
+  native `<input type="datetime-local">` that replaces the whole **calendar +
+  time row**. It must not render a date-only control next to the existing
+  `TimePickerPanel`; that would duplicate or ignore the time.
 - When `calendarFallback` is omitted, `DateTimeField` keeps its current
   behavior and does **not** install the card-local calendar-error boundary.
   When it is provided, a calendar error switches the due editor body to the
@@ -397,18 +430,22 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
      попадает в историю доски.”
 4. Extend the toast API with an opt-in key and key clear, for example
    `toast.success(message, { key })` and `toast.clear(key)`. The provider keeps
-   one toast per key: replace/update the existing item and reset its timer;
-   unkeyed calls remain append-only. `clear(key)` must remove the item **and**
-   cancel its timer; test clear→success and clear→timer with fake timers.
+   one toast per key: a keyed success appends a fresh item after the clear (not
+   an in-place update), so `aria-live` sees a removal/insertion and re-announces
+   identical text. `clear(key)` must remove the item, cancel its timer and
+   delete the key→toast map entry; manual close and auto-dismiss must delete the
+   same map entry. Test clear→success, clear→timer, close→re-add and
+   auto-dismiss→re-add with fake timers.
 5. Use `admin.card.labels:${card.id}` as the key. Clear it when a label command
    starts, clear it defensively on failure, and clear it on card change/unmount.
    Do not key `toast.error`; do not change `showFailure` or any other caller.
    A failed label command still lands in the inline `errors.labels` message; a
    real command error is never swallowed and no stale success remains.
-6. Make command completion card-scoped. Capture `card.id`, a
-   card/generation token and a mounted flag at command start. After `await`,
-   only call `toast.success`, `onSaved`, `setErrors` or `setBusy(null)` when the
-   captured card is still current and the component is mounted. Key
+6. Make command completion card-scoped. Capture `card.id`, a card/generation
+   token and a mounted flag at command start. Increment the generation **only
+   when `card.id` changes**, never on a same-card detail/relations reload. After
+   `await`, only call `toast.success`, `onSaved`, `setErrors` or `setBusy(null)`
+   when the captured card is still current and the component is mounted. Key
    `<CardFieldsPanel key={card.id} …>` in `CardDetailPage` and reset
    busy/errors on card change. A late A success/failure must not toast, set an
    inline error, disable controls or reload card B.
@@ -417,23 +454,41 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
    the existing disabled state; do not optimistically flip `aria-pressed`
    unless rollback is implemented and tested. Assert one `SET_CARD_LABEL` per
    double-click.
-8. Keep `SET_CARD_LABEL`, the cap guard and the `busy` serialization unchanged.
-9. Accessibility note: because the keyed toast is cleared at command start and
-   re-added on success, the live region sees a fresh node and should announce
-   the confirmation even when the text is identical. Do not rely on updating
-   identical text in place, which `aria-live` may not re-announce. Test the
-   success→failure→success sequence with a status-region assertion.
+8. Add `labelsSyncing` and keep label controls disabled while `busy ||
+   labelsSyncing`. Set it when a label command starts; after success mark an
+   "awaiting label reload" flag and clear syncing only when a `cardLabels` prop
+   change follows that success (ignore same-card reloads before success). Clear
+   it on command failure. Do not re-enable with stale `selectedLabelIds`: if the
+   detail reload fails, use the page's existing detail error/retry path or a
+   field-level refresh retry while keeping the controls disabled. Alternatively
+   change `onSaved` to `() => Promise<void>`, await the reload in `send`, and
+   hold `busy` until it resolves; pick one contract and test it.
+9. Add the delayed-reload regression: hold the detail reload after a successful
+   toggle, click the same label again before it resolves, and assert exactly one
+   `SET_CARD_LABEL`; resolve the reload, assert the buttons re-enable and the
+   next click sends the correct new `on`. Add the same-card reload test from
+   §5.2 (relations/detail refresh while a label command is in flight) and assert
+   busy is not left stuck.
+10. Keep `SET_CARD_LABEL`, the cap guard and the `busy` serialization unchanged.
+11. Accessibility note: because the keyed toast is cleared at command start and
+    re-added on success, the live region sees a fresh node and should announce
+    the confirmation even when the text is identical. Do not rely on updating
+    identical text in place, which `aria-live` may not re-announce. Test the
+    success→failure→success sequence with a status-region assertion.
 
 ### Phase 2 — Calendar resilience (P1, independent PR)
 
 1. Add an optional field-level fallback contract to `DateTimeField`:
    `calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>` and
-   `calendarFallback?: (state: { value: string; onChange: (value: string) => void;
-   time: string; calendarProps: CalendarProps; retry: () => void }) => ReactNode`.
-   The fallback receives the draft value, time and calendar props so it can
-   replace the **calendar + time pair** with a native `datetime-local` input.
-   When `calendarFallback` is omitted, `DateTimeField` keeps its current
-   behavior; announcement scheduling and board consumers are untouched.
+   `calendarFallback?: ComponentType<CalendarFallbackState>`, where
+   `CalendarFallbackState = { value: string; onChange: (value: string) => void;
+   time: string; calendarProps: CalendarProps; retry: () => void }`. Render the
+   fallback as a component (`<CalendarFallback {...state} />` or
+   `createElement`), never call it as a plain function; it may use hooks. The
+   fallback receives the draft value, time and calendar props so it can replace
+   the **calendar + time pair** with a native `datetime-local` input. When
+   `calendarFallback` is omitted, `DateTimeField` keeps its current behavior;
+   announcement scheduling and board consumers are untouched.
 2. Add an optional `calendarLoader` prop to `CardFieldsPanel` and forward it to
    `DateTimeField`; production omits it. Pass a card-local
    `CardCalendarFallback` component as `calendarFallback`. The real page passes
@@ -497,13 +552,22 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - A success followed by a failed label command removes the success toast and
   shows the inline error; no stale “Label updated” remains. Navigating to
   another card clears the previous card's keyed toast.
+- After a successful toggle, label controls stay disabled until the detail
+  reload updates `cardLabels`; a second click before that resolves sends no
+  additional `SET_CARD_LABEL`. Once labels sync, controls re-enable and the
+  next toggle uses the new state.
+- A same-card detail/relations reload during an in-flight label command does
+  not mark it stale or leave busy stuck; the generation token changes only with
+  `card.id`.
 - An in-flight label success from card A does not toast, set an error, call
   `onSaved`, or leave a stale busy state on card B after navigation. An
   in-flight failure from A does not write its inline error on B.
 - A same-label double-click sends at most one `SET_CARD_LABEL`; the second click
   is blocked by the synchronous in-flight guard and disabled state.
 - Unkeyed success toasts remain additive, and repeated identical error toasts
-  remain additive; label command errors remain visible inline.
+  remain additive; label command errors remain visible inline. Keyed toast map
+  entries are removed on manual close and auto-dismiss, so a later re-add of the
+  same key works.
 - Each actual click still sends exactly one `SET_CARD_LABEL` with the right
   `labelId` and `on`; cap/no-op/disabled behavior is unchanged.
 - The heading, help button and popover fit at 1440, 1024 and 390 px with no
@@ -549,12 +613,24 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
   return, assert the three facts are present and localized.
 - **Toast keyed refresh test:** toggle two labels in sequence; assert two
   commands, correct state, and exactly one “Label updated” status. Assert the
-  timer is reset rather than stacked.
-- **Clear/timer fake-timer test:** `clear(key)` removes the item and cancels its
-  timer; a later success with the same key gets a fresh full 4.5 s lifetime.
+  fresh item gets a full 4.5 s timer rather than stacking.
+- **Clear/timer fake-timer test:** `clear(key)` removes the item, cancels its
+  timer and deletes the key map entry; a later success with the same key gets a
+  fresh full 4.5 s lifetime and appends a new node.
+- **Dismiss→re-add test:** close the keyed toast manually and let another keyed
+  toast auto-dismiss; in both cases re-adding the same key works and does not
+  target a stale item.
 - **Success→failure test:** first toggle succeeds and shows the toast; second
   toggle fails (fake server 409/404); assert the toast is gone, the inline error
   is visible and no stale success remains.
+- **Delayed-reload test (blocker regression):** defer `adminApi.cardDetail`
+  (or the parent reload promise) after a successful toggle; before it resolves,
+  click the same label again and assert exactly one `SET_CARD_LABEL`. Resolve the
+  reload, assert labels sync and the buttons re-enable; the next click then
+  sends the correct new `on`.
+- **Same-card reload test:** trigger a relations/detail reload during an
+  in-flight label command; assert the generation token does not change, the
+  command still completes, and busy is cleared rather than left stuck.
 - **Deferred navigation tests:** add a deferred-command hook to
   `FakeAdminServer` (or spy on `adminApi.sendBoardCommand`) so the test can hold
   the POST. Navigate A→B while the label command is in flight, then:
@@ -661,5 +737,6 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
   change? Recommended: separate small change/runbook update, so the product
   boundary fix stays reviewable on its own.
 - **Reserved numbering:** TASK-181/§7.30/row 112 remain reserved for the
-  parallel admin-filters ticket. The ROADMAP placeholder row 112 exists only to
-  keep the GFM table valid; it is not TASK-182 scope.
+  parallel admin-filters ticket. The placeholder row 112 reserves the row
+  number and makes the reservation visible; it is not required for GFM table
+  validity (row 113 after 111 would parse), and it is not TASK-182 scope.
