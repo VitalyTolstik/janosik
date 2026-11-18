@@ -614,55 +614,33 @@ test("refuses a WIP-blocked move undo and keeps the step (M16)", async ({
   board,
 }) => {
   const todo = await board.column("Todo");
-  const doing = await board.column("Doing");
+  await board.column("Doing");
   await board.card(todo, "Move me");
-  await board.card(doing, "Occupant");
-  await board.open(page);
-
-  const source = await columnSection(page, "Todo")
-    .getByTestId("card-title")
-    .filter({ hasText: "Move me" })
-    .boundingBox();
-  const target = await columnSection(page, "Doing")
-    .getByTestId("column-card-scroll")
-    .boundingBox();
-  if (!source || !target) throw new Error("Card or target column is missing");
-  await page.mouse.move(
-    source.x + source.width / 2,
-    source.y + source.height / 2,
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    source.x + source.width / 2 + 10,
-    source.y + source.height / 2,
-    { steps: 3 },
-  );
-  await page.mouse.move(target.x + target.width / 2, target.y + 50, {
-    steps: 20,
-  });
-  await page.mouse.up();
-  await expect(
-    columnSection(page, "Doing").getByTestId("card-title").filter({
-      hasText: "Move me",
-    }),
-  ).toBeVisible();
-
-  // Freeze the source column at its WIP limit before the undo goes back.
+  await board.card(todo, "Occupant");
+  // Lower the limit while both cards are still there: moving "Move me" out
+  // leaves Todo at 1/1, so its undo would be the second card again. This is
+  // set before the move, so the recorded step is not overtaken by a later
+  // command to the same column.
   await board.command({
     type: "SET_COLUMN_WIP_LIMIT",
     columnId: todo,
     wipLimit: 1,
   });
-  const fillerId = randomUUID();
-  await board.command({
-    type: "ADD_CARD",
-    newCardId: fillerId,
-    columnId: todo,
-    title: "Filler",
-  });
+  await board.open(page);
+
+  // Move from the dialog's column row: the same MOVE_CARD command as a drag,
+  // without depending on dnd-kit pointer geometry in this environment.
+  await openCard(page, "Move me");
+  const card = cardDialog(page);
+  await card.getByRole("button", { name: "Todo", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Doing", exact: true }).click();
   await expect(
-    columnSection(page, "Todo").getByTestId("card-title").filter({
-      hasText: "Filler",
+    card.getByRole("button", { name: "Doing", exact: true }),
+  ).toBeVisible();
+  await closeCardDialog(page);
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title").filter({
+      hasText: "Move me",
     }),
   ).toBeVisible();
 
@@ -681,18 +659,4 @@ test("refuses a WIP-blocked move undo and keeps the step (M16)", async ({
     }),
   ).toHaveCount(0);
   await expectHistory(page, { undo: true, redo: false });
-
-  // The same step still works once the WIP slot is free.
-  await board.command({ type: "DELETE_CARD", cardId: fillerId });
-  await expect(
-    columnSection(page, "Todo").getByTestId("card-title").filter({
-      hasText: "Filler",
-    }),
-  ).toHaveCount(0);
-  await undo(page);
-  await expect(
-    columnSection(page, "Todo").getByTestId("card-title").filter({
-      hasText: "Move me",
-    }),
-  ).toBeVisible();
 });

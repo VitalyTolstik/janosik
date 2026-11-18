@@ -90,6 +90,9 @@ test("duplicates the card content below the original", async ({
   // H3: the checklist must be written server-side with fresh ids, not just
   // cloned optimistically — a reload is the honest check.
   await page.reload();
+  await expect(
+    page.getByTestId("card-title").filter({ hasText: /^Original$/ }),
+  ).toBeVisible();
   expect(await cardOrder(page, "Work")).toEqual([
     "Original",
     "Copy of Original",
