@@ -1709,7 +1709,7 @@ TASK-36 и TASK-37.)*
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
 | 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
 | 112 | TASK-181 `admin-list-filters` *(reserved)* | — | Зарезервировано под параллельную задачу admin-фильтров; в этот diff не входит. | — |
-| 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: довести UX меток в Properties админ-карточки (help-поповер у заголовка, один обновляемый success-toast с очисткой при старте/ошибке) и локализовать падение lazy-календаря due-date в card-local boundary: Retry и native/read-only fallback вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, очистка при старте/ошибке/навигации, команды `SET_CARD_LABEL` и inline-ошибки не меняются; фаза 2 — card-local boundary вокруг due-editor, инъектируемый loader/Retry, при повторном отказе fallback; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
+| 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: довести UX меток в Properties админ-карточки (help-поповер у заголовка, один обновляемый success-toast с очисткой при старте/ошибке, card-scoped in-flight guard) и локализовать падение lazy-календаря due-date в card-local fallback: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear timer/item, guard card.id/generation/mounted + key панели, same-label double-click; команды `SET_CARD_LABEL` и inline-ошибки не меняются; фаза 2 — field-level `calendarFallback(value/onChange/time/calendarProps/retry)` заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5102,7 +5102,9 @@ apply-window — намеренное поведение; e2e уже обнов�
 
 > **Статус:** предложено (docs-only, 2026-11-19); production-кода в этой
 > задаче нет. Две независимые PR-фазы: сначала метки (P2), затем календарь
-> (P1); номера фаз — порядок поставки, не приоритет.
+> (P1); номера фаз — порядок поставки, не приоритет. Метки идут первыми как
+> маленький изолированный PR; календарь P1 от них не зависит и может идти
+> сразу после или параллельно.
 >
 > **Полный spec:** [`docs/TASK-182-admin-label-and-calendar-ux.md`](docs/TASK-182-admin-label-and-calendar-ux.md).
 >
@@ -5133,40 +5135,64 @@ title/assignee/due/priority/cover/labels. Field-level retry отсутствуе
 клавиатура, touch, Escape/outside-click и многострочный текст). Copy: метки
 сохраняются сразу, клик прикрепляет/открепляет, изменения видны в истории
 доски. Тосты: opt-in `key` у success-toast (`toast.success(message, { key })`)
-плюс `toast.clear(key)`; ключ — `admin.card.labels:${card.id}`. Тост очищается
-при старте команды, защитно при ошибке и при смене карточки/unmount; успех
-добавляет свежий тост с перезапущенным таймером. Так успех не переживает
-последующую ошибку и не переносится на другую карточку. Unkeyed success и все
-`error` остаются аддитивными; ошибки лейблов — по-прежнему inline. Глобальный
-dedupe по тексту отклонён: он мог бы скрыть повторную одинаковую ошибку.
-`SET_CARD_LABEL`, cap/no-op и `busy`-сериализация не меняются.
+плюс `toast.clear(key)`, который снимает и item, и его таймер; ключ —
+`admin.card.labels:${card.id}`. Тост очищается при старте команды, защитно при
+ошибке и при смене карточки/unmount; успех добавляет свежий тост с полным
+таймером. Так успех не переживает последующую ошибку и не переносится на
+другую карточку. Unkeyed success и все `error` остаются аддитивными; ошибки
+лейблов — по-прежнему inline. Глобальный dedupe по тексту отклонён: он мог бы
+скрыть повторную одинаковую ошибку.
 
-**Фаза 2 — календарь.** Card-local scope: новый `CardCalendar` с boundary
-вокруг lazy `Calendar`, инъекция через опциональный `calendarComponent` в
-`DateTimeField`; trigger/popover, Save/Remove и остальные поля остаются
-смонтированными. `DateTimeField`/`calendar-lazy` по умолчанию не меняются.
-Announcements (`AnnouncementEditorDialog`) и board calendar consumers не
-трогаем — их copy/tests/поведение остаются прежними. Fallback: field-specific
-`role="alert"`, Retry с новым lazy-import-attempt и, если календарь не поднялся,
-native `<input type="datetime-local">` или read-only due-value. Внешний
-`CardFieldsChunkBoundary` сохраняется для panel-level ошибок; формулировка
-«generic fallback только при падении чанка панели» невозможна для generic
-boundary — правильно: «generic fallback остаётся для panel chunk или uncaught
-non-calendar render error, а calendar failure до него больше не доходит».
+In-flight команда тоже card-scoped: на старте захватываются `card.id`,
+card/generation token и mounted flag; после `await` toast/`onSaved`/
+`setErrors`/`setBusy(null)` выполняются только если карточка всё ещё текущая и
+компонент смонтирован. `CardFieldsPanel` ключуется `key={card.id}` в
+`CardDetailPage`, busy/errors сбрасываются при смене карточки. Поздний успех A
+не показывает тост и не рефрешит B, поздняя ошибка A не пишет inline-ошибку в
+B, stale busy не блокирует B. Для same-label double-click — синхронный
+in-flight ref (кнопки по-прежнему disabled), один `SET_CARD_LABEL` на
+двойной клик; оптимистичный `aria-pressed` без rollback не вводим. Тесты:
+deferred-команда + навигация A→B для success и failure, same-label
+double-click, fake-timer clear→success, unkeyed success/error.
+
+**Фаза 2 — календарь.** `DateTimeField` получает опциональные
+`calendarLoader` и `calendarFallback({ value, onChange, time, calendarProps,
+retry })`.
+Fallback заменяет **пару calendar + TimePickerPanel**, а не только календарь:
+native `<input type="datetime-local">` получает draft value и time, имеет
+доступный label, а существующие Save/Remove снаружи сохраняют draft. При
+отсутствии этих props `DateTimeField` ведёт себя как сегодня; announcements
+(`AnnouncementEditorDialog`) и board consumers (`CardDueDate`, `FilterBar`,
+`BoardMembersDialog`; `CardDialog` — косвенно, `CalendarView`/`calendar-parts`
+`calendar-lazy` не импортируют) не меняются. `CardFieldsPanel` получает
+опциональный `calendarLoader` (test seam, production omits) и передаёт
+card-local native fallback; trigger/popover и остальные поля остаются
+смонтированными. Retry делает новый lazy attempt через
+`createCalendar(loader)`; rejected `react-day-picker/locale` import ловится и
+не даёт unhandled rejection. Внешний `CardFieldsChunkBoundary` сохраняется для
+panel-level ошибок; generic fallback остаётся для panel chunk или uncaught
+non-calendar render error, а calendar failure до него больше не доходит.
 
 **DoD.** Help-кнопка: mouse/keyboard, Escape/outside-click, focus return, EN/RU,
 нет overflow на 1440/1024/390 (browser verification обязательна). Быстрые
 toggle: один обновляемый тост, ровно один `SET_CARD_LABEL` на реальное
 изменение; success→failure убирает success и показывает inline-ошибку;
-навигация на другую карточку очищает старый key; unkeyed success/error остаются
-аддитивными. Calendar: тест сначала кликает `admin-card-due-input` и реально
-монтирует lazy-календарь, затем reject-once loader даёт alert, а реальная
-команда (например `SET_CARD_PRIORITY`) проходит при сломанном календаре; Retry
-поднимает календарь и позволяет сохранить due; persistent failure даёт
-native/read-only fallback; sibling fields и outer whole-panel fallback-test не
-ломаются. Гейты implementation PR: `npm test -w ui`, `npx tsc -b --force`,
-`npm run build -w ui`, lint/Prettier, `git diff --check`, CHANGELOG/docs при
-необходимости. Dev-cache — environment/runbook, не product acceptance.
+навигация очищает key; deferred A→B success/failure не тостит, не пишет ошибку
+и не блокирует B; same-label double-click даёт одну команду; unkeyed
+success/error остаются аддитивными. Calendar: отдельный normal-path тест
+кликает `admin-card-due-input` и монтирует lazy-календарь; отдельный
+reject-once тест даёт alert/fallback, а реальная команда (например
+`SET_CARD_PRIORITY`) проходит при сломанном календаре; Retry возвращает
+calendar+time и позволяет сохранить due; persistent failure даёт native input
+с label и сохранением через существующий Save, без duplicate time; locale
+rejection не даёт unhandled rejection; outer boundary-test рендерит панель
+внутри `CardFieldsChunkBoundary`/fallback и не показывает generic fallback при
+calendar failure; browser 1440/1024/390 проверяет и layout native fallback.
+Гейты implementation PR: `npm test -w ui`,
+`npx tsc -b ui/tsconfig.json --force` (или `npm run build -w ui`),
+`npm run build -w ui`, `npm run size -w ui` (бюджет admin card page 113 KB
+gzip), lint/Prettier, `git diff --check`, CHANGELOG/docs при необходимости.
+Dev-cache — environment/runbook, не product acceptance.
 
 **Зависимости.** TASK-176.9 B1/B2 ещё не в `main`; implementation PR
 ребейзится на финальный tip/merge TASK-176.9 (известный tip `7bb2848b`) и

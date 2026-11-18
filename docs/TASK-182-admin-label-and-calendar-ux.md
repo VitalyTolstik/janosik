@@ -5,7 +5,10 @@ code and does not require running the test suites.
 **Priority:** P1 for the calendar blast radius; P2 for the label UX polish.
 **Delivery:** two independent PRs. Phase 1 is the small label PR (P2); phase 2
 is the higher-priority calendar PR (P1). The phase numbers describe delivery
-order, not severity.
+order, not severity. Labels go first because that PR is tiny, isolated and can
+land while the larger calendar seam/test harness is written; the calendar is
+P1 and should not wait behind unrelated work. If strict priority order is
+preferred, swap the two PRs without changing either scope.
 **Baseline:** behavior observed on `feat/TASK-176.9-admin-card-relations` @
 `7bb2848b` (TASK-176.9 B1 fields + B2 relations). That is the exact known
 feature tip at proposal time; implementation must rebase on the final
@@ -32,10 +35,11 @@ Properties panel feel less trustworthy than the rest of the admin console:
 2. **A calendar chunk failure takes down every field.** Opening the due-date
    calendar in the live demo could replace the entire Properties panel with the
    generic “Could not load the card field editor. Reload the page to try again.”
-   fallback. The runtime trigger was a dev-server prebundle/cache collision, but
-   the product bug is broader: the field panel boundary is scoped to the whole
-   panel, so one nested lazy calendar failure hides title, assignee, due,
-   priority, cover and labels. There is no card-local retry.
+   fallback. The investigation attributed the runtime trigger to a dev-server
+   prebundle/cache collision, but the product bug is broader: the field panel
+   boundary is scoped to the whole panel, so one nested lazy calendar failure
+   hides title, assignee, due, priority, cover and labels. There is no
+   card-local retry.
 
 Both issues are small enough to fix without turning `/admin` into a second
 board client. They are kept in one ticket because they touch the same panel and
@@ -150,14 +154,22 @@ environment/runbook concern, not a product acceptance criterion.
 - Make repeated label toggles produce **one refreshed confirmation**, not a
   growing stack of identical “Label updated” toasts, and make sure a stale
   success cannot outlive a later failed label command.
+- Keep label command completion card-scoped: a late success, failure or busy
+  reset from card A must not toast, set an inline error or disable controls on
+  card B after navigation.
 - Keep `SET_CARD_LABEL` behavior exactly as it is: one real command per actual
-  change, cap/no-op guards unchanged.
-- Isolate a due-date calendar chunk/render failure to the due-date editor in
+  change, cap/no-op guards unchanged; a same-label double-click must not queue
+  two commands.
+- Isolate a due-date calendar chunk/render failure to the due-date calendar in
   `CardFieldsPanel`: the rest of the Properties panel stays editable.
-- Give the card's due-date editor a clear localized error, a retry that can
-  restore the calendar, and a graceful fallback if the calendar cannot load.
+- Define a field-level calendar fallback contract that can replace the
+  calendar+time pair with an accessible native `datetime-local` input, so the
+  fallback does not duplicate or ignore the time value.
 - Leave `DateTimeField`, `calendar-lazy`, announcement scheduling and board
-  calendar consumers behaviourally unchanged.
+  calendar consumers behaviourally unchanged when the card-local fallback is
+  not requested.
+- Handle a rejected `react-day-picker/locale` import without an unhandled
+  effect rejection; fall back to the default locale or the field fallback.
 - Document the dev-only Vite cache trigger and the production/dev distinction.
 
 ### Non-goals
@@ -178,15 +190,15 @@ environment/runbook concern, not a product acceptance criterion.
 
 | File | Scope for TASK-182 |
 | --- | --- |
-| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; host of the card-local due-date wrapper. |
-| `ui/src/admin/CardCalendar.tsx` (new, or a local component) | Card-local retryable calendar + `CardCalendarBoundary`; injected only into the admin card due editor. |
+| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; add optional `calendarLoader` test seam and an internal `CardCalendarFallback` forwarded to `DateTimeField`; key panel by `card.id` from the page or reset state on card change. |
+| `ui/src/admin/CardCalendarFallback.tsx` (new, or a local component) | Card-local accessible native `datetime-local` fallback + Retry; replaces the calendar+time row when the calendar fails. |
 | `ui/src/admin/ui.tsx` | `Field` label rendering; add an optional label/action slot so the Labels help button is not nested in a `<label>` (phase 1 only). |
 | `ui/src/components/Toast.tsx` | `ToastProvider`, append-only `push()`, 4.5 s timers, `ToastApi`; add opt-in keys/clear for label success (phase 1). |
-| `ui/src/admin/CardDetailPage.tsx` | Lazy `CardFieldsPanel` and the outer `CardFieldsChunkBoundary`; outer boundary stays for panel-level failures (phase 2 tests). |
-| `ui/src/admin/announcements/DateTimeField.tsx` | Generic due/scheduling picker. Add an optional calendar-component seam with the current `Calendar` as default; default behavior unchanged. |
-| `ui/src/components/ui/calendar-lazy.tsx` | Existing lazy calendar used by other consumers. Expose a `createCalendar(loader?)` factory (or equivalent) for the card-local retry; the existing `Calendar` export and behavior stay unchanged. |
+| `ui/src/admin/CardDetailPage.tsx` | Lazy `CardFieldsPanel` and the outer `CardFieldsChunkBoundary`; key `CardFieldsPanel` by `card.id`; outer boundary stays for panel-level failures (phase 2 tests). |
+| `ui/src/admin/announcements/DateTimeField.tsx` | Optional `calendarLoader`, `calendarFallback` and calendar-error handling; default behavior unchanged when the card-local props are omitted. |
+| `ui/src/components/ui/calendar-lazy.tsx` | Existing lazy calendar used by other consumers. Expose a `createCalendar(loader?)` factory (or equivalent) for retries; catch locale-import rejection; the existing `Calendar` export and default behavior stay unchanged. |
 | `ui/src/admin/announcements/AnnouncementEditorDialog.tsx` | `DateTimeField` consumer; **intentionally untouched**, keeps default calendar behavior and copy. |
-| `ui/src/components/board/CardDialog.tsx`, `CalendarView.tsx`, `calendar-parts.tsx` | Board calendar consumers; **intentionally untouched**, keep default calendar behavior and copy. |
+| `ui/src/components/board/CardDueDate.tsx`, `FilterBar.tsx`, `BoardMembersDialog.tsx` | Actual board `calendar-lazy` consumers; **intentionally untouched**, keep default calendar behavior and copy. `CardDialog` reaches the calendar indirectly through `CardDueDate`; `CalendarView`/`calendar-parts` do not import `calendar-lazy`. |
 | `ui/src/components/ui/popover.tsx` | Existing Radix popover primitive used by the same panel (cover picker). |
 | `ui/src/admin/admin-i18n.ts` | EN/RU strings; `AdminMessageKey` type catches missing translations. |
 | `ui/src/admin/CardDetailPage.test.tsx` | Existing whole-panel chunk fallback test and label toggle tests. |
@@ -243,43 +255,101 @@ Errors stay unkeyed and additive. Two identical failures still produce two
 visible error toasts. Unkeyed successes from unrelated actions remain additive
 as well; only the label success path opts into replacement.
 
+`toast.clear(key)` must cancel the keyed toast's timer as well as remove its
+item. Otherwise an old 4.5-second timer can dismiss a newer toast that reuses
+the key. Cover clear→success with fake timers.
+
+**In-flight completion is card-scoped.** `send()` currently awaits the POST and
+then unconditionally calls `toast.success`, `onSaved`, `setErrors` and
+`setBusy`; `CardFieldsPanel` is not keyed by card id. Navigate A→B while a label
+toggle is in flight and a late A success can toast on B, a late A failure can
+write A's inline error on B, and a stale busy reset can disable B's controls.
+The fix has two layers:
+
+1. Capture `card.id`, a card/generation token and a mounted flag when the
+   command starts. After `await`, only toast, call `onSaved`, set errors or
+   clear busy when the captured card is still current and the component is
+   still mounted.
+2. Key `<CardFieldsPanel key={card.id} …>` in `CardDetailPage` (as
+   `CardRelationsPanel` already is) and reset busy/errors on a card change.
+   Keying resets local state; the post-await guard is still mandatory because
+   the promise itself is not cancelled.
+
+**Same-label double-click.** `selectedLabelIds` stays stale until the async
+reload, so a second click before the UI disables could try to flip the same
+label again. Keep the buttons disabled while busy, and add a synchronous
+in-flight ref so two click events in one frame cannot both pass the guard.
+Do not optimistically change `aria-pressed` unless the rollback path is also
+implemented and tested.
+
 ### 5.3 Calendar containment
 
 | Option | Pros | Cons | Verdict |
 | --- | --- | --- | --- |
 | **Card-local due-date boundary + injectable retryable calendar seam + graceful fallback** | A calendar failure is contained to the card's due-date editor; other fields remain mounted; specific card copy; retry; no announcement/board changes | Needs a small optional seam in `DateTimeField` and careful retry/focus handling | **Recommended core** |
-| Put the boundary inside shared `DateTimeField` | Fewer card-local files | Changes the blast radius and copy for announcements/board consumers; reviewers correctly rejected this as card-only scope | No |
+| Put a card-specific boundary/copy unconditionally inside shared `DateTimeField` | Fewer card-local files | Would change the blast radius and copy for announcements/board consumers; rejected. The optional, inactive-by-default fallback contract below is different: only the card passes it. | No |
 | Preload/retry the calendar chunk on popover intent | Can avoid the first-open failure and recover from transient network errors | Does not contain a failure if the retry also fails; does not fix the misleading whole-panel fallback by itself | Complementary, not sufficient |
-| Native date input or read-only due display fallback | Due date remains usable/visible even if the chunk never loads; robust | Design inconsistency; native control follows OS locale/theme; extra formatting/timezone tests | **Recommended fallback layer** |
+| Native `datetime-local` fallback (chosen) vs read-only due display | Native keeps the due value editable; read-only is visually consistent but cannot recover the due edit | Native follows OS locale/theme and needs formatting/timezone tests; read-only would require a different contract/copy | **Native chosen** |
 | Eagerly import the calendar / remove the lazy boundary | No lazy failure | Adds `react-day-picker`/`date-fns` to the critical path and breaks the size budget | No |
 | Keep the whole-panel boundary and only improve the message | Small copy change | Still hides all healthy fields; no field-level retry | No |
 
 Recommended minimal robust design: keep `CardFieldsChunkBoundary` as the outer
-guard for the whole `CardFieldsPanel` chunk, but add a **card-local
-`CardCalendar` component** for `/admin/cards/:id` and inject it into the due
-editor through an optional `calendarComponent` prop on `DateTimeField`. The
-component owns its own boundary around the lazy calendar; shared behavior stays
-unchanged. Its fallback renders inside the due popover (or directly in place of
-the calendar), so the due trigger, Save/Remove controls and the rest of the
-Properties panel stay mounted:
+guard for the whole `CardFieldsPanel` chunk, and give `DateTimeField` an
+optional **field-level fallback contract** used only by the admin card:
+
+- `calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>` — fresh
+  lazy import attempts; production default is the existing module import.
+- `calendarFallback?: (state: {
+  value: string;
+  onChange: (value: string) => void;
+  time: string;
+  calendarProps: {
+    mode: "single";
+    localeTag?: string;
+    selected?: Date;
+    onSelect: (date: Date | undefined) => void;
+  };
+  retry: () => void;
+}) => ReactNode` — receives the current draft value, time and calendar props, so
+  the fallback can render a native `<input type="datetime-local">` that replaces
+  the whole **calendar + time row**. It must not render a date-only control next
+  to the existing `TimePickerPanel`; that would duplicate or ignore the time.
+- When `calendarFallback` is omitted, `DateTimeField` keeps its current
+  behavior and does **not** install the card-local calendar-error boundary.
+  When it is provided, a calendar error switches the due editor body to the
+  fallback while the trigger, Save/Remove controls and the rest of the
+  Properties panel stay mounted.
+- `CardFieldsPanel` passes a card-local `CardCalendarFallback` component and an
+  optional `calendarLoader` test seam; production omits the loader and uses the
+  real calendar import.
+
+The card-local fallback contains:
 
 - an inline `role="alert"` message: “The calendar could not load. Other fields
   are still editable.” / “Календарь не загрузился. Остальные поля остаются
   доступными.”;
 - a “Retry” / “Повторить” button that remounts a **fresh** lazy calendar
   attempt, not just a boundary state reset;
-- if the retry cannot restore the calendar, a native `<input type="datetime-local">`
-  fallback (same `value`/`onChange` contract, Save/Remove buttons unchanged) or,
-  if the team rejects native UI, a read-only due display plus Retry;
-- the due trigger and popover remain available; only the calendar subtree is
-  replaced, never the whole field panel.
+- if the retry cannot restore the calendar, the accessible native
+  `<input type="datetime-local">` bound to `value`/`onChange`; the existing
+  due Save/Remove buttons remain outside and save this draft normally;
+- a full-width fallback layout inside the due popover, with an explicit label
+  (for example “Due date and time” / “Срок и время”), no horizontal overflow at
+  390 px and no duplicate time control.
 
 The retry must be honest. `React.lazy()` caches a rejected import per lazy
 component instance, so resetting `failed` alone will usually re-render the same
-rejected promise. The card-local wrapper must create a new lazy instance (or
-retry the import through an injectable loader) per attempt. If the browser has
-cached a deployment-level rejection, the native fallback is the reliable
-recovery; a page reload remains the last resort for the whole-panel chunk case.
+rejected promise. The optional loader must create a new lazy instance (or retry
+the import) per attempt. If the browser has cached a deployment-level rejection,
+the native fallback is the reliable recovery; a page reload remains the last
+resort for the whole-panel chunk case.
+
+`calendar-lazy`'s `useRdpLocale` currently starts
+`import("react-day-picker/locale").then(...)` with no rejection handler. A
+failed locale chunk must not become an unhandled effect rejection or take down
+the calendar: catch it and keep the default locale (the field fallback remains
+available for the calendar chunk itself). Add a regression test that rejects the
+locale import and still renders/uses the calendar or its fallback.
 
 **False-acceptance guard.** A generic React error boundary cannot tell whether
 an error came from the calendar or from unrelated panel code. The correct
@@ -328,14 +398,27 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
 4. Extend the toast API with an opt-in key and key clear, for example
    `toast.success(message, { key })` and `toast.clear(key)`. The provider keeps
    one toast per key: replace/update the existing item and reset its timer;
-   unkeyed calls remain append-only. Clear keyed timers on dismiss and unmount.
+   unkeyed calls remain append-only. `clear(key)` must remove the item **and**
+   cancel its timer; test clear→success and clear→timer with fake timers.
 5. Use `admin.card.labels:${card.id}` as the key. Clear it when a label command
    starts, clear it defensively on failure, and clear it on card change/unmount.
    Do not key `toast.error`; do not change `showFailure` or any other caller.
    A failed label command still lands in the inline `errors.labels` message; a
    real command error is never swallowed and no stale success remains.
-6. Keep `SET_CARD_LABEL`, the cap guard and the `busy` serialization unchanged.
-7. Accessibility note: because the keyed toast is cleared at command start and
+6. Make command completion card-scoped. Capture `card.id`, a
+   card/generation token and a mounted flag at command start. After `await`,
+   only call `toast.success`, `onSaved`, `setErrors` or `setBusy(null)` when the
+   captured card is still current and the component is mounted. Key
+   `<CardFieldsPanel key={card.id} …>` in `CardDetailPage` and reset
+   busy/errors on card change. A late A success/failure must not toast, set an
+   inline error, disable controls or reload card B.
+7. Add a synchronous in-flight ref for label toggles so a same-label
+   double-click cannot pass the guard before React disables the buttons. Keep
+   the existing disabled state; do not optimistically flip `aria-pressed`
+   unless rollback is implemented and tested. Assert one `SET_CARD_LABEL` per
+   double-click.
+8. Keep `SET_CARD_LABEL`, the cap guard and the `busy` serialization unchanged.
+9. Accessibility note: because the keyed toast is cleared at command start and
    re-added on success, the live region sees a fresh node and should announce
    the confirmation even when the text is identical. Do not rely on updating
    identical text in place, which `aria-live` may not re-announce. Test the
@@ -343,33 +426,35 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
 
 ### Phase 2 — Calendar resilience (P1, independent PR)
 
-1. Add a card-local `CardCalendar` component (new file or local to
-   `CardFieldsPanel.tsx`). It owns the retry attempt and the field-specific
-   fallback, and wraps only the lazy calendar in a small `CardCalendarBoundary`.
-   Use a fresh calendar component from the shared `createCalendar(loader)`
-   factory (which keeps the existing locale handling) for each attempt. Inject
-   it into the due editor through the optional `calendarComponent` prop; do not
-   wrap the whole `DateTimeField` or the panel.
-2. Add an optional `calendarComponent` (or `renderCalendar`) prop to
-   `DateTimeField`. Its default is the current `Calendar` from
-   `calendar-lazy`; announcement scheduling and board consumers keep using that
-   default and are not edited. The card-local wrapper passes its retryable
-   component only for `/admin/cards/:id`.
-3. Add an injectable loader seam for tests and retries, for example
-   `calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>` with the
-   real module import as the production default. A retry creates a fresh lazy
-   component/attempt from that loader through `createCalendar`; do not mutate
-   the module-level lazy component used by other consumers.
-4. On failure, render the card-local alert and Retry inside the due editor. If
-   the loader succeeds on retry, the calendar opens in the same popover. If it
-   fails again, show the native `datetime-local` fallback or a read-only due
-   value. The rest of the Properties panel must stay mounted and editable
-   throughout.
+1. Add an optional field-level fallback contract to `DateTimeField`:
+   `calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>` and
+   `calendarFallback?: (state: { value: string; onChange: (value: string) => void;
+   time: string; calendarProps: CalendarProps; retry: () => void }) => ReactNode`.
+   The fallback receives the draft value, time and calendar props so it can
+   replace the **calendar + time pair** with a native `datetime-local` input.
+   When `calendarFallback` is omitted, `DateTimeField` keeps its current
+   behavior; announcement scheduling and board consumers are untouched.
+2. Add an optional `calendarLoader` prop to `CardFieldsPanel` and forward it to
+   `DateTimeField`; production omits it. Pass a card-local
+   `CardCalendarFallback` component as `calendarFallback`. The real page passes
+   only card props; tests render `CardFieldsPanel` directly with the loader (or
+   use the documented harness). Add these props to the code map and tests; no
+   page-level API change is needed.
+3. Use a fresh `createCalendar(loader)` component/attempt on Retry; do not
+   mutate the module-level lazy component. Catch a rejected
+   `react-day-picker/locale` import in `calendar-lazy`, keep the default locale
+   and never leave an unhandled effect rejection.
+4. On calendar failure, render the card-local alert and Retry **in place of the
+   calendar + time row**, not beside the existing `TimePickerPanel`. If Retry
+   succeeds, the normal calendar+time row returns in the same popover. If it
+   fails again, keep the native `datetime-local` fallback with an explicit
+   accessible label; the existing due Save/Remove controls save the draft
+   normally. The rest of the Properties panel must stay mounted and editable.
 5. Keep focus and announcements intentional: `role="alert"` for the failure,
-   an accessible Retry name, and no focus loss into nowhere when the calendar
-   subtree is replaced. If the popover closes, return focus to the due trigger
-   or the Retry button.
-6. Add EN/RU keys for the card-local error, Retry and, if chosen, native
+   an accessible Retry name, and no focus loss into nowhere when the picker
+   body is replaced. If the popover closes, return focus to the due trigger or
+   the Retry button.
+6. Add EN/RU keys for the card-local error, Retry, fallback label and native
    fallback. Do not reuse the whole-panel `admin.cards.fields.loadFailed` copy
    for a calendar-only failure, and do not add announcement/board copy.
 7. Add the dev-only cache note/fix from §5.4 separately; do not make product
@@ -377,6 +462,11 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
 8. Verify the outer boundary still handles a panel-level failure and that a
    card-local calendar failure no longer reaches it. Do not promise more than a
    generic boundary can distinguish.
+9. Size plan: run `npm run size -w ui`; keep the admin card page within the
+   feature branch's 113 KB gzip budget (`AdminApp` + `CardFieldsPanel` +
+   `CardRelationsPanel` + shared admin UI). `CardCalendarFallback` and its
+   copy are small; if the budget is exceeded, move/split the fallback within
+   the existing lazy panel rather than silently raising the limit.
 
 ### Proposed copy summary
 
@@ -386,7 +476,7 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
 | `admin.cards.fields.labelsHelpBody` | Labels save immediately — there is no separate Save button. Click a label to attach it, click it again to detach it. Every change is recorded in the board history. | Метки сохраняются сразу — отдельной кнопки «Сохранить» нет. Нажмите на метку, чтобы прикрепить её, и ещё раз — чтобы открепить. Каждое изменение попадает в историю доски. |
 | `admin.cards.fields.calendarFailed` | The calendar could not load. Other fields are still editable. | Календарь не загрузился. Остальные поля остаются доступными. |
 | `admin.cards.fields.calendarRetry` | Retry calendar | Повторить загрузку календаря |
-| `admin.cards.fields.calendarUseNative` (if used) | Use date input | Использовать поле даты |
+| `admin.cards.fields.calendarFallbackLabel` | Due date and time | Срок и время |
 
 The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Метка
 обновлена”; only its toast identity/lifetime changes.
@@ -407,6 +497,11 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - A success followed by a failed label command removes the success toast and
   shows the inline error; no stale “Label updated” remains. Navigating to
   another card clears the previous card's keyed toast.
+- An in-flight label success from card A does not toast, set an error, call
+  `onSaved`, or leave a stale busy state on card B after navigation. An
+  in-flight failure from A does not write its inline error on B.
+- A same-label double-click sends at most one `SET_CARD_LABEL`; the second click
+  is blocked by the synchronous in-flight guard and disabled state.
 - Unkeyed success toasts remain additive, and repeated identical error toasts
   remain additive; label command errors remain visible inline.
 - Each actual click still sends exactly one `SET_CARD_LABEL` with the right
@@ -424,21 +519,26 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
   The generic panel fallback remains for panel-level failures (panel chunk
   failure or an uncaught non-calendar render error); a calendar failure must no
   longer reach it. Do not claim it appears “only” for a panel chunk.
-- When the calendar import succeeds on retry, the calendar opens and the date
-  can be selected and saved. When it cannot succeed, the native/read-only
-  fallback keeps the current due value visible and does not require a page
-  reload.
+- When the calendar import succeeds on retry, the normal calendar+time row
+  returns in the same popover and the date can be selected and saved. When it
+  cannot succeed, the accessible native `datetime-local` fallback replaces the
+  calendar+time pair (no duplicate/ignored time control), and the existing due
+  Save/Remove controls save the draft without a page reload.
 - `DateTimeField`, `calendar-lazy`, announcement scheduling and board calendar
-  consumers keep their existing behavior and copy; only the card-local wrapper
-  opts into the retryable calendar.
-- The failure is announced (`role="alert"`), Retry has an accessible name, and
-  focus goes somewhere sensible when the calendar subtree is replaced.
-- EN/RU copy exists for the card-local error, Retry and fallback.
-- 1440/1024/390 layouts remain usable, verified in a browser; dev-vs-production
-  behavior is documented. A clean dev cache is an environment check, not a
-  product acceptance criterion.
+  consumers keep their existing behavior and copy when the card-local props are
+  omitted; only the admin card opts into the loader/fallback contract. A
+  rejected `react-day-picker/locale` import is caught and does not produce an
+  unhandled rejection.
+- The failure is announced (`role="alert"`), Retry has an accessible name, the
+  native fallback has an explicit accessible label, and focus goes somewhere
+  sensible when the picker body is replaced.
+- EN/RU copy exists for the card-local error, Retry and fallback label.
+- 1440/1024/390 layouts remain usable, including the native fallback layout,
+  verified in a browser; dev-vs-production behavior is documented. A clean dev
+  cache is an environment check, not a product acceptance criterion.
 - The existing whole-panel chunk-failure test still passes, and a new
-  calendar-containment test proves the fields stay editable.
+  calendar-containment test proves the fields stay editable. The admin card
+  page size gate (`npm run size -w ui`) stays within its 113 KB gzip budget.
 
 ## 8. Test and verification plan (for implementation)
 
@@ -450,11 +550,20 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - **Toast keyed refresh test:** toggle two labels in sequence; assert two
   commands, correct state, and exactly one “Label updated” status. Assert the
   timer is reset rather than stacked.
+- **Clear/timer fake-timer test:** `clear(key)` removes the item and cancels its
+  timer; a later success with the same key gets a fresh full 4.5 s lifetime.
 - **Success→failure test:** first toggle succeeds and shows the toast; second
   toggle fails (fake server 409/404); assert the toast is gone, the inline error
   is visible and no stale success remains.
-- **Navigation test:** card A success toast is cleared when navigating to card
-  B; card B uses a different `admin.card.labels:${card.id}` key.
+- **Deferred navigation tests:** add a deferred-command hook to
+  `FakeAdminServer` (or spy on `adminApi.sendBoardCommand`) so the test can hold
+  the POST. Navigate A→B while the label command is in flight, then:
+  - resolve success — B shows no “Label updated” toast, no `onSaved` refresh,
+    no stale busy state; B's label buttons stay enabled;
+  - reject failure — B shows no A inline error and no stale busy state.
+  Also assert card A's keyed toast is cleared when leaving A.
+- **Same-label double-click test:** fire two clicks on one label in the same
+  frame; assert exactly one `SET_CARD_LABEL` and a disabled button while busy.
 - **Unkeyed behavior tests:** two unkeyed success calls produce two toasts; two
   identical unkeyed error calls produce two toasts. This proves the key did not
   weaken global behavior.
@@ -464,37 +573,53 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 
 ### Calendar
 
-- **Mount the real lazy calendar first.** Render the card field editor with a
-  fake server and a test `calendarLoader`; click `admin-card-due-input` to open
-  the popover and actually mount the lazy calendar. Do not assert on a calendar
-  that was never rendered.
-- **Reject-once seam:** configure the loader to reject on the first attempt and
-  resolve on the second. Assert the card-local alert appears, the other fields
-  remain mounted, and a **real command still succeeds while the calendar is
-  broken** (change priority and await `SET_CARD_PRIORITY`, or edit/save the
-  title and await `UPDATE_CARD`). Presence alone is not enough.
-- **Retry success:** click Retry, let the loader resolve, assert the calendar
-  grid opens in the same due popover; select a date and Save, then assert
-  `SET_CARD_DUE_DATE` (or the actual due command) was sent.
-- **Persistent failure:** make the loader reject every attempt; after Retry,
-  assert the native input/read-only fallback is available and the due value is
-  still usable or visible; assert another real field command still succeeds.
+- **Normal path (separate test):** render the card field editor with a
+  resolving `calendarLoader` directly on `CardFieldsPanel`; click
+  `admin-card-due-input`, assert the popover opens and the real lazy calendar
+  mounts, select a date and save. This test must not inject a rejection.
+- **Reject-once seam (separate test):** configure the loader to reject on the
+  first attempt and resolve on the second. Click `admin-card-due-input` to open
+  the popover and attempt the mount. Assert the card-local alert/fallback
+  replaces the calendar+time row, the trigger and other fields remain mounted,
+  and a **real command still succeeds while the calendar is broken** (change
+  priority and await `SET_CARD_PRIORITY`, or edit/save the title and await
+  `UPDATE_CARD`). Presence alone is not enough.
+- **Retry success:** click Retry, let the loader resolve, assert the normal
+  calendar+time row returns in the same due popover; select a date and Save,
+  then assert `SET_CARD_DUE_DATE` (or the actual due command) was sent.
+- **Persistent failure + native fallback:** make the loader reject every
+  attempt; after Retry, assert the native `datetime-local` input is present with
+  an accessible label, no duplicate time control is rendered, the due value can
+  be changed, and the existing due Save sends the command. Assert another real
+  field command still succeeds.
+- **Locale rejection:** mock a rejected `react-day-picker/locale` import;
+  assert there is no unhandled rejection and the calendar (or its field
+  fallback) still works with the default locale.
 - **Outer boundary regression:** keep the existing whole-panel
-  `CardFieldsFallback` test; add a test that a calendar failure does not render
-  `admin-card-fields-error` and does not hide sibling fields.
+  `CardFieldsFallback` test. Render the panel inside
+  `CardFieldsChunkBoundary`/`CardFieldsFallback` and assert that a calendar
+  failure does **not** render `admin-card-fields-error` and does not hide
+  sibling fields.
 - **Browser matrix (required):** open the Properties panel at 1440/1024/390,
-  open the help popover and the due calendar, trigger the field fallback if the
-  test harness allows it, and verify no horizontal overflow or clipped controls.
-  Use an isolated stack; do not restart the shared demo stack.
+  open the help popover and the due calendar, and force the native fallback in
+  the isolated test stack (Playwright route interception for the calendar chunk
+  or the test-only loader seam). Verify no horizontal overflow, no clipped
+  Retry/input, and no duplicate time control. Use an isolated stack; do not
+  restart the shared demo stack.
 - **Dev/prod distinction:** document the dev cache workaround and verify the
   calendar opens in a clean dev server and in a production build. The clean
   cache is an environment check, not a product fix.
+- **Size:** run `npm run size -w ui`; keep the admin card page within the 113 KB
+  gzip budget. If `CardCalendarFallback`/copy push it over, split or move the
+  fallback inside the existing lazy panel rather than raising the limit without
+  evidence.
 
 ### Repo gates (implementation PR)
 
 - `npm test -w ui`
-- `npx tsc -b --force`
+- `npx tsc -b ui/tsconfig.json --force` (or rely on `npm run build -w ui`)
 - `npm run build -w ui`
+- `npm run size -w ui`
 - UI lint/Prettier and `git diff --check`
 - CHANGELOG and user-facing docs updates where applicable.
 
@@ -503,7 +628,10 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - Backend commands, audit records, label CRUD or board-history data changes.
 - Editing labels themselves, board-label management, or per-chip help.
 - Changes to `DateTimeField` default behavior, `calendar-lazy` default behavior,
-  announcement scheduling, or board card/calendar surfaces and their copy/tests.
+  announcement scheduling, or board calendar surfaces and their copy/tests:
+  `AnnouncementEditorDialog`, `CardDueDate`, `FilterBar`, `BoardMembersDialog`.
+  `CardDialog` reaches the calendar indirectly through `CardDueDate`;
+  `CalendarView`/`calendar-parts` do not import `calendar-lazy`.
 - Reworking the normal board card dialog’s due-date UX.
 - Global toast redesign, notification center changes, or deduping unrelated
   admin actions.
@@ -519,10 +647,11 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
   generic “Label updated”? It is clearer, but adds copy and interpolation. The
   chosen first pass keeps the generic message and relies on clear-then-add for
   the live-region announcement.
-- **Calendar fallback:** native `<input type="datetime-local">` (fully usable,
-  OS-styled) or read-only due display (consistent, but not editable)? Recommend
-  native fallback as the resilience layer, with the existing Save/Remove
-  controls unchanged.
+- **Calendar fallback:** the native `<input type="datetime-local">` is the
+  chosen resilience layer; open only its visual/format treatment (locale,
+  width, timezone display), not whether a fallback exists. If the team rejects
+  native UI, the fallback contract, copy and tests must switch to a read-only
+  display before implementation.
 - **Integration target:** the known feature tip is `7bb2848b`; the
   implementation must name and rebase on the final TASK-176.9 branch tip or
   merge commit. If that branch changes `CardFieldsPanel` again, re-check the
