@@ -37,9 +37,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   size gate: the second lazy panel split the shared admin `ui` chunk out of
   `AdminApp`, and the panel also loads the existing board `links` chunk, so the
   entry now measures `AdminApp` + both lazy panels + those shared chunks.
-  **101.62 kB → 111.86 kB gzip against an explicit 113 kB budget**, leaving
-  1.14 kB headroom (the DTO flag grew the page by 68 bytes; the previous 102 kB
-  budget measured only the shell + field panel). EN/RU admin content docs
+  **101.62 kB → 111.97 kB gzip against an explicit 113 kB budget**, leaving
+  1.03 kB headroom (the DTO flag and follow-ups added about 0.17 kB; the
+  previous 102 kB budget measured only the shell + field panel). EN/RU admin
+  content docs
   describe the editor and counters; the monitoring note records the audit
   correlation.
 

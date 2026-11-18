@@ -2128,6 +2128,19 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
         type: "relates_to",
       });
     });
+    // Add one query-matching unlinked card so the filtered list is provably
+    // non-empty while every "Incoming N" card is already linked.
+    state.cards.push(
+      adminCard({ id: "incoming-open", title: "Incoming open" }),
+    );
+    state.contentBoard!.columns[0]!.cardIds.push("incoming-open");
+    state.contentBoard!.cards["incoming-open"] = {
+      id: "incoming-open",
+      title: "Incoming open",
+      createdAt: 200,
+      updatedAt: 200,
+      labelIds: [],
+    };
     state.cardLinks = incoming;
     await renderRelations(state);
 
@@ -2139,17 +2152,27 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
     ).toHaveTextContent("50 incoming links");
 
     fireEvent.click(screen.getByTestId("admin-card-link-open"));
-    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
-      target: { value: "Card 2" },
-    });
+    const targetInput = screen.getByTestId("admin-card-link-target");
+
+    // Check the picker before selecting anything: choosing a target closes
+    // the suggestion list. "Incoming" matches the 50 linked rows and the one
+    // unlinked card, proving the picker is non-empty and the linked rows are
+    // filtered out.
+    fireEvent.change(targetInput, { target: { value: "Incoming" } });
+    expect(
+      await screen.findByTestId("admin-card-link-suggestion-incoming-open"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-link-suggestion-incoming-card-0"),
+    ).toBeNull();
+
+    // Now switch the query and select an unlinked card to verify the outgoing
+    // counter/cap stays independent from the 50 incoming rows.
+    fireEvent.change(targetInput, { target: { value: "Card 2" } });
     fireEvent.click(
       await screen.findByTestId("admin-card-link-suggestion-card-2"),
     );
     expect(screen.getByTestId("admin-card-link-add")).not.toBeDisabled();
-    // The already-linked incoming cards are excluded from the picker.
-    expect(
-      screen.queryByTestId("admin-card-link-suggestion-incoming-card-0"),
-    ).toBeNull();
   });
 
   it("shows the reverse holder cap instead of the viewed card's incoming count", async () => {

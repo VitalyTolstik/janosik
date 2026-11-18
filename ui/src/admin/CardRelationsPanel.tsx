@@ -553,6 +553,9 @@ export function CardRelationsPanel({
   }, []);
 
   const loadBoard = () => {
+    // An async link command can finish after the panel unmounted; do not
+    // start a fetch or enqueue state updates in that case.
+    if (!mountedRef.current) return;
     const request = ++boardRequestRef.current;
     setBoardLoading(true);
     setBoardError(false);
@@ -874,7 +877,7 @@ export function CardRelationsPanel({
       "admin.cards.relations.toast.linkAdded",
       holderId,
     );
-    if (saved) {
+    if (saved && mountedRef.current) {
       loadBoard();
       closeLinkForm();
     }
@@ -898,7 +901,7 @@ export function CardRelationsPanel({
       "admin.cards.relations.toast.linkRemoved",
       holderCardId,
     );
-    if (saved) loadBoard();
+    if (saved && mountedRef.current) loadBoard();
     return saved;
   };
 
@@ -976,6 +979,17 @@ export function CardRelationsPanel({
       }
     }
   };
+
+  const incomingCount = liveIncoming.length;
+  const incomingCountLabel =
+    incomingCount === 1 ||
+    (lang === "ru" && incomingCount % 10 === 1 && incomingCount % 100 !== 11)
+      ? t("admin.cards.relations.incomingCountOne", { count: incomingCount })
+      : lang === "ru" &&
+          [2, 3, 4].includes(incomingCount % 10) &&
+          ![12, 13, 14].includes(incomingCount % 100)
+        ? t("admin.cards.relations.incomingCountFew", { count: incomingCount })
+        : t("admin.cards.relations.incomingCount", { count: incomingCount });
 
   const linkRows = [
     ...linksOut.map((link) => ({ direction: "out" as const, link })),
@@ -1210,11 +1224,7 @@ export function CardRelationsPanel({
             })}
           </span>
           <span data-testid="admin-card-links-incoming-count">
-            {liveIncoming.length === 1
-              ? t("admin.cards.relations.incomingCountOne", { count: 1 })
-              : t("admin.cards.relations.incomingCount", {
-                  count: liveIncoming.length,
-                })}
+            {incomingCountLabel}
           </span>
         </div>
 
