@@ -550,6 +550,255 @@ describe("Commands API — labels & checklists (e2e)", () => {
     });
   });
 
+  describe("same-board parentage (H2)", () => {
+    interface ParentageIds {
+      boardId: string;
+      columnId: string;
+      cardA: string;
+      cardB: string;
+      checklistA: string;
+      checklistB: string;
+      itemA: string;
+      linkA: string;
+    }
+
+    async function parentageBoard(): Promise<ParentageIds> {
+      // Ids are global primary keys; a second test must not reuse the first
+      // fixture's ids or the cross-board guard would answer before parentage.
+      const suffix = randomUUID().slice(0, 8);
+      const ids = {
+        columnId: `col-p-${suffix}`,
+        cardA: `card-a-${suffix}`,
+        cardB: `card-b-${suffix}`,
+        checklistA: `cl-a-${suffix}`,
+        checklistB: `cl-b-${suffix}`,
+        itemA: `it-a-${suffix}`,
+        linkA: `link-a-${suffix}`,
+      };
+      const boardId = await createBoard(`Parentage board ${suffix}`);
+      for (const action of [
+        {
+          type: "ADD_COLUMN",
+          newColumnId: ids.columnId,
+          title: "Todo",
+        },
+        {
+          type: "ADD_CARD",
+          newCardId: ids.cardA,
+          columnId: ids.columnId,
+          title: "A",
+        },
+        {
+          type: "ADD_CARD",
+          newCardId: ids.cardB,
+          columnId: ids.columnId,
+          title: "B",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardA,
+          newChecklistId: ids.checklistA,
+          title: "A steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+          newItemId: ids.itemA,
+          text: "Do it",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardB,
+          newChecklistId: ids.checklistB,
+          title: "B steps",
+        },
+        {
+          type: "ADD_CARD_LINK",
+          cardId: ids.cardA,
+          linkId: ids.linkA,
+          targetCardId: ids.cardB,
+          linkType: "relates_to",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+      return { boardId, ...ids };
+    }
+
+    it("refuses same-board checklist/item/link re-parenting and moves no row", async () => {
+      const ids = await parentageBoard();
+      const attempts: Array<Record<string, unknown>> = [
+        {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardB,
+          newChecklistId: ids.checklistA,
+          title: "Stolen",
+        },
+        {
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardB,
+          checklist: { id: ids.checklistA, title: "Stolen", items: [] },
+          index: 0,
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: ids.cardB,
+          checklistId: ids.checklistB,
+          newItemId: ids.itemA,
+          text: "Stolen",
+        },
+        {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId: ids.cardB,
+          checklistId: ids.checklistB,
+          item: { id: ids.itemA, text: "Stolen", done: false },
+          index: 0,
+        },
+        {
+          type: "ADD_CARD_LINK",
+          cardId: ids.cardB,
+          linkId: ids.linkA,
+          targetCardId: ids.cardA,
+          linkType: "relates_to",
+        },
+      ];
+      for (const attempt of attempts) {
+        const res = await post(
+          ids.boardId,
+          scoped(ids.boardId, attempt),
+        ).expect(409);
+        expect(res.body).toMatchObject({
+          code: "id_conflict",
+          conflict: "id",
+        });
+      }
+      const aggregate = await getAggregate(ids.boardId);
+      expect(aggregate.cards[ids.cardA].checklists?.map((c) => c.id)).toEqual([
+        ids.checklistA,
+      ]);
+      expect(aggregate.cards[ids.cardA].checklists?.[0].items).toEqual([
+        { id: ids.itemA, text: "Do it", done: false },
+      ]);
+      expect(aggregate.cards[ids.cardB].checklists?.map((c) => c.id)).toEqual([
+        ids.checklistB,
+      ]);
+      expect(aggregate.cards[ids.cardA].links?.map((l) => l.id)).toEqual([
+        ids.linkA,
+      ]);
+      expect(aggregate.cards[ids.cardB].links).toBeUndefined();
+    });
+
+    it("revives a soft-deleted id only under its original owner", async () => {
+      const ids = await parentageBoard();
+      const before = await getAggregate(ids.boardId);
+      const checklist = before.cards[ids.cardA].checklists?.find(
+        (entry) => entry.id === ids.checklistA,
+      );
+      expect(checklist).toBeDefined();
+      const item = checklist?.items[0];
+      expect(item).toBeDefined();
+
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+        }),
+      );
+      // A soft-deleted checklist is still owned by card A.
+      await post(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardB,
+          checklist: checklist!,
+          index: 0,
+        }),
+      ).expect(409);
+      await applyAndAssert(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardA,
+          checklist: checklist!,
+          index: 0,
+        }),
+      );
+
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "DELETE_CHECKLIST_ITEM",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+          itemId: ids.itemA,
+        }),
+      );
+      await post(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId: ids.cardB,
+          checklistId: ids.checklistB,
+          item: item!,
+          index: 0,
+        }),
+      ).expect(409);
+      await applyAndAssert(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+          item: item!,
+          index: 0,
+        }),
+      );
+
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "REMOVE_CARD_LINK",
+          cardId: ids.cardA,
+          linkId: ids.linkA,
+          targetCardId: ids.cardB,
+          linkType: "relates_to",
+        }),
+      );
+      await applyAndAssert(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "ADD_CARD_LINK",
+          cardId: ids.cardA,
+          linkId: ids.linkA,
+          targetCardId: ids.cardB,
+          linkType: "relates_to",
+        }),
+      );
+
+      // The same replay after a second delete still cannot move the row to B.
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+        }),
+      );
+      await post(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardB,
+          newChecklistId: ids.checklistA,
+          title: "Stolen",
+        }),
+      ).expect(409);
+    });
+  });
+
   describe("card labels", () => {
     it("persists the m2m order with positions in the database", async () => {
       const boardId = await createBoard("M2M board");

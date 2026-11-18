@@ -12,6 +12,7 @@ import type {
   Board,
   BoardAction,
   BoardScopedAction,
+  Checklist,
   CommandDeltaEntry,
   CommandResponse,
   ConflictError,
@@ -64,6 +65,12 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
+import {
+  loadCardLinkParentage,
+  loadChecklistItemParentage,
+  loadChecklistParentage,
+  parentageConflict,
+} from "./entity-parentage";
 import { commandDetails } from "./command-details";
 import {
   actionFingerprint,
@@ -659,6 +666,13 @@ export class CommandsService {
           }
         }
         await this.assertIdsBelongToBoard(tx, boardId, [...referenced]);
+        // H2: a same-board id can still name another card's checklist/item or
+        // another card's link. The writers upsert by id, so parentage must be
+        // checked before the reducer/writers get a chance to re-parent it.
+        await this.assertEntityParentage(
+          tx,
+          prepared.filter((entry) => !existingById.has(entry.dto.commandId)),
+        );
 
         let running = await loadBoardAggregate(tx, boardId);
         if (!running) {
@@ -1421,6 +1435,156 @@ export class CommandsService {
         message: `Entity id already used on another board: ${offender.table}:${offender.row.id}`,
         field: "action",
       } satisfies ConflictError & { message: string; field: string });
+    }
+  }
+
+  /**
+   * H2: every client-named checklist/item/link id must keep its stored
+   * parent. `assertIdsBelongToBoard` rejects foreign boards; this checks the
+   * same-board half: an id owned by another card/checklist would be
+   * re-parented by the upsert writers.
+   *
+   * Soft-deleted rows are deliberately allowed through *under the same
+   * parent*: undoing a delete re-sends the original id and the writer must
+   * revive that row. Under a different parent even a soft-deleted row is a
+   * theft attempt and is refused. Replays never reach here.
+   */
+  private async assertEntityParentage(
+    tx: Prisma.TransactionClient,
+    entries: PreparedCommand[],
+  ): Promise<void> {
+    const checklistOwner = new Map<string, { cardId: string; field: string }>();
+    const itemOwner = new Map<string, { checklistId: string; field: string }>();
+    const linkOwner = new Map<string, { fromCardId: string; field: string }>();
+
+    const expectChecklist = (
+      id: string,
+      cardId: string,
+      field: string,
+    ): void => {
+      const known = checklistOwner.get(id);
+      if (known !== undefined && known.cardId !== cardId) {
+        parentageConflict(
+          field,
+          `Checklist id ${id} is already used by another card`,
+        );
+      }
+      if (known === undefined) checklistOwner.set(id, { cardId, field });
+    };
+    const expectItem = (
+      id: string,
+      checklistId: string,
+      field: string,
+    ): void => {
+      const known = itemOwner.get(id);
+      if (known !== undefined && known.checklistId !== checklistId) {
+        parentageConflict(
+          field,
+          `Checklist item id ${id} is already used by another checklist`,
+        );
+      }
+      if (known === undefined) itemOwner.set(id, { checklistId, field });
+    };
+    const expectLink = (
+      id: string,
+      fromCardId: string,
+      field: string,
+    ): void => {
+      const known = linkOwner.get(id);
+      if (known !== undefined && known.fromCardId !== fromCardId) {
+        parentageConflict(
+          field,
+          `Link id ${id} is already used by another card`,
+        );
+      }
+      if (known === undefined) linkOwner.set(id, { fromCardId, field });
+    };
+    const expectCardSnapshot = (
+      card: { id: string; checklists?: Checklist[] },
+      field: string,
+    ): void => {
+      for (const checklist of card.checklists ?? []) {
+        expectChecklist(checklist.id, card.id, field);
+        for (const item of checklist.items) {
+          expectItem(item.id, checklist.id, field);
+        }
+      }
+    };
+
+    for (const { action } of entries) {
+      switch (action.type) {
+        case "ADD_CHECKLIST":
+          expectChecklist(
+            action.newChecklistId,
+            action.cardId,
+            "action.newChecklistId",
+          );
+          break;
+        case "RESTORE_CHECKLIST":
+          expectChecklist(
+            action.checklist.id,
+            action.cardId,
+            "action.checklist.id",
+          );
+          break;
+        case "ADD_CHECKLIST_ITEM":
+          expectItem(action.newItemId, action.checklistId, "action.newItemId");
+          break;
+        case "RESTORE_CHECKLIST_ITEM":
+          expectItem(action.item.id, action.checklistId, "action.item.id");
+          break;
+        case "ADD_CARD_LINK":
+          expectLink(action.linkId, action.cardId, "action.linkId");
+          break;
+        case "RESTORE_CARD":
+          expectCardSnapshot(action.card, "action.card.checklists");
+          break;
+        case "RESTORE_COLUMN":
+          for (const card of action.cards) {
+            expectCardSnapshot(card, "action.cards.checklists");
+          }
+          break;
+        case "RESTORE_COLUMN_CARDS":
+          for (const card of action.cards) {
+            expectCardSnapshot(card, "action.cards.checklists");
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    const [checklists, items, links] = await Promise.all([
+      loadChecklistParentage(tx, [...checklistOwner.keys()]),
+      loadChecklistItemParentage(tx, [...itemOwner.keys()]),
+      loadCardLinkParentage(tx, [...linkOwner.keys()]),
+    ]);
+    for (const row of checklists) {
+      const expected = checklistOwner.get(row.id);
+      if (expected !== undefined && row.cardId !== expected.cardId) {
+        parentageConflict(
+          expected.field,
+          `Checklist id ${row.id} is already used by another card`,
+        );
+      }
+    }
+    for (const row of items) {
+      const expected = itemOwner.get(row.id);
+      if (expected !== undefined && row.checklistId !== expected.checklistId) {
+        parentageConflict(
+          expected.field,
+          `Checklist item id ${row.id} is already used by another checklist`,
+        );
+      }
+    }
+    for (const row of links) {
+      const expected = linkOwner.get(row.id);
+      if (expected !== undefined && row.fromCardId !== expected.fromCardId) {
+        parentageConflict(
+          expected.field,
+          `Link id ${row.id} is already used by another card`,
+        );
+      }
     }
   }
 
