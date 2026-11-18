@@ -110,4 +110,27 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
 
 ## Verification
 
-See the stream report for exact commands and results.
+Run on this branch (`feat/TASK-180.2-write-integrity`, 2026-11-19):
+
+- `npm run typecheck -w backend`, `-w shared`, `-w mcp`, `-w e2e`; `npx tsc -b ui` — passed.
+- `npm run test:unit -w backend -- --runInBand` — 77 suites / 568 tests passed.
+- `npm run test -w shared` — 13 files / 541 tests passed.
+- `npm run test -w mcp` — 9 files / 142 passed, 1 skipped.
+- UI focused Vitest: undo/WIP, attachment cap, comment page-2 edit, assignee
+  face, column views, API idempotency — 10 files / 118 tests passed.
+- Backend targeted e2e (single in-band run): `commands-ids`,
+  `commands-labels-checklists`, `commands-columns-cards`, `card-claim`,
+  `card-assignee`, `write-contract`, `attachments`, `activity-comments`,
+  `runs`, `admin` — 9 suites / 187 tests passed. (The attachments suite was
+  also re-run alone: 20/20.)
+- Browser (isolated local API + Vite, Chrome): duplicate-content,
+  filtered column delete, comment pagination/edit, description attachment and
+  the new WIP-undo refusal — 8/8 passed. Drag-based legacy undo tests fail in
+  this local non-Compose environment for the same reason on `main` (pointer
+  geometry), so the WIP test uses the dialog's column row instead.
+- `npm run build -w ui`, `npm run size -w ui` — passed; critical path
+  263.38 kB gzip (limit 300 kB).
+- `npm run lint` for backend/shared/ui/mcp — 0 errors (existing UI warnings
+  unchanged); prettier check of every touched file passed.
+- `npm run openapi:check` / `openapi:test` — valid, 80 operations, 5 tests.
+- `git diff --check` — clean.
