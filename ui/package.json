@@ -54,11 +54,12 @@
       "running": false
     },
     {
-      "name": "admin panel chunk (lazy, gzip)",
+      "name": "admin card page (shell + lazy field panel, gzip)",
       "path": [
-        "dist/assets/AdminApp-*.js"
+        "dist/assets/AdminApp-*.js",
+        "dist/assets/CardFieldsPanel-*.js"
       ],
-      "limit": "100 KB",
+      "limit": "102 KB",
       "gzip": true
     },
     {

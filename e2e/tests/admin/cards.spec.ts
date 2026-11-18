@@ -370,6 +370,9 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
       .locator("ul");
     const fields = page.getByTestId("admin-card-fields");
     await expect(fields).toBeVisible();
+    await expect(
+      page.getByTestId(`admin-card-label-toggle-${longLabelId}`),
+    ).toBeVisible();
     for (const box of [scroller, timeline, fields]) {
       expect(
         await box.evaluate(

@@ -24,8 +24,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cards with `409`, and exact replays stay idempotent. Checklists and links are
   intentionally left for B2. EN/RU admin content and monitoring docs describe
   the panel and the audit correlation. The field panel is lazy-loaded into its
-  own chunk, leaving the admin panel at 97.2 kB gzip against the 100 kB budget
-  (2.8 kB headroom).
+  own chunk. The size gate now measures the combined admin card page (shell +
+  field panel): **101.62 kB gzip against an explicit 102 kB budget** (the old
+  shell-only gate was 100 kB); that leaves 0.38 kB headroom and makes the lazy
+  chunk part of the real budget.
 
 - TASK-176.8 + TASK-176.10 admin editing pilot and command ↔ audit
   correlation: `/admin/cards/:id` can edit the card description through an

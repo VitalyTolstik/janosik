@@ -228,7 +228,7 @@ export function CardFieldsPanel({
     setErrors((previous) => ({ ...previous, [field]: undefined }));
   };
 
-  const errorText = (cause: unknown): string => {
+  const errorText = (cause: unknown, field: FieldKey): string => {
     if (cause instanceof ApiError) {
       if (cause.status === 403) return t("admin.common.forbidden");
       if (cause.status === 404) {
@@ -238,6 +238,17 @@ export function CardFieldsPanel({
         return t("admin.cards.fields.errorInvalid");
       }
       if (cause.status === 409) {
+        // The command layer reports collection caps as `conflict: "wip"`.
+        // On the labels field that is the per-card cap, so give the exact
+        // reason instead of a generic conflict (TASK-176.9 review).
+        if (
+          field === "labels" &&
+          (cause.conflict === "wip" || /label/i.test(cause.messageText))
+        ) {
+          return t("admin.cards.fields.labelsLimit", {
+            limit: LIMITS.labelsPerCard,
+          });
+        }
         return t("admin.cards.fields.errorConflict");
       }
       // Keep a useful English backend detail for English masters; the admin
@@ -271,7 +282,7 @@ export function CardFieldsPanel({
     } catch (cause) {
       setErrors((previous) => ({
         ...previous,
-        [field]: errorText(cause),
+        [field]: errorText(cause, field),
       }));
       return false;
     } finally {

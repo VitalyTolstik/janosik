@@ -878,6 +878,9 @@ const en = {
   "admin.cards.fields.noLabels": "This board has no labels yet.",
   "admin.cards.fields.boardLoading": "Loading board members and labels…",
   "admin.cards.fields.boardFailed": "Could not load board members and labels.",
+  "admin.cards.fields.loadFailed":
+    "Could not load the card field editor. Reload the page to try again.",
+  "admin.cards.fields.reload": "Reload page",
   "admin.cards.fields.errorNotFound":
     "The card or label no longer exists. Reload the page.",
   "admin.cards.fields.errorInvalid":
@@ -2157,6 +2160,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.fields.noLabels": "На этой доске пока нет меток.",
   "admin.cards.fields.boardLoading": "Загрузка участников и меток…",
   "admin.cards.fields.boardFailed": "Не удалось загрузить участников и метки.",
+  "admin.cards.fields.loadFailed":
+    "Не удалось загрузить редактор полей карточки. Перезагрузите страницу.",
+  "admin.cards.fields.reload": "Перезагрузить страницу",
   "admin.cards.fields.errorNotFound":
     "Карточка или метка больше не существует. Перезагрузите страницу.",
   "admin.cards.fields.errorInvalid":

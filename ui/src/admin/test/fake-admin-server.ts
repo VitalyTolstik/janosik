@@ -373,7 +373,11 @@ export class FakeAdminServer {
   /** Paths whose next call answers 500 once (matched via `includes`). */
   failNext: string[] = [];
   /** Paths whose next call answers with an explicit status once. */
-  failNextStatuses: Array<{ path: string; status: number }> = [];
+  failNextStatuses: Array<{
+    path: string;
+    status: number;
+    body?: Record<string, unknown>;
+  }> = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
   sessionAlive = true;
   /**
@@ -592,7 +596,10 @@ export class FakeAdminServer {
         this.failNextStatuses = this.failNextStatuses.filter(
           (item) => item !== statusFailure,
         );
-        return this.json({ message: "denied" }, statusFailure.status);
+        return this.json(
+          statusFailure.body ?? { message: "denied" },
+          statusFailure.status,
+        );
       }
 
       return this.route(method, path, body, url);
@@ -965,7 +972,14 @@ export class FakeAdminServer {
             !selected.includes(labelId) &&
             selected.length >= LIMITS.labelsPerCard
           ) {
-            return this.json({ message: "Too many labels on the card" }, 409);
+            return this.json(
+              {
+                message: "Too many labels on the card",
+                conflict: "wip",
+                currentVersion: 0,
+              },
+              409,
+            );
           }
         }
         if (action.type === "UPDATE_CARD") {

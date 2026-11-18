@@ -15,6 +15,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
 import { adminMessage } from "./admin-i18n";
 import AdminApp from "./AdminApp";
+import { CardFieldsChunkBoundary, CardFieldsFallback } from "./CardDetailPage";
 import {
   adminActivity,
   adminAttachment,
@@ -961,6 +962,48 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     expect(cleared !== undefined && "dueDate" in cleared).toBe(false);
   });
 
+  it("restores the saved due date when clearing is rejected", async () => {
+    const { server, state } = await renderFields();
+    server.failNextStatuses.push({ path: "/commands", status: 409 });
+    fireEvent.click(screen.getByTestId("admin-card-due-remove"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-card-field-due")).toHaveTextContent(
+        "The change conflicts with the current card. Reload and try again.",
+      );
+    });
+    expect(screen.getByTestId("admin-card-due-input")).not.toHaveTextContent(
+      "No due date",
+    );
+    expect(screen.getByTestId("admin-card-due-remove")).toBeTruthy();
+    expect(state.cards[0]?.dueDate).toBe(DUE);
+  });
+
+  it("shows the label cap message for a wip conflict", async () => {
+    const { server } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    server.failNextStatuses.push({
+      path: "/commands",
+      status: 409,
+      body: {
+        message: "Too many labels on the card",
+        conflict: "wip",
+        currentVersion: 0,
+      },
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-card-field-labels")).toHaveTextContent(
+        "A card can have at most 20 labels.",
+      );
+    });
+  });
+
   it("does not treat sub-minute due-date precision as dirty", async () => {
     const state = fieldState();
     state.cards[0]!.dueDate = new Date(
@@ -1234,6 +1277,30 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     expect(await screen.findByTestId("admin-card-detail-actions")).toBeTruthy();
     expect(screen.queryByTestId("admin-card-fields")).toBeNull();
     expect(screen.queryByTestId("admin-card-title-input")).toBeNull();
+  });
+});
+
+describe("CardDetailPage field chunk fallback", () => {
+  it("keeps the page usable and offers reload when the field chunk fails", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const BrokenFields = () => {
+      throw new Error("chunk failed");
+    };
+    render(
+      <I18nProvider>
+        <CardFieldsChunkBoundary fallback={<CardFieldsFallback />}>
+          <BrokenFields />
+        </CardFieldsChunkBoundary>
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTestId("admin-card-fields-error")).toHaveTextContent(
+      "Could not load the card field editor. Reload the page to try again.",
+    );
+    expect(screen.getByTestId("admin-card-fields-reload")).toHaveTextContent(
+      "Reload page",
+    );
+    errorSpy.mockRestore();
   });
 });
 
