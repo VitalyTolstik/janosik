@@ -961,6 +961,116 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     expect(cleared !== undefined && "dueDate" in cleared).toBe(false);
   });
 
+  it("does not treat sub-minute due-date precision as dirty", async () => {
+    const state = fieldState();
+    state.cards[0]!.dueDate = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      10,
+      9,
+      0,
+      42,
+      500,
+    ).getTime();
+    const { server } = await renderFields(state);
+
+    expect(screen.getByTestId("admin-card-due-save")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("admin-card-due-save"));
+    expect(sentCommands(server)).toHaveLength(0);
+  });
+
+  it("shows a localized error and keeps the card when a title save is rejected", async () => {
+    const { server, state } = await renderFields();
+    server.failNextStatuses.push({ path: "/commands", status: 409 });
+    const input = screen.getByTestId("admin-card-title-input");
+    fireEvent.change(input, { target: { value: "Rejected title" } });
+    fireEvent.click(screen.getByTestId("admin-card-title-save"));
+
+    expect(
+      await screen.findByTestId("admin-card-title-error"),
+    ).toHaveTextContent(
+      "The change conflicts with the current card. Reload and try again.",
+    );
+    expect(state.cards[0]?.title).toBe("Original title");
+    expect(
+      screen.getByRole("heading", { name: "Original title", level: 1 }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("admin-card-title-input")).toHaveValue(
+      "Rejected title",
+    );
+  });
+
+  it("shows a localized 404 and keeps a label toggle when the command is rejected", async () => {
+    const { server, state } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    server.failNextStatuses.push({ path: "/commands", status: 404 });
+    const second = screen.getByTestId("admin-card-label-toggle-label-2");
+    fireEvent.click(second);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-card-field-labels")).toHaveTextContent(
+        "The card or label no longer exists. Reload the page.",
+      );
+    });
+    expect(state.cardLabelIds["card-1"]).toEqual(["label-1"]);
+    expect(second).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("offers a retry when board members and labels fail to load", async () => {
+    const state = fieldState();
+    const { server } = await renderFields(state, (fake) => {
+      fake.failNextStatuses.push({ path: "/meta", status: 500 });
+    });
+
+    expect(
+      await screen.findByTestId("admin-card-field-assignee-error"),
+    ).toHaveTextContent("Could not load board members and labels.");
+    expect(screen.getByTestId("admin-card-fields-board-error")).toBeTruthy();
+    expect(
+      screen.getByTestId("admin-card-field-assignee-select"),
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("admin-card-fields-board-retry"));
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId("admin-card-field-assignee-select"))
+          .getAllByRole("option")
+          .map((option) => (option as HTMLOptionElement).value),
+      ).toContain("u-2");
+    });
+    expect(
+      server.requests.filter((request) => request.path.endsWith("/meta")),
+    ).toHaveLength(2);
+    expect(screen.queryByTestId("admin-card-field-assignee-error")).toBeNull();
+  });
+
+  it("keeps a current inactive assignee visible as a fallback option", async () => {
+    const state = fieldState();
+    state.cards[0]!.assigneeId = "u-5";
+    state.cards[0]!.assigneeEmail = "disabled@example.com";
+    await renderFields(state);
+
+    const select = screen.getByTestId("admin-card-field-assignee-select");
+    await waitFor(() => {
+      expect(select).toHaveValue("u-5");
+    });
+    const options = within(select).getAllByRole("option");
+    expect(
+      options.some(
+        (option) =>
+          (option as HTMLOptionElement).value === "u-5" &&
+          option.textContent?.includes("current, inactive"),
+      ),
+    ).toBe(true);
+    expect(
+      options.map((option) => (option as HTMLOptionElement).value),
+    ).not.toContain("u-4");
+  });
+
   it("changes priority and resets medium to the default", async () => {
     const { server, state } = await renderFields();
     const select = screen.getByTestId("admin-card-field-priority-select");
@@ -1124,5 +1234,116 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     expect(await screen.findByTestId("admin-card-detail-actions")).toBeTruthy();
     expect(screen.queryByTestId("admin-card-fields")).toBeNull();
     expect(screen.queryByTestId("admin-card-title-input")).toBeNull();
+  });
+});
+
+describe("FakeAdminServer card field fidelity", () => {
+  const post = (
+    server: FakeAdminServer,
+    commandId: string,
+    action: Record<string, unknown>,
+  ) =>
+    server.fetchImpl("http://api.test/api/v1/admin/boards/b-1/commands", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commandId, action }),
+    });
+
+  function fakeFieldState(): FakeAdminState {
+    const state = emptyAdminState();
+    state.boards = [adminBoard()];
+    state.cards = [adminCard({ commentIds: [] })];
+    return state;
+  }
+
+  it("rejects a reused commandId with a different payload", async () => {
+    const server = new FakeAdminServer(fakeFieldState());
+    const action = {
+      type: "SET_CARD_PRIORITY",
+      cardId: "card-1",
+      priority: "high",
+      at: 1,
+    };
+    expect((await post(server, "replay-1", action)).status).toBe(200);
+    expect(
+      (
+        await post(server, "replay-1", {
+          ...action,
+          priority: "low",
+        })
+      ).status,
+    ).toBe(409);
+    expect((await post(server, "replay-1", action)).status).toBe(200);
+    expect(server.state.commands).toHaveLength(1);
+  });
+
+  it("mirrors priority, cover, due-date and title validation", async () => {
+    const server = new FakeAdminServer(fakeFieldState());
+    for (const action of [
+      { type: "SET_CARD_PRIORITY", cardId: "card-1", priority: "urgent" },
+      {
+        type: "SET_CARD_COVER",
+        cardId: "card-1",
+        cover: { type: "color", value: "not-a-color" },
+      },
+      {
+        type: "SET_CARD_DUE_DATE",
+        cardId: "card-1",
+        dueDate: 1e300,
+      },
+      { type: "UPDATE_CARD", cardId: "card-1", title: "x".repeat(301) },
+    ]) {
+      expect(
+        (await post(server, crypto.randomUUID(), { ...action, at: 1 })).status,
+      ).toBe(400);
+    }
+    expect(server.state.commands).toHaveLength(0);
+  });
+
+  it("counts only live labels toward the card cap", async () => {
+    const state = fakeFieldState();
+    const server = new FakeAdminServer(state);
+    server.boardLabels["b-1"] = [
+      ...Array.from({ length: 21 }, (_, index) =>
+        adminLabel({
+          id: `live-${index + 1}`,
+          name: `Live ${index + 1}`,
+          position: index,
+        }),
+      ),
+      adminLabel({
+        id: "deleted-label",
+        name: "Deleted",
+        position: 21,
+        deletedAt: 1,
+      }),
+    ];
+    state.cardLabelIds["card-1"] = [
+      ...Array.from({ length: 19 }, (_, index) => `live-${index + 1}`),
+      "deleted-label",
+    ];
+
+    expect(
+      (
+        await post(server, crypto.randomUUID(), {
+          type: "SET_CARD_LABEL",
+          cardId: "card-1",
+          labelId: "live-20",
+          on: true,
+          at: 1,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await post(server, crypto.randomUUID(), {
+          type: "SET_CARD_LABEL",
+          cardId: "card-1",
+          labelId: "live-21",
+          on: true,
+          at: 2,
+        })
+      ).status,
+    ).toBe(409);
   });
 });

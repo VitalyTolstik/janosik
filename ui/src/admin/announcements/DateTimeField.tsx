@@ -33,6 +33,8 @@ interface DateTimeFieldProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   testId: string;
+  /** Accessible name for the trigger (the visible value is not a label). */
+  ariaLabel?: string;
   placeholder: string;
   clearLabel: string;
   timeLabel: string;
@@ -50,6 +52,7 @@ export function DateTimeField({
   onChange,
   disabled = false,
   testId,
+  ariaLabel,
   placeholder,
   clearLabel,
   timeLabel,
@@ -87,6 +90,7 @@ export function DateTimeField({
           type="button"
           disabled={disabled}
           data-testid={testId}
+          aria-label={ariaLabel}
           className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-sm text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           <CalendarClock

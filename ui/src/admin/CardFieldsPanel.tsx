@@ -84,6 +84,15 @@ function fromLocalInput(value: string): number | null {
   return Number.isFinite(parsed.getTime()) ? parsed.getTime() : null;
 }
 
+/**
+ * The control exposes minute precision, so a persisted second/millisecond
+ * must not make an untouched field look dirty (TASK-176.9 review B1).
+ */
+function sameMinute(a: number | null, b: number | null): boolean {
+  if (a === null || b === null) return a === b;
+  return Math.floor(a / 60_000) === Math.floor(b / 60_000);
+}
+
 /** Narrow the admin DTO's `coverType`/`coverValue` strings to `CardCover`. */
 function readCover(card: AdminCardDetailDto["card"]): CardCover | undefined {
   const value = card.coverValue;
@@ -111,6 +120,12 @@ function memberLabel(member: AdminBoardMemberRowDto): string {
   return member.userDisplayName ?? member.userEmail;
 }
 
+/** Avoid the duplicate `email · email` option when a name is missing. */
+function memberOptionLabel(member: AdminBoardMemberRowDto): string {
+  const name = member.userDisplayName?.trim();
+  return name ? `${name} · ${member.userEmail}` : member.userEmail;
+}
+
 function memberActive(member: AdminBoardMemberRowDto): boolean {
   return (
     member.acceptedAt !== null &&
@@ -135,6 +150,7 @@ export function CardFieldsPanel({
 
   const [board, setBoard] = useState<AdminBoardDetailDto | null>(null);
   const [boardError, setBoardError] = useState(false);
+  const [boardReloadKey, setBoardReloadKey] = useState(0);
   const [titleDraft, setTitleDraft] = useState(card.title);
   const [assigneeDraft, setAssigneeDraft] = useState(card.assigneeId ?? "");
   const [dueDraft, setDueDraft] = useState(() => toLocalInput(card.dueDate));
@@ -160,7 +176,7 @@ export function CardFieldsPanel({
     return () => {
       active = false;
     };
-  }, [card.boardId]);
+  }, [card.boardId, boardReloadKey]);
 
   useEffect(() => setTitleDraft(card.title), [card.title]);
   useEffect(() => setAssigneeDraft(card.assigneeId ?? ""), [card.assigneeId]);
@@ -188,7 +204,8 @@ export function CardFieldsPanel({
 
   const assigneeOutsidePicker =
     card.assigneeId !== null &&
-    !selectableMembers.some((member) => member.userId === card.assigneeId);
+    (board === null ||
+      !selectableMembers.some((member) => member.userId === card.assigneeId));
 
   const boardLabels = useMemo(
     () => (board?.labels ?? []).filter((label) => label.deletedAt === null),
@@ -213,8 +230,19 @@ export function CardFieldsPanel({
 
   const errorText = (cause: unknown): string => {
     if (cause instanceof ApiError) {
-      if (cause.messageText) return cause.messageText;
       if (cause.status === 403) return t("admin.common.forbidden");
+      if (cause.status === 404) {
+        return t("admin.cards.fields.errorNotFound");
+      }
+      if (cause.status === 400) {
+        return t("admin.cards.fields.errorInvalid");
+      }
+      if (cause.status === 409) {
+        return t("admin.cards.fields.errorConflict");
+      }
+      // Keep a useful English backend detail for English masters; the admin
+      // dictionary stays localized and never shows raw English in RU.
+      if (lang === "en" && cause.messageText) return cause.messageText;
     }
     return t("admin.common.actionFailed");
   };
@@ -249,6 +277,48 @@ export function CardFieldsPanel({
     } finally {
       setBusy(null);
     }
+  };
+
+  const boardStatus = (section: "assignee" | "labels") => {
+    if (boardError) {
+      const errorId =
+        section === "assignee"
+          ? "admin-card-field-assignee-error"
+          : "admin-card-fields-board-error";
+      const retryId =
+        section === "assignee"
+          ? "admin-card-field-assignee-retry"
+          : "admin-card-fields-board-retry";
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            role="alert"
+            data-testid={errorId}
+            className="text-[11px] text-danger"
+          >
+            {t("admin.cards.fields.boardFailed")}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[11px]"
+            data-testid={retryId}
+            onClick={() => setBoardReloadKey((key) => key + 1)}
+          >
+            {t("admin.common.retry")}
+          </Button>
+        </div>
+      );
+    }
+    if (board === null) {
+      return (
+        <p className="text-[11px] text-muted-foreground">
+          {t("admin.cards.fields.boardLoading")}
+        </p>
+      );
+    }
+    return null;
   };
 
   const titleValidation =
@@ -295,22 +365,28 @@ export function CardFieldsPanel({
     if (!saved) setAssigneeDraft(card.assigneeId ?? "");
   };
 
-  const saveDue = async (value: number | null) => {
-    if (value === card.dueDate) {
+  const saveDue = async (value: number | null): Promise<boolean> => {
+    if (sameMinute(value, card.dueDate)) {
       clearError("due");
-      return;
+      return true;
     }
     const action: CardFieldAction =
       value === null
         ? { type: "SET_CARD_DUE_DATE" }
         : { type: "SET_CARD_DUE_DATE", dueDate: value };
-    await send(
+    const saved = await send(
       "due",
       action,
       value === null
         ? "admin.cards.toast.dueCleared"
         : "admin.cards.toast.dueSaved",
     );
+    // A failed clear must not leave the picker saying "No due date" while
+    // the saved-value line still shows a deadline (TASK-176.9 review).
+    if (!saved && value === null) {
+      setDueDraft(toLocalInput(card.dueDate));
+    }
+    return saved;
   };
 
   const submitDue = async () => {
@@ -460,6 +536,7 @@ export function CardFieldsPanel({
             label={t("admin.cards.fields.assignee")}
             error={errors.assignee}
           >
+            {boardStatus("assignee")}
             <select
               id="admin-card-assignee"
               data-testid="admin-card-field-assignee-select"
@@ -473,15 +550,17 @@ export function CardFieldsPanel({
               </option>
               {selectableMembers.map((member) => (
                 <option key={member.userId} value={member.userId}>
-                  {memberLabel(member)} · {member.userEmail}
+                  {memberOptionLabel(member)}
                 </option>
               ))}
               {assigneeOutsidePicker ? (
                 <option value={card.assigneeId ?? ""}>
                   {card.assigneeDisplayName ??
                     card.assigneeEmail ??
-                    card.assigneeId}{" "}
-                  · {t("admin.cards.fields.assigneeInactive")}
+                    card.assigneeId}
+                  {board === null
+                    ? ""
+                    : ` · ${t("admin.cards.fields.assigneeInactive")}`}
                 </option>
               ) : null}
             </select>
@@ -500,6 +579,7 @@ export function CardFieldsPanel({
                   }}
                   disabled={busy !== null}
                   testId="admin-card-due-input"
+                  ariaLabel={t("admin.cards.fields.due")}
                   placeholder={t("admin.cards.fields.duePlaceholder")}
                   clearLabel={t("admin.cards.fields.dueClearDraft")}
                   timeLabel={t("admin.cards.fields.dueTime")}
@@ -510,7 +590,8 @@ export function CardFieldsPanel({
                 type="button"
                 data-testid="admin-card-due-save"
                 disabled={
-                  busy !== null || fromLocalInput(dueDraft) === card.dueDate
+                  busy !== null ||
+                  sameMinute(fromLocalInput(dueDraft), card.dueDate)
                 }
                 onClick={() => void submitDue()}
               >
@@ -593,6 +674,11 @@ export function CardFieldsPanel({
                     variant="outline"
                     size="sm"
                     data-testid="admin-card-cover-trigger"
+                    aria-label={
+                      currentCover
+                        ? t("admin.cards.fields.coverChange")
+                        : t("admin.cards.fields.coverSet")
+                    }
                     disabled={busy !== null}
                   >
                     <Paintbrush className="h-3.5 w-3.5" aria-hidden />
@@ -708,49 +794,48 @@ export function CardFieldsPanel({
           data-testid="admin-card-field-labels"
         >
           <Field label={t("admin.cards.fields.labels")} error={errors.labels}>
-            {board === null && !boardError ? (
-              <p className="text-[11px] text-muted-foreground">
-                {t("admin.cards.fields.boardLoading")}
-              </p>
-            ) : boardError ? (
-              <p
-                role="alert"
-                data-testid="admin-card-fields-board-error"
-                className="text-[11px] text-danger"
-              >
-                {t("admin.cards.fields.boardFailed")}
-              </p>
-            ) : boardLabels.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground">
-                {t("admin.cards.fields.noLabels")}
-              </p>
-            ) : (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {boardLabels.map((label) => {
-                  const selected = selectedLabelIds.has(label.id);
-                  const disabled = busy !== null || (!selected && labelsAtCap);
-                  return (
-                    <button
-                      key={label.id}
-                      type="button"
-                      aria-pressed={selected}
-                      data-testid={`admin-card-label-toggle-${label.id}`}
-                      disabled={disabled}
-                      onClick={() => void toggleLabel(label.id)}
-                      className={cn(
-                        "rounded-md border px-1 py-0.5 transition-colors",
-                        selected
-                          ? "border-foreground/40 bg-hover"
-                          : "border-transparent hover:border-border",
-                        disabled && "cursor-not-allowed opacity-50",
-                      )}
-                    >
-                      <LabelChip name={label.name} color={label.color} />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {boardStatus("labels") ??
+              (boardLabels.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {t("admin.cards.fields.noLabels")}
+                </p>
+              ) : (
+                <div
+                  role="group"
+                  aria-label={t("admin.cards.fields.labels")}
+                  className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5"
+                >
+                  {boardLabels.map((label) => {
+                    const selected = selectedLabelIds.has(label.id);
+                    const disabled =
+                      busy !== null || (!selected && labelsAtCap);
+                    return (
+                      <button
+                        key={label.id}
+                        type="button"
+                        aria-pressed={selected}
+                        data-testid={`admin-card-label-toggle-${label.id}`}
+                        disabled={disabled}
+                        title={label.name}
+                        onClick={() => void toggleLabel(label.id)}
+                        className={cn(
+                          "min-w-0 max-w-full rounded-md border px-1 py-0.5 transition-colors",
+                          selected
+                            ? "border-foreground/40 bg-hover"
+                            : "border-transparent hover:border-border",
+                          disabled && "cursor-not-allowed opacity-50",
+                        )}
+                      >
+                        <LabelChip
+                          name={label.name}
+                          color={label.color}
+                          className="max-w-full"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             {labelsAtCap ? (
               <p className="text-[11px] text-muted-foreground">
                 {t("admin.cards.fields.labelsLimit", {

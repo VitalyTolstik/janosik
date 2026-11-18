@@ -1,6 +1,9 @@
 import {
   boardReducer,
+  CARD_PRIORITIES,
   completeness,
+  COVER_COLORS,
+  COVER_GRADIENTS,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
   LIMITS,
@@ -89,6 +92,21 @@ export interface FakeAdminState {
 }
 
 const now = 1_760_000_000_000;
+
+/** Stable JSON for the fake's idempotency fingerprint check. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
 
 export function emptyAdminState(): FakeAdminState {
   return {
@@ -862,6 +880,15 @@ export class FakeAdminServer {
               (command) => command.id === requestedCommandId,
             );
       if (replay !== undefined) {
+        if (
+          replay.boardId !== boardCommand[1] ||
+          canonicalJson(replay.payload) !== canonicalJson(jsonBody?.action)
+        ) {
+          return this.json(
+            { message: "commandId already used with a different payload" },
+            409,
+          );
+        }
         return this.json({ seq: replay.seq, versions: {} });
       }
 
@@ -913,22 +940,83 @@ export class FakeAdminServer {
           }
         }
         if (action.type === "SET_CARD_LABEL") {
-          const labelId = (action as { labelId?: string }).labelId;
-          const on = (action as { on?: boolean }).on === true;
-          const label = (this.boardLabels[boardCommand[1]] ?? []).find(
-            (entry) => entry.id === labelId && entry.deletedAt === null,
+          const labelId = (action as { labelId?: unknown }).labelId;
+          const on = (action as { on?: unknown }).on;
+          if (typeof labelId !== "string" || labelId.trim() === "") {
+            return this.json({ message: "Label id is required" }, 400);
+          }
+          if (typeof on !== "boolean") {
+            return this.json({ message: "on must be a boolean" }, 400);
+          }
+          const liveLabels = (this.boardLabels[boardCommand[1]] ?? []).filter(
+            (entry) => entry.deletedAt === null,
           );
+          const label = liveLabels.find((entry) => entry.id === labelId);
           if (label === undefined) {
             return this.json({ message: "Label not found" }, 404);
           }
-          const selected = this.state.cardLabelIds[actionCardId] ?? [];
+          // The cap counts live labels only, like the real board aggregate.
+          const liveIds = new Set(liveLabels.map((entry) => entry.id));
+          const selected = (this.state.cardLabelIds[actionCardId] ?? []).filter(
+            (id) => liveIds.has(id),
+          );
           if (
             on &&
-            labelId !== undefined &&
             !selected.includes(labelId) &&
             selected.length >= LIMITS.labelsPerCard
           ) {
             return this.json({ message: "Too many labels on the card" }, 409);
+          }
+        }
+        if (action.type === "UPDATE_CARD") {
+          const title = (action as { title?: unknown }).title;
+          if (
+            title !== undefined &&
+            title !== null &&
+            (typeof title !== "string" || title.length > LIMITS.cardTitle)
+          ) {
+            return this.json({ message: "Invalid card title" }, 400);
+          }
+        }
+        if (action.type === "SET_CARD_PRIORITY") {
+          const priority = (action as { priority?: unknown }).priority;
+          if (
+            typeof priority !== "string" ||
+            !(CARD_PRIORITIES as readonly string[]).includes(priority)
+          ) {
+            return this.json({ message: "Invalid priority" }, 400);
+          }
+        }
+        if (action.type === "SET_CARD_DUE_DATE") {
+          const dueDate = (action as { dueDate?: unknown }).dueDate;
+          if (
+            dueDate !== undefined &&
+            dueDate !== null &&
+            (typeof dueDate !== "number" ||
+              !Number.isFinite(dueDate) ||
+              Math.abs(dueDate) > 8.64e15)
+          ) {
+            return this.json({ message: "Invalid due date" }, 400);
+          }
+        }
+        if (action.type === "SET_CARD_COVER") {
+          const cover = (action as { cover?: unknown }).cover;
+          if (cover !== undefined && cover !== null) {
+            const record =
+              typeof cover === "object"
+                ? (cover as { type?: unknown; value?: unknown })
+                : null;
+            const valid =
+              record !== null &&
+              ((record.type === "color" &&
+                (COVER_COLORS as readonly unknown[]).includes(record.value)) ||
+                (record.type === "gradient" &&
+                  (COVER_GRADIENTS as readonly unknown[]).includes(
+                    record.value,
+                  )));
+            if (!valid) {
+              return this.json({ message: "Invalid cover" }, 400);
+            }
           }
         }
       }

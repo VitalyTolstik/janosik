@@ -878,6 +878,12 @@ const en = {
   "admin.cards.fields.noLabels": "This board has no labels yet.",
   "admin.cards.fields.boardLoading": "Loading board members and labels…",
   "admin.cards.fields.boardFailed": "Could not load board members and labels.",
+  "admin.cards.fields.errorNotFound":
+    "The card or label no longer exists. Reload the page.",
+  "admin.cards.fields.errorInvalid":
+    "The server rejected this value. Check it and try again.",
+  "admin.cards.fields.errorConflict":
+    "The change conflicts with the current card. Reload and try again.",
   "admin.cards.fields.labelsLimit": "A card can have at most {limit} labels.",
   "admin.cards.toast.titleSaved": "Title saved",
   "admin.cards.toast.assigneeSaved": "Assignee updated",
@@ -2151,6 +2157,12 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.fields.noLabels": "На этой доске пока нет меток.",
   "admin.cards.fields.boardLoading": "Загрузка участников и меток…",
   "admin.cards.fields.boardFailed": "Не удалось загрузить участников и метки.",
+  "admin.cards.fields.errorNotFound":
+    "Карточка или метка больше не существует. Перезагрузите страницу.",
+  "admin.cards.fields.errorInvalid":
+    "Сервер отклонил значение. Проверьте его и повторите попытку.",
+  "admin.cards.fields.errorConflict":
+    "Изменение конфликтует с текущим состоянием карточки. Перезагрузите страницу и повторите.",
   "admin.cards.fields.labelsLimit":
     "У карточки может быть не больше {limit} меток.",
   "admin.cards.toast.titleSaved": "Название сохранено",

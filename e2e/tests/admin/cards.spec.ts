@@ -324,6 +324,16 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
 }) => {
   const columnId = await board.column(uniqueToken("timeline-column"));
   const cardId = await board.card(columnId, uniqueToken("timeline-card"));
+  const longLabelId = await board.label(
+    `${uniqueToken("lbl")}${"x".repeat(9)}`,
+    "red",
+  );
+  await board.command({
+    type: "SET_CARD_LABEL",
+    cardId,
+    labelId: longLabelId,
+    on: true,
+  });
   const commandId = randomUUID();
   const command = await admin.post(
     `/api/v1/admin/boards/${board.id}/commands`,
@@ -359,6 +369,7 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
       .getByTestId("admin-card-detail-timeline")
       .locator("ul");
     const fields = page.getByTestId("admin-card-fields");
+    await expect(fields).toBeVisible();
     for (const box of [scroller, timeline, fields]) {
       expect(
         await box.evaluate(

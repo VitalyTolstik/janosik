@@ -1510,6 +1510,21 @@ describe("Admin API (e2e)", () => {
       expect(await prisma.command.count({ where: { id: wrongBoardId } })).toBe(
         0,
       );
+      const foreignLabel = await prisma.label.create({
+        data: {
+          id: `foreign-label-${randomUUID()}`,
+          boardId: otherBoard.id,
+          name: "Foreign label",
+          color: "red",
+        },
+      });
+      await reject(404, {
+        type: "SET_CARD_LABEL",
+        cardId: fixture.cardId,
+        labelId: foreignLabel.id,
+        on: true,
+      });
+      await prisma.label.delete({ where: { id: foreignLabel.id } });
       await prisma.boardMember.deleteMany({
         where: { boardId: otherBoard.id },
       });

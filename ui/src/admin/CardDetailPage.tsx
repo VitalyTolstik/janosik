@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -49,8 +49,18 @@ import {
   LabelChip,
   SizeCell,
 } from "./cells";
-import { CardFieldsPanel } from "./CardFieldsPanel";
 import { RowActions, type EntityAction } from "./row-actions";
+
+/**
+ * The field editors pull in the date picker and shared palettes. Keeping them
+ * in their own lazy chunk leaves the admin shell inside its size budget
+ * (TASK-176.9 review B3).
+ */
+const CardFieldsPanel = lazy(() =>
+  import("./CardFieldsPanel").then((module) => ({
+    default: module.CardFieldsPanel,
+  })),
+);
 
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
@@ -596,11 +606,20 @@ export function CardDetailPage() {
       </Panel>
 
       {card.deletedAt === null ? (
-        <CardFieldsPanel
-          card={card}
-          cardLabels={detail.labels}
-          onSaved={reload}
-        />
+        <Suspense
+          fallback={
+            <div
+              data-testid="admin-card-fields-loading"
+              className="h-48 animate-pulse rounded-xl border border-border bg-card/70"
+            />
+          }
+        >
+          <CardFieldsPanel
+            card={card}
+            cardLabels={detail.labels}
+            onSaved={reload}
+          />
+        </Suspense>
       ) : null}
 
       {card.description ? (

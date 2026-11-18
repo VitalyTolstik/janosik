@@ -356,8 +356,10 @@ and the backend still permits an active disabled membership); labels are live
 board labels capped at 20 per card. The admin command guard covers all
 of these types: missing/deleted/wrong-board cards and foreign/deleted labels
 answer `404`, the label cap stays `409`, and replays remain idempotent without a
-second audit row. Checklists and links are deliberately **not** part of B1.
-Implemented on `feat/TASK-176.9-admin-card-fields` (base `05d0df30`).
+second audit row. The panel is lazy-loaded into its own chunk; the admin panel
+measures 97.2 kB gzip against the 100 kB budget (2.8 kB headroom). Checklists
+and links are deliberately **not** part of B1. Implemented on
+`feat/TASK-176.9-admin-card-fields` (base `05d0df30`).
 
 Master-authored comments/uploads are also a separate product decision: decide the author identity, history display and responsibility before adding the controls.
 
