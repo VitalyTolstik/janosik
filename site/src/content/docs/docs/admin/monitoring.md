@@ -80,9 +80,14 @@ creation time and then by sequence number.
 | Board | board title, linked to the board detail page |
 | Seq | the command sequence number |
 | Payload | the command payload as JSON |
+| Audit | an `Audit` link when a master issued the command, otherwise a dash |
 | When | creation time |
 
 The page has a search box, period tabs and pagination. It has no row actions.
+The `Audit` link opens `/admin/audit?tab=audit&commandId=<id>`, which filters
+the audit trail to the exact row recorded for that command. Only commands
+issued through the master panel are correlated; normal user commands and
+historical rows keep a dash.
 The legacy path `/admin/log` redirects to `/admin/commands`.
 
 ## Audit trail
@@ -99,6 +104,11 @@ The legacy path `/admin/log` redirects to `/admin/commands`.
 | When | creation time |
 
 The page has a search box, period tabs and pagination. It has no row actions.
+`?commandId=<id>` filters the trail to the audit row recorded for one
+master-issued board command; the command log and the card timeline link to
+this exact view. `board.command` details carry `commandId`, `masterId` and
+`masterEmail` alongside the owner-facing `actorEmail`, so the real master is
+never hidden behind the owner attribution.
 
 ### Audit actions
 
@@ -133,7 +143,7 @@ its entity supports.
 - Pagination shows the total, the page size and the current page. The page
   size default is 50, the minimum is 1 and the maximum is 100.
 - The entity list state lives in the URL (`search`, `status`, `period`,
-  `limit`, `offset`). Reloading, sharing the link or using browser
+  `limit`, `offset` and the exact id filters). Reloading, sharing the link or using browser
   back/forward restores the same filtered page; hub keys such as `tab` are
   preserved. Typing in the search box replaces the current history entry,
   while filters and pagination add one, so Back returns to the previous view
@@ -159,10 +169,11 @@ of a name search:
 | Label chip or card count | `/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
 | Search label result | `/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
 | Card title in the content editor | `/admin/cards/<id>` | the card detail |
+| Command row `Audit` link | `/admin/audit?tab=audit&commandId=<id>` | the exact audit row for that master-issued command |
 
-`boardId`, `columnId`, `labelId` and `cardId` are validated ids, not text: a
-malformed value is rejected with `400`, and same-name boards or labels cannot
-collide. The filters combine with `status` and the period window; a request
+`boardId`, `columnId`, `labelId`, `cardId` and `commandId` are validated ids,
+not text: a malformed value is rejected with `400`, and same-name boards or
+labels cannot collide. The filters combine with `status` and the period window; a request
 that names a column from another board returns no rows rather than widening
 the result. Filtered links show removable chips above the table.
 

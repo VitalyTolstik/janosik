@@ -48,6 +48,24 @@ export function Panel({
   );
 }
 
+/**
+ * TASK-176.8 — the explicit attribution banner every master content edit
+ * shows: the command log still names the board owner, so the master must know
+ * the change will appear as the owner's in board history.
+ */
+export function OwnerAttributionNotice({ testId }: { testId?: string }) {
+  const t = useAdminT();
+  return (
+    <div
+      role="note"
+      data-testid={testId}
+      className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground"
+    >
+      {t("admin.common.actingAsOwner")}
+    </div>
+  );
+}
+
 export function PageHeader({
   title,
   subtitle,

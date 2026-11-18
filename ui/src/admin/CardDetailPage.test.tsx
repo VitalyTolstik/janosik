@@ -501,3 +501,89 @@ describe("CardDetailPage identity links and per-row moderation", () => {
     expect(back).toHaveAttribute("href", backTo);
   });
 });
+
+describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
+  it("edits the description through UPDATE_CARD and shows the owner notice", async () => {
+    const state = emptyAdminState();
+    state.cards = [adminCard({ id: "card-1", commentIds: [] })];
+    state.cardDescriptions["card-1"] = "Old support note";
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    expect(
+      await screen.findByTestId("admin-card-detail-description"),
+    ).toHaveTextContent("Old support note");
+
+    fireEvent.pointerDown(screen.getByTestId("admin-card-detail-actions"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByTestId("admin-card-edit-description"));
+    const dialog = await screen.findByTestId("admin-card-description-dialog");
+    expect(
+      within(dialog).getByTestId("admin-card-description-owner-notice"),
+    ).toHaveTextContent(adminMessage("admin.common.actingAsOwner", "en"));
+
+    fireEvent.change(
+      within(dialog).getByTestId("admin-card-description-input"),
+      { target: { value: "Updated by support" } },
+    );
+    fireEvent.click(
+      within(dialog).getByTestId("admin-card-description-submit"),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-detail-description"),
+      ).toHaveTextContent("Updated by support");
+    });
+    const sent = server.requests
+      .filter((request) => request.path.endsWith("/commands"))
+      .at(-1)?.body as { action: Record<string, unknown> };
+    expect(sent.action).toMatchObject({
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: "Updated by support",
+    });
+    expect(state.audit[0]).toMatchObject({
+      action: "board.command",
+      targetId: "b-1",
+      details: expect.objectContaining({
+        commandId: state.commands[0].id,
+        masterId: "master-1",
+        masterEmail: "master@example.com",
+        type: "UPDATE_CARD",
+      }),
+    });
+  });
+
+  it("links a correlated command event to its audit row", async () => {
+    const state = emptyAdminState();
+    state.cards = [adminCard({ id: "card-1", commentIds: [] })];
+    state.commands = [
+      {
+        id: "cmd-1",
+        boardId: "b-1",
+        boardTitle: "Roadmap",
+        actorId: "u-1",
+        actorEmail: "member@example.com",
+        type: "UPDATE_CARD",
+        seq: 1,
+        createdAt: 1_760_000_000_000,
+        payload: { cardId: "card-1", description: "Admin edit" },
+        auditId: "audit-1",
+      },
+    ];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderCard();
+
+    const link = await screen.findByTestId(
+      "admin-card-timeline-audit-command-cmd-1",
+    );
+    expect(link).toHaveAttribute(
+      "href",
+      "/admin/audit?tab=audit&commandId=audit-1",
+    );
+    expect(link).toHaveTextContent("Audit");
+  });
+});

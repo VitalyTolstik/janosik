@@ -143,3 +143,74 @@ test("C4: card detail archive, restore and confirmed delete", async ({
   await expect(status).toHaveText("Deleted");
   await expectAudit(admin, { action: "card.delete", targetId: seeded.cardId });
 });
+
+test("C5: a master edits the description and opens the correlated audit row", async ({
+  page,
+  admin,
+  board,
+}) => {
+  const seeded = await seedRichCard(board);
+  const nextDescription = uniqueToken("admin-description");
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`cards/${seeded.cardId}`), {
+    waitUntil: "domcontentloaded",
+  });
+
+  await expect(page.getByTestId("admin-card-detail-description")).toContainText(
+    seeded.description,
+  );
+  await page.getByTestId("admin-card-detail-actions").click();
+  await page.getByTestId("admin-card-edit-description").click();
+  const dialog = page.getByTestId("admin-card-description-dialog");
+  await expect(
+    dialog.getByTestId("admin-card-description-owner-notice"),
+  ).toContainText(
+    "You are acting as the board owner; this change appears as the owner in the board history.",
+  );
+  await dialog
+    .getByTestId("admin-card-description-input")
+    .fill(nextDescription);
+  await dialog.getByTestId("admin-card-description-submit").click();
+  await expect(page.getByTestId("admin-card-detail-description")).toContainText(
+    nextDescription,
+  );
+
+  const auditResponse = await admin.get(
+    `/api/v1/admin/audit?limit=100&search=${encodeURIComponent(board.id)}`,
+  );
+  expect(auditResponse.ok(), await auditResponse.text()).toBeTruthy();
+  const audit = (await auditResponse.json()) as {
+    items: Array<{
+      id: string;
+      action: string;
+      details: Record<string, unknown> | null;
+    }>;
+  };
+  const row = audit.items.find(
+    (entry) =>
+      entry.action === "board.command" &&
+      entry.details?.type === "UPDATE_CARD" &&
+      entry.details?.masterEmail === ownerCredentials().email,
+  );
+  expect(row).toBeDefined();
+  const commandId = String(row?.details?.commandId);
+  expect(commandId).not.toBe("undefined");
+
+  const timelineLink = page.getByTestId(
+    `admin-card-timeline-audit-command-${commandId}`,
+  );
+  await expect(timelineLink).toBeVisible();
+  await timelineLink.click();
+  await expect(page).toHaveURL((url) => {
+    return (
+      url.pathname.endsWith("/admin/audit") &&
+      url.searchParams.get("tab") === "audit" &&
+      url.searchParams.get("commandId") === commandId
+    );
+  });
+  await expect(page.getByTestId("admin-filter-clear-commandId")).toBeVisible();
+  const auditRow = page.getByRole("row").filter({ hasText: "board.command" });
+  await expect(auditRow).toHaveCount(1);
+  await auditRow.locator("button[aria-expanded]").click();
+  await expect(auditRow.locator("pre")).toContainText(commandId);
+});

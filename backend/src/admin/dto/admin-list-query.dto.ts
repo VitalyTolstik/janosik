@@ -97,4 +97,16 @@ export class AdminListQueryDto {
   @MaxLength(64)
   @Matches(ADMIN_ID_PATTERN)
   cardId?: string;
+
+  /**
+   * Exact command ↔ audit correlation (TASK-176.10): a command id matches
+   * `Command.id` in the command log and `details.commandId` in the audit
+   * trail, so both lists can deep-link to the same row.
+   */
+  @IsOptional()
+  @Transform(trimOptionalId)
+  @IsString()
+  @MaxLength(64)
+  @Matches(ADMIN_ID_PATTERN)
+  commandId?: string;
 }

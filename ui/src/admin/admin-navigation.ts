@@ -107,6 +107,11 @@ export function adminCommandsHref(boardId?: string | null): string {
   return adminListHref("/admin/audit", { tab: "commands", boardId });
 }
 
+/** TASK-176.10: open the audit row recorded for one board command. */
+export function adminAuditEntryHref(commandId: string): string {
+  return adminListHref("/admin/audit", { tab: "audit", commandId });
+}
+
 export function adminActivityHref(boardId?: string | null): string {
   return adminListHref("/admin/audit", { tab: "activity", boardId });
 }

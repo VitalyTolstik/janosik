@@ -95,6 +95,8 @@ export interface AdminListParams {
   columnId?: string;
   labelId?: string;
   cardId?: string;
+  /** Exact command ↔ audit correlation (TASK-176.10). */
+  commandId?: string;
   limit?: number;
   offset?: number;
 }
@@ -895,6 +897,7 @@ export class AdminApiClient {
     if (params.columnId) search.set("columnId", params.columnId);
     if (params.labelId) search.set("labelId", params.labelId);
     if (params.cardId) search.set("cardId", params.cardId);
+    if (params.commandId) search.set("commandId", params.commandId);
     const value = search.toString();
     return value === "" ? "" : `?${value}`;
   }

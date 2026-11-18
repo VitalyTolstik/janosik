@@ -21,7 +21,7 @@ import type {
 } from "@janosik/shared";
 import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
-import { adminCardsHref } from "./admin-navigation";
+import { adminAuditEntryHref, adminCardsHref } from "./admin-navigation";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { Badge } from "./ui";
@@ -1146,6 +1146,20 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 testId={`admin-command-payload-${command.id}`}
               />
             ),
+          },
+          {
+            label: t("admin.commands.column.audit"),
+            render: (command) =>
+              command.auditId === null ? (
+                <span className="text-muted-foreground">—</span>
+              ) : (
+                <EntityLink
+                  to={adminAuditEntryHref(command.auditId)}
+                  testId={`admin-command-audit-${command.id}`}
+                >
+                  {t("admin.commands.column.audit")}
+                </EntityLink>
+              ),
           },
           {
             label: t("admin.commands.column.created"),

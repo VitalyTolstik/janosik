@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "@/fixtures/admin.js";
 import {
   adminPath,
@@ -257,4 +258,50 @@ test("ADM-X7: each mutation family writes its own audit action", async ({
   await expect(
     page.getByRole("row").filter({ hasText: "attachment.delete" }),
   ).toContainText("attachment");
+});
+
+test("F4: a commandId deep link opens exactly the correlated audit row", async ({
+  page,
+  admin,
+  board,
+}) => {
+  const columnId = await board.column(uniqueToken("audit-command-column"));
+  const cardId = await board.card(columnId, uniqueToken("audit-command-card"));
+  const commandId = randomUUID();
+  const command = await admin.post(
+    `/api/v1/admin/boards/${board.id}/commands`,
+    {
+      data: {
+        commandId,
+        action: {
+          type: "UPDATE_CARD",
+          cardId,
+          description: "Audit deep link",
+          at: Date.now(),
+        },
+      },
+    },
+  );
+  expect(command.status(), await command.text()).toBe(201);
+
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(
+    `${adminPath("audit")}?tab=audit&commandId=${encodeURIComponent(commandId)}`,
+    { waitUntil: "domcontentloaded" },
+  );
+
+  await expect(page.getByTestId("admin-filter-clear-commandId")).toBeVisible();
+  await expect(page.getByText(commandId, { exact: true })).toBeVisible();
+  const row = page.getByRole("row").filter({ hasText: "board.command" });
+  await expect(row).toHaveCount(1);
+  await row.locator("button[aria-expanded]").click();
+  await expect(row.locator("pre")).toContainText(commandId);
+  await expect(row.locator("pre")).toContainText(ownerCredentials().email);
+  await expect(page).toHaveURL((url) => {
+    return (
+      url.pathname.endsWith("/admin/audit") &&
+      url.searchParams.get("tab") === "audit" &&
+      url.searchParams.get("commandId") === commandId
+    );
+  });
 });

@@ -256,6 +256,7 @@ export function EntityPage<E extends AdminEntity>({
     columnId: "admin.filter.column",
     labelId: "admin.filter.label",
     cardId: "admin.filter.card",
+    commandId: "admin.filter.commandId",
   };
   const activeFilters = ADMIN_LIST_FILTER_KEYS.filter(
     (key) => list.filters[key] !== null,

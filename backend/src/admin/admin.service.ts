@@ -88,6 +88,7 @@ import { SecurityAuditService } from "@/common/security-audit/security-audit.ser
 import type { RequestAttribution } from "@/auth/request-attribution";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import { auditIdsForCommands } from "./audit-correlation";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import type { AdminEmailTestDto } from "./dto/admin-email-test.dto";
 import type { AdminUpdateOAuthProviderDto } from "./dto/admin-update-oauth-provider.dto";
@@ -1045,11 +1046,13 @@ export class AdminService {
       throw new BadRequestException("Board has no owner to act for");
     }
 
+    // One id links the command log row with the audit row (TASK-176.10).
+    const commandId = dto.commandId ?? randomUUID();
     const response = await this.commands.apply(
       boardId,
       owner.user.id,
       {
-        commandId: dto.commandId ?? randomUUID(),
+        commandId,
         // `CreateCommandDto.action` is deliberately loose (the strict shared
         // validator owns its shape); the wire type is already a BoardAction.
         action: dto.action as unknown as Record<string, unknown>,
@@ -1059,8 +1062,13 @@ export class AdminService {
     await this.audit(admin, "board.command", "board", boardId, {
       title: board.title,
       type: dto.action.type,
+      // Board-facing attribution stays the owner; the master is recorded
+      // here explicitly so a master edit is never silently the owner's.
       actorEmail: owner.user.email,
       seq: response.seq,
+      commandId,
+      masterId: admin.id,
+      masterEmail: admin.email,
     });
     return response;
   }
@@ -1596,6 +1604,7 @@ export class AdminService {
   ): Promise<AdminPage<AdminCommandRowDto>> {
     const where: Prisma.CommandWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
+    if (query.commandId) where.id = query.commandId;
     const touches: string[] = [];
     if (query.cardId) touches.push(`card:${query.cardId}`);
     if (query.columnId) touches.push(`column:${query.columnId}`);
@@ -1638,6 +1647,11 @@ export class AdminService {
       this.prisma.command.count({ where }),
     ]);
 
+    const auditIds = await auditIdsForCommands(
+      this.prisma,
+      items.map((command) => command.id),
+    );
+
     return {
       items: items.map((command) => ({
         id: command.id,
@@ -1649,6 +1663,7 @@ export class AdminService {
         seq: Number(command.seq),
         createdAt: command.createdAt.getTime(),
         payload: (command.payload as Record<string, unknown> | null) ?? null,
+        auditId: auditIds.get(command.id) ?? null,
       })),
       total,
       limit,
@@ -1909,6 +1924,10 @@ export class AdminService {
         { adminEmail: { contains: query.search, mode: "insensitive" } },
         { targetId: { contains: query.search, mode: "insensitive" } },
       ];
+    }
+    // TASK-176.10: the command row and the audit trail share this id.
+    if (query.commandId) {
+      where.details = { path: ["commandId"], equals: query.commandId };
     }
     where.createdAt = this.dateRange(query);
     const { limit, offset } = this.window(query);

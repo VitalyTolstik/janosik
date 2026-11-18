@@ -436,6 +436,7 @@ describe("AdminApp", () => {
         seq: 12,
         createdAt: 1_760_000_000_000,
         payload: { newCardId: "card-1", title: "Moderate me" },
+        auditId: "audit-1",
       },
     ];
     state.audit = [
@@ -457,6 +458,17 @@ describe("AdminApp", () => {
 
     expect(await screen.findByText("ADD_CARD")).toBeTruthy();
     expect(screen.getByText("Roadmap")).toBeTruthy();
+    const auditLink = screen.getByTestId("admin-command-audit-c-1");
+    const auditUrl = new URL(
+      auditLink.getAttribute("href") ?? "",
+      "http://admin.test",
+    );
+    expect(auditUrl.pathname).toBe("/admin/audit");
+    expect(auditUrl.searchParams.get("tab")).toBe("audit");
+    expect(auditUrl.searchParams.get("commandId")).toBe("audit-1");
+    expect(auditUrl.searchParams.get("returnTo")).toBe(
+      "/admin/audit?tab=commands",
+    );
 
     view.unmount();
     renderAdmin("/admin/audit");
@@ -860,6 +872,68 @@ describe("admin content and security pages", () => {
         (request) => (request.body as { action: { type: string } }).action.type,
       );
     expect(commands).toEqual(["ADD_COLUMN", "ADD_CARD"]);
+  });
+
+  it("moves a card between columns and records a correlated audit row", async () => {
+    const state = serverWith().state;
+    state.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+
+    fireEvent.click(await screen.findByTestId("admin-card-move-card-1"));
+    const dialog = await screen.findByTestId("admin-move-card-dialog");
+    expect(
+      within(dialog).getByTestId("admin-move-card-owner-notice"),
+    ).toHaveTextContent(t("admin.common.actingAsOwner"));
+
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-target"));
+    fireEvent.click(
+      await screen.findByTestId("admin-move-card-target-option-col-b"),
+    );
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-submit"));
+
+    await waitFor(() => {
+      expect(state.contentBoard?.columns[1].cardIds).toEqual(["card-1"]);
+      expect(state.contentBoard?.columns[0].cardIds).toEqual([]);
+    });
+    const sent = server.requests
+      .filter((request) => request.path.endsWith("/commands"))
+      .at(-1)?.body as { action: Record<string, unknown> };
+    expect(sent.action).toMatchObject({
+      type: "MOVE_CARD",
+      cardId: "card-1",
+      fromColumnId: "col-a",
+      fromIndex: 0,
+      toColumnId: "col-b",
+      toIndex: 0,
+    });
+    expect(state.commands[0]).toMatchObject({
+      type: "MOVE_CARD",
+      auditId: expect.any(String),
+    });
+    expect(state.audit[0]).toMatchObject({
+      action: "board.command",
+      details: {
+        commandId: state.commands[0].id,
+        masterId: "master-1",
+        masterEmail: "master@example.com",
+      },
+    });
   });
 
   it("shows the runtime card on the dashboard", async () => {

@@ -37,6 +37,7 @@ import type {
   AdminUserDetailQueryDto,
 } from "./dto/admin-detail-query.dto";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import { auditIdsForCommands } from "./audit-correlation";
 import { AdminService } from "./admin.service";
 import { CommsService } from "./comms.service";
 
@@ -1438,6 +1439,10 @@ export class AdminEntitiesService {
       attachmentsLive + (includeDeleted ? attachmentsDeleted : 0);
     const sessionsTotal = sessionsLive + (includeDeleted ? sessionsHidden : 0);
     const tokensTotal = tokensLive + (includeDeleted ? tokensHidden : 0);
+    const recentCommandAuditIds = await auditIdsForCommands(
+      this.prisma,
+      recentCommands.map((command) => command.id),
+    );
 
     return {
       user: userRow,
@@ -1540,7 +1545,9 @@ export class AdminEntitiesService {
       attachments: attachments.map(toAttachmentRow),
       sessions: sessions.map(toSessionRow),
       tokens: tokens.map(toTokenRow),
-      recentCommands: recentCommands.map(toCommandRow),
+      recentCommands: recentCommands.map((command) =>
+        toCommandRow(command, recentCommandAuditIds.get(command.id) ?? null),
+      ),
       recentActivity: recentActivity.map(toActivityRow),
     };
   }
@@ -1821,6 +1828,7 @@ export class AdminEntitiesService {
         type: entry.type,
         actorId: entry.actorId,
         actorEmail: entry.actor.email,
+        auditId: null,
         details: (entry.details as Record<string, unknown> | null) ?? null,
         createdAt: entry.createdAt.getTime(),
       })),
@@ -1830,12 +1838,29 @@ export class AdminEntitiesService {
         type: entry.type,
         actorId: entry.actorId,
         actorEmail: entry.actor.email,
+        auditId: null,
         details: (entry.details as Record<string, unknown> | null) ?? null,
         createdAt: entry.createdAt.getTime(),
       })),
     ]
       .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
       .slice(requestedOffset, requestedOffset + limit);
+    // Resolve correlation only for the rows this page returns (the window can
+    // be large while the page stays at most `limit` rows). Historical rows
+    // stay `null`; there is no backfill.
+    const timelineAuditIds = await auditIdsForCommands(
+      this.prisma,
+      timeline
+        .filter((entry) => entry.kind === "command")
+        .map((entry) => entry.id),
+    );
+    const timelineWithAudit = timeline.map((entry) => ({
+      ...entry,
+      auditId:
+        entry.kind === "command"
+          ? (timelineAuditIds.get(entry.id) ?? null)
+          : null,
+    }));
     const timelineTotal = activityTotal + commandTotal;
     const commentsTotal =
       commentsLive + (includeDeletedComments ? commentsDeleted : 0);
@@ -1934,7 +1959,7 @@ export class AdminEntitiesService {
       },
       comments: comments.map(toCommentRow),
       attachments: attachments.map(toAttachmentRow),
-      timeline,
+      timeline: timelineWithAudit,
       createdBy,
     };
   }
@@ -2294,7 +2319,10 @@ type CommandJoin = {
   actor: { email: string };
 };
 
-function toCommandRow(command: CommandJoin): AdminCommandRowDto {
+function toCommandRow(
+  command: CommandJoin,
+  auditId: string | null = null,
+): AdminCommandRowDto {
   return {
     id: command.id,
     boardId: command.boardId,
@@ -2305,6 +2333,7 @@ function toCommandRow(command: CommandJoin): AdminCommandRowDto {
     seq: Number(command.seq),
     createdAt: command.createdAt.getTime(),
     payload: (command.payload as Record<string, unknown> | null) ?? null,
+    auditId,
   };
 }
 

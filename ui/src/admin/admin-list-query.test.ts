@@ -18,7 +18,8 @@ describe("admin list query state", () => {
   it("restores search, status, period, page and structural filters", () => {
     const params = new URLSearchParams(
       "tab=cards&search=needle&status=archived&period=7d&limit=25&offset=50" +
-        "&boardId=b-1&columnId=col-1&labelId=l-1&cardId=c-1&returnTo=%2Fadmin",
+        "&boardId=b-1&columnId=col-1&labelId=l-1&cardId=c-1" +
+        "&commandId=cmd-1&returnTo=%2Fadmin",
     );
     const state = readAdminListQuery(params, {
       statuses: ["active", "archived", "deleted"],
@@ -36,6 +37,7 @@ describe("admin list query state", () => {
         columnId: "col-1",
         labelId: "l-1",
         cardId: "c-1",
+        commandId: "cmd-1",
       },
     });
   });
@@ -45,7 +47,8 @@ describe("admin list query state", () => {
       new URLSearchParams(
         "search=x&status=owner&period=forever&limit=999&offset=-5" +
           "&boardId=bad%24id&columnId=&labelId=..%2Fetc&cardId=" +
-          "a".repeat(80),
+          "a".repeat(80) +
+          "&commandId=bad%24id",
       ),
       { statuses: ["active"], periods: true, defaultLimit: 50 },
     );
@@ -119,7 +122,7 @@ describe("admin list query state", () => {
       offset: 0,
       filters: EMPTY_ADMIN_LIST_FILTERS,
     };
-    expect(adminFiltersKey(base.filters)).toBe("|||");
+    expect(adminFiltersKey(base.filters)).toBe("||||");
     expect(hasAdminFilters(base.filters)).toBe(false);
     expect(adminListQueryKey(base)).toBe(
       adminListQueryKey({ ...base, filters: { ...base.filters } }),
@@ -128,5 +131,30 @@ describe("admin list query state", () => {
       adminListQueryKey({ ...base, offset: 25 }),
     );
     expect(hasAdminFilters({ ...base.filters, labelId: "l-1" })).toBe(true);
+    expect(hasAdminFilters({ ...base.filters, commandId: "cmd-1" })).toBe(true);
+  });
+
+  it("writes and clears the commandId audit deep-link filter", () => {
+    const next = writeAdminListQuery(new URLSearchParams("tab=audit"), {
+      search: "",
+      status: "all",
+      period: "any",
+      limit: 50,
+      offset: 0,
+      filters: { ...EMPTY_ADMIN_LIST_FILTERS, commandId: "cmd-1" },
+    });
+    expect(next.get("tab")).toBe("audit");
+    expect(next.get("commandId")).toBe("cmd-1");
+
+    const cleared = writeAdminListQuery(next, {
+      search: "",
+      status: "all",
+      period: "any",
+      limit: 50,
+      offset: 0,
+      filters: EMPTY_ADMIN_LIST_FILTERS,
+    });
+    expect(cleared.get("commandId")).toBeNull();
+    expect(cleared.get("tab")).toBe("audit");
   });
 });

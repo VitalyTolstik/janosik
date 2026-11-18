@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
-import { ADMIN_DETAIL_LIMITS } from "@janosik/shared";
+import { ADMIN_DETAIL_LIMITS, LIMITS } from "@janosik/shared";
 import type {
   AdminCardDetailDto,
   AdminCardDetailSection,
 } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +26,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
-import { readReturnTo } from "./admin-navigation";
+import { adminAuditEntryHref, readReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import {
   AttachmentDownloadButton,
@@ -35,11 +44,14 @@ import { RowActions, type EntityAction } from "./row-actions";
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
   Badge,
+  CharCount,
   ConfirmDialog,
   EmptyState,
   ErrorState,
+  Field,
   FilterTabs,
   ListWindowFooter,
+  OwnerAttributionNotice,
   PageHeader,
   Panel,
   Table,
@@ -128,6 +140,10 @@ export function CardDetailPage() {
   const [detail, setDetail] = useState<AdminCardDetailDto | null>(null);
   const [error, setError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [descriptionBusy, setDescriptionBusy] = useState(false);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [sectionLoading, setSectionLoading] =
     useState<AdminCardDetailSection | null>(null);
 
@@ -232,6 +248,40 @@ export function CardDetailPage() {
 
   const { card } = detail;
   const reload = load;
+
+  const openDescriptionEditor = () => {
+    setDescriptionDraft(card.description ?? "");
+    setDescriptionError(null);
+    setDescriptionOpen(true);
+  };
+
+  const saveDescription = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (descriptionBusy) return;
+    setDescriptionBusy(true);
+    setDescriptionError(null);
+    try {
+      await adminApi.sendBoardCommand(card.boardId, {
+        action: {
+          type: "UPDATE_CARD",
+          cardId: card.id,
+          description: descriptionDraft,
+          at: Date.now(),
+        },
+      });
+      toast.success(t("admin.cards.toast.descriptionSaved"));
+      setDescriptionOpen(false);
+      reload();
+    } catch (cause) {
+      setDescriptionError(
+        cause instanceof ApiError && cause.messageText
+          ? cause.messageText
+          : t("admin.common.actionFailed"),
+      );
+    } finally {
+      setDescriptionBusy(false);
+    }
+  };
 
   const footer = (section: AdminCardDetailSection, shown: number) => {
     const window = detail.windows[section];
@@ -396,6 +446,12 @@ export function CardDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  data-testid="admin-card-edit-description"
+                  onSelect={openDescriptionEditor}
+                >
+                  {t("admin.cards.action.editDescription")}
+                </DropdownMenuItem>
                 {card.archivedAt === null ? (
                   <DropdownMenuItem
                     onSelect={() =>
@@ -878,7 +934,16 @@ export function CardDetailPage() {
                   </EntityLink>
                 </span>
                 {event.details ? <JsonCell value={event.details} /> : null}
-                <span className="ml-auto tabular-nums text-[11px] text-muted-foreground">
+                <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-[11px] text-muted-foreground">
+                  {event.kind === "command" && event.auditId ? (
+                    <EntityLink
+                      to={adminAuditEntryHref(event.auditId)}
+                      testId={`admin-card-timeline-audit-command-${event.id}`}
+                      className="shrink-0 whitespace-nowrap font-normal"
+                    >
+                      {t("admin.cardDetail.timelineAudit")}
+                    </EntityLink>
+                  ) : null}
                   {formatDate(event.createdAt, lang, hour12)}
                 </span>
               </li>
@@ -889,6 +954,80 @@ export function CardDetailPage() {
           ? footer("timeline", detail.timeline.length)
           : null}
       </Panel>
+
+      <Dialog
+        open={descriptionOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            setDescriptionOpen(false);
+            setDescriptionError(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-lg"
+          data-testid="admin-card-description-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {t("admin.cards.description.title")}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {card.title}
+            </DialogDescription>
+          </DialogHeader>
+          <form noValidate onSubmit={saveDescription} className="space-y-3">
+            <OwnerAttributionNotice testId="admin-card-description-owner-notice" />
+            <Field
+              htmlFor="admin-card-description"
+              label={t("admin.cards.description.label")}
+              counter={
+                <CharCount value={descriptionDraft} max={LIMITS.description} />
+              }
+            >
+              <Textarea
+                id="admin-card-description"
+                data-testid="admin-card-description-input"
+                value={descriptionDraft}
+                maxLength={LIMITS.description}
+                rows={6}
+                onChange={(event) => setDescriptionDraft(event.target.value)}
+              />
+            </Field>
+            {descriptionError !== null ? (
+              <p
+                role="alert"
+                data-testid="admin-card-description-error"
+                className="text-xs text-danger"
+              >
+                {descriptionError}
+              </p>
+            ) : null}
+            <DialogFooter className="gap-2">
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                disabled={descriptionBusy}
+                onClick={() => setDescriptionOpen(false)}
+              >
+                {t("admin.common.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                data-testid="admin-card-description-submit"
+                disabled={
+                  descriptionBusy ||
+                  descriptionDraft.length > LIMITS.description
+                }
+              >
+                {t("admin.cards.description.submit")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmDelete}
