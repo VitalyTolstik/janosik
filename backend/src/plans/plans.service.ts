@@ -43,6 +43,10 @@ import {
   type PreparedCommand,
 } from "@/commands/command-validation";
 import { CommandsService } from "@/commands/commands.service";
+import {
+  createEntityParentageLedger,
+  recordBoardParentage,
+} from "@/commands/entity-parentage";
 import type { CreateCommandDto } from "@/commands/dto/create-command.dto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { boardsEqual, diffBoards } from "./plan-diff";
@@ -378,6 +382,11 @@ export class PlansService {
       params.agentSessionId,
     );
     const failed = new Set<number>();
+    // Cumulative ownership across the simulated plan: an id created earlier
+    // stays owned here even after a later plan command deletes it from
+    // `running`, matching the soft-deleted row apply still sees.
+    const parentage = createEntityParentageLedger();
+    recordBoardParentage(parentage, running);
 
     for (let index = 0; index < params.prepared.length; index += 1) {
       const entry = params.prepared[index]!;
@@ -437,7 +446,12 @@ export class PlansService {
       // position. The final simulated board would see checklists appended by
       // later commands and both false-positive and miss apply-time failures.
       try {
-        await this.commands.assertPlanIds(params.boardId, [entry], running);
+        await this.commands.assertPlanIds(
+          params.boardId,
+          [entry],
+          running,
+          parentage,
+        );
       } catch (error) {
         const conflict = planConflictOf(error, index, commandId);
         if (conflict === null) throw error;
@@ -458,6 +472,7 @@ export class PlansService {
         });
       }
       running = next;
+      recordBoardParentage(parentage, running);
     }
 
     return { board: running, conflicts, warnings };

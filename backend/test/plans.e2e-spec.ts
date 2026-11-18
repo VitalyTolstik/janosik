@@ -1132,21 +1132,30 @@ describe("Plans and apply (e2e)", () => {
   });
 
   it("previews parentage for entities created earlier in the plan", async () => {
-    const columnId = await createColumn("Plan cumulative parentage");
-    const sourceId = await createCard(columnId, "Source");
-    const victimId = await createCard(columnId, "Victim");
+    const planBoard = await createBoard("Plan cumulative parentage");
+    const columnId = await createColumn("Cumulative", planBoard);
+    const sourceId = await createCard(columnId, "Source", planBoard);
+    const victimId = await createCard(columnId, "Victim", planBoard);
     const sourceChecklistId = randomUUID();
-    await command("ADD_CHECKLIST", {
-      cardId: sourceId,
-      newChecklistId: sourceChecklistId,
-      title: "Source steps",
-    }).expect(200);
-    await command("ADD_CHECKLIST_ITEM", {
-      cardId: sourceId,
-      checklistId: sourceChecklistId,
-      newItemId: randomUUID(),
-      text: "Source item",
-    }).expect(200);
+    await command(
+      "ADD_CHECKLIST",
+      {
+        cardId: sourceId,
+        newChecklistId: sourceChecklistId,
+        title: "Source steps",
+      },
+      { board: planBoard },
+    ).expect(200);
+    await command(
+      "ADD_CHECKLIST_ITEM",
+      {
+        cardId: sourceId,
+        checklistId: sourceChecklistId,
+        newItemId: randomUUID(),
+        text: "Source item",
+      },
+      { board: planBoard },
+    ).expect(200);
 
     const duplicate = (copyId: string) =>
       planCommand({
@@ -1162,8 +1171,9 @@ describe("Plans and apply (e2e)", () => {
         title: "Victim checklist",
       });
     const conflicts = async (commands: PlanCommand[]) => {
-      const body = (await preview(commands, ownerSession).expect(200))
-        .body as PlanPreviewDto;
+      const body = (
+        await preview(commands, ownerSession, planBoard).expect(200)
+      ).body as PlanPreviewDto;
       return body.conflicts.some((conflict) => conflict.code === "id");
     };
 
@@ -1221,24 +1231,147 @@ describe("Plans and apply (e2e)", () => {
     expect(await conflicts([sourceLink, victimLink])).toBe(true);
   });
 
-  it("previews duplicate parentage at the command's position", async () => {
-    const columnId = await createColumn("Plan duplicate parentage");
-    const sourceId = await createCard(columnId, "Source");
-    const victimId = await createCard(columnId, "Victim");
+  it("keeps plan-created tombstones in preview parentage", async () => {
+    const planBoard = await createBoard("Plan tombstone parentage");
+    const columnId = await createColumn("Tombstone", planBoard);
+    const sourceId = await createCard(columnId, "Source", planBoard);
+    const victimId = await createCard(columnId, "Victim", planBoard);
     const sourceChecklistId = randomUUID();
-    await command("ADD_CHECKLIST", {
-      cardId: sourceId,
-      newChecklistId: sourceChecklistId,
-      title: "First",
-    }).expect(200);
+    await command(
+      "ADD_CHECKLIST",
+      {
+        cardId: sourceId,
+        newChecklistId: sourceChecklistId,
+        title: "Source steps",
+      },
+      { board: planBoard },
+    ).expect(200);
+
+    const check = async (commands: PlanCommand[]) => {
+      const before = await snapshot(planBoard);
+      const body = (
+        await preview(commands, ownerSession, planBoard).expect(200)
+      ).body as PlanPreviewDto;
+      expect(body.canApply).toBe(false);
+      expect(body.conflicts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: "id" })]),
+      );
+      await applyPlan(commands, body.planHash, {
+        token: ownerSession,
+        board: planBoard,
+      }).expect(409);
+      expect(await snapshot(planBoard)).toEqual(before);
+    };
+
+    // Duplicate-derived checklist: create under B, soft-delete, then duplicate
+    // A. Apply still sees the tombstone; preview must too.
+    const copyId = randomUUID();
+    const tombstoneChecklist = duplicateChecklistId(copyId, 0);
+    await check([
+      planCommand({
+        type: "ADD_CHECKLIST",
+        cardId: victimId,
+        newChecklistId: tombstoneChecklist,
+        title: "Victim",
+      }),
+      planCommand({
+        type: "DELETE_CHECKLIST",
+        cardId: victimId,
+        checklistId: tombstoneChecklist,
+      }),
+      planCommand({
+        type: "DUPLICATE_CARD",
+        cardId: sourceId,
+        newCardId: copyId,
+      }),
+    ]);
+
+    // Item create → delete → reuse on another checklist.
+    const victimChecklist = randomUUID();
+    const tombstoneItem = randomUUID();
+    await check([
+      planCommand({
+        type: "ADD_CHECKLIST",
+        cardId: victimId,
+        newChecklistId: victimChecklist,
+        title: "Victim steps",
+      }),
+      planCommand({
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: victimId,
+        checklistId: victimChecklist,
+        newItemId: tombstoneItem,
+        text: "Victim item",
+      }),
+      planCommand({
+        type: "DELETE_CHECKLIST_ITEM",
+        cardId: victimId,
+        checklistId: victimChecklist,
+        itemId: tombstoneItem,
+      }),
+      planCommand({
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: sourceId,
+        checklistId: sourceChecklistId,
+        newItemId: tombstoneItem,
+        text: "Reused item",
+      }),
+    ]);
+
+    // Link create → remove → reuse on another card.
+    const tombstoneLink = randomUUID();
+    await check([
+      planCommand({
+        type: "ADD_CARD_LINK",
+        cardId: victimId,
+        linkId: tombstoneLink,
+        targetCardId: sourceId,
+        linkType: "relates_to",
+      }),
+      planCommand({
+        type: "REMOVE_CARD_LINK",
+        cardId: victimId,
+        linkId: tombstoneLink,
+        targetCardId: sourceId,
+        linkType: "relates_to",
+      }),
+      planCommand({
+        type: "ADD_CARD_LINK",
+        cardId: sourceId,
+        linkId: tombstoneLink,
+        targetCardId: victimId,
+        linkType: "relates_to",
+      }),
+    ]);
+  });
+
+  it("previews duplicate parentage at the command's position", async () => {
+    const planBoard = await createBoard("Plan duplicate parentage");
+    const columnId = await createColumn("Position", planBoard);
+    const sourceId = await createCard(columnId, "Source", planBoard);
+    const victimId = await createCard(columnId, "Victim", planBoard);
+    const sourceChecklistId = randomUUID();
+    await command(
+      "ADD_CHECKLIST",
+      {
+        cardId: sourceId,
+        newChecklistId: sourceChecklistId,
+        title: "First",
+      },
+      { board: planBoard },
+    ).expect(200);
 
     const copyId = randomUUID();
     const stolenChecklistId = duplicateChecklistId(copyId, 1);
-    await command("ADD_CHECKLIST", {
-      cardId: victimId,
-      newChecklistId: stolenChecklistId,
-      title: "Victim",
-    }).expect(200);
+    await command(
+      "ADD_CHECKLIST",
+      {
+        cardId: victimId,
+        newChecklistId: stolenChecklistId,
+        title: "Victim",
+      },
+      { board: planBoard },
+    ).expect(200);
 
     const secondChecklistId = randomUUID();
     const duplicate = () =>
@@ -1261,6 +1394,7 @@ describe("Plans and apply (e2e)", () => {
     const forward = await preview(
       [duplicate(), addSecond()],
       ownerSession,
+      planBoard,
     ).expect(200);
     expect(
       (forward.body as PlanPreviewDto).conflicts.some(
@@ -1273,6 +1407,7 @@ describe("Plans and apply (e2e)", () => {
     const reverse = await preview(
       [addSecond(), duplicate()],
       ownerSession,
+      planBoard,
     ).expect(200);
     expect((reverse.body as PlanPreviewDto).conflicts).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "id" })]),

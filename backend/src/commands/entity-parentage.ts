@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import type { Board } from "@janosik/shared";
 
 /**
  * Entity ids are global primary keys while commands are board-scoped, but a
@@ -32,6 +33,46 @@ export interface CardLinkParentage {
   boardId: string;
   fromCardId: string;
   deletedAt: Date | null;
+}
+
+/**
+ * Cumulative ownership for a plan simulation. The live `running` board loses
+ * an entity when a plan deletes it, while apply still sees the soft-deleted
+ * row in the database; this ledger keeps the first owner an id ever had in
+ * the simulated plan so preview can refuse the same later reuse.
+ */
+export interface EntityParentageLedger {
+  checklists: Map<string, string>;
+  items: Map<string, string>;
+  links: Map<string, string>;
+}
+
+export function createEntityParentageLedger(): EntityParentageLedger {
+  return { checklists: new Map(), items: new Map(), links: new Map() };
+}
+
+/** Remember every owner currently visible in `board`; never remove entries. */
+export function recordBoardParentage(
+  ledger: EntityParentageLedger,
+  board: Board,
+): void {
+  for (const card of Object.values(board.cards)) {
+    for (const checklist of card.checklists ?? []) {
+      if (!ledger.checklists.has(checklist.id)) {
+        ledger.checklists.set(checklist.id, card.id);
+      }
+      for (const item of checklist.items) {
+        if (!ledger.items.has(item.id)) {
+          ledger.items.set(item.id, checklist.id);
+        }
+      }
+    }
+    for (const link of card.links ?? []) {
+      if (!ledger.links.has(link.id)) {
+        ledger.links.set(link.id, card.id);
+      }
+    }
+  }
 }
 
 export async function loadChecklistParentage(

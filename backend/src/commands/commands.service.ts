@@ -68,6 +68,7 @@ import {
 } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import {
+  type EntityParentageLedger,
   loadCardLinkParentage,
   loadChecklistItemParentage,
   loadChecklistParentage,
@@ -1047,6 +1048,7 @@ export class CommandsService {
     boardId: string,
     prepared: PreparedCommand[],
     board?: Board,
+    ledger?: EntityParentageLedger,
   ): Promise<void> {
     const ids = new Set<string>();
     for (const entry of prepared) {
@@ -1058,7 +1060,7 @@ export class CommandsService {
     // must be refused in the preview, not only inside the apply transaction.
     const current = board ?? (await loadBoardAggregate(this.prisma, boardId));
     if (current !== null) {
-      await this.assertEntityParentage(client, prepared, current);
+      await this.assertEntityParentage(client, prepared, current, ledger);
     }
   }
 
@@ -1553,6 +1555,7 @@ export class CommandsService {
     tx: Prisma.TransactionClient,
     entries: PreparedCommand[],
     board: Board,
+    ledger?: EntityParentageLedger,
   ): Promise<void> {
     const checklistOwner = new Map<string, { cardId: string; field: string }>();
     const itemOwner = new Map<string, { checklistId: string; field: string }>();
@@ -1581,6 +1584,13 @@ export class CommandsService {
       cardId: string,
       field: string,
     ): void => {
+      const previous = ledger?.checklists.get(id);
+      if (previous !== undefined && previous !== cardId) {
+        parentageConflict(
+          field,
+          `Checklist id ${id} is already used by another card`,
+        );
+      }
       const simulated = simulatedChecklistOwner.get(id);
       if (simulated !== undefined && simulated !== cardId) {
         parentageConflict(
@@ -1602,6 +1612,13 @@ export class CommandsService {
       checklistId: string,
       field: string,
     ): void => {
+      const previous = ledger?.items.get(id);
+      if (previous !== undefined && previous !== checklistId) {
+        parentageConflict(
+          field,
+          `Checklist item id ${id} is already used by another checklist`,
+        );
+      }
       const simulated = simulatedItemOwner.get(id);
       if (simulated !== undefined && simulated !== checklistId) {
         parentageConflict(
@@ -1623,6 +1640,13 @@ export class CommandsService {
       fromCardId: string,
       field: string,
     ): void => {
+      const previous = ledger?.links.get(id);
+      if (previous !== undefined && previous !== fromCardId) {
+        parentageConflict(
+          field,
+          `Link id ${id} is already used by another card`,
+        );
+      }
       const simulated = simulatedLinkOwner.get(id);
       if (simulated !== undefined && simulated !== fromCardId) {
         parentageConflict(
