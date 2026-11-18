@@ -193,11 +193,12 @@ environment/runbook concern, not a product acceptance criterion.
 
 | File | Scope for TASK-182 |
 | --- | --- |
-| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; keep `onSaved: () => void`, add `optimisticLabelIds` + per-card in-flight guard, optional `calendarLoader` test seam and an internal `CardCalendarFallback` forwarded to `DateTimeField`; key panel by `card.id` from the page. |
+| `ui/src/admin/CardFieldsPanel.tsx` | Labels section, `toggleLabel()`, `send()`, due-date section; keep `onSaved: () => void`, add `optimisticLabelIds` (intersected with live board labels), guard-before-mutation ordering, per-card in-flight guard, ambiguous-resync pending guard, label command start/end callbacks; optional `calendarLoader` test seam and internal `CardCalendarFallback`. |
 | `ui/src/admin/CardCalendarFallback.tsx` (new, or a local component) | Card-local accessible native `datetime-local` fallback + Retry; replaces the calendar+time row when the calendar fails. |
 | `ui/src/admin/ui.tsx` | `Field` label rendering; add an optional label/action slot so the Labels help button is not nested in a `<label>` (phase 1 only). |
 | `ui/src/components/Toast.tsx` | `ToastProvider`, append-only `push()`, 4.5 s timers, `ToastApi`; add opt-in keys/clear, fresh append after clear, and dismissal map cleanup (phase 1). |
-| `ui/src/admin/CardDetailPage.tsx` | Lazy `CardFieldsPanel` and the outer `CardFieldsChunkBoundary`; serialize all detail reloads through one monotonic request sequence/`AbortController` so only the latest `setDetail` wins; page error/retry clears `detail`/shows skeleton or keeps the panel unmounted; key `CardFieldsPanel` by `card.id`; outer boundary stays for panel-level failures. |
+| `ui/src/admin/CardDetailPage.tsx` | Lazy `CardFieldsPanel` and the outer `CardFieldsChunkBoundary`; monotonic `detailRequestSeq` + `AbortController` so only the latest request may `setDetail`/`setError`; track in-flight label commands; retry clears `detail`/shows skeleton and waits for pending labels before a fresh request; key `CardFieldsPanel` by `card.id`. |
+| `ui/src/admin/admin-client.ts` | Optional `AbortSignal`/timeout support for `sendBoardCommand` (label command timeout); preserve existing callers when omitted. |
 | `ui/src/admin/announcements/DateTimeField.tsx` | Optional `calendarLoader`, `calendarFallback: ComponentType<CalendarFallbackState>` rendered as a component, and calendar-error handling; export/share `CalendarFallbackState`; default behavior unchanged when the card-local props are omitted. |
 | `ui/src/components/ui/calendar-lazy.tsx` | Existing lazy calendar used by other consumers. Expose a `createCalendar(loader?)` factory (or equivalent) for retries and share/export `CalendarProps`; catch locale-import rejection; the existing `Calendar` export and default behavior stay unchanged. |
 | `ui/src/admin/announcements/AnnouncementEditorDialog.tsx` | `DateTimeField` consumer; **intentionally untouched**, keeps default calendar behavior and copy. |
@@ -274,45 +275,68 @@ new insertion, so an identical “Label updated” message is announced again.
 
 **Chosen design: optimistic label state + background refresh.** Keep
 `onSaved: () => void` unchanged for every field. The label state is local
-optimistic state only; there is no label-specific reload or failure state.
+optimistic state plus a small ambiguous-resync guard, not a label reload
+lifecycle.
 
-- `CardFieldsPanel` keeps a local `optimisticLabelIds` set initialized from
-  `cardLabels`; the selected label chips derive from that set.
-- A label click computes the next `on` from the optimistic set, performs the
-  cap check, applies the optimistic change immediately, then sends
-  `SET_CARD_LABEL`. A single per-card in-flight guard (ref) blocks a second
-  label command while the first is pending, including the other half of a fast
-  double-click.
-- On command success, keep the optimistic set, show the keyed success toast
-  immediately (command success, not reload success), and call the existing
-  void `onSaved()` to refresh the page in the background. The second click may
-  happen before that reload; because the optimistic set already changed, it
-  computes the correct new `on`.
-- On command failure, restore the previous optimistic set, clear the keyed
-  toast, show the existing inline label error, and call `onSaved()` only if a
-  resync is needed. No success toast is shown for a failed command.
-- Reconcile the local set from `cardLabels` props only when no label command is
-  pending for the current card. Key `<CardFieldsPanel key={card.id} …>` in
-  `CardDetailPage` so A→B navigation resets local state. The per-card
-  generation/mounted guard ignores a late A success/failure: it cannot toast,
-  set an inline error, update optimistic state or disable controls on B.
-- The generation token is **card identity only**: it changes with `card.id`,
-  not on every detail/relations reload. A same-card reload during an in-flight
-  command must not mark it stale or leave busy stuck.
+- `CardFieldsPanel` keeps `optimisticLabelIds`, intersected with the live
+  `boardLabels` ids (preserve the existing deleted-label filter and cap
+  behaviour); selected chips derive from that set.
+- A click first checks `busy`, the label cap and the per-card in-flight ref,
+  **before** computing or applying anything. A blocked click is a pure no-op:
+  no optimistic mutation, no toast, no inline error, no command. Only after
+  those guards pass: capture the previous set, compute the next `on` from the
+  optimistic set, apply it, clear the keyed toast, notify the page that a label
+  command started, and send `SET_CARD_LABEL`.
+- One per-card in-flight ref blocks a second label command while the first is
+  pending, including the other half of a fast double-click and a click on a
+  different label. If the send path cannot start (`send === false`), do not
+  apply or revert anything; the click was a no-op.
+- The label command gets a bounded timeout and optional `AbortSignal` through
+  `adminApi.sendBoardCommand`. Extend the admin client with an optional
+  signal/timeout option; if that is too broad for the client, a
+  `Promise.race` timeout is the fallback baseline, but the request may still
+  have applied server-side, so timeout is always treated as ambiguous.
+- Success: keep the optimistic set, show the keyed toast immediately (command
+  success, not reload success), call the existing void `onSaved()`, and release
+  the in-flight guard. The next click before the background reload uses the
+  optimistic set and computes the correct new `on`.
+- **Definitive 4xx failure** (400/404/409): restore the previous optimistic set,
+  clear the toast, show the existing inline error, release the guard, and do not
+  resync unless the conflict copy requires it. No success toast.
+- **Ambiguous failure** (transport error, timeout/abort, 5xx): restore the
+  previous optimistic set, clear the toast, show an inline error, set
+  `labelResyncPending`, call `onSaved()` for resync, and keep label controls
+  disabled until that resync commits. Release the per-card command guard, but
+  keep the resync guard separate: a new label click is not allowed while the
+  server state is unknown.
+- Reconcile `optimisticLabelIds` from `cardLabels` only when the prop came from
+  a detail request **started after the label command settled**. `CardDetailPage`
+  bumps a monotonic `detailRequestSeq` at label command start and on every
+  reload; `CardFieldsPanel` records the settle sequence and ignores prop changes
+  from older requests. This prevents a sibling reload that commits old labels
+  during the pending window from being adopted after the guard clears. On
+  ambiguous failure, adopt only a request started after the failure settle
+  before clearing `labelResyncPending`.
+- Key `<CardFieldsPanel key={card.id} …>` in `CardDetailPage` so A→B resets
+  local state. The per-card generation/mounted guard ignores a late A
+  success/failure: it cannot toast, set an inline error, update optimistic
+  state or disable controls on B. Generation is card identity only; a same-card
+  detail/relations reload does not invalidate an in-flight command.
 
-**Parent reload serialization.** All `CardDetailPage` detail reloads —
-initial/page load, relations `onSaved`, field `onSaved` — go through one
-monotonically increasing request sequence (and/or `AbortController`); only the
-latest request may call `setDetail`. A label success calls the same `onSaved`,
-which bumps the sequence, so a stale sibling reload started before the label
-success cannot overwrite the fresh optimistic labels when it resolves later.
+**Parent reload serialization and page errors.** All `CardDetailPage` detail
+reloads — initial/page load, relations `onSaved`, field `onSaved` — go through
+one monotonically increasing request sequence plus `AbortController`; only the
+latest request may `setDetail`. `setError` is guarded by the same request token,
+so a rejected stale sibling cannot put the page into `ErrorState`.
 
-On page error/retry, keep the simplest safe behaviour: clear `detail` and show
-the card skeleton until the retry fetch commits, or keep `CardFieldsPanel`
-unmounted until then. A retry must not remount the panel with stale `cardLabels`
-and re-enable label buttons; a late label response from an unmounted panel is
-ignored by the mounted/card guard. There is no label-specific page error path
-and no label reload failure handling.
+The page tracks in-flight label commands through start/end callbacks from
+`CardFieldsPanel`. If a page error/retry happens while a label command is
+pending, clear `detail` and show the skeleton (or keep the panel unmounted) and
+wait for the pending label command to settle before starting a new detail
+request. The retry starts a fresh sequence after that settle, and only then
+remounts `CardFieldsPanel` with fresh labels. A late label response from an
+unmounted panel is ignored by the mounted/card guard. There is no label-specific
+page error path.
 
 The keyed toast lifecycle stays as described above: clear at command start,
 clear on failure/navigation, and show the success toast only after the command
@@ -447,40 +471,53 @@ the live demo, not a CI reproduction; the ticket keeps it explicitly provisional
    `<CardFieldsPanel key={card.id} …>` in `CardDetailPage` and reset
    busy/errors on card change. A late A success/failure must not toast, set an
    inline error, disable controls or reload card B.
-7. Add `optimisticLabelIds` initialized from `cardLabels`; derive the selected
-   chips from it. A click computes the next `on` from the optimistic set,
-   applies the change immediately, and sends `SET_CARD_LABEL`. A single
-   per-card in-flight ref blocks a second command while the first is pending
-   (including the other half of a fast double-click). After success the guard
-   clears; a second click before any reload uses the optimistic set and sends
-   the correct new `on`.
-8. On command success keep the optimistic set, show the keyed toast immediately
-   (command success, not reload success), and call the existing void
-   `onSaved()` to refresh in the background. On failure restore the previous
-   optimistic set, clear the toast, show the inline label error, and call
-   `onSaved()` only if a resync is needed. Reconcile `optimisticLabelIds` from
-   `cardLabels` props only when no label command is pending for the current
-   card. Key `<CardFieldsPanel key={card.id} …>` in `CardDetailPage` so A→B
-   resets local state; the per-card generation/mounted guard ignores late A
-   success/failure on B.
-9. Serialize parent detail reloads. All `CardDetailPage` reloads (initial/page,
-   relations `onSaved`, field `onSaved`) go through one monotonically increasing
-   request sequence and/or `AbortController`; only the latest may `setDetail`.
-   A label success calls the same `onSaved`, bumping the sequence, so a stale
-   sibling reload started before it cannot overwrite fresh labels. On page
-   error/retry, clear `detail` and show the skeleton until the retry commits, or
-   keep `CardFieldsPanel` unmounted; a late label response from an unmounted
-   panel is ignored by the mounted/card guard. No label-specific page error or
-   reload-failure path.
-10. Add the required tests: same-label double-click while pending → exactly one
-    `SET_CARD_LABEL`; second click after success but before reload → correct new
-    `on` from optimistic state; failure reverts, inline error, no success toast;
-    A→B with in-flight command → late A response does not affect B; stale
-    sibling reload resolving after label success does not overwrite labels;
-    page error/retry with held fetch → no stale label click/command, then fresh
-    panels after retry; no toast before the label command resolves, and keyed
-    timer cleanup still works.
-11. Keep `SET_CARD_LABEL`, the cap guard and the `busy` serialization unchanged.
+7. Add `optimisticLabelIds` intersected with live `boardLabels`; derive selected
+   chips from it. A click must first check `busy`, the label cap and the
+   per-card in-flight ref, **before** computing/applying any optimistic change.
+   A blocked click is a pure no-op (no mutation, toast or error). Only then
+   capture the previous set, compute the next `on`, apply it, clear the toast,
+   notify the page that a label command started, and send `SET_CARD_LABEL`.
+   A second click while pending is blocked; after success it uses the optimistic
+   set and sends the correct new `on`. If `send` cannot start, do not apply or
+   revert.
+8. Add a bounded label-command timeout/`AbortSignal` through
+   `adminApi.sendBoardCommand` (optional client option). On timeout/abort treat
+   the outcome as ambiguous. Classify failures:
+   - definitive 4xx (400/404/409): revert the optimistic set, clear the toast,
+     show the inline error, release the guard, no resync unless the conflict
+     copy needs it;
+   - transport/timeout/5xx: ambiguous — revert, clear the toast, show an inline
+     error, set `labelResyncPending`, call the void `onSaved()` for resync, and
+     keep label controls disabled until the resync commits. Release the command
+     guard but keep the resync guard.
+   On success keep the optimistic set, show the keyed toast immediately (command
+   success, not reload success), call void `onSaved()`, and release the guard.
+9. Reconcile from `cardLabels` only when the prop came from a detail request
+   started after the label command settled. `CardDetailPage` passes a monotonic
+   `detailRequestSeq`; bump it at label command start and every reload. Ignore
+   prop changes from older requests so a sibling reload that commits old labels
+   during pending cannot be adopted after the guard clears. On ambiguous
+   failure, adopt only a request started after that failure settle before
+   clearing `labelResyncPending`.
+10. Serialize parent detail reloads and page errors. All `CardDetailPage`
+    reloads use one `detailRequestSeq` + `AbortController`; only the latest may
+    `setDetail`/`setError`. Track in-flight label commands at page level. Page
+    error/retry clears `detail` and shows the skeleton (or keeps the panel
+    unmounted); if a label command is pending, wait for it to settle before
+    starting the fresh detail request/sequence, then remount with fresh labels.
+    A late label response from an unmounted panel is ignored by the
+    mounted/card guard. No label-specific page error path.
+11. Add the required tests: same-label double-click while pending (one command,
+    optimistic/aria-pressed unchanged by second); different-label click while
+    pending (pure no-op); click while busy/`send === false` (no optimistic
+    mutation); optimistic second click after success; definitive failure revert;
+    hung command timeout recovery; applied-then-rejected ambiguous failure with
+    resync showing server state; A→B late response isolation; stale sibling
+    reload/prop during pending ignored; relation-reload rejection while label
+    in flight; page retry with held fetch/late label success; rejected stale
+    sibling does not set page error; no toast before command resolves; keyed
+    timer/map cleanup. Keep `SET_CARD_LABEL`, cap guard and busy serialization
+    otherwise unchanged.
 12. Accessibility note: the keyed toast is cleared at command start and re-added
     only after the command resolves; the live region sees a fresh node, so an
     identical “Label updated” is announced again. Do not rely on an in-place
@@ -566,22 +603,37 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - A success followed by a failed label command removes the success toast and
   shows the inline error; no stale “Label updated” remains. Navigating to
   another card clears the previous card's keyed toast.
-- Label clicks update the optimistic label set immediately; on command success
-  the optimistic state stays and the keyed toast is shown; on command failure
-  the optimistic set reverts, the inline error appears and no success toast is
-  shown.
-- A same-label double-click while the command is pending sends exactly one
-  `SET_CARD_LABEL`. A second click after success but before any reload uses the
-  optimistic state and sends the correct new `on`.
+- A label click acquires the busy/cap/in-flight guard before any optimistic
+  mutation. A blocked click is a pure no-op: no optimistic change, no toast, no
+  error. Same-label double-click, a different-label click while pending, and a
+  click while busy/`send === false` all leave `aria-pressed`/the optimistic set
+  unchanged.
+- `optimisticLabelIds` is intersected with live board labels, preserving the
+  existing deleted-label filter and cap behaviour.
+- Label clicks update the optimistic set only after the guard passes; on
+  command success the optimistic state stays and the keyed toast is shown; on
+  definitive 4xx failure the optimistic set reverts, the inline error appears
+  and no success toast is shown.
+- A second click after success but before any reload uses the optimistic state
+  and sends the correct new `on`.
+- A hung label POST times out/aborts; the optimistic set reverts, the toast and
+  guard are cleared, an inline error appears and a resync is started. On
+  transport/timeout/5xx ambiguity, label controls stay disabled until the
+  resync commits and then reflect the server state (including an
+  apply-then-reject case); on definitive 4xx they recover immediately without
+  resync (unless the conflict copy requires it).
 - An in-flight label success from card A does not toast, set an error, update
   optimistic labels or leave a stale busy state on card B after navigation. An
   in-flight failure from A does not write its inline error on B.
 - A stale sibling detail reload started before label success cannot overwrite
-  the fresh labels; the post-success `onSaved` reload supersedes it through the
-  parent request sequence.
+  the fresh labels; a prop change from a request started before the label
+  command settled is ignored via `detailRequestSeq`.
+- A relation reload rejection while a label command is in flight does not
+  unmount the panel with stale labels; page retry clears `detail`/shows the
+  skeleton, waits for the pending label command, then starts a fresh detail
+  request before remounting. A rejected stale sibling does not set page error.
 - On page error/retry with a held fetch, no stale label click can send a
-  command; after retry the panel mounts with fresh labels. There is no
-  label-specific page error or reload-failure path.
+  command; after retry the panel mounts with fresh labels.
 - No success toast appears before the label command resolves; the keyed toast is
   cleared at command start and on failure, and its timer/map cleanup still
   works.
@@ -644,23 +696,36 @@ The existing `admin.cards.toast.labelSaved` stays “Label updated” / “Ме�
 - **Success→failure test:** first toggle succeeds and shows the toast; second
   toggle fails (fake server 409/404); assert the toast is gone, the inline error
   is visible and no stale success remains.
-- **Same-label double-click test (required 1):** fire two clicks on one label
-  while the command is pending; assert exactly one `SET_CARD_LABEL`.
+- **Guard-before-mutation test (required 1):** assert `aria-pressed`/the
+  optimistic set does not change for a same-label double-click while pending, a
+  different-label click while pending, or a click while busy / `send === false`;
+  only the first accepted click sends a command.
 - **Optimistic second click test (required 2):** let the first toggle succeed
   but hold any reload; click the same label again before reload and assert the
   second command uses the correct new `on` derived from the optimistic set.
-- **Failure-revert test (required 3):** reject the label command; assert the
-  optimistic set reverts, the inline error appears and no success toast is
-  shown.
-- **A→B navigation test (required 4):** hold the label command, navigate away,
+- **Definitive-failure revert test (required 3):** reject with 400/404/409;
+  assert the optimistic set reverts, inline error appears, no success toast and
+  no resync is started unless the conflict copy requires it.
+- **Hung-command test (required 4):** hold the label POST past the bounded
+  timeout/abort; assert the optimistic set reverts, toast clears, inline error
+  appears, the guard is released, and the resync path starts. Controls stay
+  disabled while the resync is pending and recover only after it commits.
+- **Applied-then-rejected test (required 5):** fake server applies the label
+  server-side, then rejects as transport/5xx; assert the resync eventually
+  shows the server state (the server wins) instead of keeping a lost toggle.
+- **A→B navigation test (required 6):** hold the label command, navigate away,
   then resolve/reject it; assert no toast, inline error, optimistic update or
   busy state affects card B.
-- **Stale sibling reload test (required 5):** start a detail/relations reload
-  before label success, let it resolve after the label command; assert the
-  post-success `onSaved` sequence supersedes it and labels are not overwritten.
-- **Page error/retry test (required 6):** with a held fetch, no stale label
-  click can send a command; after retry the panel mounts with fresh labels.
-- **Toast timing/cleanup test (required 7):** assert no success toast before the
+- **Stale sibling/prop test (required 7):** start a detail/relations reload
+  before label success and let a prop change land during pending; assert
+  `detailRequestSeq` ignores it, and a stale sibling resolving after the label
+  command does not overwrite labels.
+- **Page-error-with-in-flight-label test (required 8):** reject a relations
+  reload while a label command is pending; assert the page does not remount
+  with stale labels. Page retry holds the fetch, waits for the late label
+  success/failure to settle, then starts a fresh request and remounts fresh. A
+  rejected stale sibling must not set page error.
+- **Toast timing/cleanup test (required 9):** assert no success toast before the
   label command resolves; after success the keyed toast appears, and its timer,
   manual close/auto-dismiss map cleanup and re-add still work.
 - **Unkeyed behavior tests:** two unkeyed success calls produce two toasts; two

@@ -1709,7 +1709,7 @@ TASK-36 и TASK-37.)*
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
 | 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
 | 112 | TASK-181 `admin-list-filters` *(reserved)* | — | Зарезервировано под параллельную задачу admin-фильтров; в этот diff не входит. | — |
-| 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: довести UX меток в Properties админ-карточки (help-поповер у заголовка, один обновляемый success-toast с очисткой при старте/ошибке, оптимистичный label set + per-card guard) и локализовать падение lazy-календаря due-date в card-local fallback: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear item/timer/map entry, optimisticLabelIds + per-card in-flight guard, failure revert; parent reload sequence/AbortController, только latest setDetail; команды `SET_CARD_LABEL` и inline-ошибки не меняются; фаза 2 — `calendarFallback: ComponentType<...>` (value/onChange/time/calendarProps/retry) заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
+| 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: довести UX меток в Properties админ-карточки (help-поповер у заголовка, один обновляемый success-toast с очисткой при старте/ошибке, optimistic label set + guard-before-mutation) и локализовать падение lazy-календаря due-date в card-local fallback: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear item/timer/map entry, optimisticLabelIds + per-card guard strictly before mutation, timeout/abort + failure classes (4xx vs 5xx/transport resync), parent `detailRequestSeq`/`AbortController`, page tracks in-flight label; команды `SET_CARD_LABEL` и inline-ошибки не меняются; фаза 2 — `calendarFallback: ComponentType<...>` (value/onChange/time/calendarProps/retry) заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5147,45 +5147,59 @@ clear**, а не обновляет старый in place (для повторн
 повторную одинаковую ошибку.
 
 Оптимистичный контракт меток: `onSaved` остаётся `() => void` для всех полей.
-`CardFieldsPanel` держит `optimisticLabelIds`, инициализированный из
-`cardLabels`; клик вычисляет следующий `on` из оптимистичного набора, сразу
-применяет его и отправляет `SET_CARD_LABEL`. Один per-card in-flight ref
-блокирует вторую команду, пока первая pending (включая вторую половину
-double-click). Success: оптимистичное состояние сохраняется, keyed toast
-показывается сразу (успех команды, не reload), вызывается существующий void
-`onSaved()` для фонового refresh. Failure: набор откатывается к предыдущему,
-toast очищается, показывается inline-ошибка, `onSaved()` — только если нужен
-resync. Reconcile из `cardLabels` prop — только когда нет pending label-команды
-для текущей карточки; `CardFieldsPanel` ключуется `key={card.id}`, поэтому A→B
-сбрасывает локальное состояние, а generation/mounted guard игнорирует поздний
-A success/failure (без toast/ошибки/optimistic-обновления/disabled на B).
-Generation меняется только с `card.id`, не на same-card reload.
+`CardFieldsPanel` держит `optimisticLabelIds`, пересечённый с live
+`boardLabels` (сохраняет фильтр удалённых меток и cap). Клик **сначала**
+проверяет `busy`, cap и per-card in-flight ref и только потом вычисляет/применяет
+optimistic change: заблокированный клик — чистый no-op (без mutation/toast/
+error). После guard: сохранить previous set, посчитать `on`, применить, очистить
+toast, сообщить page о старте label-команды и отправить `SET_CARD_LABEL`. Один
+in-flight ref блокирует вторую команду, включая double-click и клик по другой
+метке; `send === false` не применяет и не откатывает.
 
-**Parent reload serialization.** Все detail reload'ы `CardDetailPage`
-(initial/page, relations `onSaved`, field `onSaved`) идут через один
-монотонный request sequence и/или `AbortController`; только latest делает
-`setDetail`. Label success вызывает тот же `onSaved`, поднимая sequence,
-поэтому stale sibling reload, начатый раньше, не перезапишет свежие метки.
-Page error/retry: либо очистить `detail` и показывать skeleton до commit
-retry, либо держать `CardFieldsPanel` unmounted; поздний ответ от unmounted
-панели игнорируется mounted/card guard. Отдельного label page error/reload
-failure пути нет.
+Команда получает bounded timeout/`AbortSignal` через
+`adminApi.sendBoardCommand` (опциональный client option; если расширять client
+слишком широко, `Promise.race` — baseline, но timeout всё равно ambiguous).
+Failure classes: definitive 4xx (400/404/409) → revert, inline error, guard
+release, без resync (если conflict copy не требует); transport/timeout/5xx →
+ambiguous: revert, clear toast, inline error, `labelResyncPending`, вызвать void
+`onSaved()` для resync и держать label controls disabled до commit resync;
+command guard release, resync guard остаётся. Success: optimistic set остаётся,
+keyed toast показывается сразу (успех команды, не reload), вызывается void
+`onSaved()`, guard release.
 
-Тесты: same-label double-click при pending → ровно один `SET_CARD_LABEL`;
-второй клик после success до reload использует optimistic state и шлёт
-правильный новый `on`; failure откатывает набор, inline-ошибка, без success
-toast; A→B с in-flight командой → поздний A-ответ не влияет на B; stale sibling
-reload после label success не перезаписывает метки; page error/retry с held
-fetch → нет stale click/команды, после retry свежая панель; toast не раньше
-команды и keyed timer cleanup работает. Плюс fake-timer
-clear/timer/close/auto-dismiss→re-add и unkeyed success/error.
+Reconcile из `cardLabels` — только из detail request, начатого после settle
+label-команды: `CardDetailPage` передаёт `detailRequestSeq`, bump на label start
+и каждом reload; prop changes от старых requests игнорируются. При ambiguous
+failure adopt только request после failure settle до снятия `labelResyncPending`.
+`CardFieldsPanel` ключуется `key={card.id}`; generation/mounted guard игнорирует
+поздний A success/failure (без toast/ошибки/optimistic-обновления/disabled на B).
+Generation меняется только с `card.id`.
+
+**Parent reload serialization.** Все detail reload'ы `CardDetailPage` идут через
+один `detailRequestSeq` + `AbortController`; только latest делает
+`setDetail`/`setError`, поэтому stale sibling rejection не включает page error.
+Page отслеживает in-flight label-команды через start/end callbacks. При
+page error/retry: очистить `detail`/skeleton (или держать панель unmounted),
+дождаться settle pending label-команд, затем начать новый detail request и
+только после него remount с fresh labels; поздний label response от unmounted
+панели игнорируется mounted/card guard. Отдельного label page error пути нет.
+
+Тесты: guard-before-mutation (same-label double-click, different-label pending,
+busy/`send === false`) с проверкой `aria-pressed`/optimistic set; optimistic
+second click; definitive failure revert; hung command timeout/resync; applied-then-
+rejected ambiguous failure с server-wins после resync; A→B late response; stale
+sibling/prop during pending; page error/retry with in-flight label и rejected
+stale sibling без page error; toast не раньше команды и keyed timer/map
+cleanup. Плюс fake-timer clear/timer/close/auto-dismiss→re-add и unkeyed
+success/error.
 
 **Фаза 2 — календарь.** `DateTimeField` получает опциональные
 `calendarLoader` и `calendarFallback: ComponentType<CalendarFallbackState>` с
 `{ value, onChange, time, calendarProps, retry }`; fallback рендерится как
 компонент (`createElement`/JSX), не вызывается как обычная функция, поэтому
 может использовать hooks; `CalendarFallbackState`/`CalendarProps`
-экспортируются рядом с `DateTimeField`/`calendar-lazy`.
+экспортируются рядом с `DateTimeField`/`calendar-lazy`, а fallback-компонент
+определён на module level.
 Fallback заменяет **пару calendar + TimePickerPanel**, а не только календарь:
 native `<input type="datetime-local">` получает draft value и time, имеет
 доступный label, а существующие Save/Remove снаружи сохраняют draft. При
@@ -5203,25 +5217,26 @@ non-calendar render error, а calendar failure до него больше не �
 
 **DoD.** Help-кнопка: mouse/keyboard, Escape/outside-click, focus return, EN/RU,
 нет overflow на 1440/1024/390 (browser verification обязательна). Быстрые
-toggle: один обновляемый тост, ровно один `SET_CARD_LABEL` на реальное
-изменение; success→failure убирает success и показывает inline-ошибку;
-навигация очищает key; same-label double-click при pending даёт одну команду;
-второй клик после success до reload использует optimistic state и шлёт
-правильный новый `on`; failure откатывает optimistic set; deferred A→B
-success/failure не тостит, не пишет ошибку и не блокирует B; stale sibling
-reload после label success не перезаписывает метки; page error/retry с held
-fetch не даёт stale click/команду и после retry монтирует свежую панель;
-success-toast не раньше команды. Keyed toast map очищается на close/auto-dismiss
-и допускает re-add; unkeyed success/error остаются аддитивными. Calendar:
-отдельный normal-path тест кликает `admin-card-due-input` и монтирует
-lazy-календарь; отдельный reject-once тест даёт alert/fallback, а реальная
-команда (например `SET_CARD_PRIORITY`) проходит при сломанном календаре; Retry
-возвращает calendar+time и позволяет сохранить due; persistent failure даёт
-native input с label и сохранением через существующий Save, без duplicate
-time; locale rejection не даёт unhandled rejection; outer boundary-test рендерит
-панель внутри `CardFieldsChunkBoundary`/fallback и не показывает generic
-fallback при calendar failure; browser 1440/1024/390 проверяет и layout native
-fallback. Гейты implementation PR: `npm test -w ui`,
+toggle: guard-before-mutation, заблокированный клик — no-op без mutation/toast/
+error; same-label double-click и different-label click при pending не меняют
+`aria-pressed`/optimistic set; второй клик после success до reload шлёт
+правильный новый `on`; definitive 4xx откатывает set, inline error; hung
+command timeout/abort откатывает, освобождает guard и запускает resync;
+applied-then-rejected 5xx/transport показывает server state после resync;
+A→B late response не влияет на B; stale sibling/prop во время pending
+игнорируется; page error/retry с in-flight label ждёт settle и монтирует fresh
+labels; rejected stale sibling не включает page error; success-toast не раньше
+команды. Keyed toast map очищается на close/auto-dismiss и допускает re-add;
+unkeyed success/error остаются аддитивными. Calendar: отдельный normal-path тест
+кликает `admin-card-due-input` и монтирует lazy-календарь; отдельный reject-once
+тест даёт alert/fallback, а реальная команда (например `SET_CARD_PRIORITY`)
+проходит при сломанном календаре; Retry возвращает calendar+time и позволяет
+сохранить due; persistent failure даёт native input с label и сохранением через
+существующий Save, без duplicate time; locale rejection не даёт unhandled
+rejection; outer boundary-test рендерит панель внутри
+`CardFieldsChunkBoundary`/fallback и не показывает generic fallback при calendar
+failure; browser 1440/1024/390 проверяет и layout native fallback. Гейты
+implementation PR: `npm test -w ui`,
 `npx tsc -b ui/tsconfig.json --force` (или `npm run build -w ui`),
 `npm run build -w ui`, `npm run size -w ui` (бюджет admin card page 113 KB
 gzip), lint/Prettier, `git diff --check`, CHANGELOG/docs при необходимости.
