@@ -131,7 +131,9 @@ test("an agent request appears live, is approved with a reason and consumed afte
     "Delete me with approval",
   );
   await page.getByTestId(`approval-row-${ref.approvalId}`).click();
-  await expect(page.getByTestId("approval-plan-hash")).toHaveText(ref.planHash);
+  const planHash = page.getByTestId("approval-plan-hash");
+  await expect(planHash).toHaveAttribute("title", ref.planHash);
+  await expect(planHash).toContainText(ref.planHash.slice(0, 44));
   await expect(page.getByTestId("approval-plan-command")).toContainText(
     "DELETE_CARD",
   );
@@ -140,15 +142,25 @@ test("an agent request appears live, is approved with a reason and consumed afte
   await page.getByTestId("approval-approve").click();
   await expect(page.getByTestId("approval-approve-dialog")).toBeVisible();
   await page.getByTestId("approval-confirm").click();
+
+  // The decision leaves the Needs filter, so inspect it from Decided.
+  await page.getByTestId("approval-filter-decided").click();
+  await page.getByTestId(`approval-row-${ref.approvalId}`).click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
     "data-status",
     "approved",
   );
 
-  // The agent applies the same plan with the approval id; the open dialog
-  // follows the `approval` SSE frame to consumed without a reload.
+  // The agent applies the same plan with the approval id. The detail is not
+  // pinned across the Needs → Decided transition and does not subscribe to
+  // the consume frame itself, so reload before inspecting the consumed row.
   const applied = await applyCardDelete(pat, board.id, cardId, ref);
   expect(applied.status(), await applied.text()).toBe(200);
+  // The reload keeps ?agents=inbox, so the dialog reopens by itself.
+  await page.reload();
+  await expect(page.getByTestId("agent-control-dialog")).toBeVisible();
+  await page.getByTestId("approval-filter-decided").click();
+  await page.getByTestId(`approval-row-${ref.approvalId}`).click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
     "data-status",
     "consumed",
@@ -215,13 +227,18 @@ test("rejecting a request keeps the card and records the reason", async ({
   await page.getByTestId("approval-reject").click();
   await page.getByTestId("approval-comment").fill("Not this card");
   await page.getByTestId("approval-confirm").click();
+
+  // The Needs queue drops the decided row; open it from Decided to inspect
+  // the persisted decision instead of expecting the Needs detail to stay.
+  await page.getByTestId("approval-filter-decided").click();
+  await page.getByTestId(`approval-row-${ref.approvalId}`).click();
   await expect(page.getByTestId("approval-status")).toHaveAttribute(
     "data-status",
     "rejected",
   );
-  await expect(page.getByTestId("approval-comment-view")).toContainText(
-    "Not this card",
-  );
+  await expect(
+    page.getByTestId("approval-section-decision-history"),
+  ).toContainText("Not this card");
 
   const snapshot = await board.api.get(`/api/v1/boards/${board.id}`);
   const body = (await snapshot.json()) as {
@@ -405,7 +422,9 @@ test("session pause blocks only writes carrying that session id", async ({
   await row.getByTestId("agent-session-pause").click();
   await page.getByTestId("agent-action-reason").fill("Review changes");
   await page.getByTestId("agent-action-confirm").click();
-  await expect(row.getByTestId("agent-session-paused")).toBeVisible();
+  // A session-scope pause is the primary Paused pill, not the board/token
+  // "agent-session-paused" overlay.
+  await expect(row.getByTestId("agent-status-paused")).toBeVisible();
 
   const blocked = await pat.post(`/api/v1/boards/${board.id}/commands`, {
     headers: { "X-Agent-Session": session.id },
@@ -426,7 +445,7 @@ test("session pause blocks only writes carrying that session id", async ({
 
   await row.getByTestId("agent-session-resume").click();
   await page.getByTestId("agent-action-confirm").click();
-  await expect(row.getByTestId("agent-session-paused")).toHaveCount(0);
+  await expect(row.getByTestId("agent-status-paused")).toHaveCount(0);
   const allowed = await pat.post(`/api/v1/boards/${board.id}/commands`, {
     headers: { "X-Agent-Session": session.id },
     data: {
