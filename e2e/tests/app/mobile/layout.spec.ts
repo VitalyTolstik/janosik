@@ -44,6 +44,23 @@ async function clickEvenIfHidden(locator: Locator) {
   await locator.evaluate((element) => (element as HTMLElement).click());
 }
 
+/**
+ * The Data menu trigger is desktop-only at 390 too, and its Radix dropdown
+ * opens on pointerdown rather than click. Dispatch the pointer event so the
+ * archived-card dialog can still be measured on a phone viewport.
+ */
+async function openDataMenu(page: Page) {
+  const trigger = page.locator('button[aria-label="Data & backups"]');
+  await expect(trigger).toHaveCount(1);
+  await trigger.dispatchEvent("pointerdown", {
+    button: 0,
+    pointerType: "mouse",
+    isPrimary: true,
+    bubbles: true,
+  });
+  await expect(page.getByTestId("data-archive")).toBeVisible();
+}
+
 test("header, filters and view controls fit a phone without sideways scroll", async ({
   page,
   board,
@@ -129,7 +146,7 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(share).toBeHidden();
 
   // Data → archive of the long archived title.
-  await page.getByRole("button", { name: "Data & backups" }).tap();
+  await openDataMenu(page);
   await page.getByTestId("data-archive").tap();
   const archive = page.getByRole("dialog");
   await expectDialogFits(page, archive, "archive");
@@ -140,7 +157,7 @@ test("board dialogs fit the phone and close by touch", async ({
   // Server mode deliberately hides the local-only backup entries (TASK-166
   // D21): Janosik does not create server backups. The local-mode backup
   // dialogs are covered by the DataMenu unit tests instead.
-  await page.getByRole("button", { name: "Data & backups" }).tap();
+  await openDataMenu(page);
   await expect(page.getByTestId("data-backups")).toHaveCount(0);
   await page.keyboard.press("Escape");
 

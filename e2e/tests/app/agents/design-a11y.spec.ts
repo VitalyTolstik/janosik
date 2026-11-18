@@ -85,24 +85,31 @@ test("one status badge keeps the mark and label on the same centre", async ({
     const row = page.getByTestId(`agent-session-row-${agent.session.id}`);
     await expect(row).toBeVisible();
     const badge = row.locator('[data-testid^="agent-status-"]').first();
-    const metrics = await badge.evaluate((node) => {
-      const mark = node.querySelector("[aria-hidden]");
-      const label = node.lastElementChild;
-      const rowRect = node.getBoundingClientRect();
-      const markRect = mark?.getBoundingClientRect();
-      const labelRect = label?.getBoundingClientRect();
-      return {
-        height: rowRect.height,
-        rowCenter: rowRect.top + rowRect.height / 2,
-        markCenter: markRect ? markRect.top + markRect.height / 2 : null,
-        labelCenter: labelRect ? labelRect.top + labelRect.height / 2 : null,
-      };
-    });
-    expect(metrics.height).toBe(22);
-    expect(metrics.markCenter).not.toBeNull();
-    expect(metrics.labelCenter).not.toBeNull();
-    expect(Math.abs(metrics.markCenter! - metrics.rowCenter)).toBeLessThan(1);
-    expect(Math.abs(metrics.labelCenter! - metrics.rowCenter)).toBeLessThan(1);
+    // Polling can replace the row while Playwright holds a handle, and a
+    // detached node measures 0×0. Re-query and measure atomically, retrying
+    // until the rendered badge is stable.
+    await expect(async () => {
+      const metrics = await badge.evaluate((node) => {
+        const mark = node.querySelector("[aria-hidden]");
+        const label = node.lastElementChild;
+        const rowRect = node.getBoundingClientRect();
+        const markRect = mark?.getBoundingClientRect();
+        const labelRect = label?.getBoundingClientRect();
+        return {
+          height: rowRect.height,
+          rowCenter: rowRect.top + rowRect.height / 2,
+          markCenter: markRect ? markRect.top + markRect.height / 2 : null,
+          labelCenter: labelRect ? labelRect.top + labelRect.height / 2 : null,
+        };
+      });
+      expect(metrics.height).toBe(22);
+      expect(metrics.markCenter).not.toBeNull();
+      expect(metrics.labelCenter).not.toBeNull();
+      expect(Math.abs(metrics.markCenter! - metrics.rowCenter)).toBeLessThan(1);
+      expect(Math.abs(metrics.labelCenter! - metrics.rowCenter)).toBeLessThan(
+        1,
+      );
+    }).toPass({ timeout: 10_000 });
   } finally {
     await agent.dispose();
   }
