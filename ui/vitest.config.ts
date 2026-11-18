@@ -24,9 +24,11 @@ export default defineConfig({
     globals: true,
     // Lazy chunks (calendar, editor) plus userEvent can exceed the 5s
     // default when the whole suite runs in parallel; the assertions are
-    // fine, the machine is just busy. Generous ceiling, no slowdown of a
-    // green run.
-    testTimeout: 15_000,
+    // fine, the machine is just busy. The admin detail windows also render a
+    // few hundred rows and approach 10s under coverage on a loaded runner, so
+    // 30s leaves real headroom without slowing a green run; a genuine hang
+    // still fails.
+    testTimeout: 30_000,
     hookTimeout: 15_000,
     setupFiles: ["./src/test/setup.ts"],
     css: false,
