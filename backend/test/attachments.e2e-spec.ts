@@ -5,6 +5,7 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { randomUUID } from "crypto";
 
+import { LIMITS } from "@janosik/shared";
 import { AppModule } from "@/app.module";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { setupApp } from "@/common/app-setup";
@@ -245,6 +246,132 @@ describe("Attachments (TASK-47)", () => {
     expect(await listed()).toEqual([ordinary.body.id]);
     await update(embedded);
     expect(await listed()).toContain(uploaded.body.id);
+  });
+
+  it("scrubs a deleted embedded attachment from description and comments (L19)", async () => {
+    const command = (action: Record<string, unknown>) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(admin.token))
+        .send({
+          commandId: randomUUID(),
+          action: { boardId, at: Date.now(), ...action },
+        })
+        .expect(200);
+    const upload = (name: string) =>
+      server()
+        .post(`/api/v1/cards/${cardId}/attachments?description=1`)
+        .set(auth(admin.token))
+        .attach("file", png, { filename: name, contentType: "image/png" })
+        .expect(201);
+    const doomed = await upload("doomed.png");
+    const kept = await upload("kept.png");
+    const url = (id: string) => `/api/v1/attachments/${id}/content`;
+    const body = `Before\n\n![doomed](${url(doomed.body.id)})\n\n![kept](${url(kept.body.id)})`;
+    await command({
+      type: "UPDATE_CARD",
+      cardId,
+      description: body,
+    });
+    await server()
+      .post(`/api/v1/cards/${cardId}/comments`)
+      .set(auth(admin.token))
+      .send({ text: `Inline image ${url(doomed.body.id)} here` })
+      .expect(201);
+
+    await server()
+      .delete(`/api/v1/attachments/${doomed.body.id as string}`)
+      .set(auth(admin.token))
+      .expect(200);
+
+    const board = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(admin.token))
+      .expect(200);
+    const description = board.body.cards[cardId].description as string;
+    expect(description).toContain("Before");
+    expect(description).toContain("![kept]");
+    expect(description).not.toContain(doomed.body.id);
+    expect(description).toContain(kept.body.id);
+
+    const comments = await server()
+      .get(`/api/v1/cards/${cardId}/comments`)
+      .set(auth(admin.token))
+      .expect(200);
+    expect(comments.body.items[0].text).not.toContain(doomed.body.id);
+
+    await server()
+      .get(`/api/v1/attachments/${doomed.body.id as string}/content`)
+      .set(auth(admin.token))
+      .expect(404);
+    // The surviving embed is still a live, listable attachment.
+    await server()
+      .get(`/api/v1/attachments/${kept.body.id as string}/content`)
+      .set(auth(admin.token))
+      .expect(200);
+  });
+
+  it("counts inline media toward the upload cap and reports the cap code (L20)", async () => {
+    const capBoard = await server()
+      .post("/api/v1/boards")
+      .set(auth(admin.token))
+      .send({ title: "Attachment cap board" })
+      .expect(201)
+      .then((res) => res.body.id as string);
+    for (const action of [
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "cap-col",
+        title: "Cap",
+      },
+      {
+        type: "ADD_CARD",
+        newCardId: "cap-card",
+        columnId: "cap-col",
+        title: "Cap",
+      },
+    ]) {
+      await server()
+        .post(`/api/v1/boards/${capBoard}/commands`)
+        .set(auth(admin.token))
+        .send({
+          commandId: randomUUID(),
+          action: { boardId: capBoard, at: Date.now(), ...action },
+        })
+        .expect(200);
+    }
+    for (let index = 0; index < LIMITS.attachmentsPerCard; index += 1) {
+      await server()
+        .post("/api/v1/cards/cap-card/attachments?inline=1")
+        .set(auth(admin.token))
+        .attach("file", png, {
+          filename: `inline-${index}.png`,
+          contentType: "image/png",
+        })
+        .expect(201);
+    }
+    const list = await server()
+      .get("/api/v1/cards/cap-card/attachments")
+      .set(auth(admin.token))
+      .expect(200);
+    expect(list.body).toEqual([]);
+    expect(list.headers["x-attachment-count"]).toBe(
+      String(LIMITS.attachmentsPerCard),
+    );
+
+    const res = await server()
+      .post("/api/v1/cards/cap-card/attachments")
+      .set(auth(admin.token))
+      .attach("file", png, {
+        filename: "one-too-many.png",
+        contentType: "image/png",
+      })
+      .expect(400);
+    expect(res.body).toMatchObject({
+      code: "attachment_limit",
+      field: "file",
+      limit: LIMITS.attachmentsPerCard,
+    });
   });
 
   it("uploads, lists and streams a file (members only)", async () => {

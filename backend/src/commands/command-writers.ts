@@ -42,6 +42,31 @@ const attachmentIds = (text: string | undefined): Set<string> =>
     ),
   );
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * TASK-180.2 L19: remove every reference to a deleted attachment from a
+ * markdown body. Handles image/link syntax and a bare URL (with or without
+ * the `/api/v1` prefix). The id is matched exactly so deleting `a` never
+ * touches `a2`.
+ */
+export function stripAttachmentReference(
+  text: string | undefined,
+  attachmentId: string,
+): string | undefined {
+  if (text === undefined || !text.includes(attachmentId)) return text;
+  const id = escapeRegExp(attachmentId);
+  const url = `(?:https?:\\/\\/[^\\s()<>]*)?\\/attachments\\/${id}\\/content(?:\\?[^\\s()<>]*)?`;
+  let next = text
+    .replace(new RegExp(`!\\[[^\\]]*\\]\\(${url}\\)`, "g"), "")
+    .replace(new RegExp(`\\[[^\\]]*\\]\\(${url}\\)`, "g"), "")
+    .replace(new RegExp(url, "g"), "");
+  next = next.replace(/\n{3,}/g, "\n\n").trim();
+  return next;
+}
+
 /** Keep description uploads reversible: detached blobs remain readable for
  * undo and snapshots, but disappear from the live attachment list. */
 export async function reconcileDescriptionAttachments(
