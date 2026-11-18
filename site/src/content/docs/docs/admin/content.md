@@ -129,9 +129,9 @@ filtered by `labelId`. Both links keep the board detail as their return path.
   delete controls; a composer at the bottom adds a column.
 - The right panel lists the cards of the selected column. Each card has rename,
   move and archive controls; a composer at the bottom adds a card. The move
-  dialog appends the card to another column and disables the current one. The
-  card title links to `/admin/cards/:id`, and the card detail's back control
-  returns to this editor.
+  dialog appends the card to another column and omits the current column from
+  the destination list. The card title links to `/admin/cards/:id`, and the
+  card detail's back control returns to this editor.
 - A manual refresh button is in the header.
 - The page polls the board aggregate every 2 seconds while it is visible and
   focused, so you can monitor a running demo on this page.

@@ -214,3 +214,48 @@ test("C5: a master edits the description and opens the correlated audit row", as
   await auditRow.locator("button[aria-expanded]").click();
   await expect(auditRow.locator("pre")).toContainText(commandId);
 });
+
+test("C6: the card timeline and audit link stay inside 1440/1024/390", async ({
+  page,
+  admin,
+  board,
+}) => {
+  const columnId = await board.column(uniqueToken("timeline-column"));
+  const cardId = await board.card(columnId, uniqueToken("timeline-card"));
+  const commandId = randomUUID();
+  const command = await admin.post(
+    `/api/v1/admin/boards/${board.id}/commands`,
+    {
+      data: {
+        commandId,
+        action: {
+          type: "UPDATE_CARD",
+          cardId,
+          description: "Responsive timeline",
+          at: Date.now(),
+        },
+      },
+    },
+  );
+  expect(command.status(), await command.text()).toBe(201);
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`cards/${cardId}`), {
+    waitUntil: "domcontentloaded",
+  });
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(
+      page.getByTestId(`admin-card-timeline-audit-command-${commandId}`),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+});

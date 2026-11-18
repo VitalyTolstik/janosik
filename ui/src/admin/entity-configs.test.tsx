@@ -252,4 +252,40 @@ describe("admin audit identity links", () => {
       expect(latest?.query.get("commandId")).toBe("cmd-1");
     });
   });
+
+  it("does not match the audit row id instead of the command id", async () => {
+    const state = emptyAdminState();
+    state.audit = [
+      {
+        id: "audit-1",
+        adminId: "master-1",
+        adminEmail: "master@example.com",
+        action: "board.command",
+        targetType: "board",
+        targetId: "b-1",
+        targetExists: true,
+        details: {
+          commandId: "cmd-1",
+          masterId: "master-1",
+          masterEmail: "master@example.com",
+        },
+        createdAt: 1_760_000_000_000,
+      },
+    ];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/audit?tab=audit&commandId=audit-1");
+
+    await screen.findByTestId("admin-filter-clear-commandId");
+    await waitFor(() => {
+      expect(
+        server.requests.some(
+          (request) =>
+            request.path === "/admin/entities/audit" &&
+            request.query.get("commandId") === "audit-1",
+        ),
+      ).toBe(true);
+    });
+    expect(screen.queryByText("board.command")).toBeNull();
+  });
 });

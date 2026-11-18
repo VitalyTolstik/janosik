@@ -164,6 +164,19 @@ export interface RunContext {
 export interface BatchApplyResult {
   results: CommandResponse[];
   runId: string | null;
+  /**
+   * Ids whose rows were written by this call. An id that already existed is
+   * an idempotent replay and is absent, which lets internal callers (the
+   * master panel) avoid fabricating a second effect such as an audit row.
+   */
+  freshCommandIds: string[];
+}
+
+/** One command plus whether this call wrote it or returned a stored replay. */
+export interface CommandApplyResult {
+  response: CommandResponse;
+  /** `false` when the commandId already existed and the stored result was returned. */
+  applied: boolean;
 }
 
 /** Options shared by the single-command and batch transports. */
@@ -224,13 +237,32 @@ export class CommandsService {
     dto: CreateCommandDto,
     options: ApplyOptions = {},
   ): Promise<CommandResponse> {
+    const applied = await this.applyDetailed(boardId, actorId, dto, options);
+    return applied.response;
+  }
+
+  /**
+   * Like {@link apply}, but also tells an internal caller whether the row was
+   * freshly written or replayed from an earlier request. Deliberately not
+   * part of the wire response: it exists for admin-only side effects (the
+   * `board.command` audit row) that must not be fabricated on a replay.
+   */
+  async applyDetailed(
+    boardId: string,
+    actorId: string,
+    dto: CreateCommandDto,
+    options: ApplyOptions = {},
+  ): Promise<CommandApplyResult> {
     const applied = await this.applyBatch(boardId, actorId, [dto], {
       ...options,
       ...(options.run === undefined && dto.clientRunId !== undefined
         ? { clientRunId: dto.clientRunId }
         : {}),
     });
-    return applied.results[0]!;
+    return {
+      response: applied.results[0]!,
+      applied: applied.freshCommandIds.includes(dto.commandId),
+    };
   }
 
   /**
@@ -383,6 +415,7 @@ export class CommandsService {
         events: InternalCommandEvent[];
         consumedApproval: ApprovalRequest | null;
         runId: string | null;
+        freshCommandIds: string[];
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` checks below see each
@@ -687,9 +720,21 @@ export class CommandsService {
             actorId,
             options.principal,
           );
-          return { responses, events, consumedApproval: consumed, runId };
+          return {
+            responses,
+            events,
+            consumedApproval: consumed,
+            runId,
+            freshCommandIds: fresh.map((entry) => entry.dto.commandId),
+          };
         }
-        return { responses, events, consumedApproval: null, runId };
+        return {
+          responses,
+          events,
+          consumedApproval: null,
+          runId,
+          freshCommandIds: fresh.map((entry) => entry.dto.commandId),
+        };
       },
       pauseGateFor(options.principal, attribution.agentSessionId),
     );
@@ -718,7 +763,11 @@ export class CommandsService {
     // A successful PAT write refreshes the session heartbeat at most once a
     // minute (ADR §6.5), but only after the transaction committed.
     await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
-    return { results: applied.responses, runId: applied.runId };
+    return {
+      results: applied.responses,
+      runId: applied.runId,
+      freshCommandIds: applied.freshCommandIds,
+    };
   }
 
   /**

@@ -446,12 +446,14 @@ export function CardDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  data-testid="admin-card-edit-description"
-                  onSelect={openDescriptionEditor}
-                >
-                  {t("admin.cards.action.editDescription")}
-                </DropdownMenuItem>
+                {card.deletedAt === null ? (
+                  <DropdownMenuItem
+                    data-testid="admin-card-edit-description"
+                    onSelect={openDescriptionEditor}
+                  >
+                    {t("admin.cards.action.editDescription")}
+                  </DropdownMenuItem>
+                ) : null}
                 {card.archivedAt === null ? (
                   <DropdownMenuItem
                     onSelect={() =>
@@ -913,7 +915,7 @@ export function CardDetailPage() {
             {detail.timeline.map((event) => (
               <li
                 key={`${event.kind}-${event.id}`}
-                className="flex items-start gap-2 text-xs"
+                className="flex flex-wrap items-start gap-2 text-xs"
               >
                 <span
                   className={
@@ -924,7 +926,7 @@ export function CardDetailPage() {
                 >
                   {event.type}
                 </span>
-                <span className="text-muted-foreground">
+                <span className="min-w-0 break-words text-muted-foreground">
                   <EntityLink
                     to={userHref(event.actorId)}
                     copyValue={event.actorEmail}
@@ -936,13 +938,17 @@ export function CardDetailPage() {
                 {event.details ? <JsonCell value={event.details} /> : null}
                 <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-[11px] text-muted-foreground">
                   {event.kind === "command" && event.auditId ? (
-                    <EntityLink
-                      to={adminAuditEntryHref(event.auditId)}
-                      testId={`admin-card-timeline-audit-command-${event.id}`}
-                      className="shrink-0 whitespace-nowrap font-normal"
+                    <Link
+                      to={adminAuditEntryHref(event.id)}
+                      data-testid={`admin-card-timeline-audit-command-${event.id}`}
+                      aria-label={t("admin.cardDetail.timelineAuditLabel", {
+                        commandId: event.id,
+                        cardId: card.id,
+                      })}
+                      className="shrink-0 whitespace-nowrap font-medium text-primary underline-offset-2 hover:underline"
                     >
                       {t("admin.cardDetail.timelineAudit")}
-                    </EntityLink>
+                    </Link>
                   ) : null}
                   {formatDate(event.createdAt, lang, hour12)}
                 </span>

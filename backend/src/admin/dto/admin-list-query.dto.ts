@@ -18,7 +18,7 @@ import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
  * still scopes every row through Prisma's relations, so a valid id from
  * another board cannot leak a row into this board's list.
  */
-const ADMIN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export const ADMIN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 const trimOptionalId = ({ value }: { value: unknown }): unknown =>
   typeof value === "string"

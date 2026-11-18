@@ -523,6 +523,9 @@ describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
     expect(
       within(dialog).getByTestId("admin-card-description-owner-notice"),
     ).toHaveTextContent(adminMessage("admin.common.actingAsOwner", "en"));
+    expect(
+      within(dialog).getByTestId("admin-card-description-input"),
+    ).toHaveValue("Old support note");
 
     fireEvent.change(
       within(dialog).getByTestId("admin-card-description-input"),
@@ -582,8 +585,64 @@ describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
     );
     expect(link).toHaveAttribute(
       "href",
-      "/admin/audit?tab=audit&commandId=audit-1",
+      "/admin/audit?tab=audit&commandId=cmd-1",
     );
+    expect(link).toHaveAccessibleName("Audit command cmd-1 for card card-1");
     expect(link).toHaveTextContent("Audit");
+  });
+
+  it("supports clearing the description", async () => {
+    const state = emptyAdminState();
+    state.cards = [adminCard({ id: "card-1", commentIds: [] })];
+    state.cardDescriptions["card-1"] = "Old support note";
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard();
+
+    expect(
+      await screen.findByTestId("admin-card-detail-description"),
+    ).toHaveTextContent("Old support note");
+    fireEvent.pointerDown(screen.getByTestId("admin-card-detail-actions"), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByTestId("admin-card-edit-description"));
+    const dialog = await screen.findByTestId("admin-card-description-dialog");
+    const input = within(dialog).getByTestId("admin-card-description-input");
+    expect(input).toHaveValue("Old support note");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(
+      within(dialog).getByTestId("admin-card-description-submit"),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("admin-card-detail-description")).toBeNull();
+    });
+    const sent = server.requests
+      .filter((request) => request.path.endsWith("/commands"))
+      .at(-1)?.body as { action: Record<string, unknown> };
+    expect(sent.action).toMatchObject({
+      type: "UPDATE_CARD",
+      cardId: "card-1",
+      description: "",
+    });
+  });
+
+  it("hides description editing for a deleted card", async () => {
+    const state = emptyAdminState();
+    state.cards = [
+      adminCard({
+        id: "card-1",
+        commentIds: [],
+        deletedAt: 1_760_000_000_000,
+      }),
+    ];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderCard();
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-card-detail-actions"),
+      { button: 0 },
+    );
+    expect(screen.queryByTestId("admin-card-edit-description")).toBeNull();
   });
 });

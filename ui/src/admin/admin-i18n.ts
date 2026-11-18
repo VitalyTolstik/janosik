@@ -1071,6 +1071,8 @@ const en = {
   "admin.cardDetail.links": "Links",
   "admin.cardDetail.timeline": "Timeline",
   "admin.cardDetail.timelineAudit": "Audit",
+  "admin.cardDetail.timelineAuditLabel":
+    "Audit command {commandId} for card {cardId}",
   "admin.cardDetail.updated": "Updated",
   "admin.cardDetail.version": "Version",
   "admin.cardLabels.column.board": "Board",
@@ -1125,6 +1127,7 @@ const en = {
   "admin.commands.column.seq": "Seq",
   "admin.commands.column.type": "Action",
   "admin.commands.column.audit": "Audit",
+  "admin.commands.auditLabel": "Audit command {commandId} ({type})",
   "admin.commands.subtitle": "Every board action, newest first",
   "admin.commands.column.payload": "Payload",
   "admin.commands.title": "Command log",
@@ -2305,6 +2308,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cardDetail.links": "Связи",
   "admin.cardDetail.timeline": "Хронология",
   "admin.cardDetail.timelineAudit": "Аудит",
+  "admin.cardDetail.timelineAuditLabel":
+    "Аудит команды {commandId} для карточки {cardId}",
   "admin.cardDetail.updated": "Обновлена",
   "admin.cardDetail.version": "Версия",
   "admin.cardLabels.column.board": "Доска",
@@ -2360,6 +2365,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.commands.column.seq": "Seq",
   "admin.commands.column.type": "Действие",
   "admin.commands.column.audit": "Аудит",
+  "admin.commands.auditLabel": "Аудит команды {commandId} ({type})",
   "admin.commands.subtitle": "Все действия с досками, свежие сверху",
   "admin.commands.column.payload": "Payload",
   "admin.commands.title": "Журнал команд",

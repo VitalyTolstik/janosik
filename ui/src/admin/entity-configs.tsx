@@ -1153,12 +1153,17 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
               command.auditId === null ? (
                 <span className="text-muted-foreground">—</span>
               ) : (
-                <EntityLink
-                  to={adminAuditEntryHref(command.auditId)}
-                  testId={`admin-command-audit-${command.id}`}
+                <Link
+                  to={adminAuditEntryHref(command.id)}
+                  data-testid={`admin-command-audit-${command.id}`}
+                  aria-label={t("admin.commands.auditLabel", {
+                    commandId: command.id,
+                    type: command.type,
+                  })}
+                  className="font-medium text-primary underline-offset-2 hover:underline"
                 >
                   {t("admin.commands.column.audit")}
-                </EntityLink>
+                </Link>
               ),
           },
           {

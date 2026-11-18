@@ -482,7 +482,7 @@ export function BoardContentPage() {
                         <IdChip id={card.id} className="shrink-0" />
                       </span>
                     )}
-                    <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <button
                         type="button"
                         aria-label={t("admin.boardContent.rename")}
@@ -503,7 +503,7 @@ export function BoardContentPage() {
                           card.archivedAt !== undefined
                         }
                         onClick={() => openMove(card)}
-                        className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <MoveRight className="h-3.5 w-3.5" aria-hidden />
                       </button>

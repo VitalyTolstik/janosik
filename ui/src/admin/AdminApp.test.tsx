@@ -465,10 +465,10 @@ describe("AdminApp", () => {
     );
     expect(auditUrl.pathname).toBe("/admin/audit");
     expect(auditUrl.searchParams.get("tab")).toBe("audit");
-    expect(auditUrl.searchParams.get("commandId")).toBe("audit-1");
-    expect(auditUrl.searchParams.get("returnTo")).toBe(
-      "/admin/audit?tab=commands",
-    );
+    // The filter is the command id; `auditId` is only the "correlated" flag.
+    expect(auditUrl.searchParams.get("commandId")).toBe("c-1");
+    expect(auditUrl.searchParams.get("returnTo")).toBeNull();
+    expect(auditLink).toHaveAccessibleName("Audit command c-1 (ADD_CARD)");
 
     view.unmount();
     renderAdmin("/admin/audit");
@@ -876,6 +876,14 @@ describe("admin content and security pages", () => {
 
   it("moves a card between columns and records a correlated audit row", async () => {
     const state = serverWith().state;
+    state.cards = [
+      adminCard({
+        id: "card-1",
+        title: "Movable",
+        columnId: "col-a",
+        columnTitle: "Backlog",
+      }),
+    ];
     state.contentBoard = contentBoard({
       columns: [
         { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
@@ -934,6 +942,140 @@ describe("admin content and security pages", () => {
         masterEmail: "master@example.com",
       },
     });
+  });
+
+  it("disables moving for a single-column board and an archived card", async () => {
+    const single = serverWith().state;
+    single.cards = [adminCard({ id: "card-1", columnId: "col-a" })];
+    single.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Only", cardIds: ["card-1"], createdAt: 1 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    vi.stubGlobal("fetch", new FakeAdminServer(single).fetchImpl);
+    const view = renderAdmin("/admin/boards/b-1/content");
+    fireEvent.click(await screen.findByTestId("admin-column-col-a"));
+    expect(await screen.findByTestId("admin-card-move-card-1")).toBeDisabled();
+    view.unmount();
+
+    const archived = serverWith().state;
+    archived.cards = [
+      adminCard({
+        id: "card-1",
+        columnId: "col-a",
+        archivedAt: 1_760_000_000_000,
+      }),
+    ];
+    archived.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          archivedAt: 1_760_000_000_000,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    vi.stubGlobal("fetch", new FakeAdminServer(archived).fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+    fireEvent.click(await screen.findByTestId("admin-column-col-a"));
+    expect(await screen.findByTestId("admin-card-move-card-1")).toBeDisabled();
+  });
+
+  it("omits the current column from the move target and cancel sends nothing", async () => {
+    const state = serverWith().state;
+    state.cards = [adminCard({ id: "card-1", columnId: "col-a" })];
+    state.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+
+    fireEvent.click(await screen.findByTestId("admin-column-col-a"));
+    fireEvent.click(screen.getByTestId("admin-card-move-card-1"));
+    const dialog = await screen.findByTestId("admin-move-card-dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-target"));
+    expect(
+      await screen.findByTestId("admin-move-card-target-option-col-b"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-move-card-target-option-col-a"),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: t("admin.common.cancel") }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId("admin-move-card-dialog")).toBeNull();
+    });
+    expect(
+      server.requests.filter((request) => request.path.endsWith("/commands")),
+    ).toHaveLength(0);
+  });
+
+  it("keeps the move dialog open when the server refuses", async () => {
+    const state = serverWith().state;
+    state.cards = [adminCard({ id: "card-1", columnId: "col-a" })];
+    state.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    const server = new FakeAdminServer(state);
+    server.failNextStatuses.push({ path: "/commands", status: 409 });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+
+    fireEvent.click(await screen.findByTestId("admin-column-col-a"));
+    fireEvent.click(screen.getByTestId("admin-card-move-card-1"));
+    const dialog = await screen.findByTestId("admin-move-card-dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-target"));
+    fireEvent.click(
+      await screen.findByTestId("admin-move-card-target-option-col-b"),
+    );
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-submit"));
+
+    expect(await screen.findByText("denied")).toBeTruthy();
+    expect(screen.getByTestId("admin-move-card-dialog")).toBeTruthy();
+    expect(state.contentBoard?.columns[0].cardIds).toEqual(["card-1"]);
   });
 
   it("shows the runtime card on the dashboard", async () => {

@@ -1441,7 +1441,11 @@ export class AdminEntitiesService {
     const tokensTotal = tokensLive + (includeDeleted ? tokensHidden : 0);
     const recentCommandAuditIds = await auditIdsForCommands(
       this.prisma,
-      recentCommands.map((command) => command.id),
+      recentCommands.map((command) => ({
+        id: command.id,
+        boardId: command.boardId,
+        seq: Number(command.seq),
+      })),
     );
 
     return {
@@ -1848,11 +1852,25 @@ export class AdminEntitiesService {
     // Resolve correlation only for the rows this page returns (the window can
     // be large while the page stays at most `limit` rows). Historical rows
     // stay `null`; there is no backfill.
+    const timelineCommandsById = new Map(
+      commands.map((command) => [command.id, command] as const),
+    );
     const timelineAuditIds = await auditIdsForCommands(
       this.prisma,
       timeline
         .filter((entry) => entry.kind === "command")
-        .map((entry) => entry.id),
+        .flatMap((entry) => {
+          const command = timelineCommandsById.get(entry.id);
+          return command === undefined
+            ? []
+            : [
+                {
+                  id: command.id,
+                  boardId: command.boardId,
+                  seq: Number(command.seq),
+                },
+              ];
+        }),
     );
     const timelineWithAudit = timeline.map((entry) => ({
       ...entry,

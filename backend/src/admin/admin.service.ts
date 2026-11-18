@@ -1037,6 +1037,28 @@ export class AdminService {
     if (!board || board.deletedAt !== null) {
       throw new NotFoundException("Board not found");
     }
+
+    // TASK-176.8: the board aggregate deliberately excludes deleted cards,
+    // so an admin edit of one would be a no-op with a "saved" toast and a
+    // fabricated command/audit row. Reject it before the command log.
+    if (dto.action.type === "UPDATE_CARD" || dto.action.type === "MOVE_CARD") {
+      const card = await this.prisma.card.findUnique({
+        where: { id: dto.action.cardId },
+        select: {
+          id: true,
+          deletedAt: true,
+          archivedAt: true,
+          column: { select: { boardId: true } },
+        },
+      });
+      if (!card || card.deletedAt !== null || card.column.boardId !== boardId) {
+        throw new NotFoundException("Card not found");
+      }
+      if (dto.action.type === "MOVE_CARD" && card.archivedAt !== null) {
+        throw new ConflictException("Archived cards cannot be moved");
+      }
+    }
+
     const owner = await this.prisma.boardMember.findFirst({
       where: { boardId, role: "ADMIN", acceptedAt: { not: null } },
       orderBy: { createdAt: "asc" },
@@ -1048,7 +1070,7 @@ export class AdminService {
 
     // One id links the command log row with the audit row (TASK-176.10).
     const commandId = dto.commandId ?? randomUUID();
-    const response = await this.commands.apply(
+    const applied = await this.commands.applyDetailed(
       boardId,
       owner.user.id,
       {
@@ -1059,18 +1081,23 @@ export class AdminService {
       },
       { actorType: "admin" },
     );
-    await this.audit(admin, "board.command", "board", boardId, {
-      title: board.title,
-      type: dto.action.type,
-      // Board-facing attribution stays the owner; the master is recorded
-      // here explicitly so a master edit is never silently the owner's.
-      actorEmail: owner.user.email,
-      seq: response.seq,
-      commandId,
-      masterId: admin.id,
-      masterEmail: admin.email,
-    });
-    return response;
+    // An idempotent replay must not fabricate a master audit row: the command
+    // may have been issued by a normal user (or audited by an earlier admin
+    // retry). Only a freshly written command gets the correlation.
+    if (applied.applied) {
+      await this.audit(admin, "board.command", "board", boardId, {
+        title: board.title,
+        type: dto.action.type,
+        // Board-facing attribution stays the owner; the master is recorded
+        // here explicitly so a master edit is never silently the owner's.
+        actorEmail: owner.user.email,
+        seq: applied.response.seq,
+        commandId,
+        masterId: admin.id,
+        masterEmail: admin.email,
+      });
+    }
+    return applied.response;
   }
 
   /**
@@ -1649,7 +1676,11 @@ export class AdminService {
 
     const auditIds = await auditIdsForCommands(
       this.prisma,
-      items.map((command) => command.id),
+      items.map((command) => ({
+        id: command.id,
+        boardId: command.boardId,
+        seq: Number(command.seq),
+      })),
     );
 
     return {
@@ -1925,8 +1956,11 @@ export class AdminService {
         { targetId: { contains: query.search, mode: "insensitive" } },
       ];
     }
-    // TASK-176.10: the command row and the audit trail share this id.
+    // TASK-176.10: the command row and the audit trail share this id. Pin
+    // the action too, so a stray `details.commandId` on another action can
+    // never satisfy the deep link.
     if (query.commandId) {
+      where.action = "board.command";
       where.details = { path: ["commandId"], equals: query.commandId };
     }
     where.createdAt = this.dateRange(query);

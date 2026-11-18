@@ -823,6 +823,21 @@ export class FakeAdminServer {
     const boardCommand = path.match(/^\/admin\/boards\/([^/]+)\/commands$/);
     if (boardCommand && method === "POST") {
       const action = (jsonBody?.action ?? {}) as BoardAction;
+      const actionCardId = (action as { cardId?: string }).cardId;
+      if (
+        (action.type === "UPDATE_CARD" || action.type === "MOVE_CARD") &&
+        typeof actionCardId === "string"
+      ) {
+        const target = this.state.cards.find(
+          (card) => card.id === actionCardId,
+        );
+        if (target === undefined || target.deletedAt !== null) {
+          return this.json({ message: "Card not found" }, 404);
+        }
+        if (action.type === "MOVE_CARD" && target.archivedAt !== null) {
+          return this.json({ message: "Archived cards cannot be moved" }, 409);
+        }
+      }
       const current = this.state.contentBoard ?? contentBoard();
       try {
         const next = boardReducer([current], {
@@ -986,10 +1001,10 @@ export class FakeAdminServer {
     }
 
     if (path === "/admin/commands") {
-      return this.json(this.page(this.state.commands, url));
+      return this.json(this.page(this.state.commands, url, "id"));
     }
     if (path === "/admin/audit") {
-      return this.json(this.page(this.state.audit, url));
+      return this.json(this.page(this.state.audit, url, "details"));
     }
 
     // Email service settings (TASK-52): view for any signed-in master,
@@ -1710,7 +1725,13 @@ export class FakeAdminServer {
         activity: this.state.activity,
         announcements: this.announcements,
       };
-      return this.json(this.page(map[entity[1]] ?? [], url));
+      const commandMatch =
+        entity[1] === "commands"
+          ? "id"
+          : entity[1] === "audit"
+            ? "details"
+            : "auto";
+      return this.json(this.page(map[entity[1]] ?? [], url, commandMatch));
     }
     const userDetail = path.match(/^\/admin\/users\/([^/]+)\/detail$/);
     if (userDetail && method === "GET") {
@@ -2070,6 +2091,7 @@ export class FakeAdminServer {
   private page<T>(
     items: T[],
     url: URL,
+    commandMatch: "id" | "details" | "auto" = "auto",
   ): {
     items: T[];
     total: number;
@@ -2094,9 +2116,13 @@ export class FakeAdminServer {
       }
       if (commandId) {
         const details = record.details as Record<string, unknown> | null;
-        if (record.id !== commandId && details?.commandId !== commandId) {
-          return false;
-        }
+        const matched =
+          commandMatch === "details"
+            ? details?.commandId === commandId
+            : commandMatch === "id"
+              ? record.id === commandId
+              : details?.commandId === commandId || record.id === commandId;
+        if (!matched) return false;
       }
       return search
         ? JSON.stringify(item).toLowerCase().includes(search)
