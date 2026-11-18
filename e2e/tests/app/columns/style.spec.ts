@@ -387,7 +387,18 @@ test("applies all nine board-wide shapes and persists the choice", async ({
   // column by its DOM attribute instead of the header's role.
   const accentColumn = page.locator('section[data-column-accent="ocean"]');
   for (const style of styles) {
-    await page.getByTestId("column-style-menu").click();
+    // Applying a shape re-renders the board and closes the style submenu.
+    // Close and reopen the display menu explicitly: clicking the trigger
+    // while the previous submenu is still animating out can land on the
+    // closing portal and leave the item unreachable.
+    await page.keyboard.press("Escape");
+    const displayMenu = page.getByTestId("board-display-menu");
+    await expect(displayMenu).toHaveAttribute("aria-expanded", "false");
+    await displayMenu.click();
+    await expect(displayMenu).toHaveAttribute("aria-expanded", "true");
+    const styleMenu = page.getByTestId("column-style-menu");
+    await styleMenu.click();
+    await expect(styleMenu).toHaveAttribute("aria-expanded", "true");
     await page.getByTestId(`column-style-menu-${style}`).click();
     await expect(accentColumn).toHaveAttribute(
       "data-column-accent-style",

@@ -341,6 +341,11 @@ describe("Command ids and payload limits (e2e)", () => {
   });
 
   it("accepts a large RESTORE_CARD that used to die in the body parser", async () => {
+    // The point is the >100 KB Express body-parser threshold, not the row
+    // count: the full MAX payload is ~1 MB and 2 000 sequential upserts, which
+    // can outlive BOARD_WRITE_TIMEOUT_MS (15 s) on a loaded host and flake as
+    // 503. Three full checklists keep the body well over 100 KB (and well
+    // under MAX_COMMAND_BYTES) in a fraction of the row count.
     const bigCard = {
       id: "card-big",
       title: "Big",
@@ -348,7 +353,7 @@ describe("Command ids and payload limits (e2e)", () => {
       labelIds: [],
       createdAt: clock,
       updatedAt: clock,
-      checklists: Array.from({ length: LIMITS.checklistsPerCard }, (_, c) => ({
+      checklists: Array.from({ length: 3 }, (_, c) => ({
         id: `cl-big-${c}`,
         title: "C",
         items: Array.from({ length: LIMITS.itemsPerChecklist }, (_, i) => ({

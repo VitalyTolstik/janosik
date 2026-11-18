@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -777,7 +778,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [board?.id, roles, dropHistory]);
 
   // Switching boards swaps in that board's stack — and its own undo state.
-  useEffect(() => {
+  // The active-board reader the stable callbacks use. A layout effect, not a
+  // passive one: hydration commits the board (and "ready") first, and a click
+  // can land before passive effects flush. `dispatch` would then fall back to
+  // an unset ref and drop the command.
+  useLayoutEffect(() => {
     activeIdRef.current = board?.id;
     syncHistory();
   }, [board?.id, syncHistory]);
