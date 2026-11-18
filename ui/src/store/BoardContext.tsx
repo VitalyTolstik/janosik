@@ -19,6 +19,7 @@ import {
 
 import {
   boardReducer,
+  LIMITS,
   type BoardAction,
   type BoardState,
   type ColumnSortBy,
@@ -643,9 +644,24 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         case "offline":
           toast.error(t("sync.offline"));
           break;
-        case "wip":
-          toast.error(t("toast.wipLimitBlocked"));
+        case "wip": {
+          const board = getActiveBoard();
+          const column =
+            failure.columnId === undefined
+              ? undefined
+              : board?.columns.find((entry) => entry.id === failure.columnId);
+          if (column === undefined) {
+            toast.error(t("sync.rejected"));
+            break;
+          }
+          toast.error(
+            t("toast.wipLimitBlocked", {
+              title: column.title,
+              limit: column.wipLimit ?? LIMITS.cardsPerColumn,
+            }),
+          );
           break;
+        }
         case "version":
           toast.error(t("sync.foreignEdit"));
           break;

@@ -7,41 +7,44 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
 
 | ID | Change |
 |---|---|
-| H2 | `ADD_/RESTORE_CHECKLIST`, `ADD_/RESTORE_CHECKLIST_ITEM`, `ADD_CARD_LINK` and nested `RESTORE_CARD`/`RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` snapshots now check the stored parent, not only the board. A same-board id owned by another card/checklist/link answers `409 { code: "id_conflict", conflict: "id" }` before the writers run. Soft-deleted rows may be revived only by their original owner. The shared owner predicate and error shape live in `backend/src/commands/entity-parentage.ts`; TASK-176.9's admin `assertAdminCardRelations` uses the same `id_conflict` envelope and should import this helper when its branch merges. Admin commands remain run-free/pre-image-free (covered by `admin.e2e-spec.ts`). |
-| L18 | The idempotency fingerprint canonicalizes `RESTORE_CARD` without `card.assigneeId`. The server may strip a removed assignee from the applied/stored action, so that derived field is not part of the request identity. An honest retry with the original body returns the stored result; a genuinely different payload still conflicts. |
-| M7 | A live claim may be released only by the holder identity that claimed it (agent session, then PAT, then legacy user id). Another member, a second PAT of the same user, or a browser session / PAT cross-release answers `400 field:"action.claimedBy"`. Lapsed leases remain free to take or clear. |
-| H3 | Duplicate card/column now derive fresh checklist/item ids from the new card id (`duplicateChecklistId`/`duplicateChecklistItemId` in the shared reducer), so the optimistic client and the server writers agree without an extra id map. The duplicate writers persist checklists/items and include them in `touches`/pre-images. Links are intentionally not copied — copies start unlinked. |
-| M13 | `RESTORE_*` no longer skips WIP/collection guards based on the action type or a client `inverse:true`. Each restore is checked as the fresh add it performs (cards/columns/labels/checklists/items, including nested snapshots). Only the internal run-revert path passes `exemptRestoreLimits`; it is not a wire field. |
-| M16 | Client undo of `MOVE_CARD`/`UNARCHIVE_CARD` is no longer optimistic: it preflights the destination WIP and otherwise waits for the server. A refusal leaves the board untouched and restores the undo step for a later retry. `inverse.ts` and `BoardScopedAction.inverse` document that the flag is local bookkeeping, not a server exemption. |
+| H2 | `ADD_/RESTORE_CHECKLIST`, `ADD_/RESTORE_CHECKLIST_ITEM`, `ADD_CARD_LINK` and nested `RESTORE_CARD`/`RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` snapshots now check the stored parent, not only the board. `RESTORE_CHECKLIST` checks every nested item too; duplicate-derived checklist/item ids are preflighted against the live aggregate. A same-board id owned by another card/checklist/link answers `409 { code: "id_conflict", conflict: "id" }` before the writers run. Soft-deleted rows may be revived only by their original owner. The plan preview runs the same parentage check, so apply does not fail late. The shared owner predicate and error shape live in `backend/src/commands/entity-parentage.ts`; TASK-176.9's admin `assertAdminCardRelations` uses the same `id_conflict` envelope and should import this helper when its branch merges. Admin commands remain run-free/pre-image-free (covered by `admin.e2e-spec.ts`). |
+| L18 | The idempotency check compares the exact request first. Only when the incoming `RESTORE_CARD` assignee is genuinely no longer an active board member (the case the server strips) may the comparison ignore `card.assigneeId` on both sides; a different valid assignee still answers `409 idempotency_conflict`. |
+| M7 | A live claim may be released only by the holder identity that claimed it (agent session, then PAT, then legacy user id). Another member, a second PAT of the same user, or a browser session / PAT cross-release answers `400 field:"action.claimedBy"`. Lapsed leases remain free to take or clear. An internal run revert may release the exact claim the run held (non-wire `exemptClaimRelease`), with the same preview/apply result. |
+| H3 | Duplicate card/column now derive fresh checklist/item ids from the new card id (`duplicateChecklistId`/`duplicateChecklistItemId` in the shared reducer), so the optimistic client and the server writers agree without an extra id map. The base is a 128-bit FNV-1a hash of the whole card id (colon-free, no truncation collision); duplicate-derived ids are included in the parentage guard so a pre-existing victim row cannot be stolen. The duplicate writers persist checklists/items and include them in `touches`/pre-images. Links are intentionally not copied — copies start unlinked. |
+| M13 | `RESTORE_*` no longer skips WIP/collection guards based on the action type or a client `inverse:true`. Each restore is checked as the fresh add it performs (cards/columns/labels/checklists/items, including nested snapshots); `RESTORE_COLUMN_CARDS` counts the resulting column and its writer mirrors the reducer (omitted cards are parked in the invisible orphan column, not written into the restored column). Only the internal run-revert path passes `exemptRestoreLimits`; it is not a wire field. |
+| M16 | Client undo of `MOVE_CARD`/`UNARCHIVE_CARD` is no longer optimistic: it preflights the destination WIP and otherwise waits for the server. A refusal leaves the board untouched and restores the undo step for a later retry. The toast includes the destination column title and limit, and the failure carries `columnId` from the server. `inverse.ts` and `BoardScopedAction.inverse` document that the flag is local bookkeeping, not a server exemption. |
 | M17 | UI `createBoard`/`importBoards` send an `Idempotency-Key` and retry once on network/502/503/504 with the same key. MCP `create_board`, `import_board`, `create_share`, `add_comment` and `upload_attachment` generate a default key and the client retries a transient post with it. Command/batch writes keep using `commandId`. |
 | M14 | The delete-column confirmation counts `column.cardIds.length` (all cards that will be deleted), while the header badge/empty state keeps the filtered `cards.length`. |
-| L19 | Deleting an attachment scrubs its `/attachments/<id>/content` URL from live card descriptions and comments, then runs `reconcileDescriptionAttachments` so other embeds and the card badge stay correct. The soft-deleted row/blob still exists for retention/undo snapshots. |
+| L19 | Deleting an attachment scrubs its URL from live card descriptions and comments in all forms the editor emits: markdown image/link, bare URL with or without `/api/v1`, and `::image/video/audio{src="…"}` directives. It then runs `reconcileDescriptionAttachments` so other embeds and the card badge stay correct. Exact cleaned bodies are asserted in e2e; HTML `<img>` remains a documented residual. The soft-deleted row/blob still exists for retention/undo snapshots. |
 | L20 | The attachment list exposes `X-Attachment-Count`, the total live budget including inline/description media. The UI uses it for the cap and maps `code:"attachment_limit"` to the cap message, not "bad file type". OpenAPI documents the header. |
-| L24 | An idempotency record is released when the write proves a rollback via the existing `markGuaranteedRollback` marker or a Prisma `P2028` transaction timeout. Ambiguous post-commit failures still keep the record. Board create/import and `BoardWriteService` mark their converted timeout errors as proven rollbacks. |
+| L24 | An idempotency record is released only on the existing `markGuaranteedRollback` proof. Board create/import and `BoardWriteService` mark a P2028 from the **write transaction**; a P2028 from a post-commit `getAggregate`/list read is unmarked and keeps the record, so a committed board cannot be duplicated by a retry. |
 | L35 | The card face resolves the assignee from the live roster; a removed/expired assignee renders no avatar, matching the dialog's "Unassigned". Member-roster expiry rules stay in 180.3/M15. |
 | L36 | A `comment_updated` frame refreshes the loaded pages until it finds the edited row (bounded by the loaded page count + 1), so an edit on page 2+ updates in place instead of only the newest 50. |
 
 ## Decisions
 
 - **H3 id contract:** deterministic derived ids, not an action-carried map:
-  `${newCardId}~cl~<index>` and
-  `${newCardId}~cl~<checklistIndex>~i~<itemIndex>` (base truncated to 80
-  characters, no colon because `Command.touches` is `kind:id`). Reducer and
-  writers therefore produce the same rows; the ids stay below the 128-char
-  wire id bound for follow-up checklist commands.
+  `dup-<16 hex><16 hex>~cl~<index>` and
+  `dup-<16 hex><16 hex>~cl~<checklistIndex>~i~<itemIndex>`. The base is a
+  128-bit FNV-1a hash of the **whole** new card id — colon-free, no
+  first-80-char truncation collision, and comfortably below the 128-char wire
+  id bound. The parentage guard preflights these derived ids too.
 - **M7 admin flow:** deliberately not added. A board-ADMIN release needs an
   explicit audited operation/UI owned by TASK-176/180.4; the command path now
-  enforces holder-only release and returns `400`. TASK-180.4 can add the admin
-  flow without weakening this check.
+  enforces holder-only release and returns `400`. The internal run revert is
+  the one exception: it may release the exact claim its run held, via a
+  non-wire `exemptClaimRelease` flag.
 - **M13/M16 contract:** the server is authoritative for WIP/collection caps;
-  `inverse:true` and `RESTORE_*` buy nothing. Client undo stays responsive for
+  `inverse:true` and `RESTORE_*` buy nothing. `RESTORE_COLUMN_CARDS` counts
+  the resulting column and the writer mirrors the reducer (omitted cards are
+  parked in the invisible orphan column). Client undo stays responsive for
   non-WIP actions (optimistic + rollback on refusal), while the two WIP
   sensitive moves wait for the server. Internal run revert is the only
   exemption and is flagged in-process.
-- **L24 proof:** `P2028` from an interactive Prisma transaction is a rolled
-  back transaction, so it is safe to delete the `in_progress` idempotency row.
-  Any other error after `run()` is ambiguous and keeps the row for the 24 h
-  lease, exactly as before.
+- **L24 proof:** only an explicitly marked rollback releases the idempotency
+  record. A P2028 inside the write transaction is marked by `createBoard`,
+  `importBoards` or `BoardWriteService`; a P2028 from a post-commit aggregate
+  read is unmarked and keeps the row for the 24 h lease.
 
 ## Cross-cluster boundaries
 
@@ -67,21 +70,37 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
   that receives a lost response and calls the tool again gets a new key unless
   it supplies the optional `idempotencyKey`; the client's own transient retry
   reuses the generated key, but a full process-level retry cannot.
-- L19 scrubs URLs with markdown-image/link/bare-URL patterns. Exotic HTML
-  `<img>` markup is not rewritten; the old URL then 404s but the visible text
-  remains until edited.
-- H2 duplicate-derived checklist ids rely on the new card id being fresh; a
-  crafted pre-existing id that exactly matches the derived pattern is still
-  caught by the same parentage guard only when a command names it.
+- L19 scrubs markdown-image/link, bare-URL and `::image/video/audio` directive
+  forms, including a `/api/v1` prefix. Exotic HTML `<img>` markup is not
+  rewritten; the old URL then 404s but the visible text remains until edited.
+  The delete publishes `attachment_deleted`; an open description editor still
+  refreshes on its normal reload/focus path.
+- H3 duplicate writers still upsert checklist/item rows one by one. A very
+  large column duplicate remains linear in rows written; batching was
+  deliberately deferred because each row carries its own version bump and
+  revive semantics.
+- M13/M16 residual: non-move `RESTORE_*` undo is still optimistic in the UI.
+  A server refusal rolls it back and keeps the undo step, but the card can
+  briefly appear restored before the 409. Deferring every refusable restore
+  is left for a later UX pass; the two WIP-sensitive move inverses are
+  deferred.
+- MCP now retries 502/504 keyed writes with the same key. A caller-level retry
+  after a lost response still needs to pass the optional `idempotencyKey`.
 
 ## Tests added/updated
 
 - `backend/test/commands-labels-checklists.e2e-spec.ts`: same-board cross-card
-  checklist/item/link reparent attempts, owner-only soft-delete revival,
-  over-cap forged label/checklist/item restores vs genuine delete→restore.
+  checklist/item/link reparent attempts (including a nested item in a
+  `RESTORE_CHECKLIST` snapshot), owner-only soft-delete revival, over-cap
+  forged label/checklist/item restores vs genuine delete→restore.
 - `backend/test/commands-columns-cards.e2e-spec.ts`: duplicate card/column
-  checklist+item reload, copy checklist delete leaves the original, RESTORE_CARD
-  and RESTORE_COLUMN_CARDS WIP refusals, duplicate touches.
+  checklist+item reload, derived-id victim collisions, copy checklist delete
+  leaves the original, RESTORE_CARD and multi-card RESTORE_COLUMN_CARDS WIP
+  refusals, cards/cardIds mismatch writer parity, one-card restore, duplicate
+  touches.
+- `backend/test/plans.e2e-spec.ts`: parentage conflict appears in plan preview.
+- `backend/test/runs.e2e-spec.ts`: PAT-held claim released by an internal run
+  revert with a clean preview.
 - `backend/test/runs.e2e-spec.ts`: duplicate pre-image includes the created
   checklist/item touches; the M22 unarchive WIP preview still refuses; existing
   run/revert suites stay green.
@@ -113,21 +132,20 @@ TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
 Run on this branch (`feat/TASK-180.2-write-integrity`, 2026-11-19):
 
 - `npm run typecheck -w backend`, `-w shared`, `-w mcp`, `-w e2e`; `npx tsc -b ui` — passed.
-- `npm run test:unit -w backend -- --runInBand` — 77 suites / 568 tests passed.
-- `npm run test -w shared` — 13 files / 541 tests passed.
-- `npm run test -w mcp` — 9 files / 142 passed, 1 skipped.
-- UI focused Vitest: undo/WIP, attachment cap, comment page-2 edit, assignee
-  face, column views, API idempotency — 10 files / 118 tests passed.
-- Backend targeted e2e (single in-band run): `commands-ids`,
-  `commands-labels-checklists`, `commands-columns-cards`, `card-claim`,
-  `card-assignee`, `write-contract`, `attachments`, `activity-comments`,
-  `runs`, `admin` — 9 suites / 187 tests passed. (The attachments suite was
-  also re-run alone: 20/20.)
+- `npm run test:unit -w backend -- --runInBand` — 77 suites / 570 tests passed.
+- `npm run test -w shared` — 13 files / 542 tests passed.
+- `npm run test -w mcp` — 9 files / 143 passed, 1 skipped.
+- UI focused Vitest: undo/WIP, server-sync classification, attachment cap,
+  comment page-2 edit, assignee face, column views, API idempotency — passed.
+- Backend targeted e2e (single in-band run): `commands-labels-checklists`,
+  `commands-columns-cards`, `card-claim`, `card-assignee`, `write-contract`,
+  `attachments`, `runs`, `plans`, `admin` — 9 suites / 190 tests passed.
 - Browser (isolated local API + Vite, Chrome): duplicate-content,
   filtered column delete, comment pagination/edit, description attachment and
-  the new WIP-undo refusal — 8/8 passed. Drag-based legacy undo tests fail in
-  this local non-Compose environment for the same reason on `main` (pointer
-  geometry), so the WIP test uses the dialog's column row instead.
+  the WIP-undo refusal with exact localized toast — 8/8 passed. Drag-based
+  legacy undo tests fail in this local non-Compose environment for the same
+  reason on `main` (pointer geometry), so the WIP test uses the dialog's
+  column row instead.
 - `npm run build -w ui`, `npm run size -w ui` — passed; critical path
   263.38 kB gzip (limit 300 kB).
 - `npm run lint` for backend/shared/ui/mcp — 0 errors (existing UI warnings

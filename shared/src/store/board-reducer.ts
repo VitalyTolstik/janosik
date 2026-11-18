@@ -1121,19 +1121,40 @@ function archiveColumnCards(
  * wrong: the global-id upsert would re-parent the original card's checklist
  * to the copy.
  */
-const DUPLICATE_ID_BASE_MAX = 80;
+const FNV_OFFSET_A = 0xcbf29ce484222325n;
+const FNV_OFFSET_B = 0x84222325cbf29ce4n;
+const FNV_PRIME = 0x100000001b3n;
 
+/** 64-bit FNV-1a, kept deterministic across client and server. */
+function fnv1a64(value: string, offset: bigint): bigint {
+  let hash = offset;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= BigInt(value.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * FNV_PRIME);
+  }
+  return hash;
+}
+
+function hex64(value: bigint): string {
+  return value.toString(16).padStart(16, "0");
+}
+
+/**
+ * Collision-resistant, colon-free base for derived duplicate ids.
+ *
+ * A truncated raw card id was wrong twice: two long ids sharing the first
+ * N characters derived the same checklist ids, and a colon in the source id
+ * broke `Command.touches` (`kind:id` split on the first colon). Two FNV-1a
+ * lanes over the *whole* id give 128 bits while staying deterministic in the
+ * browser (no async crypto) and short enough for the 128-char wire id bound.
+ */
 function duplicateIdBase(cardId: string): string {
-  // Keep room for the suffix under the wire's 128-character id bound, so a
-  // checklist created by this copy can later be named in ADD_CHECKLIST_ITEM.
-  return cardId.length <= DUPLICATE_ID_BASE_MAX
-    ? cardId
-    : cardId.slice(0, DUPLICATE_ID_BASE_MAX);
+  return `dup-${hex64(fnv1a64(cardId, FNV_OFFSET_A))}${hex64(
+    fnv1a64(cardId, FNV_OFFSET_B),
+  )}`;
 }
 
 export function duplicateChecklistId(cardId: string, index: number): string {
-  // No colon: `Command.touches` labels are `kind:id` and split on the first
-  // colon, so an id carrying one would corrupt the pre-image lookup.
   return `${duplicateIdBase(cardId)}~cl~${index}`;
 }
 

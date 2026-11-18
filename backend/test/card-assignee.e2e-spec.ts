@@ -239,6 +239,23 @@ describe("Card assignee gate (e2e)", () => {
     const retry = await send().expect(200);
     expect(retry.body.seq).toBe(first.body.seq);
 
+    // Normalization is only for the stripped/non-member case: the same key
+    // with a *valid* different assignee is a different payload.
+    const conflict = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(ownerToken))
+      .send({
+        commandId,
+        action: {
+          ...action,
+          card: { ...snapshot, assigneeId: ownerId },
+        },
+      })
+      .expect(409);
+    expect(conflict.body).toMatchObject({
+      code: "idempotency_conflict",
+    });
+
     const restored = await assignedCard();
     expect(restored.assigneeId).toBeUndefined();
   });

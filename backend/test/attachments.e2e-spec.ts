@@ -264,10 +264,18 @@ describe("Attachments (TASK-47)", () => {
         .set(auth(admin.token))
         .attach("file", png, { filename: name, contentType: "image/png" })
         .expect(201);
+    const original = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(admin.token))
+      .expect(200);
+    const originalDescription =
+      (original.body.cards[cardId].description as string | undefined) ?? "";
     const doomed = await upload("doomed.png");
     const kept = await upload("kept.png");
     const url = (id: string) => `/api/v1/attachments/${id}/content`;
-    const body = `Before\n\n![doomed](${url(doomed.body.id)})\n\n![kept](${url(kept.body.id)})`;
+    const doomedUrl = url(doomed.body.id);
+    const keptUrl = url(kept.body.id);
+    const body = `Before\n\n![doomed](${doomedUrl})\n\nBare ${doomedUrl} end\n\n![kept](${keptUrl})`;
     await command({
       type: "UPDATE_CARD",
       cardId,
@@ -276,7 +284,7 @@ describe("Attachments (TASK-47)", () => {
     const scrubComment = await server()
       .post(`/api/v1/cards/${cardId}/comments`)
       .set(auth(admin.token))
-      .send({ text: `Inline image ${url(doomed.body.id)} here` })
+      .send({ text: `Before\n\n::video{src="${doomedUrl}"}\n\nAfter` })
       .expect(201);
 
     await server()
@@ -288,17 +296,16 @@ describe("Attachments (TASK-47)", () => {
       .get(`/api/v1/boards/${boardId}`)
       .set(auth(admin.token))
       .expect(200);
-    const description = board.body.cards[cardId].description as string;
-    expect(description).toContain("Before");
-    expect(description).toContain("![kept]");
-    expect(description).not.toContain(doomed.body.id);
-    expect(description).toContain(kept.body.id);
+    // Exact body: no `/api/v1` remnant, no dangling directive or markdown.
+    expect(board.body.cards[cardId].description).toBe(
+      `Before\n\nBare end\n\n![kept](${keptUrl})`,
+    );
 
     const comments = await server()
       .get(`/api/v1/cards/${cardId}/comments`)
       .set(auth(admin.token))
       .expect(200);
-    expect(comments.body.items[0].text).not.toContain(doomed.body.id);
+    expect(comments.body.items[0].text).toBe("Before\n\nAfter");
 
     await server()
       .get(`/api/v1/attachments/${doomed.body.id as string}/content`)
@@ -318,6 +325,11 @@ describe("Attachments (TASK-47)", () => {
       .delete(`/api/v1/comments/${scrubComment.body.id as string}`)
       .set(auth(admin.token))
       .expect(200);
+    await command({
+      type: "UPDATE_CARD",
+      cardId,
+      description: originalDescription,
+    });
   });
 
   it("counts inline media toward the upload cap and reports the cap code (L20)", async () => {

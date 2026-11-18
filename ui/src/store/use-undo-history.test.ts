@@ -344,7 +344,7 @@ describe("useUndoHistory — WIP-sensitive undo (TASK-180.2 M16)", () => {
     const onSendFailed = vi.fn();
     const send = vi.fn().mockResolvedValue({
       ok: false,
-      failure: { kind: "wip" },
+      failure: { kind: "wip", columnId: "col-1" },
     });
     const { result } = renderHook(() =>
       useUndoHistory({
@@ -368,7 +368,10 @@ describe("useUndoHistory — WIP-sensitive undo (TASK-180.2 M16)", () => {
     // back into the source column.
     expect(state.current).toBe(after);
     expect(send).toHaveBeenCalledTimes(1);
-    expect(onSendFailed).toHaveBeenCalledWith({ kind: "wip" });
+    expect(onSendFailed).toHaveBeenCalledWith({
+      kind: "wip",
+      columnId: "col-1",
+    });
     // The refused step stays on the stack.
     expect(result.current.canUndo).toBe(true);
     expect(result.current.canRedo).toBe(false);
@@ -447,7 +450,10 @@ describe("useUndoHistory — WIP-sensitive undo (TASK-180.2 M16)", () => {
 
     expect(send).not.toHaveBeenCalled();
     expect(apply).not.toHaveBeenCalled();
-    expect(onSendFailed).toHaveBeenCalledWith({ kind: "wip" });
+    expect(onSendFailed).toHaveBeenCalledWith({
+      kind: "wip",
+      columnId: "col-1",
+    });
     expect(result.current.canUndo).toBe(true);
     expect(state.current.cards["card-1"].archivedAt).toEqual(
       expect.any(Number),

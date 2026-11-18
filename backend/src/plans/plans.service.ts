@@ -449,7 +449,11 @@ export class PlansService {
     }
 
     try {
-      await this.commands.assertPlanIds(params.boardId, params.prepared);
+      await this.commands.assertPlanIds(
+        params.boardId,
+        params.prepared,
+        running,
+      );
     } catch (error) {
       const conflict = planConflictOf(error);
       if (conflict === null) throw error;

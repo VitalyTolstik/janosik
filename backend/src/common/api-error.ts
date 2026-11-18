@@ -101,6 +101,7 @@ const RESERVED_BODY_KEYS = new Set([
   "field",
   "details",
   "conflict",
+  "columnId",
   "workflow",
   "allowedToColumnIds",
   "missingLocales",
@@ -309,6 +310,9 @@ export function apiErrorEnvelope(
         }
       : {}),
     ...(conflict !== undefined ? { conflict } : {}),
+    ...(stringField(body?.columnId) !== undefined
+      ? { columnId: stringField(body?.columnId) as string }
+      : {}),
     ...(workflow !== undefined ? { workflow } : {}),
     ...(allowedToColumnIds !== undefined ? { allowedToColumnIds } : {}),
     ...(missingLocales !== undefined ? { missingLocales } : {}),

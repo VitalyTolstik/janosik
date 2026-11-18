@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { isTransactionTimeout } from "./board-write.service";
 import { isGuaranteedRollback } from "./rollback-certainty";
 import { createReadStream } from "node:fs";
 import {
@@ -238,11 +237,12 @@ export class IdempotencyService {
       // A failure after commit is indistinguishable from a failed response.
       // Only reopen when the operation explicitly proved it rolled back.
       //
-      // L24: a Prisma `P2028` is a transaction that timed out and was rolled
-      // back by the database. Keeping its `in_progress` row would block every
-      // retry of the same key for 24 h even though nothing committed. Any
-      // *other* error stays ambiguous and keeps the row.
-      if (isGuaranteedRollback(error) || isTransactionTimeout(error)) {
+      // L24: a write-transaction P2028 is marked by the caller at the point
+      // the interactive transaction failed. A P2028 from a *post-commit* read
+      // (getAggregate/list) is just as ambiguous as any other network/db
+      // failure and must keep the in-progress record; blanket-checking the
+      // code here let a committed board be created twice.
+      if (isGuaranteedRollback(error)) {
         await this.prisma.idempotencyRecord
           .delete({ where: { id: record.id } })
           .catch(() => undefined);

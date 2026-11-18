@@ -9,7 +9,11 @@ import type {
   CommandDeltaEntry,
   CommandResponse,
 } from "@janosik/shared";
-import { boardReducer } from "@janosik/shared";
+import {
+  boardReducer,
+  duplicateChecklistId,
+  duplicateChecklistItemId,
+} from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -780,6 +784,138 @@ describe("Commands API (e2e)", () => {
       );
       expect(remaining.cards[copy.id].checklists).toBeUndefined();
     });
+
+    it("refuses duplicate-card derived ids owned by another card", async () => {
+      const boardId = await createBoard("Duplicate id collision card");
+      const columnId = `col-${randomUUID()}`;
+      const sourceId = `source-${randomUUID()}`;
+      const victimId = `victim-${randomUUID()}`;
+      const copyId = `copy-${randomUUID()}`;
+      const sourceChecklistId = `src-cl-${randomUUID()}`;
+      const stolenChecklistId = duplicateChecklistId(copyId, 0);
+      const stolenItemId = duplicateChecklistItemId(copyId, 0, 0);
+
+      for (const action of [
+        { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+        { type: "ADD_CARD", newCardId: sourceId, columnId, title: "Source" },
+        { type: "ADD_CARD", newCardId: victimId, columnId, title: "Victim" },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: sourceId,
+          newChecklistId: sourceChecklistId,
+          title: "Source steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: sourceId,
+          checklistId: sourceChecklistId,
+          newItemId: `src-it-${randomUUID()}`,
+          text: "One",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: victimId,
+          newChecklistId: stolenChecklistId,
+          title: "Victim steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: victimId,
+          checklistId: stolenChecklistId,
+          newItemId: stolenItemId,
+          text: "Keep me",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_CARD",
+          cardId: sourceId,
+          newCardId: copyId,
+        }),
+      ).expect(409);
+      expect(res.body).toMatchObject({
+        code: "id_conflict",
+        conflict: "id",
+      });
+
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards[copyId]).toBeUndefined();
+      expect(aggregate.cards[victimId].checklists?.[0]).toMatchObject({
+        id: stolenChecklistId,
+        items: [{ id: stolenItemId, text: "Keep me", done: false }],
+      });
+    });
+
+    it("refuses duplicate-column derived ids owned by another card", async () => {
+      const boardId = await createBoard("Duplicate id collision column");
+      const columnId = `col-${randomUUID()}`;
+      const victimColumnId = `victim-col-${randomUUID()}`;
+      const sourceId = `source-${randomUUID()}`;
+      const victimId = `victim-${randomUUID()}`;
+      const copyCardId = `copy-${randomUUID()}`;
+      const stolenChecklistId = duplicateChecklistId(copyCardId, 0);
+      const stolenItemId = duplicateChecklistItemId(copyCardId, 0, 0);
+
+      for (const action of [
+        { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+        {
+          type: "ADD_COLUMN",
+          newColumnId: victimColumnId,
+          title: "Victim",
+        },
+        { type: "ADD_CARD", newCardId: sourceId, columnId, title: "Source" },
+        {
+          type: "ADD_CARD",
+          newCardId: victimId,
+          columnId: victimColumnId,
+          title: "Victim",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: sourceId,
+          newChecklistId: `src-cl-${randomUUID()}`,
+          title: "Source steps",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: victimId,
+          newChecklistId: stolenChecklistId,
+          title: "Victim steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: victimId,
+          checklistId: stolenChecklistId,
+          newItemId: stolenItemId,
+          text: "Keep me",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_COLUMN",
+          columnId,
+          newColumnId: `copy-col-${randomUUID()}`,
+          newCardIds: [copyCardId],
+        }),
+      ).expect(409);
+      expect(res.body).toMatchObject({
+        code: "id_conflict",
+        conflict: "id",
+      });
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards[copyCardId]).toBeUndefined();
+      expect(aggregate.cards[victimId].checklists?.[0].id).toBe(
+        stolenChecklistId,
+      );
+    });
   });
 
   describe("attribution: lastActorId follows the writer", () => {
@@ -1226,6 +1362,161 @@ describe("Commands API (e2e)", () => {
       expect(aggregate.columns.find((c) => c.id === "col-rc")?.cardIds).toEqual(
         ["card-rc-1"],
       );
+    });
+
+    it("counts every card in a RESTORE_COLUMN_CARDS batch against WIP", async () => {
+      const boardId = await createBoard("Restore many WIP board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rm",
+          title: "Many",
+        }),
+      );
+      for (const id of ["a", "b", "c", "d"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ADD_CARD",
+            newCardId: `card-rm-${id}`,
+            columnId: "col-rm",
+            title: id,
+          }),
+        );
+      }
+      const beforeArchive = await getAggregate(boardId);
+      const snapshots = ["a", "b"].map(
+        (id) => beforeArchive.cards[`card-rm-${id}`],
+      );
+      for (const id of ["a", "b"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ARCHIVE_CARD",
+            cardId: `card-rm-${id}`,
+          }),
+        );
+      }
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rm",
+          wipLimit: 2,
+        }),
+      );
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-rm",
+          cardIds: ["card-rm-a", "card-rm-b"],
+          cards: snapshots,
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body).toMatchObject({ conflict: "wip", columnId: "col-rm" });
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.columns.find((c) => c.id === "col-rm")?.cardIds).toEqual(
+        ["card-rm-c", "card-rm-d"],
+      );
+    });
+
+    it("keeps cards omitted from cardIds out of the restored column", async () => {
+      const boardId = await createBoard("Restore mismatch board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rmx",
+          title: "Mix",
+        }),
+      );
+      for (const id of ["a", "b", "c"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ADD_CARD",
+            newCardId: `card-rmx-${id}`,
+            columnId: "col-rmx",
+            title: id,
+          }),
+        );
+      }
+      const beforeArchive = await getAggregate(boardId);
+      const snapshots = ["a", "b"].map(
+        (id) => beforeArchive.cards[`card-rmx-${id}`],
+      );
+      for (const id of ["a", "b"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ARCHIVE_CARD",
+            cardId: `card-rmx-${id}`,
+          }),
+        );
+      }
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-rmx",
+          cardIds: ["card-rmx-a"],
+          cards: snapshots,
+          inverse: true,
+        }),
+      );
+      const aggregate = await getAggregate(boardId);
+      const column = aggregate.columns.find((c) => c.id === "col-rmx");
+      expect(column?.cardIds).toContain("card-rmx-a");
+      expect(column?.cardIds).not.toContain("card-rmx-b");
+      expect(aggregate.cards["card-rmx-b"]).toMatchObject({
+        id: "card-rmx-b",
+      });
+      expect(aggregate.cards["card-rmx-b"].archivedAt).toBeUndefined();
+    });
+
+    it("restores one archived card into a column with room", async () => {
+      const boardId = await createBoard("Restore one board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-r1",
+          title: "One",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-r1",
+          columnId: "col-r1",
+          title: "One",
+        }),
+      );
+      const before = await getAggregate(boardId);
+      const snapshot = before.cards["card-r1"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "ARCHIVE_CARD", cardId: "card-r1" }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-r1",
+          cardIds: ["card-r1"],
+          cards: [snapshot],
+          inverse: true,
+        }),
+      );
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.columns[0].cardIds).toEqual(["card-r1"]);
+      expect(aggregate.cards["card-r1"].archivedAt).toBeUndefined();
     });
 
     it("409s a stale ifMatch with conflict 'version' and currentVersion", async () => {

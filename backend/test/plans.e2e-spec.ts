@@ -1068,6 +1068,31 @@ describe("Plans and apply (e2e)", () => {
     );
     expect(missingBoard.status).toBe(404);
 
+    const parentageColumn = await createColumn("Parentage");
+    const cardA = await createCard(parentageColumn, "Parentage A");
+    const cardB = await createCard(parentageColumn, "Parentage B");
+    const checklistId = randomUUID();
+    await command("ADD_CHECKLIST", {
+      cardId: cardA,
+      newChecklistId: checklistId,
+      title: "A steps",
+    }).expect(200);
+    const parentage = await preview(
+      [
+        planCommand({
+          type: "RESTORE_CHECKLIST",
+          cardId: cardB,
+          checklist: { id: checklistId, title: "Stolen", items: [] },
+          index: 0,
+        }),
+      ],
+      ownerSession,
+    ).expect(200);
+    // H2 preview parity: the apply-time parentage guard must surface here.
+    expect((parentage.body as PlanPreviewDto).conflicts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "id" })]),
+    );
+
     const unknownAction = await server()
       .post(`/api/v1/boards/${boardId}/plans`)
       .set(auth(workerToken))

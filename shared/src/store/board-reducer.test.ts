@@ -1275,6 +1275,25 @@ describe("boardReducer — DUPLICATE_CARD", () => {
     );
   });
 
+  it("hashes the whole card id and never emits a colon", () => {
+    const sharedPrefix = "x".repeat(120);
+    const firstLong = `${sharedPrefix}-a`;
+    const secondLong = `${sharedPrefix}-b`;
+    expect(duplicateChecklistId(firstLong, 0)).not.toBe(
+      duplicateChecklistId(secondLong, 0),
+    );
+
+    const colonCard = "copy:with:colons";
+    const checklistId = duplicateChecklistId(colonCard, 0);
+    const itemId = duplicateChecklistItemId(colonCard, 1, 2);
+    expect(checklistId).not.toContain(":");
+    expect(itemId).not.toContain(":");
+    // Touch labels are `kind:id`; the id half must survive a first-colon split.
+    expect(`checklist:${checklistId}`.split(":")[1]).toBe(checklistId);
+    expect(checklistId.length).toBeLessThanOrEqual(128);
+    expect(itemId.length).toBeLessThanOrEqual(128);
+  });
+
   it("keeps the source title when no copy title is provided", () => {
     const next = reduceBoard(freshBoard(), {
       type: "DUPLICATE_CARD",

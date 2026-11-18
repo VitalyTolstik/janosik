@@ -642,6 +642,18 @@ describe("Commands API — labels & checklists (e2e)", () => {
           index: 0,
         },
         {
+          // The checklist id is owned by B here, but its nested victim item
+          // belongs to A's checklist; `upsertChecklist` must not move it.
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardB,
+          checklist: {
+            id: ids.checklistB,
+            title: "Stolen",
+            items: [{ id: ids.itemA, text: "Stolen", done: false }],
+          },
+          index: 0,
+        },
+        {
           type: "ADD_CHECKLIST_ITEM",
           cardId: ids.cardB,
           checklistId: ids.checklistB,

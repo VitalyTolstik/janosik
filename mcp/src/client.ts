@@ -206,16 +206,22 @@ export class JanosikClient {
     // Reads are safe to repeat. A write is only retried when it carries an
     // Idempotency-Key: the server then replays the first result instead of
     // applying the body twice (TASK-180.2 M17).
-    const attempts =
-      (options.method ?? "GET") === "GET" ||
-      options.headers?.["Idempotency-Key"] !== undefined
-        ? 2
-        : 1;
+    const keyedWrite =
+      options.headers?.["Idempotency-Key"] !== undefined &&
+      (options.method ?? "GET") !== "GET";
+    const attempts = (options.method ?? "GET") === "GET" || keyedWrite ? 2 : 1;
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.send<T>(path, options);
       } catch (error) {
-        if (attempt >= attempts || !isTransientNetworkError(error)) throw error;
+        const retryable =
+          isTransientNetworkError(error) ||
+          // A gateway timeout/response loss after the write reached the
+          // server: safe only because the same Idempotency-Key is resent.
+          (keyedWrite &&
+            error instanceof ApiError &&
+            (error.status === 502 || error.status === 504));
+        if (attempt >= attempts || !retryable) throw error;
       }
     }
   }

@@ -58,12 +58,22 @@ export function stripAttachmentReference(
 ): string | undefined {
   if (text === undefined || !text.includes(attachmentId)) return text;
   const id = escapeRegExp(attachmentId);
-  const url = `(?:https?:\\/\\/[^\\s()<>]*)?\\/attachments\\/${id}\\/content(?:\\?[^\\s()<>]*)?`;
+  // Consume the optional `/api/v1` prefix as part of the URL: matching only
+  // from `/attachments` left a dangling `/api/v1` behind a bare URL.
+  const url = `(?:https?:\\/\\/[^\\s()<>"']*)?(?:\\/api\\/v1)?\\/attachments\\/${id}\\/content(?:\\?[^\\s()<>"']*)?`;
+  const mediaDirective = `::(?:image|video|audio)\\{[^}]*${url}[^}]*\\}`;
   let next = text
+    .replace(new RegExp(mediaDirective, "g"), "")
     .replace(new RegExp(`!\\[[^\\]]*\\]\\(${url}\\)`, "g"), "")
     .replace(new RegExp(`\\[[^\\]]*\\]\\(${url}\\)`, "g"), "")
     .replace(new RegExp(url, "g"), "");
-  next = next.replace(/\n{3,}/g, "\n\n").trim();
+  // Collapse only whitespace left by the removal; keep code fences/blank
+  // lines otherwise stable.
+  next = next
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return next;
 }
 
@@ -1040,12 +1050,21 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const column = columnOf(after, action.columnId);
       if (!column) return [boardTouch];
       const touchList = [boardTouch, touch.column(column.id)];
+      let orphanId: string | undefined;
       for (const card of action.cards) {
         const cardPosition = column.cardIds.indexOf(card.id);
+        // The reducer keeps a card listed in `cards` but omitted from
+        // `cardIds` in the aggregate's card map while taking it out of the
+        // column. Park it in the invisible orphan column to reproduce that
+        // exact state — writing every card into the restored column made the
+        // reload disagree with the reducer (M13).
+        if (cardPosition < 0) {
+          orphanId ??= await ensureOrphanColumn(tx, boardId, ctx.at);
+        }
         await upsertCard(
           tx,
           card,
-          column.id,
+          cardPosition < 0 ? orphanId! : column.id,
           cardPosition < 0 ? 0 : cardPosition,
           ctx.actorId,
         );

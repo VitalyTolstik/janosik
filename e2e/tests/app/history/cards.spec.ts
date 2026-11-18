@@ -647,7 +647,12 @@ test("refuses a WIP-blocked move undo and keeps the step (M16)", async ({
   await expectHistory(page, { undo: true, redo: false });
   await undo(page);
   // No optimistic move: the card stayed in Doing and the undo step survived.
-  await expect(page.getByText(/WIP limit/i)).toBeVisible();
+  // Exact localized copy, with the column title and limit interpolated.
+  await expect(
+    page.getByText(
+      "“Todo” is at its WIP limit (1) — the card stays in its column.",
+    ),
+  ).toBeVisible();
   await expect(
     columnSection(page, "Doing").getByTestId("card-title").filter({
       hasText: "Move me",

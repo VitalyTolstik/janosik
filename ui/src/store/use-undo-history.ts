@@ -194,7 +194,15 @@ export function useUndoHistory({
         if (deferredUndo) {
           if (before !== undefined && undoWouldExceedWip(before, applied)) {
             stack.restoreUndone();
-            onSendFailed?.({ kind: "wip" });
+            onSendFailed?.({
+              kind: "wip",
+              columnId:
+                applied.type === "MOVE_CARD"
+                  ? applied.toColumnId
+                  : applied.type === "UNARCHIVE_CARD"
+                    ? (applied.columnId ?? before.columns[0]?.id)
+                    : undefined,
+            });
             sync();
             return;
           }

@@ -384,6 +384,10 @@ export class BoardsService {
         { timeout: 15_000, maxWait: 10_000 },
       )
       .catch(async (error: unknown) => {
+        // L24: only a timeout from the *write* transaction proves a rollback.
+        // A later `getAggregate` P2028 runs outside this catch and stays
+        // ambiguous, so the idempotency record is retained.
+        if (isTransactionTimeout(error)) markGuaranteedRollback(error);
         // TASK-166.9: the refusal already carries limit/current; record one
         // attention row, then rethrow the original 409 unchanged.
         await this.attention.notifyLimitExceeded(userId, error, {

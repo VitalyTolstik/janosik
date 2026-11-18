@@ -186,6 +186,26 @@ describe("JanosikClient REST idempotency defaults (M17)", () => {
     expect(headers[1]).toBe(headers[0]);
   });
 
+  it("reuses the key after a 504 gateway timeout", async () => {
+    let attempts = 0;
+    const { calls } = stubFetch(() => {
+      attempts += 1;
+      return attempts === 1
+        ? json({ message: "gateway timeout" }, 504)
+        : json({ id: "b1", title: "Created" }, 201);
+    });
+    const client = new JanosikClient("http://api.test", "t");
+
+    await client.createBoard("Created");
+
+    expect(attempts).toBe(2);
+    const headers = calls.map(
+      (call) =>
+        (call.init.headers as Record<string, string>)["Idempotency-Key"],
+    );
+    expect(headers[1]).toBe(headers[0]);
+  });
+
   it("generates independent default keys for import, share, comment and upload", async () => {
     const { calls } = stubFetch(({ url }) =>
       url.includes("/boards/import")

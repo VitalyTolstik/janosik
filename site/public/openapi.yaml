@@ -2797,6 +2797,9 @@ components:
         conflict:
           type: string
           enum: [version, wip, id, workflow]
+        columnId:
+          type: string
+          description: "Column whose WIP/absolute limit refused a `conflict: wip`."
         workflow:
           $ref: "#/components/schemas/WorkflowConflictDetails"
         allowedToColumnIds:

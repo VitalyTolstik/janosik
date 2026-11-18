@@ -21,6 +21,8 @@ import {
   atWipLimit,
   boardReducer,
   cardOf,
+  duplicateChecklistId,
+  duplicateChecklistItemId,
   evaluateCardTransition,
   evaluateTransition,
   hasLinkedPair,
@@ -74,6 +76,7 @@ import {
 import { commandDetails } from "./command-details";
 import {
   actionFingerprint,
+  actionFingerprintWithoutRestoreAssignee,
   jsonSafe,
   prepareCommandDto,
   type PreparedCommand,
@@ -259,6 +262,12 @@ export interface ApplyOptions {
    * does not populate it; only `RunsService` does.
    */
   exemptRestoreLimits?: boolean;
+  /**
+   * TASK-180.2 M7: a run revert may release a claim held by the token/session
+   * that originally claimed it, even though the revert itself is issued by a
+   * human ADMIN. Internal only; acquisition remains holder-checked.
+   */
+  exemptClaimRelease?: boolean;
   /** TASK-166.7 internal post-apply hook, inside the board transaction. */
   afterRun?: (
     tx: Prisma.TransactionClient,
@@ -529,7 +538,12 @@ export class CommandsService {
           // collision), not a retry: answering with the first command's
           // result would tell the caller its *new* action was applied.
           if (
-            actionFingerprint(existing.payload, boardId) !== entry.fingerprint
+            !(await this.fingerprintsMatch(
+              tx,
+              boardId,
+              existing.payload,
+              entry,
+            ))
           ) {
             throw new ConflictException({
               message: "commandId already used with a different payload",
@@ -673,18 +687,21 @@ export class CommandsService {
           }
         }
         await this.assertIdsBelongToBoard(tx, boardId, [...referenced]);
-        // H2: a same-board id can still name another card's checklist/item or
-        // another card's link. The writers upsert by id, so parentage must be
-        // checked before the reducer/writers get a chance to re-parent it.
-        await this.assertEntityParentage(
-          tx,
-          prepared.filter((entry) => !existingById.has(entry.dto.commandId)),
-        );
 
         let running = await loadBoardAggregate(tx, boardId);
         if (!running) {
           throw new NotFoundException("Board not found");
         }
+        // H2: a same-board id can still name another card's checklist/item or
+        // another card's link. Duplicate commands also derive nested ids from
+        // the new card id, so the live aggregate is needed to check those too.
+        // The writers upsert by id, so parentage must be checked before the
+        // reducer/writers get a chance to re-parent it.
+        await this.assertEntityParentage(
+          tx,
+          prepared.filter((entry) => !existingById.has(entry.dto.commandId)),
+          running,
+        );
 
         const responses: CommandResponse[] = [];
         const events: InternalCommandEvent[] = [];
@@ -731,6 +748,7 @@ export class CommandsService {
             entry,
             board: running,
             exemptRestoreLimits: options.exemptRestoreLimits === true,
+            exemptClaimRelease: options.exemptClaimRelease === true,
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -1031,16 +1049,20 @@ export class CommandsService {
   async assertPlanIds(
     boardId: string,
     prepared: PreparedCommand[],
+    board?: Board,
   ): Promise<void> {
     const ids = new Set<string>();
     for (const entry of prepared) {
       for (const id of referencedEntityIds(entry.action)) ids.add(id);
     }
-    await this.assertIdsBelongToBoard(
-      this.prisma as unknown as Prisma.TransactionClient,
-      boardId,
-      [...ids],
-    );
+    const client = this.prisma as unknown as Prisma.TransactionClient;
+    await this.assertIdsBelongToBoard(client, boardId, [...ids]);
+    // H2 preview parity: a plan that re-parents a same-board checklist/item
+    // must be refused in the preview, not only inside the apply transaction.
+    const current = board ?? (await loadBoardAggregate(this.prisma, boardId));
+    if (current !== null) {
+      await this.assertEntityParentage(client, prepared, current);
+    }
   }
 
   /**
@@ -1113,6 +1135,7 @@ export class CommandsService {
       entry: PreparedCommand;
       board: Board;
       exemptRestoreLimits?: boolean;
+      exemptClaimRelease?: boolean;
     },
   ): Promise<{
     response: CommandResponse;
@@ -1132,7 +1155,14 @@ export class CommandsService {
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
-    await this.assertClaimIsFree(tx, boardId, action, attribution, actorId);
+    await this.assertClaimIsFree(
+      tx,
+      boardId,
+      action,
+      attribution,
+      actorId,
+      params.exemptClaimRelease === true,
+    );
 
     await this.assertBoardManagement(tx, boardId, actorId, action.type);
 
@@ -1465,6 +1495,39 @@ export class CommandsService {
   }
 
   /**
+   * L18: `RESTORE_CARD` may strip an assignee who is no longer a member
+   * before the payload is stored. Compare the exact request first; only when
+   * the incoming assignee is genuinely non-member may the comparison ignore
+   * that field. A different *valid* assignee stays a payload conflict.
+   */
+  private async fingerprintsMatch(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    storedPayload: unknown,
+    entry: PreparedCommand,
+  ): Promise<boolean> {
+    if (actionFingerprint(storedPayload, boardId) === entry.fingerprint) {
+      return true;
+    }
+    if (entry.action.type !== "RESTORE_CARD") return false;
+    const assigneeId = entry.action.card.assigneeId;
+    if (assigneeId === undefined) return false;
+    const member = await tx.boardMember.findFirst({
+      where: {
+        boardId,
+        userId: assigneeId,
+        ...activeMembershipWhere(),
+      },
+      select: { id: true },
+    });
+    if (member !== null) return false;
+    return (
+      actionFingerprintWithoutRestoreAssignee(storedPayload, boardId) ===
+      actionFingerprintWithoutRestoreAssignee(entry.action, boardId)
+    );
+  }
+
+  /**
    * H2: every client-named checklist/item/link id must keep its stored
    * parent. `assertIdsBelongToBoard` rejects foreign boards; this checks the
    * same-board half: an id owned by another card/checklist would be
@@ -1478,6 +1541,7 @@ export class CommandsService {
   private async assertEntityParentage(
     tx: Prisma.TransactionClient,
     entries: PreparedCommand[],
+    board: Board,
   ): Promise<void> {
     const checklistOwner = new Map<string, { cardId: string; field: string }>();
     const itemOwner = new Map<string, { checklistId: string; field: string }>();
@@ -1536,6 +1600,31 @@ export class CommandsService {
         }
       }
     };
+    /** Derived ids a DUPLICATE_CARD/COLUMN will create for one copy. */
+    const expectDuplicateCard = (
+      source: { id: string; checklists?: Checklist[] } | undefined,
+      newCardId: string,
+      field: string,
+    ): void => {
+      if (source === undefined) return;
+      for (const [checklistIndex, checklist] of (
+        source.checklists ?? []
+      ).entries()) {
+        const checklistId = duplicateChecklistId(newCardId, checklistIndex);
+        expectChecklist(checklistId, newCardId, field);
+        for (
+          let itemIndex = 0;
+          itemIndex < checklist.items.length;
+          itemIndex += 1
+        ) {
+          expectItem(
+            duplicateChecklistItemId(newCardId, checklistIndex, itemIndex),
+            checklistId,
+            field,
+          );
+        }
+      }
+    };
 
     for (const { action } of entries) {
       switch (action.type) {
@@ -1552,6 +1641,12 @@ export class CommandsService {
             action.cardId,
             "action.checklist.id",
           );
+          // Nested items are upserted by global id too: a snapshot must not
+          // move another checklist's item into this one, even if the
+          // checklist id itself is owned correctly.
+          for (const item of action.checklist.items) {
+            expectItem(item.id, action.checklist.id, "action.checklist.items");
+          }
           break;
         case "ADD_CHECKLIST_ITEM":
           expectItem(action.newItemId, action.checklistId, "action.newItemId");
@@ -1562,6 +1657,28 @@ export class CommandsService {
         case "ADD_CARD_LINK":
           expectLink(action.linkId, action.cardId, "action.linkId");
           break;
+        case "DUPLICATE_CARD":
+          expectDuplicateCard(
+            cardOf(board, action.cardId),
+            action.newCardId,
+            "action.newCardId",
+          );
+          break;
+        case "DUPLICATE_COLUMN": {
+          const source = board.columns.find(
+            (column) => column.id === action.columnId,
+          );
+          source?.cardIds.forEach((sourceCardId, index) => {
+            const newCardId = action.newCardIds[index];
+            if (newCardId === undefined) return;
+            expectDuplicateCard(
+              cardOf(board, sourceCardId),
+              newCardId,
+              "action.newCardIds",
+            );
+          });
+          break;
+        }
         case "RESTORE_CARD":
           expectCardSnapshot(action.card, "action.card.checklists");
           break;
@@ -1689,6 +1806,7 @@ export class CommandsService {
     action: BoardAction,
     attribution: RequestAttribution,
     actorId: string,
+    allowAnyRelease = false,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
     const card = await tx.card.findFirst({
@@ -1716,6 +1834,10 @@ export class CommandsService {
       });
     };
     if (releasing) {
+      // Internal run revert: the human ADMIN is acting for the run that took
+      // the lease, so the original token/session may be released. This is a
+      // non-wire flag set only by `RunsService`; acquisition stays guarded.
+      if (allowAnyRelease) return;
       // The stored holder and the authenticated caller must be the same
       // *kind* of identity: a second PAT of the owner is not the holder, and
       // neither is the owner's browser session when a PAT holds the lease.
@@ -2045,10 +2167,11 @@ export class CommandsService {
     currentVersion: number,
     exemptRestoreLimits = false,
   ): void {
-    const reject = (): never => {
+    const reject = (columnId?: string): never => {
       throw new ConflictException({
         conflict: "wip",
         currentVersion,
+        ...(columnId !== undefined ? { columnId } : {}),
       } satisfies ConflictError);
     };
     const columnBlocked = (column: Board["columns"][number] | undefined) =>
@@ -2073,7 +2196,7 @@ export class CommandsService {
         if (
           columnBlocked(board.columns.find((c) => c.id === action.columnId))
         ) {
-          reject();
+          reject(action.columnId);
         }
         return;
       }
@@ -2081,7 +2204,7 @@ export class CommandsService {
         const source = cardOf(board, action.cardId);
         if (!source) return;
         const column = board.columns.find((c) => c.cardIds.includes(source.id));
-        if (columnBlocked(column)) reject();
+        if (columnBlocked(column)) reject(column?.id);
         return;
       }
       case "MOVE_CARD": {
@@ -2089,7 +2212,7 @@ export class CommandsService {
         if (
           columnBlocked(board.columns.find((c) => c.id === action.toColumnId))
         ) {
-          reject();
+          reject(action.toColumnId);
         }
         return;
       }
@@ -2097,7 +2220,7 @@ export class CommandsService {
         const column =
           board.columns.find((c) => c.id === action.columnId) ??
           board.columns[0];
-        if (columnBlocked(column)) reject();
+        if (columnBlocked(column)) reject(column?.id);
         return;
       }
       case "ADD_COLUMN":
@@ -2170,7 +2293,7 @@ export class CommandsService {
         if (action.columnId === undefined) return;
         const column = board.columns.find((c) => c.id === action.columnId);
         if (!column) return;
-        if (columnBlocked(column)) reject();
+        if (columnBlocked(column)) reject(column.id);
         checkRestoredCard(action.card);
         return;
       }
@@ -2183,7 +2306,7 @@ export class CommandsService {
           action.column.wipLimit !== undefined &&
           action.column.cardIds.length > action.column.wipLimit
         ) {
-          reject();
+          reject(action.column.id);
         }
         for (const card of action.cards) checkRestoredCard(card);
         return;
@@ -2192,12 +2315,35 @@ export class CommandsService {
         if (restoreExempt) return;
         const column = board.columns.find((c) => c.id === action.columnId);
         if (!column) return;
-        // Only a card this command actually puts back can grow the column;
-        // a payload of cards already there is a no-op.
-        const addsCard = action.cardIds.some(
-          (id) => !column.cardIds.includes(id),
+        // Count the *resulting* column, not just "one more card fits": a
+        // batch restore can add several rows at once. This mirrors
+        // `restoreColumnCards` exactly (written cards that are not archived,
+        // plus cards the column already had), so omitted action.cards do not
+        // inflate the WIP check.
+        const own = new Set(column.cardIds);
+        const byId = new Map(action.cards.map((card) => [card.id, card]));
+        const written = new Set(byId.keys());
+        const restored = [
+          ...new Set(
+            action.cardIds.filter((id) => {
+              const card = byId.get(id);
+              return card !== undefined
+                ? card.archivedAt === undefined
+                : own.has(id);
+            }),
+          ),
+        ];
+        const kept = new Set(restored);
+        const extras = column.cardIds.filter(
+          (id) => !kept.has(id) && !written.has(id),
         );
-        if (addsCard && columnBlocked(column)) reject();
+        const nextCount = restored.length + extras.length;
+        if (
+          nextCount > LIMITS.cardsPerColumn ||
+          (column.wipLimit !== undefined && nextCount > column.wipLimit)
+        ) {
+          reject(column.id);
+        }
         for (const card of action.cards) checkRestoredCard(card);
         return;
       }

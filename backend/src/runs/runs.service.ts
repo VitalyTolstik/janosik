@@ -474,6 +474,9 @@ export class RunsService {
           // M13: internal only. A restore command issued by this run revert
           // may put back rows past the board's current WIP/collection caps.
           exemptRestoreLimits: true,
+          // M7: the run may have held the claim through its PAT/session; the
+          // human ADMIN reverting it must be able to release that exact lease.
+          exemptClaimRelease: true,
           guard: revalidate,
           run: {
             kind: "revert",

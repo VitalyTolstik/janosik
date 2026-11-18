@@ -180,7 +180,9 @@ export function CardComments({
         const byId = new Map<string, CommentDto>();
         let cursor: string | undefined;
         // The loaded list is the newest N rows, so only those pages can hold
-        // a row this component shows. One extra page covers a cursor shift.
+        // a row this component shows. One extra page covers a cursor shift;
+        // the walk is therefore bounded by the already-loaded page count and
+        // never turns one SSE frame into an unbounded history scan.
         const maxPages = Math.ceil(loaded.length / PAGE_SIZE) + 1;
         for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
           const page = await api.listComments(cardId, cursor, PAGE_SIZE);

@@ -846,6 +846,36 @@ describe("Agent runs and rollback (e2e)", () => {
     await retireColumn(columnId);
   });
 
+  it("releases a PAT-held claim on revert with matching preview (M7)", async () => {
+    const columnId = await createColumn("Claim revert");
+    const cardId = await createCard(columnId, "Claimed");
+    const created = await batch(
+      [
+        {
+          action: {
+            type: "CLAIM_CARD",
+            cardId,
+            claimedBy: ownerId,
+            leaseUntil: Date.now() + 600_000,
+          },
+        },
+        {
+          action: { type: "SET_CARD_PRIORITY", cardId, priority: "high" },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    expect((await aggregate()).cards[cardId].claimedBy).toBe(ownerId);
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(runId).expect(200);
+    expect((await aggregate()).cards[cardId].claimedBy).toBeUndefined();
+    await retireColumn(columnId);
+  });
+
   it("previews a removed assignee before applying SET_CARD_ASSIGN (M22)", async () => {
     const columnId = await createColumn("Assignee preview");
     const cardId = await createCard(columnId, "Assigned");
