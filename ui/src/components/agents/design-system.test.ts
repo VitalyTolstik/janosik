@@ -100,6 +100,30 @@ describe("agent design system (TASK-179.9)", () => {
     expect(boardSettingsShell).toContain("md:top-[56px]");
   });
 
+  it("uses the large-screen width caps on the global agents page", () => {
+    expect(agentsPage).toContain("max-w-[980px]");
+    expect(agentsPage).toContain("min-[1600px]:max-w-[1200px]");
+    expect(agentsPage).toContain("min-[1181px]:w-[352px]");
+    expect(agentsPage).toContain("min-[1600px]:w-[400px]");
+  });
+
+  it("adds the large-screen modal width only at >=1600", () => {
+    const marker = "@media (min-width: 1600px)";
+    const start = agentControlCss.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    const block = agentControlCss.slice(start);
+    expect(block).toContain(".agent-control-surface.ac-modal");
+    expect(block).toContain("top: 0");
+    expect(block).toContain("bottom: 0");
+    expect(block).toContain("width: min(1400px, calc(100vw - 96px))");
+    expect(block).toContain("height: min(860px, calc(100dvh - 96px))");
+    expect(block).toContain(".agent-control-surface .ac-rail");
+    expect(block).toContain("width: 220px");
+    expect(block).toContain(".agent-control-surface .ac-list");
+    expect(block).toContain('data-testid="agent-run-list"');
+    expect(block).toContain("width: 360px");
+  });
+
   it("gives every primary control a 44 px mobile target", () => {
     const controls = [
       [pausePanel, "agent-live-refresh"],
