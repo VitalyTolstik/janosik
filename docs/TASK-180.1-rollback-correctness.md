@@ -8,8 +8,8 @@ TASK-176.8 branch A (`05d0df30`). No PR/merge is part of this stream.
 | ID | Change |
 |---|---|
 | C1 | `finalizePreimage` stores `inverse: null` when the command wrote no entity, and `RunsService.analyze` ignores a legacy no-op pre-image even if an older row still carries `DELETE_COLUMN`/`DELETE_CARD`. A no-op-only run previews `canRevert:false` and cannot be applied. |
-| H4 | Card membership/order writes bump the column's `version` (raw SQL, so `updatedAt` stays untouched). A run-created column's `postVersion` now changes when a human adds, moves, archives or deletes a card later, so `DELETE_COLUMN` is refused with a conflict instead of cascading over the new card. |
-| H5 | `RESTORE_CARD`/`UNARCHIVE_CARD` inverses are checked against the recorded source column at preview/apply time. A deleted source column is a `run_conflict` (`deleted`/`missing`), never a silent fallback to column 1 or a `reverted` run with the card still gone. |
+| H4 | Card membership/order writes bump the column's `version` (raw SQL, so `updatedAt` stays untouched) and expose that bump in touches/versions/preimages. Any membership, order or metadata/rename change in a touched column conflicts; this is intentionally stricter than card-only tracking. |
+| H5 | `RESTORE_CARD`/`UNARCHIVE_CARD` inverses are checked against the recorded source column in inverse replay order. The run's own `RESTORE_COLUMN` unblocks its card inverse; a human-deleted column is a `run_conflict` (`deleted`/`missing`), never a silent fallback to column 1 or a `reverted` run with the card still gone. |
 | H6 | `analyze` compares retained commands with `run.commandCount`; a partial command set is `409 run_expired` without applying anything. |
 | M20 | A concurrent replay with the same revert `commandId` is reconciled only when the existing revert's `revertsRunId` matches. A key reused for another run is `409 run_conflict` with that target `runId`. |
 | M21 | The run detail reuses one `commandId` per attempt until a success; a retry after a lost response sends the same key and reconciles to the committed revert. |
@@ -45,12 +45,16 @@ TASK-176.8 branch A (`05d0df30`). No PR/merge is part of this stream.
   in the preview, because the claim holder and workflow role depend on the
   eventual apply transaction.
 - H5 compares the recorded source column and the run's own
-  `RESTORE_COLUMN` steps. If a human deletes and recreates a column with the
-  same id before the revert, the card lands in the recreated column; that is
-  treated as the original column id rather than a conflict.
-- H4 treats any card membership/order change in a touched column as a version
-  change. This is stricter than card-only conflict tracking but keeps column
-  versions, command responses and SSE touches consistent.
+  `RESTORE_COLUMN` steps. A human delete-and-recreate of the same column id
+  normally conflicts as `version_changed` because the H4 bump is recorded in
+  the preimage; H5 itself only adds the explicit `deleted`/`missing` reason
+  when the column is still marked deleted/absent.
+- H4 intentionally treats **any** membership, order, or metadata/rename
+  change in a touched column as a column version change. This is stricter
+  than card-only conflict tracking: moving an unrelated card, reordering a
+  column, or renaming it after the run can block a revert that touches that
+  column. The trade-off is deliberate — column versions, command responses,
+  SSE touches and preimages stay consistent, with no invisible bumps.
 
 ## Tests added
 

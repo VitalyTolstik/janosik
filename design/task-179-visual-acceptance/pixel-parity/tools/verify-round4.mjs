@@ -74,6 +74,16 @@ try {
             (v) => document.documentElement.classList.contains(v),
             theme,
           );
+          await page.waitForFunction(() =>
+            /\d/.test(
+              document.querySelector('[data-testid="agents-section-runs"]')
+                ?.textContent ?? "",
+            ),
+          );
+          const count = (
+            await page.getByTestId("agents-section-runs").innerText()
+          ).match(/\d+/)?.[0];
+          assert.ok(count, `${tag} run count`);
           await page.goto(
             `${base}/agents?section=runs&board=${board}&run=${seed.runs.plusTwo}&lng=${lang}`,
             { waitUntil: "domcontentloaded" },
@@ -196,7 +206,7 @@ try {
             boardRunCount: Number(count),
             checks: [
               "unfiltered badge",
-              "failed run",
+              "board run count",
               "equal footer widths",
               "rollback styling",
               "missing board",

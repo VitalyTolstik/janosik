@@ -1198,6 +1198,65 @@ describe("Agent runs and rollback (e2e)", () => {
     await retireColumn(moveTo);
   });
 
+  it("records the DUPLICATE_CARD destination column in its preimage (H4)", async () => {
+    const columnId = await createColumn("Duplicate destination");
+    const sourceId = await createCard(columnId, "Duplicate source");
+    const copyId = randomUUID();
+    const duplicateCommandId = randomUUID();
+    const created = await batch(
+      [
+        {
+          commandId: duplicateCommandId,
+          action: {
+            type: "DUPLICATE_CARD",
+            cardId: sourceId,
+            newCardId: copyId,
+            title: "Duplicate copy",
+          },
+        },
+        {
+          action: {
+            type: "UPDATE_CARD",
+            cardId: copyId,
+            description: "copy body",
+          },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    expect((created.body as CommandBatchResponse).results[0]!.versions).toEqual(
+      expect.objectContaining({
+        [`column:${columnId}`]: expect.any(Number),
+      }),
+    );
+    const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+      where: { commandId: duplicateCommandId },
+    });
+    const data = preimage.data as {
+      entities: Array<{
+        touch: string;
+        exists: boolean;
+        snapshot: { title?: string } | null;
+      }>;
+    };
+    expect(
+      data.entities.find((entity) => entity.touch === `column:${columnId}`),
+    ).toMatchObject({
+      exists: true,
+      snapshot: { title: "Duplicate destination" },
+    });
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(runId).expect(200);
+    const after = await aggregate();
+    expect(after.cards[sourceId]?.title).toBe("Duplicate source");
+    expect(after.cards[copyId]).toBeUndefined();
+    await retireColumn(columnId);
+  });
+
   it("reverts a run that deleted its own source column (H5)", async () => {
     // Archive X, then delete C in the same run. The inverse sequence restores
     // C before unarchiving X, so it must not look like a human deletion.
