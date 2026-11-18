@@ -40,8 +40,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   size gate: the second lazy panel split the shared admin `ui` chunk out of
   `AdminApp`, and the panel also loads the existing board `links` chunk, so the
   entry now measures `AdminApp` + both lazy panels + those shared chunks.
-  **101.62 kB → 112.28 kB gzip against an explicit 113 kB budget**, leaving
-  0.72 kB headroom (the DTO flag and follow-ups added about 0.48 kB; B1’s
+  **101.62 kB → 112.39 kB gzip against an explicit 113 kB budget**, leaving
+  0.61 kB headroom (the DTO flag and follow-ups added about 0.59 kB; B1’s
   102 kB budget measured only the shell + field panel). EN/RU admin content
   docs
   describe the editor and counters; the monitoring note records the audit
@@ -82,7 +82,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exact validated `commandId`; the audit query is pinned to `board.command`.
   `/admin/audit?tab=audit&commandId=<command id>` is a shareable deep link.
   The admin `UPDATE_CARD` / `MOVE_CARD` path rejects soft-deleted/missing cards
-  with `404` and archived-card moves with `409`, and a replay of an existing
+  with `404` and archived-card moves with `409`; a fresh move with a stale
+  source column is `409 conflict: "version"` (`move_stale`), and a
+  missing/deleted/foreign target column is `404`, both before any command or
+  audit row. Archived cards repointed to the internal soft-deleted orphan
+  column by `DELETE_COLUMN` keep their field editing. A replay of an existing
   `commandId` never fabricates a second master audit row. No feature flag is
   added:
   product sign-off is recorded in TASK-176.8/176.10. EN/RU admin docs record

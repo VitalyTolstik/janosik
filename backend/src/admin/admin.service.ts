@@ -1127,11 +1127,14 @@ export class AdminService {
           if (
             !card ||
             card.deletedAt !== null ||
-            card.column.boardId !== boardId ||
-            card.column.deletedAt !== null
+            card.column.boardId !== boardId
           ) {
             throw new NotFoundException("Card not found");
           }
+          // Do not reject a soft-deleted source column here. DELETE_COLUMN
+          // repoints archived cards to the board's internal soft-deleted
+          // orphan column, and those cards must keep their field editing
+          // (TASK-176.9). Only a move is impossible, checked below.
           // Archived cards may still have their fields edited (the normal
           // card dialog allows it); only a move is impossible.
           if (action.type === "MOVE_CARD" && card.archivedAt !== null) {

@@ -1028,6 +1028,8 @@ const en = {
   "admin.boardContent.move.submit": "Move card",
   "admin.boardContent.move.stale":
     "The board changed since this dialog opened. Reload and try again.",
+  "admin.boardContent.move.targetGone":
+    "The target column disappeared. Reload and try again.",
   "admin.boardContent.confirmDelete.title": "Delete column “{title}”?",
   "admin.boardContent.confirmDelete.body":
     "It is a soft delete: the column and its cards disappear for members.",
@@ -2414,6 +2416,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.boardContent.move.submit": "Переместить карточку",
   "admin.boardContent.move.stale":
     "Доска изменилась с момента открытия диалога. Перезагрузите страницу и повторите.",
+  "admin.boardContent.move.targetGone":
+    "Целевая колонка исчезла. Перезагрузите страницу и повторите.",
   "admin.boardContent.confirmDelete.title": "Удалить колонку «{title}»?",
   "admin.boardContent.confirmDelete.body":
     "Это мягкое удаление: колонка и её карточки исчезнут у участников.",

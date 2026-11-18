@@ -140,7 +140,12 @@ Each edit is submitted as a board command through
 `POST /admin/boards/:id/commands` on behalf of the board owner, the board's
 first accepted `ADMIN`. The server re-validates each action with the shared
 strict validator, so a rejected action (for example, due to a WIP or size limit)
-shows a notification and leaves the board unchanged. The editor sends
+shows a notification and leaves the board unchanged. The move dialog re-checks
+its snapshot before sending: if the card left the source column, or the target
+column disappeared, it shows a reload message. A fresh server move with a stale
+source is rejected as `409 conflict: "version"`; a missing, deleted or foreign
+target column is `404` — both before any command or audit row. An exact retry of
+a stored `commandId` still returns its stored result. The editor sends
 `ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`, `UPDATE_CARD`, `MOVE_CARD`,
 `ARCHIVE_CARD` and `DELETE_COLUMN`, each stamped with the command clock. The
 command log, versions and the board UI stay consistent.
@@ -237,7 +242,9 @@ directions with the stored type and a readable phrase: outgoing `blocks` reads
 as “blocks”, incoming as “is blocked by” (the same reverse phrasing is offered
 when adding: relates to, blocks, is blocked by, duplicates, is duplicated by).
 The counters separate the viewed card's live outgoing rows (which own its
-50-link cap) from incoming rows. With a reverse option the form shows the
+50-link cap) from live incoming rows; a live incoming row whose holder card is
+deleted remains readable as dangling but is not counted. With a reverse option
+the form shows the
 selected target holder's own outgoing count and cap. Incoming rows are removed
 through their holder card, not through the viewed card. The target combobox is
 loaded lazily from the board content when the link editor opens and excludes

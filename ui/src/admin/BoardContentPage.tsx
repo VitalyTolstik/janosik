@@ -153,19 +153,34 @@ export function BoardContentPage() {
         );
         return true;
       } catch (error) {
+        if (error instanceof ApiError && error.code === "move_stale") {
+          toast.error(t("admin.boardContent.move.stale"));
+          setMovingCard(null);
+          load();
+          return false;
+        }
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          (error.body as { field?: unknown } | null)?.field ===
+            "action.toColumnId"
+        ) {
+          toast.error(t("admin.boardContent.move.targetGone"));
+          setMovingCard(null);
+          load();
+          return false;
+        }
         toast.error(
-          error instanceof ApiError && error.code === "move_stale"
-            ? t("admin.boardContent.move.stale")
-            : error instanceof ApiError
-              ? error.messageText
-              : t("admin.common.error"),
+          error instanceof ApiError
+            ? error.messageText
+            : t("admin.common.error"),
         );
         return false;
       } finally {
         setBusy(false);
       }
     },
-    [boardId, t, toast, setSelectedColumnId],
+    [boardId, load, t, toast, setMovingCard, setSelectedColumnId],
   );
 
   if (state === "loading") return <BoardEditorSkeleton />;

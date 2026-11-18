@@ -36,7 +36,7 @@ Separately, the product has no way for a user to edit their own comment, althoug
 
 ### Non-goals / deliberate boundaries
 
-- Do **not** make `/admin/cards/:id` a full card editor in this task. A narrow pilot is 176.8; the broad editor is a separate product decision (176.9).
+- Do **not** turn `/admin/cards/:id` into a full board client. A narrow pilot is 176.8; 176.9 adds the field/checklist/link editor on that page, not a board client or master-authored comments/uploads.
 - Do **not** add a master-wide agent control section. The agent contour stays in `/agents` and the board-scoped `AgentControlDialog` (176.11).
 - Do **not** allow masters to edit other users' comment text. 176.2 is author-only. Admin editing of someone else's comment is a separate product/attribution decision.
 - Do **not** weaken tests, remove audit, or make destructive operations silent.
@@ -325,10 +325,14 @@ editor moves cards through `UPDATE_CARD` / `MOVE_CARD`; both dialogs show the
 owner-attribution banner. The command log and board history still name the
 owner, while the audit row records `commandId`, `masterId` and `masterEmail`.
 Deleted cards are rejected before a fresh `UPDATE_CARD` / `MOVE_CARD` is
-logged, missing cards answer `404` and archived-card moves answer `409`; an
-exact admin replay of an existing `commandId` still returns its stored result
-even after the card is archived or deleted, and does not create a second audit
-row. Implemented in commit
+logged, missing cards answer `404` and archived-card moves answer `409`; a
+fresh move with a stale source column answers `409 conflict: "version"`
+(`move_stale`), while a missing, deleted or foreign target column answers
+`404` before any command or audit row. Archived cards repointed to the internal
+soft-deleted orphan column by `DELETE_COLUMN` keep field editing. An exact
+admin replay of an existing `commandId` still returns its stored result even
+after the card is archived or deleted, and does not create a second audit row.
+Implemented in commit
 `d04dd441` plus this review-fix follow-up.
 
 ---
@@ -404,8 +408,8 @@ the incoming count to the viewed card.
 The combined size gate now measures the real card page: `AdminApp`,
 `CardFieldsPanel`, `CardRelationsPanel`, the shared admin `ui` chunk split out
 by the second lazy panel, and the existing board `links` chunk that the panel
-now loads. **101.62 kB → 112.28 kB gzip against an explicit 113 kB budget**,
-leaving 0.72 kB headroom; the DTO flag and follow-ups added about 0.48 kB, so
+now loads. **101.62 kB → 112.39 kB gzip against an explicit 113 kB budget**,
+leaving 0.61 kB headroom; the DTO flag and follow-ups added about 0.59 kB, so
 the budget was adjusted from 112 kB explicitly. The lazy relations chunk is not
 omitted.
 

@@ -1016,6 +1016,93 @@ describe("admin content and security pages", () => {
     }
   });
 
+  it("closes the move dialog and reloads on a server move_stale conflict", async () => {
+    const state = serverWith().state;
+    state.cards = [adminCard({ id: "card-1", columnId: "col-a" })];
+    state.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+
+    fireEvent.click(await screen.findByTestId("admin-card-move-card-1"));
+    const dialog = await screen.findByTestId("admin-move-card-dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-target"));
+    fireEvent.click(
+      await screen.findByTestId("admin-move-card-target-option-col-b"),
+    );
+    server.failNextStatuses.push({
+      path: "/commands",
+      status: 409,
+      body: { code: "move_stale", conflict: "version" },
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-submit"));
+
+    expect(
+      await screen.findByText(t("admin.boardContent.move.stale")),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-move-card-dialog")).toBeNull();
+    expect(state.contentBoard.columns[0]?.cardIds).toEqual(["card-1"]);
+  });
+
+  it("localizes a vanished target column and closes the dialog", async () => {
+    const state = serverWith().state;
+    state.cards = [adminCard({ id: "card-1", columnId: "col-a" })];
+    state.contentBoard = contentBoard({
+      columns: [
+        { id: "col-a", title: "Backlog", cardIds: ["card-1"], createdAt: 1 },
+        { id: "col-b", title: "Done", cardIds: [], createdAt: 2 },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Movable",
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/boards/b-1/content");
+
+    fireEvent.click(await screen.findByTestId("admin-card-move-card-1"));
+    const dialog = await screen.findByTestId("admin-move-card-dialog");
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-target"));
+    fireEvent.click(
+      await screen.findByTestId("admin-move-card-target-option-col-b"),
+    );
+    server.failNextStatuses.push({
+      path: "/commands",
+      status: 404,
+      body: {
+        message: "Target column not found",
+        field: "action.toColumnId",
+      },
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-move-card-submit"));
+
+    expect(
+      await screen.findByText(t("admin.boardContent.move.targetGone")),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-move-card-dialog")).toBeNull();
+    expect(state.contentBoard.columns[0]?.cardIds).toEqual(["card-1"]);
+  });
+
   it("disables moving for a single-column board and an archived card", async () => {
     const single = serverWith().state;
     single.cards = [adminCard({ id: "card-1", columnId: "col-a" })];

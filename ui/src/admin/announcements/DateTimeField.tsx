@@ -112,16 +112,16 @@ export function DateTimeField({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-auto max-w-[calc(100vw-1rem)] overflow-x-auto p-3"
+        className="w-auto max-w-[calc(100vw-1rem)] p-3"
       >
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Calendar
             mode="single"
             localeTag={lang}
             selected={parsed ?? undefined}
             onSelect={applyDate}
           />
-          <div className="flex flex-col gap-2 border-l border-border pl-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
             <p className="text-[11px] font-medium text-muted-foreground">
               {timeLabel}
             </p>

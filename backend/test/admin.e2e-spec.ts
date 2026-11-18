@@ -2646,6 +2646,119 @@ describe("Admin API (e2e)", () => {
       await cleanupCommandFixture(fixture);
     });
 
+    it("keeps archived orphan-column cards editable (TASK-176.9)", async () => {
+      const fixture = await commandFixture("orphan-fields");
+      const send = async (type: string, action: Record<string, unknown>) => {
+        const id = randomUUID();
+        const response = await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({
+            commandId: id,
+            action: { type, ...action, at: Date.now() },
+          });
+        return { id, response };
+      };
+
+      const archived = await send("ARCHIVE_CARD", {
+        cardId: fixture.cardId,
+      });
+      expect(archived.response.status).toBe(201);
+      const deletedColumn = await send("DELETE_COLUMN", {
+        columnId: fixture.sourceId,
+      });
+      expect(deletedColumn.response.status).toBe(201);
+
+      const orphaned = await prisma.card.findUniqueOrThrow({
+        where: { id: fixture.cardId },
+        select: { columnId: true, archivedAt: true },
+      });
+      expect(orphaned.columnId).toBe(`orphan:${fixture.boardId}`);
+      expect(orphaned.archivedAt).not.toBeNull();
+
+      const updateId = randomUUID();
+      const updateAction = {
+        type: "UPDATE_CARD",
+        cardId: fixture.cardId,
+        title: "Orphan still editable",
+        at: Date.now(),
+      };
+      const updated = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: updateId, action: updateAction })
+        .expect(201);
+      expect(
+        await prisma.card.findUniqueOrThrow({
+          where: { id: fixture.cardId },
+          select: { title: true },
+        }),
+      ).toMatchObject({ title: "Orphan still editable" });
+
+      const priority = await send("SET_CARD_PRIORITY", {
+        cardId: fixture.cardId,
+        priority: "high",
+      });
+      expect(priority.response.status).toBe(201);
+      expect(
+        await prisma.card.findUniqueOrThrow({
+          where: { id: fixture.cardId },
+          select: { priority: true },
+        }),
+      ).toMatchObject({ priority: "high" });
+
+      // The exact replay still returns the stored result after the orphan
+      // repoint; the fresh guard is skipped.
+      const replay = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: updateId, action: updateAction })
+        .expect(201);
+      expect(replay.body.seq).toBe(updated.body.seq);
+
+      // A move is still an archived-card conflict, not a missing-card 404.
+      const moveId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: moveId,
+          action: {
+            type: "MOVE_CARD",
+            cardId: fixture.cardId,
+            fromColumnId: `orphan:${fixture.boardId}`,
+            fromIndex: 0,
+            toColumnId: fixture.targetId,
+            toIndex: 0,
+            at: Date.now(),
+          },
+        })
+        .expect(409);
+      expect(await prisma.command.count({ where: { id: moveId } })).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: moveId },
+          },
+        }),
+      ).toBe(0);
+
+      // archive + delete-column + update + priority; the replay and the
+      // rejected move add nothing.
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(4);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(4);
+
+      await cleanupCommandFixture(fixture);
+    });
+
     it("validates the admin commandId on writes and reads", async () => {
       const fixture = await commandFixture("validation");
       for (const commandId of ["", "   ", "bad id", "a".repeat(65)]) {
