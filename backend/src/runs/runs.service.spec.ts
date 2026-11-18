@@ -90,7 +90,13 @@ describe("RunsService revert TOCTOU guard", () => {
           .fn()
           .mockResolvedValue([{ id: "c1", version: 1, deletedAt: null }]),
       },
-      board: { findMany: jest.fn().mockResolvedValue([]) },
+      command: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { seq: 1n } }),
+      },
+      board: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       column: { findMany: jest.fn().mockResolvedValue([]) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
       checklist: { findMany: jest.fn().mockResolvedValue([]) },
@@ -116,13 +122,21 @@ describe("RunsService revert TOCTOU guard", () => {
           .fn()
           .mockResolvedValue([{ id: "c1", version: 2, deletedAt: null }]),
       },
-      board: { findMany: jest.fn().mockResolvedValue([]) },
+      command: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { seq: 1n } }),
+      },
+      board: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       column: { findMany: jest.fn().mockResolvedValue([]) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
       checklist: { findMany: jest.fn().mockResolvedValue([]) },
       checklistItem: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const commands = {
+      latestSeq: jest.fn().mockResolvedValue(1),
+      inspectInversePreconditions: jest.fn().mockResolvedValue([]),
       deltaSince: jest.fn().mockResolvedValue({
         entries: [command],
         resync: false,
@@ -146,6 +160,7 @@ describe("RunsService revert TOCTOU guard", () => {
       commands as unknown as CommandsService,
       { publish: jest.fn() } as never,
       { record: jest.fn() } as never,
+      { retentionDays: jest.fn().mockResolvedValue(30) } as never,
     );
 
     const error = await service

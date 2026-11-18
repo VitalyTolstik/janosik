@@ -302,7 +302,14 @@ export function isReadOnlyControlOperation(
 ): boolean {
   if (method !== "POST") return false;
   return (
-    /^\/api\/v1\/boards\/[^/]+\/runs\/[^/]+\/revert\/preview\/?$/.test(path) ||
+    // L21: both the dedicated preview and the generic `revert` route. The
+    // generic route decides `dryRun` in the controller; a real revert there
+    // is PAT-forbidden in `RunsService` (never a read-only scope error), so
+    // a read-only PAT gets the documented `pat_forbidden` instead of
+    // `pat_read_only` while `{dryRun:true}` keeps working.
+    /^\/api\/v1\/boards\/[^/]+\/runs\/[^/]+\/revert(?:\/preview)?\/?$/.test(
+      path,
+    ) ||
     /^\/api\/v1\/boards\/[^/]+\/agent-sessions(?:\/[^/]+\/(?:heartbeat|end))?\/?$/.test(
       path,
     )

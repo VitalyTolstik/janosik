@@ -62,7 +62,7 @@ export function registerRunTools(server: McpServer, client: JanosikClient) {
       inputSchema: {
         boardId: z.string().describe("Board id."),
         status: z
-          .enum(["applied", "reverted", "failed"])
+          .enum(["applied", "reverted"])
           .optional()
           .describe("Filter by run status."),
         kind: z

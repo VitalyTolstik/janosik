@@ -242,6 +242,8 @@ export interface ApiErrorEnvelope {
   status?: string;
   /** Run that consumed an approval. */
   runId?: string | null;
+  /** Retention window (days) behind a `run_expired` refusal. */
+  retentionDays?: number;
 }
 
 /** Header carrying a REST idempotency key (ADR §6.12). */
@@ -429,13 +431,28 @@ export interface ApprovalSseEvent {
  * human rollback emits `run.reverted` after its transaction commits; the
  * original run is `runId`, the new audit run is `revertRunId`.
  */
-export interface RunSseEvent {
-  type: "run";
-  op: "reverted";
-  runId: string;
-  revertRunId: string;
-  at: number;
-}
+/**
+ * Board-scoped run lifecycle (TASK-166.15, L38).
+ *
+ * `created` announces a freshly committed run so an open board runs list can
+ * refresh without a reload. `reverted` preserves the original rollback frame.
+ * Both are emitted on the active board's stream only; fanning every run into
+ * the global `/agents` overview is TASK-180.6.
+ */
+export type RunSseEvent =
+  | {
+      type: "run";
+      op: "created";
+      runId: string;
+      at: number;
+    }
+  | {
+      type: "run";
+      op: "reverted";
+      runId: string;
+      revertRunId: string;
+      at: number;
+    };
 
 /** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 /**
@@ -1299,7 +1316,12 @@ export interface ApprovalListQuery {
 export const AGENT_RUN_KINDS = ["batch", "plan", "single", "revert"] as const;
 export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number];
 
-export const AGENT_RUN_STATUSES = ["applied", "reverted", "failed"] as const;
+/**
+ * L37: a run has only the two states a committed transaction can produce.
+ * Failed batches/plans roll back and never create a run; the old `failed`
+ * status had no writer. TASK-180.5 re-checks the public contract.
+ */
+export const AGENT_RUN_STATUSES = ["applied", "reverted"] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
 /**
@@ -1516,7 +1538,6 @@ export interface AgentsOverviewRunCounts {
   total: number;
   applied: number;
   reverted: number;
-  failed: number;
 }
 
 /**

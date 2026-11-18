@@ -123,6 +123,7 @@ const RESERVED_BODY_KEYS = new Set([
   "scope",
   "pausedAt",
   "runId",
+  "retentionDays",
 ]);
 
 type RawBody = Record<string, unknown>;
@@ -382,6 +383,9 @@ export function apiErrorEnvelope(
       : stringField(body?.runId) !== undefined
         ? { runId: stringField(body?.runId) as string }
         : {}),
+    ...(numberField(body?.retentionDays) !== undefined
+      ? { retentionDays: numberField(body?.retentionDays) as number }
+      : {}),
   };
 }
 

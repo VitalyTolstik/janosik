@@ -309,6 +309,78 @@ describe("RunsPanel (TASK-179.5)", () => {
     await waitFor(() => expect(api.listRuns).toHaveBeenCalledTimes(2));
   });
 
+  it("reuses the same commandId when a lost response is retried (M21)", async () => {
+    const preimages = {
+      "cmd-1": { schemaVersion: 1, entities: [{ touch: "card:card-1" }] },
+    };
+    vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    vi.spyOn(api, "getRun")
+      .mockResolvedValueOnce(detail(preimages))
+      // The failed attempt refreshes the still-applied run.
+      .mockResolvedValueOnce(detail(preimages))
+      .mockResolvedValue(revertedDetail(preimages));
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+    const revert = vi
+      .spyOn(api, "revertRun")
+      .mockRejectedValueOnce(new ApiError(500, { message: "response lost" }))
+      .mockResolvedValueOnce(revertRunDetail(preimages));
+
+    renderPanel();
+    await screen.findByTestId("agent-run-detail");
+
+    await userEvent.click(screen.getByTestId("agent-run-revert-apply"));
+    await userEvent.click(await screen.findByTestId("run-revert-confirm"));
+    expect(await screen.findByTestId("agent-run-action-error")).toBeVisible();
+
+    await userEvent.click(await screen.findByTestId("agent-run-revert-apply"));
+    await userEvent.click(await screen.findByTestId("run-revert-confirm"));
+    await waitFor(() => expect(revert).toHaveBeenCalledTimes(2));
+
+    const keys = revert.mock.calls.map((call) => call[2].commandId);
+    expect(keys).toHaveLength(2);
+    expect(typeof keys[0]).toBe("string");
+    expect(keys[1]).toBe(keys[0]);
+    expect(await screen.findByText("Run reverted")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-run-status")).toHaveAttribute(
+      "data-status",
+      "reverted",
+    );
+  });
+
+  it("maps rollback limit, validation and payload errors to specific copy (M22)", async () => {
+    vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    vi.spyOn(api, "getRun").mockResolvedValue(detail());
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+    vi.spyOn(api, "revertRun")
+      .mockRejectedValueOnce(
+        new ApiError(409, { code: "limit_exceeded", message: "limit" }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError(400, { code: "validation_failed", message: "invalid" }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError(413, { code: "payload_too_large", message: "large" }),
+      );
+
+    renderPanel();
+    await screen.findByTestId("agent-run-detail");
+    for (const expected of [
+      "A board limit refuses this rollback",
+      "The stored rollback is no longer a valid command",
+      "The rollback payload is too large to apply",
+    ]) {
+      await userEvent.click(screen.getByTestId("agent-run-revert-apply"));
+      await userEvent.click(await screen.findByTestId("run-revert-confirm"));
+      expect(
+        await screen.findByTestId("agent-run-action-error"),
+      ).toHaveTextContent(expected);
+    }
+  });
+
   it("previews conflicts for a member without apply, diff or pre-images", async () => {
     mocks.role = "MEMBER";
     vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
@@ -419,6 +491,41 @@ describe("RunsPanel (TASK-179.5)", () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 
+  it("adds a run.created frame to the open board runs list without a reload", async () => {
+    const fresh = run({
+      id: "run-created",
+      createdAt: Date.now(),
+      appliedAt: Date.now(),
+      clientRunId: "pat-batch-key",
+    });
+    const list = vi
+      .spyOn(api, "listRuns")
+      .mockResolvedValueOnce([RUN])
+      .mockResolvedValue([fresh, RUN]);
+    vi.spyOn(api, "getRun").mockResolvedValue(detail());
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+
+    renderPanel();
+    await screen.findByTestId(`agent-run-row-${RUN.id}`);
+    expect(screen.queryByTestId(`agent-run-row-${fresh.id}`)).toBeNull();
+
+    act(() => {
+      live.agentControl.publishRun({
+        type: "run",
+        op: "created",
+        runId: fresh.id,
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByTestId(`agent-run-row-${fresh.id}`),
+    ).toBeVisible();
+  });
+
   it("keeps the open run pinned when a refresh prepends the revert run", async () => {
     const revertRun = run({
       id: "run-revert",
@@ -472,13 +579,14 @@ describe("RunsPanel (TASK-179.5)", () => {
     expect(screen.queryByTestId("run-filter-time")).toBeNull();
 
     await userEvent.click(screen.getByTestId("run-filter-status"));
+    expect(screen.queryByTestId("run-filter-status-option-failed")).toBeNull();
     await userEvent.click(
-      screen.getByTestId("run-filter-status-option-failed"),
+      screen.getByTestId("run-filter-status-option-reverted"),
     );
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith(
         "board-1",
-        expect.objectContaining({ status: "failed" }),
+        expect.objectContaining({ status: "reverted" }),
       ),
     );
 

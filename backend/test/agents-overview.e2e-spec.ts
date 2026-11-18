@@ -371,7 +371,7 @@ describe("Agents overview aggregation (e2e)", () => {
         apiTokenId: ownerToken.id,
         agentSessionId: null,
         kind: "plan",
-        status: "failed",
+        status: "applied",
         createdAt: minutes(-30),
         appliedAt: minutes(-29.2),
       })
@@ -1251,10 +1251,20 @@ describe("Agents overview aggregation (e2e)", () => {
     expect(stale.counts.sessions.total).toBe(8);
     expect(stale.counts.runs.total).toBe(7);
 
-    const failed = await runsPage(owner.accessToken, { status: "failed" });
-    expect(failed.items.map((row) => row.id)).toEqual([alphaRun3]);
+    // L37: `failed` is a session status, never a run status.
+    const failed = await overview(owner.accessToken, {
+      section: "runs",
+      status: "failed",
+    }).expect(400);
+    expect(failed.body.code).toBe("invalid_filter");
     const reverted = await runsPage(owner.accessToken, { status: "reverted" });
     expect(reverted.items.map((row) => row.id)).toEqual([alphaRun2]);
+    const appliedRuns = await runsPage(owner.accessToken, {
+      status: "applied",
+    });
+    expect(appliedRuns.items.map((row) => row.id)).toEqual(
+      expect.arrayContaining([alphaRun3]),
+    );
   });
 
   it("applies the section filter whitelist and stable cursor binding", async () => {

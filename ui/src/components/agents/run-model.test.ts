@@ -64,8 +64,14 @@ describe("run filters", () => {
     ).toEqual(EMPTY_RUN_FILTER);
   });
 
+  it("ignores the retired failed run status instead of sending it to the server", () => {
+    expect(readRunFilter(new URLSearchParams("status=failed"))).toEqual(
+      EMPTY_RUN_FILTER,
+    );
+  });
+
   it("writes defaults out of the URL and removes the old alias", () => {
-    const params = new URLSearchParams("token=legacy&status=failed");
+    const params = new URLSearchParams("token=legacy&status=reverted");
     const next: AgentRunFilter = {
       board: "board-2",
       status: "applied",

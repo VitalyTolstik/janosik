@@ -1091,7 +1091,7 @@ paths:
             `rejected`, `expired`, `cancelled`, `consumed`. Sessions: `all`,
             `live`, `stale`, `paused`, `active`, `idle`, `waiting_approval`,
             `completed`, `failed`, `cancelled`. Runs: `all`, `applied`,
-            `reverted`, `failed`.
+            `reverted`.
           schema:
             $ref: "#/components/schemas/AgentsOverviewStatus"
         - name: kind
@@ -2772,8 +2772,8 @@ components:
           type: [integer, "null"]
           description: |
             Current version of the checked resource: command sequence for a
-            command conflict, `agentPolicyVersion` for policy CAS, run state for
-            `run_conflict`; otherwise `null`.
+            command or `run_conflict`, `agentPolicyVersion` for policy CAS;
+            otherwise `null`.
         statusCode:
           type: integer
           description: Compatibility mirror of the HTTP status.
@@ -2845,6 +2845,10 @@ components:
           description: Approval status for `approval_not_pending`.
         runId:
           type: [string, "null"]
+          description: Original run for `run_conflict`, or the lost run for `run_expired`.
+        retentionDays:
+          type: integer
+          description: Retention window behind a `run_expired` refusal.
     ApiErrorCode:
       type: string
       description: |
@@ -4805,7 +4809,10 @@ components:
       enum: [batch, plan, single, revert]
     AgentRunStatus:
       type: string
-      enum: [applied, reverted, failed]
+      description: |
+        Only committed runs exist. A failed batch or plan rolls back and
+        creates no run, so `failed` is not a run status (TASK-180.1 / L37).
+      enum: [applied, reverted]
     AgentRunCommandSummary:
       type: object
       required: [actionTypes, title]
@@ -4946,6 +4953,10 @@ components:
       enum: [approvals, sessions, runs]
     AgentsOverviewStatus:
       type: string
+      description: |
+        The union of per-section filters. `failed` remains a **session**
+        status only; `section=runs` rejects it with `400 invalid_filter`
+        because a failed transaction creates no run (L37).
       enum:
         - all
         - pending
@@ -5014,15 +5025,13 @@ components:
           description: Effective session, board or token pause on a live session.
     AgentsOverviewRunCounts:
       type: object
-      required: [total, applied, reverted, failed]
+      required: [total, applied, reverted]
       properties:
         total:
           type: integer
         applied:
           type: integer
         reverted:
-          type: integer
-        failed:
           type: integer
     AgentsOverviewCounts:
       type: object

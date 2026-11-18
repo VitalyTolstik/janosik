@@ -126,7 +126,7 @@ export function overviewResponse(
         stale: 0,
         paused: 0,
       },
-      runs: { total: 0, applied: 0, reverted: 0, failed: 0 },
+      runs: { total: 0, applied: 0, reverted: 0 },
     },
     facets: {
       tokens: [],

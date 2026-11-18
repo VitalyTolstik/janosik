@@ -332,8 +332,8 @@ export function AgentsPage() {
       if (value === "runs") {
         writeRunFilter(search, readRunFilter(search));
       } else if (section === "runs") {
-        // Run status/kind/time values are not session filters; `failed`
-        // overlaps by name but means a failed run, not a failed session.
+        // Run status/kind/time values are not session filters. `failed`
+        // belongs to the session lifecycle only; runs have no failed state.
         search.delete("status");
         search.delete("kind");
         search.delete("time");
