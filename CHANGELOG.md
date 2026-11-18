@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-179 large-screen layout: at `min-width: 1600px` the board-scoped Agent
+  Control modal grows to a 1400×860 canvas at 1920 (rail 220, list 360,
+  detail 818), and the global `/agents` content cap and detail rail grow from
+  980/352 to 1200/400 (49 px gutters at 1920; the cap binds at ~1822). At
+  exactly 1600 the fixed rails leave 978 px of content. The 1440/1024/390
+  pixel-parity geometry is unchanged, and `?board=all` approval/run deep links
+  now resolve the selected row's concrete board instead of calling
+  `/boards/all/...`.
+
 - TASK-176.11 admin agent boundary (docs-only): the English and Russian admin
   guides and ADR-166 now state explicitly that `/admin` is a support,
   moderation and investigation console and does not manage agent runs,
