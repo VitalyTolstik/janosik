@@ -176,13 +176,34 @@ function candidateIds(before: Board, action: BoardAction): CandidateIds {
     }
   }
 
+  /**
+   * The column a card sits in, for writers that bump its version even though
+   * no `columnId` is in the action payload.
+   */
+  const sourceColumn = (cardId: string | undefined) =>
+    cardId === undefined
+      ? undefined
+      : before.columns.find((column) => column.cardIds.includes(cardId));
+
   switch (action.type) {
     case "DELETE_CARD": {
       const card = before.cards[action.cardId];
+      const column = sourceColumn(action.cardId);
+      if (column !== undefined) add(ids, "column", column.id);
       for (const checklist of card?.checklists ?? []) {
         add(ids, "checklist", checklist.id);
         for (const item of checklist.items) add(ids, "checklistItem", item.id);
       }
+      break;
+    }
+    case "ARCHIVE_CARD": {
+      const column = sourceColumn(action.cardId);
+      if (column !== undefined) add(ids, "column", column.id);
+      break;
+    }
+    case "DUPLICATE_CARD": {
+      const column = sourceColumn(action.cardId);
+      if (column !== undefined) add(ids, "column", column.id);
       break;
     }
     case "DELETE_COLUMN": {

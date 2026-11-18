@@ -355,39 +355,56 @@ export class RunsService {
       });
     }
 
-    const run = await this.load(boardId, runId);
-    if (run.status !== "applied") {
-      throw this.conflict(`Run is already ${run.status}`, [], {
-        runId,
-        currentVersion,
-      });
-    }
-    if (run.kind === "revert") {
-      throw this.conflict("Reverting a revert is not supported", [], {
-        runId,
-        currentVersion,
-      });
-    }
+    // The preflight itself can lose the same race: a concurrent request with
+    // this key may commit between the replay lookup above and these reads.
+    // On any preflight `run_conflict`, reconcile once more against the
+    // winner before returning an error next to a reverted run.
+    let run: AgentRun;
+    let commands: CommandDeltaEntry[];
+    let analysis: RunAnalysis;
+    try {
+      run = await this.load(boardId, runId);
+      if (run.status !== "applied") {
+        throw this.conflict(`Run is already ${run.status}`, [], {
+          runId,
+          currentVersion,
+        });
+      }
+      if (run.kind === "revert") {
+        throw this.conflict("Reverting a revert is not supported", [], {
+          runId,
+          currentVersion,
+        });
+      }
 
-    const commands = await this.commandEntries(boardId, runId);
-    const analysis = await this.analyze(
-      boardId,
-      run,
-      commands,
-      await this.rawPreimages(boardId, runId),
-    );
-    if (analysis.conflicts.length > 0) {
-      throw this.conflict(
-        "Run cannot be reverted without conflicts",
-        analysis.conflicts,
-        { runId, currentVersion },
+      commands = await this.commandEntries(boardId, runId);
+      analysis = await this.analyze(
+        boardId,
+        run,
+        commands,
+        await this.rawPreimages(boardId, runId),
       );
-    }
-    if (analysis.inverses.length === 0) {
-      throw this.conflict("Run has no revertable commands", [], {
-        runId,
-        currentVersion,
-      });
+      if (analysis.conflicts.length > 0) {
+        throw this.conflict(
+          "Run cannot be reverted without conflicts",
+          analysis.conflicts,
+          { runId, currentVersion },
+        );
+      }
+      if (analysis.inverses.length === 0) {
+        throw this.conflict("Run has no revertable commands", [], {
+          runId,
+          currentVersion,
+        });
+      }
+    } catch (error) {
+      if (this.isRunConflict(error)) {
+        const winner = await this.matchingRevert(boardId, runId, commandId);
+        if (winner !== null) {
+          return this.get(boardId, winner.id, role, principal);
+        }
+      }
+      throw error;
     }
 
     const inverseCommands = analysis.inverses.map((action) => ({
@@ -494,14 +511,8 @@ export class RunsService {
       // revalidation (a 409 "already reverted") or during run creation
       // (P2002). Either way, the same key on the same original run is a
       // successful replay, not an error next to a reverted banner.
-      const existing = await this.prisma.agentRun.findUnique({
-        where: { boardId_clientRunId: { boardId, clientRunId: commandId } },
-      });
-      if (
-        existing !== null &&
-        existing.kind === "revert" &&
-        existing.revertsRunId === runId
-      ) {
+      const existing = await this.matchingRevert(boardId, runId, commandId);
+      if (existing !== null) {
         return this.get(boardId, existing.id, role, principal);
       }
       if (
@@ -559,6 +570,30 @@ export class RunsService {
     });
     if (run === null) throw new NotFoundException("Run not found");
     return run;
+  }
+
+  /** The committed revert run for this exact key and original run, if any. */
+  private async matchingRevert(
+    boardId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<AgentRun | null> {
+    const row = await this.prisma.agentRun.findUnique({
+      where: { boardId_clientRunId: { boardId, clientRunId: commandId } },
+    });
+    return row !== null && row.kind === "revert" && row.revertsRunId === runId
+      ? row
+      : null;
+  }
+
+  private isRunConflict(error: unknown): boolean {
+    if (!(error instanceof ConflictException)) return false;
+    const response = error.getResponse();
+    return (
+      typeof response === "object" &&
+      response !== null &&
+      (response as { code?: unknown }).code === "run_conflict"
+    );
   }
 
   private async commandEntries(
@@ -693,16 +728,18 @@ export class RunsService {
     }
 
     // H5: archive/delete inverses can only land in their recorded source
-    // column. If a human deleted that column in the meantime, refuse instead
-    // of letting the reducer fall back to column 1 or silently no-op and
-    // still mark the run reverted. Only the column's deletion state matters
-    // here — other cards moving in/out of it are not this card's conflict.
+    // column. Walk the inverse sequence, not just the final DB state, so a
+    // column deleted *by this same run* is restored by its own
+    // `RESTORE_COLUMN` before the card inverse needs it. A column a human
+    // deleted after the run has no restore step and still blocks.
     const inverseColumns = new Set<string>();
     for (const action of inverses) {
-      if (action.type === "UNARCHIVE_CARD" && action.columnId !== undefined) {
+      if (action.type === "RESTORE_COLUMN") {
+        inverseColumns.add(action.column.id);
+      } else if (action.type === "DELETE_COLUMN") {
         inverseColumns.add(action.columnId);
       } else if (
-        action.type === "RESTORE_CARD" &&
+        (action.type === "UNARCHIVE_CARD" || action.type === "RESTORE_CARD") &&
         action.columnId !== undefined
       ) {
         inverseColumns.add(action.columnId);
@@ -714,9 +751,28 @@ export class RunsService {
         [...inverseColumns].map((id) => `column:${id}`),
         client,
       );
+      const availableColumns = new Set<string>();
       for (const columnId of inverseColumns) {
         const current = columnStates.get(`column:${columnId}`) ?? null;
-        if (current !== null && current.deletedAt === null) continue;
+        if (current !== null && current.deletedAt === null) {
+          availableColumns.add(columnId);
+        }
+      }
+      for (const action of inverses) {
+        if (action.type === "RESTORE_COLUMN") {
+          availableColumns.add(action.column.id);
+          continue;
+        }
+        if (action.type === "DELETE_COLUMN") {
+          availableColumns.delete(action.columnId);
+          continue;
+        }
+        const columnId =
+          action.type === "UNARCHIVE_CARD" || action.type === "RESTORE_CARD"
+            ? action.columnId
+            : undefined;
+        if (columnId === undefined || availableColumns.has(columnId)) continue;
+        const current = columnStates.get(`column:${columnId}`) ?? null;
         conflicts.push({
           touch: `column:${columnId}`,
           expectedVersion: current?.version ?? 0,
@@ -763,9 +819,18 @@ export class RunsService {
         });
       }
     }
-    conflicts.sort((a, b) => a.touch.localeCompare(b.touch));
+    // One row per `touch`: the UI keys conflicts by `touch`, and H4/H5 can
+    // describe the same column from different angles. Keep the first, most
+    // specific reason (H5 deletion is added before the version comparison).
+    const byTouch = new Map<string, RevertConflictDto>();
+    for (const conflict of conflicts) {
+      if (!byTouch.has(conflict.touch)) byTouch.set(conflict.touch, conflict);
+    }
+    const deduped = [...byTouch.values()].sort((a, b) =>
+      a.touch.localeCompare(b.touch),
+    );
 
-    return { conflicts, inverses, lastByTouch, currentByTouch };
+    return { conflicts: deduped, inverses, lastByTouch, currentByTouch };
   }
 
   private async currentStates(

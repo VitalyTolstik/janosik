@@ -857,6 +857,10 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [
         boardTouch,
         touch.card(card.id),
+        // The bump above is a real write: it must be visible in `touches`,
+        // `versions` and the run pre-image, or a later command in the same
+        // run would compare its pre-image against a stale column version.
+        ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -1434,7 +1438,11 @@ async function writeCardAction(
           cardIdsOf(after, sourceColumn.id),
         );
       }
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+      ];
     }
 
     case "UNARCHIVE_CARD": {

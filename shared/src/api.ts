@@ -427,17 +427,14 @@ export interface ApprovalSseEvent {
 }
 
 /**
- * TASK-166.7: a run-level lifecycle event on the board stream. A successful
- * human rollback emits `run.reverted` after its transaction commits; the
- * original run is `runId`, the new audit run is `revertRunId`.
- */
-/**
  * Board-scoped run lifecycle (TASK-166.15, L38).
  *
- * `created` announces a freshly committed run so an open board runs list can
- * refresh without a reload. `reverted` preserves the original rollback frame.
- * Both are emitted on the active board's stream only; fanning every run into
- * the global `/agents` overview is TASK-180.6.
+ * `created` announces a freshly committed non-revert run so an open board
+ * runs list can refresh without a reload. `reverted` preserves the original
+ * rollback frame (the original run is `runId`, the new audit run is
+ * `revertRunId`); a revert run is announced only by that frame. Both are
+ * emitted on the active board's stream only; fanning every run into the
+ * global `/agents` overview is TASK-180.6.
  */
 export type RunSseEvent =
   | {
@@ -454,7 +451,6 @@ export type RunSseEvent =
       at: number;
     };
 
-/** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 /**
  * The server could not replay the full gap since `?since=` (the delta hit
  * its cap, or the requested seq is older than the retained log): the client
@@ -464,6 +460,7 @@ export interface ResyncSseEvent {
   type: "resync";
 }
 
+/** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 export type BoardSseEvent =
   | CommandSseEvent
   | PresenceSseEvent

@@ -349,6 +349,49 @@ describe("RunsPanel (TASK-179.5)", () => {
     );
   });
 
+  it("clears a lost-response error once the refetch reports the run reverted", async () => {
+    const preimages = {
+      "cmd-1": { schemaVersion: 1, entities: [{ touch: "card:card-1" }] },
+    };
+    vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
+    let resolveRefetch!: (value: RunDetailDto) => void;
+    const refetch = new Promise<RunDetailDto>((resolve) => {
+      resolveRefetch = resolve;
+    });
+    vi.spyOn(api, "getRun")
+      .mockResolvedValueOnce(detail(preimages))
+      .mockReturnValueOnce(refetch);
+    vi.spyOn(api, "previewRunRevert").mockResolvedValue(preview());
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "listTokens").mockResolvedValue([]);
+    vi.spyOn(api, "revertRun").mockRejectedValueOnce(
+      new ApiError(500, { message: "response lost" }),
+    );
+
+    renderPanel();
+    await screen.findByTestId("agent-run-detail");
+    await userEvent.click(screen.getByTestId("agent-run-revert-apply"));
+    await userEvent.click(await screen.findByTestId("run-revert-confirm"));
+    // The lost-response failure happened, but the next fetch will show the
+    // committed revert. The stale error must not reappear beside it.
+    await waitFor(() =>
+      expect(api.revertRun).toHaveBeenCalledWith(
+        "board-1",
+        RUN.id,
+        expect.objectContaining({ dryRun: false }),
+      ),
+    );
+
+    resolveRefetch(revertedDetail(preimages));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-run-status")).toHaveAttribute(
+        "data-status",
+        "reverted",
+      ),
+    );
+    expect(screen.queryByTestId("agent-run-action-error")).toBeNull();
+  });
+
   it("maps rollback limit, validation and payload errors to specific copy (M22)", async () => {
     vi.spyOn(api, "listRuns").mockResolvedValue([RUN]);
     vi.spyOn(api, "getRun").mockResolvedValue(detail());

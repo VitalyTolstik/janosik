@@ -26,7 +26,7 @@ dev database or the app on `:3000`/`:5173`.
 | Measurements | [`app-measurements.json`](./app-measurements.json), [`measurements.json`](./measurements.json), [`mockup-measurements.json`](./mockup-measurements.json) |
 
 The seed uses the real command transport: runs have genuine `Command` rows and
-`CommandPreimage` rows, so the applied/reverted/failed/conflict/retention
+`CommandPreimage` rows, so the applied/reverted/conflict/retention
 rollback states in the screenshots are real API states, not mocked HTML.
 
 ## Feedback checklist
@@ -44,7 +44,7 @@ the implementation and the place that pins it.
 | Run-detail footer sizing/order | Covered | Helper line above the action row, 11 px info glyph, 32 px `Open board`/`Copy link` buttons, 352 px pane. `run-ui.tsx`; `app-measurements.json` keys `runFooter`, `runFooterOpen`, `runFooterCopy`; `AgentsPage.test.tsx` checks the footer destination. |
 | Open board destinations | Covered | Every `Open board` action lands on the board's Agent Control surface: `?agents=inbox` for approvals, `?agents=live` for sessions, `?agents=runs` for runs. `routes.agentControl`; `AgentsPage.test.tsx` expects `/board/board-1?agents=live` and `?agents=runs`. |
 | Idle / stale session state | Covered | The primary pill keeps the lifecycle for an unpaused session; a separate no-heartbeat signal shows its age. A human pause uses `Paused`. The seeded Idle row keeps a fresh heartbeat, and paused/stale rows stay in the live preview but are excluded from `Needs a nudge`. `agent-model.ts`, `session-ui.tsx`, `AgentsPage.tsx`; `agent-model.test.ts` and `status-badge.test.tsx`. |
-| Rollback fixtures | Covered | The seed creates applied, reverted, failed, conflict and retention-expired runs through the real batch endpoint, including preimages and a genuine conflict. `scripts/seed-agent-pixel-demo.mjs`; `state-run-*` screenshots; `RunsPanel.test.tsx`. |
+| Rollback fixtures | Covered | The seed creates applied, reverted, conflict and retention-expired runs through the real batch endpoint, including preimages and a genuine conflict. `scripts/seed-agent-pixel-demo.mjs`; `state-run-*` screenshots; `RunsPanel.test.tsx`. |
 | Runs count / limit | Covered | Board Runs shows five rows per page, `5 of N` from loaded rows, `Load more` appends five and fetches the next server cursor; the global list keeps its own board-scoped page. `RunsPanel.tsx`, `use-agent-runs.ts`; `RunsPanel.test.tsx` (`shows a total and appends the next page with Load more`). |
 | Approvals expired / consumed / cancelled copy | Covered | Only an undecided `pending` row expires from `status + expiresAt`; a decided approval keeps `Approved` even past the decision TTL, while apply-time still refuses a lapsed apply window. Disabled actions and banner/history copy switch without a refresh. `effectiveApprovalStatus`, `statusHint`; `state-approval-*` screenshots; `AgentControlDialog.test.tsx` (`explains an expired request`). |
 | Mobile geometry | Covered | 390 full-screen modal, 44 px close/rail/actions, one scroll pane; 1024 sheet below the real header. `control-*.png` at 390/1024; `design-system.test.ts` pins the shell rules. |

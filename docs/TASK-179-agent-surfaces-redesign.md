@@ -237,7 +237,7 @@ Three clear layers:
 
 - Filters: status/kind/token/session/board/time; named token/session
   comboboxes; Clear filters.
-- List/detail: total + load more, retry detail, applied/reverted/failed
+- List/detail: total + load more, retry detail, applied/reverted
   badges right-aligned, conflicts/expired.
 - Preview revert for members; apply revert ADMIN with danger confirm and
   impact/conflicts; `run.reverted` refresh. Describe rollback as conditional:

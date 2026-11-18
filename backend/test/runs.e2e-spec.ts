@@ -719,10 +719,32 @@ describe("Agent runs and rollback (e2e)", () => {
     const runId = (deleted.body as CommandResponse).runId!;
     const key = randomUUID();
 
-    const [first, second] = await Promise.all([
-      revert(runId, key),
-      revert(runId, key),
-    ]);
+    // Hold the board advisory lock both reverts need. Both requests finish
+    // their preflight (top replay lookup, status check, analyze) while the
+    // run is still `applied`, then queue on the lock; the loser must
+    // reconcile with the winner from the post-lock path.
+    let acquired!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    let release!: () => void;
+    const lockReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+      acquired();
+      await lockReleased;
+    });
+    await lockAcquired;
+    const pending = Promise.all([revert(runId, key), revert(runId, key)]);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      release();
+    }
+    await holder;
+    const [first, second] = await pending;
     expect([first.status, second.status]).toEqual([200, 200]);
     const firstId = (first.body as RunDetailDto).run.id;
     expect((second.body as RunDetailDto).run.id).toBe(firstId);
@@ -745,9 +767,12 @@ describe("Agent runs and rollback (e2e)", () => {
   });
 
   it("never reuses a clientRunId for a different run (M20)", async () => {
-    const columnId = await createColumn("Revert keys");
-    const firstCard = await createCard(columnId, "First");
-    const secondCard = await createCard(columnId, "Second");
+    // Separate columns: H4 correctly treats another card leaving the same
+    // column as a later column change, which is not what this test measures.
+    const firstColumn = await createColumn("Revert keys first");
+    const secondColumn = await createColumn("Revert keys second");
+    const firstCard = await createCard(firstColumn, "First");
+    const secondCard = await createCard(secondColumn, "Second");
     const firstRun = (
       await command(
         "DELETE_CARD",
@@ -779,7 +804,8 @@ describe("Agent runs and rollback (e2e)", () => {
       ).status,
     ).toBe("applied");
     expect((await aggregate()).cards[secondCard]).toBeUndefined();
-    await retireColumn(columnId);
+    await retireColumn(firstColumn);
+    await retireColumn(secondColumn);
   });
 
   it("previews the WIP refusal before applying an unarchive (M22)", async () => {
@@ -1053,6 +1079,177 @@ describe("Agent runs and rollback (e2e)", () => {
     await retireColumn(columnId);
   });
 
+  it("does not self-conflict when a run adds/archives/moves and deletes in one column (H4)", async () => {
+    // ADD_CARD → DELETE_CARD: the delete bumps the column after the add; the
+    // run's own pre-image must record that bump, not compare against ADD's.
+    const addDeleteColumn = await createColumn("Self add delete");
+    const addDeleteCard = randomUUID();
+    const addDelete = await batch(
+      [
+        {
+          action: {
+            type: "ADD_CARD",
+            newCardId: addDeleteCard,
+            columnId: addDeleteColumn,
+            title: "Transient add delete",
+          },
+        },
+        { action: { type: "DELETE_CARD", cardId: addDeleteCard } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const addDeleteRun = (addDelete.body as CommandBatchResponse).runId!;
+    // The invisible bump must be visible: the delete's response carries the
+    // new column version for `ifMatchVersions` and the SSE `touches` list.
+    expect(
+      (addDelete.body as CommandBatchResponse).results[1]!.versions,
+    ).toEqual(
+      expect.objectContaining({
+        [`column:${addDeleteColumn}`]: expect.any(Number),
+      }),
+    );
+    expect(
+      (
+        await prisma.command.findFirstOrThrow({
+          where: { runId: addDeleteRun, type: "DELETE_CARD" },
+          select: { touches: true },
+        })
+      ).touches,
+    ).toContain(`column:${addDeleteColumn}`);
+    const addDeletePreview = (await preview(addDeleteRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(addDeletePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(addDeleteRun).expect(200);
+    expect(
+      (await aggregate()).columns.some(
+        (column) => column.id === addDeleteColumn,
+      ),
+    ).toBe(true);
+    await retireColumn(addDeleteColumn);
+
+    // ADD_CARD → ARCHIVE_CARD: archive also rewrites the source column.
+    const archiveColumn = await createColumn("Self add archive");
+    const archiveCard = randomUUID();
+    const archived = await batch(
+      [
+        {
+          action: {
+            type: "ADD_CARD",
+            newCardId: archiveCard,
+            columnId: archiveColumn,
+            title: "Transient archive",
+          },
+        },
+        { action: { type: "ARCHIVE_CARD", cardId: archiveCard } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const archiveRun = (archived.body as CommandBatchResponse).runId!;
+    expect(
+      (archived.body as CommandBatchResponse).results[1]!.versions,
+    ).toEqual(
+      expect.objectContaining({
+        [`column:${archiveColumn}`]: expect.any(Number),
+      }),
+    );
+    const archivePreview = (await preview(archiveRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(archivePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(archiveRun).expect(200);
+    expect(
+      (await aggregate()).columns.some((column) => column.id === archiveColumn),
+    ).toBe(true);
+    await retireColumn(archiveColumn);
+
+    // MOVE_CARD → DELETE_CARD: the move and the delete both bump the source
+    // and destination columns.
+    const moveFrom = await createColumn("Self move from");
+    const moveTo = await createColumn("Self move to");
+    const movedCard = await createCard(moveFrom, "Move then delete");
+    const moved = await batch(
+      [
+        {
+          action: {
+            type: "MOVE_CARD",
+            cardId: movedCard,
+            fromColumnId: moveFrom,
+            fromIndex: 0,
+            toColumnId: moveTo,
+            toIndex: 0,
+          },
+        },
+        { action: { type: "DELETE_CARD", cardId: movedCard } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const movedRun = (moved.body as CommandBatchResponse).runId!;
+    const movedPreview = (await preview(movedRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(movedPreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(movedRun).expect(200);
+    const restored = await aggregate();
+    const fromColumn = restored.columns.find(
+      (column) => column.id === moveFrom,
+    );
+    const toColumn = restored.columns.find((column) => column.id === moveTo);
+    expect(fromColumn?.cardIds).toContain(movedCard);
+    expect(toColumn?.cardIds).not.toContain(movedCard);
+    await retireColumn(moveFrom);
+    await retireColumn(moveTo);
+  });
+
+  it("reverts a run that deleted its own source column (H5)", async () => {
+    // Archive X, then delete C in the same run. The inverse sequence restores
+    // C before unarchiving X, so it must not look like a human deletion.
+    const archiveColumn = await createColumn("Run deletes archive source");
+    const archiveCard = await createCard(archiveColumn, "Archive with column");
+    const archived = await batch(
+      [
+        { action: { type: "ARCHIVE_CARD", cardId: archiveCard } },
+        { action: { type: "DELETE_COLUMN", columnId: archiveColumn } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const archiveRun = (archived.body as CommandBatchResponse).runId!;
+    const archivePreview = (await preview(archiveRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(archivePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(archiveRun).expect(200);
+    const afterArchive = await aggregate();
+    expect(afterArchive.columns.some((c) => c.id === archiveColumn)).toBe(true);
+    expect(
+      afterArchive.columns
+        .find((c) => c.id === archiveColumn)
+        ?.cardIds.includes(archiveCard),
+    ).toBe(true);
+    await retireColumn(archiveColumn);
+
+    // Delete X, then delete C. The column restore comes before the card
+    // restore in the inverse sequence.
+    const deleteColumn = await createColumn("Run deletes card source");
+    const deleteCard = await createCard(deleteColumn, "Delete with column");
+    const deleted = await batch(
+      [
+        { action: { type: "DELETE_CARD", cardId: deleteCard } },
+        { action: { type: "DELETE_COLUMN", columnId: deleteColumn } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const deleteRun = (deleted.body as CommandBatchResponse).runId!;
+    const deletePreview = (await preview(deleteRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(deletePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(deleteRun).expect(200);
+    const afterDelete = await aggregate();
+    expect(afterDelete.columns.some((c) => c.id === deleteColumn)).toBe(true);
+    expect(
+      afterDelete.columns
+        .find((c) => c.id === deleteColumn)
+        ?.cardIds.includes(deleteCard),
+    ).toBe(true);
+    await retireColumn(deleteColumn);
+  });
+
   it("blocks deleting a card from a column a human removed (H5)", async () => {
     const columnId = await createColumn("Source delete");
     const cardId = await createCard(columnId, "Deleted by run");
@@ -1072,6 +1269,10 @@ describe("Agent runs and rollback (e2e)", () => {
         expect.objectContaining({ touch: `column:${columnId}` }),
       ]),
     );
+    // H4 version check and H5 source-column deletion both point at the same
+    // column. The UI keys rows by `touch`, so the API must emit it once.
+    const touches = previewBody.conflicts.map((conflict) => conflict.touch);
+    expect(new Set(touches).size).toBe(touches.length);
     const refused = await revert(runId).expect(409);
     expect(refused.body.code).toBe("run_conflict");
     expect(
@@ -1484,6 +1685,7 @@ describe("Agent runs and rollback (e2e)", () => {
         },
       );
       const reader = stream.body!.getReader();
+      const createdRunIds: string[] = [];
       const framePromise = (async () => {
         const decoder = new TextDecoder();
         let buffer = "";
@@ -1502,6 +1704,10 @@ describe("Agent runs and rollback (e2e)", () => {
               op?: string;
               runId?: string;
             };
+            if (frame.type === "run" && frame.op === "created") {
+              if (frame.runId !== undefined) createdRunIds.push(frame.runId);
+              continue;
+            }
             if (
               frame.type === "run" &&
               frame.op === "reverted" &&
@@ -1512,9 +1718,13 @@ describe("Agent runs and rollback (e2e)", () => {
           }
         }
       })();
-      await revert(runId).expect(200);
+      const reverted = await revert(runId).expect(200);
+      const revertRunId = (reverted.body as RunDetailDto).run.id;
       const frame = await framePromise;
       expect(frame).toMatchObject({ type: "run", op: "reverted", runId });
+      // A revert run is announced by `run.reverted`, not an extra
+      // `run.created` that would refresh the list twice.
+      expect(createdRunIds).not.toContain(revertRunId);
       await reader.cancel();
     } finally {
       clearTimeout(timeout);

@@ -809,9 +809,11 @@ export class CommandsService {
     }
     // L38: announce a freshly created run on the board stream. Admin/internal
     // commands never create a run, and a replay returns an existing id, so
-    // neither can fabricate a `run.created` frame. This is board-scoped on
+    // neither can fabricate a `run.created` frame. A revert run is announced
+    // by `run.reverted` after the original is marked, not here — otherwise an
+    // open list refreshes twice for one rollback. This is board-scoped on
     // purpose; routing a run to every open `/agents` overview is TASK-180.6.
-    if (applied.createdRun && applied.runId !== null) {
+    if (applied.createdRun && applied.runId !== null && runKind !== "revert") {
       this.realtime.publish(boardId, {
         type: "run",
         op: "created",

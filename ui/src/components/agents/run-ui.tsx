@@ -369,6 +369,9 @@ export function RunDetail({
         const loaded = await api.getRun(boardId, runId);
         if (!alive) return;
         setDetail(loaded);
+        // A retry after a lost response can discover the revert already
+        // committed; do not leave the old error banner beside `reverted`.
+        if (loaded.run.status === "reverted") setActionError(null);
         if (loaded.run.status === "applied" && loaded.run.kind !== "revert") {
           await requestPreview(alive);
         }
