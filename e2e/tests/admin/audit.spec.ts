@@ -138,10 +138,12 @@ test("F2: an audit master link opens Masters and survives master deletion", asyn
   await loginAsMaster(page, ownerCredentials());
   await page.goto(adminPath("audit"), { waitUntil: "domcontentloaded" });
   await searchAdminList(page, "audit", master.email);
+  // The action cell is an exact badge: a substring filter also matches
+  // `admin.login_failed` and other rows that reference the same email.
   const row = page
     .getByRole("row")
     .filter({ hasText: master.email })
-    .filter({ hasText: "admin.login" });
+    .filter({ has: page.getByText("admin.login", { exact: true }) });
   const link = row.getByRole("link", { name: master.email, exact: true });
   await expect(link).toBeVisible();
   await link.click();
@@ -163,7 +165,7 @@ test("F2: an audit master link opens Masters and survives master deletion", asyn
   const kept = page
     .getByRole("row")
     .filter({ hasText: master.email })
-    .filter({ hasText: "admin.login" });
+    .filter({ has: page.getByText("admin.login", { exact: true }) });
   await expect(kept).toContainText(master.email);
   await expect(kept.getByTestId(`admin-copy-${master.email}`)).toBeVisible();
   await expect(
