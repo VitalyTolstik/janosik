@@ -442,8 +442,13 @@ export function CardDetailPage() {
       className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4"
       data-testid="admin-card-detail-scroll"
     >
-      <div className="flex items-center gap-2">
-        <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
+      <div className="flex min-w-0 items-start gap-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          asChild
+        >
           <Link
             to={requestedBack ?? boardHref(card.boardId)}
             aria-label={t("admin.common.back")}
@@ -451,60 +456,62 @@ export function CardDetailPage() {
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
         </Button>
-        <PageHeader
-          title={card.title}
-          subtitle={`${card.boardTitle} · ${card.columnTitle}`}
-          actions={
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid="admin-card-detail-actions"
-                >
-                  {t("admin.common.actions")}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {card.deletedAt === null ? (
-                  <DropdownMenuItem
-                    data-testid="admin-card-edit-description"
-                    onSelect={openDescriptionEditor}
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            title={card.title}
+            subtitle={`${card.boardTitle} · ${card.columnTitle}`}
+            actions={
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="admin-card-detail-actions"
                   >
-                    {t("admin.cards.action.editDescription")}
-                  </DropdownMenuItem>
-                ) : null}
-                {card.archivedAt === null ? (
+                    {t("admin.common.actions")}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {card.deletedAt === null ? (
+                    <DropdownMenuItem
+                      data-testid="admin-card-edit-description"
+                      onSelect={openDescriptionEditor}
+                    >
+                      {t("admin.cards.action.editDescription")}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {card.archivedAt === null ? (
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        void run(t("admin.cards.action.archive"), () =>
+                          adminApi.archiveCard(card.id),
+                        )
+                      }
+                    >
+                      {t("admin.cards.action.archive")}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        void run(t("admin.cards.action.unarchive"), () =>
+                          adminApi.unarchiveCard(card.id),
+                        )
+                      }
+                    >
+                      {t("admin.cards.action.unarchive")}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
-                    onSelect={() =>
-                      void run(t("admin.cards.action.archive"), () =>
-                        adminApi.archiveCard(card.id),
-                      )
-                    }
+                    className="text-danger focus:text-danger"
+                    onSelect={() => setConfirmDelete(true)}
                   >
-                    {t("admin.cards.action.archive")}
+                    {t("admin.cards.action.delete")}
                   </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      void run(t("admin.cards.action.unarchive"), () =>
-                        adminApi.unarchiveCard(card.id),
-                      )
-                    }
-                  >
-                    {t("admin.cards.action.unarchive")}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="text-danger focus:text-danger"
-                  onSelect={() => setConfirmDelete(true)}
-                >
-                  {t("admin.cards.action.delete")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          }
-        />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

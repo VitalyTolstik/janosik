@@ -61,4 +61,30 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     expect(close?.className).toContain("w-11");
     expect(close?.className).toContain("md:h-8");
   });
+
+  it("leaves Escape to an expanded combobox instead of closing the dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <Dialog defaultOpen>
+          <DialogContent>
+            <DialogTitle>Agent control</DialogTitle>
+            <DialogDescription>Combobox Escape probe</DialogDescription>
+            <button
+              type="button"
+              role="combobox"
+              aria-expanded="true"
+              aria-haspopup="listbox"
+            >
+              Status
+            </button>
+          </DialogContent>
+        </Dialog>
+      </I18nProvider>,
+    );
+
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeNull());
+  });
 });

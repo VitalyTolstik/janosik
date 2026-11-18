@@ -68,6 +68,22 @@ const DialogContent = React.forwardRef<
             className,
           )}
           {...props}
+          // Radix marks the Popover's DismissableLayer as highest only in a
+          // passive effect. An immediate Escape right after opening a
+          // combobox can race that update and close the whole Dialog together
+          // with the listbox. While a combobox is expanded, Escape belongs to
+          // it: shield the Dialog; the combobox closes itself.
+          onEscapeKeyDown={(event) => {
+            props.onEscapeKeyDown?.(event);
+            if (
+              !event.defaultPrevented &&
+              document.querySelector(
+                '[role="combobox"][aria-expanded="true"]',
+              ) !== null
+            ) {
+              event.preventDefault();
+            }
+          }}
         >
           {children}
           {hideClose ? null : (

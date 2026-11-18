@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -67,8 +68,11 @@ export function useCombobox({
 
   // Escape belongs to the listbox while it is open, even if the Dialog focus
   // trap moved focus out of the trigger. Capture at the document so the
-  // Dialog's own Escape handler never sees an open combobox.
-  useEffect(() => {
+  // Dialog's own Escape handler never sees an open combobox. This is a
+  // layout effect: the listener must be registered before the portalled
+  // listbox paints, otherwise an immediate Escape after opening can reach the
+  // Dialog and close the whole modal (browser E2E race).
+  useLayoutEffect(() => {
     if (!open) return;
     const onEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
