@@ -1801,6 +1801,9 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
     fireEvent.click(
       await screen.findByTestId("admin-card-link-suggestion-card-4"),
     );
+    expect(document.activeElement).toBe(
+      screen.getByTestId("admin-card-link-target"),
+    );
     fireEvent.click(screen.getByTestId("admin-card-link-add"));
     await waitFor(() => {
       expect(
@@ -2087,16 +2090,45 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
     expect(screen.getByTestId("admin-card-link-add")).not.toBeDisabled();
   });
 
-  it("does not apply incoming links to the viewed card's outgoing cap", async () => {
+  it("uses the singular incoming copy for one link", async () => {
     const state = relationsState();
-    state.cardLinks = Array.from({ length: 50 }, (_, index) =>
+    state.cardLinks = [
       adminCardLink({
-        id: `incoming-${index}`,
-        fromCardId: index % 2 === 0 ? "card-2" : "card-3",
+        id: "one-incoming",
+        fromCardId: "card-2",
         toCardId: "card-1",
         type: "relates_to",
       }),
-    );
+    ];
+    await renderRelations(state);
+    expect(
+      screen.getByTestId("admin-card-links-incoming-count"),
+    ).toHaveTextContent("1 incoming link");
+  });
+
+  it("does not apply incoming links to the viewed card's outgoing cap", async () => {
+    const state = relationsState();
+    const incoming = Array.from({ length: 50 }, (_, index) => {
+      const id = `incoming-card-${index}`;
+      const linkId = `incoming-link-${index}`;
+      state.cards.push(adminCard({ id, title: `Incoming ${index}` }));
+      state.contentBoard!.columns[0]!.cardIds.push(id);
+      state.contentBoard!.cards[id] = {
+        id,
+        title: `Incoming ${index}`,
+        createdAt: 100 + index,
+        updatedAt: 100 + index,
+        labelIds: [],
+        links: [{ id: linkId, type: "relates_to", targetCardId: "card-1" }],
+      };
+      return adminCardLink({
+        id: linkId,
+        fromCardId: id,
+        toCardId: "card-1",
+        type: "relates_to",
+      });
+    });
+    state.cardLinks = incoming;
     await renderRelations(state);
 
     expect(
@@ -2114,6 +2146,10 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
       await screen.findByTestId("admin-card-link-suggestion-card-2"),
     );
     expect(screen.getByTestId("admin-card-link-add")).not.toBeDisabled();
+    // The already-linked incoming cards are excluded from the picker.
+    expect(
+      screen.queryByTestId("admin-card-link-suggestion-incoming-card-0"),
+    ).toBeNull();
   });
 
   it("shows the reverse holder cap instead of the viewed card's incoming count", async () => {
@@ -2320,6 +2356,7 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
     expect(screen.getByTestId("admin-card-link-selected")).toHaveTextContent(
       "Card 2",
     );
+    expect(document.activeElement).toBe(input);
 
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByTestId("admin-card-link-selected")).toBeNull();
@@ -2330,6 +2367,20 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
 
   it("keeps dangling/deleted link rows readable and removes only safe rows", async () => {
     const state = relationsState();
+    state.cards.push(
+      adminCard({
+        id: "card-6",
+        title: "Deleted target",
+        commentIds: [],
+        deletedAt: 1,
+      }),
+      adminCard({
+        id: "card-7",
+        title: "Deleted holder",
+        commentIds: [],
+        deletedAt: 1,
+      }),
+    );
     state.cardLinks = [
       adminCardLink({
         id: "dangling-out",
@@ -2351,10 +2402,11 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
         type: "duplicates",
       }),
     ];
-    await renderRelations(state);
+    const { server } = await renderRelations(state);
 
     const dangling = screen.getByTestId("admin-card-link-row-dangling-out");
-    expect(dangling).toHaveTextContent("Deleted card");
+    expect(dangling).toHaveTextContent("Deleted target");
+    expect(dangling).toHaveTextContent("Card deleted");
     expect(
       screen.getByTestId("admin-card-link-remove-dangling-out"),
     ).toBeTruthy();
@@ -2364,15 +2416,26 @@ describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
       screen.queryByTestId("admin-card-link-remove-deleted-out"),
     ).toBeNull();
 
-    fireEvent.click(screen.getByTestId("admin-card-link-open"));
-    await waitFor(() =>
-      expect(
-        screen.queryByTestId("admin-card-link-remove-dangling-in"),
-      ).toBeNull(),
-    );
+    // The deleted incoming holder is known from the DTO flag, so Remove is
+    // hidden before the lazy board aggregate is ever requested.
+    const incoming = screen.getByTestId("admin-card-link-row-dangling-in");
+    expect(incoming).toHaveTextContent("Deleted holder");
+    expect(incoming).toHaveTextContent("Card deleted");
     expect(
-      screen.getByTestId("admin-card-link-row-dangling-in"),
-    ).toHaveTextContent("Card deleted");
+      screen.queryByTestId("admin-card-link-remove-dangling-in"),
+    ).toBeNull();
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "GET" && request.path.endsWith("/content"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" && request.path.endsWith("/commands"),
+      ),
+    ).toHaveLength(0);
   });
 
   it("names rename buttons after the checklist or item", async () => {

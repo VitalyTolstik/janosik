@@ -324,6 +324,8 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
 }) => {
   const columnId = await board.column(uniqueToken("timeline-column"));
   const cardId = await board.card(columnId, uniqueToken("timeline-card"));
+  const suggestionTitle = uniqueToken("timeline-target");
+  const suggestionId = await board.card(columnId, suggestionTitle);
   const longLabelId = await board.label(
     `${uniqueToken("lbl")}${"x".repeat(9)}`,
     "red",
@@ -386,6 +388,10 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
       await page.getByTestId("admin-card-link-open").click();
       const linkForm = page.getByTestId("admin-card-link-form");
       await expect(linkForm).toBeVisible();
+      await page.getByTestId("admin-card-link-target").fill(suggestionTitle);
+      await expect(
+        page.getByTestId(`admin-card-link-suggestion-${suggestionId}`),
+      ).toBeVisible();
       for (const box of [linkForm, relations]) {
         expect(
           await box.evaluate(
@@ -405,6 +411,15 @@ test("C8: a master edits checklists and links and every change has an audit row"
   const seeded = await seedRichCard(board, { withLink: false });
   const targetTitle = uniqueToken("relation-target");
   const targetId = await board.card(seeded.columnId, targetTitle);
+  const incomingTitle = uniqueToken("relation-incoming");
+  const incomingId = await board.card(seeded.columnId, incomingTitle);
+  await board.command({
+    type: "ADD_CARD_LINK",
+    cardId: incomingId,
+    linkId: randomUUID(),
+    targetCardId: seeded.cardId,
+    linkType: "relates_to",
+  });
   await loginAsMaster(page, ownerCredentials());
   await page.goto(adminPath(`cards/${seeded.cardId}`), {
     waitUntil: "domcontentloaded",
@@ -470,6 +485,15 @@ test("C8: a master edits checklists and links and every change has an audit row"
   await page.getByTestId(`admin-checklist-delete-${checklistId}`).click();
   await confirmAction(page);
   await expect(checklistRow).toHaveCount(0);
+
+  // Remove an incoming link through its holder card (the other card).
+  const incomingRow = page
+    .locator('[data-testid^="admin-card-link-row-"]')
+    .filter({ hasText: incomingTitle })
+    .first();
+  await expect(incomingRow).toBeVisible();
+  await incomingRow.locator('[data-testid^="admin-card-link-remove-"]').click();
+  await expect(incomingRow).toContainText("Deleted");
 
   // Add and remove a link through the admin combobox.
   await page.getByTestId("admin-card-link-open").click();

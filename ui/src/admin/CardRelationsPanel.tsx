@@ -520,6 +520,7 @@ export function CardRelationsPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const boardRequestRef = useRef(0);
+  const mountedRef = useRef(true);
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
 
@@ -541,6 +542,16 @@ export function CardRelationsPanel({
    * link draft. Link commands do refetch: the target list, pair/cap/cycle
    * checks and dangling state all derive from the aggregate.
    */
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Invalidate an in-flight aggregate fetch: a late response must not set
+      // state after the panel unmounted.
+      boardRequestRef.current += 1;
+    };
+  }, []);
+
   const loadBoard = () => {
     const request = ++boardRequestRef.current;
     setBoardLoading(true);
@@ -548,12 +559,12 @@ export function CardRelationsPanel({
     adminApi
       .getBoardContent(card.boardId)
       .then((next) => {
-        if (boardRequestRef.current !== request) return;
+        if (!mountedRef.current || boardRequestRef.current !== request) return;
         setBoard(next);
         setBoardLoading(false);
       })
       .catch(() => {
-        if (boardRequestRef.current !== request) return;
+        if (!mountedRef.current || boardRequestRef.current !== request) return;
         setBoardError(true);
         setBoardLoading(false);
       });
@@ -898,9 +909,9 @@ export function CardRelationsPanel({
     if (!isCardLinkType(link.type) || link.deletedAt !== null) return false;
     if (direction === "in") {
       // The row is stored on the other card; removing it needs that holder to
-      // be live. Before the lazy board aggregate arrives, allow the attempt —
-      // the backend guard still refuses a deleted holder with 404.
-      return board === null || board.cards[link.otherCardId] !== undefined;
+      // be live. The DTO flag lets us hide the action before the lazy board
+      // aggregate is loaded.
+      return !link.otherCardDeleted;
     }
     return true;
   };
@@ -923,6 +934,9 @@ export function CardRelationsPanel({
     setTargetId(target.id);
     setLinkQuery("");
     setCursor(0);
+    // Clicking/tabbing an option moves focus to the list button; put it back
+    // on the combobox so the next keystroke keeps editing the target.
+    targetInputRef.current?.focus({ preventScroll: true });
   };
 
   const handleTargetKeyDown = (
@@ -1116,8 +1130,7 @@ export function CardRelationsPanel({
         ) : (
           <ul className="min-w-0 space-y-1">
             {linkRows.map(({ direction, link }) => {
-              const dangling =
-                board !== null && board.cards[link.otherCardId] === undefined;
+              const dangling = link.otherCardDeleted;
               const removable = canRemoveLink(direction, link);
               return (
                 <li
@@ -1197,9 +1210,11 @@ export function CardRelationsPanel({
             })}
           </span>
           <span data-testid="admin-card-links-incoming-count">
-            {t("admin.cards.relations.incomingCount", {
-              count: liveIncoming.length,
-            })}
+            {liveIncoming.length === 1
+              ? t("admin.cards.relations.incomingCountOne", { count: 1 })
+              : t("admin.cards.relations.incomingCount", {
+                  count: liveIncoming.length,
+                })}
           </span>
         </div>
 

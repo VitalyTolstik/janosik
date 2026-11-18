@@ -1850,10 +1850,43 @@ describe("Admin API (e2e)", () => {
             id: linkId,
             otherCardId: targetCard.id,
             otherCardTitle: "Link target",
+            otherCardDeleted: false,
             type: "blocks",
           }),
         ]),
       );
+
+      // The DTO flags a soft-deleted other end independently of the board
+      // aggregate, so the admin UI can show its dangling badge immediately.
+      await prisma.card.update({
+        where: { id: targetCard.id },
+        data: { deletedAt: new Date() },
+      });
+      const danglingDetail = await server()
+        .get(`/api/v1/admin/cards/${fixture.cardId}/detail`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(danglingDetail.body.linksOut).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: linkId, otherCardDeleted: true }),
+        ]),
+      );
+      const targetDetail = await server()
+        .get(`/api/v1/admin/cards/${targetCard.id}/detail`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(targetDetail.body.linksIn).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: linkId,
+            otherCardDeleted: false,
+          }),
+        ]),
+      );
+      await prisma.card.update({
+        where: { id: targetCard.id },
+        data: { deletedAt: null },
+      });
 
       // Archived cards keep checklist and link editing; only moves stay
       // blocked (covered by the field test above).
@@ -1955,6 +1988,15 @@ describe("Admin API (e2e)", () => {
           },
         }),
       ).toBe(1);
+      const deletedSourceTargetDetail = await server()
+        .get(`/api/v1/admin/cards/${targetCard.id}/detail`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(deletedSourceTargetDetail.body.linksIn).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: linkId, otherCardDeleted: true }),
+        ]),
+      );
 
       await cleanupCommandFixture(fixture);
     });
@@ -2403,13 +2445,20 @@ describe("Admin API (e2e)", () => {
         })),
       });
 
+      const checklistsBefore = await prisma.checklist.count({
+        where: { cardId: fixture.cardId },
+      });
+      const itemsBefore = await prisma.checklistItem.count({
+        where: { checklistId: checklistIds[0]! },
+      });
       const reject = async (action: Record<string, unknown>): Promise<void> => {
         const id = randomUUID();
-        await server()
+        const response = await server()
           .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
           .set("Authorization", `Bearer ${adminToken}`)
           .send({ commandId: id, action: { ...action, at: Date.now() } })
           .expect(409);
+        expect(response.body).toMatchObject({ conflict: "wip" });
         expect(await prisma.command.count({ where: { id } })).toBe(0);
         expect(
           await prisma.adminAuditLog.count({
@@ -2444,6 +2493,16 @@ describe("Admin API (e2e)", () => {
           where: { action: "board.command", targetId: fixture.boardId },
         }),
       ).toBe(0);
+      expect(
+        await prisma.checklist.count({
+          where: { cardId: fixture.cardId },
+        }),
+      ).toBe(checklistsBefore);
+      expect(
+        await prisma.checklistItem.count({
+          where: { checklistId: checklistIds[0]! },
+        }),
+      ).toBe(itemsBefore);
 
       await cleanupCommandFixture(fixture);
     });

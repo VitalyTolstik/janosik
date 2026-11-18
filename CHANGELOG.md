@@ -34,12 +34,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   row; exact replays stay idempotent. The relation counters separate live
   outgoing rows (the holder cap) from incoming rows; a reverse link option
   shows the target holder's own cap. The lazy relations chunk is part of the
-  size gate: rolldown split the shared admin `ui` and `links` chunks out when
-  the panel arrived, so the entry now measures `AdminApp` + both lazy panels +
-  those admin chunks. **101.62 kB → 111.80 kB gzip against an explicit 112 kB
-  budget**, leaving 0.20 kB headroom (the previous 102 kB budget measured only
-  the shell + field panel). EN/RU admin content docs describe the editor and
-  counters; the monitoring note records the audit correlation.
+  size gate: the second lazy panel split the shared admin `ui` chunk out of
+  `AdminApp`, and the panel also loads the existing board `links` chunk, so the
+  entry now measures `AdminApp` + both lazy panels + those shared chunks.
+  **101.62 kB → 111.86 kB gzip against an explicit 113 kB budget**, leaving
+  1.14 kB headroom (the DTO flag grew the page by 68 bytes; the previous 102 kB
+  budget measured only the shell + field panel). EN/RU admin content docs
+  describe the editor and counters; the monitoring note records the audit
+  correlation.
 
 - TASK-176.9 B1 admin card fields: `/admin/cards/:id` now has a compact
   `Properties` panel for the card title, assignee, due date, priority, cover

@@ -939,6 +939,7 @@ const en = {
   "admin.cards.relations.outgoingCount":
     "{count} of {limit} outgoing links on this card",
   "admin.cards.relations.incomingCount": "{count} incoming links",
+  "admin.cards.relations.incomingCountOne": "{count} incoming link",
   "admin.cards.relations.holderCap":
     "“{title}” holds {count} of {limit} outgoing links",
   "admin.cards.relations.renameChecklistLabel": "Rename checklist “{title}”",
@@ -2315,6 +2316,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.relations.outgoingCount":
     "{count} из {limit} исходящих связей у этой карточки",
   "admin.cards.relations.incomingCount": "{count} входящих связей",
+  "admin.cards.relations.incomingCountOne": "{count} входящая связь",
   "admin.cards.relations.holderCap":
     "«{title}»: {count} из {limit} исходящих связей",
   "admin.cards.relations.renameChecklistLabel":

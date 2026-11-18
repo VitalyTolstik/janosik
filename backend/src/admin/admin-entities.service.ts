@@ -1616,7 +1616,7 @@ export class AdminEntitiesService {
             deletedAt: true,
             createdAt: true,
             toCardId: true,
-            toCard: { select: { title: true } },
+            toCard: { select: { title: true, deletedAt: true } },
           },
         },
         linksTo: {
@@ -1626,7 +1626,7 @@ export class AdminEntitiesService {
             deletedAt: true,
             createdAt: true,
             fromCardId: true,
-            fromCard: { select: { title: true } },
+            fromCard: { select: { title: true, deletedAt: true } },
           },
         },
         comments: {
@@ -1924,6 +1924,7 @@ export class AdminEntitiesService {
         id: link.id,
         otherCardId: link.toCardId,
         otherCardTitle: link.toCard.title,
+        otherCardDeleted: link.toCard.deletedAt !== null,
         type: link.type,
         deletedAt: MS(link.deletedAt),
         createdAt: link.createdAt.getTime(),
@@ -1932,6 +1933,7 @@ export class AdminEntitiesService {
         id: link.id,
         otherCardId: link.fromCardId,
         otherCardTitle: link.fromCard.title,
+        otherCardDeleted: link.fromCard.deletedAt !== null,
         type: link.type,
         deletedAt: MS(link.deletedAt),
         createdAt: link.createdAt.getTime(),

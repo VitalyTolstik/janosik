@@ -1037,6 +1037,12 @@ export interface AdminCardLinkEndDto {
   /** The card on the other end of the link. */
   otherCardId: string;
   otherCardTitle: string;
+  /**
+   * The card on the other end is soft-deleted. The admin panel uses this for
+   * the dangling badge and to hide an incoming Remove action even before the
+   * lazy board aggregate is loaded.
+   */
+  otherCardDeleted: boolean;
   type: string;
   deletedAt: number | null;
   createdAt: number;

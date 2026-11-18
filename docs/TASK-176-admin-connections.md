@@ -400,10 +400,11 @@ the selected target holder's own outgoing count and cap instead of applying
 the incoming count to the viewed card.
 
 The combined size gate now measures the real card page: `AdminApp`,
-`CardFieldsPanel`, `CardRelationsPanel` and the shared admin `ui`/`links`
-chunks that rolldown split out when the panel was added. **101.62 kB → 111.80
-kB gzip against an explicit 112 kB budget**, leaving 0.20 kB headroom. The
-lazy relations chunk is not omitted.
+`CardFieldsPanel`, `CardRelationsPanel`, the shared admin `ui` chunk split out
+by the second lazy panel, and the existing board `links` chunk that the panel
+now loads. **101.62 kB → 111.86 kB gzip against an explicit 113 kB budget**,
+leaving 1.14 kB headroom; the DTO dangling flag added 68 bytes, so the budget
+was adjusted from 112 kB explicitly. The lazy relations chunk is not omitted.
 
 Master-authored comments/uploads are also a separate product decision: decide
 the author identity, history display and responsibility before adding the

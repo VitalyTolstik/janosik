@@ -732,6 +732,7 @@ export function CardDetailPage() {
                 }
               >
                 <CardRelationsPanel
+                  key={card.id}
                   card={card}
                   checklists={detail.checklists}
                   linksOut={detail.linksOut}

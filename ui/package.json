@@ -62,7 +62,7 @@
         "dist/assets/ui-*.js",
         "dist/assets/links-*.js"
       ],
-      "limit": "112 KB",
+      "limit": "113 KB",
       "gzip": true
     },
     {

@@ -2750,28 +2750,36 @@ export class FakeAdminServer {
       ),
       linksOut: this.state.cardLinks
         .filter((link) => link.fromCardId === card.id)
-        .map((link) => ({
-          id: link.id,
-          otherCardId: link.toCardId,
-          otherCardTitle:
-            this.state.cards.find((entry) => entry.id === link.toCardId)
-              ?.title ?? "Deleted card",
-          type: link.type,
-          deletedAt: link.deletedAt,
-          createdAt: link.createdAt,
-        })),
+        .map((link) => {
+          const other = this.state.cards.find(
+            (entry) => entry.id === link.toCardId,
+          );
+          return {
+            id: link.id,
+            otherCardId: link.toCardId,
+            otherCardTitle: other?.title ?? "Deleted card",
+            otherCardDeleted: other === undefined || other.deletedAt !== null,
+            type: link.type,
+            deletedAt: link.deletedAt,
+            createdAt: link.createdAt,
+          };
+        }),
       linksIn: this.state.cardLinks
         .filter((link) => link.toCardId === card.id)
-        .map((link) => ({
-          id: link.id,
-          otherCardId: link.fromCardId,
-          otherCardTitle:
-            this.state.cards.find((entry) => entry.id === link.fromCardId)
-              ?.title ?? "Deleted card",
-          type: link.type,
-          deletedAt: link.deletedAt,
-          createdAt: link.createdAt,
-        })),
+        .map((link) => {
+          const other = this.state.cards.find(
+            (entry) => entry.id === link.fromCardId,
+          );
+          return {
+            id: link.id,
+            otherCardId: link.fromCardId,
+            otherCardTitle: other?.title ?? "Deleted card",
+            otherCardDeleted: other === undefined || other.deletedAt !== null,
+            type: link.type,
+            deletedAt: link.deletedAt,
+            createdAt: link.createdAt,
+          };
+        }),
       windows: {
         comments: win(
           commentsOffset,
