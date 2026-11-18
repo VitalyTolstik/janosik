@@ -467,7 +467,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25), TASK-176 — отдельный admin/comment backlog (§7.26), TASK-177 — human-last-mile backlog (§7.27), TASK-178 — редизайн настроек доски ✅, TASK-179 — agent surfaces redesign ✅ (§7.28). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25), TASK-176 — отдельный admin/comment backlog (§7.26), TASK-177 — human-last-mile backlog (§7.27), TASK-178 — редизайн настроек доски ✅, TASK-179 — agent surfaces redesign ✅ (§7.28), TASK-180 — bug-research remediation backlog (§7.29). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1707,6 +1707,7 @@ TASK-36 и TASK-37.)*
 | 108 | TASK-177 `human-last-mile` | `docs/TASK-177-human-last-mile.md` → отдельные `feat/TASK-177.x-*` | §7.27: закрыть **все 18** разрывов project-gaps + **9 новых** находок UI-roast — share edit, self-leave, потеря черновика, честные счётчики, task spec/claim, admin shares, notification opt-out + inbox, per-board export, «permanent» copy, detached attachments, search cap, mentions, поиск комментариев/файлов, approval truth на `/agents`, a11y, first-run, safe-area и bulk actions | **Запланировано:** 20 подзадач, все G-01…G-18 и U-01…U-09 в scope; первая волна — 177.3 draft+counts, 177.15 a11y, 177.17 delete safety; затем 177.1/177.5/177.8/177.16/177.18; 177.2/177.6/177.13/177.14; 177.10/177.11/177.12; 177.4/177.7/177.9/177.19/177.20 — с зафиксированным решением, но не вне задачи. См. §7.27 |
 | 109 | TASK-178 `board-settings-rail` ✅ | `docs/TASK-178-board-settings-rail.md` → `feat/board-settings-rail-redesign` | Редизайн «Настройки доски» по направлению **01 «Рельс доски»**: один surface, рельс колонок, список правил, инспектор 316 px, матрица как вкладка, компактные global/start-done, responsive/a11y, мастер-панель без диалогового shell | **Выполнено:** PR #242, merge `360938b`; все 5 фаз, unit/browser/mobile-тесты, EN/RU user-guide, CHANGELOG. Модель `BoardWorkflow` не менялась. См. spec и `design/board-settings-redesign/REPORT.md` |
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
+| 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5046,6 +5047,52 @@ boards sum, не «одно число везде»); MEMBER/VIEWER не дел�
 EN/RU docs и CHANGELOG. **Зависимости:** TASK-166.17 и TASK-178 уже в main;
 179.10 — единственная новая backend-фича (read-only), остальное —
 переиспользование существующих API.
+
+---
+
+### 7.29. Bug-research remediation (TASK-180)
+
+> **Статус:** запланировано (2026-11-18). Источник — 10 read-only audit-стримов;
+> 99 уникальных находок: **1 critical, 15 high, 41 medium, 42 low**. Baseline —
+> `main` @ `4549342a`, pixel-находки перепроверены после PR #276 (`c21a2b8e`).
+> **Полный spec:** [`docs/TASK-180-bug-research-remediation.md`](docs/TASK-180-bug-research-remediation.md).
+> **Детальный отчёт:** [`docs/TASK-180-bug-research-report.md`](docs/TASK-180-bug-research-report.md).
+> **Правило:** одна подзадача = одна ветка `feat/TASK-180.x-*` и один PR; не
+> смешивать с TASK-179/176/177/178 и не превращать в один мега- PR.
+
+**Зачем.** 10 стримов нашли не одну фичу, а классы дефектов: rollback может
+удалить данные, которых ран не касался; operator обходит owner-only границы;
+клиентские ID перерождают чужие чек-листы/ссылки; approvals/MCP не проходят
+page-size, TTL и hash; realtime/уведомления не durable; docs и deploy-пути
+расходятся с образом; RU-раскладка и a11y ломают заявленные shortcuts/ARIA.
+Задача закрывает всё это в reviewable-слайсах с полной трассировкой ID.
+
+**Подзадачи.**
+
+| ID | Что закрываем | Findings | Приоритет |
+| --- | --- | ---: | --- |
+| 180.1 | Rollback и корректность ранов: no-op inverse, созданные колонки, source column, partial retention, revert idempotency, preview=apply, failed/new-run события | C1, H4–H6, M20–M22, L21, L37, L38 | P0/P1 |
+| 180.2 | Целостность card/command writes: parentage/ID reuse, duplicate checklists, claims, forged inverse, WIP, idempotency, attachments, assignee/comment paging | H2, H3, M7, M13, M14, M16, M17, L18–L20, L24, L35, L36 | P1 |
+| 180.3 | Auth/роли/PAT/shares: bootstrap, operator→owner takeover, owner-only purge, flags, SSE re-auth, share approval/revocation, 2FA, PAT trustedCi, public agentPolicy | H1, H7, H8, M3–M6, M9–M12, M15, L25, L26 | P0/P1 |
+| 180.4 | Approvals и Agent Control: >100 queue, TTL counts, SSE detail, Live heartbeat, paused nudge, MCP commandId, dedup, mobile deep links, archived boards | H10–H12, M8, M24–M28, L16, L17, L39 | P1 |
+| 180.5 | MCP и публичный API: >25k card docs, seq/runId, PAT-only claims, scope preset, error catalog, share/token/auth docs, missing routes | M32–M35, L8–L13 | P1/P2 |
+| 180.6 | Уведомления/realtime/шедулеры: BullMQ jobId, response-loss reconcile, attention inbox/opt-out, durable email/schedules, cursor, multi-node, health/nginx, RU reminders | H13, H14, M29–M31, L22, L23, L40–L42 | P1/P2 |
+| 180.7 | Demo/retention/snapshots: demo link deletion, title-prefix purge, frozen snapshots, cache eviction, session/approval retention | H9, M18, M19, M23 | P1/P2 |
+| 180.8 | Docs/deploy/onboarding: `/app` base paths, no-SMTP quickstart, SITE_BASE, RU 404/JSON-LD, export v3, nginx parity, backup claims | M36, M37, L3–L5, L7, L14, L15 | P2 |
+| 180.9 | Navigation/i18n/a11y: board-settings draft, OAuth deep link, short auth, RU shortcuts, palette race/ARIA, `?lng`, admin mobile/breadcrumbs, undo overlay | H15, M1, M2, M38–M41, L1, L2, L6, L27–L34 | P2 |
+
+**Порядок.** Wave 1 (P0/P1, останавливает потери/эскалации): **180.1 →
+180.2 → 180.3 → 180.4 → 180.7**. Wave 2: **180.5 → 180.6 → 180.8 → 180.9**.
+Внутри каждой подзадачи сначала regression test на границу из отчёта, потом
+фикс; live/fault-injected evidence обязателен там, где отчёт был code-only.
+
+**DoD.** Все 99 ID закрыты, явно deferred с owner/date или reclassified с
+evidence; нет silent omissions. Каждая подзадача: regression tests, EN/RU
+docs/OpenAPI при изменении контракта, без ослабления тестов; `npm test -w ui`,
+backend unit/e2e (включая security-contract), `tsc -b`, build, OpenAPI и
+browser matrix зелёные. **H11:** после #276 `approved` после истечения
+apply-window — намеренное поведение; e2e уже обновлён; не возвращать silent
+`expired`.
 
 ---
 
