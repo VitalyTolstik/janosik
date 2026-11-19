@@ -1,7 +1,8 @@
 # TASK-180.2 — Card/command write integrity
 
-Implements the 180.2 slice of `TASK-180-bug-research-remediation.md` on top of
-TASK-180.1 (`4b22721f`). No PR/merge is part of this stream.
+Implements the 180.2 slice of `TASK-180-bug-research-remediation.md`. It
+merged in [PR #288](https://github.com/VitalyTolstik/janosik/pull/288) as
+[`242bc789`](https://github.com/VitalyTolstik/janosik/commit/242bc789).
 
 ## What changed
 
