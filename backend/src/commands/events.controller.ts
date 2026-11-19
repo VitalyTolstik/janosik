@@ -18,12 +18,14 @@ import { CurrentPrincipal } from "@/auth/auth-principal";
 import type { AuthUser } from "@/auth/auth.types";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { MembershipGuard } from "@/common/membership.guard";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { PresenceService } from "@/realtime/presence.service";
 import type { PresenceJoinResult } from "@/realtime/presence.service";
 import {
   type InternalCommandEvent,
   RealtimeService,
 } from "@/realtime/realtime.service";
+import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { sseTiming } from "@/realtime/sse-timing";
 import { CommandStreamSequencer } from "./command-stream";
 import { CommandsService } from "./commands.service";
@@ -60,9 +62,10 @@ export class EventsController {
     private readonly realtime: RealtimeService,
     private readonly presence: PresenceService,
     private readonly access: StreamAccessService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
-  @UseGuards(MembershipGuard)
+  @UseGuards(MembershipGuard, RealtimeFlagGuard)
   @Sse()
   events(
     @Param("id") id: string,
@@ -270,6 +273,11 @@ export class EventsController {
     sessionId: string | undefined,
   ): Promise<{ allowed: boolean; pause: AgentPauseStamp | null }> {
     try {
+      // M5: flipping the flag off must also close streams that were already
+      // open when the operator changed it.
+      if (!(await this.flags.isEnabled("realtime_sse", user?.id ?? null))) {
+        return { allowed: false, pause: null };
+      }
       if (
         user !== undefined &&
         !(await this.access.memberStreamAllowed(boardId, user.id, principal))

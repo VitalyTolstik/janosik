@@ -6,6 +6,7 @@ import { BoardsModule } from "@/boards/boards.module";
 import { CommandsModule } from "@/commands/commands.module";
 import { CommentsModule } from "@/comments/comments.module";
 import { MembershipGuard } from "@/common/membership.guard";
+import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { RealtimeModule } from "@/realtime/realtime.module";
 import { BoardSharesController } from "./board-shares.controller";
 import { ShareAccessGuard } from "./share-access.guard";
@@ -34,6 +35,7 @@ import { ShareService } from "./share.service";
     ShareService,
     ShareAccessGuard,
     ShareThrottlerGuard,
+    RealtimeFlagGuard,
     MembershipGuard,
   ],
   exports: [ShareService],

@@ -124,21 +124,48 @@ export class BoardSharesController {
   }
 
   @Post(":shareId/refresh")
-  refresh(
+  async refresh(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
+    @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
   ): Promise<BoardShareDto> {
-    return this.shares
-      .requireShareOnBoard(shareId, id)
-      .then(() =>
-        this.shares.refreshSnapshot(
-          shareId,
-          principal,
-          requestAttribution(principal, session?.id),
-        ),
-      );
+    await this.shares.requireShareOnBoard(shareId, id);
+    // M9: replacing a snapshot's public content is `share.update`, so the
+    // board's approval policy applies exactly as it does to PATCH.
+    const approval = await rollbackOnThrow(() =>
+      this.approvals.authorizeOperation({
+        boardId: id,
+        userId: user.id,
+        role: membership.role,
+        principal,
+        agentSessionId: session?.id ?? null,
+        op: "share.update",
+        target: { boardId: id, shareId },
+        body: {},
+        ...(approvalId !== undefined ? { approvalId } : {}),
+      }),
+    );
+    const result = await this.approvals.performOperation(approval, () =>
+      this.shares.refreshSnapshot(
+        shareId,
+        user.id,
+        principal,
+        requestAttribution(principal, session?.id),
+        approval !== null,
+      ),
+    );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "share.update",
+        shareId,
+        refresh: true,
+      });
+    }
+    return result;
   }
 
   @Patch(":shareId")

@@ -346,11 +346,11 @@ describe("ShareService (unit)", () => {
   it("only snapshot shares can be refreshed", async () => {
     const { service } = makeHarness();
     const live = await service.create("b1", "u1", { mode: "live" });
-    await expect(service.refreshSnapshot(live.id)).rejects.toMatchObject({
+    await expect(service.refreshSnapshot(live.id, "u1")).rejects.toMatchObject({
       status: 400,
     });
     const snap = await service.create("b1", "u1", { mode: "snapshot" });
-    const refreshed = await service.refreshSnapshot(snap.id);
+    const refreshed = await service.refreshSnapshot(snap.id, "u1");
     expect(refreshed.mode).toBe("snapshot");
   });
 });

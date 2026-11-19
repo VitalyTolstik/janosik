@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { type AgentPauseStamp, resolveAgentPause } from "@/auth/agent-pause";
 import { ApiTokenService } from "@/auth/api-token.service";
 import type { AuthPrincipal } from "@/auth/auth-principal";
+import { securityStamp } from "@/auth/security-stamp";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
 /**
@@ -15,7 +16,13 @@ import { PrismaService } from "@/common/prisma/prisma.service";
  * - the membership is gone (removed, possibly on another node), no longer
  *   accepted, or a time-limited VIEWER passed its `expiresAt`;
  * - the stream was opened with a personal API token that has since been
- *   revoked or has expired.
+ *   revoked, expired, or narrowed to another board;
+ * - the browser access token itself has expired, its security stamp no longer
+ *   matches (password/mailbox change), or its rotation family was logged out.
+ *
+ * M6 closes the gaps the original B-6 check left open; the stream is a
+ * long-lived read capability and must not outlive the credential that opened
+ * it.
  */
 @Injectable()
 export class StreamAccessService {
@@ -34,7 +41,15 @@ export class StreamAccessService {
       select: {
         acceptedAt: true,
         expiresAt: true,
-        user: { select: { disabledAt: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            passwordHash: true,
+            emailVerifiedAt: true,
+            disabledAt: true,
+          },
+        },
         board: { select: { deletedAt: true } },
       },
     });
@@ -51,8 +66,41 @@ export class StreamAccessService {
     if (principal?.via === "pat") {
       return (
         principal.apiTokenId !== undefined &&
-        (await this.apiTokens.isActive(principal.apiTokenId))
+        (await this.apiTokens.isActive(principal.apiTokenId, boardId))
       );
+    }
+    if (principal?.via === "jwt") {
+      if (
+        principal.accessTokenExpiresAt !== undefined &&
+        principal.accessTokenExpiresAt <= Date.now()
+      ) {
+        return false;
+      }
+      // Impersonation tokens are signed without a stamp; their short TTL and
+      // read-only policy are the control. A normal session must still match
+      // the current credentials.
+      if (
+        principal.impersonatedBy == null &&
+        principal.stamp !== undefined &&
+        principal.stamp !== securityStamp(membership.user)
+      ) {
+        return false;
+      }
+      // Logout/refresh revoke the family, not the already-minted access
+      // token. Without this row the stream would remain readable for the
+      // access token's full lifetime after sign-out.
+      if (principal.sessionFamilyId !== undefined) {
+        const live = await this.prisma.refreshToken.findFirst({
+          where: {
+            userId,
+            familyId: principal.sessionFamilyId,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        });
+        if (live === null) return false;
+      }
     }
     return true;
   }
