@@ -26,6 +26,7 @@ export function SecurityPage() {
   const [security, setSecurity] = useState<AdminSecurityDto | null>(null);
   const [setup, setSetup] = useState<AdminTotpSetupDto | null>(null);
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [allowlist, setAllowlist] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -45,21 +46,29 @@ export function SecurityPage() {
   }, [load]);
 
   const beginSetup = useCallback(
-    async (proof: { totpCode?: string } = {}) => {
+    async (proof: { totpCode?: string; password?: string } = {}) => {
+      if (busy) return;
+      setBusy(true);
       try {
         setSetup(await adminApi.setupTotp(proof));
         setCode("");
+        setPassword("");
       } catch {
         toast.error(t("admin.common.actionFailed"));
+      } finally {
+        setBusy(false);
       }
     },
-    [t, toast],
+    [busy, t, toast],
   );
 
   const confirm = useCallback(async () => {
+    if (setup === null) return;
     setBusy(true);
     try {
-      await adminApi.verifyTotp(code);
+      // The staged secret is active only after this call succeeds; a lost
+      // setup response leaves the old factor working (M12).
+      await adminApi.verifyTotp(code, setup.setupToken);
       toast.success(t("admin.security.totp.enabled"));
       setSetup(null);
       setCode("");
@@ -69,7 +78,7 @@ export function SecurityPage() {
     } finally {
       setBusy(false);
     }
-  }, [code, load, t, toast]);
+  }, [code, load, setup, t, toast]);
 
   const disable = useCallback(async () => {
     try {
@@ -195,19 +204,36 @@ export function SecurityPage() {
                 }
               />
             </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.security.totp.password")}
+              </span>
+              <Input
+                type="password"
+                value={password}
+                autoComplete="current-password"
+                data-testid="admin-totp-password"
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
             <Button
               variant="outline"
               size="sm"
-              disabled={code.length !== 6}
+              disabled={busy || (code.length !== 6 && password.length === 0)}
               data-testid="admin-totp-replace"
-              onClick={() => void beginSetup({ totpCode: code })}
+              onClick={() =>
+                void beginSetup({
+                  ...(code.length === 6 ? { totpCode: code } : {}),
+                  ...(password.length > 0 ? { password } : {}),
+                })
+              }
             >
               {t("admin.security.totp.replace")}
             </Button>
             <Button
               variant="destructive"
               size="sm"
-              disabled={code.length !== 6}
+              disabled={busy || code.length !== 6}
               data-testid="admin-totp-disable"
               onClick={() => void disable()}
             >

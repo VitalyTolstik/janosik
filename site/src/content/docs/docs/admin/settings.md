@@ -122,6 +122,12 @@ The secret is stored encrypted. The TOTP is SHA-1, six digits, a 30-second
 period, verified inside a one-step window. Once enabled, the login flow
 requires the code after the password.
 
+A replacement is staged: the new secret becomes active only after `Confirm`
+accepts a code from it, so a lost response cannot invalidate the working
+factor. The current code is checked without consuming its step. A successful
+replacement is audited as `security.totp_replaced`; first enrollment remains
+`security.totp_enabled`.
+
 ### IP allowlist
 
 The allowlist is a comma- or space-separated list of IPs and CIDR ranges. An
@@ -187,6 +193,11 @@ Owner-only inputs:
 | Board id | optional | empty creates a dedicated demo board |
 | Agents | 1 to 100 | |
 | Tasks | 1 to 1000 | cards to seed |
+
+The demo needs the live observation link, so it is unavailable while public
+sharing is disabled (`public_shares` off / `ALLOW_PUBLIC_SHARES=false`). A
+start attempt answers `409 public_shares_disabled` before any demo users or
+board rows are created.
 
 `Start demo` creates the demo users and cards, then starts the scenario. `Stop & clean up`
 is enabled while data created by the demo still exists; it is confirmed and deletes

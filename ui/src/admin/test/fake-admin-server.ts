@@ -839,6 +839,12 @@ export class FakeAdminServer {
     }
     const userPatch = path.match(/^\/admin\/users\/([^/]+)$/);
     if (userPatch && method === "PATCH") {
+      if (
+        this.sessionRole !== "OWNER" &&
+        (jsonBody?.email !== undefined || jsonBody?.emailVerified !== undefined)
+      ) {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
       const user = this.state.users.find((item) => item.id === userPatch[1]);
       if (!user) return this.json({ message: "User not found" }, 404);
       if (jsonBody?.disabled !== undefined) {
@@ -1985,6 +1991,7 @@ export class FakeAdminServer {
         {
           secret: this.totpSecret,
           otpauthUrl: `otpauth://totp/Janosik:master@example.com?secret=${this.totpSecret}&issuer=Janosik`,
+          setupToken: "fake-totp-setup-token",
         },
         201,
       );
@@ -1994,8 +2001,9 @@ export class FakeAdminServer {
       if (payload.code !== "123456") {
         return this.json({ message: "Invalid code" }, 401);
       }
+      const replaced = this.security.totpEnabled;
       this.security = { ...this.security, totpEnabled: true };
-      return this.json({ totpEnabled: true });
+      return this.json({ totpEnabled: true, replaced });
     }
     if (path === "/admin/security" && method === "PUT") {
       const payload = jsonBody as {

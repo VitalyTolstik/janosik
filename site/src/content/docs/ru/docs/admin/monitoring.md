@@ -141,7 +141,7 @@ description: Дашборд, лента активности, журнал ко�
 | Конфигурация | `oauth.settings_changed`, `throttle.settings_changed`, `flag.changed`, `ops.settings_changed` |
 | Коммуникации | `announcement.created`, `announcement.updated`, `announcement.deleted`, `comms.digest_sent`, `comms.reminder_sent` |
 | Данные | `data.exported`, `data.export_queued`, `data.export_downloaded`, `retention.changed` |
-| Безопасность | `security.totp_enabled`, `security.totp_disabled`, `security.ip_allowlist_changed` |
+| Безопасность | `security.totp_enabled`, `security.totp_replaced`, `security.totp_disabled`, `security.ip_allowlist_changed` |
 | Демо и ссылки | `demo.started`, `demo.stopped`, `share.created`, `share.refreshed`, `share.revoked` |
 | Эксплуатация | `maintenance.run`, `queue.ticket_issued` |
 

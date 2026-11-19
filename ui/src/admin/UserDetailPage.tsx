@@ -604,13 +604,15 @@ export function UserDetailPage() {
                     {t("admin.users.action.enable")}
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem
-                  onSelect={() => setEmailDialog(true)}
-                  data-testid="admin-user-change-email"
-                >
-                  <AtSign className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.users.action.changeEmail")}
-                </DropdownMenuItem>
+                {isOwner ? (
+                  <DropdownMenuItem
+                    onSelect={() => setEmailDialog(true)}
+                    data-testid="admin-user-change-email"
+                  >
+                    <AtSign className="h-3.5 w-3.5" aria-hidden />
+                    {t("admin.users.action.changeEmail")}
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   className="text-danger focus:text-danger"
                   onSelect={() => setPending("revokeSessions")}
@@ -623,35 +625,37 @@ export function UserDetailPage() {
                 >
                   {t("admin.users.action.revokeTokens")}
                 </DropdownMenuItem>
-                {user.emailVerifiedAt === null ? (
-                  <DropdownMenuItem
-                    data-testid="admin-user-verify"
-                    onSelect={() =>
-                      void run(t("admin.userDetail.action.verify"), () =>
-                        adminApi
-                          .updateUser(user.id, { emailVerified: true })
-                          .then(() => undefined),
-                      )
-                    }
-                  >
-                    <MailCheck className="h-3.5 w-3.5" aria-hidden />
-                    {t("admin.userDetail.action.verify")}
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem
-                    data-testid="admin-user-unverify"
-                    onSelect={() =>
-                      void run(t("admin.userDetail.action.unverify"), () =>
-                        adminApi
-                          .updateUser(user.id, { emailVerified: false })
-                          .then(() => undefined),
-                      )
-                    }
-                  >
-                    <MailX className="h-3.5 w-3.5" aria-hidden />
-                    {t("admin.userDetail.action.unverify")}
-                  </DropdownMenuItem>
-                )}
+                {isOwner ? (
+                  user.emailVerifiedAt === null ? (
+                    <DropdownMenuItem
+                      data-testid="admin-user-verify"
+                      onSelect={() =>
+                        void run(t("admin.userDetail.action.verify"), () =>
+                          adminApi
+                            .updateUser(user.id, { emailVerified: true })
+                            .then(() => undefined),
+                        )
+                      }
+                    >
+                      <MailCheck className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.verify")}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      data-testid="admin-user-unverify"
+                      onSelect={() =>
+                        void run(t("admin.userDetail.action.unverify"), () =>
+                          adminApi
+                            .updateUser(user.id, { emailVerified: false })
+                            .then(() => undefined),
+                        )
+                      }
+                    >
+                      <MailX className="h-3.5 w-3.5" aria-hidden />
+                      {t("admin.userDetail.action.unverify")}
+                    </DropdownMenuItem>
+                  )
+                ) : null}
                 <DropdownMenuItem
                   data-testid="admin-user-resend"
                   onSelect={() =>

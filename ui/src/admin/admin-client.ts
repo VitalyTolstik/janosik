@@ -53,6 +53,7 @@ import type {
   AdminSendEmailResponse,
   AdminTotpSetupDto,
   AdminTotpSetupRequest,
+  AdminVerifyTotpResponse,
   AdminUpdateAnnouncementRequest,
   AdminUpdateFeatureFlagRequest,
   AdminUpdateOpsSettingsRequest,
@@ -852,11 +853,17 @@ export class AdminApiClient {
     });
   }
 
-  verifyTotp(code: string): Promise<{ totpEnabled: true }> {
-    return this.request<{ totpEnabled: true }>("/admin/security/totp/verify", {
-      method: "POST",
-      body: { code },
-    });
+  verifyTotp(
+    code: string,
+    setupToken?: string,
+  ): Promise<AdminVerifyTotpResponse> {
+    return this.request<AdminVerifyTotpResponse>(
+      "/admin/security/totp/verify",
+      {
+        method: "POST",
+        body: { code, ...(setupToken === undefined ? {} : { setupToken }) },
+      },
+    );
   }
 
   updateSecurity(body: AdminUpdateSecurityRequest): Promise<AdminSecurityDto> {

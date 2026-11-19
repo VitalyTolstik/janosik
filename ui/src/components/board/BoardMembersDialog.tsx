@@ -423,7 +423,9 @@ export function BoardMembersPanel({
   const load = useCallback(async () => {
     try {
       const [nextMembers, nextPending] = await Promise.all([
-        api.listMembers(boardId),
+        // M15: only the admin's management list asks for lapsed VIEWER rows;
+        // an ordinary read-only member list stays the active roster.
+        api.listMembers(boardId, { includeExpired: canManage }),
         canManage
           ? api.listPendingInvitations(boardId).catch(() => [])
           : Promise.resolve([]),

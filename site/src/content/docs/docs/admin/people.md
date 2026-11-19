@@ -48,11 +48,11 @@ Every row has an actions menu with the following entries.
 | --- | --- | --- |
 | Block | sets `disabledAt` | destructive, confirmed; also revokes every session immediately |
 | Unblock | clears `disabledAt` | confirmed; sessions are not restored |
-| Change email | opens the change email dialog | see below |
+| Change email | opens the change email dialog | owner-only server-side; see below |
 | Revoke sessions | revokes every live refresh session | destructive, confirmed |
 | Revoke API tokens | revokes every personal API token | destructive, confirmed |
-| Verify email | sets the address verified | shown when unverified; confirmed |
-| Unverify email | withdraws the confirmation | destructive, shown when verified; confirmed |
+| Verify email | sets the address verified | owner-only server-side; shown when unverified; confirmed |
+| Unverify email | withdraws the confirmation | owner-only server-side; destructive, shown when verified; confirmed |
 | Resend verification | sends a fresh confirmation code | shown always |
 | Reset password | issues a temporary password | owner-only server-side; opens a dialog |
 | Promote to master | creates an `OPERATOR` master | warning color; opens a dialog |
@@ -66,11 +66,13 @@ full set.
 ### Change email
 
 `Change email` opens a dialog with the current address as the description and a
-`New email` field. Unlike the self-service flow there is no verification code:
-the master is accountable through the audit trail. On success every session of
-the user is revoked, the change is audited as `user.email_changed`, and a
-notice is sent to the old address. A duplicate address answers `409` and an
-invalid address answers `400`.
+`New email` field. It is owner-only server-side: an operator gets `403` with
+`Owner rights are required`, and the action is hidden from the operator menu.
+Unlike the self-service flow there is no verification code: the master is
+accountable through the audit trail. On success every session of the user is
+revoked, the change is audited as `user.email_changed`, and a notice is sent to
+the old address. A duplicate address answers `409` and an invalid address
+answers `400`.
 
 ### Reset password
 

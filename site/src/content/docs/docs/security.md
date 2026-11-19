@@ -103,6 +103,12 @@ anything addressed to that mailbox:
   mailbox, loses all access. This closes the pre-account-takeover path.
 - **Invitations.** Invitations wait for the email to be confirmed: an
   unverified account sees none and cannot accept one.
+- **Abandoned registrations are released.** A never-verified account does not
+  reserve its unique address forever: the maintenance sweep deletes it after
+  `UNVERIFIED_ACCOUNT_TTL_DAYS` (14 by default) only when it never accepted a
+  membership and never wrote a comment, command or attachment. The check is
+  repeated inside the deletion transaction, so content that lands during the
+  sweep keeps the account.
 - **No account enumeration.** Inviting an address answers the same way
   whether or not an account exists for it, and the login backoff is keyed by
   address whether or not an account exists.

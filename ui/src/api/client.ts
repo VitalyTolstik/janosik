@@ -1034,8 +1034,17 @@ export class ApiClient {
     });
   }
 
-  listMembers(boardId: string): Promise<BoardMemberDto[]> {
-    return this.request<BoardMemberDto[]>(`/boards/${boardId}/members`);
+  /**
+   * Active members by default. `includeExpired` is only accepted by the
+   * server for a board ADMIN and is used by the member-management dialog to
+   * show/revoke lapsed VIEWER rows; pickers and filters never pass it.
+   */
+  listMembers(
+    boardId: string,
+    options: { includeExpired?: boolean } = {},
+  ): Promise<BoardMemberDto[]> {
+    const query = options.includeExpired ? "?includeExpired=1" : "";
+    return this.request<BoardMemberDto[]>(`/boards/${boardId}/members${query}`);
   }
 
   listPendingInvitations(
