@@ -441,7 +441,10 @@ paths:
       description: |
         Board `ADMIN` and `admin` preset. Publishing a board is sensitive and
         requires approval (`share.create`) for a PAT. `Idempotency-Key`
-        replays the first link for the same intent.
+        replays the first link for the same intent. When public sharing is
+        disabled by the operator (`ALLOW_PUBLIC_SHARES=false` or the
+        `public_shares` flag) creation answers `404`, like the rest of the
+        public share contour.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ApprovalId"
@@ -528,7 +531,15 @@ paths:
       tags: [Boards]
       operationId: refreshBoardShare
       summary: Refresh a snapshot share
-      description: Re-freezes a snapshot share; a live share answers `400`.
+      description: |
+        Re-freezes a snapshot share; a live share answers `400`. Replacing
+        the public snapshot is a `share.update` lifecycle action: a PAT on a
+        board whose policy requires approval gets `409 approval_required` and
+        must retry with `X-Approval-Id`. Every refresh is written to the
+        board-share audit log.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
       responses:
         "201":
           description: Refreshed share.
@@ -540,6 +551,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/shares/{shareId}/permanent:
     parameters:

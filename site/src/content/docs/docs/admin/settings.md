@@ -116,6 +116,7 @@ are not affected.
 | Enable 2FA | starts enrollment and shows a base32 secret and an `otpauth://` URL |
 | Confirm | finishes enrollment with a six-digit code |
 | Disable 2FA | turns it off; requires a valid code |
+| Replace authenticator | issues a new secret; while 2FA is active this requires the current code or the account password and is written to the master audit log |
 
 The secret is stored encrypted. The TOTP is SHA-1, six digits, a 30-second
 period, verified inside a one-step window. Once enabled, the login flow
@@ -210,7 +211,7 @@ takes effect without a restart. All controls are owner-only.
 | `registration_open` | allow anyone to create a new account | env `ALLOW_REGISTRATION` |
 | `public_shares` | allow read-only public links to boards | env `ALLOW_PUBLIC_SHARES` |
 | `video_transcode` | re-encode uploaded videos to a compact MP4 | on |
-| `realtime_sse` | stream live board changes over SSE | on |
+| `realtime_sse` | stream live board changes over SSE; off closes open streams and answers `404` on the SSE routes | on |
 
 Each flag has a toggle. When a flag has per-user overrides, their count is
 shown. The effective value for a user is the per-user override when present,
@@ -269,6 +270,7 @@ are:
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |
 | `sweep-security-audit` | `SecurityAuditLog` rows older than `AUDIT_RETENTION_DAYS` (deletion lifecycle and `board.cleanup_failed` markers are kept) |
 | `sweep-accounts` | accounts whose seven-day self-service deletion window elapsed (still disabled) |
+| `sweep-unverified-users` | abandoned registrations that never confirmed their e-mail, accepted a membership or wrote content (older than `UNVERIFIED_ACCOUNT_TTL_DAYS`); releases the address |
 | `sweep-orphan-boards` | retries soft-deletion of boards left behind by an account erase (pending invites do not count) |
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
 | `sweep-idempotency` | `IdempotencyRecord` rows past their 24-hour expiry |

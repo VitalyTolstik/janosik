@@ -39,7 +39,9 @@ access expires.
 
 An admin can change a member's role at any time, set or clear a viewer's
 expiry, and remove a member (behind a confirmation). A viewer's row shows
-`no expiry`, `until <date>` or `access expired`.
+`no expiry`, `until <date>` or `access expired`. An expired viewer stays on
+this list so an admin can remove the row or invite the person again; the
+lapsed row never grants access.
 
 ## Invitations
 
