@@ -1,5 +1,6 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
 import type { Board } from "@janosik/shared";
+import { isGuaranteedRollback } from "@/common/rollback-certainty";
 import { ShareService } from "./share.service";
 
 /**
@@ -266,6 +267,26 @@ describe("ShareService (unit)", () => {
     for (const member of payload.members) {
       expect(member).not.toHaveProperty("email");
     }
+  });
+
+  it("marks refresh pre-write failures so a claimed approval is released", async () => {
+    const { service, shares, setAlive } = makeHarness();
+    const detached = await service.create("b1", "u1", { mode: "snapshot" });
+    const unreadable = await service.create("b1", "u1", { mode: "snapshot" });
+    shares[0]!.boardId = null as unknown as string;
+
+    const detachedError = await service
+      .refreshSnapshot(detached.id, "u1")
+      .catch((error: unknown) => error);
+    expect(detachedError).toBeInstanceOf(GoneException);
+    expect(isGuaranteedRollback(detachedError)).toBe(true);
+
+    setAlive(false);
+    const readError = await service
+      .refreshSnapshot(unreadable.id, "u1")
+      .catch((error: unknown) => error);
+    expect(readError).toBeInstanceOf(NotFoundException);
+    expect(isGuaranteedRollback(readError)).toBe(true);
   });
 
   it("a snapshot survives the source board being deleted", async () => {

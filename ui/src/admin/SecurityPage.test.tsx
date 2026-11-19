@@ -157,4 +157,111 @@ describe("2FA replacement staging", () => {
       ).toBe(true),
     );
   });
+
+  it("keeps Disable 2FA busy until the server answers", async () => {
+    await ensureLocale("en");
+    await defaultI18n.changeLanguage("en");
+    const server = new FakeAdminServer();
+    server.security = {
+      ...server.security,
+      totpEnabled: true,
+      alerts: [],
+    };
+    const original = server.fetchImpl;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/admin/security") && init?.method === "PUT") {
+        return gate.then(() => original(input, init));
+      }
+      return original(input, init);
+    });
+    render(
+      <ThemeProvider>
+        <I18nProvider>
+          <ToastProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/admin/security"]}>
+                <Routes>
+                  <Route path="/admin/*" element={<AdminApp />} />
+                </Routes>
+              </MemoryRouter>
+            </TooltipProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+
+    fireEvent.change(await screen.findByTestId("admin-totp-code"), {
+      target: { value: "123456" },
+    });
+    const disable = screen.getByTestId("admin-totp-disable");
+    fireEvent.click(disable);
+    expect(disable).toBeDisabled();
+    release();
+    expect(await screen.findByTestId("admin-totp-enable")).toBeTruthy();
+  });
+
+  it("clears the dead setup panel on setup_stale", async () => {
+    await ensureLocale("en");
+    await defaultI18n.changeLanguage("en");
+    const server = new FakeAdminServer();
+    server.security = {
+      ...server.security,
+      totpEnabled: true,
+      alerts: [],
+    };
+    const original = server.fetchImpl;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/admin/security/totp/verify")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              message: "This enrollment was superseded",
+              code: "setup_stale",
+            }),
+            {
+              status: 409,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      }
+      return original(input, init);
+    });
+    render(
+      <ThemeProvider>
+        <I18nProvider>
+          <ToastProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/admin/security"]}>
+                <Routes>
+                  <Route path="/admin/*" element={<AdminApp />} />
+                </Routes>
+              </MemoryRouter>
+            </TooltipProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+
+    fireEvent.change(await screen.findByTestId("admin-totp-password"), {
+      target: { value: "master correct horse battery" },
+    });
+    fireEvent.click(screen.getByTestId("admin-totp-replace"));
+    await screen.findByTestId("admin-totp-setup");
+    fireEvent.change(screen.getByTestId("admin-totp-code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByTestId("admin-totp-confirm"));
+
+    expect(
+      await screen.findByText(
+        "This enrollment was superseded by a newer security change — start again",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-totp-setup")).toBeNull();
+  });
 });

@@ -392,7 +392,7 @@ export function DemoPage() {
                   busy ||
                   agents === "" ||
                   cards === "" ||
-                  publicSharesEnabled === false
+                  publicSharesEnabled !== true
                 }
                 onClick={() => void start()}
               >

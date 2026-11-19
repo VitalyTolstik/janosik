@@ -85,8 +85,16 @@ export function SecurityPage() {
       setCode("");
       load();
     } catch (cause) {
+      const stale = cause instanceof ApiError && cause.code === "setup_stale";
+      if (stale) {
+        // The ticket can never succeed now; drop the dead panel instead of
+        // inviting the operator to retry the same staged secret.
+        setSetup(null);
+        setCode("");
+        load();
+      }
       toast.error(
-        cause instanceof ApiError && cause.code === "setup_stale"
+        stale
           ? t("admin.security.totp.stale")
           : t("admin.security.totp.invalid"),
       );
@@ -96,6 +104,8 @@ export function SecurityPage() {
   }, [code, load, setup, t, toast]);
 
   const disable = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       const next = await adminApi.updateSecurity({
         totpEnabled: false,
@@ -106,8 +116,10 @@ export function SecurityPage() {
       toast.success(t("admin.security.totp.disabled"));
     } catch {
       toast.error(t("admin.security.totp.invalid"));
+    } finally {
+      setBusy(false);
     }
-  }, [code, t, toast]);
+  }, [busy, code, t, toast]);
 
   const saveAllowlist = useCallback(async () => {
     setBusy(true);
@@ -265,6 +277,7 @@ export function SecurityPage() {
             <Button
               size="sm"
               data-testid="admin-totp-enable"
+              disabled={busy}
               onClick={() => void beginSetup()}
             >
               {t("admin.security.totp.enable")}

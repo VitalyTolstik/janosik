@@ -17,6 +17,7 @@ import { verify as argonVerify } from "argon2";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "@/mailer/secret-box";
+import { AdminService } from "./admin.service";
 import type { AdminPrincipal } from "./admin.types";
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -239,6 +240,7 @@ export class SecurityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly admin: AdminService,
   ) {}
 
   // ------------------------------------------------------------------- 2FA
@@ -286,8 +288,9 @@ export class SecurityService {
     // Staging (M12): do NOT touch the active secret here. The old factor
     // keeps working until `/security/totp/verify` confirms the new code, so
     // a lost setup response cannot lock the master out. The ticket records
-    // the exact active state it was issued against: a later enrollment,
-    // replacement, disable or newer staged ticket invalidates it.
+    // the exact active state it was issued against: a later **confirmed**
+    // enrollment or replacement, a disable, or the ticket's own confirmation
+    // invalidates it. Staging another secret writes nothing, so it does not.
     const setupToken = await this.jwt.signAsync(
       {
         sub: admin.id,
@@ -311,8 +314,9 @@ export class SecurityService {
   /**
    * Finish enrollment. The setup ticket is mandatory and records the active
    * factor state it was issued against. Under the row lock the state must
-   * still match exactly; otherwise the ticket is stale (a newer replacement,
-   * a disable, or activation after an inactive ticket) and is refused.
+   * still match exactly; otherwise the ticket is stale (a newer confirmed
+   * replacement, a disable, or activation after an inactive ticket) and is
+   * refused.
    *
    * The successful update and its audit row commit in the same transaction,
    * and changing the secret consumes the ticket automatically: a replay or a
@@ -391,6 +395,10 @@ export class SecurityService {
       });
       return current.totpEnabled;
     });
+    // The audit row was written inside the transaction instead of through
+    // `AdminService.audit`, which is the normal metrics-cache choke point.
+    // Drop the snapshot explicitly now that the security change committed.
+    this.admin.invalidateMetrics();
     // The replay map is keyed by admin, not by secret: a fresh factor must not
     // be rejected just because the old code was used in the same time step.
     this.lastTotpStep.delete(admin.id);

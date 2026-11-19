@@ -246,13 +246,20 @@ export class ShareService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     approvalApplied = false,
   ): Promise<BoardShareDto> {
-    await this.assertPublicSharingEnabled();
+    // These reads happen after the controller claimed the approval. Mark every
+    // failure as pre-write so `performOperation` releases the claim instead of
+    // leaving a failed refresh with a permanently consumed approval.
+    await rollbackOnThrow(() => this.assertPublicSharingEnabled());
     const row = await this.requireShare(shareId);
     if (row.mode !== "snapshot") {
-      throw new BadRequestException("Only a snapshot share can be refreshed");
+      throw beforeWrite(
+        new BadRequestException("Only a snapshot share can be refreshed"),
+      );
     }
     const boardId = this.boardIdOf(row);
-    const { payload, version } = await this.captureSnapshot(boardId);
+    const { payload, version } = await rollbackOnThrow(() =>
+      this.captureSnapshot(boardId),
+    );
     const updated = await this.lifecycleTransaction(
       boardId,
       principal,
@@ -835,7 +842,7 @@ export class ShareService {
   /** The source board, or 410 for a snapshot detached by a board purge. */
   private boardIdOf(row: ShareRow): string {
     if (row.boardId === null) {
-      throw new GoneException("The shared board no longer exists");
+      throw beforeWrite(new GoneException("The shared board no longer exists"));
     }
     return row.boardId;
   }

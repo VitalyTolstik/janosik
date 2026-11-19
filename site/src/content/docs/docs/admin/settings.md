@@ -126,10 +126,18 @@ A replacement is staged: the new secret becomes active only after `Confirm`
 accepts a code from it and the short-lived setup ticket returned by the
 enrollment call, so a lost response cannot invalidate the working factor. The
 ticket is bound to the active factor state and is single-use; a newer
-enrollment, a disable or an already-consumed ticket answers `409 setup_stale`.
-The current code is checked without consuming its step. A successful
-replacement is audited as `security.totp_replaced`; first enrollment remains
-`security.totp_enabled`.
+**confirmed** enrollment or replacement, a disable or an already-consumed
+ticket answers `409 setup_stale`. Staging another secret writes nothing, so it
+does not invalidate the first ticket by itself. The current code is checked
+without consuming its step. A successful replacement is audited as
+`security.totp_replaced`; first enrollment remains `security.totp_enabled`.
+
+First enrollment (while 2FA is off) starts from an authenticated master
+session without asking for a second proof. A stolen live master session can
+therefore enroll its own authenticator before the owner does; this is a known
+residual. Enabling 2FA immediately after account creation and keeping master
+sessions short are the mitigations. Once a factor is active, replacing it
+always requires the current code or the account password.
 
 ### IP allowlist
 

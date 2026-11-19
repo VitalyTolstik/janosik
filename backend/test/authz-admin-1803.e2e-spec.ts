@@ -7,6 +7,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { AdminService } from "@/admin/admin.service";
 import { decryptSecret, encryptSecret } from "@/mailer/secret-box";
 import { wipeAll } from "./support/wipe";
 
@@ -230,6 +231,8 @@ describe("Admin authz matrix (e2e)", () => {
         }),
       ).toBe(0);
 
+      const adminService = app.get(AdminService);
+      const invalidate = jest.spyOn(adminService, "invalidateMetrics");
       const confirmed = await server()
         .post("/api/v1/admin/security/totp/verify")
         .set(auth(ownerToken))
@@ -242,6 +245,10 @@ describe("Admin authz matrix (e2e)", () => {
         totpEnabled: true,
         replaced: true,
       });
+      // The audit row was written in the secret transaction, outside the
+      // normal audit helper, so the metrics cache must still be dropped.
+      expect(invalidate).toHaveBeenCalled();
+      invalidate.mockRestore();
 
       row = await prisma.adminUser.findUniqueOrThrow({
         where: { id: ownerId },
@@ -410,7 +417,14 @@ describe("Admin authz matrix (e2e)", () => {
         where: { id: ownerId },
       });
       // Force the audit insert to fail at the database, so the assertion is
-      // about the real transaction boundary rather than a Prisma mock.
+      // about the real transaction boundary rather than a Prisma mock. Drop a
+      // trigger left by a killed run first so the suite can be re-entered.
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS janosik_failing_audit ON "AdminAuditLog"',
+      );
+      await prisma.$executeRawUnsafe(
+        "DROP FUNCTION IF EXISTS janosik_test_failing_audit()",
+      );
       await prisma.$executeRawUnsafe(`
         CREATE OR REPLACE FUNCTION janosik_test_failing_audit() RETURNS trigger AS $$
         BEGIN

@@ -66,6 +66,9 @@ describe("DemoPage", () => {
     fireEvent.change(screen.getByTestId("admin-demo-cards-input"), {
       target: { value: "8" },
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-demo-start")).not.toBeDisabled(),
+    );
     fireEvent.click(screen.getByTestId("admin-demo-start"));
 
     await waitFor(() =>
@@ -99,6 +102,9 @@ describe("DemoPage", () => {
     fireEvent.change(screen.getByTestId("admin-demo-cards-input"), {
       target: { value: "2" },
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-demo-start")).not.toBeDisabled(),
+    );
     fireEvent.click(screen.getByTestId("admin-demo-start"));
 
     await waitFor(() => expect(server.demoStatus.running).toBe(true));

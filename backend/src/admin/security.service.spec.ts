@@ -52,7 +52,11 @@ function totp(secret: string, at = Date.now()): string {
 const SECRET = "JBSWY3DPEHPK3PXP";
 
 describe("SecurityService.verifyCode (TOTP)", () => {
-  const service = new SecurityService({} as PrismaService, {} as JwtService);
+  const service = new SecurityService(
+    {} as PrismaService,
+    {} as JwtService,
+    { invalidateMetrics: () => undefined } as never,
+  );
 
   it("accepts the code from an independent implementation", () => {
     expect(service.verifyCode(SECRET, totp(SECRET))).toBe(true);
@@ -88,7 +92,11 @@ describe("isIpAllowed", () => {
 });
 
 describe("SecurityService.verifyCode (TOTP replay)", () => {
-  const service = new SecurityService({} as PrismaService, {} as JwtService);
+  const service = new SecurityService(
+    {} as PrismaService,
+    {} as JwtService,
+    { invalidateMetrics: () => undefined } as never,
+  );
   const code = totp(SECRET);
 
   it("accepts a code once per admin and refuses the replay", () => {

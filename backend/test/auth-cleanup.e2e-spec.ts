@@ -225,6 +225,10 @@ describe("Unverified registration cleanup (e2e)", () => {
     const board = await prisma.board.create({
       data: { title: "Late-writer board" },
     });
+    // A killed run may have left the trigger behind; make the suite re-entrant.
+    await prisma.$executeRawUnsafe(
+      'DROP TRIGGER IF EXISTS janosik_late_membership ON "User"',
+    );
     await prisma.$executeRawUnsafe(`
       CREATE OR REPLACE FUNCTION janosik_test_late_membership() RETURNS trigger AS $$
       BEGIN

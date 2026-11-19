@@ -640,7 +640,10 @@ When public sharing is disabled (`ALLOW_PUBLIC_SHARES=false` or the
 `public_shares` flag), creation and refresh answer `404` before approvals or
 idempotency records are touched.
 
-`PATCH`/`DELETE` changes are audited as `share.updated` / `share.revoked`.
+`PATCH` writes a `BoardShareAuditLog` row with action `updated`; `POST
+.../refresh` writes `refreshed`, and revoking writes `revoked`. A master's
+hard-delete of a revoked share is also recorded in the master audit log as
+`share.revoked`.
 
 `DELETE` revokes a share: its token stops resolving at once. Revoking is
 idempotent.

@@ -189,24 +189,42 @@ describe("Share authz (e2e)", () => {
   });
 
   it("M5: the realtime flag disables the public share stream too", async () => {
+    sseTiming.keepAliveMs = 150;
     const live = await createShare(boardId, { mode: "live" });
-    await prisma.featureFlag.upsert({
-      where: { key: "realtime_sse" },
-      create: { key: "realtime_sse", enabled: false },
-      update: { enabled: false },
-    });
-    await server().get(`/api/v1/share/${live.token}/events`).expect(404);
+    try {
+      await prisma.featureFlag.upsert({
+        where: { key: "realtime_sse" },
+        create: { key: "realtime_sse", enabled: false },
+        update: { enabled: false },
+      });
+      await server().get(`/api/v1/share/${live.token}/events`).expect(404);
 
-    await prisma.featureFlag.update({
-      where: { key: "realtime_sse" },
-      data: { enabled: true },
-    });
-    const open = await fetch(
-      `${baseUrl}/api/v1/share/${live.token}/events?since=0`,
-      { headers: { Accept: "text/event-stream" } },
-    );
-    expect(open.status).toBe(200);
-    await open.body?.cancel().catch(() => undefined);
+      await prisma.featureFlag.update({
+        where: { key: "realtime_sse" },
+        data: { enabled: true },
+      });
+      const open = await fetch(
+        `${baseUrl}/api/v1/share/${live.token}/events?since=0`,
+        { headers: { Accept: "text/event-stream" } },
+      );
+      expect(open.status).toBe(200);
+      expect(open.body).not.toBeNull();
+      const reader = sseReader(open.body!);
+
+      // Kill switch for an already-open public stream, not only for new ones.
+      await prisma.featureFlag.update({
+        where: { key: "realtime_sse" },
+        data: { enabled: false },
+      });
+      expect(await reader.waitClosed(5_000)).toBe(true);
+      await reader.close();
+    } finally {
+      sseTiming.keepAliveMs = 25_000;
+      await prisma.featureFlag.update({
+        where: { key: "realtime_sse" },
+        data: { enabled: true },
+      });
+    }
   });
 
   it("M9: snapshot refresh uses the share.update approval and audits it", async () => {
@@ -403,11 +421,13 @@ describe("Share authz (e2e)", () => {
 /** Incremental public-SSE frame reader used by the includeComments test. */
 function sseReader(stream: ReadableStream<Uint8Array>): {
   drain: (ms: number) => Promise<Frame[]>;
+  waitClosed: (ms: number) => Promise<boolean>;
   close: () => Promise<void>;
 } {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let closed = false;
 
   const drain = async (ms: number): Promise<Frame[]> => {
     const frames: Frame[] = [];
@@ -421,7 +441,10 @@ function sseReader(stream: ReadableStream<Uint8Array>): {
         ),
       ]);
       if (chunk === null) break;
-      if (chunk.done) break;
+      if (chunk.done) {
+        closed = true;
+        break;
+      }
       buffer += decoder.decode(chunk.value, { stream: true });
       for (;;) {
         const separator = buffer.indexOf("\n\n");
@@ -444,8 +467,17 @@ function sseReader(stream: ReadableStream<Uint8Array>): {
     return frames;
   };
 
+  const waitClosed = async (ms: number): Promise<boolean> => {
+    const deadline = Date.now() + ms;
+    while (!closed && Date.now() < deadline) {
+      await drain(Math.min(250, Math.max(1, deadline - Date.now())));
+    }
+    return closed;
+  };
+
   return {
     drain,
+    waitClosed,
     close: async () => {
       await reader.cancel().catch(() => undefined);
     },

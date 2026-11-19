@@ -192,8 +192,11 @@ factor requires the current code or the account password; the new secret is
 staged in a short-lived ticket bound to the current factor state and becomes
 active only after confirmation, so a superseded or replayed ticket is refused
 and the change plus its `security.totp_replaced` audit row commit together.
-User accounts have no second factor; the 6-digit codes for email confirmation
-and email change are out-of-band confirmations, not login factors.
+First enrollment while 2FA is off does not require a second proof from the
+current session, so a stolen live master session could enroll first; enabling
+2FA immediately after account creation is the mitigation. User accounts have
+no second factor; the 6-digit codes for email confirmation and email change
+are out-of-band confirmations, not login factors.
 
 A master's IP allowlist is enforced on every admin request and on every
 session refresh, not only at sign-in, so a token or refresh cookie carried off

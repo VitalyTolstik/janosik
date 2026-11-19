@@ -634,7 +634,10 @@ MIME-типов и проверяет сигнатуры файлов для т�
 
 При выключенных публичных ссылках (`ALLOW_PUBLIC_SHARES=false` или флаг
 `public_shares`) создание и обновление отвечают `404` до согласований и
-idempotency-записей. `PATCH`/`DELETE` пишут `share.updated` / `share.revoked`.
+idempotency-записей. `PATCH` пишет строку `BoardShareAuditLog` с действием
+`updated`; `POST .../refresh` — `refreshed`, отзыв — `revoked`. Жёсткое
+удаление отозванной ссылки мастером дополнительно пишется в аудит мастера как
+`share.revoked`.
 
 `DELETE` отзывает ссылку: её токен сразу перестаёт работать. Отзыв
 идемпотентен.
