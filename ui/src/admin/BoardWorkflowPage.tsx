@@ -31,6 +31,28 @@ export function BoardWorkflowPage() {
   return <BoardWorkflowEditorPage key={boardId} boardId={boardId} />;
 }
 
+/**
+ * A language handoff may be consumed without a router navigation while a
+ * workflow draft is dirty. Ignore that one parameter when comparing search
+ * strings; every other query or hash change still belongs to the blocker.
+ */
+function searchWithoutLocale(search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete("lng");
+  return params.toString();
+}
+
+function workflowLocationChanged(
+  current: { pathname: string; search: string; hash: string },
+  next: { pathname: string; search: string; hash: string },
+): boolean {
+  return (
+    current.pathname !== next.pathname ||
+    current.hash !== next.hash ||
+    searchWithoutLocale(current.search) !== searchWithoutLocale(next.search)
+  );
+}
+
 function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
   const { t: appT } = useI18n();
   const t = useAdminT();
@@ -41,10 +63,7 @@ function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
   const [dirty, setDirty] = useState(false);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty &&
-      (currentLocation.pathname !== nextLocation.pathname ||
-        currentLocation.search !== nextLocation.search ||
-        currentLocation.hash !== nextLocation.hash),
+      dirty && workflowLocationChanged(currentLocation, nextLocation),
   );
 
   useEffect(() => {

@@ -185,8 +185,10 @@ export function BoardSection() {
 
   return (
     <main
+      data-testid="board-main"
+      tabIndex={-1}
       className={cn(
-        "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 sm:px-6",
+        "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 outline-none sm:px-6",
         boardBackgroundById(background).className,
       )}
     >

@@ -40,6 +40,9 @@ test("switching boards closes the settings draft before another board can save",
   await search.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/board/${other.id}$`));
   await expect(dialog).toBeHidden();
+  // The forced switch unmounts Settings without a close event; focus belongs
+  // to the new board's gear, not BODY.
+  await expect(settings).toBeFocused();
 
   await settings.click();
   const otherSettings = page.getByRole("dialog", {

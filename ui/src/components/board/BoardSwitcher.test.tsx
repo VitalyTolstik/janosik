@@ -156,8 +156,27 @@ describe("BoardSwitcher", () => {
       within(row).getByRole("button", { name: "Archive board" }),
     ).toBeInTheDocument();
     fireEvent.change(input, { target: { value: "zzz" } });
-    expect(input).toHaveAttribute("aria-expanded", "false");
+    // Openness describes the popup, not whether any result matched.
+    expect(input).toHaveAttribute("aria-expanded", "true");
     expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("reports popover openness, not the result count, in aria-expanded (M41)", async () => {
+    renderSwitcher();
+    const trigger = screen.getByRole("button", { name: "Switch board" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await openSwitcher();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    const input = screen.getByRole("combobox", { name: "Search boards…" });
+    fireEvent.change(input, { target: { value: "zzz" } });
+    expect(screen.getByText("No boards match")).toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute("aria-expanded", "false"),
+    );
   });
 
   it("keeps longer search queries while enforcing the board title limit", async () => {
@@ -437,8 +456,16 @@ describe("BoardSwitcher role sections (server mode)", () => {
     expect(screen.getByTestId("board-group-shared")).toHaveTextContent(
       "Shared with me",
     );
+    // The group headings are real grid rows with an accessible name, not
+    // hidden text inside a grid whose rows skip the section.
+    expect(screen.getByRole("row", { name: "My boards" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("row", { name: "Shared with me" }),
+    ).toBeInTheDocument();
 
-    const options = screen.getAllByRole("row");
+    const options = screen
+      .getAllByRole("row")
+      .filter((row) => row.dataset.index !== undefined);
     expect(options.map((option) => option.textContent)).toEqual([
       expect.stringContaining("Alpha"),
       expect.stringContaining("Beta"),
@@ -507,11 +534,14 @@ describe("BoardSwitcher role sections (server mode)", () => {
     await screen.findByTestId("board-group-mine");
 
     // The cursor walks the flat, on-screen order: Alpha → Beta → Gamma,
-    // across the section boundary.
+    // across the section boundary (the group headings are rows too, but carry
+    // no data-index and never join the roving cursor).
     const input = screen.getByLabelText("Search boards…");
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getAllByRole("row")[2].className).toContain("bg-hover");
+    expect(screen.getByRole("row", { selected: true })).toHaveTextContent(
+      "Gamma",
+    );
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
       expect(

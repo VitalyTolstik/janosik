@@ -246,10 +246,17 @@ test("NAV-5: omnibox finds all six entity types and opens a card with the keyboa
     ).toBeVisible();
   }
 
-  // Narrow to the single card hit, then exercise the keyboard path: the
-  // first result is active and Enter opens it.
+  // Narrow to the single card hit, then exercise the keyboard path. Wait for
+  // the debounced response: pressing Enter while the new query is still
+  // loading has no active result and would legitimately do nothing.
   await input.fill(`Card ${token}`);
+  const cardResult = page.getByTestId("admin-search-result-0");
+  await expect(cardResult).toContainText(`Card ${token}`);
   await expect(page.getByTestId("admin-search-result-1")).toHaveCount(0);
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    (await cardResult.getAttribute("id"))!,
+  );
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/admin/cards/${cardId}$`));
 });

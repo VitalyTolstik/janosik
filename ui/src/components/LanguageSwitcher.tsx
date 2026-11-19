@@ -1,4 +1,3 @@
-import { useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronDown } from "lucide-react";
 
 import { api } from "@/api/client";
@@ -16,38 +15,49 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ensureLocale, useI18n, type Lang } from "@/i18n";
+import { useI18n, type Lang } from "@/i18n";
+import { ensureLocale } from "@/i18n/i18n";
 
 interface LanguageSwitcherProps {
   /** `icon` (header trigger) or `row` (account preferences). */
   variant?: "icon" | "row";
 }
 
+/**
+ * Drop the one-shot `?lng=` handoff after the catalog is ready. A router
+ * navigation would count as a location change and trip the dirty-workflow
+ * blocker (M39); replacing the current history entry keeps the URL honest
+ * without rendering a new route. The hash and every other parameter survive.
+ */
+function consumeLocaleParam(): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("lng")) return;
+    url.searchParams.delete("lng");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  } catch {
+    // A history entry without a usable URL is not worth failing the switch.
+  }
+}
+
 /** Language picker (English / Russian) — a globe icon with a dropdown. */
 export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   const { lang, setLang, t } = useI18n();
-  const location = useLocation();
-  const navigate = useNavigate();
   const { status, user, updateUser, impersonating } = useAuth();
 
   // Load the lazy catalog before switching; a failed load (offline, not yet
-  // cached) leaves both the UI and the server profile on the current language.
+  // cached) leaves both the UI, the URL and the server profile on the current
+  // language. The `?lng=` handoff is consumed only after the new catalog is
+  // ready, so a reload can retry a failed one.
   const choose = (next: Lang) => {
-    const params = new URLSearchParams(location.search);
-    if (params.has("lng")) {
-      params.delete("lng");
-      void navigate(
-        {
-          pathname: location.pathname,
-          search: params.toString(),
-          hash: location.hash,
-        },
-        { replace: true, state: location.state },
-      );
-    }
     void ensureLocale(next).then((ready) => {
       if (!ready) return;
       setLang(next);
+      consumeLocaleParam();
       if (status !== "authenticated" || user === null || impersonating) return;
       void api
         .updateProfile({ locale: next })

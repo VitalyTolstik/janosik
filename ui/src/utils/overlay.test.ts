@@ -19,6 +19,7 @@ describe("isOverlayOpen", () => {
   it("detects dialogs, menus and the card context menu", () => {
     for (const marker of [
       { role: "dialog" },
+      { role: "alertdialog" },
       { role: "menu" },
       { role: "listbox" },
       { "data-slot": "context-menu-content" },
@@ -31,6 +32,26 @@ describe("isOverlayOpen", () => {
       document.body.append(overlay);
 
       expect(isOverlayOpen()).toBe(true);
+    }
+  });
+
+  it("ignores surfaces that are animating closed (M41/L31)", () => {
+    for (const marker of [
+      { role: "dialog" },
+      { role: "alertdialog" },
+      { role: "menu" },
+      { role: "listbox" },
+      { "data-slot": "context-menu-content" },
+    ]) {
+      document.body.replaceChildren();
+      const overlay = document.createElement("div");
+      for (const [name, value] of Object.entries(marker)) {
+        overlay.setAttribute(name, value);
+      }
+      overlay.setAttribute("data-state", "closed");
+      document.body.append(overlay);
+
+      expect(isOverlayOpen()).toBe(false);
     }
   });
 });

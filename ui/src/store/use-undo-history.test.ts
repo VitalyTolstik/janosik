@@ -263,6 +263,19 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
     expect(apply).toHaveBeenCalledTimes(2);
   });
 
+  it("undoes immediately while a closed dialog is still exiting (L31)", () => {
+    const { result, apply, state } = setupHotkeys();
+    act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));
+    const closing = document.createElement("div");
+    closing.setAttribute("role", "dialog");
+    closing.setAttribute("data-state", "closed");
+    document.body.append(closing);
+
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
+    expect(apply).toHaveBeenCalledTimes(1);
+    closing.remove();
+  });
+
   it("ignores keys pressed without Ctrl or Cmd", () => {
     const { result, apply, state } = setupHotkeys();
     act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));

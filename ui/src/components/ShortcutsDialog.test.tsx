@@ -270,6 +270,18 @@ describe("keyboard shortcuts", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("opens the cheat sheet immediately while a closed dialog exits (L31)", () => {
+    renderBoard();
+    const closing = document.createElement("div");
+    closing.setAttribute("role", "dialog");
+    closing.setAttribute("data-state", "closed");
+    document.body.append(closing);
+
+    pressKey("?");
+    expect(screen.getByTestId("shortcuts-table")).toBeInTheDocument();
+    closing.remove();
+  });
+
   it("focuses the board search with slash unless an overlay is open", () => {
     renderBoard();
     const search = screen.getByRole("textbox", { name: "Search cards" });

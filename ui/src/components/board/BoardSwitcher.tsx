@@ -96,18 +96,20 @@ export function BoardSwitcher({
             when the popover closes, so every open mounts a clean panel —
             reset by remount, never imperatively in `onOpenChange`
             (AGENT.md). */}
-        <BoardSwitcherPanel onClose={() => setOpen(false)} />
+        <BoardSwitcherPanel open={open} onClose={() => setOpen(false)} />
       </PopoverContent>
     </Popover>
   );
 }
 
 interface BoardSwitcherPanelProps {
+  /** Whether the surrounding popover is open (the combobox's popup state). */
+  open: boolean;
   /** Closes the surrounding popover (used after navigating/creating). */
   onClose: () => void;
 }
 
-function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
+function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
@@ -304,7 +306,7 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
         <input
           name="board-search"
           role="combobox"
-          aria-expanded={groups.flat.length > 0}
+          aria-expanded={open}
           aria-haspopup="grid"
           aria-controls={gridId}
           aria-autocomplete="list"
@@ -367,20 +369,24 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
             return (
               <Fragment key={b.id}>
                 {header !== null ? (
-                  <p
-                    aria-hidden
+                  <div
+                    role="row"
                     data-testid={`board-group-${header}`}
                     className={cn(
-                      "px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                       header === "shared" && "mt-1 border-t border-border/60",
                     )}
                   >
-                    {t(
-                      header === "mine"
-                        ? "board.switcher.section.mine"
-                        : "board.switcher.section.shared",
-                    )}
-                  </p>
+                    <div
+                      role="gridcell"
+                      className="px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      {t(
+                        header === "mine"
+                          ? "board.switcher.section.mine"
+                          : "board.switcher.section.shared",
+                      )}
+                    </div>
+                  </div>
                 ) : null}
                 <div
                   data-index={index}

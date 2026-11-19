@@ -94,8 +94,13 @@ test("undo skips a label rename overtaken by another member", async ({
     page.getByRole("button", { name: "Member label", exact: true }).last(),
   ).toBeVisible({ timeout: 15_000 });
 
+  // Global undo hotkeys yield to an open dialog (L31): close the card and
+  // its label popover first, then undo from the board surface.
+  await closeCardDialog(page);
   await pressUndo(page);
   await expect(notification(page, FOREIGN_SKIP)).toBeVisible();
+  await openCard(page, "Task");
+  await dialog.getByRole("button", { name: "Labels" }).click();
   await expect(
     page.getByRole("button", { name: "Member label", exact: true }).last(),
   ).toBeVisible();

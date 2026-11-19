@@ -9,6 +9,7 @@ import { usePendingApprovals } from "@/components/agents/use-pending-approvals";
 import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
 import { BoardScopeSelect } from "@/components/agents/BoardScopeSelect";
 import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
+import { restoreBoardSettingsFocus } from "@/components/board/settings/focus";
 import { ShareDialog } from "@/components/board/ShareDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
@@ -124,6 +125,10 @@ export function Header() {
     boardId: string;
     section: "workflow" | "agents";
   } | null>(null);
+  // A board switch forcibly unmounts Settings without a close event. Remember
+  // which board owned the last open dialog so focus can move to the new board
+  // once its header is mounted, not fall to BODY with the discarded dialog.
+  const settingsBoardRef = useRef<string | null>(null);
   if (settings !== null && settings.boardId !== settingsBoardId) {
     setSettings(null);
   }
@@ -131,6 +136,24 @@ export function Header() {
     if (settingsBoardId !== undefined)
       setSettings({ boardId: settingsBoardId, section });
   };
+  useEffect(() => {
+    if (settings !== null) {
+      settingsBoardRef.current = settings.boardId;
+      return;
+    }
+    const previousBoardId = settingsBoardRef.current;
+    if (previousBoardId === null) return;
+    if (!isBoardRoute) {
+      settingsBoardRef.current = null;
+      return;
+    }
+    // Still between aggregates: wait for the target board, so the gear/title
+    // that receives focus belongs to the new board.
+    if (settingsBoardId === undefined) return;
+    settingsBoardRef.current = null;
+    // A normal close keeps the same board; the shell already restored focus.
+    if (settingsBoardId !== previousBoardId) restoreBoardSettingsFocus();
+  }, [isBoardRoute, settings, settingsBoardId]);
   const [agentControlOpen, setAgentControlOpen] = useState(false);
   const agentTrigger = useRef<HTMLButtonElement | null>(null);
   const agentsLink = useRef<HTMLAnchorElement | null>(null);

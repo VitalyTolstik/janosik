@@ -267,11 +267,10 @@ export function FilterBar({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing) return;
-      const slash =
-        (e.key === "/" || (e.code === "Slash" && !e.shiftKey)) &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey;
+      // `/` is a character shortcut: RU, QWERTZ and AZERTY layouts put `.`,
+      // `-` or `:` on the physical Slash key, and those keys must stay inert.
+      // Letter shortcuts keep their physical-code fallback (see M38).
+      const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey;
 
       if (slash && !isEditableTarget(e.target) && !isOverlayOpen()) {
         e.preventDefault();

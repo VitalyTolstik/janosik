@@ -40,7 +40,11 @@ export function BoardTitle() {
   // VIEWER renames nothing — the header shows a plain heading (TASK-35).
   if (roleOf(id) === "VIEWER") {
     return (
-      <h2 className="max-w-[46vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]">
+      <h2
+        data-testid="board-title"
+        tabIndex={-1}
+        className="max-w-[46vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
+      >
         {title}
       </h2>
     );
@@ -71,6 +75,7 @@ export function BoardTitle() {
     </span>
   ) : (
     <h2
+      data-testid="board-title"
       onClick={startEdit}
       tabIndex={0}
       onKeyDown={(e) => {
