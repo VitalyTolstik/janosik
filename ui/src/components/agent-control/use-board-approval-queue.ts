@@ -131,13 +131,14 @@ export function useBoardApprovalQueue(
         ...current,
         [status]: next,
         [`${status}Error`]: false,
+        loadingMore: undefined,
       });
     } catch (error) {
       if (request !== generation.current) return;
       publish(
         accessLost(error)
           ? { boardId, pendingError: true, decidedError: true }
-          : { ...current, [`${status}Error`]: true },
+          : { ...current, [`${status}Error`]: true, loadingMore: undefined },
       );
     }
   };

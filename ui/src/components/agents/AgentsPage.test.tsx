@@ -1963,6 +1963,48 @@ describe("AgentsPage", () => {
     );
   });
 
+  it("focuses the rejection reason when quick reject opens the mobile sheet", async () => {
+    const matchMedia = window.matchMedia;
+    const mobile = vi
+      .spyOn(window, "matchMedia")
+      .mockImplementation((query) => ({
+        ...matchMedia(query),
+        matches: query === "(max-width: 1060px)",
+      }));
+    const row = approval();
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem({ planHash: row.planHash })], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+
+    const focusTargets: EventTarget[] = [];
+    const trackFocus = (event: FocusEvent) => {
+      if (event.target !== null) focusTargets.push(event.target);
+    };
+    document.addEventListener("focusin", trackFocus);
+    try {
+      renderPage("/agents?section=attention");
+      await userEvent.click(
+        await screen.findByTestId("agents-approval-reject-approval-1"),
+      );
+      expect(
+        screen.getByTestId("agents-approval-sheet-scrim"),
+      ).toBeInTheDocument();
+      expect(await screen.findByTestId("approval-comment")).toHaveFocus();
+      const detail = screen.getByTestId("agents-approval-detail");
+      expect(focusTargets).not.toContain(
+        within(detail).getByRole("button", { name: /back/i }),
+      );
+    } finally {
+      document.removeEventListener("focusin", trackFocus);
+      mobile.mockRestore();
+    }
+  });
+
   it("shows an expired approval without decision controls", async () => {
     const expired = approval({ expiresAt: Date.now() - 1_000 });
     hoisted.agentsOverview.mockResolvedValue(

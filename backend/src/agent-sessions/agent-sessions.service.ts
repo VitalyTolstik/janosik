@@ -186,7 +186,13 @@ export class AgentSessionsService {
         sessionId,
       });
     }
-    await publishAgentHeartbeat(this.prisma, this.realtime, session, now);
+    await publishAgentHeartbeat(
+      this.prisma,
+      this.realtime,
+      session.id,
+      now,
+      session.lastHeartbeatPublishedAt,
+    );
     // The successful update is the linearization point. Build the response
     // from that snapshot instead of re-reading, so a concurrently committed
     // `end` cannot make this 200 look like an open session with `endedAt` set.

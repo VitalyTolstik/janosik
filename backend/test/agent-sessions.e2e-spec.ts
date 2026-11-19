@@ -428,7 +428,7 @@ describe("Agent sessions and attribution (e2e)", () => {
     expect(stream.status).toBe(200);
     const isHeartbeat = (frame: SseFrame) =>
       frame.type === "agent" && frame.op === "heartbeat";
-    const frames = readFrames(stream, isHeartbeat, 3);
+    const frames = readFrames(stream, isHeartbeat, 4);
     const heartbeat = () =>
       server()
         .post(`/api/v1/boards/${boardId}/agent-sessions/${agent.id}/heartbeat`)
@@ -460,17 +460,45 @@ describe("Agent sessions and attribution (e2e)", () => {
       where: { id: agent.id },
       data: { lastHeartbeatPublishedAt: overdue, lastHeartbeatAt: overdue },
     });
-    await command(
-      tokenA,
-      {
-        type: "ADD_CARD",
-        newCardId: randomUUID(),
-        columnId: "col-agent",
-        title: "Write heartbeat",
-      },
-      agent.id,
+    const write = () =>
+      command(
+        tokenA,
+        {
+          type: "ADD_CARD",
+          newCardId: randomUUID(),
+          columnId: "col-agent",
+          title: "Write heartbeat",
+        },
+        agent.id,
+      );
+    const readSession = () =>
+      prisma.agentSession.findUniqueOrThrow({ where: { id: agent.id } });
+    await write();
+    const writeStamp = await readSession();
+    expect(writeStamp.lastHeartbeatPublishedAt).toEqual(
+      writeStamp.lastHeartbeatAt,
     );
-    expect(await frames).toHaveLength(3);
+    expect(writeStamp.lastHeartbeatAt.getTime()).toBeGreaterThan(
+      overdue.getTime(),
+    );
+    await write();
+    expect((await readSession()).lastHeartbeatPublishedAt).toEqual(
+      writeStamp.lastHeartbeatPublishedAt,
+    );
+
+    // A write-only client must publish when the SSE window elapses, even
+    // when its persisted liveness stamp is still inside the write window.
+    await prisma.agentSession.update({
+      where: { id: agent.id },
+      data: { lastHeartbeatPublishedAt: overdue },
+    });
+    await write();
+    const latest = await readSession();
+    expect(latest.lastHeartbeatAt).toEqual(writeStamp.lastHeartbeatAt);
+    expect(latest.lastHeartbeatPublishedAt!.getTime()).toBeGreaterThan(
+      overdue.getTime(),
+    );
+    expect(await frames).toHaveLength(4);
     for (const frame of await frames) {
       expect(frame).toMatchObject({
         sessionId: agent.id,
@@ -478,10 +506,6 @@ describe("Agent sessions and attribution (e2e)", () => {
         scope: "session",
       });
     }
-    const latest = await prisma.agentSession.findUniqueOrThrow({
-      where: { id: agent.id },
-    });
-    expect(latest.lastHeartbeatPublishedAt).toEqual(latest.lastHeartbeatAt);
   });
 
   it("exposes the token identity on whoami and the token list", async () => {

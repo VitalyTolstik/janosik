@@ -371,7 +371,7 @@ describe("agent entry points in the header", () => {
     ).not.toHaveLength(0);
   });
 
-  it("sums All boards, renders 99+ and leaves the bell invitations-only", async () => {
+  it("shows the exact All boards total in the scope menu and caps the compact badge at 99+", async () => {
     const server = new FakeServer([board, boardTwo]);
     server.pendingApprovals.set("board-1", 60);
     server.pendingApprovals.set("board-2", 40);
@@ -380,12 +380,15 @@ describe("agent entry points in the header", () => {
     expect(await screen.findByTestId("agents-pending-count")).toHaveTextContent(
       "99+",
     );
+    // Approval counts live in the Agents controls. The bell still counts invitations only.
     expect(screen.queryByTestId("notifications-badge")).toBeNull();
 
     await userEvent.click(screen.getByTestId("agents-header-scope"));
     expect(
-      screen.getByTestId("agents-header-scope-option-all"),
-    ).toHaveTextContent("99+");
+      within(screen.getByTestId("agents-header-scope-option-all")).getByText(
+        "100",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByTestId("agents-header-scope-option-board-1"),
     ).toHaveTextContent("60");

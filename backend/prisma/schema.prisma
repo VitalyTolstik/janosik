@@ -484,6 +484,7 @@ model ApprovalRequest {
   createdAt          DateTime  @default(now())
 
   @@index([boardId, status, createdAt])
+  @@index([boardId, agentSessionId, status])
   @@index([requestedByTokenId, status])
   @@index([expiresAt, status])
   @@index([planHash])

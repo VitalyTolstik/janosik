@@ -383,7 +383,9 @@ one-time: the same applied commands are an idempotent replay, a different plan
 gets `approval_mismatch` or `approval_consumed`. An authorized
 `approval_mismatch` includes the stored `plan`. Batch/command application
 creates an `AgentRun` with `approvalId`, stamps `runId` on every command and
-writes `approval_consumed`; a lifecycle operation leaves `runId` null. The
+writes `approval_consumed`; a lifecycle operation leaves `runId` null.
+Requesting an identical consumed lifecycle plan in the same board, token and
+agent session scope returns `409 approval_consumed`. The
 decision endpoint is session-only, so a PAT gets `pat_forbidden` — the human
 token owner approves their agent's request, the agent never approves itself.
 
@@ -401,7 +403,15 @@ The browser Inbox uses
 `status=pending` or `status=decided` for independent queues, and follow
 `nextCursor` with the same filters. `total` counts matching rows before
 pagination. `matchingCounts` applies search and scope filters across all
-statuses, and `counts` supplies unfiltered scope totals.
+statuses, and `counts` supplies unfiltered scope totals. The Board Inbox
+header count reflects TTL expiry on the next 30-second poll while visible.
+
+Global Attention subscribes to approval SSE for the first four boards and
+adds the board in scope or the board of the selected approval when needed.
+Other boards update on the 30-second poll while visible. Password resets,
+password changes and OAuth account takeovers cancel actionable approvals for
+revoked tokens in the credential transaction. Those cancellations can also
+reach the browser on the next poll.
 
 Browser sessions do not pass through the preset/destructive gate; their board
 role rules are unchanged (including ordinary undo). A PAT can never send

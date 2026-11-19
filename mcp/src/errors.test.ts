@@ -93,6 +93,16 @@ describe("describeError", () => {
     expect(message).toMatch(/do not retry/i);
   });
 
+  it("resubmits the same plan for a fresh approval after expiry", () => {
+    const message = describeError(
+      new ApiError(409, { code: "approval_expired" }),
+    );
+    expect(message).toMatch(/expired/i);
+    expect(message).toMatch(
+      /fresh approval id.*same plan.*janosik_request_approval/i,
+    );
+  });
+
   it("explains the other approval refusals without a blind retry", () => {
     for (const [code, pattern] of [
       ["approval_expired", /expired/i],

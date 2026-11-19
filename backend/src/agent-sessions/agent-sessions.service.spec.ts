@@ -115,6 +115,16 @@ describe("heartbeat SSE (TASK-180.4 M27)", () => {
             return { count: 1 };
           },
         ),
+        updateManyAndReturn: jest.fn(
+          async ({
+            data,
+          }: {
+            data: Pick<AgentSession, "lastHeartbeatPublishedAt">;
+          }) => {
+            session.lastHeartbeatPublishedAt = data.lastHeartbeatPublishedAt;
+            return [{ boardId: session.boardId }];
+          },
+        ),
       },
       board: {
         findUnique: jest.fn(async () => ({ agentsPausedAt: null })),

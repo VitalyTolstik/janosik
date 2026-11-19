@@ -83,23 +83,20 @@ export async function resolveAgentSessionHeader(
 export async function publishAgentHeartbeat(
   prisma: PrismaService,
   realtime: RealtimeService,
-  session: {
-    id: string;
-    boardId: string;
-    lastHeartbeatPublishedAt: Date | null;
-  },
+  sessionId: string,
   now: Date,
+  lastHeartbeatPublishedAt: Date | null = null,
 ): Promise<void> {
   const publishBefore = new Date(now.getTime() - HEARTBEAT_SSE_INTERVAL_MS);
   if (
-    session.lastHeartbeatPublishedAt !== null &&
-    session.lastHeartbeatPublishedAt > publishBefore
+    lastHeartbeatPublishedAt !== null &&
+    lastHeartbeatPublishedAt > publishBefore
   )
     return;
   try {
-    const claimed = await prisma.agentSession.updateMany({
+    const [session] = await prisma.agentSession.updateManyAndReturn({
       where: {
-        id: session.id,
+        id: sessionId,
         endedAt: null,
         OR: [
           { lastHeartbeatPublishedAt: null },
@@ -107,19 +104,20 @@ export async function publishAgentHeartbeat(
         ],
       },
       data: { lastHeartbeatPublishedAt: now },
+      select: { boardId: true },
     });
-    if (claimed.count > 0) {
+    if (session !== undefined) {
       realtime.publish(session.boardId, {
         type: "agent",
         op: "heartbeat",
-        sessionId: session.id,
+        sessionId,
         scope: "session",
         at: now.getTime(),
       });
     }
   } catch (error) {
     logger.warn(
-      `agent session ${session.id}: heartbeat publication failed (${String(error)})`,
+      `agent session ${sessionId}: heartbeat publication failed (${String(error)})`,
     );
   }
 }
@@ -138,17 +136,14 @@ export async function touchAgentSessionAfterWrite(
   const now = new Date();
   const cutoff = new Date(now.getTime() - AGENT_SESSION_WRITE_HEARTBEAT_MS);
   try {
-    const [session] = await prisma.agentSession.updateManyAndReturn({
+    await prisma.agentSession.updateMany({
       where: {
         id: sessionId,
         endedAt: null,
-        lastHeartbeatAt: { lt: cutoff },
+        lastHeartbeatAt: { lte: cutoff },
       },
       data: { lastHeartbeatAt: now },
-      select: { id: true, boardId: true, lastHeartbeatPublishedAt: true },
     });
-    if (session !== undefined)
-      await publishAgentHeartbeat(prisma, realtime, session, now);
   } catch (error) {
     logger.warn(
       `agent session ${sessionId}: heartbeat stamp failed (${
@@ -156,4 +151,5 @@ export async function touchAgentSessionAfterWrite(
       })`,
     );
   }
+  await publishAgentHeartbeat(prisma, realtime, sessionId, now);
 }

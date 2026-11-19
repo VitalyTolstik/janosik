@@ -1967,7 +1967,9 @@ export function AgentsPage() {
             fallbackCardTitle={selectedApprovalBase?.cardTitle ?? undefined}
             initialMode={approvalIntent}
             onChanged={reloadApprovals}
-            focusBack={mobileApproval && approvalSheetOpen}
+            focusBack={
+              mobileApproval && approvalSheetOpen && approvalIntent === null
+            }
             onBack={closeApproval}
             onNextPending={
               nextPendingApproval === null

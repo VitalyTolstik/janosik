@@ -520,8 +520,8 @@ describe("agent control (TASK-166.14)", () => {
     ).toHaveTextContent("1 waiting");
   });
 
-  it("keeps 101 pending approvals reachable when the recent page fails", async () => {
-    const rows = Array.from({ length: 101 }, (_, index) =>
+  it("loads all 250 pending approvals across two cursors when the recent page fails", async () => {
+    const rows = Array.from({ length: 250 }, (_, index) =>
       overviewItem({ id: `pending-${index}`, summary: `Pending ${index}` }),
     );
     let decidedAvailable = false;
@@ -535,19 +535,21 @@ describe("agent control (TASK-166.14)", () => {
       .mockImplementation(async (query = {}) => {
         if (query.status === "decided" && !decidedAvailable)
           throw new Error("Recent page unavailable");
+        const start = Number(query.cursor ?? 0);
         const items =
           query.status === "decided"
             ? [decided]
-            : query.cursor
-              ? [rows[99]!, rows[100]!]
-              : rows.slice(0, 100);
+            : rows.slice(start, start + 100);
         return {
           ...overviewResponse(items, {
             boardId: "board-1",
-            total: query.status === "decided" ? 1 : 101,
+            total: query.status === "decided" ? 1 : rows.length,
           }),
           nextCursor:
-            query.status === "pending" && !query.cursor ? "next" : null,
+            query.status === "pending" && start + 100 < rows.length
+              ? // Repeat the last initial row to exercise cursor-page deduplication.
+                String(start === 0 ? 99 : start + 100)
+              : null,
         };
       });
     vi.spyOn(api, "getApproval").mockImplementation(async (_boardId, id) =>
@@ -556,17 +558,26 @@ describe("agent control (TASK-166.14)", () => {
     renderDialog();
     expect(
       await screen.findByTestId("agent-approvals-count"),
-    ).toHaveTextContent("101");
+    ).toHaveTextContent("250");
     expect(
       screen.getByTestId("agent-control-header-pending"),
-    ).toHaveTextContent("101 waiting");
+    ).toHaveTextContent("250 waiting");
     expect(await screen.findByTestId("approval-row-pending-0")).toBeVisible();
     await userEvent.click(screen.getByTestId("approval-load-more"));
     expect(await screen.findByTestId("approval-row-pending-100")).toBeVisible();
     expect(overview).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "pending", cursor: "next" }),
+      expect.objectContaining({ status: "pending", cursor: "99" }),
     );
-    expect(screen.getAllByTestId(/^approval-row-pending-/)).toHaveLength(101);
+    expect(screen.getAllByTestId(/^approval-row-pending-/)).toHaveLength(199);
+    const loadMore = screen.getByTestId("approval-load-more");
+    expect(loadMore).toBeEnabled();
+    await userEvent.click(loadMore);
+    expect(await screen.findByTestId("approval-row-pending-249")).toBeVisible();
+    expect(overview).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "pending", cursor: "199" }),
+    );
+    expect(screen.getAllByTestId(/^approval-row-pending-/)).toHaveLength(250);
+    expect(screen.queryByTestId("approval-load-more")).toBeNull();
     decidedAvailable = true;
     await userEvent.click(screen.getByTestId("approval-refresh"));
     await userEvent.click(screen.getByTestId("approval-filter-all"));
