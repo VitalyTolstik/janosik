@@ -334,7 +334,7 @@ the old `expired` expectation as the target.
 into `main` before TASK-180.9. PR #295 carried the remaining 18. The finding
 assignments are in the [subtask map](#subtasks).
 
-| Subtask | PR | Merge commit | Evidence doc | Outcome |
+| Subtask | PR | Merge/landing commit | Evidence doc | Outcome |
 | --- | --- | --- | --- | --- |
 | 180.1 | [#284](https://github.com/VitalyTolstik/janosik/pull/284) | [`eaf0f0ca`](https://github.com/VitalyTolstik/janosik/commit/eaf0f0ca) | [Rollback correctness](TASK-180.1-rollback-correctness.md) | 10 IDs. Rollback and replay guards shipped. L37 closed by retiring the unused `failed` status. M22 retains apply-time workflow and claim checks. |
 | 180.2 | [#288](https://github.com/VitalyTolstik/janosik/pull/288) | [`242bc789`](https://github.com/VitalyTolstik/janosik/commit/242bc789) | [Write integrity](TASK-180.2-write-integrity.md) | 13 IDs. Parentage, duplication, claim, restore and retry guards shipped, with M17, L18 and L19 limits below. |
@@ -347,6 +347,18 @@ assignments are in the [subtask map](#subtasks).
 | 180.9 | [#295](https://github.com/VitalyTolstik/janosik/pull/295) | [`c70b93e7`](https://github.com/VitalyTolstik/janosik/commit/c70b93e7) | [Navigation, i18n and accessibility](TASK-180.9-nav-i18n-a11y.md) | 18 IDs. Navigation, locale, shortcut and ARIA fixes shipped, with the H15 limit and M1/M41 manual gaps below. |
 
 ### Accepted residuals
+
+This table lists only closeout-critical residuals in the central register.
+Additional per-subtask limits remain documented in the evidence for
+[180.1 — Known residuals](TASK-180.1-rollback-correctness.md#known-residuals),
+[180.2 — Known residuals](TASK-180.2-write-integrity.md#known-residuals),
+[180.3 — Residuals](TASK-180.3-authz.md#residuals),
+[180.4 — Queue and live state](TASK-180.4-approvals.md#queue-and-live-state),
+[180.5 — Residuals](TASK-180.5-mcp-api.md#residuals),
+[180.6 — Residual risks](TASK-180.6-notifications.md#residual-risks),
+[180.7 — Compatibility and limits](TASK-180.7-demo-retention.md#compatibility-and-limits),
+[180.8 — Residual risks](TASK-180.8-docs-deploy.md#residual-risks), and
+[180.9 — Residual coverage](TASK-180.9-nav-i18n-a11y.md#residual-coverage).
 
 | ID/area | Residual | Owner | Date |
 | --- | --- | --- | --- |
@@ -374,11 +386,17 @@ assignments are in the [subtask map](#subtasks).
 - [x] All nine subtasks have linked evidence. The evidence records regression
   boundaries, live or fault-injected checks for critical/high paths, and EN/RU
   and OpenAPI updates where the contracts changed.
-- [x] Final gate green on PR #295. The checked PR head `1bebcd8c` and merge
-  `c70b93e7` have the same Git tree. `verify` passed UI and backend unit/e2e
-  tests, type checks including `tsc -b`, builds, and OpenAPI validation and
-  validator tests. [Verify job](https://github.com/VitalyTolstik/janosik/actions/runs/44630080321/job/135934236136)
-- [x] The final gate passed the app browser lane with and without email, the
-  admin browser lane, security-contract (backend and browser), CodeQL, and
-  Docker smoke checks on amd64 and arm64. [CI run](https://github.com/VitalyTolstik/janosik/actions/runs/44630080321),
-  [CodeQL run](https://github.com/VitalyTolstik/janosik/actions/runs/44630080400)
+- [x] CI passed on PR #295 head `1bebcd8c` and on the post-merge `main` push
+  at `c70b93e7`. Both commits have Git tree
+  `adcfae80f093bfbae68c681440e1b822fc837c29`. The PR's `verify` job passed UI
+  and backend unit/e2e tests, type checks including `tsc -b`, builds, and
+  OpenAPI validation and validator tests.
+  [PR-head CI run `44630080321`](https://github.com/VitalyTolstik/janosik/actions/runs/44630080321),
+  [post-merge CI run `44634141494`](https://github.com/VitalyTolstik/janosik/actions/runs/44634141494),
+  [verify job](https://github.com/VitalyTolstik/janosik/actions/runs/44630080321/job/135934236136)
+- [x] The PR gate passed the app browser lane with and without email, the
+  admin browser lane, security-contract (backend and browser), and Docker
+  smoke checks on amd64 and arm64. CodeQL passed on the PR head and on the
+  post-merge `main` push.
+  [PR-head CodeQL run `44630080400`](https://github.com/VitalyTolstik/janosik/actions/runs/44630080400),
+  [post-merge CodeQL run `44634140593`](https://github.com/VitalyTolstik/janosik/actions/runs/44634140593)
