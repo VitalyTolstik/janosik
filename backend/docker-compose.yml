@@ -1,7 +1,7 @@
 # Janosik backend — postgres 16 (dev DB `janosik`, test DB `janosik_test`).
 # Credentials come from backend/.env (see .env.example) — nothing secret
 # is committed here.
-# USAGE: docker compose -f backend/docker-compose.yml up -d
+# USAGE: docker compose --env-file backend/.env -f backend/docker-compose.yml up -d
 services:
   postgres:
     image: postgres:16-alpine

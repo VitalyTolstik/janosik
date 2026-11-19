@@ -10,6 +10,7 @@ import {
   plans,
   type Cell,
 } from "../pricing";
+import { withBase } from "../utils/url";
 
 // `/pricing.md` — the pricing page as machine-readable Markdown, so AI agents
 // comparing tools can read plans and limits without rendering JavaScript (see
@@ -65,8 +66,7 @@ const tableBody = comparison
   .join("\n");
 
 export const GET: APIRoute = ({ site: astroSite }) => {
-  const abs = (path: string) =>
-    new URL(path, astroSite ?? "https://janosik.app").href;
+  const abs = (path: string) => new URL(withBase(path), astroSite).href;
 
   const body = `# Pricing — ${site.name}
 

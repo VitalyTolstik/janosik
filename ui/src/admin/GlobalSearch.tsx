@@ -17,6 +17,7 @@ import type { AdminGlobalSearchDto } from "@janosik/shared";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
+import { appPath } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { adminCardsHref } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
@@ -333,7 +334,7 @@ export function GlobalSearchDialog({
       label: t("admin.palette.action.boards"),
       testId: "admin-command-action-boards",
       run: () => {
-        window.location.assign(routes.home);
+        window.location.assign(appPath(routes.home));
       },
     },
   ].filter((action) => matches(action.label));

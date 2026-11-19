@@ -1,6 +1,6 @@
 ---
 title: Account, keys and preferences
-description: Sign in, manage your profile, password and API keys, set preferences, and back up your data.
+description: Sign in, manage your profile, password and API keys, set preferences, and see how operators back up PostgreSQL and uploaded files.
 ---
 
 Janosik runs in server mode: an account is required, and the app opens to the
@@ -160,8 +160,6 @@ Offline edits are not saved, and reloading loses unsaved changes.
 
 The data menu in the header manages your data.
 
-![The data menu: export, import, a manual copy, the card archive and automatic backups.](/screens/data-menu.png)
-
 - `Export JSON` downloads all your boards as `janosik-boards.json`. A file
   above 25 MB is refused with advice to use `pg_dump` (the same limit applies
   to a single server board export), so an export can always be imported back.
@@ -169,10 +167,6 @@ The data menu in the header manages your data.
   account. Server mode imposes no 10-board product limit; an operator may set
   `MAX_BOARDS_PER_USER` in the environment, and an import above that cap is
   rejected without creating anything.
-- `Save a copy now` writes a backup copy straight away.
-- `Automatic backups` opens the list of copies the app kept on its own while
-  you worked. From there you can restore a copy or delete it. Restoring takes
-  a safety copy of the current state first.
 - `Card archive` opens the active board's archived cards. Search and select
   cards across pages to restore them to a column or delete them. Select all
   applies to all search results; the restore destination must allow every
@@ -183,11 +177,9 @@ The data menu in the header manages your data.
 
 ![The card archive: archived cards of the active board, with restore and delete.](/screens/archive.png)
 
-`Save a copy now` and `Automatic backups` belong to the local mode (the no-API build the tests use). In
-the shipped server mode your boards live in the database and are not mirrored
-into the browser. **Janosik does not create, schedule or verify server
-backups.** Running `pg_dump` and copying the uploads volume is an operator
-task (see the runbooks).
+JSON export copies boards without their attachment files. The instance
+operator backs up PostgreSQL and the uploads volume. Janosik does not create,
+schedule or verify server backups. [Backup and restore](/docs/runbooks/).
 
 ### Your data and account
 
@@ -210,15 +202,3 @@ The account panel has a **Data & privacy** section:
   comments and attachment copies. A board admin can revoke or refresh the
   snapshot while the source board is accessible. A platform admin can also
   revoke a snapshot whose source board was purged.
-
-### The data-safety banner
-
-When local storage is at risk, a banner appears above the header.
-
-- `Data is not being saved` — storage refused the last write. The banner
-  cannot be dismissed; its action downloads a backup of what is still in
-  memory. It clears when a write succeeds again.
-- `Storage is almost full` — saving still works, but the data is near the
-  storage limit. Download a backup and delete boards you no longer need.
-- `Saved data was damaged` — the stored data could not be read. You can
-  download the damaged copy or restore an automatic backup.

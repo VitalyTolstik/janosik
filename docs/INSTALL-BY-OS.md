@@ -43,7 +43,7 @@ brew install node@24            # or: brew install nvm && nvm install   # .nvmrc
 git clone https://github.com/VitalyTolstik/janosik.git
 cd janosik
 npm install
-npm run dev                     # → http://localhost:5173 (server mode: sign in / register)
+npm run dev                     # → http://localhost:5173 (server mode: sign in)
 ```
 
 `npm run dev` starts the UI in **server mode**: it talks to the API and shows a
@@ -160,7 +160,7 @@ nvm install                     # reads .nvmrc (Node 24)
 git clone https://github.com/VitalyTolstik/janosik.git
 cd janosik
 npm install
-npm run dev                     # → http://localhost:5173 (server mode: sign in / register)
+npm run dev                     # → http://localhost:5173 (server mode: sign in)
 ```
 
 ---
@@ -194,9 +194,13 @@ npm run start -w backend
 npm run dev
 ```
 
-Register at <http://localhost:5173> (registration is open by default); create a
-master with `npm run admin:create -w backend -- --email me@example.com` and open
-`/admin`.
+With the default `backend/.env.example` configuration (no SMTP or bootstrap),
+self-service password registration is unavailable. From the repository root
+run `npm run admin:create -w backend -- --email me@example.com` to create the
+first master. Sign in at `http://localhost:5173/admin` (the Vite dev URL), go to
+**Users → Create user**, and open the user's details to **Verify email** for
+an address you control. Then sign in with the board account at
+`http://localhost:5173/`.
 
 **Marketing site** (optional, separate dev server):
 

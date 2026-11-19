@@ -112,7 +112,7 @@ audit events; it is not a complete log of the link lifecycle.
 
 ## Agents
 
-The `Agents` entry opens the global `/agents` control room: Attention for
+The `Agents` entry opens the global `/app/agents` control room: Attention for
 pending approvals and stale sessions, Sessions grouped by board, and Runs with
 filters, detail and conditional rollback. On a board, the single Bot button
 opens the board-scoped Agent Control modal (Inbox / Live / Runs); policy lives
@@ -121,7 +121,7 @@ in Board Settings → Agents & automation.
 The global page keeps board scope, search, section and selection in the URL,
 supports `?session=`, `?agent=`, `?approval=` and `?run=` deep links (the last
 two require `?board=`), and preserves the pre-179 `?token`, `?status`, `?time`
-and `?q` spellings. `/agents/:tokenId` remains a canonical token → sessions
+and `?q` spellings. `/app/agents/:tokenId` remains a canonical token → sessions
 deep link.
 A MEMBER or VIEWER sees no approval requests at all and gets Live/Runs
 read-only; the same evidence is available without a 403/Retry trap.

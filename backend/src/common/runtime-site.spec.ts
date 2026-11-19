@@ -48,6 +48,34 @@ describe("prepareRuntimeSite", () => {
     );
   });
 
+  it("rewrites machine-readable links without dropping the site base", () => {
+    const markdown =
+      "[Pricing](https://site-origin.invalid/janosik/pricing/)\n" +
+      "[Docs](https://site-origin.invalid/janosik/docs/)\n" +
+      "[Source](https://github.com/VitalyTolstik/janosik)";
+    fs.writeFileSync(
+      path.join(source, "index.html"),
+      '<link href="https://site-origin.invalid/janosik/">',
+    );
+    for (const filename of ["llms.txt", "pricing.md"]) {
+      fs.writeFileSync(path.join(source, filename), markdown);
+    }
+    fs.writeFileSync(path.join(source, "example.md"), markdown);
+
+    generated = prepareRuntimeSite(source, "https://self-host.example:8443");
+    for (const filename of ["llms.txt", "pricing.md"]) {
+      expect(fs.readFileSync(path.join(generated, filename), "utf8")).toBe(
+        markdown.replaceAll(
+          "https://site-origin.invalid",
+          "https://self-host.example:8443",
+        ),
+      );
+    }
+    expect(fs.readFileSync(path.join(generated, "example.md"), "utf8")).toBe(
+      markdown,
+    );
+  });
+
   it("does not rewrite lookalike hosts, userinfo, ports or the wrong protocol", () => {
     const malicious = [
       "https://site-origin.invalid.evil/docs/",

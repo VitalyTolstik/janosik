@@ -41,7 +41,7 @@ The right side holds the tools:
 - **Global search** — find cards and boards everywhere (Ctrl/Cmd+K);
 - the **keyboard icon** — the shortcut cheat sheet;
 - **undo / redo**;
-- the **data menu** — export, import, backups and the card archive;
+- the **data menu** — export, import and the card archive;
 - your **account** — profile, security, API keys and preferences.
 
 ### Above the columns
@@ -66,4 +66,4 @@ The right side holds the tools:
 - [Collaboration, sharing and search](collaboration/) — members, realtime
   updates, public links, search, filters and shortcuts.
 - [Account, keys and preferences](account/) — your profile, API keys,
-  preferences, offline use and backups.
+  preferences, offline use and data export.

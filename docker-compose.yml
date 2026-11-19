@@ -3,10 +3,12 @@
 # Quick start:
 #   curl -O https://raw.githubusercontent.com/VitalyTolstik/janosik/main/docker-compose.yml
 #   curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.example
-#   # edit .env: set JWT_SECRET (openssl rand -hex 32) and PUBLIC_ORIGIN;
+#   # edit .env: set JWT_SECRET (openssl rand -hex 32), POSTGRES_PASSWORD and PUBLIC_ORIGIN;
 #   # for a plain-HTTP trial also set COOKIE_SECURE=false (see the app block)
 #   docker compose up -d
-#   # → open PUBLIC_ORIGIN, create the first account, then close registration
+#   docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
+#   # Sign in at PUBLIC_ORIGIN/app/admin. Choose Users → Create user, then
+#   # open the user's details and choose Actions → Verify email. Sign in at PUBLIC_ORIGIN/app/.
 #
 # Upgrade:  docker compose pull && docker compose up -d   (migrations run on boot)
 # Backup and restore (database + uploads):

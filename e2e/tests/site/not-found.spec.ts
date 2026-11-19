@@ -85,3 +85,25 @@ test("404 links to the docs, switches language and stays noindex", async ({
     page.getByRole("banner").locator('.lang-btn[hreflang="en"]'),
   ).toHaveAttribute("href", sitePath("/"));
 });
+
+test.describe("Russian browser on an unprefixed URL", () => {
+  test.use({ locale: "ru-RU" });
+
+  test("renders the Russian 404 and localizes its navigation", async ({
+    page,
+  }) => {
+    const response = await page.goto(sitePage("/missing-page/"));
+    expect(response?.status()).toBe(404);
+    await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+    await expect(page).toHaveTitle("Страница не найдена — Janosik");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Не удалось найти эту страницу.",
+    );
+    await expect(
+      page.getByRole("link", { name: "Перейти к содержимому" }),
+    ).toHaveAttribute("href", "#main");
+    await expect(
+      page.getByRole("link", { name: "Документация" }).last(),
+    ).toHaveAttribute("href", sitePath("/ru/docs/"));
+  });
+});

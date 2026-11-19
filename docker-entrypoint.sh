@@ -30,8 +30,8 @@ case "${DATABASE_URL:-}" in
 esac
 
 if [ "${ALLOW_REGISTRATION:-true}" = "true" ]; then
-  echo "janosik: open registration is ON — anyone who can reach this instance" \
-    "can sign up. Set ALLOW_REGISTRATION=false after creating your account."
+  echo "janosik: ALLOW_REGISTRATION is ON. Password signup requires SMTP or" \
+    "one-time bootstrap. Set ALLOW_REGISTRATION=false for a private instance."
 fi
 
 echo "janosik: applying database migrations"

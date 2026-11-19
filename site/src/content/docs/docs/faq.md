@@ -42,16 +42,15 @@ remains available offline.
 
 ## How do I back up my data?
 
-Take a database dump and an uploads archive; both are in
-[Operations runbooks](/docs/runbooks/). Janosik does not create or schedule
-server backups itself — the app's automatic copies exist only in the local
-(no-API) build. You can also export a board to JSON (up to 25 MB) and import it
-back from **Data & backups** in the app.
+Instance operators back up the database and uploads volume and test restoration.
+Janosik does not create, schedule or verify server backups. To move boards,
+use JSON export and import (up to 25 MB). JSON exports omit attachment files.
+[Backup and restore](/docs/runbooks/).
 
 ## Can I move boards between instances?
 
 Yes — export a board to JSON and import it into the other instance (from
-**Data & backups**). To move an entire instance, restore a database dump on the
+**Data & backups**). To move an entire instance, restore the database and uploads on the
 target (see [Operations runbooks](/docs/runbooks/)).
 
 ## Which browsers are supported?

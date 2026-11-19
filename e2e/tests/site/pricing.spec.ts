@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { sitePage } from "@/helpers/urls.js";
+import { sitePage, sitePath } from "@/helpers/urls.js";
 
 /**
  * Pricing page (`/pricing/`): the plan cards, their limits, the comparison
@@ -111,4 +111,55 @@ test("shows the closing call to action", async ({ page }) => {
   ).toBeVisible();
   await expect(page.locator('[data-cta="pricing-signup"]')).toBeVisible();
   await expect(page.locator('[data-cta="pricing-github"]')).toBeVisible();
+});
+
+test("Russian pricing breadcrumbs use localized canonical URLs", async ({
+  page,
+}) => {
+  await page.goto(sitePage("/ru/pricing/"));
+  const canonical = await page
+    .locator('link[rel="canonical"]')
+    .getAttribute("href");
+  expect(canonical).not.toBeNull();
+  expect(new URL(canonical!).pathname).toBe(sitePath("/ru/pricing/"));
+  const graph = JSON.parse(
+    await page.locator('script[type="application/ld+json"]').innerText(),
+  );
+  const breadcrumbs = graph.find(
+    (entry: { "@type": string }) => entry["@type"] === "BreadcrumbList",
+  );
+  expect(breadcrumbs.itemListElement).toEqual([
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Главная",
+      item: new URL("../", canonical!).href,
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: "Janosik бесплатно на своём сервере",
+      item: canonical,
+    },
+  ]);
+});
+
+test("machine-readable resources link to the deployed site", async ({
+  page,
+  request,
+}) => {
+  await page.goto(sitePage("/pricing/"));
+  const canonical = await page
+    .locator('link[rel="canonical"]')
+    .getAttribute("href");
+  expect(canonical).not.toBeNull();
+  const docs = new URL(sitePath("/docs/"), canonical!).href;
+  for (const path of ["/llms.txt", "/pricing.md"]) {
+    const response = await request.get(sitePage(path));
+    expect(response.ok()).toBe(true);
+    const content = await response.text();
+    expect(content).not.toContain("site-origin.invalid");
+    expect(content).toContain(`(${canonical})`);
+    expect(content).toContain(`(${docs})`);
+  }
 });

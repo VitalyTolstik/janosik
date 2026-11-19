@@ -11,6 +11,7 @@ import ogImages from "./src/integrations/og-images.mjs";
 // the base defaults to `/`; a deployment only overrides `SITE_URL`.
 const site = process.env.SITE_URL ?? "https://janosik.app";
 const base = process.env.SITE_BASE ?? "/";
+const docsImage = new URL(`${base.replace(/\/+$/, "")}/og-docs.png`, site).href;
 
 export default defineConfig({
   site,
@@ -45,14 +46,14 @@ export default defineConfig({
           tag: "meta",
           attrs: {
             property: "og:image",
-            content: `${site.replace(/\/$/, "")}/og-docs.png`,
+            content: docsImage,
           },
         },
         {
           tag: "meta",
           attrs: {
             name: "twitter:image",
-            content: `${site.replace(/\/$/, "")}/og-docs.png`,
+            content: docsImage,
           },
         },
       ],

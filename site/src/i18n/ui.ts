@@ -106,7 +106,7 @@ const en = {
   "home.more.attribution":
     "History shows whether a person or agent made each change",
   "home.more.share": "Live read-only share links",
-  "home.more.admin": "Admin panel and backups",
+  "home.more.admin": "Admin panel",
 
   "home.oss.title": "Open source. Self-hosted. Under your control.",
   "home.oss.body":
@@ -198,7 +198,7 @@ const en = {
   "pricing.row.boards": "Boards",
   "pricing.row.storage": "Attachment storage",
   "pricing.row.shares": "Read-only share links",
-  "pricing.row.admin": "Admin panel & backups",
+  "pricing.row.admin": "Admin panel",
   "pricing.row.roles": "Roles & permissions",
   "pricing.row.audit": "Activity history with person or agent labels",
   "pricing.row.hosting": "Who runs it",
@@ -231,7 +231,7 @@ const en = {
   "pricing.cloud.price": "Not available yet",
   "pricing.cloud.period": "Contact us about the launch",
   "pricing.cloud.cta": "Email us about the launch",
-  "pricing.cloud.f1": "We run it, update it and back it up",
+  "pricing.cloud.f1": "Hosting and updates included",
   "pricing.cloud.f2": "Realtime sync & presence",
   "pricing.cloud.f3": "Email support",
 
@@ -369,7 +369,7 @@ const ru: Record<keyof typeof en, string> = {
     "В истории видно, кто внёс изменение: человек или агент",
   "home.more.share":
     "Ссылки только для чтения: на снимок или текущую версию доски",
-  "home.more.admin": "Админ-панель и резервные копии",
+  "home.more.admin": "Админ-панель",
 
   "home.oss.title": "Открытый исходный код и ваши данные",
   "home.oss.body":
@@ -462,7 +462,7 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.row.boards": "Количество досок",
   "pricing.row.storage": "Хранилище вложений",
   "pricing.row.shares": "Ссылки только для чтения",
-  "pricing.row.admin": "Админ-панель и резервные копии",
+  "pricing.row.admin": "Админ-панель",
   "pricing.row.roles": "Роли и права",
   "pricing.row.audit": "История действий с указанием автора: человек или агент",
   "pricing.row.hosting": "Кто размещает приложение",
@@ -497,8 +497,7 @@ const ru: Record<keyof typeof en, string> = {
   "pricing.cloud.price": "Пока недоступно",
   "pricing.cloud.period": "Напишите нам о запуске",
   "pricing.cloud.cta": "Написать нам",
-  "pricing.cloud.f1":
-    "Мы размещаем и обновляем Janosik, создаём резервные копии данных",
+  "pricing.cloud.f1": "Хостинг и обновления включены",
   "pricing.cloud.f2": "Синхронизация и статусы участников в реальном времени",
   "pricing.cloud.f3": "Поддержка по электронной почте",
 

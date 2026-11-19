@@ -10,7 +10,7 @@ import Header from "../components/Header.astro";
 import SEO from "../components/SEO.astro";
 import { defaultLang, type Lang } from "../i18n/ui";
 import { useTranslations } from "../i18n/utils";
-import { withBase } from "../utils/url";
+import { base, withBase } from "../utils/url";
 
 interface Props {
   title: string;
@@ -81,25 +81,35 @@ const t = useTranslations(lang);
       applied();
       darkQuery.addEventListener("change", applied);
     </script>
-    {dualLang && <script is:inline>
-      // Pick the 404's language before first paint from the URL, matching the
-      // rest of the site (which localizes by path, not browser language).
-      // `lang-slot` blocks then reveal the matching copy, header and footer
-      // with no flash.
+    {dualLang && <script define:vars={{ base }}>
+      // Prefer an explicit Russian URL prefix. Unprefixed missing pages
+      // use the browser language because they have no page locale.
       (function () {
-        try {
-          var ru = /(^|\/)ru(\/|$)/.test(location.pathname);
-          var root = document.documentElement;
-          root.dataset.nfLang = ru ? "ru" : "en";
-          root.lang = ru ? "ru" : "en";
-        } catch (error) {}
+        var path = location.pathname;
+        if (path.startsWith(base + "/")) path = path.slice(base.length);
+        var ru =
+          /^\/ru(?:\/|$)/.test(path) || /^ru(?:-|$)/i.test(navigator.language);
+        var root = document.documentElement;
+        root.dataset.nfLang = ru ? "ru" : "en";
+        root.lang = root.dataset.nfLang;
       })();
     </script>}
     <Analytics />
   </head>
   <body>
     <a class="skip-link" href="#main">
-      {t("a11y.skip")}
+      {dualLang ? (
+        <>
+          <span class="lang-slot" data-lang="en">
+            {t("a11y.skip")}
+          </span>
+          <span class="lang-slot" data-lang="ru">
+            {useTranslations("ru")("a11y.skip")}
+          </span>
+        </>
+      ) : (
+        t("a11y.skip")
+      )}
     </a>
     {dualLang ? (
       <>
