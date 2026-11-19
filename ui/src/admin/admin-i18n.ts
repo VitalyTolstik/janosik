@@ -131,6 +131,8 @@ const en = {
   "admin.demo.openBoard": "Open board",
   "admin.demo.boardInput": "Board id (optional)",
   "admin.demo.boardHint": "Leave empty to create a dedicated demo board",
+  "admin.demo.boardWarning":
+    "Starting a demo here creates a public live link to this board, including its existing content and comments. Cleanup preserves this board and user-created data.",
   "admin.demo.boardPlaceholder": "auto — a new demo board",
   "admin.demo.liveView": "Open live view",
   "admin.demo.copyLink": "Copy share link",
@@ -193,7 +195,7 @@ const en = {
   "admin.userDetail.overview.recentEmpty": "No recorded activity yet.",
   "admin.userDetail.overview.danger": "Danger zone",
   "admin.userDetail.overview.dangerHint":
-    "Deleting the account erases everything it authored and cannot be undone. Owner rights are required.",
+    "Deleting the account and its source data is permanent. Owner rights are required.",
   "admin.userDetail.overview.ownerOnly":
     "Read-only for operators. Owner-only actions are hidden and enforced by the server.",
   "admin.userDetail.verified": "Verified",
@@ -215,7 +217,10 @@ const en = {
     "The account falls back behind the confirmation gate.",
   "admin.userDetail.confirm.delete.title": "Permanently erase {email}?",
   "admin.userDetail.confirm.delete.body":
-    "This deletes the account and everything it authored. It cannot be undone.",
+    "This permanently deletes the account and its source data.",
+  "admin.userDetail.delete.snapshotNotice":
+    "Copies already published in board snapshots can remain public.",
+  "admin.userDetail.delete.securityPolicy": "Security policy",
   "admin.userDetail.delete.prompt": "Type {email} to confirm",
   "admin.userDetail.delete.mismatch": "The email does not match",
   "admin.userDetail.delete.done": "User erased",
@@ -303,7 +308,7 @@ const en = {
   "admin.ops.retention.purge": "Purge now",
   "admin.ops.retention.confirm.title": "Purge soft-deleted data?",
   "admin.ops.retention.confirm.body":
-    "Permanently deletes already-deleted cards, comments, attachments and columns of all users older than {days} days. Live data is never touched.",
+    "Permanently purges boards and other data soft-deleted more than {days} days ago for all users. Purging a board also deletes all its agent sessions and approval requests, regardless of age or status.",
   "admin.ops.retention.purged": "Purged {count} rows",
   "admin.ops.backups.external":
     "External backup directory: {location}. Janosik writes nothing there.",
@@ -546,9 +551,12 @@ const en = {
   "admin.security.alert.locked": "locked",
   "admin.demo.startedAt": "Started",
   "admin.demo.started": "Demo started",
-  "admin.demo.stopped": "Demo stopped, everything cleaned up",
+  "admin.demo.stopped":
+    "Demo stopped. Recorded demo data cleaned up where possible",
   "admin.demo.confirmStop":
-    "Stop the demo and delete its board, cards and demo users?",
+    "Stop the demo and remove its recorded rows where possible? The selected existing board and user-created data are preserved. A dedicated demo board is deleted only if it is empty after cleanup.",
+  "admin.demo.cleanupPending":
+    "Cleanup is still pending because some demo rows have dependencies. Check the board and retry cleanup.",
 
   "admin.login.title": "Sign in to Janosik",
   "admin.login.subtitle": "Master console",
@@ -1516,6 +1524,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.openBoard": "Открыть доску",
   "admin.demo.boardInput": "ID доски (необязательно)",
   "admin.demo.boardHint": "Пусто — будет создана отдельная демо-доска",
+  "admin.demo.boardWarning":
+    "Запуск демо создаст публичную ссылку на эту доску, включая её содержимое и комментарии. Очистка сохранит доску и данные, созданные пользователями.",
   "admin.demo.boardPlaceholder": "авто — новая демо-доска",
   "admin.demo.liveView": "Открыть вживую",
   "admin.demo.copyLink": "Скопировать ссылку",
@@ -1578,7 +1588,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.userDetail.overview.recentEmpty": "Записей об активности пока нет.",
   "admin.userDetail.overview.danger": "Опасная зона",
   "admin.userDetail.overview.dangerHint":
-    "Удаление аккаунта стирает всё созданное им и не отменяется. Нужны права владельца.",
+    "Аккаунт и его исходные данные удаляются безвозвратно. Нужны права владельца.",
   "admin.userDetail.overview.ownerOnly":
     "Только чтение для операторов. Owner-действия скрыты, сервер их проверяет.",
   "admin.userDetail.verified": "Подтверждён",
@@ -1600,7 +1610,10 @@ const ru: Record<AdminMessageKey, string> = {
     "Аккаунт снова окажется за гейтом подтверждения.",
   "admin.userDetail.confirm.delete.title": "Стереть {email} навсегда?",
   "admin.userDetail.confirm.delete.body":
-    "Аккаунт и всё, что он создал, будет удалено. Отменить нельзя.",
+    "Аккаунт и его исходные данные будут удалены безвозвратно.",
+  "admin.userDetail.delete.snapshotNotice":
+    "Копии, уже опубликованные в снимках досок, могут остаться общедоступными.",
+  "admin.userDetail.delete.securityPolicy": "Политика безопасности",
   "admin.userDetail.delete.prompt": "Введите {email} для подтверждения",
   "admin.userDetail.delete.mismatch": "Email не совпадает",
   "admin.userDetail.delete.done": "Пользователь стёрт",
@@ -1691,7 +1704,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention.purge": "Очистить",
   "admin.ops.retention.confirm.title": "Очистить soft-deleted данные?",
   "admin.ops.retention.confirm.body":
-    "Безвозвратно удалит уже удалённые карточки, комментарии, вложения и колонки всех пользователей старше {days} дней. Живые данные не затрагиваются.",
+    "Безвозвратно очистит доски и другие данные всех пользователей, удалённые более {days} дней назад. При очистке доски также удаляются все её сессии агентов и запросы на одобрение независимо от их возраста и статуса.",
   "admin.ops.retention.purged": "Очищено строк: {count}",
   "admin.ops.backups.external":
     "Внешний каталог бэкапов: {location}. Janosik ничего туда не пишет.",
@@ -1936,9 +1949,12 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.security.alert.locked": "заблокирован",
   "admin.demo.startedAt": "Запущено",
   "admin.demo.started": "Демо запущено",
-  "admin.demo.stopped": "Демо остановлено, всё очищено",
+  "admin.demo.stopped":
+    "Демо остановлено. Записанные демо-данные очищены там, где это возможно",
   "admin.demo.confirmStop":
-    "Остановить демо и удалить его доску, карточки и демо-аккаунты?",
+    "Остановить демо и удалить записанные демо-данные там, где это возможно? Выбранная существующая доска и данные, созданные пользователями, сохранятся. Отдельная демо-доска удаляется, только если после очистки она пуста.",
+  "admin.demo.cleanupPending":
+    "Очистка ещё не завершена: от некоторых демо-данных зависят другие записи. Проверьте доску и повторите очистку.",
 
   "admin.login.title": "Вход в Janosik",
   "admin.login.subtitle": "Мастер-консоль",

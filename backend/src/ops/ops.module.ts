@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
+import { ApprovalsModule } from "@/approvals/approvals.module";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { queuesEnabled } from "./queue-core";
 import { EmailTemplateService } from "./email-template.service";
@@ -26,6 +27,7 @@ import { COMMS_QUEUE, CommsSchedulerService } from "./comms-scheduler.service";
 @Module({
   imports: [
     AttachmentsModule,
+    ApprovalsModule,
     ...(queuesEnabled
       ? [
           BullModule.registerQueue({ name: MAINTENANCE_QUEUE }),

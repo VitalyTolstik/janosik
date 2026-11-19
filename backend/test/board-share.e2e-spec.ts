@@ -1,6 +1,14 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import type { BoardShareDto } from "@janosik/shared";
+import {
+  LIMITS,
+  SHARE_LIMITS,
+  serializeExport,
+  type BoardShareDto,
+} from "@janosik/shared";
+import { BoardsService } from "@/boards/boards.service";
+import { AccountDeletionService } from "@/users/account-deletion.service";
+import type { Prisma } from "@prisma/client";
 import { argon2id, hash as argonHash } from "argon2";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
@@ -10,8 +18,9 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
-import { ShareService } from "@/share/share.service";
-import { writeFile } from "node:fs/promises";
+import { sanitizePublicBoard, ShareService } from "@/share/share.service";
+import { MaintenanceService } from "@/ops/maintenance.service";
+import { access, utimes, writeFile } from "node:fs/promises";
 
 const ADMIN_EMAIL = "share-admin@example.com";
 const ADMIN_PASSWORD = "share admin correct horse";
@@ -320,6 +329,535 @@ describe("Public board shares (e2e)", () => {
         },
       });
     }
+  });
+
+  it("freezes comment pages, attachment metadata and bytes through edits, archive, delete and purge (M18)", async () => {
+    const { boardId, cardId } = await newBoard("Frozen nested data");
+    const comment = async (text: string) =>
+      (
+        await server()
+          .post(`/api/v1/cards/${cardId}/comments`)
+          .set(auth(adminToken))
+          .send({ text })
+          .expect(201)
+      ).body;
+    const first = await comment("Captured comment");
+    const second = await comment("Captured second comment");
+    // Exercise the id tie-breaker in the opaque comment cursor.
+    await prisma.comment.updateMany({
+      where: { id: { in: [first.id, second.id] } },
+      data: { createdAt: new Date(first.createdAt) },
+    });
+    const attachment = (
+      await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .attach("file", Buffer.from("captured bytes"), "capture.txt")
+        .expect(201)
+    ).body;
+    const share = await createShare(boardId, {
+      mode: "snapshot",
+      includeComments: true,
+      includeAttachments: true,
+    });
+    const base = `/api/v1/share/${share.token}`;
+    const commentUrl = `${base}/cards/${cardId}/comments`;
+    const attachmentUrl = `${base}/cards/${cardId}/attachments`;
+    const contentUrl = `${base}/attachments/${attachment.id}/content`;
+    const before = (await server().get(base).expect(200)).body;
+    const comments = (await server().get(commentUrl).expect(200)).body;
+    const firstPage = (
+      await server().get(commentUrl).query({ limit: 1 }).expect(200)
+    ).body;
+    expect(firstPage.items).toEqual(comments.items.slice(0, 1));
+    expect(typeof firstPage.nextCursor).toBe("string");
+    const nextPage = (
+      await server()
+        .get(commentUrl)
+        .query({
+          limit: 1,
+          cursor: firstPage.nextCursor,
+        })
+        .expect(200)
+    ).body;
+    expect(nextPage).toEqual({
+      items: comments.items.slice(1),
+      nextCursor: null,
+    });
+    expect(
+      comments.items.map(({ text }: { text: string }) => text).sort(),
+    ).toEqual(["Captured comment", "Captured second comment"]);
+    const attachments = (await server().get(attachmentUrl).expect(200)).body;
+    expect(attachments).toEqual([
+      expect.objectContaining({ id: attachment.id, fileName: "capture.txt" }),
+    ]);
+
+    const storage = app.get(StorageService);
+    const source = await prisma.attachment.findUniqueOrThrow({
+      where: { id: attachment.id },
+    });
+    const copy = await prisma.boardShareSnapshotBlob.findFirstOrThrow({
+      where: { shareId: share.id },
+    });
+    expect(copy.storedName).not.toBe(source.storedName);
+    await server()
+      .patch(`/api/v1/comments/${first.id}`)
+      .set(auth(adminToken))
+      .send({ text: "Edited original" })
+      .expect(200);
+    await server()
+      .delete(`/api/v1/comments/${second.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+    await comment("Later comment");
+    await prisma.attachment.update({
+      where: { id: attachment.id },
+      data: { fileName: "edited.txt" },
+    });
+    await writeFile(storage.attachmentPath(source.storedName), "edited bytes");
+    const late = (
+      await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .attach("file", Buffer.from("later bytes"), "later.txt")
+        .expect(201)
+    ).body;
+    const expectFrozen = async () => {
+      expect((await server().get(base).expect(200)).body).toEqual(before);
+      expect((await server().get(commentUrl).expect(200)).body).toEqual(
+        comments,
+      );
+      expect((await server().get(attachmentUrl).expect(200)).body).toEqual(
+        attachments,
+      );
+      await server().get(contentUrl).expect(200, "captured bytes");
+      await server().get(`${base}/attachments/${late.id}/content`).expect(404);
+    };
+    await expectFrozen();
+    await server()
+      .delete(`/api/v1/attachments/${attachment.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(adminToken))
+      .send({
+        commandId: randomUUID(),
+        action: { boardId, at: Date.now(), type: "ARCHIVE_BOARD" },
+      })
+      .expect(200);
+    await expectFrozen();
+    await server()
+      .delete(`/api/v1/boards/${boardId}`)
+      .set(auth(adminToken))
+      .expect(200);
+    await expectFrozen();
+
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { deletedAt: new Date(0) },
+    });
+    const maintenance = app.get(MaintenanceService);
+    await maintenance.purgeSoftDeleted();
+    expect(
+      await prisma.board.findUnique({ where: { id: boardId } }),
+    ).toBeNull();
+    expect(
+      await prisma.attachment.findUnique({ where: { id: attachment.id } }),
+    ).toBeNull();
+    await expect(
+      access(storage.attachmentPath(source.storedName)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await utimes(storage.attachmentPath(copy.storedName), 0, 0);
+    await maintenance.sweepOrphanBlobs();
+    await expectFrozen();
+
+    await prisma.boardShare.update({
+      where: { id: share.id },
+      data: { expiresAt: new Date(0) },
+    });
+    await maintenance.sweepShares();
+    await maintenance.sweepOrphanBlobs();
+    await expect(
+      access(storage.attachmentPath(copy.storedName)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps a creation-time cutoff for board-only legacy snapshots (M18)", async () => {
+    const { boardId, cardId } = await newBoard("Legacy snapshot");
+    const upload = async (text: string) =>
+      (
+        await server()
+          .post(`/api/v1/cards/${cardId}/attachments`)
+          .set(auth(adminToken))
+          .attach("file", Buffer.from(text), `${text}.txt`)
+          .expect(201)
+      ).body;
+    const oldFile = await upload("legacy");
+    const newFile = await upload("too-late");
+    const cutoff = new Date(Date.now() - 10_000);
+    const before = new Date(cutoff.getTime() - 1);
+    await prisma.attachment.update({
+      where: { id: oldFile.id },
+      data: { createdAt: before },
+    });
+    await prisma.comment.createMany({
+      data: [
+        { cardId, authorId: adminId, text: "Before cutoff", createdAt: before },
+        { cardId, authorId: adminId, text: "After cutoff" },
+      ],
+    });
+    const board = await app.get(BoardsService).getAggregate(boardId);
+    const legacy = await prisma.boardShare.create({
+      data: {
+        boardId,
+        token: randomUUID(),
+        mode: "snapshot",
+        createdBy: adminId,
+        includeComments: true,
+        includeAttachments: true,
+        snapshotTakenAt: cutoff,
+        snapshot: {
+          envelope: JSON.parse(
+            serializeExport([sanitizePublicBoard(board)]),
+          ) as Prisma.InputJsonValue,
+          takenAt: cutoff.getTime(),
+          members: [],
+        },
+      },
+    });
+    const base = `/api/v1/share/${legacy.token}`;
+    const comments = `${base}/cards/${cardId}/comments`;
+    const files = `${base}/cards/${cardId}/attachments`;
+    expect((await server().get(base).expect(200)).body).toMatchObject({
+      takenAt: cutoff.getTime(),
+      includeComments: true,
+      includeAttachments: true,
+    });
+    expect(
+      (await server().get(comments).query({ limit: 1 }).expect(200)).body,
+    ).toEqual({
+      items: [expect.objectContaining({ text: "Before cutoff" })],
+      nextCursor: null,
+    });
+    expect((await server().get(files).expect(200)).body).toEqual([
+      expect.objectContaining({ id: oldFile.id }),
+    ]);
+    await server()
+      .get(`${base}/attachments/${oldFile.id}/content`)
+      .expect(200, "legacy");
+    await server().get(`${base}/attachments/${newFile.id}/content`).expect(404);
+
+    await server()
+      .delete(`/api/v1/boards/${boardId}`)
+      .set(auth(adminToken))
+      .expect(200);
+    expect((await server().get(base).expect(200)).body).toMatchObject({
+      includeComments: false,
+      includeAttachments: false,
+      board: { id: boardId },
+    });
+    await server().get(comments).expect(404);
+    await server().get(files).expect(404);
+    await server().get(`${base}/attachments/${oldFile.id}/content`).expect(404);
+
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { deletedAt: new Date(0) },
+    });
+    await app.get(MaintenanceService).purgeSoftDeleted();
+    expect((await server().get(base).expect(200)).body).toMatchObject({
+      takenAt: cutoff.getTime(),
+      includeComments: false,
+      includeAttachments: false,
+      board: { id: boardId },
+    });
+    await server().get(comments).expect(404);
+    await server().get(files).expect(404);
+  });
+
+  it.each(["count", "bytes"])(
+    "enforces the snapshot file %s limit and keeps the previous capture (M18)",
+    async (limit) => {
+      const { boardId, cardId } = await newBoard("Snapshot file cap");
+      const storage = app.get(StorageService);
+      const file = (
+        await server()
+          .post(`/api/v1/cards/${cardId}/attachments`)
+          .set(auth(adminToken))
+          .attach("file", Buffer.from("first capture"), "first.txt")
+          .expect(201)
+      ).body;
+      const tinyFile = () => ({
+        boardId,
+        cardId,
+        uploadedById: adminId,
+        fileName: "tiny.txt",
+        storedName: `${randomUUID()}.txt`,
+        mimeType: "text/plain",
+        sizeBytes: 1,
+      });
+      if (limit === "count") {
+        const tinyFiles = Array.from({ length: 499 }, tinyFile);
+        for (const { storedName } of tinyFiles) {
+          await writeFile(storage.attachmentPath(storedName), "x");
+        }
+        await prisma.attachment.createMany({ data: tinyFiles });
+      } else {
+        // The cap uses stored byte sizes, so the fixture can use a small blob.
+        await prisma.attachment.update({
+          where: { id: file.id },
+          data: { sizeBytes: 100 * 1024 * 1024 },
+        });
+      }
+      const share = await createShare(boardId, {
+        mode: "snapshot",
+        includeAttachments: true,
+      });
+      const priorBlobs = await prisma.boardShareSnapshotBlob.findMany({
+        where: { shareId: share.id },
+        orderBy: { storedName: "asc" },
+      });
+      expect(priorBlobs).toHaveLength(limit === "count" ? 500 : 1);
+      const extraFile = tinyFile();
+      await writeFile(storage.attachmentPath(extraFile.storedName), "x");
+      await prisma.attachment.create({ data: extraFile });
+      const copy = jest.spyOn(storage, "copyForSnapshot");
+      const path = `/api/v1/boards/${boardId}/shares`;
+      try {
+        const created = await server()
+          .post(path)
+          .set(auth(adminToken))
+          .send({ mode: "snapshot", includeAttachments: true })
+          .expect(413);
+        const refreshed = await server()
+          .post(`${path}/${share.id}/refresh`)
+          .set(auth(adminToken))
+          .expect(413);
+        expect(created.body.code).toBe("snapshot_attachment_limit");
+        expect(refreshed.body.code).toBe("snapshot_attachment_limit");
+        expect(copy).not.toHaveBeenCalled();
+        expect(await prisma.boardShare.count({ where: { boardId } })).toBe(1);
+        expect(
+          await prisma.boardShareSnapshotBlob.findMany({
+            where: { shareId: share.id },
+            orderBy: { storedName: "asc" },
+          }),
+        ).toEqual(priorBlobs);
+        await server()
+          .get(`/api/v1/share/${share.token}/attachments/${file.id}/content`)
+          .expect(200, "first capture");
+      } finally {
+        copy.mockRestore();
+      }
+    },
+  );
+
+  it.each(["count", "bytes"])(
+    "rejects the snapshot comment %s overflow without replacing the capture (M18)",
+    async (limit) => {
+      const { boardId, cardId } = await newBoard("Snapshot comment cap");
+      const text = "First captured comment";
+      await prisma.comment.create({
+        data: { cardId, authorId: adminId, text },
+      });
+      const share = await createShare(boardId, {
+        mode: "snapshot",
+        includeComments: true,
+      });
+      // Multibyte text exceeds the byte cap with fewer than 1,000 comments.
+      const largeText = "漢".repeat(LIMITS.comment);
+      const count =
+        limit === "count"
+          ? SHARE_LIMITS.snapshotCommentCount
+          : Math.ceil(
+              SHARE_LIMITS.snapshotCommentBytes / Buffer.byteLength(largeText),
+            );
+      await prisma.comment.createMany({
+        data: Array.from({ length: count }, () => ({
+          cardId,
+          authorId: adminId,
+          text: limit === "count" ? "x" : largeText,
+        })),
+      });
+
+      const path = `/api/v1/boards/${boardId}/shares`;
+      const created = await server()
+        .post(path)
+        .set(auth(adminToken))
+        .send({ mode: "snapshot", includeComments: true })
+        .expect(413);
+      const refreshed = await server()
+        .post(`${path}/${share.id}/refresh`)
+        .set(auth(adminToken))
+        .expect(413);
+      expect(created.body.code).toBe("snapshot_comment_limit");
+      expect(refreshed.body.code).toBe("snapshot_comment_limit");
+      expect(await prisma.boardShare.count({ where: { boardId } })).toBe(1);
+      const response = await server()
+        .get(`/api/v1/share/${share.token}/cards/${cardId}/comments`)
+        .expect(200);
+      expect(response.body).toEqual({
+        items: [expect.objectContaining({ text })],
+        nextCursor: null,
+      });
+    },
+  );
+
+  it("retains previously published snapshot copies after source account erasure (M18)", async () => {
+    const { boardId, cardId } = await newBoard("Snapshot account erasure");
+    const author = await prisma.user.create({
+      data: {
+        email: "snapshot-erasure@example.com",
+        displayName: "Snapshot author",
+      },
+    });
+    await prisma.boardMember.create({
+      data: {
+        boardId,
+        userId: author.id,
+        role: "MEMBER",
+        acceptedAt: new Date(),
+      },
+    });
+    const comment = await prisma.comment.create({
+      data: { cardId, authorId: author.id, text: "Published before erasure" },
+    });
+    const file = (
+      await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .attach("file", Buffer.from("published bytes"), "published.txt")
+        .expect(201)
+    ).body;
+    const source = await prisma.attachment.update({
+      where: { id: file.id },
+      data: { uploadedById: author.id },
+    });
+    const share = await createShare(boardId, {
+      mode: "snapshot",
+      includeComments: true,
+      includeAttachments: true,
+    });
+    const base = `/api/v1/share/${share.token}`;
+
+    expect(
+      await app.get(AccountDeletionService).deleteAccount(author.id),
+    ).not.toBeNull();
+    expect(
+      await prisma.user.findUnique({ where: { id: author.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.comment.findUnique({ where: { id: comment.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.attachment.findUnique({ where: { id: file.id } }),
+    ).toBeNull();
+    await expect(
+      access(app.get(StorageService).attachmentPath(source.storedName)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await server().get(base).expect(200)).body.members).toContainEqual(
+      expect.objectContaining({
+        id: author.id,
+        displayName: author.displayName,
+      }),
+    );
+    expect(
+      (await server().get(`${base}/cards/${cardId}/comments`).expect(200)).body
+        .items,
+    ).toEqual([
+      expect.objectContaining({ id: comment.id, text: comment.text }),
+    ]);
+    await server()
+      .get(`${base}/attachments/${file.id}/content`)
+      .expect(200, "published bytes");
+
+    await server()
+      .delete(`/api/v1/boards/${boardId}/shares/${share.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+    await server().get(`${base}/attachments/${file.id}/content`).expect(404);
+  });
+
+  it("only exposes opted-in data after capture or refresh (M18)", async () => {
+    const { boardId, cardId } = await newBoard("Refresh nested data");
+    const attachment = (
+      await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .attach("file", Buffer.from("refresh bytes"), "refresh.txt")
+        .expect(201)
+    ).body;
+    const share = await createShare(boardId, { mode: "snapshot" });
+    const ownerUrl = `/api/v1/boards/${boardId}/shares/${share.id}`;
+    const base = `/api/v1/share/${share.token}`;
+    const contentUrl = `${base}/attachments/${attachment.id}/content`;
+    const updated = await server()
+      .patch(ownerUrl)
+      .set(auth(adminToken))
+      .send({ includeComments: true, includeAttachments: true })
+      .expect(200);
+    expect(updated.body).toMatchObject({
+      includeComments: true,
+      includeAttachments: true,
+      effectiveIncludeComments: false,
+      effectiveIncludeAttachments: false,
+    });
+    const listed = await server()
+      .get(`/api/v1/boards/${boardId}/shares`)
+      .set(auth(adminToken))
+      .expect(200);
+    expect(listed.body).toContainEqual(
+      expect.objectContaining({
+        id: share.id,
+        effectiveIncludeComments: false,
+        effectiveIncludeAttachments: false,
+      }),
+    );
+    expect((await server().get(base).expect(200)).body).toMatchObject({
+      includeComments: false,
+      includeAttachments: false,
+    });
+    await server().get(`${base}/cards/${cardId}/comments`).expect(404);
+    await server().get(contentUrl).expect(404);
+
+    const refreshed = await server()
+      .post(`${ownerUrl}/refresh`)
+      .set(auth(adminToken))
+      .expect(201);
+    expect(refreshed.body).toMatchObject({
+      effectiveIncludeComments: true,
+      effectiveIncludeAttachments: true,
+    });
+    expect((await server().get(base).expect(200)).body).toMatchObject({
+      includeComments: true,
+      includeAttachments: true,
+    });
+    await server()
+      .get(`${base}/cards/${cardId}/comments`)
+      .expect(200, { items: [], nextCursor: null });
+    await server().get(contentUrl).expect(200, "refresh bytes");
+
+    const priorCopy = await prisma.boardShareSnapshotBlob.findFirstOrThrow({
+      where: { shareId: share.id },
+    });
+    await server()
+      .post(`${ownerUrl}/refresh`)
+      .set(auth(adminToken))
+      .expect(201);
+    const copies = await prisma.boardShareSnapshotBlob.findMany({
+      where: { shareId: share.id },
+    });
+    expect(copies).toHaveLength(1);
+    expect(copies[0].storedName).not.toBe(priorCopy.storedName);
+    await server().get(contentUrl).expect(200, "refresh bytes");
+
+    await server()
+      .patch(ownerUrl)
+      .set(auth(adminToken))
+      .send({ includeAttachments: false })
+      .expect(200);
+    await server().get(contentUrl).expect(404);
   });
 
   it("live: reads the board and is revoked with it (deleting a board)", async () => {

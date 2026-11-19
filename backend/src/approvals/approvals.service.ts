@@ -745,9 +745,12 @@ export class ApprovalsService {
     }
   }
 
-  /** Lazily mark overdue rows expired and publish one activity per row. */
-  async expireOverdue(boardId: string): Promise<void> {
-    const now = new Date();
+  /** Mark overdue rows expired and publish one activity per row. */
+  async expireOverdue(
+    boardId: string | undefined,
+    now = new Date(),
+    take?: number,
+  ): Promise<number> {
     const rows = await this.prisma.approvalRequest.findMany({
       where: {
         boardId,
@@ -757,11 +760,22 @@ export class ApprovalsService {
         status: "pending",
         expiresAt: { lte: now },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy:
+        boardId === undefined
+          ? [{ expiresAt: "asc" }, { id: "asc" }]
+          : { createdAt: "asc" },
+      take,
     });
     for (const row of rows) {
-      await this.expireOne(row, now);
+      try {
+        await this.expireOne(row, now);
+      } catch (error) {
+        // Another sweep or account/board erasure can remove a selected row.
+        if (boardId !== undefined || !(error instanceof NotFoundException))
+          throw error;
+      }
     }
+    return rows.length;
   }
 
   private async expireOne(

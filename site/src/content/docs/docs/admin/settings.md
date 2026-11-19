@@ -219,15 +219,27 @@ sharing is disabled (`public_shares` off / `ALLOW_PUBLIC_SHARES=false`). A
 start attempt answers `409 public_shares_disabled` before any demo users or
 board rows are created.
 
-`Start demo` creates the demo users and cards, then starts the scenario. `Stop & clean up`
-is enabled while data created by the demo still exists; it is confirmed and deletes
-exactly the recorded rows: the board when the run created it, its cards, its
-demo users and its share.
+Saving a Board id targets an existing board. Starting the demo publishes a
+live observation link that includes the board's existing content and
+comments. Anyone with the link can read them while it is active.
+
+`Start demo` records the generated IDs before provisioning, then creates the
+users and cards and starts the scenario. `Stop & clean up` and startup
+cleanup use those IDs and remove the observation link. The selected existing
+board and user-created data are preserved, including links to demo cards
+and any demo rows those links need. A dedicated demo board is deleted only
+if it is empty after cleanup. If a dedicated board or demo account is kept
+by other rows, the run stays pending and the operator can retry. Interrupted
+starts can also be cleaned up. A provided-board run can finish cleanup with
+recorded demo rows still needed by user-created data. After the run is
+marked stopped, those rows remain for manual board maintenance. Older runs
+use surviving creation commands for child IDs absent from their records.
 
 Behind the scenes the runner creates a dispatcher and the requested agents on
 the reserved `@janosik.demo` domain, the five flow columns (Новые, В работе,
-На ревью, Тестирование, Готово), a label set and one card per agent, then
-drives the cards across the flow. Every id it creates is recorded, so cleanup uses the recorded IDs.
+На ревью, Тестирование, Готово), a label set and one card per requested task, then
+drives the cards across the flow. Board titles, task names and email suffixes
+are display conventions.
 
 ## Operations
 
@@ -271,9 +283,15 @@ to every account equally, each with its own counter. The `/admin`, `/auth` and
 The retention window is the number of days before the purge may remove
 soft-deleted rows (1 to 3650, default 30). The page offers the 30/90/365
 presets and shows how many cards, comments, attachments and columns are
-currently eligible. The same window trims the command log, activity feed and
-terminal agent sessions; `AdminAuditLog` and `SecurityAuditLog` keep the longer
-`AUDIT_RETENTION_DAYS` window (365 by default).
+currently eligible. The same window applies to the command log, activity
+feed, ended agent sessions and approvals past their decision or apply window.
+Age runs from the session end, the rejection or cancellation decision,
+the approval expiry or the time it was consumed. Housekeeping marks overdue
+pending requests expired across all boards. An approved request keeps its
+decision and becomes eligible for removal after the retention window from
+expiry. Open sessions and requests still within their decision or apply
+window are kept until they become eligible or the board is purged. `AdminAuditLog` and `SecurityAuditLog` use
+`AUDIT_RETENTION_DAYS` (365 by default).
 
 The backup line is deliberately honest: `BACKUP_DIR` is only a location you
 configured, not a backup Janosik creates. The API reports
@@ -281,9 +299,10 @@ configured, not a backup Janosik creates. The API reports
 that Janosik neither creates, schedules nor verifies backups. Use `pg_dump`
 and back up the uploads volume yourself.
 
-`Purge now` permanently deletes already-deleted cards, comments, attachments
-and columns older than the window. Live data is never touched. The action is
-confirmed.
+`Purge now` permanently deletes boards and other data soft-deleted before
+the retention cutoff. Purging a board also deletes all of its agent sessions
+and approval requests, regardless of age or status. The action requires
+confirmation.
 
 ### Scheduled housekeeping
 
@@ -293,13 +312,15 @@ are:
 
 | Sweep | Removes |
 | --- | --- |
-| `purge-soft-deleted` | soft-deleted rows (and whole boards) past the retention window |
+| `purge-soft-deleted` | soft-deleted rows past the retention window, including whole boards with their agent sessions and approvals |
 | `sweep-codes` | expired or consumed verification and email-change codes |
 | `sweep-tokens` | expired or long-revoked refresh tokens (user and admin) |
 | `sweep-shares` | board shares past their TTL or revoked over a day ago |
 | `sweep-invitations` | lapsed pending invitations |
 | `sweep-exports` | expired background data exports and their files |
 | `sweep-commands` | command-log rows past the retention window |
+| `sweep-agent-sessions` | agent sessions that ended before the retention cutoff |
+| `sweep-approvals` | marks overdue pending requests expired, then removes rejected, cancelled, expired, lapsed approved and consumed requests past the retention window |
 | `sweep-reminders` | stale due-reminder dedupe rows |
 | `sweep-activity` | membership/comment feed rows past the retention window |
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |

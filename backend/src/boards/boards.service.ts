@@ -355,6 +355,7 @@ export class BoardsService {
     userId: string,
     dto: CreateBoardDto,
     principal?: AuthPrincipal,
+    internalId?: string,
   ): Promise<BoardAggregate> {
     const title = dto.title.trim();
     if (title.length === 0) {
@@ -370,7 +371,9 @@ export class BoardsService {
             await lockBoardQuota(tx, userId);
             await assertAgentTokenCanWriteInTransaction(tx, principal);
             await assertBoardQuota(tx, userId, 1);
-            const created = await tx.board.create({ data: { title } });
+            const created = await tx.board.create({
+              data: { id: internalId, title },
+            });
             await tx.boardMember.create({
               data: {
                 boardId: created.id,
@@ -469,26 +472,26 @@ export class BoardsService {
    */
   async getAggregateWithSeq(
     boardId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<{ board: BoardAggregate; seq: number }> {
-    const snapshot = await this.prisma.$transaction(
-      async (tx) => {
-        const board = await loadBoardAggregate(tx, boardId);
-        if (!board) return null;
-        const max = await tx.command.aggregate({
-          where: { boardId },
-          _max: { seq: true },
+    const read = async (reader: Prisma.TransactionClient) => {
+      const board = await loadBoardAggregate(reader, boardId);
+      if (!board) throw new NotFoundException("Board not found");
+      const max = await reader.command.aggregate({
+        where: { boardId },
+        _max: { seq: true },
+      });
+      return {
+        board,
+        seq: max._max.seq === null ? 0 : Number(max._max.seq),
+      };
+    };
+    // A caller supplying a transaction holds the board write lock.
+    return tx
+      ? read(tx)
+      : this.prisma.$transaction(read, {
+          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
         });
-        return {
-          board,
-          seq: max._max.seq === null ? 0 : Number(max._max.seq),
-        };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
-    if (!snapshot) {
-      throw new NotFoundException("Board not found");
-    }
-    return snapshot;
   }
 
   /**

@@ -1,5 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import { env } from "@/config/env";
+import { ApprovalsService } from "@/approvals/approvals.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
 import {
@@ -30,6 +32,8 @@ export const MAINTENANCE_JOBS = [
   "sweep-exports",
   "sweep-commands",
   "sweep-runs",
+  "sweep-agent-sessions",
+  "sweep-approvals",
   "sweep-reminders",
   "sweep-activity",
   "sweep-audit",
@@ -73,6 +77,7 @@ export class MaintenanceService {
     private readonly ops: OpsSettingsService,
     private readonly accountDeletion: AccountDeletionService,
     private readonly attention: AttentionService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /** Runs one named sweep, or all of them. */
@@ -109,6 +114,10 @@ export class MaintenanceService {
         return this.sweepCommands();
       case "sweep-runs":
         return this.sweepRuns();
+      case "sweep-agent-sessions":
+        return this.sweepAgentSessions();
+      case "sweep-approvals":
+        return this.sweepApprovals();
       case "sweep-reminders":
         return this.sweepReminders();
       case "sweep-activity":
@@ -426,6 +435,12 @@ export class MaintenanceService {
           this.prisma.column.deleteMany({ where: { boardId: { in: ids } } }),
           this.prisma.label.deleteMany({ where: { boardId: { in: ids } } }),
           this.prisma.agentRun.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.agentSession.deleteMany({
+            where: { boardId: { in: ids } },
+          }),
+          this.prisma.approvalRequest.deleteMany({
+            where: { boardId: { in: ids } },
+          }),
           // Snapshot shares are detached by the FK (`SET NULL`) and keep
           // serving; only a live share dies with its board (TASK-156).
           this.prisma.boardShare.deleteMany({
@@ -900,6 +915,70 @@ export class MaintenanceService {
     return removed;
   }
 
+  async sweepAgentSessions(): Promise<number> {
+    const cutoff = new Date(
+      Date.now() - (await this.retentionDays()) * 86_400_000,
+    );
+    const where = { endedAt: { lte: cutoff } };
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.agentSession.findMany({
+          where,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.agentSession.deleteMany({
+            where: { ...where, id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+  }
+
+  async sweepApprovals(): Promise<number> {
+    const now = new Date();
+    const cutoff = new Date(
+      now.getTime() - (await this.retentionDays()) * 86_400_000,
+    );
+    for (let chunk = 0; chunk < PURGE_MAX_CHUNKS; chunk++) {
+      const scanned = await this.approvals.expireOverdue(
+        undefined,
+        now,
+        PURGE_CHUNK,
+      );
+      if (scanned < PURGE_CHUNK) break;
+    }
+    const where: Prisma.ApprovalRequestWhereInput = {
+      OR: [
+        {
+          status: { in: ["rejected", "cancelled"] },
+          decidedAt: { lte: cutoff },
+        },
+        {
+          // Lapsed requests are eligible even on a board with no approval traffic.
+          status: { in: ["expired", "approved"] },
+          expiresAt: { lte: cutoff },
+        },
+        { status: "consumed", consumedAt: { lte: cutoff } },
+      ],
+    };
+    return this.purgeChunks(
+      (take) =>
+        this.prisma.approvalRequest.findMany({
+          where,
+          select: { id: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.approvalRequest.deleteMany({
+            where: { ...where, id: { in: rows.map((row) => row.id) } },
+          })
+        ).count,
+    );
+  }
+
   /**
    * Due-reminder dedupe rows past their usefulness (TASK-83). A card whose
    * dueDate is more than the retention window in the past will never be
@@ -1170,6 +1249,22 @@ export class MaintenanceService {
       if (rows.length < PURGE_CHUNK) break;
       cursor = rows[rows.length - 1]?.id;
       if (cursor === undefined) break;
+    }
+
+    cursor = undefined;
+    for (;;) {
+      const rows: Array<{ storedName: string }> =
+        await this.prisma.boardShareSnapshotBlob.findMany({
+          select: { storedName: true },
+          orderBy: { storedName: "asc" },
+          take: PURGE_CHUNK,
+          ...(cursor !== undefined
+            ? { cursor: { storedName: cursor }, skip: 1 }
+            : {}),
+        });
+      for (const row of rows) referenced.add(row.storedName);
+      if (rows.length < PURGE_CHUNK) break;
+      cursor = rows[rows.length - 1]?.storedName;
     }
 
     return referenced;

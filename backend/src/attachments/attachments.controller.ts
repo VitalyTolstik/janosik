@@ -156,7 +156,7 @@ export class AttachmentsController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AttachmentDto[]> {
     const [items, total] = await Promise.all([
-      this.attachments.list(cardId, undefined, detached === "1"),
+      this.attachments.list(cardId, detached === "1"),
       this.attachments.countLive(cardId),
     ]);
     // L20: the UI's cap must include inline/description media, which the

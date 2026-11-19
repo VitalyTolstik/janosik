@@ -96,8 +96,10 @@ substring). It reaches comment text, which is not part of the board aggregate.
 A query longer than 200 characters answers `400`.
 
 `DELETE /boards/:id` soft-deletes the board and cascades the flag to its
-children. Memberships are hard-deleted; live shares are revoked; snapshot
-shares survive.
+children and revokes live shares. Memberships stay available for board
+restoration until purge. Snapshot shares keep serving their captured content
+after deletion and purge. Permanent purge also removes the board's agent
+sessions and approvals.
 
 `POST /boards/:id/members` invites a user by email. The address is trimmed
 and lowercased. The answer never reveals whether an account exists for it: a
@@ -425,13 +427,19 @@ decision endpoint is session-only, so a PAT gets `pat_forbidden` — the human
 token owner approves their agent's request, the agent never approves itself.
 
 TTL is `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)`
-with a five-minute floor. Pending rows transition to `expired` lazily. An
+with a five-minute floor. Overdue pending requests transition to `expired`
+on access or during the scheduled `sweep-approvals` job. A retained
 `approved` row keeps the historical decision after its apply window ends,
 and apply returns `409 approval_expired`. Submit the same plan again to
 create a fresh pending request. Ending an agent session cancels its open
 requests and approvals still within the apply window. Token revocation
 cancels the corresponding requests as well. Decisions write activity and
 `SecurityAuditLog` records and publish `approval` SSE frames.
+
+The sweep also removes rejected, cancelled, expired, consumed and lapsed
+approved requests after the configured retention window. For lapsed approved
+requests the window starts at `expiresAt`. See
+[retention settings](/docs/admin/settings/#soft-deleted-data-and-retention).
 
 The browser Inbox uses
 `GET /agents/overview?section=approvals&boardId=<id>`. Use
@@ -686,14 +694,21 @@ A live share reads the board as it is now and follows it over SSE.
 to `true` for a live share and `false` for a snapshot; `includeAttachments`
 defaults to `false`. Supply a future `expiresAt` or a relative `expiresInHours`.
 When both are supplied, the relative duration takes precedence. A supplied
-non-null `expiresAt` is always validated as ISO-8601.
+non-null `expiresAt` is always validated as ISO-8601. Owner responses include
+`effectiveIncludeComments` and `effectiveIncludeAttachments` alongside the
+configured flags. For a snapshot, the effective flags show which content
+categories are available publicly.
 
 `POST .../refresh` re-freezes a snapshot share; a live share answers `400`
 before any approval is created. It is a `share.update` lifecycle action: a PAT
 on a board whose policy requires approval gets `409 approval_required` with
 `approvalId`/`planHash`, and the retry must carry `X-Approval-Id`. An applied
 refresh is written to the board-share audit log. The approval is one-shot; a
-replay answers `409 approval_consumed`.
+replay answers `409 approval_consumed`. Snapshot creation and refresh reject
+more than 500 captured files or 100 MiB with `413 snapshot_attachment_limit`.
+They return `413 snapshot_comment_limit` for captures exceeding 1,000 comments
+or 10 MiB of UTF-8 comment JSON.
+A rejected refresh keeps the previous capture.
 
 When public sharing is disabled (`ALLOW_PUBLIC_SHARES=false` or the
 `public_shares` flag), creation and refresh answer `404` before approvals or
@@ -737,7 +752,9 @@ The public API has a per-token rate limit: 240 requests per minute per token
 `GET /share/:token` returns the whole public payload: the board (the live
 aggregate or the frozen snapshot), a sanitized member roster with no emails,
 and the share's privacy flags. It counts one view. A live share whose board
-is gone answers `410`; a snapshot never depends on the board.
+is gone answers `410`. A snapshot's board and roster remain available after
+source deletion. Live aggregate reads can return `503` when the process
+has reached its concurrent rebuild limit.
 
 `GET /share/:token/events` is live mode only; a snapshot answers `404`. It
 streams `command` frames and, when `includeComments` is set, `activity`
@@ -754,9 +771,16 @@ is revoked or expired, public sharing is switched off, or the board is gone.
 not expose comments or attachments respectively. A card that is not on the
 shared board answers `404`.
 
-A snapshot share freezes the conversation too: its comments, attachment list
-and attachment content include only what was created up to the moment the
-snapshot was captured (or last refreshed). A later attachment answers `404`.
+A snapshot serves the captured versions of its opted-in comments, attachment
+metadata and attachment files. Later edits, additions, removals, board
+archival and board deletion (including permanent purge) leave those versions
+available. A file or card absent at capture answers `404`. Turning an
+inclusion flag off hides that category immediately. Enabling a category that
+was absent at capture requires a refresh before it is public. Legacy
+board-only snapshots can still show eligible source comments and files
+created by the snapshot's capture time while the board and source rows are
+available. Soft-deleting the source board disables this fallback. Refreshing
+a legacy snapshot while the source is accessible saves independent copies.
 
 `POST /share/:token` and any nested `POST` answer `405` with
 `"Shared boards are read-only"`. The public API states its read-only rule

@@ -367,18 +367,16 @@ export class CommentsService {
     cursorRaw?: string,
     limitRaw?: string,
     kindRaw?: string,
-    createdUpTo?: Date,
+    createdBefore?: Date,
   ): Promise<CommentPage> {
-    const limit = parseLimit(limitRaw);
-    const cursor = cursorRaw ? parseCursor(cursorRaw) : null;
+    const { cursor, limit } = parseCommentPage(cursorRaw, limitRaw);
     const kind = parseKind(kindRaw);
     const rows = await this.prisma.comment.findMany({
       where: {
         cardId,
         deletedAt: null,
+        ...(createdBefore ? { createdAt: { lte: createdBefore } } : {}),
         ...(kind ? { kind } : {}),
-        // Snapshot shares freeze the conversation at capture time too.
-        ...(createdUpTo ? { createdAt: { lte: createdUpTo } } : {}),
         ...(cursor
           ? {
               OR: [
@@ -615,7 +613,7 @@ export class CommentsService {
   }
 }
 
-function toCommentDto(comment: Comment): CommentDto {
+export function toCommentDto(comment: Comment): CommentDto {
   return {
     id: comment.id,
     cardId: comment.cardId,
@@ -639,6 +637,13 @@ function inlineAttachmentIds(text: string): Set<string> {
 interface CommentCursor {
   at: number;
   id: string;
+}
+
+export function parseCommentPage(cursorRaw?: string, limitRaw?: string) {
+  return {
+    limit: parseLimit(limitRaw),
+    cursor: cursorRaw ? parseCursor(cursorRaw) : null,
+  };
 }
 
 function parseCursor(raw: string): CommentCursor {

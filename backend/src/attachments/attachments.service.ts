@@ -359,17 +359,16 @@ export class AttachmentsService {
 
   async list(
     cardId: string,
-    createdUpTo?: Date,
     detached = false,
+    createdBefore?: Date,
   ): Promise<AttachmentDto[]> {
     const rows = await this.prisma.attachment.findMany({
       where: {
         cardId,
         deletedAt: null,
         isInline: false,
-        ...(!createdUpTo ? { descriptionDetached: detached } : {}),
-        // Snapshot shares only show what existed at capture time.
-        ...(createdUpTo ? { createdAt: { lte: createdUpTo } } : {}),
+        descriptionDetached: detached,
+        ...(createdBefore ? { createdAt: { lte: createdBefore } } : {}),
       },
       orderBy: { createdAt: "desc" },
     });
@@ -628,7 +627,7 @@ export class AttachmentsService {
   }
 }
 
-function toAttachmentDto(row: {
+export function toAttachmentDto(row: {
   id: string;
   cardId: string;
   fileName: string;

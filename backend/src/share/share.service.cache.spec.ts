@@ -12,7 +12,9 @@ function shareRow(boardId: string): ShareArg {
     title: null,
     includeComments: false,
     includeAttachments: false,
-    snapshot: null,
+    snapshotTakenAt: null,
+    snapshotHasComments: null,
+    snapshotHasAttachments: null,
     snapshotVersion: null,
     revokedAt: null,
     expiresAt: null,
@@ -51,6 +53,8 @@ describe("ShareService live aggregate cache", () => {
       {},
       {},
       { isEnabled: async () => true },
+      {},
+      {},
     ] as unknown as ConstructorParameters<typeof ShareService>;
     const service = new ShareService(...deps);
     // Enable the cache for this spec (the test env sets the window to 0).

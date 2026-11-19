@@ -1256,8 +1256,7 @@ export interface AdminDemoStatusDto {
   cards: number;
   /** Cards that reached the last column of the run so far. */
   cardsDone: number;
-  /** A run's footprint still exists and `stop` would clean it (even if the
-   * swarm already finished), so the panel keeps "Stop & clean up" enabled. */
+  /** A recorded run still needs cleanup, including retries after the swarm finishes. */
   cleanupPending: boolean;
   /**
    * Live-share token of the run's board (TASK-58): the observation path that
@@ -1296,6 +1295,8 @@ export interface AdminShareRowDto {
   title: string | null;
   includeComments: boolean;
   includeAttachments: boolean;
+  effectiveIncludeComments?: boolean;
+  effectiveIncludeAttachments?: boolean;
   /** Unix ms expiry; `null` = no expiry. */
   expiresAt: number | null;
   /** Unix ms revoke time; `null` while active. */

@@ -114,7 +114,7 @@ remote MCP/OAuth, webhooks, object storage, and SIEM are outside TASK-166
 | D3 | Default for destructive actions | **Deny by default means direct execution is forbidden:** a destructive agent request without approval receives `approval_required`; the standard path is a human approving the exact plan. `trustedCi` is the explicit exception for trusted CI. A hard block (`destructive: "deny"`) is an opt-in board policy for everyone, including `trustedCi`. | This is the main human-control launch blocker. Approval-by-default does not depend on the MEMBER/ADMIN role; hard deny is a separate, stricter mode. | Do not treat the board ADMIN role as permission for destructive actions without approval/`trustedCi`. Do not mix `deny` (hard block) and `approval` (standard path) in one default. `trustedCi` does not override `destructive: "deny"` or board pause. |
 | D4 | What is a run? | One `AgentRun` = one board-scoped batch/plan/single destructive PAT command + one `agentSessionId?`. Cross-board runs are forbidden. | One batch is already one transaction and one lock; a run is the natural unit of audit/rollback. | Do not combine commands from different boards in one run. Do not make a run an unbounded time window. |
 | D5 | Pause semantics | New writes → `403 agent_paused`; in-flight transactions finish; SSE closes on the next keep-alive; resume restores writes; board-level pause and "stop all" are reversible; kill = revoke. | A transaction must not be cut in the middle and leave a half-applied batch. Irreversible kill already exists as revoke. | Do not implement pause by revoking a token. Do not let an agent call pause/resume. Do not clear claims on pause. |
-| D6 | Retention | One `OpsSettings.retentionDays`: default 30, presets 30/90/365, custom 1–3650. It covers Command, CommandPreimage, Activity, AgentRun, AgentSession, terminal ApprovalRequest, and soft-deleted rows. `AdminAuditLog` and `SecurityAuditLog` keep their own longer 365-day window (TASK-166.6). | One understandable window; 30 days is enough for beta, 365 for investigations. A separate SIEM/audit tier is outside TASK-166. | Do not delete `pending` approvals by retention. Do not promise "forever" audit. |
+| D6 | Retention | One `OpsSettings.retentionDays`: default 30, presets 30/90/365, custom 1–3650. It covers Command, CommandPreimage, Activity, AgentRun, AgentSession, eligible ApprovalRequest, and soft-deleted rows. `AdminAuditLog` and `SecurityAuditLog` keep their own longer 365-day window (TASK-166.6). | One understandable window; 30 days is enough for beta, 365 for investigations. A separate SIEM/audit tier is outside TASK-166. | Transition overdue `pending` approvals before deleting them. Do not promise "forever" audit. |
 | D7 | Attachments | Local disk as today (`UPLOAD_DIR`), with no presigned URL or object storage. | Self-host does not need S3; TASK-166 is not about the storage backend. | Do not add S3/object storage/presigned upload to TASK-166. |
 | D8 | Agent undo | An agent does not get browser undo. Compensation is ordinary non-destructive commands; run rollback is a session-only human API. Browser JWT keeps normal undo: `RESTORE_*` is allowed for the role that could perform the original command (ADMIN/MEMBER), regardless of token scope. | Browser undo is the human's local history; the MEMBER "delete → undo" scenario must not break. Run rollback is controlled, checked, and audited. | Do not give PAT access to `RESTORE_*` or to apply run revert. `RESTORE_BOARD` remains an aggregate-level/local snapshot; `/commands` does not accept it. |
 
@@ -1015,13 +1015,17 @@ Backfill:
 - `sweepRuns`: `AgentRun` older than cutoff with no commands; original
   `reverted` runs are deleted together with the revert run at the same
   cutoff.
-- `sweepAgentSessions`: completed/expired sessions older than cutoff.
-- `sweepApprovals`: `rejected|expired|cancelled|consumed` older than cutoff;
-  `pending` and `approved` are **not** deleted by age, only by expiry.
+- `sweep-agent-sessions`: sessions whose `endedAt` is past the retention window.
+- `sweep-approvals` transitions overdue pending requests to `expired` across
+  all boards. It removes `rejected|cancelled` by `decidedAt`,
+  `expired|approved` by `expiresAt`, and `consumed` by `consumedAt`.
+  The decision/apply flows still enforce expiry immediately.
 - `sweepSecurityAudit`: `SecurityAuditLog` older than cutoff.
 - `sweepIdempotency`: `expiresAt < now`.
-- Board/user purge calls the same sweep functions; ordering:
-  preimages → commands → runs → sessions → approvals → board rows.
+- Permanent board purge clears all sessions and requests scoped to the
+  purged board. The ordering is preimages → commands → runs → sessions →
+  approvals → board rows. Account erasure clears sessions and approvals
+  scoped to the deleted user.
 
 ---
 
@@ -1811,9 +1815,11 @@ Applying a cancelled approval → `approval_cancelled`.
 
 - Default 30 days; presets 30/90/365; custom 1–3650.
 - One `retentionDays` for Command, CommandPreimage, Activity, AgentRun,
-  AgentSession, terminal ApprovalRequest, and soft-deleted rows.
-- `pending`/`approved` approvals are not deleted by age, only by `expiresAt`
-  (then swept).
+  AgentSession, eligible ApprovalRequest, and soft-deleted rows.
+- Overdue pending requests become eligible once they transition to
+  `expired`, either on a board request or during scheduled maintenance.
+  An approved request keeps its recorded decision, can be applied only before
+  `expiresAt`, and can be removed after the retention window from expiry.
 - `AdminAuditLog` **and** `SecurityAuditLog` keep their own long window
   (`AUDIT_RETENTION_DAYS`, default 365). The 30/90/365 product setting does
   not erase the security trail; a `account.delete_scheduled` marker is kept

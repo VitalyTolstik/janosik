@@ -608,6 +608,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Snapshot shares now store independent copies of opted-in comments and
+  attachments. Published copies and the saved roster can remain publicly
+  accessible after erasure of the source account. The previous capture stays
+  available until refresh, link revocation or expiry. See the
+  [security policy](site/src/content/docs/docs/security.md).
+
 - The per-column card cap is now 1000 active cards (was 200), decided after
   the 2026-11-10 load test: a 5×1000 board renders in ~0.63 s with 50 cards in
   the DOM and 76 MB of JS heap, and the API reads its 3.37 MB payload in

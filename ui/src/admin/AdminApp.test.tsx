@@ -283,6 +283,35 @@ describe("AdminApp", () => {
     expect(await screen.findAllByText("moved@example.com")).toBeTruthy();
   });
 
+  it("explains the public snapshot exception before deleting a user", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    const notice =
+      "Copies already published in board snapshots can remain public.";
+    const policy = t("admin.userDetail.delete.securityPolicy");
+    expect(await screen.findByText(notice, { exact: false })).toBeVisible();
+    expect(screen.getByRole("link", { name: policy })).toHaveAttribute(
+      "href",
+      "/docs/security/",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: t("admin.userDetail.action.deleteUser"),
+      }),
+    );
+    const dialog = await screen.findByTestId("admin-delete-user-dialog");
+    expect(within(dialog).getByText(notice, { exact: false })).toBeVisible();
+    expect(within(dialog).getByRole("link", { name: policy })).toHaveAttribute(
+      "href",
+      "/docs/security/",
+    );
+  });
+
   it("changes a user's email from the users list row menu (TASK-51)", async () => {
     const state = serverWith().state;
     state.users = [adminUser()];

@@ -15,6 +15,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- Snapshot links save independent copies of opted-in comments and files.
+  Published copies and the saved roster can stay public after the source
+  account is erased, until the snapshot is refreshed or the link is revoked
+  or expires. See the [security policy](/docs/security/).
 - The agent surfaces now have three layers: the global
   [Agents](/docs/user-guide/agents/) control room (Attention / Sessions /
   Runs), a board-scoped Agent Control modal (Inbox / Live / Runs) and policy in

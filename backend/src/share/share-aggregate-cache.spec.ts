@@ -32,6 +32,24 @@ describe("ShareAggregateCache", () => {
     expect(cache.get("b1", 5)).toBeUndefined();
   });
 
+  it("bounds distinct boards and evicts the least recently used aggregate", async () => {
+    const cache = new ShareAggregateCache(2000, 2);
+    await cache.load("b1", build);
+    await cache.load("b2", build);
+    expect(cache.get("b1", 5)).toBeDefined();
+
+    await cache.load("b3", build);
+    expect(cache.size).toBe(2);
+    expect(cache.get("b2", 5)).toBeUndefined();
+    expect(cache.get("b1", 5)).toBeDefined();
+    expect(cache.get("b3", 5)).toBeDefined();
+
+    jest.advanceTimersByTime(2000);
+    await cache.load("b4", build);
+    expect(cache.size).toBe(1);
+    expect(cache.get("b4", 5)).toBeDefined();
+  });
+
   it("single-flights concurrent rebuilds for one board", async () => {
     jest.useRealTimers();
     const cache = new ShareAggregateCache(2000);
@@ -46,6 +64,25 @@ describe("ShareAggregateCache", () => {
     ]);
     expect(calls).toBe(1);
     expect(a).toBe(b);
+  });
+
+  it("caps distinct in-flight rebuilds and still deduplicates a board at capacity", async () => {
+    const cache = new ShareAggregateCache(2000, 2, 1);
+    let finish!: (value: Awaited<ReturnType<typeof build>>) => void;
+    const first = cache.load(
+      "b1",
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    expect(cache.load("b1", build)).toBe(first);
+    await expect(cache.load("b2", build)).rejects.toMatchObject({
+      status: 503,
+    });
+    finish(await build());
+    await first;
+    await expect(cache.load("b2", build)).resolves.toMatchObject({ seq: 5 });
   });
 
   it("is disabled at ttl <= 0 (never stores)", async () => {

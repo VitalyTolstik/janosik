@@ -90,11 +90,20 @@ describe("DemoPage", () => {
     fireEvent.change(await screen.findByTestId("admin-demo-board-input"), {
       target: { value: "board-xyz" },
     });
+    expect(screen.queryByText(t("admin.demo.boardWarning"))).toBeNull();
     fireEvent.click(screen.getByTestId("admin-demo-board-save"));
     // The board panel above reflects the saved selection.
     expect(screen.getByTestId("admin-demo-board")).toHaveTextContent(
       "board-xyz",
     );
+    expect(
+      screen.getByText(/creates a public live link to this board/i),
+    ).toHaveTextContent("Cleanup preserves this board and user-created data.");
+
+    fireEvent.change(screen.getByTestId("admin-demo-board-input"), {
+      target: { value: "" },
+    });
+    expect(screen.getByText(t("admin.demo.boardWarning"))).toBeVisible();
 
     fireEvent.change(screen.getByTestId("admin-demo-agents-input"), {
       target: { value: "2" },
@@ -158,6 +167,15 @@ describe("DemoPage", () => {
     renderDemo();
 
     fireEvent.click(await screen.findByTestId("admin-demo-stop"));
+    const confirmation = screen.getByText(
+      /remove its recorded rows where possible/i,
+    );
+    expect(confirmation).toHaveTextContent(
+      "The selected existing board and user-created data are preserved.",
+    );
+    expect(confirmation).toHaveTextContent(
+      "A dedicated demo board is deleted only if it is empty after cleanup.",
+    );
     fireEvent.click(screen.getByTestId("admin-confirm-accept"));
 
     await waitFor(() => expect(server.demoStatus.running).toBe(false));
@@ -190,6 +208,40 @@ describe("DemoPage", () => {
     expect(screen.getByTestId("admin-demo-status")).toHaveTextContent(
       t("admin.demo.idle"),
     );
+  });
+
+  it("qualifies successful cleanup when a real board retains demo dependencies", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderDemo();
+
+    fireEvent.change(await screen.findByTestId("admin-demo-board-input"), {
+      target: { value: "real-board" },
+    });
+    fireEvent.click(screen.getByTestId("admin-demo-board-save"));
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-demo-start")).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByTestId("admin-demo-start"));
+    await waitFor(() => expect(server.demoStatus.running).toBe(true));
+    fireEvent.click(await screen.findByTestId("admin-demo-stop"));
+    fireEvent.click(screen.getByTestId("admin-confirm-accept"));
+
+    // This success response has no separate status for retained dependencies.
+    expect(
+      await screen.findByText(
+        "Demo stopped. Recorded demo data cleaned up where possible",
+      ),
+    ).toBeVisible();
+    expect(server.demoStatus).toMatchObject({
+      running: false,
+      boardId: null,
+      cleanupPending: false,
+    });
+    expect(screen.getByTestId("admin-demo-board")).toHaveTextContent(
+      "real-board",
+    );
+    expect(screen.getByTestId("admin-demo-stop")).toBeDisabled();
   });
 
   it("disables start and explains when public shares are off", async () => {

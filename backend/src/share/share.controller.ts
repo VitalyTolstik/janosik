@@ -18,7 +18,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { Observable } from "rxjs";
-import type { BoardShare } from "@prisma/client";
+import type { ShareRow } from "./share.service";
 import type {
   AttachmentDto,
   CommentPage,
@@ -90,7 +90,7 @@ export class ShareController {
   @UseGuards(ShareAccessGuard)
   @Get(":token")
   @Header("X-Robots-Tag", "noindex, nofollow")
-  board(@CurrentShare() share: BoardShare): Promise<PublicBoardDto> {
+  board(@CurrentShare() share: ShareRow): Promise<PublicBoardDto> {
     return this.shares.publicBoard(share);
   }
 
@@ -106,7 +106,7 @@ export class ShareController {
   @Sse(":token/events")
   @Header("X-Robots-Tag", "noindex, nofollow")
   events(
-    @CurrentShare() share: BoardShare,
+    @CurrentShare() share: ShareRow,
     @Query("since") since?: string,
     @Res({ passthrough: true }) res?: Response,
   ): Observable<MessageEvent> {
@@ -131,7 +131,7 @@ export class ShareController {
   }
 
   private stream(
-    share: BoardShare,
+    share: ShareRow,
     boardId: string,
     since: number,
     release: () => void,
@@ -193,7 +193,7 @@ export class ShareController {
   }
 
   private async tick(
-    share: BoardShare,
+    share: ShareRow,
     sequencer: CommandStreamSequencer,
     includeComments: boolean,
   ): Promise<{ allowed: boolean; includeComments: boolean }> {
@@ -226,7 +226,7 @@ export class ShareController {
   @Get(":token/og.png")
   @Header("X-Robots-Tag", "noindex, nofollow")
   async og(
-    @CurrentShare() share: BoardShare,
+    @CurrentShare() share: ShareRow,
     @Res() res: Response,
   ): Promise<void> {
     const png = await this.shares.ogImage(share);
@@ -240,7 +240,7 @@ export class ShareController {
   @Get(":token/cards/:cardId/comments")
   @Header("X-Robots-Tag", "noindex, nofollow")
   comments(
-    @CurrentShare() share: BoardShare,
+    @CurrentShare() share: ShareRow,
     @Param("cardId") cardId: string,
     @Query("cursor") cursor?: string,
     @Query("limit") limit?: string,
@@ -253,7 +253,7 @@ export class ShareController {
   @Get(":token/cards/:cardId/attachments")
   @Header("X-Robots-Tag", "noindex, nofollow")
   attachments(
-    @CurrentShare() share: BoardShare,
+    @CurrentShare() share: ShareRow,
     @Param("cardId") cardId: string,
   ): Promise<AttachmentDto[]> {
     return this.shares.publicAttachments(share, cardId);
@@ -264,7 +264,7 @@ export class ShareController {
   @Get(":token/attachments/:attachmentId/content")
   @Header("X-Robots-Tag", "noindex, nofollow")
   async attachment(
-    @CurrentShare() share: BoardShare,
+    @CurrentShare() share: ShareRow,
     @Param("attachmentId") attachmentId: string,
     @Res() res: Response,
   ): Promise<void> {

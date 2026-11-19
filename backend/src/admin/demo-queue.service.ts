@@ -61,6 +61,17 @@ export class DemoQueueService {
     }
   }
 
+  async hasActiveJob(runId: string): Promise<boolean> {
+    const job = await this.queue?.getJob(runId);
+    const state = await job?.getState();
+    return (
+      state !== undefined &&
+      state !== "completed" &&
+      state !== "failed" &&
+      state !== "unknown"
+    );
+  }
+
   /** Best-effort job removal when a run is stopped. */
   async cancel(runId: string): Promise<void> {
     if (!this.queue) return;
