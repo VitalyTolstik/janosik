@@ -11,7 +11,7 @@ rate limits).
 
 ## Write headers and concurrency
 
-Every write accepts `X-Agent-Session: <sessionId>` when the caller is a PAT that
+A supported PAT write accepts `X-Agent-Session: <sessionId>` when the caller is a PAT that
 started a session on the same board. It attributes the command/comment/
 attachment and is verified on the server; a mismatch is
 `403 agent_session_invalid`, a closed session `403 agent_session_closed`.
@@ -48,6 +48,7 @@ design (they are not reducer actions). Content lives in the command log.
 | `GET`    | `/boards/:id`                 | member      | none              | `BoardAggregate`   |
 | `DELETE` | `/boards/:id`                 | `ADMIN`     | none              | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/members`         | member      | none              | `BoardMemberDto[]` |
+| `GET` | `/boards/:id/invitations` | `ADMIN` | none | `BoardPendingInvitationDto[]` |
 | `POST`   | `/boards/:id/members`         | `ADMIN`     | `InviteMemberDto` | `BoardMemberDto`   |
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`     | `UpdateMemberDto` | `BoardMemberDto`   |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
@@ -113,6 +114,8 @@ An invitee whose account has not confirmed its email does not see the
 invitation, and cannot accept it, until the address is confirmed (see
 [Invitations](../#invitations)).
 
+`GET /boards/:id/invitations` lists pending invitations on the board.
+
 `PATCH /boards/:id/members/:userId` changes the role and/or the `VIEWER`
 expiry. The last `ADMIN` of a board cannot be demoted, and the last `ADMIN`
 cannot be removed: both answer `409`.
@@ -124,9 +127,22 @@ an unknown or soft-deleted board is `404`; no membership is `403`; an expired
 `VIEWER` membership is `403` and the stale row is dropped; a role not allowed
 by the route is `403`.
 
-Every route on this page accepts a personal API token as well as an access
-token. Only the account-credential routes are session-only (see
-[API reference](../#session-only-routes)).
+Board routes that accept a PAT still enforce membership, board roles and
+token scope. The routes below require a browser access JWT. When a PAT
+reaches the session check, the server returns `403 pat_forbidden`.
+
+| Browser-only route | PAT access to related routes |
+| --- | --- |
+| `GET /agents/overview` | Board-scoped session, approval and run reads are available under their respective visibility rules. |
+| `GET` / `PATCH /boards/:id/agent-policy` | Board reads are available to members within scope. |
+| `POST /boards/:id/approvals/:approvalId/decision` | The requesting PAT can create, read and cancel its own request. |
+| `POST /boards/:id/runs/:runId/revert` to apply a rollback | A PAT can call `/revert/preview` or use `{ "dryRun": true }`. |
+| Board, agent-session, token and global pause/resume routes | A PAT can start, heartbeat and end its own agent sessions. |
+| Personal API token management | `GET /auth/me` returns the caller's token identity. |
+
+The [API reference](../#session-only-routes) lists the exact pause and account
+routes. Account invitations use a browser session. Board invitations can be
+listed or sent by a board ADMIN using a PAT with the `admin` preset.
 
 ## Comments
 
@@ -161,6 +177,18 @@ in `CommentDto`), and inline media removed from the text is soft-deleted.
 The edit writes a `comment_updated` activity row and SSE frame.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
+
+## Resource board context
+
+Each route resolves the board of an accessible resource and returns
+`{ boardId: string }`. The same membership and PAT scope rules apply as when
+reading the resource.
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/cards/:cardId/board-context` |
+| `GET` | `/comments/:commentId/board-context` |
+| `GET` | `/attachments/:attachmentId/board-context` |
 
 ## Agent sessions and attribution
 
@@ -208,6 +236,14 @@ streams strip token/session ids and the token name. `GET /auth/me` for a PAT
 adds a non-secret `token` identity object (`scopePreset`, `trustedCi`, pause
 stamps, `effectiveTokenScope`) and a `server` block; a browser session gets
 `token: null`.
+
+## Agent overview
+
+`GET /agents/overview` returns the browser control plane’s paginated
+approvals, sessions or runs. Approval rows require board ADMIN access.
+Sessions and runs are visible to accepted board members. Select the
+`section` and optional `boardId`, filters, `limit` and `cursor`. The
+[OpenAPI document](/openapi.yaml) describes the query and response fields.
 
 ## Pause and kill
 
@@ -277,11 +313,10 @@ SSE on the next tick. New requests with the key get `401`.
 
 ## Token scopes and the destructive gate
 
-Every PAT carries one immutable preset. A new key is `worker`; existing keys
-were grandfathered to `admin` + `trustedCi` (read-only keys keep effective
-`observer`). The preset is chosen when the key is created and cannot be
-changed: create a new key and revoke the old one. `readOnly` remains as a
-deprecated compatibility flag and always wins, yielding `observer`.
+Every PAT carries a scope preset. A new key defaults to `worker`. The owner
+can update `scopePreset` on an existing key from Account → API keys or through
+`PATCH /users/me/tokens/:id` in a browser session. The deprecated `readOnly`
+compatibility flag always yields effective `observer`.
 
 | Preset     | Read | Ordinary content write | Done transition (`reviewer`) | Destructive | Board administration |
 | ---------- | ---- | ---------------------- | ---------------------------- | ----------- | -------------------- |
@@ -299,7 +334,7 @@ that needs `admin` gets `scope_denied`, not `approval_required`.
 
 Board-scoped keys are limited to their board and cannot create or import
 boards. Account routes (profile writes, key management, invitations, exports)
-and their sensitive reads are session-only: a PAT gets `403 pat_forbidden`.
+and their sensitive reads require a browser session.
 Identity reads (`GET /auth/me`, avatar) remain available.
 
 Error codes are additive and stable:
@@ -322,8 +357,7 @@ Error codes are additive and stable:
 
 ## Personal API tokens
 
-Token management is account self-service and browser-session only: a PAT gets
-`403 pat_forbidden` on every route here.
+Token management is account self-service and requires a browser session.
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
@@ -334,12 +368,13 @@ Token management is account self-service and browser-session only: a PAT gets
 | `POST` | `/users/me/tokens/:id/pause` | `AgentPauseDto` | `UserTokenDto` |
 | `POST` | `/users/me/tokens/:id/resume` | `AgentPauseDto` | `UserTokenDto` |
 
-A new token is `worker` by default. `scopePreset` (`observer`, `worker`,
-`reviewer`, `admin`), `boardId`, `readOnly`, `rateLimitPerMinute`, `expiresAt`
-and `trustedCi` are chosen at creation; `PATCH` edits every field except the
-secret, and an omitted field keeps its value. The plaintext appears exactly
-once in the create response. Revocation is the irreversible kill: it cancels
-open sessions, releases token claims and closes the token SSE.
+A new token defaults to `worker`. PATCH accepts `name`, `scopePreset`,
+`boardId`, `readOnly`, `rateLimitPerMinute` and `trustedCi`. Omitted fields
+keep their values, and `null` clears the board or rate limit. Validation
+strips `expiresAt` and other unknown fields, so the stored expiry stays
+unchanged. The plaintext key appears once in the create response. PATCH on a
+revoked key returns `409 token_revoked`. Revocation cancels open sessions,
+releases the token's claims and closes its SSE streams.
 
 ## Approvals
 
@@ -456,7 +491,7 @@ an `ApprovalRequest`. It replays the reducer in memory and returns:
   `currentVersion` where known;
 - `requirement` (kind/scope/risk/summary), effective `limits` and `canApply`.
 
-`POST /plans/apply` requires the exact preview `planHash`. A changed plan is
+`POST /boards/:id/plans/apply` requires the exact preview `planHash`. A changed plan is
 `409 approval_mismatch` with `expectedPlanHash`/`actualPlanHash` prefixes and
 the `approvalId` when a header was sent. Apply then behaves exactly like
 `/commands/batch`: one board lock, one transaction, all-or-nothing, results in
@@ -551,7 +586,7 @@ PAT-forbidden (`403 pat_forbidden`).
 ## Board agent policy
 
 The board policy is human-controlled. Both routes are session-only board
-`ADMIN`; a PAT gets `403 pat_forbidden`.
+`ADMIN`. Authentication and board access checks run before the session check.
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
@@ -641,6 +676,7 @@ management is nested under the board and gated to `ADMIN`.
 | `POST`   | `/boards/:id/shares/:shareId/refresh` | `ADMIN`     | none             | `BoardShareDto`   |
 | `PATCH`  | `/boards/:id/shares/:shareId`         | `ADMIN`     | `UpdateShareDto` | `BoardShareDto`   |
 | `DELETE` | `/boards/:id/shares/:shareId`         | `ADMIN`     | none             | `BoardShareDto`   |
+| `DELETE` | `/boards/:id/shares/:shareId/permanent` | `ADMIN` | none | `204`, empty |
 
 A share's `mode` is `snapshot` or `live`. A snapshot freezes the board at
 creation and survives the board being deleted; a board admin can refresh it.
@@ -648,7 +684,8 @@ A live share reads the board as it is now and follows it over SSE.
 
 `POST` generates a random token (16 bytes, base64url). `includeComments` defaults
 to `true` for a live share and `false` for a snapshot; `includeAttachments`
-defaults to `false`. An `expiresAt` in the past answers `400`.
+defaults to `false`. Supply a future `expiresAt` or a relative `expiresInHours`.
+When both are supplied, the relative duration takes precedence.
 
 `POST .../refresh` re-freezes a snapshot share; a live share answers `400`
 before any approval is created. It is a `share.update` lifecycle action: a PAT
@@ -667,7 +704,8 @@ hard-delete of a revoked share is also recorded in the master audit log as
 `share.revoked`.
 
 `DELETE` revokes a share: its token stops resolving at once. Revoking is
-idempotent.
+idempotent. `DELETE .../permanent` removes a previously revoked share. A PAT
+needs the `admin` preset and follows the `share.delete` approval policy.
 
 A `:shareId` that does not belong to the board answers `403`; an unknown one
 answers `404`.
@@ -850,7 +888,10 @@ Field presence and nullability are specified separately:
 | `title`              | string         | optional           | at most 100 characters                                   |
 | `includeComments`    | boolean        | optional           | default `true` for `live`, `false` for `snapshot`        |
 | `includeAttachments` | boolean        | optional           | default `false`                                          |
-| `expiresAt`          | string or null | optional, nullable | ISO-8601, must be in the future; omitted means no expiry |
+| `expiresAt`          | string or null | optional, nullable | ISO-8601 in the future when used |
+| `expiresInHours` | integer | optional | 1–87,600 hours from creation. Takes precedence over `expiresAt` |
+
+With both fields omitted, or an explicit `expiresAt: null` on its own, the link has no expiry.
 
 ```json
 { "mode": "live", "includeAttachments": true }

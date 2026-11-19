@@ -10,7 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
-import { respond, textOnly } from "../format.js";
+import { commandFields, respond, textOnly } from "../format.js";
 import { newId, stableCommandId } from "../ids.js";
 import {
   approvalIdSchema,
@@ -74,7 +74,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
     },
     async ({ boardId, labelId, name, color, expectedVersion }) => {
       const id = labelId ?? newId();
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "ADD_LABEL",
@@ -86,6 +86,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         },
       );
       return textOnly(`Created label "${name}" (${color}) — \`${id}\`.`, {
+        ...commandFields(response),
         resourceId: id,
       });
     },
@@ -106,12 +107,15 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, labelId, name, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "RENAME_LABEL", labelId, name },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Renamed label ${labelId} to "${name}".`);
+      return textOnly(
+        `Renamed label ${labelId} to "${name}".`,
+        commandFields(response),
+      );
     },
   );
 
@@ -130,7 +134,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, labelId, color, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_LABEL_COLOR",
@@ -139,7 +143,10 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Set label ${labelId} to ${color}.`);
+      return textOnly(
+        `Set label ${labelId} to ${color}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -159,7 +166,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
       annotations: DESTRUCTIVE,
     },
     async ({ boardId, labelId, expectedVersion, commandId, approvalId }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "DELETE_LABEL", labelId },
         {
@@ -168,7 +175,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Deleted label ${labelId}.`);
+      return textOnly(`Deleted label ${labelId}.`, commandFields(response));
     },
   );
 
@@ -189,7 +196,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, labelId, on, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CARD_LABEL",
@@ -201,6 +208,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
       );
       return textOnly(
         `${on ? "Attached" : "Detached"} label ${labelId} ${on ? "to" : "from"} card ${cardId}.`,
+        commandFields(response),
       );
     },
   );

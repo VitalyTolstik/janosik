@@ -9,7 +9,8 @@ The operator creates a key in the app under **Account → API keys**, using a
 browser user session. Copy it when shown: the full key is displayed once.
 Choose the board scope, scope preset (`observer`, `worker`, `reviewer` or
 `admin`), read-only setting, trusted-CI flag, expiry and rate limit for the
-agent. The preset is immutable and never raises the user's board role. API-key
+agent. The owner can edit the preset from a browser session, within the limits
+of the user's board role. API-key
 list/create/revoke endpoints reject API-key authentication; MCP has no tools
 for minting or rotating credentials.
 

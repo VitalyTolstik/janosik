@@ -140,8 +140,8 @@ export class AuthController {
 
   /**
    * Public runtime config (TASK-38a): the sign-in screen reads it before a
-   * session exists to hide the register form when sign-up is closed. No
-   * guard — it exposes only two booleans.
+   * session exists to read the registration and public-share flags and the
+   * applicable board and import limits.
    */
   @Get("config")
   config(): Promise<{

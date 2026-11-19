@@ -7,8 +7,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 
+import type { Config } from "../config.js";
 import { describeError, errorStructuredContent } from "../errors.js";
-import { errorResult, type ToolResult } from "../format.js";
+import {
+  errorResult,
+  respond,
+  textOnly,
+  type ResponseFormat,
+  type ToolResult,
+} from "../format.js";
+import { writeSandboxedFile } from "../fs-policy.js";
 
 /** Behaviour hints the MCP spec exposes to clients (advisory, not security). */
 export interface ToolAnnotations {
@@ -41,6 +49,51 @@ export const DESTRUCTIVE: ToolAnnotations = {
   idempotentHint: false,
   openWorldHint: false,
 };
+
+export type DocumentOutputOptions = Pick<
+  Config,
+  "allowFs" | "fsRoot" | "readOnly"
+>;
+
+/** These reads write locally only when the caller supplies an output path. */
+export function documentAnnotations(
+  options: DocumentOutputOptions,
+): ToolAnnotations {
+  return options.allowFs && !options.readOnly ? WRITE : READ;
+}
+
+export async function respondDocument(
+  options: DocumentOutputOptions,
+  {
+    outputPath,
+    response_format,
+  }: { outputPath?: string; response_format: ResponseFormat },
+  document: Record<string, unknown>,
+  markdown: () => string,
+): Promise<ToolResult> {
+  if (outputPath === undefined) {
+    return respond(
+      response_format,
+      document,
+      markdown(),
+      "Pass outputPath on a write-enabled MCP server with JANOSIK_MCP_ALLOW_FS=1 to save the full JSON document.",
+    );
+  }
+  if (options.readOnly) {
+    return errorResult(
+      "Error: outputPath writes a local file and is unavailable in read-only mode.",
+      { ok: false, code: "forbidden", retryable: false },
+    );
+  }
+  const saved = await writeSandboxedFile(
+    outputPath,
+    options,
+    JSON.stringify(document, null, 2),
+  );
+  return textOnly(`Saved the full JSON document to ${saved}.`, {
+    outputPath: saved,
+  });
+}
 
 /** Servers built in read-only mode: write tools are not registered at all. */
 const readOnlyServers = new WeakSet<McpServer>();

@@ -134,6 +134,15 @@ MCP-инструмент не может откатить run (ADR D17). Есл�
 умолчанию) или `"json"`. Имена всех инструментов начинаются с `janosik_`,
 чтобы не конфликтовать с другими серверами.
 
+В `janosik_get_card`, `janosik_get_run` и `janosik_get_approval` можно
+передать `outputPath` (например, `details.json`), чтобы сохранить полный JSON,
+когда документ превышает лимит ответа в 25 000 символов. Файл содержит те же
+доступные вызывающему данные, что и JSON в ответе. Инструмент возвращает
+`{ ok: true, outputPath }` с абсолютным путём. Для записи нужны
+`JANOSIK_MCP_ALLOW_FS=1` и режим MCP с разрешённой записью. Относительный путь
+отсчитывается от `JANOSIK_MCP_FS_ROOT`, если он задан, иначе от рабочей папки
+сервера MCP. Выбирайте новый путь для каждого сохранения.
+
 Пример рабочего процесса:
 
 1. `janosik_list_boards` находит доску.
@@ -184,7 +193,7 @@ resourceId, seq, runId }`, где `resourceId` — id новой карточк�
 Preview возвращает `planHash`, `plan`, `diff`, `warnings`, `conflicts` и
 `canApply`. Передайте те же `commands` и `planHash` в `apply_plan`; добавьте
 `approvalId`, если preview сообщает о необходимости подтверждения. Apply
-возвращает `{ runId, planHash, results }`.
+возвращает `{ seq, runId, planHash, results }`.
 
 **Подтверждение.**
 
@@ -262,9 +271,11 @@ id (`cardId`, `checklistId`, …), который служит ключом ид
 `janosik_create_share`, `janosik_upload_attachment`) также принимают
 `idempotencyKey`: используйте его повторно только с тем же телом запроса.
 
-Результаты мутаций несут `structuredContent` с `ok: true` и, когда известно,
-`resourceId`, `seq`, `runId` или `approvalId`, поэтому агенту не нужно
-разбирать человеческий текст. Ошибки остаются `isError: true` и дополнительно
+Успешные записи через журнал команд возвращают `structuredContent` с
+`ok: true`, `seq` и `runId` (`null`, если запись не создала прогон).
+Пакет команд возвращает наибольший `seq` из результатов и `runId` пакета.
+Используйте `seq` как `expectedVersion` следующей записи. Результат также
+может содержать `resourceId` или `approvalId`. Ошибки остаются `isError: true` и дополнительно
 несут `structuredContent` с `ok: false`, серверным `code`, `retryable`,
 `requestId` и деталями конфликта (`currentVersion`, `allowedToColumnIds`,
 `approvalId`/`expiresAt`). Реагируйте на код, а не на фразу:

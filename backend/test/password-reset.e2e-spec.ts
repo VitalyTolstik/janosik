@@ -2,10 +2,12 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { hash, argon2id } from "argon2";
 import { randomUUID } from "node:crypto";
+import request from "supertest";
 import { AppModule } from "@/app.module";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { AuthService } from "@/auth/auth.service";
 import { MailerService } from "@/mailer/mailer.service";
+import { setupApp } from "@/common/app-setup";
 
 describe("Password recovery security (database integration)", () => {
   let app: INestApplication;
@@ -20,6 +22,7 @@ describe("Password recovery security (database integration)", () => {
       imports: [AppModule],
     }).compile();
     app = module.createNestApplication();
+    setupApp(app);
     await app.init();
     prisma = app.get(PrismaService);
     auth = app.get(AuthService);
@@ -46,8 +49,7 @@ describe("Password recovery security (database integration)", () => {
     userIds.push(account.id);
     return account;
   }
-  async function issue(email: string) {
-    await auth.requestPasswordReset(email, "en");
+  function latestCode(email: string) {
     const message = [...mailer.outbox]
       .reverse()
       .find((item) => item.to === email);
@@ -55,6 +57,34 @@ describe("Password recovery security (database integration)", () => {
     expect(code).toBeDefined();
     return code!;
   }
+  async function issue(email: string) {
+    await auth.requestPasswordReset(email, "en");
+    return latestCode(email);
+  }
+
+  it("issues and consumes a code through the public HTTP routes", async () => {
+    const account = await user();
+    const server = request(app.getHttpServer());
+    const email = `  ${account.email.toUpperCase()}  `;
+    await server
+      .post("/api/v1/auth/password/reset/request")
+      .send({ email })
+      .expect(200, { status: "ok" });
+
+    const dto = {
+      email,
+      code: latestCode(account.email),
+      newPassword: "new-password",
+    };
+    await server
+      .post("/api/v1/auth/password/reset/confirm")
+      .send(dto)
+      .expect(200, { status: "ok" });
+    await server
+      .post("/api/v1/auth/password/reset/confirm")
+      .send(dto)
+      .expect(400);
+  });
   it("stores only a hash and rejects an expired code", async () => {
     const account = await user();
     const code = await issue(account.email);

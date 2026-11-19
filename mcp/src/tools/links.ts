@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { JanosikClient } from "../client.js";
-import { errorResult, textOnly } from "../format.js";
+import { commandFields, errorResult, textOnly } from "../format.js";
 import { newId } from "../ids.js";
 import {
   boardIdSchema,
@@ -39,7 +39,7 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
     },
     async ({ boardId, cardId, targetCardId, linkType, expectedVersion }) => {
       const linkId = newId();
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "ADD_CARD_LINK",
@@ -52,7 +52,7 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
       );
       return textOnly(
         `Linked card ${cardId} --${linkType}--> ${targetCardId}.`,
-        { resourceId: linkId },
+        { ...commandFields(response), resourceId: linkId },
       );
     },
   );
@@ -109,7 +109,10 @@ export function registerLinkTools(server: McpServer, client: JanosikClient) {
             "board.",
         );
       }
-      return textOnly(`Removed the ${link.type} link to ${targetCardId}.`);
+      return textOnly(
+        `Removed the ${link.result.type} link to ${targetCardId}.`,
+        commandFields(link.response),
+      );
     },
   );
 }

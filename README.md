@@ -412,7 +412,7 @@ Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex.
 `/app`). By default the server registers the board-work and agent-session
 tools; member, share and account-identity tools are opt-in
 (`JANOSIK_MCP_TOOLSETS`), and attachment upload/download stays off until you set
-`JANOSIK_MCP_ALLOW_FS=1`. An API key also carries an immutable scope preset
+`JANOSIK_MCP_ALLOW_FS=1`. An API key carries an owner-editable scope preset
 (`observer`, `worker`, `reviewer`, `admin`) and an optional `trustedCi` flag;
 destructive actions need a human approval unless the key is trusted CI.
 

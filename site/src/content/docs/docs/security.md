@@ -70,8 +70,9 @@ prompt-injected agent therefore cannot mint a longer-lived key, accept an
 invitation, change the profile, lock the owner out or move the account to
 another mailbox.
 
-Every key also carries an immutable scope preset. New keys are `worker`; a
-token never raises the owner's board role. Ordinary content writes need
+Every key carries a scope preset. New keys default to `worker`, and the
+owner can edit the preset from Account → API keys in a browser session.
+The token is bounded by the owner's board role. Ordinary content writes need
 `worker`, a done-column transition needs `reviewer`, and board administration
 needs `admin` (and still the board ADMIN role). Destructive actions require a
 human approval by default; `trustedCi` is an explicit opt-out for a trusted CI
@@ -80,8 +81,7 @@ pipeline, while a board policy of `destructive: "deny"` blocks them even for
 `409 approval_required` and nothing is applied; the server creates the exact
 plan request, a human board ADMIN decides it in the browser, and the agent
 repeats the call with `X-Approval-Id`. Approval is one-time. Existing keys were grandfathered to
-`admin` + `trustedCi` unless read-only. Changing a key's scope means creating a
-new key and revoking the old one.
+`admin` + `trustedCi` unless read-only.
 
 Changing the password revokes every API key as well as other sessions, which is
 useful if you suspect a credential leak. A key created

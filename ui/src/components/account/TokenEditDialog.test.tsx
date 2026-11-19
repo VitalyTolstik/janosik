@@ -156,4 +156,19 @@ describe("TokenEditDialog (TASK-166.15)", () => {
       "Sign in with a browser session to edit an API key",
     );
   });
+
+  it("explains why a key revoked while editing cannot be saved", async () => {
+    const onSaved = vi.fn();
+    vi.spyOn(api, "updateToken").mockRejectedValue(
+      new ApiError(409, { code: "token_revoked", message: "Revoked" }),
+    );
+    renderDialog(token(), onSaved);
+
+    await userEvent.click(screen.getByTestId("token-edit-save"));
+
+    expect(await screen.findByTestId("token-edit-error")).toHaveTextContent(
+      "This API key has been revoked and can no longer be edited.",
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+  });
 });

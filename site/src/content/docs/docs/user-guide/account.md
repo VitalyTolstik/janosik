@@ -106,8 +106,9 @@ or revoke keys, change your password or email, update the profile, or list and
 accept invitations, so a leaked key can never mint a longer-lived one, change
 your account or lock you out. Use `Edit` on an existing key to change its name,
 board scope, scope preset, trusted-CI flag, read-only flag or rate limit; the
-server validates and audits the change and never reveals the secret again. If
-you need a new secret, create a new key and revoke the old one. The row keeps a
+server validates and audits the change. Set the expiry when creating the key.
+To change the expiry or get a new secret, create a replacement key and revoke
+the old one. The row keeps a
 compact summary of the effective scope, board scope, rate limit and pause
 state.
 

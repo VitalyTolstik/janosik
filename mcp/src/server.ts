@@ -78,7 +78,7 @@ const GROUPS: Record<
     registerWorkflowTools(server, client);
   },
   columns: (server, client) => registerColumnTools(server, client),
-  cards: (server, client) => registerCardTools(server, client),
+  cards: (server, client, config) => registerCardTools(server, client, config),
   labels: (server, client) => registerLabelTools(server, client),
   checklists: (server, client) => registerChecklistTools(server, client),
   links: (server, client) => registerLinkTools(server, client),
@@ -87,9 +87,10 @@ const GROUPS: Record<
   attachments: (server, client, config) =>
     registerAttachmentTools(server, client, fsOptions(config)),
   sessions: (server, client) => registerSessionTools(server, client),
-  approvals: (server, client) => registerApprovalTools(server, client),
+  approvals: (server, client, config) =>
+    registerApprovalTools(server, client, config),
   plans: (server, client) => registerPlanTools(server, client),
-  runs: (server, client) => registerRunTools(server, client),
+  runs: (server, client, config) => registerRunTools(server, client, config),
   members: (server, client) => registerMemberTools(server, client),
   shares: (server, client, config) =>
     registerShareTools(server, client, config.url, config.appBase),

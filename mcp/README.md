@@ -17,7 +17,7 @@ unarchive tools or explicit compensating edits to correct them. Comments, attach
 creation/import/deletion, membership, shares and account changes use separate
 API routes. Activity records identify the user and whether a command came
 from a human session or an API key. A key can be scoped to one board, carry an
-immutable scope preset (`observer`, `worker`, `reviewer`, `admin`), be made
+owner-editable scope preset (`observer`, `worker`, `reviewer`, `admin`), be made
 read-only, and have its own per-minute rate limit. Its scope never raises the
 board role.
 
@@ -93,8 +93,20 @@ response that would exceed the size budget is refused with a hint (read one
 column with `janosik_get_board`'s `columnId`, export to a file) rather than
 truncated into JSON that does not parse.
 
-Mutating tools also return `structuredContent` with `ok: true` and, when
-available, `resourceId`, `seq`, `runId` or `approvalId`. Failed calls keep
+For `janosik_get_card`, `janosik_get_run` and `janosik_get_approval`, pass
+`outputPath` (for example, `details.json`) to save the complete JSON document
+when it exceeds the 25,000-character tool response budget. The file contains
+the same authorized data as the inline JSON response. The tool returns
+`{ ok: true, outputPath }` with the resolved path. File output requires
+`JANOSIK_MCP_ALLOW_FS=1` and write-enabled MCP mode. Relative paths resolve
+against `JANOSIK_MCP_FS_ROOT` when set, otherwise against the MCP server's
+working directory. Choose a new path each time.
+
+Successful command-log mutations return `structuredContent` with `ok: true`,
+`seq` and `runId` (`null` when no run was recorded). A batch returns the
+highest sequence from its results and the batch run ID. Use `seq` as
+`expectedVersion` for a subsequent write. The result may also carry
+`resourceId` or `approvalId`. Failed calls keep
 `isError: true` and carry `structuredContent` with `ok: false`, the API `code`,
 `retryable`, `requestId` and conflict details. Retry only `retryable: true`
 failures (`rate_limited`, `board_write_timeout`, `idempotency_in_progress`);
@@ -222,7 +234,7 @@ and hash:
 
 `plan_changes` returns `planHash`, `plan`, `diff`, `warnings`, `conflicts` and
 `canApply`, and writes nothing. `apply_plan` with the same `commands` and
-`planHash` returns `{ runId, planHash, results }`; add `approvalId` when the
+`planHash` returns `{ seq, runId, planHash, results }`. Add `approvalId` when the
 preview requires approval.
 
 **Approval.**
@@ -371,7 +383,7 @@ presence. Those stay in the app.
 
 ## Permissions and safety
 
-The key acts as the user who created it, but its immutable scope preset limits
+The key acts as the user who created it, but its owner-editable scope preset limits
 what it may do: `observer` reads only, `worker` writes ordinary content,
 `reviewer` may also enter a done column, and `admin` may administer the board.
 The preset never raises the user's board role: content editing still needs

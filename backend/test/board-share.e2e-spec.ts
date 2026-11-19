@@ -1,5 +1,6 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import type { BoardShareDto } from "@janosik/shared";
 import { argon2id, hash as argonHash } from "argon2";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
@@ -110,7 +111,7 @@ describe("Public board shares (e2e)", () => {
   async function createShare(
     boardId: string,
     body: Record<string, unknown>,
-  ): Promise<{ id: string; token: string; mode: string }> {
+  ): Promise<BoardShareDto> {
     return (
       await server()
         .post(`/api/v1/boards/${boardId}/shares`)
@@ -401,6 +402,18 @@ describe("Public board shares (e2e)", () => {
       data: { expiresAt: new Date(Date.now() - 60_000) },
     });
     await server().get(`/api/v1/share/${expired.token}`).expect(404);
+  });
+
+  it("uses expiresInHours in preference to an absolute expiry", async () => {
+    const { boardId } = await newBoard("Relative expiry");
+    const startedAt = Date.now();
+    const { expiresAt } = await createShare(boardId, {
+      mode: "live",
+      expiresAt: "2000-01-01T00:00:00.000Z",
+      expiresInHours: 2,
+    });
+    expect(expiresAt).toBeGreaterThanOrEqual(startedAt + 7_200_000);
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 7_200_000);
   });
 
   it("comments/attachments are gated by their flags", async () => {

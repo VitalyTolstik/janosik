@@ -128,6 +128,15 @@ Data-reading tools accept `response_format: "markdown"` (default) or `"json"`. T
 tool names all start with `janosik_` so they sit alongside other servers
 without clashing.
 
+For `janosik_get_card`, `janosik_get_run` and `janosik_get_approval`, pass
+`outputPath` (for example, `details.json`) to save the complete JSON document
+when it exceeds the 25,000-character tool response budget. The file contains
+the same authorized data as the inline JSON response. The tool returns
+`{ ok: true, outputPath }` with the resolved path. File output requires
+`JANOSIK_MCP_ALLOW_FS=1` and write-enabled MCP mode. Relative paths resolve
+against `JANOSIK_MCP_FS_ROOT` when set, otherwise against the MCP server's
+working directory. Choose a new path each time.
+
 A typical run:
 
 1. `janosik_list_boards` to find a board.
@@ -177,7 +186,7 @@ apply exactly the returned commands and hash:
 The preview returns `planHash`, `plan`, `diff`, `warnings`, `conflicts` and
 `canApply`. Pass the same `commands` and `planHash` to `apply_plan`; add
 `approvalId` if the preview says approval is required. The apply returns
-`{ runId, planHash, results }`.
+`{ seq, runId, planHash, results }`.
 
 **Approval.**
 
@@ -254,9 +263,11 @@ writes (`janosik_create_board`, `janosik_duplicate_card`,
 `janosik_add_comment`, `janosik_create_share`, `janosik_upload_attachment`)
 also accept `idempotencyKey`: reuse it only for the same request body.
 
-Mutation results carry `structuredContent` with `ok: true` and, when known,
-`resourceId`, `seq`, `runId` or `approvalId`, so an agent does not have to parse
-the human text. Errors stay `isError: true` and additionally carry
+Successful command-log mutations return `structuredContent` with `ok: true`,
+`seq` and `runId` (`null` when no run was recorded). A batch returns the
+highest sequence from its results and the batch run ID. Use `seq` as
+`expectedVersion` for a subsequent write. The result may also carry
+`resourceId` or `approvalId`. Errors stay `isError: true` and additionally carry
 `structuredContent` with `ok: false`, the server's `code`, `retryable`,
 `requestId` and any conflict details (`currentVersion`, `allowedToColumnIds`,
 `approvalId`/`expiresAt`). Read the code, not the sentence:

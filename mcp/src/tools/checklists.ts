@@ -8,7 +8,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
-import { textOnly } from "../format.js";
+import { commandFields, textOnly } from "../format.js";
 import { newId, stableCommandId } from "../ids.js";
 import {
   approvalIdSchema,
@@ -54,7 +54,7 @@ export function registerChecklistTools(
     },
     async ({ boardId, cardId, checklistId, title, expectedVersion }) => {
       const newChecklistId = checklistId ?? newId();
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "ADD_CHECKLIST",
@@ -70,6 +70,7 @@ export function registerChecklistTools(
         },
       );
       return textOnly(`Added checklist "${title}" — \`${newChecklistId}\`.`, {
+        ...commandFields(response),
         resourceId: newChecklistId,
       });
     },
@@ -95,7 +96,7 @@ export function registerChecklistTools(
       annotations: WRITE,
     },
     async ({ boardId, cardId, checklistId, title, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "RENAME_CHECKLIST",
@@ -105,7 +106,10 @@ export function registerChecklistTools(
         },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Renamed checklist ${checklistId}.`);
+      return textOnly(
+        `Renamed checklist ${checklistId}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -136,7 +140,7 @@ export function registerChecklistTools(
     },
     async ({ boardId, cardId, checklistId, itemId, text, expectedVersion }) => {
       const newItemId = itemId ?? newId();
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "ADD_CHECKLIST_ITEM",
@@ -151,6 +155,7 @@ export function registerChecklistTools(
         },
       );
       return textOnly(`Added item "${text}" — \`${newItemId}\`.`, {
+        ...commandFields(response),
         resourceId: newItemId,
       });
     },
@@ -173,7 +178,7 @@ export function registerChecklistTools(
       annotations: WRITE,
     },
     async ({ boardId, cardId, checklistId, itemId, done, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CHECKLIST_ITEM_DONE",
@@ -184,7 +189,10 @@ export function registerChecklistTools(
         },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`${done ? "Checked" : "Unchecked"} item ${itemId}.`);
+      return textOnly(
+        `${done ? "Checked" : "Unchecked"} item ${itemId}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -209,7 +217,7 @@ export function registerChecklistTools(
       annotations: WRITE,
     },
     async ({ boardId, cardId, checklistId, itemId, text, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "RENAME_CHECKLIST_ITEM",
@@ -220,7 +228,7 @@ export function registerChecklistTools(
         },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Renamed item ${itemId}.`);
+      return textOnly(`Renamed item ${itemId}.`, commandFields(response));
     },
   );
 
@@ -250,7 +258,7 @@ export function registerChecklistTools(
       commandId,
       approvalId,
     }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "DELETE_CHECKLIST_ITEM",
@@ -264,7 +272,7 @@ export function registerChecklistTools(
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Deleted item ${itemId}.`);
+      return textOnly(`Deleted item ${itemId}.`, commandFields(response));
     },
   );
 
@@ -292,7 +300,7 @@ export function registerChecklistTools(
       commandId,
       approvalId,
     }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "DELETE_CHECKLIST",
@@ -305,7 +313,10 @@ export function registerChecklistTools(
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Deleted checklist ${checklistId}.`);
+      return textOnly(
+        `Deleted checklist ${checklistId}.`,
+        commandFields(response),
+      );
     },
   );
 }

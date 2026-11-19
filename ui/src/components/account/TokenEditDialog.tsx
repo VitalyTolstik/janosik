@@ -49,6 +49,7 @@ function errorMessage(error: unknown, t: ReturnType<typeof useI18n>["t"]) {
     const body = error.body as { code?: unknown };
     if (body.code === "pat_forbidden")
       return t("account.tokens.editSessionOnly");
+    if (body.code === "token_revoked") return t("account.tokens.editRevoked");
   }
   if (error instanceof ApiError && error.status === 403) {
     return t("account.tokens.editSessionOnly");

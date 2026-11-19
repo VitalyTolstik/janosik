@@ -12,8 +12,14 @@ import { z } from "zod";
 import type { AgentRunDto } from "@janosik/shared";
 import type { JanosikClient } from "../client.js";
 import { bullets, code, formatTimestamp, respond } from "../format.js";
-import { responseFormatSchema } from "../schemas.js";
-import { READ, defineTool } from "./helpers.js";
+import { documentOutputPathSchema, responseFormatSchema } from "../schemas.js";
+import {
+  READ,
+  defineTool,
+  documentAnnotations,
+  respondDocument,
+  type DocumentOutputOptions,
+} from "./helpers.js";
 
 function renderRun(run: AgentRunDto): string {
   return [
@@ -51,7 +57,11 @@ function renderRuns(runs: AgentRunDto[]): string {
   ].join("\n");
 }
 
-export function registerRunTools(server: McpServer, client: JanosikClient) {
+export function registerRunTools(
+  server: McpServer,
+  client: JanosikClient,
+  output: DocumentOutputOptions,
+) {
   defineTool(
     server,
     "janosik_list_runs",
@@ -127,19 +137,19 @@ export function registerRunTools(server: McpServer, client: JanosikClient) {
     {
       title: "Get an agent run",
       description:
-        "Read one run with its commands and attribution. Pre-images and the full before-state are visible only to a board ADMIN browser session; an API token sees the run and commands without them.",
+        "Read one run with its commands and attribution. Pre-images and the full before-state are visible only to a board ADMIN browser session; an API token sees the run and commands without them. Pass outputPath to save large documents.",
       inputSchema: {
         boardId: z.string().describe("Board id."),
         runId: z.string().describe("Run id from janosik_list_runs."),
+        outputPath: documentOutputPathSchema,
         response_format: responseFormatSchema,
       },
-      annotations: READ,
+      annotations: documentAnnotations(output),
     },
-    async ({ boardId, runId, response_format }) => {
+    async (args) => {
+      const { boardId, runId } = args;
       const detail = await client.getRun(boardId, runId);
-      return respond(
-        response_format,
-        { ...detail },
+      return respondDocument(output, args, { ...detail }, () =>
         [
           renderRun(detail.run),
           "",

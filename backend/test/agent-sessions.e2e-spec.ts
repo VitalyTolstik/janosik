@@ -379,7 +379,7 @@ describe("Agent sessions and attribution (e2e)", () => {
     }
   }, 45_000);
 
-  it("applies an approved destructive MCP plan once and gives later writes fresh ids", async () => {
+  it("applies approved MCP writes once and returns run, sequence and large document results", async () => {
     const approvalBoard = await createBoard("MCP approvals");
     const pat = await createToken("mcp-approvals");
     await promisify(execFile)(

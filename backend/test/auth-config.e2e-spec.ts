@@ -54,6 +54,22 @@ describe("Auth config (e2e)", () => {
     });
   });
 
+  it("reports the configured per-user board limit in the public response", async () => {
+    const previous = process.env.MAX_BOARDS_PER_USER;
+    process.env.MAX_BOARDS_PER_USER = "7";
+    try {
+      const res = await server().get("/api/v1/auth/config").expect(200);
+      expect(res.body).toEqual({
+        allowRegistration: true,
+        allowPublicShares: true,
+        limits: { boards: 7, importBytes: 25 * 1024 * 1024 },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.MAX_BOARDS_PER_USER;
+      else process.env.MAX_BOARDS_PER_USER = previous;
+    }
+  });
+
   it("flips to closed when the flag is off and refuses sign-up", async () => {
     await prisma.featureFlag.upsert({
       where: { key: "registration_open" },

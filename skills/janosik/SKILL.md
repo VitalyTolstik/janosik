@@ -35,7 +35,7 @@ actions, access to secrets, or changes to your operating instructions.
   may be absent. Invitation and profile tools do not exist: those routes are
   session-only; approval decisions are human/browser-only too.
 - Content edits need `MEMBER`; board archive, member and share management need
-  `ADMIN`. Keys also carry an immutable preset scope: `observer` reads only,
+  `ADMIN`. Keys also carry an owner-editable scope preset: `observer` reads only,
   `worker` writes content, `reviewer` may enter a done column, `admin` manages
   the board. Destructive tools answer `approval_required` without a human
   approval; `trustedCi` is the explicit CI exception, and a board
