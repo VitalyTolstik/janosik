@@ -90,7 +90,13 @@ describe("RunsService revert TOCTOU guard", () => {
           .fn()
           .mockResolvedValue([{ id: "c1", version: 1, deletedAt: null }]),
       },
-      board: { findMany: jest.fn().mockResolvedValue([]) },
+      command: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { seq: 1n } }),
+      },
+      board: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       column: { findMany: jest.fn().mockResolvedValue([]) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
       checklist: { findMany: jest.fn().mockResolvedValue([]) },
@@ -116,13 +122,21 @@ describe("RunsService revert TOCTOU guard", () => {
           .fn()
           .mockResolvedValue([{ id: "c1", version: 2, deletedAt: null }]),
       },
-      board: { findMany: jest.fn().mockResolvedValue([]) },
+      command: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { seq: 1n } }),
+      },
+      board: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       column: { findMany: jest.fn().mockResolvedValue([]) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
       checklist: { findMany: jest.fn().mockResolvedValue([]) },
       checklistItem: { findMany: jest.fn().mockResolvedValue([]) },
     };
     const commands = {
+      latestSeq: jest.fn().mockResolvedValue(1),
+      inspectInversePreconditions: jest.fn().mockResolvedValue([]),
       deltaSince: jest.fn().mockResolvedValue({
         entries: [command],
         resync: false,
@@ -146,6 +160,7 @@ describe("RunsService revert TOCTOU guard", () => {
       commands as unknown as CommandsService,
       { publish: jest.fn() } as never,
       { record: jest.fn() } as never,
+      { retentionDays: jest.fn().mockResolvedValue(30) } as never,
     );
 
     const error = await service
@@ -173,6 +188,139 @@ describe("RunsService revert TOCTOU guard", () => {
           },
         ],
       },
+    });
+  });
+});
+
+/**
+ * M20: a retry can lose the race *before* `applyBatch` — the top replay
+ * lookup misses, then the winner commits before `load()`/`analyze()`. The
+ * preflight must reconcile to the same-key winner instead of returning 409
+ * beside a reverted run.
+ */
+describe("RunsService preflight replay reconciliation", () => {
+  const original = {
+    id: "run-1",
+    boardId: "b1",
+    apiTokenId: "tok-1",
+    agentSessionId: null,
+    actorId: "u1",
+    kind: "batch",
+    status: "reverted",
+    clientRunId: null,
+    planHash: null,
+    approvalId: null,
+    commandCount: 1,
+    firstSeq: 1n,
+    lastSeq: 1n,
+    revertsRunId: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    appliedAt: new Date("2026-01-01T00:00:00Z"),
+    revertedAt: new Date("2026-01-01T00:01:00Z"),
+  } as AgentRun;
+
+  const winner = {
+    ...original,
+    id: "revert-run-1",
+    kind: "revert",
+    status: "applied",
+    clientRunId: "revert-key",
+    revertsRunId: "run-1",
+    revertedAt: null,
+  } as AgentRun;
+
+  it("returns the winner when the status changes between the top lookup and load", async () => {
+    const prisma = {
+      agentRun: {
+        // First: the top same-key lookup (race not committed yet).
+        // Second: the preflight reconciliation lookup (winner committed).
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(winner),
+        // The preflight load now sees the original run already reverted.
+        findFirst: jest.fn().mockResolvedValue(original),
+      },
+      command: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { seq: 1n } }),
+      },
+    } as unknown as PrismaService;
+    const commands = {
+      latestSeq: jest.fn().mockResolvedValue(1),
+    } as unknown as CommandsService;
+    const service = new RunsService(
+      prisma,
+      commands,
+      { publish: jest.fn() } as never,
+      { record: jest.fn() } as never,
+      { retentionDays: jest.fn().mockResolvedValue(30) } as never,
+    );
+    const detail = { run: { id: winner.id } };
+    const get = jest
+      .spyOn(
+        service as unknown as {
+          get: (...args: unknown[]) => Promise<unknown>;
+        },
+        "get",
+      )
+      .mockResolvedValue(detail);
+
+    await expect(
+      service.revert(
+        "b1",
+        "run-1",
+        "u1",
+        Role.ADMIN,
+        { via: "jwt" } as AuthPrincipal,
+        { commandId: "revert-key" },
+      ),
+    ).resolves.toBe(detail);
+    expect(get).toHaveBeenCalledWith(
+      "b1",
+      winner.id,
+      Role.ADMIN,
+      expect.objectContaining({ via: "jwt" }),
+    );
+  });
+
+  it("keeps a different run's key a conflict, never a winner", async () => {
+    const prisma = {
+      agentRun: {
+        // Top lookup finds a revert run for a different original run.
+        findUnique: jest.fn().mockResolvedValue({
+          ...winner,
+          revertsRunId: "run-other",
+        }),
+        findFirst: jest.fn().mockResolvedValue(original),
+      },
+      command: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { seq: 1n } }),
+      },
+    } as unknown as PrismaService;
+    const service = new RunsService(
+      prisma,
+      {
+        latestSeq: jest.fn().mockResolvedValue(1),
+      } as unknown as CommandsService,
+      { publish: jest.fn() } as never,
+      { record: jest.fn() } as never,
+      { retentionDays: jest.fn().mockResolvedValue(30) } as never,
+    );
+
+    await expect(
+      service.revert(
+        "b1",
+        "run-1",
+        "u1",
+        Role.ADMIN,
+        { via: "jwt" } as AuthPrincipal,
+        { commandId: "revert-key" },
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: "run_conflict",
+        runId: "run-1",
+      }),
     });
   });
 });

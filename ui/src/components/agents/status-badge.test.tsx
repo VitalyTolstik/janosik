@@ -64,7 +64,7 @@ describe("one status badge primitive (TASK-179.9)", () => {
     expect(badge.className).toContain("h-[22px]");
   });
 
-  it.each(["applied", "reverted", "failed"] as const)(
+  it.each(["applied", "reverted"] as const)(
     "renders the run status %s",
     (status) => {
       withI18n(<RunStatusBadge status={status} testId="run" />);

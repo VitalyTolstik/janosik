@@ -85,33 +85,15 @@ try {
           ).match(/\d+/)?.[0];
           assert.ok(count, `${tag} run count`);
           await page.goto(
-            `${base}/agents?section=runs&board=${board}&status=failed&session=px-session-idle&lng=${lang}`,
+            `${base}/agents?section=runs&board=${board}&run=${seed.runs.plusTwo}&lng=${lang}`,
             { waitUntil: "domcontentloaded" },
           );
-          await page.waitForFunction(
-            (v) =>
-              (
-                document.querySelector('[data-testid="agents-section-runs"]')
-                  ?.textContent ?? ""
-              ).includes(v),
-            count,
+          await page.getByTestId("agent-run-rollback-card").waitFor();
+          const rollback = page.getByTestId("agent-run-rollback-card");
+          const background = await rollback.evaluate(
+            (el) => getComputedStyle(el).backgroundColor,
           );
-          await page.goto(
-            `${base}/agents?section=runs&board=${board}&run=${seed.runs.failed}&lng=${lang}`,
-            { waitUntil: "domcontentloaded" },
-          );
-          await page.getByTestId("agent-run-failed-banner").waitFor();
-          assert.equal(
-            await page.getByTestId("agent-run-preimages").count(),
-            0,
-          );
-          assert.equal(await page.getByTestId("agent-run-preimage").count(), 0);
-          assert.equal(
-            (await page
-              .getByText(lang === "ru" ? "Не применено" : "Not applied")
-              .count()) > 0,
-            true,
-          );
+          assert.equal(background, "rgba(0, 0, 0, 0)");
           const openBox = await page
             .getByTestId("agent-run-footer-open-board")
             .boundingBox();
@@ -122,17 +104,6 @@ try {
             openBox && copyBox && Math.abs(openBox.width - copyBox.width) < 0.2,
             `${tag} footer widths`,
           );
-          await page.screenshot({ path: `${out}/round4-failed-${tag}.png` });
-          await page.goto(
-            `${base}/agents?section=runs&board=${board}&run=${seed.runs.plusTwo}&lng=${lang}`,
-            { waitUntil: "domcontentloaded" },
-          );
-          await page.getByTestId("agent-run-rollback-card").waitFor();
-          const rollback = page.getByTestId("agent-run-rollback-card");
-          const background = await rollback.evaluate(
-            (el) => getComputedStyle(el).backgroundColor,
-          );
-          assert.equal(background, "rgba(0, 0, 0, 0)");
           if (width !== 390)
             assert.equal(
               Math.round(
@@ -235,7 +206,7 @@ try {
             boardRunCount: Number(count),
             checks: [
               "unfiltered badge",
-              "failed run",
+              "board run count",
               "equal footer widths",
               "rollback styling",
               "missing board",

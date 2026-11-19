@@ -850,7 +850,7 @@ describe("AgentsPage", () => {
   it("counts all runs in the board scope independently of status and session filters", async () => {
     const all = [
       run(),
-      run({ id: "run-2", status: "failed", agentSessionId: "other" }),
+      run({ id: "run-2", status: "reverted", agentSessionId: "other" }),
     ];
     hoisted.listRuns.mockImplementation(
       (_board: string, query: { status?: string; agentSessionId?: string }) =>
@@ -864,7 +864,7 @@ describe("AgentsPage", () => {
         ),
     );
     renderPage(
-      "/agents?section=runs&board=board-1&status=failed&session=other",
+      "/agents?section=runs&board=board-1&status=reverted&session=other",
     );
     await waitFor(() =>
       expect(screen.getByTestId("agents-section-runs")).toHaveTextContent("2"),
@@ -872,25 +872,12 @@ describe("AgentsPage", () => {
     await waitFor(() =>
       expect(hoisted.listRuns).toHaveBeenCalledWith(
         "board-1",
-        expect.objectContaining({ status: "failed", agentSessionId: "other" }),
+        expect.objectContaining({
+          status: "reverted",
+          agentSessionId: "other",
+        }),
       ),
     );
-  });
-
-  it("never shows applied diffs or preimages for a failed run", async () => {
-    const failed = run({ status: "failed" });
-    hoisted.listRuns.mockResolvedValue([failed]);
-    hoisted.getRun.mockResolvedValue(runDetail({ status: "failed" }));
-    renderPage("/agents?section=runs&board=board-1&run=run-1");
-    expect(await screen.findByTestId("agent-run-failed-banner")).toBeVisible();
-    expect(
-      within(screen.getByTestId("agent-run-commands")).getAllByText(
-        "Not applied",
-      ).length,
-    ).toBeGreaterThan(0);
-    expect(screen.queryByTestId("agent-run-preimage")).toBeNull();
-    expect(screen.queryByTestId("agent-run-preimages")).toBeNull();
-    expect(screen.queryByText("After")).toBeNull();
   });
 
   it("shows an approvals skeleton while the overview is pending", async () => {

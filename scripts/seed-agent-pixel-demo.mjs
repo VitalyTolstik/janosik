@@ -10,7 +10,7 @@
  *   consumed history;
  * - applied runs created through the real command transport, so every run has
  *   genuine Command + CommandPreimage rows and rollback preview works;
- * - a conflict run, a reverted run, a failed run and a retention-expired run
+ * - a conflict run, a reverted run and a retention-expired run
  *   (commands kept, preimages removed) for the honest rollback states.
  *
  * Prerequisites:
@@ -605,11 +605,6 @@ async function main() {
       }),
     ],
   });
-  await prisma.agentRun.update({
-    where: { id: run118 },
-    data: { status: "failed" },
-  });
-
   // Sixth Agent Ops run: the board list still starts at five rows, so the
   // reviewer can exercise Load more and the next server cursor.
   const run108 = await applyRun({
@@ -1130,7 +1125,7 @@ async function main() {
           apiReference: run126,
           reverted: run124,
           conflict: run121,
-          failed: run118,
+          batch: run118,
           sixth: run108,
           movedThree: run115,
           notes: run112,

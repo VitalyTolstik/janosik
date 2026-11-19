@@ -202,6 +202,24 @@ async function writeCardPositions(
       WHERE c."id" = v.id
     `;
   }
+  // H4: card membership/order is part of a column's value. Bump its version
+  // even though the aggregate has no column `updatedAt` and the rewrite above
+  // deliberately keeps `Card.updatedAt` untouched. Without this a run that
+  // created the column would see its pre-image `postVersion` unchanged after
+  // a human added/moved a card later, and its `DELETE_COLUMN` inverse would
+  // delete that card with a clean preview.
+  await bumpColumnVersion(tx, columnId);
+}
+
+/**
+ * Change a column's row version without touching its `updatedAt` (bookkeeping
+ * order/membership changes are not column edits). Kept raw for the same
+ * reason as the position writer.
+ */
+async function bumpColumnVersion(tx: Tx, columnId: string): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE "Column" SET "version" = "version" + 1 WHERE "id" = ${columnId}
+  `;
 }
 
 /**
@@ -802,6 +820,9 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const now = new Date(ctx.at);
       const card = cardOf(before, action.cardId);
       if (!card) return [boardTouch];
+      const sourceColumn = before.columns.find((column) =>
+        column.cardIds.includes(card.id),
+      );
       const checklists = await tx.checklist.findMany({
         where: { cardId: card.id, deletedAt: null },
         select: { id: true },
@@ -830,9 +851,16 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           version: { increment: 1 },
         },
       });
+      if (sourceColumn !== undefined) {
+        await bumpColumnVersion(tx, sourceColumn.id);
+      }
       return [
         boardTouch,
         touch.card(card.id),
+        // The bump above is a real write: it must be visible in `touches`,
+        // `versions` and the run pre-image, or a later command in the same
+        // run would compare its pre-image against a stale column version.
+        ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -869,6 +897,9 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           },
         });
         archived.push(id);
+      }
+      if (archived.length > 0) {
+        await bumpColumnVersion(tx, action.columnId);
       }
       return [
         boardTouch,
@@ -1407,7 +1438,11 @@ async function writeCardAction(
           cardIdsOf(after, sourceColumn.id),
         );
       }
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+      ];
     }
 
     case "UNARCHIVE_CARD": {

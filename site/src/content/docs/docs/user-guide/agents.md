@@ -37,7 +37,9 @@ The left rail has three sections:
   status.
 - **Runs** — the run history for the selected scope, newest first, with
   status/kind/time/token/session filters, total/load more, a detail pane and a
-  conditional rollback path.
+  conditional rollback path. A run is only `applied` or `reverted`; a failed
+  batch or plan rolls back and creates no run, so there is no `failed` filter.
+  New runs appear on an open board Runs tab without a reload.
 
 The top bar has a board-scope combobox (`All boards` or one board), the
 section count, search, `Updated Ns ago` plus Refresh, and **Manage tokens**
@@ -200,7 +202,7 @@ Examples:
 /agents?section=sessions&board=b1&token=t1
 /agents?section=attention&board=b1&approval=a1
 /agents?section=runs&board=b1&run=r1
-/agents?section=runs&board=b1&status=failed&time=24h&agent=t1
+/agents?section=runs&board=b1&status=reverted&time=24h&agent=t1
 ```
 
 Run copy-link always includes `board`; the copied URL survives reload and

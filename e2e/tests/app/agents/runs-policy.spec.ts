@@ -159,6 +159,45 @@ test("run history previews and reverts a PAT batch from the UI", async ({
   );
 });
 
+test("an open board runs list shows a PAT run from another session without reload", async ({
+  board,
+  page,
+  playwright,
+  testIp,
+}) => {
+  const todo = await board.column("Todo");
+  await board.open(page);
+  await openAgentControl(page);
+  await page.getByTestId("agent-runs-tab").click();
+  await expect(page.getByTestId("agent-runs-panel")).toBeVisible();
+
+  // A different API session creates the run after the board Runs tab is
+  // already open. `run.created` must prepend the row through SSE only.
+  const agent = await createAgentToken(board, playwright, testIp);
+  const created = await agent.pat.post(
+    `/api/v1/boards/${board.id}/commands/batch`,
+    {
+      data: {
+        commands: [
+          addCardCommand(board.id, todo, "Realtime run one"),
+          addCardCommand(board.id, todo, "Realtime run two"),
+        ],
+      },
+    },
+  );
+  expect(created.status(), await created.text()).toBe(200);
+  const run = (await created.json()) as { runId: string };
+
+  await expect(page.getByTestId(`agent-run-row-${run.runId}`)).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("agent-run-detail")).toBeVisible();
+  await expect(page.getByTestId("agent-run-status")).toHaveAttribute(
+    "data-status",
+    "applied",
+  );
+});
+
 test("a run deep link includes the board and survives reload and history back", async ({
   board,
   page,

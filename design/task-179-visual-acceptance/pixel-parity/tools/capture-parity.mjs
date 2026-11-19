@@ -384,7 +384,6 @@ async function captureExtraStates() {
   const details = [
     ["conflict", runIds.conflict, "px-board-agent-ops"],
     ["expired", runIds.expired, "px-board-website"],
-    ["failed", runIds.failed, "px-board-agent-ops"],
     ["reverted", runIds.reverted, "px-board-agent-ops"],
   ];
   for (const [name, runId, boardId] of details) {

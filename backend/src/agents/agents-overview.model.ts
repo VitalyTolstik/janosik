@@ -196,7 +196,6 @@ const RUN_STATUS_FILTERS = new Set<AgentsOverviewRunStatus>([
   "all",
   "applied",
   "reverted",
-  "failed",
 ]);
 
 export function parseApprovalStatusFilter(

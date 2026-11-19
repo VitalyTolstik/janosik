@@ -41,6 +41,7 @@ describe("Agent runs and rollback (e2e)", () => {
   let ownerId: string;
   let boardId: string;
   let workerToken: string;
+  let readOnlyToken: string;
   let trustedToken: string;
   let trustedTokenId: string;
   let baseUrl: string;
@@ -74,6 +75,19 @@ describe("Agent runs and rollback (e2e)", () => {
 
     workerToken = (await createToken("worker-agent", ownerSession, "worker"))
       .token;
+    readOnlyToken = (
+      await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(ownerSession))
+        .send({
+          name: "read-only-agent",
+          expiresAt: null,
+          scopePreset: "observer",
+          readOnly: true,
+        })
+        .expect(201)
+        .then((res) => res.body as CreateUserTokenResponse)
+    ).token;
     const trusted = await createToken(
       "trusted-agent",
       ownerSession,
@@ -232,6 +246,14 @@ describe("Agent runs and rollback (e2e)", () => {
     return cardId;
   }
 
+  /**
+   * Retire a test column so the board stays below `LIMITS.columnsPerBoard`
+   * for the next scenario. The aggregate only counts active columns.
+   */
+  async function retireColumn(columnId: string): Promise<void> {
+    await command("DELETE_COLUMN", { columnId }).expect(200);
+  }
+
   function runs() {
     return server()
       .get(`/api/v1/boards/${boardId}/runs`)
@@ -359,6 +381,175 @@ describe("Agent runs and rollback (e2e)", () => {
       { token: workerToken, clientRunId },
     ).expect(409);
     expect(conflict.body.code).toBe("run_conflict");
+  });
+
+  it("does not store a destructive inverse for a no-op command (C1)", async () => {
+    const columnId = await createColumn("No-op base");
+    const cardId = await createCard(columnId, "No-op card");
+    const labelId = randomUUID();
+    const checklistId = randomUUID();
+    const itemId = randomUUID();
+    await command("ADD_LABEL", {
+      label: { id: labelId, name: "Noop", color: "blue" },
+    }).expect(200);
+    await command("SET_CARD_LABEL", {
+      cardId,
+      labelId,
+      on: true,
+    }).expect(200);
+    await command("ADD_CHECKLIST", {
+      cardId,
+      newChecklistId: checklistId,
+      title: "Steps",
+    }).expect(200);
+    await command("ADD_CHECKLIST_ITEM", {
+      cardId,
+      checklistId,
+      newItemId: itemId,
+      text: "One",
+    }).expect(200);
+
+    const noops: Array<Record<string, unknown>> = [
+      { type: "ADD_COLUMN", newColumnId: columnId, title: "No-op base" },
+      {
+        type: "ADD_LABEL",
+        label: { id: labelId, name: "Noop", color: "blue" },
+      },
+      { type: "DUPLICATE_CARD", cardId, newCardId: cardId },
+      {
+        type: "DUPLICATE_COLUMN",
+        columnId,
+        newColumnId: columnId,
+        newCardIds: [cardId],
+      },
+      { type: "SET_CARD_LABEL", cardId, labelId, on: true },
+      {
+        type: "ADD_CHECKLIST",
+        cardId,
+        newChecklistId: checklistId,
+        title: "Steps",
+      },
+      {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId,
+        checklistId,
+        newItemId: itemId,
+        text: "One",
+      },
+    ];
+
+    for (const noop of noops) {
+      const noopCommandId = randomUUID();
+      const created = await batch(
+        [
+          { commandId: noopCommandId, action: noop },
+          {
+            action: {
+              type: "SET_CARD_PRIORITY",
+              cardId,
+              priority: "high",
+            },
+          },
+        ],
+        { token: workerToken },
+      ).expect(200);
+      const runId = (created.body as CommandBatchResponse).runId!;
+      const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+        where: { commandId: noopCommandId },
+      });
+      const data = preimage.data as {
+        entities: unknown[];
+        inverse?: { type: string } | null;
+      };
+      expect({
+        type: noop.type,
+        entities: data.entities,
+        inverse: data.inverse,
+      }).toEqual({ type: noop.type, entities: [], inverse: null });
+
+      const previewBody = (await preview(runId).expect(200))
+        .body as RevertPreviewDto;
+      expect(previewBody.canRevert).toBe(true);
+      await revert(runId).expect(200);
+
+      const after = await aggregate();
+      expect(after.columns.some((column) => column.id === columnId)).toBe(true);
+      expect(after.cards[cardId]).toMatchObject({
+        title: "No-op card",
+        labelIds: [labelId],
+      });
+      expect(after.cards[cardId]?.checklists?.[0]?.items[0]?.text).toBe("One");
+      expect(after.labels.some((label) => label.id === labelId)).toBe(true);
+    }
+    await retireColumn(columnId);
+  });
+
+  it("keeps a no-op-only run non-revertable instead of deleting a pre-existing entity", async () => {
+    const columnId = await createColumn("No-op only");
+    const cardId = await createCard(columnId, "Survivor");
+    const labelId = randomUUID();
+    await command("ADD_LABEL", {
+      label: { id: labelId, name: "Keep", color: "green" },
+    }).expect(200);
+
+    const created = await batch(
+      [
+        {
+          action: {
+            type: "ADD_COLUMN",
+            newColumnId: columnId,
+            title: "Duplicate",
+          },
+        },
+        {
+          action: {
+            type: "ADD_LABEL",
+            label: { id: labelId, name: "Keep", color: "green" },
+          },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+
+    // C1 legacy row: an old no-op pre-image may still carry a destructive
+    // inverse. The analyzer must ignore it even when the command row predates
+    // the writer fix.
+    const stored = await prisma.commandPreimage.findFirstOrThrow({
+      where: { runId },
+      select: { commandId: true, data: true },
+    });
+    await prisma.commandPreimage.update({
+      where: { commandId: stored.commandId },
+      data: {
+        data: {
+          ...(stored.data as Record<string, unknown>),
+          inverse: {
+            type: "DELETE_COLUMN",
+            boardId,
+            at: Date.now(),
+            columnId,
+          },
+        },
+      },
+    });
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual([]);
+
+    const refused = await revert(runId).expect(409);
+    expect(refused.body).toMatchObject({ code: "run_conflict", runId });
+    const after = await aggregate();
+    expect(after.columns.some((column) => column.id === columnId)).toBe(true);
+    expect(after.cards[cardId]?.title).toBe("Survivor");
+    expect(after.labels.some((label) => label.id === labelId)).toBe(true);
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+    await retireColumn(columnId);
   });
 
   it("does not create a run for a browser batch or an ordinary single PAT command", async () => {
@@ -517,6 +708,283 @@ describe("Agent runs and rollback (e2e)", () => {
     expect(member.body.code).toBe("scope_denied");
   });
 
+  it("treats concurrent identical revert retries as one committed rollback (M20)", async () => {
+    const columnId = await createColumn("Concurrent revert");
+    const cardId = await createCard(columnId, "Concurrent card");
+    const deleted = await command(
+      "DELETE_CARD",
+      { cardId },
+      { token: trustedToken },
+    ).expect(200);
+    const runId = (deleted.body as CommandResponse).runId!;
+    const key = randomUUID();
+
+    // Hold the board advisory lock both reverts need. Both requests finish
+    // their preflight (top replay lookup, status check, analyze) while the
+    // run is still `applied`, then queue on the lock; the loser must
+    // reconcile with the winner from the post-lock path.
+    let acquired!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    let release!: () => void;
+    const lockReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+      acquired();
+      await lockReleased;
+    });
+    await lockAcquired;
+    const pending = Promise.all([revert(runId, key), revert(runId, key)]);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      release();
+    }
+    await holder;
+    const [first, second] = await pending;
+    expect([first.status, second.status]).toEqual([200, 200]);
+    const firstId = (first.body as RunDetailDto).run.id;
+    expect((second.body as RunDetailDto).run.id).toBe(firstId);
+    expect(
+      await prisma.agentRun.count({
+        where: { boardId, kind: "revert", revertsRunId: runId },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.activity.count({
+        where: { boardId, type: "run_reverted", runId: firstId },
+      }),
+    ).toBe(1);
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("reverted");
+    expect((await aggregate()).cards[cardId]?.title).toBe("Concurrent card");
+    await retireColumn(columnId);
+  });
+
+  it("never reuses a clientRunId for a different run (M20)", async () => {
+    // Separate columns: H4 correctly treats another card leaving the same
+    // column as a later column change, which is not what this test measures.
+    const firstColumn = await createColumn("Revert keys first");
+    const secondColumn = await createColumn("Revert keys second");
+    const firstCard = await createCard(firstColumn, "First");
+    const secondCard = await createCard(secondColumn, "Second");
+    const firstRun = (
+      await command(
+        "DELETE_CARD",
+        { cardId: firstCard },
+        { token: trustedToken },
+      ).expect(200)
+    ).body as CommandResponse;
+    const secondRun = (
+      await command(
+        "DELETE_CARD",
+        { cardId: secondCard },
+        { token: trustedToken },
+      ).expect(200)
+    ).body as CommandResponse;
+    const key = randomUUID();
+
+    await revert(firstRun.runId!, key).expect(200);
+    const conflict = await revert(secondRun.runId!, key).expect(409);
+    expect(conflict.body).toMatchObject({
+      code: "run_conflict",
+      runId: secondRun.runId,
+      currentVersion: expect.any(Number),
+    });
+    expect(
+      (
+        await prisma.agentRun.findUniqueOrThrow({
+          where: { id: secondRun.runId! },
+        })
+      ).status,
+    ).toBe("applied");
+    expect((await aggregate()).cards[secondCard]).toBeUndefined();
+    await retireColumn(firstColumn);
+    await retireColumn(secondColumn);
+  });
+
+  it("previews the WIP refusal before applying an unarchive (M22)", async () => {
+    const columnId = await createColumn("WIP preview");
+    await command("SET_COLUMN_WIP_LIMIT", { columnId, wipLimit: 1 }).expect(
+      200,
+    );
+    const cardId = await createCard(columnId, "Archived");
+    const created = await batch(
+      [
+        { action: { type: "ARCHIVE_CARD", cardId } },
+        {
+          action: {
+            type: "SET_COLUMN_ACCENT",
+            columnId,
+            accent: { type: "color", value: "blue" },
+          },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    await createCard(columnId, "Filled the WIP slot");
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ reason: "wip" })]),
+    );
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_conflict");
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+    await retireColumn(columnId);
+  });
+
+  it("previews a removed assignee before applying SET_CARD_ASSIGN (M22)", async () => {
+    const columnId = await createColumn("Assignee preview");
+    const cardId = await createCard(columnId, "Assigned");
+    const assignee = await register("runs-assignee@example.com", "Assignee");
+    await invite("runs-assignee@example.com", "MEMBER");
+    await server()
+      .get("/api/v1/invitations")
+      .set(auth(assignee.accessToken))
+      .expect(200)
+      .then(async (res) => {
+        const invitation = (
+          res.body as Array<{ id: string; boardId: string }>
+        ).find((row) => row.boardId === boardId)!.id;
+        await server()
+          .post(`/api/v1/invitations/${invitation}/accept`)
+          .set(auth(assignee.accessToken))
+          .expect(200);
+      });
+    // The run *unassigns* the member; its inverse must re-assign, which is
+    // the apply-time membership check M22 is about.
+    await command("SET_CARD_ASSIGN", {
+      cardId,
+      assigneeId: assignee.id,
+    }).expect(200);
+    const created = await batch(
+      [
+        {
+          action: {
+            type: "SET_CARD_ASSIGN",
+            cardId,
+            assigneeId: null,
+          },
+        },
+        {
+          action: { type: "SET_CARD_PRIORITY", cardId, priority: "low" },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    await prisma.boardMember.delete({
+      where: { boardId_userId: { boardId, userId: assignee.id } },
+    });
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          touch: `card:${cardId}`,
+          reason: "assignee_not_member",
+        }),
+      ]),
+    );
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_conflict");
+    await retireColumn(columnId);
+  });
+
+  it("previews an oversized inverse before applying it (M22)", async () => {
+    const columnId = await createColumn("Oversized inverse");
+    await prisma.card.createMany({
+      data: Array.from({ length: 40 }, (_, index) => ({
+        id: `oversized-${index}`,
+        columnId,
+        title: `Oversized ${index}`,
+        description: "x".repeat(65_536),
+        position: index,
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+      })),
+    });
+    const deleted = await command(
+      "DELETE_COLUMN",
+      { columnId },
+      { token: trustedToken },
+    ).expect(200);
+    const runId = (deleted.body as CommandResponse).runId!;
+
+    const previewBody = (
+      await server()
+        .post(`/api/v1/boards/${boardId}/runs/${runId}/revert/preview`)
+        .set(auth(readOnlyToken))
+        .send({})
+        .expect(200)
+    ).body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "payload_too_large" }),
+      ]),
+    );
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_conflict");
+    expect(
+      (await aggregate()).columns.some((column) => column.id === columnId),
+    ).toBe(false);
+  });
+
+  it("returns a validation error for a missing commandId and keeps the generic dry run PAT-safe (L21)", async () => {
+    const columnId = await createColumn("L21");
+    const cardId = await createCard(columnId, "L21 card");
+    const deleted = await command(
+      "DELETE_CARD",
+      { cardId },
+      { token: trustedToken },
+    ).expect(200);
+    const runId = (deleted.body as CommandResponse).runId!;
+
+    const missing = await server()
+      .post(`/api/v1/boards/${boardId}/runs/${runId}/revert`)
+      .set(auth(ownerSession))
+      .send({})
+      .expect(400);
+    expect(missing.body).toMatchObject({
+      code: "validation_failed",
+      field: "commandId",
+    });
+
+    const dry = await server()
+      .post(`/api/v1/boards/${boardId}/runs/${runId}/revert`)
+      .set(auth(readOnlyToken))
+      .send({ dryRun: true })
+      .expect(200);
+    expect(dry.body).toMatchObject({
+      dryRun: true,
+      canRevert: true,
+    });
+    expect(dry.body.commandId).toBeUndefined();
+
+    const real = await server()
+      .post(`/api/v1/boards/${boardId}/runs/${runId}/revert`)
+      .set(auth(readOnlyToken))
+      .send({ commandId: randomUUID() })
+      .expect(403);
+    expect(real.body.code).toBe("pat_forbidden");
+    await retireColumn(columnId);
+  });
+
   it("blocks a revert on a later edit and applies nothing", async () => {
     const columnId = await createColumn("Conflict");
     const cardId = randomUUID();
@@ -555,7 +1023,11 @@ describe("Agent runs and rollback (e2e)", () => {
       ]),
     );
     const refused = await revert(runId).expect(409);
-    expect(refused.body.code).toBe("run_conflict");
+    expect(refused.body).toMatchObject({
+      code: "run_conflict",
+      runId,
+      currentVersion: expect.any(Number),
+    });
     expect(refused.body.details.conflicts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ touch: `card:${cardId}` }),
@@ -563,6 +1035,345 @@ describe("Agent runs and rollback (e2e)", () => {
     );
     // Nothing applied, and the run is still available for future inspection.
     expect((await aggregate()).cards[cardId]?.title).toBe("Human title");
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+  });
+
+  it("conflicts when a human adds a card to a column the run created (H4)", async () => {
+    const columnId = randomUUID();
+    const created = await batch(
+      [
+        {
+          action: {
+            type: "ADD_COLUMN",
+            newColumnId: columnId,
+            title: "Run column",
+          },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    const humanCardId = await createCard(columnId, "Human after run");
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ touch: `column:${columnId}` }),
+      ]),
+    );
+
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_conflict");
+    const after = await aggregate();
+    expect(after.columns.some((column) => column.id === columnId)).toBe(true);
+    expect(after.cards[humanCardId]?.title).toBe("Human after run");
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+    await retireColumn(columnId);
+  });
+
+  it("does not self-conflict when a run adds/archives/moves and deletes in one column (H4)", async () => {
+    // ADD_CARD → DELETE_CARD: the delete bumps the column after the add; the
+    // run's own pre-image must record that bump, not compare against ADD's.
+    const addDeleteColumn = await createColumn("Self add delete");
+    const addDeleteCard = randomUUID();
+    const addDelete = await batch(
+      [
+        {
+          action: {
+            type: "ADD_CARD",
+            newCardId: addDeleteCard,
+            columnId: addDeleteColumn,
+            title: "Transient add delete",
+          },
+        },
+        { action: { type: "DELETE_CARD", cardId: addDeleteCard } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const addDeleteRun = (addDelete.body as CommandBatchResponse).runId!;
+    // The invisible bump must be visible: the delete's response carries the
+    // new column version for `ifMatchVersions` and the SSE `touches` list.
+    expect(
+      (addDelete.body as CommandBatchResponse).results[1]!.versions,
+    ).toEqual(
+      expect.objectContaining({
+        [`column:${addDeleteColumn}`]: expect.any(Number),
+      }),
+    );
+    expect(
+      (
+        await prisma.command.findFirstOrThrow({
+          where: { runId: addDeleteRun, type: "DELETE_CARD" },
+          select: { touches: true },
+        })
+      ).touches,
+    ).toContain(`column:${addDeleteColumn}`);
+    const addDeletePreview = (await preview(addDeleteRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(addDeletePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(addDeleteRun).expect(200);
+    expect(
+      (await aggregate()).columns.some(
+        (column) => column.id === addDeleteColumn,
+      ),
+    ).toBe(true);
+    await retireColumn(addDeleteColumn);
+
+    // ADD_CARD → ARCHIVE_CARD: archive also rewrites the source column.
+    const archiveColumn = await createColumn("Self add archive");
+    const archiveCard = randomUUID();
+    const archived = await batch(
+      [
+        {
+          action: {
+            type: "ADD_CARD",
+            newCardId: archiveCard,
+            columnId: archiveColumn,
+            title: "Transient archive",
+          },
+        },
+        { action: { type: "ARCHIVE_CARD", cardId: archiveCard } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const archiveRun = (archived.body as CommandBatchResponse).runId!;
+    expect(
+      (archived.body as CommandBatchResponse).results[1]!.versions,
+    ).toEqual(
+      expect.objectContaining({
+        [`column:${archiveColumn}`]: expect.any(Number),
+      }),
+    );
+    const archivePreview = (await preview(archiveRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(archivePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(archiveRun).expect(200);
+    expect(
+      (await aggregate()).columns.some((column) => column.id === archiveColumn),
+    ).toBe(true);
+    await retireColumn(archiveColumn);
+
+    // MOVE_CARD → DELETE_CARD: the move and the delete both bump the source
+    // and destination columns.
+    const moveFrom = await createColumn("Self move from");
+    const moveTo = await createColumn("Self move to");
+    const movedCard = await createCard(moveFrom, "Move then delete");
+    const moved = await batch(
+      [
+        {
+          action: {
+            type: "MOVE_CARD",
+            cardId: movedCard,
+            fromColumnId: moveFrom,
+            fromIndex: 0,
+            toColumnId: moveTo,
+            toIndex: 0,
+          },
+        },
+        { action: { type: "DELETE_CARD", cardId: movedCard } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const movedRun = (moved.body as CommandBatchResponse).runId!;
+    const movedPreview = (await preview(movedRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(movedPreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(movedRun).expect(200);
+    const restored = await aggregate();
+    const fromColumn = restored.columns.find(
+      (column) => column.id === moveFrom,
+    );
+    const toColumn = restored.columns.find((column) => column.id === moveTo);
+    expect(fromColumn?.cardIds).toContain(movedCard);
+    expect(toColumn?.cardIds).not.toContain(movedCard);
+    await retireColumn(moveFrom);
+    await retireColumn(moveTo);
+  });
+
+  it("records the DUPLICATE_CARD destination column in its preimage (H4)", async () => {
+    const columnId = await createColumn("Duplicate destination");
+    const sourceId = await createCard(columnId, "Duplicate source");
+    const copyId = randomUUID();
+    const duplicateCommandId = randomUUID();
+    const created = await batch(
+      [
+        {
+          commandId: duplicateCommandId,
+          action: {
+            type: "DUPLICATE_CARD",
+            cardId: sourceId,
+            newCardId: copyId,
+            title: "Duplicate copy",
+          },
+        },
+        {
+          action: {
+            type: "UPDATE_CARD",
+            cardId: copyId,
+            description: "copy body",
+          },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    expect((created.body as CommandBatchResponse).results[0]!.versions).toEqual(
+      expect.objectContaining({
+        [`column:${columnId}`]: expect.any(Number),
+      }),
+    );
+    const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+      where: { commandId: duplicateCommandId },
+    });
+    const data = preimage.data as {
+      entities: Array<{
+        touch: string;
+        exists: boolean;
+        snapshot: { title?: string } | null;
+      }>;
+    };
+    expect(
+      data.entities.find((entity) => entity.touch === `column:${columnId}`),
+    ).toMatchObject({
+      exists: true,
+      snapshot: { title: "Duplicate destination" },
+    });
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(runId).expect(200);
+    const after = await aggregate();
+    expect(after.cards[sourceId]?.title).toBe("Duplicate source");
+    expect(after.cards[copyId]).toBeUndefined();
+    await retireColumn(columnId);
+  });
+
+  it("reverts a run that deleted its own source column (H5)", async () => {
+    // Archive X, then delete C in the same run. The inverse sequence restores
+    // C before unarchiving X, so it must not look like a human deletion.
+    const archiveColumn = await createColumn("Run deletes archive source");
+    const archiveCard = await createCard(archiveColumn, "Archive with column");
+    const archived = await batch(
+      [
+        { action: { type: "ARCHIVE_CARD", cardId: archiveCard } },
+        { action: { type: "DELETE_COLUMN", columnId: archiveColumn } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const archiveRun = (archived.body as CommandBatchResponse).runId!;
+    const archivePreview = (await preview(archiveRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(archivePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(archiveRun).expect(200);
+    const afterArchive = await aggregate();
+    expect(afterArchive.columns.some((c) => c.id === archiveColumn)).toBe(true);
+    expect(
+      afterArchive.columns
+        .find((c) => c.id === archiveColumn)
+        ?.cardIds.includes(archiveCard),
+    ).toBe(true);
+    await retireColumn(archiveColumn);
+
+    // Delete X, then delete C. The column restore comes before the card
+    // restore in the inverse sequence.
+    const deleteColumn = await createColumn("Run deletes card source");
+    const deleteCard = await createCard(deleteColumn, "Delete with column");
+    const deleted = await batch(
+      [
+        { action: { type: "DELETE_CARD", cardId: deleteCard } },
+        { action: { type: "DELETE_COLUMN", columnId: deleteColumn } },
+      ],
+      { token: trustedToken },
+    ).expect(200);
+    const deleteRun = (deleted.body as CommandBatchResponse).runId!;
+    const deletePreview = (await preview(deleteRun).expect(200))
+      .body as RevertPreviewDto;
+    expect(deletePreview).toMatchObject({ canRevert: true, conflicts: [] });
+    await revert(deleteRun).expect(200);
+    const afterDelete = await aggregate();
+    expect(afterDelete.columns.some((c) => c.id === deleteColumn)).toBe(true);
+    expect(
+      afterDelete.columns
+        .find((c) => c.id === deleteColumn)
+        ?.cardIds.includes(deleteCard),
+    ).toBe(true);
+    await retireColumn(deleteColumn);
+  });
+
+  it("blocks deleting a card from a column a human removed (H5)", async () => {
+    const columnId = await createColumn("Source delete");
+    const cardId = await createCard(columnId, "Deleted by run");
+    const deleted = await command(
+      "DELETE_CARD",
+      { cardId },
+      { token: trustedToken },
+    ).expect(200);
+    const runId = (deleted.body as CommandResponse).runId!;
+    await command("DELETE_COLUMN", { columnId }).expect(200);
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ touch: `column:${columnId}` }),
+      ]),
+    );
+    // H4 version check and H5 source-column deletion both point at the same
+    // column. The UI keys rows by `touch`, so the API must emit it once.
+    const touches = previewBody.conflicts.map((conflict) => conflict.touch);
+    expect(new Set(touches).size).toBe(touches.length);
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_conflict");
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+    expect(
+      await prisma.agentRun.count({
+        where: { boardId, kind: "revert", revertsRunId: runId },
+      }),
+    ).toBe(0);
+  });
+
+  it("blocks unarchiving into a column a human removed (H5)", async () => {
+    const columnId = await createColumn("Source archive");
+    const cardId = await createCard(columnId, "Archived by run");
+    const created = await batch(
+      [
+        { action: { type: "ARCHIVE_CARD", cardId } },
+        {
+          action: {
+            type: "SET_COLUMN_ACCENT",
+            columnId,
+            accent: { type: "color", value: "green" },
+          },
+        },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    await command("DELETE_COLUMN", { columnId }).expect(200);
+
+    const previewBody = (await preview(runId).expect(200))
+      .body as RevertPreviewDto;
+    expect(previewBody.canRevert).toBe(false);
+    expect(previewBody.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ touch: `column:${columnId}` }),
+      ]),
+    );
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_conflict");
     expect(
       (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
         .status,
@@ -715,8 +1526,15 @@ describe("Agent runs and rollback (e2e)", () => {
         (row) => row.apiTokenId === trustedTokenId,
       ),
     ).toBe(true);
-    const none = await runs().query({ status: "failed" }).expect(200);
-    expect(none.body).toEqual([]);
+    const revertedOnly = await runs().query({ status: "reverted" }).expect(200);
+    expect(
+      (revertedOnly.body as AgentRunDto[]).every(
+        (row) => row.status === "reverted",
+      ),
+    ).toBe(true);
+    // L37: `failed` had no writer and is no longer a run status.
+    const invalid = await runs().query({ status: "failed" }).expect(400);
+    expect(invalid.body.code).toBe("validation_failed");
 
     const runId = page[0]!.id;
     const admin = await server()
@@ -754,7 +1572,11 @@ describe("Agent runs and rollback (e2e)", () => {
     const runId = (deleted.body as CommandResponse).runId!;
     await prisma.commandPreimage.deleteMany({ where: { runId } });
     const expired = await preview(runId).expect(409);
-    expect(expired.body.code).toBe("run_expired");
+    expect(expired.body).toMatchObject({
+      code: "run_expired",
+      runId,
+      retentionDays: expect.any(Number),
+    });
 
     // The ordinary browser undo path is untouched: delete a live card and
     // restore it from its aggregate snapshot.
@@ -777,6 +1599,120 @@ describe("Agent runs and rollback (e2e)", () => {
       })
       .expect(200);
     expect((await aggregate()).cards[liveCardId]?.title).toBe("Human undo");
+  });
+
+  it("refuses a partially retained run against its commandCount (H6)", async () => {
+    const columnId = await createColumn("Partial retention");
+    const cardId = await createCard(columnId, "Partial");
+    const created = await batch(
+      [
+        { action: { type: "UPDATE_CARD", cardId, title: "Run partial" } },
+        { action: { type: "SET_CARD_PRIORITY", cardId, priority: "high" } },
+      ],
+      { token: workerToken },
+    ).expect(200);
+    const runId = (created.body as CommandBatchResponse).runId!;
+    const rows = await prisma.command.findMany({
+      where: { runId },
+      orderBy: { seq: "asc" },
+      select: { id: true },
+    });
+    expect(rows).toHaveLength(2);
+    // Simulate retention/demo cleanup dropping one member: the pre-image for
+    // it may still exist, but the run is no longer the set it applied.
+    await prisma.command.delete({ where: { id: rows[0]!.id } });
+
+    const expired = await preview(runId).expect(409);
+    expect(expired.body).toMatchObject({
+      code: "run_expired",
+      runId,
+      retentionDays: expect.any(Number),
+    });
+    const refused = await revert(runId).expect(409);
+    expect(refused.body.code).toBe("run_expired");
+    expect((await aggregate()).cards[cardId]?.title).toBe("Run partial");
+    expect(
+      (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } }))
+        .status,
+    ).toBe("applied");
+    // This scenario intentionally broke the run's command set. Remove the
+    // synthetic partial run so the suite's final attribution invariant only
+    // checks runs that claim a complete log; retention would remove it too.
+    await prisma.command.deleteMany({ where: { runId } });
+    await prisma.commandPreimage.deleteMany({ where: { runId } });
+    await prisma.agentRun.delete({ where: { id: runId } });
+    await retireColumn(columnId);
+  });
+
+  it("publishes run.created when a fresh run commits (L38)", async () => {
+    const columnId = await createColumn("Run SSE created");
+    const snapshot = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(ownerSession))
+      .expect(200);
+    const since = Number(snapshot.headers["x-board-seq"]);
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 5000);
+    try {
+      const stream = await fetch(
+        `${baseUrl}/boards/${boardId}/events?since=${since}&presence=0`,
+        {
+          headers: {
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${ownerSession}`,
+          },
+          signal: abort.signal,
+        },
+      );
+      const reader = stream.body!.getReader();
+      const framePromise = (async () => {
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) throw new Error("SSE stream closed before run.created");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (payload === "" || payload === "ping") continue;
+            const frame = JSON.parse(payload) as {
+              type?: string;
+              op?: string;
+              runId?: string;
+            };
+            if (frame.type === "run" && frame.op === "created") return frame;
+          }
+        }
+      })();
+
+      const created = await batch(
+        [
+          {
+            action: {
+              type: "ADD_CARD",
+              newCardId: randomUUID(),
+              columnId,
+              title: "Created run",
+            },
+          },
+          {
+            action: { type: "RENAME_COLUMN", columnId, title: "Renamed" },
+          },
+        ],
+        { token: workerToken },
+      ).expect(200);
+      const runId = (created.body as CommandBatchResponse).runId!;
+      const frame = await framePromise;
+      expect(frame).toMatchObject({ type: "run", op: "created", runId });
+      await reader.cancel();
+    } finally {
+      clearTimeout(timeout);
+      abort.abort();
+    }
+    await retireColumn(columnId);
   });
 
   it("publishes run.reverted on the board stream", async () => {
@@ -808,6 +1744,7 @@ describe("Agent runs and rollback (e2e)", () => {
         },
       );
       const reader = stream.body!.getReader();
+      const createdRunIds: string[] = [];
       const framePromise = (async () => {
         const decoder = new TextDecoder();
         let buffer = "";
@@ -826,6 +1763,10 @@ describe("Agent runs and rollback (e2e)", () => {
               op?: string;
               runId?: string;
             };
+            if (frame.type === "run" && frame.op === "created") {
+              if (frame.runId !== undefined) createdRunIds.push(frame.runId);
+              continue;
+            }
             if (
               frame.type === "run" &&
               frame.op === "reverted" &&
@@ -836,9 +1777,13 @@ describe("Agent runs and rollback (e2e)", () => {
           }
         }
       })();
-      await revert(runId).expect(200);
+      const reverted = await revert(runId).expect(200);
+      const revertRunId = (reverted.body as RunDetailDto).run.id;
       const frame = await framePromise;
       expect(frame).toMatchObject({ type: "run", op: "reverted", runId });
+      // A revert run is announced by `run.reverted`, not an extra
+      // `run.created` that would refresh the list twice.
+      expect(createdRunIds).not.toContain(revertRunId);
       await reader.cancel();
     } finally {
       clearTimeout(timeout);

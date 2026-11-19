@@ -24,6 +24,7 @@ import {
   evaluateTransition,
   hasLinkedPair,
   LIMITS,
+  MAX_COMMAND_BYTES,
   workflowReferenceError,
   wouldCloseBlocksCycle,
 } from "@janosik/shared";
@@ -165,11 +166,40 @@ export interface BatchApplyResult {
   results: CommandResponse[];
   runId: string | null;
   /**
+   * True only when this call created the run row. A replay (or an approval
+   * replay) returns an existing `runId` with `createdRun: false`, so
+   * realtime subscribers are not told about a run they already have.
+   */
+  createdRun: boolean;
+  /**
    * Ids whose rows were written by this call. An id that already existed is
    * an idempotent replay and is absent, which lets internal callers (the
    * master panel) avoid fabricating a second effect such as an audit row.
    */
   freshCommandIds: string[];
+}
+
+/** A rollback action that a preview can prove the apply would refuse. */
+export interface InversePreconditionFailure {
+  touch: string;
+  reason: "wip" | "assignee_not_member" | "payload_too_large";
+  currentVersion: number;
+}
+
+/** Best-effort entity label for a precondition conflict. */
+function inverseTouch(action: BoardAction): string {
+  const record = action as unknown as Record<string, unknown>;
+  const pairs: Array<[string, unknown]> = [
+    ["card", record.cardId],
+    ["column", record.columnId],
+    ["label", record.labelId],
+    ["checklist", record.checklistId],
+    ["checklistItem", record.itemId],
+  ];
+  for (const [kind, id] of pairs) {
+    if (typeof id === "string" && id !== "") return `${kind}:${id}`;
+  }
+  return "command:inverse";
 }
 
 /** One command plus whether this call wrote it or returned a stored replay. */
@@ -421,6 +451,7 @@ export class CommandsService {
         events: InternalCommandEvent[];
         consumedApproval: ApprovalRequest | null;
         runId: string | null;
+        createdRun: boolean;
         freshCommandIds: string[];
       }> => {
         // The board write lock (BoardWriteService) already serializes every
@@ -518,6 +549,7 @@ export class CommandsService {
         }
         let applyAttribution = attribution;
         let runId: string | null = null;
+        let createdRun = false;
 
         if (fresh.length === 0) {
           // Every command is a stored replay. Return their original run when
@@ -599,6 +631,7 @@ export class CommandsService {
             },
           });
           runId = run.id;
+          createdRun = true;
           // Every command of the run carries the id, so the feed and the run
           // detail agree without a second lookup.
           applyAttribution = { ...attribution, runId };
@@ -737,6 +770,7 @@ export class CommandsService {
             events,
             consumedApproval: consumed,
             runId,
+            createdRun,
             freshCommandIds: fresh.map((entry) => entry.dto.commandId),
           };
         }
@@ -745,6 +779,7 @@ export class CommandsService {
           events,
           consumedApproval: null,
           runId,
+          createdRun,
           freshCommandIds: fresh.map((entry) => entry.dto.commandId),
         };
       },
@@ -772,14 +807,108 @@ export class CommandsService {
         });
       }
     }
+    // L38: announce a freshly created run on the board stream. Admin/internal
+    // commands never create a run, and a replay returns an existing id, so
+    // neither can fabricate a `run.created` frame. A revert run is announced
+    // by `run.reverted` after the original is marked, not here — otherwise an
+    // open list refreshes twice for one rollback. This is board-scoped on
+    // purpose; routing a run to every open `/agents` overview is TASK-180.6.
+    if (applied.createdRun && applied.runId !== null && runKind !== "revert") {
+      this.realtime.publish(boardId, {
+        type: "run",
+        op: "created",
+        runId: applied.runId,
+        at: Date.now(),
+      });
+    }
     // A successful PAT write refreshes the session heartbeat at most once a
     // minute (ADR §6.5), but only after the transaction committed.
     await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
     return {
       results: applied.responses,
       runId: applied.runId,
+      createdRun: applied.createdRun,
       freshCommandIds: applied.freshCommandIds,
     };
+  }
+
+  /**
+   * M22: run the apply-time preconditions a rollback would face, without
+   * writing. A revert preview that says `canRevert: true` must not then fail
+   * on a WIP limit, a removed assignee or an oversized inverse payload. The
+   * actions are replayed through the reducer in apply order so a run whose
+   * inverses free space for one another is not refused prematurely.
+   *
+   * This inspects the server-built inverses only; it does not add any new
+   * trust in a client-supplied `inverse` flag (TASK-180.2).
+   */
+  async inspectInversePreconditions(
+    boardId: string,
+    actions: readonly BoardAction[],
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<InversePreconditionFailure[]> {
+    let board = await loadBoardAggregate(client, boardId);
+    if (board === null) return [];
+    const currentVersion = await this.latestSeq(boardId, client);
+    const failures: InversePreconditionFailure[] = [];
+    for (const action of actions) {
+      if (
+        Buffer.byteLength(JSON.stringify(action), "utf8") > MAX_COMMAND_BYTES
+      ) {
+        failures.push({
+          touch: inverseTouch(action),
+          reason: "payload_too_large",
+          currentVersion,
+        });
+        continue;
+      }
+      try {
+        this.assertNoWipConflict(board, action, currentVersion);
+      } catch (error) {
+        if (error instanceof ConflictException) {
+          const response = error.getResponse();
+          if (
+            typeof response === "object" &&
+            response !== null &&
+            (response as { conflict?: unknown }).conflict === "wip"
+          ) {
+            failures.push({
+              touch: inverseTouch(action),
+              reason: "wip",
+              currentVersion,
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
+      if (action.type === "SET_CARD_ASSIGN" && action.assigneeId !== null) {
+        const member = await client.boardMember.findFirst({
+          where: {
+            boardId,
+            userId: action.assigneeId,
+            ...activeMembershipWhere(),
+          },
+          select: { id: true },
+        });
+        if (member === null) {
+          failures.push({
+            touch: `card:${action.cardId}`,
+            reason: "assignee_not_member",
+            currentVersion,
+          });
+        }
+      }
+      const next = boardReducer(
+        [board],
+        Object.assign({}, action, { boardId }) as BoardAction,
+        { withActivity: false },
+      );
+      board = next[0] ?? board;
+    }
+    return failures;
   }
 
   /**
@@ -1181,8 +1310,11 @@ export class CommandsService {
   }
 
   /** Highest committed `seq` of the board (0 without commands). */
-  async latestSeq(boardId: string): Promise<number> {
-    const aggregate = await this.prisma.command.aggregate({
+  async latestSeq(
+    boardId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<number> {
+    const aggregate = await client.command.aggregate({
       where: { boardId },
       _max: { seq: true },
     });

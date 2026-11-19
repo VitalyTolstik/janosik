@@ -764,6 +764,17 @@ describe("Admin API (e2e)", () => {
       });
       expect(stored.actorId).toBe(fixture.ownerId);
       expect(stored.actorType).toBe("admin");
+      // TASK-180.1 boundary: the TASK-176.8 admin seam stays run-free and
+      // therefore cannot publish `run.created`.
+      expect(stored.runId).toBeNull();
+      expect(
+        await prisma.agentRun.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(0);
+      expect(
+        await prisma.commandPreimage.count({
+          where: { commandId },
+        }),
+      ).toBe(0);
 
       const moveId = randomUUID();
       await server()
