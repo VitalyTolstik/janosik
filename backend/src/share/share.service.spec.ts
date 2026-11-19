@@ -36,6 +36,9 @@ interface ShareRow {
   mode: string;
   snapshot: unknown;
   snapshotVersion: number | null;
+  snapshotTakenAt: Date | null;
+  snapshotHasComments: boolean | null;
+  snapshotHasAttachments: boolean | null;
   title: string | null;
   includeComments: boolean;
   includeAttachments: boolean;
@@ -138,6 +141,9 @@ function makeHarness(options: { alive?: boolean } = {}) {
           "revokedAt",
           "snapshot",
           "snapshotVersion",
+          "snapshotTakenAt",
+          "snapshotHasComments",
+          "snapshotHasAttachments",
           "lastViewedAt",
         ] as const) {
           if (key in data)
@@ -161,6 +167,8 @@ function makeHarness(options: { alive?: boolean } = {}) {
       ],
     },
     card: { findFirst: async () => null },
+    boardShareSnapshotComment: { deleteMany: jest.fn() },
+    boardShareSnapshotBlob: { deleteMany: jest.fn() },
     boardShareAuditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         audit.push(data);

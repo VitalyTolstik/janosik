@@ -355,6 +355,7 @@ export class BoardsService {
     userId: string,
     dto: CreateBoardDto,
     principal?: AuthPrincipal,
+    internalId?: string,
   ): Promise<BoardAggregate> {
     const title = dto.title.trim();
     if (title.length === 0) {
@@ -370,7 +371,9 @@ export class BoardsService {
             await lockBoardQuota(tx, userId);
             await assertAgentTokenCanWriteInTransaction(tx, principal);
             await assertBoardQuota(tx, userId, 1);
-            const created = await tx.board.create({ data: { title } });
+            const created = await tx.board.create({
+              data: { id: internalId, title },
+            });
             await tx.boardMember.create({
               data: {
                 boardId: created.id,

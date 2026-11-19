@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { env } from "@/config/env";
+import { ApprovalsService } from "@/approvals/approvals.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { StorageService } from "@/attachments/storage.service";
 import {
@@ -76,6 +77,7 @@ export class MaintenanceService {
     private readonly ops: OpsSettingsService,
     private readonly accountDeletion: AccountDeletionService,
     private readonly attention: AttentionService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /** Runs one named sweep, or all of them. */
@@ -935,16 +937,29 @@ export class MaintenanceService {
   }
 
   async sweepApprovals(): Promise<number> {
+    const now = new Date();
     const cutoff = new Date(
-      Date.now() - (await this.retentionDays()) * 86_400_000,
+      now.getTime() - (await this.retentionDays()) * 86_400_000,
     );
+    for (let chunk = 0; chunk < PURGE_MAX_CHUNKS; chunk++) {
+      const scanned = await this.approvals.expireOverdue(
+        undefined,
+        now,
+        PURGE_CHUNK,
+      );
+      if (scanned < PURGE_CHUNK) break;
+    }
     const where: Prisma.ApprovalRequestWhereInput = {
       OR: [
         {
           status: { in: ["rejected", "cancelled"] },
           decidedAt: { lte: cutoff },
         },
-        { status: "expired", expiresAt: { lte: cutoff } },
+        {
+          // Lapsed requests are eligible even on a board with no approval traffic.
+          status: { in: ["expired", "approved"] },
+          expiresAt: { lte: cutoff },
+        },
         { status: "consumed", consumedAt: { lte: cutoff } },
       ],
     };

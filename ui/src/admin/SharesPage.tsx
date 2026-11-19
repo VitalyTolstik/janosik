@@ -158,10 +158,11 @@ export function SharesPage() {
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">
                     {[
-                      row.includeComments
+                      (row.effectiveIncludeComments ?? row.includeComments)
                         ? t("admin.shares.flag.comments")
                         : null,
-                      row.includeAttachments
+                      (row.effectiveIncludeAttachments ??
+                      row.includeAttachments)
                         ? t("admin.shares.flag.attachments")
                         : null,
                     ]

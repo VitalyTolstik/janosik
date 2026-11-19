@@ -99,12 +99,17 @@ const attentionMock = {
   notifyClaimExpired: jest.fn().mockResolvedValue(undefined),
 } as never;
 
+const approvalsMock = { expireOverdue: jest.fn() } as never;
+
 /** Epoch mtime — unambiguously older than any grace window. */
 const LONG_AGO = 0;
 
 describe("MaintenanceService", () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    (
+      approvalsMock as { expireOverdue: jest.Mock }
+    ).expireOverdue.mockResolvedValue(0);
     (storageMock.listBlobs as jest.Mock).mockResolvedValue([]);
     (storageMock.listTempBlobs as jest.Mock).mockResolvedValue([]);
     (storageMock.remove as jest.Mock).mockResolvedValue(undefined);
@@ -121,6 +126,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
     const results = await service.run("all");
     const total = results.reduce((sum, entry) => sum + entry.removed, 0);
@@ -140,6 +146,7 @@ describe("MaintenanceService", () => {
         opsMock,
         accountDeletionMock,
         attentionMock,
+        approvalsMock,
       ).sweepAttention();
       expect(prisma.notificationMail.deleteMany).toHaveBeenCalledWith({
         where: { finishedAt: { lt: new Date("2026-11-17T12:00:00Z") } },
@@ -174,6 +181,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     expect(await service.sweepClaims()).toBe(1);
@@ -213,6 +221,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
     expect(await service.sweepIdempotency()).toBe(2);
     expect(prisma.idempotencyRecord.deleteMany).toHaveBeenCalledWith({
@@ -232,6 +241,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
     const removed = await service.sweepExports();
     expect(removed).toBe(1);
@@ -263,6 +273,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(1);
@@ -285,6 +296,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(0);
@@ -319,6 +331,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -343,6 +356,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
     const removed = await service.sweepCommands();
     expect(removed).toBe(7);
@@ -375,6 +389,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     expect(await service.sweepCommands()).toBe(9);
@@ -418,6 +433,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     expect(await service.sweepRuns()).toBe(1);
@@ -465,6 +481,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     expect(await service.sweepRuns()).toBe(2);
@@ -512,6 +529,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -571,6 +589,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -618,6 +637,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.sweepShares();
@@ -643,6 +663,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.sweepShares();
@@ -679,6 +700,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.sweepActivity();
@@ -704,6 +726,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.sweepAudit();
@@ -734,6 +757,7 @@ describe("MaintenanceService", () => {
       opsMock,
       accountDeletionMock,
       attentionMock,
+      approvalsMock,
     );
 
     const removed = await service.sweepOrphanBlobs();

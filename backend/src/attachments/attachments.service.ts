@@ -357,13 +357,18 @@ export class AttachmentsService {
     }
   }
 
-  async list(cardId: string, detached = false): Promise<AttachmentDto[]> {
+  async list(
+    cardId: string,
+    detached = false,
+    createdBefore?: Date,
+  ): Promise<AttachmentDto[]> {
     const rows = await this.prisma.attachment.findMany({
       where: {
         cardId,
         deletedAt: null,
         isInline: false,
         descriptionDetached: detached,
+        ...(createdBefore ? { createdAt: { lte: createdBefore } } : {}),
       },
       orderBy: { createdAt: "desc" },
     });

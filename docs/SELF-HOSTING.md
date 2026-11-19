@@ -270,7 +270,7 @@ that matter most:
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` well under `POSTGRES_MAX_CONNECTIONS`. |
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id (`X-Request-Id`). `0` disables it. |
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
-| `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. A hot link rebuilds its board at most once per window; a committed command invalidates it via the board `seq`. `0` disables. |
+| `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. Each process stores up to 64 board aggregates by count and evicts the least recently used at capacity. Memory depends on board size. A changed board `seq` invalidates the entry. `0` disables storage. Up to 64 distinct rebuilds can run concurrently per process. A new rebuild at capacity returns `503`. |
 | `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container; raise on a larger host. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
@@ -335,10 +335,10 @@ docker compose pull && docker compose up -d
 Migrations run automatically on container start, so no manual step is needed.
 To pin a version, set `JANOSIK_TAG=v0.2.0` in `.env`.
 
-The retention upgrade (TASK-148) adds indexes to large tables, so the first
-start after it builds them before the API is up. On an existing installation
-with a lot of data and a direct Node.js (`npm`) deployment, build them without
-a write lock first; the migration will then have no work to do:
+Retention migrations add indexes for content and agent history. On an
+existing installation with a lot of data and a direct Node.js (`npm`)
+deployment, build them concurrently before migrating. The migrations reuse
+those indexes:
 
 ```bash
 npm run db:indexes --workspace backend

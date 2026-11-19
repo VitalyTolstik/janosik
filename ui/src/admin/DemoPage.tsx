@@ -20,8 +20,8 @@ import { SettingsSkeleton } from "./skeletons";
  * Demo runner (TASK-57) — start a swarm of AI agents on a throwaway board,
  * watch them work, then clean up. The backend provisions the demo users,
  * columns, labels and cards behind `POST /admin/demo/start` and records every
- * id it created; `stop` deletes exactly those rows (board, cards, demo users)
- * — nothing is guessed by name. While a run is live the panel polls its
+ * id it creates. Cleanup preserves user-created data and any demo rows
+ * needed by that data. While a run is live the panel polls its
  * status, so the counters move on their own.
  *
  * Since TASK-58 the observation path is a **live share link**: the runner
@@ -130,7 +130,11 @@ export function DemoPage() {
           : cause instanceof ApiError && cause.messageText
             ? cause.messageText
             : t("admin.common.error");
-      toast.error(message);
+      toast.error(
+        cause instanceof ApiError && cause.code === "demo_cleanup_pending"
+          ? t("admin.demo.cleanupPending")
+          : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -148,7 +152,11 @@ export function DemoPage() {
         cause instanceof ApiError && cause.messageText
           ? cause.messageText
           : t("admin.common.error");
-      toast.error(message);
+      toast.error(
+        cause instanceof ApiError && cause.code === "demo_cleanup_pending"
+          ? t("admin.demo.cleanupPending")
+          : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -339,6 +347,11 @@ export function DemoPage() {
             <p className="text-[11px] text-muted-foreground">
               {t("admin.demo.boardHint")}
             </p>
+            {boardId.trim() || selectedBoardId ? (
+              <p className="text-xs text-muted-foreground">
+                {t("admin.demo.boardWarning")}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex flex-wrap items-end gap-4">

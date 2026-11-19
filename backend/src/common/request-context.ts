@@ -40,6 +40,17 @@ export function currentBoardWriteContext(): RequestContext["boardWrite"] {
   return storage.getStore()?.boardWrite;
 }
 
+/** Give a background writer its own membership revalidation context. */
+export function withBoardWriteContext<T>(
+  boardWrite: NonNullable<RequestContext["boardWrite"]>,
+  work: () => T,
+): T {
+  return storage.run(
+    { id: currentRequestId() ?? randomUUID(), boardWrite },
+    work,
+  );
+}
+
 /** Header used both to accept a caller's id (proxy/tracing) and to echo it. */
 export const REQUEST_ID_HEADER = "x-request-id";
 

@@ -2,10 +2,9 @@
 // blocking writes.
 //
 // `prisma migrate deploy` runs each migration inside a transaction, where
-// `CREATE INDEX CONCURRENTLY` is illegal. The migration
-// (`20261029180000_task148_retention_indexes`) therefore creates the indexes
-// inline, which is fine on a fresh install. On an existing instance with a
-// large `Command`/`Activity`/`Card` tree, run this script *first*:
+// `CREATE INDEX CONCURRENTLY` is illegal. The retention migrations create
+// indexes inline, which is fine on a fresh install. On an existing instance
+// with large content, command or agent-history tables, run this script first:
 //
 //   npm run db:indexes --workspace backend
 //
@@ -31,6 +30,9 @@ const STATEMENTS = [
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "AdminRefreshToken_revokedAt_idx" ON "AdminRefreshToken"("revokedAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "BoardShare_expiresAt_idx" ON "BoardShare"("expiresAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "BoardShare_revokedAt_idx" ON "BoardShare"("revokedAt")`,
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "AgentSession_endedAt_idx" ON "AgentSession"("endedAt")`,
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "ApprovalRequest_status_decidedAt_idx" ON "ApprovalRequest"("status", "decidedAt")`,
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "ApprovalRequest_status_consumedAt_idx" ON "ApprovalRequest"("status", "consumedAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "BoardMember_expiresAt_idx" ON "BoardMember"("expiresAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_createdAt_idx" ON "Activity"("createdAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "ReminderSent_dueDate_idx" ON "ReminderSent"("dueDate")`,

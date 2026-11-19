@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from "@nestjs/common";
 import type { BoardAggregate, PublicBoardMemberDto } from "@janosik/shared";
 
 /** A cached live board aggregate with its roster and the command seq it is at. */
@@ -17,6 +18,7 @@ export interface CachedBoardAggregate {
  * stale the members may be). Concurrent misses share one rebuild
  * (single-flight), so a burst on a cold link runs the expensive read once.
  * Inserts prune expired entries and evict the least recently used board at capacity.
+ * Distinct concurrent rebuilds have their own per-process count limit.
  *
  * `ttlMs <= 0` disables the cache: every `get` misses, and `load` still
  * single-flights within a tick but never stores.
@@ -31,6 +33,7 @@ export class ShareAggregateCache {
   constructor(
     private readonly ttlMs: number,
     private readonly maxEntries = 64,
+    private readonly maxInFlight = 64,
   ) {}
 
   /** Whether the cache is active (a positive window). */
@@ -62,6 +65,13 @@ export class ShareAggregateCache {
   ): Promise<CachedBoardAggregate> {
     const running = this.inFlight.get(boardId);
     if (running !== undefined) return running;
+    if (this.inFlight.size >= this.maxInFlight) {
+      return Promise.reject(
+        new ServiceUnavailableException(
+          "Live share is busy — retry the request",
+        ),
+      );
+    }
     const promise = build()
       .then((value) => {
         if (this.enabled) {

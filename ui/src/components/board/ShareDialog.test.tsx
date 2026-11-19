@@ -217,6 +217,35 @@ describe("ShareDialog", () => {
       screen.queryByRole("button", { name: "Embed code" }),
     ).not.toBeInTheDocument();
   });
+  it("defaults snapshot comments to off on mode change and explains what is captured", async () => {
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    const comments = await screen.findByRole("checkbox", {
+      name: "Show comments",
+    });
+    expect(comments).toBeChecked();
+    fireEvent.click(screen.getByTestId("share-mode-snapshot"));
+    expect(comments).not.toBeChecked();
+    expect(
+      screen.getByText(/comments are off by default/i),
+    ).toBeInTheDocument();
+    fireEvent.click(comments);
+    expect(comments).toBeChecked();
+    fireEvent.click(screen.getByTestId("share-mode-live"));
+    fireEvent.click(screen.getByTestId("share-mode-snapshot"));
+    expect(comments).not.toBeChecked();
+  });
+
+  it("shows when enabled snapshot content still needs a refresh", async () => {
+    shares = [share({ mode: "snapshot", effectiveIncludeComments: false })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByTestId("share-mode-snapshot"));
+    expect(
+      await screen.findByText(/refresh the snapshot to publish/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows only links of the selected mode", async () => {
     shares = [
       share({ id: "live", token: "live-token", mode: "live" }),

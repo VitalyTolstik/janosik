@@ -95,6 +95,9 @@ describe("DemoPage", () => {
     expect(screen.getByTestId("admin-demo-board")).toHaveTextContent(
       "board-xyz",
     );
+    expect(
+      screen.getByText(/creates a public live link to this board/i),
+    ).toHaveTextContent("Cleanup preserves this board and user-created data.");
 
     fireEvent.change(screen.getByTestId("admin-demo-agents-input"), {
       target: { value: "2" },
@@ -158,6 +161,15 @@ describe("DemoPage", () => {
     renderDemo();
 
     fireEvent.click(await screen.findByTestId("admin-demo-stop"));
+    const confirmation = screen.getByText(
+      /remove its recorded rows where possible/i,
+    );
+    expect(confirmation).toHaveTextContent(
+      "The selected existing board and user-created data are preserved.",
+    );
+    expect(confirmation).toHaveTextContent(
+      "A dedicated demo board is deleted only if it is empty after cleanup.",
+    );
     fireEvent.click(screen.getByTestId("admin-confirm-accept"));
 
     await waitFor(() => expect(server.demoStatus.running).toBe(false));

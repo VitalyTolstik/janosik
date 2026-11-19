@@ -98,7 +98,10 @@ Choose a mode:
   with the snapshot. Captured content stays available after changes,
   archival or permanent deletion of the board, until the link is revoked
   or expires. A board admin can refresh the snapshot to publish current
-  content, including comments or files missing from older snapshots.
+  content. Comments are off by default for snapshots. Up to 500 attachments
+  totaling 100 MiB can be captured. A legacy board-only snapshot can display
+  pre-capture comments and files from the source while they still exist.
+  Refresh it while the source is accessible to preserve independent copies.
 
 Each link can show existing comments and attachments, and can be given an
 expiry: `Never`, 1 hour, 24 hours, one week or about a month. Optionally give

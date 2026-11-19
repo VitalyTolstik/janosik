@@ -79,7 +79,11 @@ import { EmailSettingsService } from "@/mailer/email-settings.service";
 import { pickLocale } from "@/mailer/mail.types";
 import { emailChangedNoticeEmail } from "@/mailer/templates";
 import { OAuthSettingsService } from "@/oauth/oauth-settings.service";
-import { ShareService } from "@/share/share.service";
+import {
+  effectiveShareFlags,
+  SHARE_METADATA_SELECT,
+  ShareService,
+} from "@/share/share.service";
 import { AuthService } from "@/auth/auth.service";
 import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
 import { JwtService } from "@nestjs/jwt";
@@ -2299,7 +2303,8 @@ export class AdminService {
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
-        include: {
+        select: {
+          ...SHARE_METADATA_SELECT,
           board: { select: { title: true, deletedAt: true, archivedAt: true } },
         },
       }),
@@ -2320,6 +2325,7 @@ export class AdminService {
         title: row.title,
         includeComments: row.includeComments,
         includeAttachments: row.includeAttachments,
+        ...effectiveShareFlags(row),
         expiresAt: row.expiresAt?.getTime() ?? null,
         revokedAt: row.revokedAt?.getTime() ?? null,
         views: row.views,
@@ -2340,7 +2346,8 @@ export class AdminService {
   ): Promise<AdminShareRowDto> {
     const existing = await this.prisma.boardShare.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...SHARE_METADATA_SELECT,
         board: { select: { title: true, deletedAt: true, archivedAt: true } },
       },
     });
@@ -2350,6 +2357,7 @@ export class AdminService {
     const updated = await this.prisma.boardShare.update({
       where: { id },
       data: { revokedAt: existing.revokedAt ?? new Date() },
+      select: SHARE_METADATA_SELECT,
     });
     await this.audit(admin, "share.revoked", "share", id, {
       boardId: existing.boardId,
@@ -2368,6 +2376,7 @@ export class AdminService {
       title: updated.title,
       includeComments: updated.includeComments,
       includeAttachments: updated.includeAttachments,
+      ...effectiveShareFlags(updated),
       expiresAt: updated.expiresAt?.getTime() ?? null,
       revokedAt: updated.revokedAt?.getTime() ?? null,
       views: updated.views,

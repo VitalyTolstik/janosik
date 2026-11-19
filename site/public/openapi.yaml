@@ -628,7 +628,8 @@ paths:
         disabled by the operator (`ALLOW_PUBLIC_SHARES=false` or the
         `public_shares` flag) creation answers `404`, like the rest of the
         public share contour. Snapshot mode captures the board and roster
-        plus the comments and attachment files enabled in this request.
+        plus the comments and attachment files enabled in this request. It
+        captures at most 500 files totaling up to 100 MiB, including inline files.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ApprovalId"
@@ -651,6 +652,11 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "413":
+          description: Snapshot exceeds 500 files or 100 MiB (`snapshot_attachment_limit`). Existing captures remain available.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiErrorEnvelope" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/shares/{shareId}:
     parameters:
@@ -742,6 +748,11 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "413":
+          description: Snapshot exceeds 500 files or 100 MiB (`snapshot_attachment_limit`). Existing captures remain available.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiErrorEnvelope" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/shares/{shareId}/permanent:
     parameters:
@@ -3935,6 +3946,12 @@ components:
           type: boolean
         includeAttachments:
           type: boolean
+        effectiveIncludeComments:
+          type: boolean
+          description: Whether comments are available on the public share. A snapshot may need refresh after opting in.
+        effectiveIncludeAttachments:
+          type: boolean
+          description: Whether attachments are available on the public share. A snapshot may need refresh after opting in.
         expiresAt:
           type: [integer, "null"]
         revokedAt:

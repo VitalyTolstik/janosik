@@ -5,9 +5,10 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
 } from "@nestjs/common";
 import { Prisma, Role } from "@prisma/client";
-import type { Attachment, BoardShare } from "@prisma/client";
+import type { Attachment } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import type {
   BoardAggregate,
@@ -53,19 +54,57 @@ import { renderBoardPng } from "./og-image";
 import { ShareAggregateCache } from "./share-aggregate-cache";
 import type { CachedBoardAggregate } from "./share-aggregate-cache";
 
-interface SnapshotAttachment {
-  meta: AttachmentDto;
-  storedName: string;
-  isInline: boolean;
-}
-
 interface SnapshotPayload {
   envelope: BoardEnvelope;
   members: PublicBoardMemberDto[];
   takenAt?: number;
-  // Legacy snapshots and captures with a flag off have no corresponding data.
-  comments?: CommentDto[];
-  attachments?: SnapshotAttachment[];
+}
+
+// Keep large payloads out of list/authorization queries, including SSE polls.
+export const SHARE_METADATA_SELECT = {
+  id: true,
+  token: true,
+  boardId: true,
+  mode: true,
+  snapshotVersion: true,
+  snapshotTakenAt: true,
+  snapshotHasComments: true,
+  snapshotHasAttachments: true,
+  title: true,
+  includeComments: true,
+  includeAttachments: true,
+  expiresAt: true,
+  revokedAt: true,
+  createdBy: true,
+  views: true,
+  lastViewedAt: true,
+  createdAt: true,
+} satisfies Prisma.BoardShareSelect;
+
+export type ShareRow = Prisma.BoardShareGetPayload<{
+  select: typeof SHARE_METADATA_SELECT;
+}>;
+
+export function effectiveShareFlags(
+  row: Pick<
+    ShareRow,
+    | "mode"
+    | "boardId"
+    | "includeComments"
+    | "includeAttachments"
+    | "snapshotHasComments"
+    | "snapshotHasAttachments"
+  >,
+) {
+  const legacySource = row.boardId !== null;
+  return {
+    effectiveIncludeComments:
+      row.includeComments &&
+      (row.mode === "live" || (row.snapshotHasComments ?? legacySource)),
+    effectiveIncludeAttachments:
+      row.includeAttachments &&
+      (row.mode === "live" || (row.snapshotHasAttachments ?? legacySource)),
+  };
 }
 
 /**
@@ -109,6 +148,7 @@ export class ShareService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
     approvalApplied = false,
+    internalId?: string,
   ): Promise<BoardShareDto> {
     // M4: `ALLOW_PUBLIC_SHARES=false` is the operator's "no public links"
     // promise. Minting a link that can never resolve was the gap: gate the
@@ -135,6 +175,7 @@ export class ShareService {
       dto.includeAttachments ?? SHARE_LIMITS.defaultIncludeAttachments;
 
     const data: Prisma.BoardShareCreateInput = {
+      id: internalId,
       token: this.mintToken(),
       board: { connect: { id: boardId } },
       mode,
@@ -159,6 +200,7 @@ export class ShareService {
               : undefined;
           const created = await tx.boardShare.create({
             data: { ...data, ...snapshot },
+            select: SHARE_METADATA_SELECT,
           });
           await this.auditShare(
             tx,
@@ -179,7 +221,7 @@ export class ShareService {
 
   private async auditShare(
     tx: Prisma.TransactionClient,
-    share: BoardShare,
+    share: ShareRow,
     boardId: string,
     actorId: string,
     actorType: "user" | "admin",
@@ -237,6 +279,7 @@ export class ShareService {
     const rows = await this.prisma.boardShare.findMany({
       where: { boardId },
       orderBy: { createdAt: "desc" },
+      select: SHARE_METADATA_SELECT,
     });
     return rows.map((row) => this.toDto(row));
   }
@@ -274,17 +317,17 @@ export class ShareService {
         rollbackOnThrow(async () => {
           const source = await tx.boardShare.findUniqueOrThrow({
             where: { id: shareId },
+            select: { includeComments: true, includeAttachments: true },
           });
           const snapshot = await this.captureSnapshot(tx, boardId, source);
+          // Remove the previous capture in the same transaction before inserting
+          // rows whose source IDs can be present in both captures.
+          await tx.boardShareSnapshotComment.deleteMany({ where: { shareId } });
+          await tx.boardShareSnapshotBlob.deleteMany({ where: { shareId } });
           const current = await tx.boardShare.update({
             where: { id: shareId },
-            data: {
-              ...snapshot,
-              snapshotBlobs: {
-                deleteMany: {},
-                ...snapshot.snapshotBlobs,
-              },
-            },
+            data: snapshot,
+            select: SHARE_METADATA_SELECT,
           });
           await this.auditShare(
             tx,
@@ -336,6 +379,7 @@ export class ShareService {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`board-shares:${row.boardId}`}, 0))`;
             const current = await tx.boardShare.findUniqueOrThrow({
               where: { id: row.id },
+              select: { mode: true, revokedAt: true, expiresAt: true },
             });
             if (
               dto.expiresAt !== undefined &&
@@ -353,6 +397,7 @@ export class ShareService {
           const current = await tx.boardShare.update({
             where: { id: row.id },
             data,
+            select: SHARE_METADATA_SELECT,
           });
           if (row.boardId) {
             await this.auditShare(
@@ -394,6 +439,7 @@ export class ShareService {
           });
           const current = await tx.boardShare.findUniqueOrThrow({
             where: { id: row.id },
+            select: SHARE_METADATA_SELECT,
           });
           if (changed.count && row.boardId)
             await this.auditShare(
@@ -481,6 +527,7 @@ export class ShareService {
   async requireShare(shareId: string): Promise<ShareRow> {
     const row = await this.prisma.boardShare.findUnique({
       where: { id: shareId },
+      select: SHARE_METADATA_SELECT,
     });
     if (!row) {
       throw beforeWrite(new NotFoundException("Share not found"));
@@ -514,7 +561,10 @@ export class ShareService {
     if (!(await this.isPublicSharingEnabled())) {
       throw new NotFoundException("Not found");
     }
-    const row = await this.prisma.boardShare.findUnique({ where: { token } });
+    const row = await this.prisma.boardShare.findUnique({
+      where: { token },
+      select: SHARE_METADATA_SELECT,
+    });
     if (!row || row.revokedAt !== null) {
       throw new NotFoundException("Not found");
     }
@@ -536,24 +586,27 @@ export class ShareService {
     await this.prisma.boardShare.update({
       where: { id: share.id },
       data: { views: { increment: 1 }, lastViewedAt: new Date() },
+      select: { id: true },
     });
     return payload;
   }
 
   private async buildPublicBoard(share: ShareRow): Promise<PublicBoardDto> {
     if (share.mode === "snapshot") {
-      const payload = this.parseSnapshot(share);
+      const { payload, row } = await this.loadSnapshot(share.id);
+      const flags = effectiveShareFlags(row);
       return {
         mode: "snapshot",
-        title: share.title,
-        takenAt: payload.takenAt ?? share.createdAt.getTime(),
+        title: row.title,
+        takenAt:
+          row.snapshotTakenAt?.getTime() ??
+          payload.takenAt ??
+          row.createdAt.getTime(),
         board: sanitizePublicBoard(payload.envelope.boards[0]),
-        seq: share.snapshotVersion ?? null,
+        seq: row.snapshotVersion ?? null,
         members: payload.members,
-        includeComments:
-          share.includeComments && payload.comments !== undefined,
-        includeAttachments:
-          share.includeAttachments && payload.attachments !== undefined,
+        includeComments: flags.effectiveIncludeComments,
+        includeAttachments: flags.effectiveIncludeAttachments,
       };
     }
 
@@ -598,41 +651,51 @@ export class ShareService {
     cursor?: string,
     limit?: string,
   ): Promise<CommentPage> {
-    if (!share.includeComments) {
+    if (!effectiveShareFlags(share).effectiveIncludeComments) {
       throw new NotFoundException("Not found");
     }
-    // M10: archiving a live board ends every nested read, not only the main
-    // aggregate. The cards are not soft-deleted by archive, so `cardOnBoard`
-    // alone would keep serving comments/attachments.
     if (share.mode === "snapshot") {
-      const { comments } = this.snapshotCard(share, cardId);
-      if (!comments) throw new NotFoundException("Not found");
-      const { cursor: after, limit: size } = parseCommentPage(cursor, limit);
-      const items: CommentDto[] = [];
-      for (const comment of comments) {
-        if (comment.cardId !== cardId) continue;
-        if (
-          after &&
-          (comment.createdAt > after.at ||
-            (comment.createdAt === after.at && comment.id >= after.id))
-        )
-          continue;
-        items.push(comment);
-        if (items.length > size) {
-          items.pop();
-          const last = items[items.length - 1];
-          return { items, nextCursor: `${last.createdAt}:${last.id}` };
-        }
+      if (share.snapshotHasComments === true) {
+        const { cursor: after, limit: size } = parseCommentPage(cursor, limit);
+        const rows = await this.prisma.boardShareSnapshotComment.findMany({
+          where: {
+            shareId: share.id,
+            cardId,
+            ...(after
+              ? {
+                  OR: [
+                    { createdAt: { lt: new Date(after.at) } },
+                    { createdAt: new Date(after.at), id: { lt: after.id } },
+                  ],
+                }
+              : {}),
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { id: true, createdAt: true, payload: true },
+          take: size + 1,
+        });
+        if (!rows.length) await this.assertSnapshotCard(share.id, cardId);
+        const last = rows.length > size ? rows[size - 1] : undefined;
+        return {
+          items: rows
+            .slice(0, size)
+            .map(({ payload }) => payload as unknown as CommentDto),
+          nextCursor: last ? `${last.createdAt.getTime()}:${last.id}` : null,
+        };
       }
-      return { items, nextCursor: null };
+      await this.assertSnapshotCard(share.id, cardId);
+    } else {
+      await this.assertBoardAlive(this.boardIdOf(share));
     }
-    await this.assertBoardAlive(this.boardIdOf(share));
     await this.assertCardOnBoard(share, cardId);
-    const page = await this.comments.list(cardId, cursor, limit);
-    return {
-      ...page,
-      items: page.items.map(toPublicComment),
-    };
+    const page = await this.comments.list(
+      cardId,
+      cursor,
+      limit,
+      undefined,
+      this.legacyCutoff(share),
+    );
+    return { ...page, items: page.items.map(toPublicComment) };
   }
 
   /** Attachment metadata for a card on the shared board, when exposed. */
@@ -640,19 +703,29 @@ export class ShareService {
     share: ShareRow,
     cardId: string,
   ): Promise<AttachmentDto[]> {
-    if (!share.includeAttachments) {
+    if (!effectiveShareFlags(share).effectiveIncludeAttachments) {
       throw new NotFoundException("Not found");
     }
     if (share.mode === "snapshot") {
-      const { attachments } = this.snapshotCard(share, cardId);
-      if (!attachments) throw new NotFoundException("Not found");
-      return attachments
-        .filter(({ meta, isInline }) => meta.cardId === cardId && !isInline)
-        .map(({ meta }) => meta);
+      if (share.snapshotHasAttachments === true) {
+        const rows = await this.prisma.boardShareSnapshotBlob.findMany({
+          where: { shareId: share.id, cardId, isInline: false },
+          orderBy: [{ createdAt: "desc" }, { attachmentId: "desc" }],
+          select: { metadata: true },
+        });
+        if (!rows.length) await this.assertSnapshotCard(share.id, cardId);
+        return rows.map(({ metadata }) => metadata as unknown as AttachmentDto);
+      }
+      await this.assertSnapshotCard(share.id, cardId);
+    } else {
+      await this.assertBoardAlive(this.boardIdOf(share));
     }
-    await this.assertBoardAlive(this.boardIdOf(share));
     await this.assertCardOnBoard(share, cardId);
-    const rows = await this.attachments.list(cardId);
+    const rows = await this.attachments.list(
+      cardId,
+      false,
+      this.legacyCutoff(share),
+    );
     return rows.map(toPublicAttachment);
   }
 
@@ -661,26 +734,44 @@ export class ShareService {
     share: ShareRow,
     attachmentId: string,
   ): Promise<{ meta: AttachmentDto; storedName: string }> {
-    if (!share.includeAttachments) {
+    if (!effectiveShareFlags(share).effectiveIncludeAttachments) {
       throw new NotFoundException("Not found");
     }
-    if (share.mode === "snapshot") {
-      const item = this.parseSnapshot(share).attachments?.find(
-        ({ meta }) => meta.id === attachmentId,
-      );
-      if (!item) throw new NotFoundException("Not found");
-      return { meta: item.meta, storedName: item.storedName };
+    if (share.mode === "snapshot" && share.snapshotHasAttachments === true) {
+      const item = await this.prisma.boardShareSnapshotBlob.findUnique({
+        where: { shareId_attachmentId: { shareId: share.id, attachmentId } },
+        select: { metadata: true, storedName: true },
+      });
+      if (!item?.metadata) throw new NotFoundException("Not found");
+      return {
+        meta: item.metadata as unknown as AttachmentDto,
+        storedName: item.storedName,
+      };
     }
-    await this.assertBoardAlive(this.boardIdOf(share));
+    if (share.mode === "live") {
+      await this.assertBoardAlive(this.boardIdOf(share));
+    }
     const { meta, storedName } = await this.attachments.content(attachmentId);
     await this.assertCardOnBoard(share, meta.cardId);
+    const cutoff = this.legacyCutoff(share);
+    if (cutoff !== undefined) {
+      await this.assertSnapshotCard(share.id, meta.cardId);
+      if (meta.createdAt > cutoff.getTime())
+        throw new NotFoundException("Not found");
+    }
     return { meta: toPublicAttachment(meta), storedName };
+  }
+
+  private legacyCutoff(share: ShareRow): Date | undefined {
+    return share.mode === "snapshot"
+      ? (share.snapshotTakenAt ?? share.createdAt)
+      : undefined;
   }
 
   /** The OG preview PNG for a share (snapshot or a live, existing board). */
   async ogImage(share: ShareRow): Promise<Buffer> {
     if (share.mode === "snapshot") {
-      const payload = this.parseSnapshot(share);
+      const { payload } = await this.loadSnapshot(share.id);
       return renderBoardPng(payload.envelope.boards[0]);
     }
     return renderBoardPng(await this.loadLiveBoard(this.boardIdOf(share)));
@@ -754,31 +845,40 @@ export class ShareService {
     const envelope = JSON.parse(
       serializeExport([sanitizePublicBoard(board)]),
     ) as BoardEnvelope;
+    const snapshotTakenAt = new Date();
     const payload: SnapshotPayload = {
       envelope,
       members: await this.publicMembers(boardId, tx),
-      takenAt: Date.now(),
     };
     const cardIds = Object.keys(envelope.boards[0].cards);
-    if (flags.includeComments) {
-      const rows = await tx.comment.findMany({
-        where: { cardId: { in: cardIds }, deletedAt: null },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      });
-      payload.comments = rows.map((row) => toPublicComment(toCommentDto(row)));
-    }
-    if (flags.includeAttachments) {
-      payload.attachments = await this.captureAttachments(tx, cardIds);
-    }
-
-    const blobs = payload.attachments?.map(({ storedName }) => ({
-      storedName,
-    }));
+    const blobs = flags.includeAttachments
+      ? await this.captureAttachments(tx, cardIds)
+      : [];
+    const comments = flags.includeComments
+      ? await tx.comment.findMany({
+          where: { cardId: { in: cardIds }, deletedAt: null },
+        })
+      : [];
     return {
       snapshot: payload as unknown as Prisma.InputJsonValue,
       snapshotVersion: seq,
-      snapshotBlobs: blobs?.length
-        ? { createMany: { data: blobs } }
+      snapshotTakenAt,
+      snapshotHasComments: Boolean(flags.includeComments),
+      snapshotHasAttachments: Boolean(flags.includeAttachments),
+      snapshotBlobs: blobs.length ? { createMany: { data: blobs } } : undefined,
+      snapshotComments: comments.length
+        ? {
+            createMany: {
+              data: comments.map((row) => ({
+                id: row.id,
+                cardId: row.cardId,
+                createdAt: row.createdAt,
+                payload: toPublicComment(
+                  toCommentDto(row),
+                ) as unknown as Prisma.InputJsonValue,
+              })),
+            },
+          }
         : undefined,
     };
   }
@@ -786,21 +886,37 @@ export class ShareService {
   private async captureAttachments(
     tx: Prisma.TransactionClient,
     cardIds: string[],
-  ): Promise<SnapshotAttachment[]> {
+  ): Promise<Prisma.BoardShareSnapshotBlobCreateManyShareInput[]> {
     if (cardIds.length === 0) return [];
-    // Transcode and purge can replace/remove source files. Lock the rows before
-    // reading names and copying bytes, so they cannot unlink a selected file.
+    // Lock the source rows while copying so transcode cannot replace the selected
+    // files. Check both limits before writing any bytes under the board lock.
     const rows = await tx.$queryRaw<Attachment[]>`
       SELECT * FROM "Attachment"
       WHERE "cardId" IN (${Prisma.join(cardIds)})
         AND "deletedAt" IS NULL AND NOT "descriptionDetached"
-      ORDER BY "createdAt" DESC, "id" DESC
+      LIMIT ${SHARE_LIMITS.snapshotAttachmentCount + 1}
       FOR SHARE
     `;
-    const attachments: SnapshotAttachment[] = [];
+    const bytes = rows.reduce((total, row) => total + row.sizeBytes, 0);
+    if (
+      rows.length > SHARE_LIMITS.snapshotAttachmentCount ||
+      bytes > SHARE_LIMITS.snapshotAttachmentBytes
+    ) {
+      throw new PayloadTooLargeException({
+        code: "snapshot_attachment_limit",
+        message:
+          "A snapshot can capture up to 500 attachments and 100 MiB. Disable attachments or reduce the board's files.",
+      });
+    }
+    const attachments: Prisma.BoardShareSnapshotBlobCreateManyShareInput[] = [];
     for (const row of rows) {
       attachments.push({
-        meta: toPublicAttachment(toAttachmentDto(row)),
+        attachmentId: row.id,
+        cardId: row.cardId,
+        createdAt: row.createdAt,
+        metadata: toPublicAttachment(
+          toAttachmentDto(row),
+        ) as unknown as Prisma.InputJsonValue,
         storedName: await this.storage.copyForSnapshot(row.storedName),
         isInline: row.isInline,
       });
@@ -808,25 +924,32 @@ export class ShareService {
     return attachments;
   }
 
-  private snapshotCard(share: ShareRow, cardId: string): SnapshotPayload {
-    const payload = this.parseSnapshot(share);
-    if (!Object.hasOwn(payload.envelope.boards[0].cards, cardId)) {
-      throw new NotFoundException("Not found");
-    }
-    return payload;
+  private async assertSnapshotCard(
+    shareId: string,
+    cardId: string,
+  ): Promise<void> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "BoardShare"
+      WHERE "id" = ${shareId} AND ("snapshot" #> '{envelope,boards,0,cards}') ? ${cardId}
+    `;
+    if (!rows.length) throw new NotFoundException("Not found");
   }
 
-  private parseSnapshot(share: ShareRow): SnapshotPayload {
-    const raw = share.snapshot as unknown as SnapshotPayload | null;
+  private async loadSnapshot(shareId: string) {
+    const row = await this.prisma.boardShare.findUnique({
+      where: { id: shareId },
+      select: { ...SHARE_METADATA_SELECT, snapshot: true },
+    });
+    const payload = row?.snapshot as unknown as
+      SnapshotPayload | null | undefined;
     if (
-      raw === null ||
-      typeof raw !== "object" ||
-      !Array.isArray(raw.envelope?.boards) ||
-      raw.envelope.boards.length === 0
+      !row ||
+      !Array.isArray(payload?.envelope?.boards) ||
+      payload.envelope.boards.length === 0
     ) {
       throw new NotFoundException("Not found");
     }
-    return raw;
+    return { row, payload };
   }
 
   /** Sanitized roster: displayName/avatar only — never an email. */
@@ -935,6 +1058,7 @@ export class ShareService {
       title: row.title,
       includeComments: row.includeComments,
       includeAttachments: row.includeAttachments,
+      ...effectiveShareFlags(row),
       expiresAt: row.expiresAt?.getTime() ?? null,
       revokedAt: row.revokedAt?.getTime() ?? null,
       views: row.views,
@@ -987,6 +1111,3 @@ function toPublicAttachment(attachment: AttachmentDto): AttachmentDto {
   delete copy.uploadedBySessionId;
   return copy;
 }
-
-/** The Prisma row shape the service works with (local alias, not exported). */
-type ShareRow = BoardShare;

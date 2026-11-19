@@ -36,6 +36,8 @@ export const SHARE_LIMITS = {
   defaultIncludeCommentsSnapshot: false,
   /** Attachments are opt-in on both modes (blob exposure). */
   defaultIncludeAttachments: false,
+  snapshotAttachmentCount: 500,
+  snapshotAttachmentBytes: 100 * 1024 * 1024,
   /**
    * Requests per minute, per token, on the public contour (§7.9.4). A viewer
    * loads the page once plus the SSE stream, so this is generous but still
@@ -65,6 +67,9 @@ export interface BoardShareDto {
   title: string | null;
   includeComments: boolean;
   includeAttachments: boolean;
+  /** Actual public visibility. Opting in after capture can require a refresh. */
+  effectiveIncludeComments?: boolean;
+  effectiveIncludeAttachments?: boolean;
   /** Unix ms expiry; `null` = no expiry. */
   expiresAt: number | null;
   /** Unix ms revoke time; `null` while active. */

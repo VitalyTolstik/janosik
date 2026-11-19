@@ -204,8 +204,12 @@ The account panel has a **Data & privacy** section:
   keys and schedules permanent erasure after seven days. A password account
   confirms with its current password; an OAuth-only account requests a
   one-time email code and supplies the current OAuth-issued access token as
-  proof. A new request always restarts the seven-day window. Once it passes the
-  data cannot be recovered.
+  proof. A new request always restarts the seven-day window. Once it passes,
+  the account and its source personal records cannot be recovered. Public board
+  snapshots published before deletion can still contain your display name,
+  comments and attachment copies. A board admin can revoke or refresh the
+  snapshot while the source board is accessible. A platform admin can also
+  revoke a snapshot whose source board was purged.
 
 ### The data-safety banner
 

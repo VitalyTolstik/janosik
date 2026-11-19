@@ -75,13 +75,17 @@ describe("Admin queues (e2e)", () => {
 
   it("retains open and recent agent data and removes it when its board is purged (M23)", async () => {
     const live = await prisma.board.create({
-      data: { title: "Live retention fixture" },
+      data: {
+        title: "Live retention fixture",
+        members: { create: { userId, role: "ADMIN", acceptedAt: new Date() } },
+      },
     });
     const purged = await prisma.board.create({
       data: { title: "Expired board fixture", deletedAt: new Date(0) },
     });
     const old = new Date(0);
     const recent = new Date();
+    const future = new Date(Date.now() + 60_000);
     const agent = { userId, apiTokenId: "retention-token", boardId: live.id };
     const approval = {
       boardId: live.id,
@@ -138,9 +142,28 @@ describe("Admin queues (e2e)", () => {
           status: "cancelled",
           decidedAt: recent,
         },
-        { ...approval, id: "pending" },
-        { ...approval, id: "approved", status: "approved", decidedAt: old },
-        { ...approval, boardId: purged.id, id: "purged-approval" },
+        { ...approval, id: "stale-pending" },
+        {
+          ...approval,
+          id: "stale-approved",
+          status: "approved",
+          decidedAt: old,
+        },
+        { ...approval, id: "recent-lapsed", expiresAt: recent },
+        { ...approval, id: "pending", expiresAt: future },
+        {
+          ...approval,
+          id: "approved",
+          status: "approved",
+          decidedAt: old,
+          expiresAt: future,
+        },
+        {
+          ...approval,
+          boardId: purged.id,
+          id: "purged-approval",
+          expiresAt: future,
+        },
       ],
     });
     const run = async (job: string, removed: number) => {
@@ -152,8 +175,13 @@ describe("Admin queues (e2e)", () => {
       expect(res.body.results).toEqual([{ job, removed }]);
     };
     await run("sweep-agent-sessions", 1);
-    await run("sweep-approvals", 4);
+    await run("sweep-approvals", 6);
     await run("sweep-agent-sessions", 0);
+    expect(
+      await prisma.approvalRequest.findUnique({
+        where: { id: "recent-lapsed" },
+      }),
+    ).toMatchObject({ status: "expired" });
     await run("sweep-approvals", 0);
     expect(
       await prisma.agentSession.findUnique({ where: { id: "purged-session" } }),
@@ -163,6 +191,15 @@ describe("Admin queues (e2e)", () => {
         where: { id: "purged-approval" },
       }),
     ).not.toBeNull();
+    expect(
+      await prisma.activity.count({
+        where: {
+          boardId: live.id,
+          type: "approval_expired",
+          details: { path: ["approvalId"], equals: "recent-lapsed" },
+        },
+      }),
+    ).toBe(1);
     await run("purge-soft-deleted", 1);
     expect(
       await prisma.board.findUnique({ where: { id: purged.id } }),
@@ -182,7 +219,13 @@ describe("Admin queues (e2e)", () => {
       (await prisma.approvalRequest.findMany({ where: { boardId: live.id } }))
         .map(({ id }) => id)
         .sort(),
-    ).toEqual(["approved", "pending", "recent-cancelled", "recent-consumed"]);
+    ).toEqual([
+      "approved",
+      "pending",
+      "recent-cancelled",
+      "recent-consumed",
+      "recent-lapsed",
+    ]);
   });
 
   it("rejects an unknown maintenance job", async () => {

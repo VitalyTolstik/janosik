@@ -219,18 +219,25 @@ sharing is disabled (`public_shares` off / `ALLOW_PUBLIC_SHARES=false`). A
 start attempt answers `409 public_shares_disabled` before any demo users or
 board rows are created.
 
-`Start demo` creates the demo users and cards, then starts the scenario. `Stop & clean up`
-is enabled while demo cleanup is pending. Both stopping and cleanup before a
-new start use the recorded run and its authored commands. The demo's
-observation link is removed. Cleanup preserves existing boards, memberships
-and links, including user links to demo cards. A dedicated demo board is
-removed when it contains only the recorded demo footprint.
+Entering a Board id targets an existing board. Starting the demo publishes a
+live observation link that includes the board's existing content and
+comments. Anyone with the link can read them while it is active.
+
+`Start demo` records the generated IDs before provisioning, then creates the
+users and cards and starts the scenario. `Stop & clean up` and startup
+cleanup use those IDs and remove the observation link. The selected existing
+board and user-created data are preserved, including links to demo cards
+and any demo rows those links need. A dedicated demo board is deleted only
+if it is empty after cleanup. If a dedicated board or demo account is kept
+by other rows, the run stays pending and the operator can retry. Interrupted
+starts can also be cleaned up. Older runs use surviving creation commands
+for child IDs absent from their records.
 
 Behind the scenes the runner creates a dispatcher and the requested agents on
 the reserved `@janosik.demo` domain, the five flow columns (Новые, В работе,
-На ревью, Тестирование, Готово), a label set and one card per agent, then
+На ревью, Тестирование, Готово), a label set and one card per requested task, then
 drives the cards across the flow. Board titles, task names and email suffixes
-are display conventions. Cleanup uses IDs from the run and command log.
+are display conventions.
 
 ## Operations
 
@@ -275,11 +282,13 @@ The retention window is the number of days before the purge may remove
 soft-deleted rows (1 to 3650, default 30). The page offers the 30/90/365
 presets and shows how many cards, comments, attachments and columns are
 currently eligible. The same window applies to the command log, activity
-feed, ended agent sessions and terminal approvals. Age runs from the session
-end or the time an approval was rejected, cancelled, expired or consumed.
-Open sessions and pending or approved requests stay until their status
-changes or their board is permanently purged. Expiry still blocks use of a
-lapsed approval. `AdminAuditLog` and `SecurityAuditLog` use
+feed, ended agent sessions and approvals past their decision or apply window.
+Age runs from the session end, the rejection or cancellation decision,
+the approval expiry or the time it was consumed. Housekeeping marks overdue
+pending requests expired across all boards. An approved request keeps its
+decision and becomes eligible for removal after the retention window from
+expiry. Open sessions and requests still within their decision or apply
+window are kept until they become eligible or the board is purged. `AdminAuditLog` and `SecurityAuditLog` use
 `AUDIT_RETENTION_DAYS` (365 by default).
 
 The backup line is deliberately honest: `BACKUP_DIR` is only a location you
@@ -288,9 +297,10 @@ configured, not a backup Janosik creates. The API reports
 that Janosik neither creates, schedules nor verifies backups. Use `pg_dump`
 and back up the uploads volume yourself.
 
-`Purge now` permanently deletes already-deleted cards, comments, attachments
-and columns older than the window. Live data is never touched. The action is
-confirmed.
+`Purge now` permanently deletes boards and other data soft-deleted before
+the retention cutoff. Purging a board also deletes all of its agent sessions
+and approval requests, regardless of age or status. The action requires
+confirmation.
 
 ### Scheduled housekeeping
 
@@ -308,7 +318,7 @@ are:
 | `sweep-exports` | expired background data exports and their files |
 | `sweep-commands` | command-log rows past the retention window |
 | `sweep-agent-sessions` | agent sessions that ended before the retention cutoff |
-| `sweep-approvals` | rejected, cancelled, expired and consumed requests past the retention window |
+| `sweep-approvals` | marks overdue pending requests expired, then removes rejected, cancelled, expired, lapsed approved and consumed requests past the retention window |
 | `sweep-reminders` | stale due-reminder dedupe rows |
 | `sweep-activity` | membership/comment feed rows past the retention window |
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |

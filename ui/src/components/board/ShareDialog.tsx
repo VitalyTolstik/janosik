@@ -403,13 +403,24 @@ function ShareRow({
         {t("share.meta", {
           views: share.views,
           flags: [
-            share.includeComments ? t("share.visible.comments") : null,
-            share.includeAttachments ? t("share.visible.attachments") : null,
+            (share.effectiveIncludeComments ?? share.includeComments)
+              ? t("share.visible.comments")
+              : null,
+            (share.effectiveIncludeAttachments ?? share.includeAttachments)
+              ? t("share.visible.attachments")
+              : null,
           ]
             .filter(Boolean)
             .join(" · "),
         })}
       </p>
+      {((share.includeComments && share.effectiveIncludeComments === false) ||
+        (share.includeAttachments &&
+          share.effectiveIncludeAttachments === false)) && (
+        <p className="text-xs text-muted-foreground">
+          {t("share.refreshRequired")}
+        </p>
+      )}
     </li>
   );
 }
@@ -568,7 +579,9 @@ function CreateForm({
 }) {
   const { t } = useI18n();
   const [title, setTitle] = useState("");
-  const [includeComments, setIncludeComments] = useState(true);
+  const [includeComments, setIncludeComments] = useState<boolean>(
+    SHARE_LIMITS.defaultIncludeCommentsLive,
+  );
   const [includeAttachments, setIncludeAttachments] = useState(false);
   const [ttlHours, setTtlHours] = useState<number>(SHARE_TTL_HOURS[1]);
   const active = (shares ?? []).filter(
@@ -602,7 +615,15 @@ function CreateForm({
             className="flex-1"
             data-testid={`share-mode-${option}`}
             aria-pressed={mode === option}
-            onClick={() => onModeChange(option)}
+            onClick={() => {
+              if (option === mode) return;
+              setIncludeComments(
+                option === "live"
+                  ? SHARE_LIMITS.defaultIncludeCommentsLive
+                  : SHARE_LIMITS.defaultIncludeCommentsSnapshot,
+              );
+              onModeChange(option);
+            }}
           >
             {t(`share.mode.${option}`)}
           </Button>

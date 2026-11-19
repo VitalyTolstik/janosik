@@ -66,6 +66,25 @@ describe("ShareAggregateCache", () => {
     expect(a).toBe(b);
   });
 
+  it("caps distinct in-flight rebuilds and still deduplicates a board at capacity", async () => {
+    const cache = new ShareAggregateCache(2000, 2, 1);
+    let finish!: (value: Awaited<ReturnType<typeof build>>) => void;
+    const first = cache.load(
+      "b1",
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    expect(cache.load("b1", build)).toBe(first);
+    await expect(cache.load("b2", build)).rejects.toMatchObject({
+      status: 503,
+    });
+    finish(await build());
+    await first;
+    await expect(cache.load("b2", build)).resolves.toMatchObject({ seq: 5 });
+  });
+
   it("is disabled at ttl <= 0 (never stores)", async () => {
     jest.useRealTimers();
     const cache = new ShareAggregateCache(0);

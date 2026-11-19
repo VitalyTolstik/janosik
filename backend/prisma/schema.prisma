@@ -181,7 +181,7 @@ model ThrottleSettings {
 }
 
 // Master-panel demo runner (TASK-57). One row per run; `manifest` records the
-// exact ids the run created (owner, users, columns, labels, cards), so `stop`
+// exact ids reserved before provisioning, so `stop`
 // deletes precisely those rows — cleanup never guesses from names.
 model DemoRun {
   id        String    @id @default(cuid())
@@ -236,26 +236,31 @@ model Board {
 // it. The token is stored as-is (it must round-trip into a URL/embed) and its
 // 128-bit entropy + `expiresAt` + `revokedAt` + rate limit are the guard.
 model BoardShare {
-  id                 String                   @id @default(cuid())
-  token              String                   @unique // 128-bit base64url
+  id                     String                      @id @default(cuid())
+  token                  String                      @unique // 128-bit base64url
   // Snapshot shares deliberately outlive their source board (TASK-58,
   // TASK-156): deleting the board detaches the frozen copy instead of
   // cascading it away. Live shares are revoked before the board goes.
-  board              Board?                   @relation(fields: [boardId], references: [id], onDelete: SetNull)
-  boardId            String?
-  mode               String                   @default("snapshot") // snapshot | live
-  snapshot           Json? // frozen board, roster and opted-in content
-  snapshotVersion    Int? // board seq at snapshot time ("taken at")
-  title              String? // owner-side label for the share list
-  includeComments    Boolean                  @default(true)
-  includeAttachments Boolean                  @default(false)
-  expiresAt          DateTime? // TTL; null = no expiry
-  revokedAt          DateTime? // manual revoke
-  createdBy          String // userId (board) or admin email (panel/demo)
-  views              Int                      @default(0)
-  lastViewedAt       DateTime?
-  createdAt          DateTime                 @default(now())
-  snapshotBlobs      BoardShareSnapshotBlob[]
+  board                  Board?                      @relation(fields: [boardId], references: [id], onDelete: SetNull)
+  boardId                String?
+  mode                   String                      @default("snapshot") // snapshot | live
+  snapshot               Json? // frozen board and roster
+  snapshotVersion        Int? // board seq at snapshot time ("taken at")
+  snapshotTakenAt        DateTime?
+  // Null on legacy shares, which read retained source rows with a time cutoff.
+  snapshotHasComments    Boolean?
+  snapshotHasAttachments Boolean?
+  title                  String? // owner-side label for the share list
+  includeComments        Boolean                     @default(true)
+  includeAttachments     Boolean                     @default(false)
+  expiresAt              DateTime? // TTL; null = no expiry
+  revokedAt              DateTime? // manual revoke
+  createdBy              String // userId (board) or admin email (panel/demo)
+  views                  Int                         @default(0)
+  lastViewedAt           DateTime?
+  createdAt              DateTime                    @default(now())
+  snapshotBlobs          BoardShareSnapshotBlob[]
+  snapshotComments       BoardShareSnapshotComment[]
 
   @@index([boardId])
   @@index([createdBy])
@@ -266,11 +271,32 @@ model BoardShare {
 // Keeps snapshot copies in the uploads volume alive until the share is
 // refreshed or removed. No reference to the original attachment or board.
 model BoardShareSnapshotBlob {
-  storedName String     @id
-  share      BoardShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
-  shareId    String
+  storedName   String     @id
+  share        BoardShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  shareId      String
+  attachmentId String?
+  cardId       String?
+  createdAt    DateTime?
+  isInline     Boolean?
+  metadata     Json?
 
+  @@unique([shareId, attachmentId])
+  @@index([shareId, cardId, isInline, createdAt])
   @@index([shareId])
+}
+
+// Public-safe frozen comments are paged by card without loading the board or
+// comments on other cards. IDs reference only the share, never source rows.
+model BoardShareSnapshotComment {
+  share     BoardShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  shareId   String
+  id        String
+  cardId    String
+  createdAt DateTime
+  payload   Json
+
+  @@id([shareId, id])
+  @@index([shareId, cardId, createdAt, id], map: "BoardShareSnapshotComment_page_idx")
 }
 
 // Independent of the share and board rows so history survives their removal.

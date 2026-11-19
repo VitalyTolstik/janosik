@@ -1,5 +1,5 @@
 import { createParamDecorator, type ExecutionContext } from "@nestjs/common";
-import type { BoardShare } from "@prisma/client";
+import type { ShareRow } from "./share.service";
 import type { ShareRequest } from "./share-access.guard";
 
 /**
@@ -8,7 +8,7 @@ import type { ShareRequest } from "./share-access.guard";
  * first — the controller never looks the token up again.
  */
 export const CurrentShare = createParamDecorator(
-  (_data: unknown, context: ExecutionContext): BoardShare => {
+  (_data: unknown, context: ExecutionContext): ShareRow => {
     const request = context.switchToHttp().getRequest<ShareRequest>();
     if (!request.share) {
       throw new Error("CurrentShare used outside a ShareAccessGuard route");

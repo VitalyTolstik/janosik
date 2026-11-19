@@ -367,6 +367,7 @@ export class CommentsService {
     cursorRaw?: string,
     limitRaw?: string,
     kindRaw?: string,
+    createdBefore?: Date,
   ): Promise<CommentPage> {
     const { cursor, limit } = parseCommentPage(cursorRaw, limitRaw);
     const kind = parseKind(kindRaw);
@@ -374,6 +375,7 @@ export class CommentsService {
       where: {
         cardId,
         deletedAt: null,
+        ...(createdBefore ? { createdAt: { lte: createdBefore } } : {}),
         ...(kind ? { kind } : {}),
         ...(cursor
           ? {
