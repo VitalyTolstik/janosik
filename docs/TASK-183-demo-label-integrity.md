@@ -301,14 +301,17 @@ never rely on manual SQL.**
    - **own the backend lifecycle under crashes.** Run the backend in its own
      process group, persist PID/port/lock files per demo DB, and take a reset
      lock so two resets cannot run concurrently. On reset start detect and kill
-     a stale reset-owned backend before doing anything else.
+     a stale reset-owned backend before doing anything else; verify ownership
+     from `/proc/<pid>` (Linux/WSL prerequisite) or a fail-closed `ps` fallback
+     with the same PID/start-time/port/nonce proof; if unproven, never kill.
      Terminate remaining demo-DB connections before the drop (for example
-     `pg_terminate_backend` for that database), use a unique private port, stop
-     the backend before `prisma migrate reset`, restart it after migrations for
-     the seed only, stop it before the Prisma-only verifier, and stop it in
-     `finally` — wait for process exit, kill the group if needed, and include
-     the lifecycle in the reset-twice and SIGKILL-crash regressions. The
-     post-seed backend must not be left running;
+     `pg_terminate_backend` for that database), **excluding the reset’s own
+     backend PID**, and print the terminated PIDs/database only; use a unique
+     private port, stop the backend before `prisma migrate reset`, restart it
+     after migrations for the seed only, stop it before the Prisma-only verifier,
+     and stop it in `finally` — wait for process exit, kill the group if needed,
+     and include the lifecycle in the reset-twice and SIGKILL-crash regressions.
+     The post-seed backend must not be left running;
    - reset by dropping/recreating the demo schema and applying existing
      migrations (`prisma migrate reset --force --skip-seed` against the guarded
      database), then run the seed and fixture verifier. Primary resets the
@@ -326,8 +329,12 @@ never rely on manual SQL.**
      Retain `FeatureFlag`, `EmailSettings`, `EmailTemplate`, `OpsSettings`,
      `ThrottleSettings`, `Announcement` and `AnnouncementTranslation`.
      `AnnouncementDismissal` is not explicitly deleted; any rows for deleted
-     users cascade with the `User` FK. This order is FK-correct for the listed
-     tables; the earlier failure was the **missing** tables, not the ordering.
+     users cascade with the `User` FK. Because `EmailSettings` is retained, the
+     reset env must reuse the original `SETTINGS_SECRET` (or original
+     `JWT_SECRET` when `SETTINGS_SECRET` is empty), otherwise saved SMTP
+     passwords become undecryptable; document re-entry as the fallback. This
+     order is FK-correct for the listed tables; the earlier failure was the
+     **missing** tables, not the ordering.
      Both primary and fallback remove admin/security account state, so the
      master account must be recreated after either path. Add the reset-twice
      regression below, with non-zero rows in the fallback tables before **each**
@@ -348,10 +355,12 @@ never rely on manual SQL.**
    validation. The base `seed-agent-pixel-demo.mjs` contract remains supported
    for pixel parity; it gains the same equality check when `DEMO_*` are present,
    and its `PrismaClient` construction moves after the guard. Base pixel seed
-   must also add a DB-name/allowlist guard or a prominent warning, and its docs
-   must say `DEMO_*` stays unset for pixel parity. Direct base seed invocation
-   is documented as pixel-parity only, not a TASK-176 reset path; the reset
-   command refuses it. Do not add a destructive HTTP endpoint.
+   accepts **only** `janosik_pixel` / `*_pixel` and must explicitly reject
+   `janosik_task176_demo`; `*_demo` is allowed only through the overlay/reset
+   nonce path. Its docs must say `DEMO_*` stays unset for pixel parity. Direct
+   base seed invocation is documented as pixel-parity only, not a TASK-176
+   reset path; the reset command refuses it. Do not add a destructive HTTP
+   endpoint.
 
    Run from the repository root via the npm script (the script resolves cwd
    explicitly). Document that the reset role needs schema/database create-drop
@@ -398,26 +407,30 @@ never rely on manual SQL.**
    - the reset command and its destructive schema-recreate nature, run from the
      repository root;
    - the backend build/env bootstrap the reset uses: `backend/dist/main.js`
-     built, `JWT_SECRET`, `PUBLIC_ORIGIN`, `COOKIE_SECURE=false`, a fresh
-     `PORT`, `NODE_ENV`, the reset-only env file and the initial
-     `prisma migrate deploy`; the exact DB name primary guard and privileges for
-     initial DB creation, schema/database create-drop and
-     `pg_terminate_backend`;
+     built, `JWT_SECRET`, `SETTINGS_SECRET` (or the original `JWT_SECRET` when
+     empty), `PUBLIC_ORIGIN`, `COOKIE_SECURE=false`, a fresh `PORT`, `NODE_ENV`,
+     the reset-only env file and the initial `prisma migrate deploy`; the exact
+     DB name primary guard and privileges for initial DB creation,
+     schema/database create-drop and `pg_terminate_backend`;
    - the fact that both the schema reset and the narrowed fallback clear
      admin/security account state and the seed does not recreate admin users:
-     recreate the master with
-     `npm run demo:task176:admin -- --email <master>` (recommended wrapper;
-     first master becomes OWNER, `ADMIN_PASSWORD` for non-interactive use) or
-     `npm run admin:create -w backend -- --email <master> --database-url
-     "$DEMO_DATABASE_URL"`. The admin CLI must accept `--database-url` applied
-     **after** dotenv and validate the demo name; the false “reset env
-     mechanism” for admin:create is removed. Test: `backend/.env` points at dev,
-     reset env/demo URL at demo → master is created in demo;
+     recreate the master with `npm run demo:task176:admin -- --email <master>`
+     (the **only documented path**; first master becomes OWNER,
+     `ADMIN_PASSWORD` for non-interactive use). The wrapper passes
+     `DEMO_DATABASE_URL` via a 0600 env file or child env, never argv. If
+     `admin-cli.cjs` keeps `--database-url`, it must reject credential-bearing
+     URLs in argv and require `DEMO_DATABASE_URL` from the environment; parse
+     args and construct `PrismaClient` **after** dotenv. Test: `backend/.env`
+     points at dev, reset env/demo URL at demo → master is created in demo; the
+     URL/password never appears in argv, `ps`, stdout or logs;
    - the verify command and its Prisma-only, read-only guarantee;
    - the rule that the canonical demo is reset-only and manual experiments use
      a cloned database or a separate board;
-   - that the fallback is a **full reset of admin/security state**, not a
-     fixture-only path that preserves admin login;
+   - that the fallback is a **fixture + admin/security account reset**, not a
+     full demo-DB reset; global settings/announcements are retained;
+   - that retained `EmailSettings` needs the same `SETTINGS_SECRET` (or original
+     `JWT_SECRET` when empty) in the reset env so saved SMTP passwords stay
+     decryptable; otherwise re-enter them;
    - the redaction rule: no raw tokens, passwords or connection strings in
      stdout/CI; raw secrets only via an explicit 0600 file if parity tooling
      needs them;
@@ -477,9 +490,10 @@ verifier is the only maintainable path.
    refuses ambient `DATABASE_URL`/`API_URL` mismatches. It runs only under the
    reset wrapper with a one-time nonce; direct invocation is refused, and a
    divergent API cannot write. The base pixel seed still works for parity,
-   gains a DB-name/allowlist guard or strong warning, and only adds the equality
-   check when `DEMO_*` are present; `DEMO_*` stays unset for pixel parity.
-   Direct base-seed invocation is not a TASK-176 reset path.
+   accepts only `janosik_pixel`/`*_pixel`, explicitly rejects
+   `janosik_task176_demo`, and only adds the equality check when `DEMO_*` are
+   present; `DEMO_*` stays unset for pixel parity. Direct base-seed invocation
+   is not a TASK-176 reset path.
 7. `demo:task176:verify` passes after reset, is Prisma-only and truly read-only
    (no login, no PAT, no `ApiToken.lastUsedAt` mutation), and checks the full
    manifest including users/roles, comments policy and the out-of-fixture
@@ -489,10 +503,10 @@ verifier is the only maintainable path.
    assignee/cover/priority/move value that does not match the manifest.
 9. Both primary and fallback remove admin/security account state; the docs
    require master recreation with
-   `npm run demo:task176:admin -- --email <master>` (recommended wrapper; first
-   master OWNER) or `admin:create ... --database-url "$DEMO_DATABASE_URL"`
-   against the demo DB. Runtime/admin/security rows are out-of-fixture, not
-   canonical. The fallback is **fixture + admin/security account reset**;
+   `npm run demo:task176:admin -- --email <master>` (the only documented path;
+   URL via 0600 env/child env, not argv; first master OWNER) against the demo
+   DB. Runtime/admin/security rows are out-of-fixture, not canonical. The
+   fallback is **fixture + admin/security account reset**;
    `FeatureFlag`, `EmailSettings`, `EmailTemplate`, `OpsSettings`,
    `ThrottleSettings`, `Announcement` and `AnnouncementTranslation` are
    retained. `AnnouncementDismissal` is not explicitly deleted; rows for deleted
@@ -505,6 +519,36 @@ verifier is the only maintainable path.
     in stdout/CI logs; raw secrets only via an explicit 0600 file if parity
     tooling needs them. No admin demo-runner code, production database or
     non-demo developer database is touched.
+
+### 2.6 Normal path and recovery
+
+**Normal path (one command, repo root):**
+
+```bash
+npm run demo:task176:reset
+npm run demo:task176:admin -- --email <master>   # only if admin login is needed
+```
+
+The reset prints host/database only, allocates/checks the private API port,
+writes the 0600 reset env, runs the identity probe, resets/seeds, verifies and
+reaps the backend. The admin wrapper passes the DB URL via env/file, never
+argv. `npm run demo:task176:verify` is the read-only check if a human wants a
+second opinion; no login is involved.
+
+**Recovery after a crash/SIGKILL:**
+
+Rerun `npm run demo:task176:reset`. At start it sweeps stale reset env/temp/lock
+and marker rows, proves process ownership from PID/start time/command
+line/port/nonce, kills only that reset-owned group and terminates remaining
+demo-DB connections before the drop. If ownership cannot be proven, it clears
+stale bookkeeping and fails closed with the stale PID/lock path printed; do not
+kill a process by hand and do not patch rows. A partial schema is recovered by
+rerunning the same reset. Linux/WSL is the supported environment for the
+`/proc` ownership check; on other platforms the reset either uses a fail-closed
+`ps` fallback or refuses with a clear prerequisite message.
+
+Manual test edits remain reset-only: run the reset before/after a session; do
+not hand-edit the canonical demo rows.
 
 ---
 
@@ -705,9 +749,14 @@ depend on 183.2.
   a seed user. Reset twice; no FK failure, admin/security rows are cleared,
   global settings/announcements are retained, the dismissal cascades with the
   user, and the documented master-recreation step is required after both runs.
+  With a retained `EmailSettings` row, use the same reset `SETTINGS_SECRET` (or
+  original `JWT_SECRET`) and assert the SMTP secret stays decryptable; otherwise
+  assert the documented re-entry path.
 - Admin-CLI test: `backend/.env` points at dev, reset env/`DEMO_DATABASE_URL` at
-  demo; `demo:task176:admin` or `admin:create --database-url` creates the master
-  in demo, not dev. First master becomes OWNER.
+  demo; `demo:task176:admin` creates the master in demo, not dev; first master
+  becomes OWNER. The URL/password must never appear in argv, `ps`, stdout or
+  logs; if `--database-url` remains, a credential-bearing argv value is
+  rejected and `DEMO_DATABASE_URL` must come from env.
 - Env precedence test: `backend/.env` points at dev `janosik`, `DEMO_DATABASE_URL`
   points at demo, `DEMO_API_URL` at the reset backend; the reset must prove the
   backend read the demo DB, not dev. A divergent-env seed test sets
@@ -725,15 +774,22 @@ depend on 183.2.
   `aud: "janosik-user"` and a stamp computed from the reset-env `JWT_SECRET`.
   Correct DB `GET /boards/:marker` returns 200; **any non-200** (401/403/404)
   aborts before any delete. Markers are cleaned before the drop and in
-  `finally`; after `migrate reset` use a fresh connection/state and sweep stale
-  markers at start.
+  `finally`; `finally` must tolerate a missing table/recreated schema and fall
+  back to the stale-marker sweep. After `migrate reset` use a fresh
+  connection/state.
+- `securityStamp` test: the one-argument form keeps using `env.JWT_SECRET` for
+  auth callers; the two-argument `securityStamp(user, secret)` uses the provided
+  reset secret and matches the expected HMAC. Both paths are tested; the reset
+  never imports the env-bound value.
 - Lifecycle/ownership test: reset-twice starts a fresh private-port backend
   each time, stops it before the schema drop, stops it after seed and before the
   Prisma-only verify, waits for exit and leaves no process/connection behind.
   A second concurrent reset is refused by the reset lock. A stale PID pointing
   at a live non-reset process must not be killed; ownership is checked from
   PID + start time + process group/session + command line/port/nonce; if
-  unproven, clear stale state and fail closed.
+  unproven, clear stale state and fail closed. On non-Linux/WSL, a fail-closed
+  `ps` fallback or explicit prerequisite refusal is used. `pg_terminate_backend`
+  excludes the reset backend's own PID and prints the terminated PIDs/database.
 - Crash test: SIGKILL the **reset wrapper/process group** (not only the
   backend) mid-seed; PID/port/lock/env/marker state remains. The next reset
   proves ownership, kills only that group, terminates demo-DB connections,
@@ -751,8 +807,9 @@ depend on 183.2.
   `DEMO_API_URL` that is not bound to the resolved demo database is refused
   before the first delete; conflicting `DATABASE_URL`/`API_URL` values are
   refused; a direct `SEED_ALLOW=1` invocation without the demo env pair is
-  refused. Base pixel seed accepts only `janosik_pixel` / `*_pixel` / `*_demo`
-  and refuses `janosik`/dev.
+  refused. Base pixel seed accepts only `janosik_pixel` / `*_pixel`; a direct
+  base-seed run with `DATABASE_URL=.../janosik_task176_demo` is refused before
+  any delete.
 - Redaction test: reset logs contain host/database only, never a username,
   password, full connection string, PAT or token; the seed's raw token/password
   output is suppressed by default and only available via an explicit 0600 file.
@@ -859,14 +916,17 @@ with an explicit compatibility rationale.
 | The post-seed backend is left running or a crash leaves open connections. | Process group + PID/port/lock per demo DB; kill stale reset-owned backend and `pg_terminate_backend` demo connections at reset start; fresh private port; stop before drop, stop after seed/before verify, stop/reap in `finally`; SIGKILL-crash regression. |
 | The current delete sequence fails on FK `RESTRICT`. | Drop/recreate the demo schema and apply migrations; if using ordered deletes, cover `ChecklistItem`, `Checklist`, `CardLink`, `CardLabel`, shares/audit, security/admin/idempotency/reminder tables, and announcement-dismissal cascade; add a reset-twice test with non-zero rows before each run. |
 | Fallback scope contradicts the primary reset. | Chosen: **fixture + admin/security account reset**; global settings/announcements retained. Keep `SecurityAuditLog`/`Admin*`; retain flags/mail/templates/ops/throttle/announcements; `AnnouncementDismissal` cascades with deleted users. Do not call it a full demo-DB reset. |
+| Retained `EmailSettings` becomes undecryptable. | Reuse the original `SETTINGS_SECRET` (or original `JWT_SECRET` when empty) in the reset env; otherwise document/force SMTP credential re-entry. Test decryptability or re-entry. |
 | The intended `TASK-176 acceptance` label/checklist/links are lost by a reset. | Decide their status before resetting; commit them to the manifest if canonical. Do not run the destructive reset until that decision is recorded. |
 | Extra app users (`1@t.com`, `2@t.com`) silently become canonical. | Manifest expects exactly the two seed users and their board roles; an extra registration after reset fails verify. |
 | The `t176-comment-*` set is accidentally treated as TASK-176 canonical. | Classify it as TASK-176.9 scaffolding, remove it from the TASK-176 fixture, or declare a separate fixture; verifier checks the decision. |
 | The seed is partial after an API/runtime failure. | Run the verifier after the seed; fail loudly; document “rerun reset” rather than hand-patching. |
 | The seed changes the existing pixel parity fixture. | Keep the base seed output stable; make TASK-176 an explicit overlay or parameter, and test both modes. |
 | Seed/reset logs leak tokens or passwords. | Capture and redact output by default; raw secrets only via an explicit 0600 file; secret values never in stdout, URLs or CI logs. |
+| Admin DB URL in argv leaks into `ps`/history. | Only document `demo:task176:admin`, pass URL via 0600 env/child env; reject credential-bearing `--database-url`; test argv/`ps`/stdout/logs. |
+| Retained `EmailSettings` becomes undecryptable. | Reuse the original `SETTINGS_SECRET` (or original `JWT_SECRET` when empty) in the reset env; otherwise document/force SMTP credential re-entry. Test decryptability or re-entry. |
 | Verify mutates a session or `ApiToken.lastUsedAt`. | Prisma-only verification; no login/PAT. If an API read is ever added, ignore `lastUsedAt` and re-mint a known token. |
-| Primary/fallback removes the master account. | Recreate with `npm run demo:task176:admin -- --email <master>` or `admin:create --database-url "$DEMO_DATABASE_URL"` (first master OWNER) against the demo DB after either path. |
+| Primary/fallback removes the master account. | Recreate with `npm run demo:task176:admin -- --email <master>` (only documented path; URL via 0600 env/child env, not argv; first master OWNER) against the demo DB after either path. |
 | The label fix breaks undo timestamps. | Add `cardUpdatedAt` to the inverse, add `SET_CARD_LABEL` to `CARD_STAMPED_TYPES`, and assert exact restore through `POST /commands`. |
 | `DELETE_LABEL`/`RESTORE_LABEL` expand the change beyond a small fix. | Decide explicitly: forward stamping plus per-card assignment timestamps and validation, or a named follow-up with a regression test. |
 | The `board-diff` fast path becomes incorrect or overly broad. | Update the comment/test; keep the `labelIds` fallback as a compatibility guard until all writers are verified. |
@@ -931,19 +991,21 @@ with an explicit compatibility rationale.
 12. **Are `1@t.com`/`2@t.com` junk and are admin/security rows out-of-fixture?**
     Recommended: yes — expect exactly the two seed users; extra users fail
     verify. Runtime/admin/security rows are out-of-fixture; after either reset
-    path recreate the master with
-    `npm run demo:task176:admin -- --email <master>` (recommended wrapper) or
-    `admin:create --database-url "$DEMO_DATABASE_URL"` against the demo DB.
-    `admin-cli.cjs` must accept `--database-url` applied after dotenv; it does
-    not load the reset env file.
+    path recreate the master with `npm run demo:task176:admin -- --email
+    <master>` (the only documented path). The wrapper passes
+    `DEMO_DATABASE_URL` via a 0600 env file or child env, never argv. If
+    `--database-url` remains, reject credential-bearing argv and require the URL
+    from `DEMO_DATABASE_URL`; parse args/construct Prisma after dotenv.
 13. **Fallback scope — chosen: fixture + admin/security account reset.**
     Keep `SecurityAuditLog`, `AdminAuditLog`, `AdminRefreshToken` and `AdminUser`
     in the fallback; retain `FeatureFlag`, `EmailSettings`, `EmailTemplate`,
     `OpsSettings`, `ThrottleSettings`, `Announcement` and
     `AnnouncementTranslation`. `AnnouncementDismissal` is not explicitly deleted;
-    rows for deleted users cascade. This is **not** a full demo-DB reset and is
-    not claimed to match `prisma migrate reset`; master recreation is required
-    after the admin/security portion.
+    rows for deleted users cascade. Retained `EmailSettings` requires the same
+    `SETTINGS_SECRET`/original `JWT_SECRET` or SMTP credential re-entry. This is
+    **not** a full demo-DB reset and is not claimed to match
+    `prisma migrate reset`; master recreation is required after the
+    admin/security portion.
 
 ---
 
@@ -977,8 +1039,10 @@ with an explicit compatibility rationale.
   out-of-fixture. The fallback is a **fixture + admin/security account reset**;
   global flags/mail/templates/ops/throttle/announcements are retained, and
   `AnnouncementDismissal` cascades with deleted users. Both primary and fallback
-  require `npm run demo:task176:admin -- --email <master>` (or
-  `admin:create --database-url "$DEMO_DATABASE_URL"`) against the demo DB.
+  require `npm run demo:task176:admin -- --email <master>` (the only documented
+  path; URL via 0600 env/child env, not argv) against the demo DB. Retained
+  `EmailSettings` uses the same `SETTINGS_SECRET`/original `JWT_SECRET`, or the
+  docs require SMTP credential re-entry.
 - `npm run demo:task176:verify` passes after reset, is Prisma-only/read-only,
   and fails on the observed artifacts (`Card claim visibility 123`, `фывфыв`,
   checklist `123`, random-UUID link) and on any undecided
@@ -1001,6 +1065,9 @@ with an explicit compatibility rationale.
   (production + reset mode is refused), has no `.env.local` fallback, aborts on
   a missing/mismatched file and sweeps stale reset files at start; normal boot
   ignores it.
+- `securityStamp(user)` keeps its one-argument auth behavior; the reset uses
+  `securityStamp(user, secret)`/the same HMAC with the reset secret. Both paths
+  are tested.
 - Tests cover reducer state (`updatedAt`/`labelIds`), persisted server fields
   (`updatedAt`/`version`/`lastActorId`/`labelIds`), validation, inverse through
   `POST /commands`, reset-twice, SIGKILL recovery, production/stale-file

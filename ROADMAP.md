@@ -5136,16 +5136,16 @@ committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
   adminRefreshToken → adminUser. Retain `FeatureFlag`, `EmailSettings`,
   `EmailTemplate`, `OpsSettings`, `ThrottleSettings`, `Announcement`,
   `AnnouncementTranslation`; `AnnouncementDismissal` cascades with deleted users.
-  Порядок FK-корректен; раньше не хватало самих таблиц. Reset дважды с non-zero
-  rows перед **каждым** run.
+  Retained `EmailSettings` требует same `SETTINGS_SECRET`/original `JWT_SECRET`
+  или SMTP credential re-entry. Порядок FK-корректен; раньше не хватало самих
+  таблиц. Reset дважды с non-zero rows перед **каждым** run.
 - Manifest/verifier: ровно два seed-пользователя и их board roles; `1@t.com` и
   `2@t.com` — junk, extra registration после reset валит verify.
   SecurityAuditLog/AttentionNotification/RefreshToken и admin-таблицы —
   probe-time/out-of-fixture, не pins; оба reset-пути стирают admin/security
   account state — recreate `npm run demo:task176:admin -- --email <master>`
-  (recommended wrapper; first master OWNER) или
-  `admin:create --database-url "$DEMO_DATABASE_URL"` против demo DB; CLI
-  `--database-url` wins after dotenv; `.env` must not redirect to dev. Verifier также покрывает `columnId`/`position`,
+  (only documented path; URL via 0600 env/child env, never argv; first master
+  OWNER) против demo DB. Verifier также покрывает `columnId`/`position`,
   `priority`, `assigneeId`, `cover`, labels, named links, checklists; `dueDate`,
   task spec, claim, `archivedAt` — явно absent/empty. Assignee/cover/priority/
   move и 60 comments классифицировать.
@@ -5164,13 +5164,14 @@ committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
   Тест: `backend/.env` → dev, `DEMO_DATABASE_URL` → demo + tampered-`.env`/
   production-boot test.
 - Dedicated backend: process group, PID/start-time/port/lock/nonce per demo DB;
-  verify `/proc/<pid>` cmdline/start time/port/nonce before killing; if ownership
-  unproven, clear stale state and fail closed (never kill an unrelated live
-  process); `pg_terminate_backend` demo connections before drop; fresh
-  loopback/owned port or reset-allocated/printed URL, port-in-use test; stop
-  before schema drop, restart after migrations for seed only, stop before
-  Prisma-only verify, stop/reap in `finally`; SIGKILL-crash rerun kills
-  wrapper/process group. `/health db: up` не доказывает identity:
+  verify `/proc/<pid>` (Linux/WSL prerequisite) или fail-closed `ps` fallback
+  cmdline/start time/port/nonce before killing; if ownership unproven, clear
+  stale state and fail closed (never kill an unrelated live process);
+  `pg_terminate_backend` demo connections before drop, excluding reset backend
+  PID, print terminated PIDs/database; fresh loopback/owned port or
+  reset-allocated/printed URL, port-in-use test; stop before schema drop, restart
+  after migrations for seed only, stop before Prisma-only verify, stop/reap in
+  `finally`; SIGKILL-crash rerun kills wrapper/process group. `/health db: up` не доказывает identity:
   marker **user/board/accepted ADMIN BoardMember create directly via reset
   Prisma**, JWT `{ sub, aud: "janosik-user", stamp, exp }` с reset-env
   `JWT_SECRET` и parameterized `securityStamp(user, secret)`; API только
@@ -5179,13 +5180,15 @@ committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
   `DEMO_API_URL` map в seed `API_URL`/overlay; TASK-176 overlay читает `DEMO_*`
   exclusively и валидирует DB name до `PrismaClient`; direct overlay invocation
   запрещён (only reset wrapper with one-time nonce); base pixel seed contract
-  сохраняется (allowlist `janosik_pixel`/`*_pixel`/`*_demo`, `DEMO_*` unset),
+  сохраняется (allowlist only `janosik_pixel`/`*_pixel`; explicit reject
+  `janosik_task176_demo`; `*_demo` only overlay/nonce; `DEMO_*` unset),
   direct base seed — не TASK-176 reset path.
 - Verify — Prisma-only, без login/PAT/`ApiToken.lastUsedAt`; если API read
   появится, ignore `lastUsedAt` и re-mint known token. Reset/seed output
   redacted; raw secrets только через 0600 file. Docs: backend build,
-  `JWT_SECRET`/`PUBLIC_ORIGIN`/`COOKIE_SECURE=false`/port, initial
-  `migrate deploy`, DB create/drop privileges, admin recreate.
+  `JWT_SECRET`/`SETTINGS_SECRET` (или original `JWT_SECRET`)/`PUBLIC_ORIGIN`/
+  `COOKIE_SECURE=false`/port, initial `migrate deploy`, DB create/drop/
+  `pg_terminate_backend` privileges, admin recreate.
 
 **183.2 — label timestamp (P3).**
 
@@ -5231,9 +5234,10 @@ unrelated live process never killed, stopped/reaped; verify Prisma-only, ров�
 два seed-пользователя, extra user валит verify; 60 comments отсутствуют или
 вынесены в TASK-176.9 fixture;
 reset/seed output redacted. Fallback — fixture + admin/security account reset;
-global settings/announcements retained; master recreate
-`npm run demo:task176:admin -- --email <master>` или
-`admin:create --database-url "$DEMO_DATABASE_URL"` после обоих путей.
+global settings/announcements retained; retained `EmailSettings` uses same
+`SETTINGS_SECRET`/original `JWT_SECRET` or documented SMTP re-entry; master
+recreate `npm run demo:task176:admin -- --email <master>` (only documented path;
+URL via 0600 env/child env, never argv) после обоих путей.
 `SET_CARD_LABEL` двигает `updatedAt`/`version` один раз, undo
 восстанавливает timestamp, inverse проходит validation и `POST /commands`,
 no-op ничего не меняет; audit table закрыт тестами или follow-up. Без изменений
