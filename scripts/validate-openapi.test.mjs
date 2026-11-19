@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { API_ERROR_CODES } from "../shared/src/api.ts";
 import {
   OpenApiLintError,
   lintSpec,
@@ -12,6 +13,137 @@ test("the published contract is valid OpenAPI 3.1", async () => {
   assert.equal(spec.openapi, "3.1.0");
   assert.ok(operationIds.length >= 40);
   assert.equal(new Set(operationIds).size, operationIds.length);
+});
+
+test("publishes the same error codes as the shared contract and describes token PATCH", async () => {
+  const { spec } = await validateOpenApi();
+  const { ApiErrorCode, UpdateUserTokenRequest } = spec.components.schemas;
+  assert.deepEqual(ApiErrorCode.enum, [...API_ERROR_CODES]);
+  assert.deepEqual(Object.keys(UpdateUserTokenRequest.properties).sort(), [
+    "boardId",
+    "name",
+    "rateLimitPerMinute",
+    "readOnly",
+    "scopePreset",
+    "trustedCi",
+  ]);
+  assert.match(UpdateUserTokenRequest.description, /`expiresAt` are stripped/);
+  assert.match(
+    UpdateUserTokenRequest.properties.scopePreset.description,
+    /Updates the existing token's capability preset/,
+  );
+  const patch = spec.paths["/users/me/tokens/{tokenId}"].patch;
+  assert.equal(
+    patch.responses[409].content["application/json"].schema.allOf[1].properties
+      .code.const,
+    "token_revoked",
+  );
+});
+
+test("describes ScopePreset as editable by the owner in a browser session", async () => {
+  const { spec } = await validateOpenApi();
+  const { ScopePreset } = spec.components.schemas;
+  assert.doesNotMatch(ScopePreset.description, /\bimmutab\w*\b/i);
+  assert.match(
+    ScopePreset.description,
+    /owner may change it in a browser session/,
+  );
+  assert.match(ScopePreset.description, /never raises the board role/);
+  assert.match(ScopePreset.description, /readOnly: true.*effective `observer`/);
+});
+
+test("describes browser-only, PAT-only, and shared board operations", async () => {
+  const { spec } = await validateOpenApi();
+  const { paths } = spec;
+  const sessionOnly = [{ browserSession: [] }];
+  for (const operation of [
+    paths["/agents/overview"].get,
+    paths["/boards/{boardId}/agent-policy"].get,
+    paths["/boards/{boardId}/agent-policy"].patch,
+    paths["/boards/{boardId}/approvals/{approvalId}/decision"].post,
+    paths["/boards/{boardId}/agents/pause"].post,
+    paths["/boards/{boardId}/agents/resume"].post,
+    paths["/users/me/tokens/{tokenId}"].patch,
+  ]) {
+    assert.deepEqual(operation.security, sessionOnly, operation.operationId);
+  }
+  for (const operation of [
+    paths["/boards/{boardId}/approvals"].post,
+    paths["/boards/{boardId}/agent-sessions"].post,
+    paths["/boards/{boardId}/agent-sessions/{sessionId}/heartbeat"].post,
+  ]) {
+    assert.deepEqual(
+      operation.security,
+      [{ personalApiToken: [] }],
+      operation.operationId,
+    );
+  }
+  const revert = paths["/boards/{boardId}/runs/{runId}/revert"].post;
+  assert.deepEqual(revert.security, [
+    { browserSession: [] },
+    { personalApiToken: [] },
+  ]);
+  assert.match(revert.description, /dryRun: true/);
+  assert.match(revert.description, /pat_forbidden/);
+  assert.match(
+    revert.description,
+    /PAT may call this operation only with `dryRun: true`/,
+  );
+  assert.match(
+    revert.description,
+    /`dryRun` is false or omitted, applying the revert requires a board\s+`ADMIN` browser session and a PAT receives `403 pat_forbidden`/,
+  );
+  assert.equal(
+    paths["/boards/{boardId}/plans/apply"].post.operationId,
+    "applyPlan",
+  );
+  assert.equal(paths["/plans/apply"], undefined);
+});
+
+test("states that relative share expiry takes precedence and absolute expiry is still validated", async () => {
+  const { spec } = await validateOpenApi();
+  const { expiresAt, expiresInHours } =
+    spec.components.schemas.CreateShareRequest.properties;
+  assert.equal(expiresAt.format, "date-time");
+  assert.match(
+    expiresAt.description,
+    /must be ISO-8601, including when\s+expiresInHours is present/,
+  );
+  assert.match(expiresInHours.description, /takes precedence over expiresAt/);
+});
+
+test("publishes the public auth config and password recovery contracts", async () => {
+  const { spec } = await validateOpenApi();
+  const { AuthConfig } = spec.components.schemas;
+  const config = spec.paths["/auth/config"].get;
+  assert.deepEqual(config.security, []);
+  assert.equal(
+    config.responses[200].content["application/json"].schema.$ref,
+    "#/components/schemas/AuthConfig",
+  );
+  assert.deepEqual(AuthConfig.required, [
+    "allowRegistration",
+    "allowPublicShares",
+    "limits",
+  ]);
+  assert.deepEqual(AuthConfig.properties.limits.required, [
+    "boards",
+    "importBytes",
+  ]);
+
+  for (const [path, limit] of [
+    ["/auth/password/reset/request", "3 requests per hour per IP"],
+    ["/auth/password/reset/confirm", "10 requests per minute per IP"],
+  ]) {
+    const { security, description, responses } = spec.paths[path].post;
+    assert.deepEqual(security, []);
+    assert.ok(description.includes(limit));
+    assert.equal(
+      responses[200].content["application/json"].schema.$ref,
+      "#/components/schemas/StatusOk",
+    );
+    assert.ok(responses[429]);
+  }
 });
 
 test("lint catches a duplicate operationId", async () => {

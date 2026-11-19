@@ -30,7 +30,7 @@ export class CreateShareDto {
   @IsBoolean()
   includeAttachments?: boolean;
 
-  /** ISO-8601 expiry; omitted = no expiry. */
+  /** ISO-8601 expiry, validated even when expiresInHours sets the deadline. */
   @IsOptional()
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsISO8601()

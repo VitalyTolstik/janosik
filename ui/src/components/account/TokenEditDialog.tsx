@@ -45,13 +45,13 @@ function errorMessage(error: unknown, t: ReturnType<typeof useI18n>["t"]) {
   if (error instanceof ApiError && error.offline) {
     return t("account.tokens.editOffline");
   }
-  if (error instanceof ApiError && error.body !== null) {
-    const body = error.body as { code?: unknown };
-    if (body.code === "pat_forbidden")
+  if (error instanceof ApiError) {
+    const code = (error.body as { code?: unknown } | null)?.code;
+    if (code === "impersonation_read_only")
+      return t("account.tokens.editImpersonationReadOnly");
+    if (code === "token_revoked") return t("account.tokens.editRevoked");
+    if (code === "pat_forbidden" || error.status === 403)
       return t("account.tokens.editSessionOnly");
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return t("account.tokens.editSessionOnly");
   }
   return t("account.tokens.editError");
 }
@@ -195,7 +195,10 @@ export function TokenEditDialog({
         </div>
 
         <div className="space-y-1.5">
-          <span className="text-xs font-medium text-muted-foreground">
+          <span
+            id="token-edit-scope-label"
+            className="text-xs font-medium text-muted-foreground"
+          >
             {t("account.tokens.presetLabel")}
           </span>
           <DropdownMenu>
@@ -205,9 +208,12 @@ export function TokenEditDialog({
                 variant="outline"
                 size="sm"
                 data-testid="token-edit-scope-preset"
+                aria-labelledby="token-edit-scope-label token-edit-scope-value"
                 className="w-full justify-between font-normal"
               >
-                {t(SCOPE_PRESET_LABELS[scopePreset])}
+                <span id="token-edit-scope-value">
+                  {t(SCOPE_PRESET_LABELS[scopePreset])}
+                </span>
                 <ChevronDown
                   className="h-3.5 w-3.5 text-muted-foreground"
                   aria-hidden

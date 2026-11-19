@@ -18,7 +18,13 @@ import type {
   PlanPreviewDto,
 } from "@janosik/shared";
 import type { JanosikClient } from "../client.js";
-import { bullets, code, respond, textOnly } from "../format.js";
+import {
+  batchCommandFields,
+  bullets,
+  code,
+  respond,
+  textOnly,
+} from "../format.js";
 import { responseFormatSchema } from "../schemas.js";
 import { DESTRUCTIVE, READ, defineTool } from "./helpers.js";
 
@@ -148,7 +154,7 @@ export function registerPlanTools(server: McpServer, client: JanosikClient) {
     {
       title: "Apply a previewed plan",
       description:
-        "Apply exactly the commands and planHash returned by janosik_plan_changes, atomically in one board transaction. A changed plan gets 409 approval_mismatch; a destructive plan without approval gets 409 approval_required with an approvalId — wait for a human, then repeat the identical call with that approvalId. An AgentRun (kind plan) groups the applied commands and can be inspected or reverted by a human.",
+        "Apply exactly the commands and planHash returned by janosik_plan_changes, atomically in one board transaction. A changed plan gets 409 approval_mismatch; a destructive plan without approval gets 409 approval_required with an approvalId — wait for a human, then repeat the identical call with that approvalId. The result includes the highest command sequence and the run id. A human can inspect or revert the run.",
       inputSchema: {
         boardId: z.string().describe("Board id."),
         planHash: z
@@ -187,7 +193,7 @@ export function registerPlanTools(server: McpServer, client: JanosikClient) {
         approvalId,
       );
       return textOnly(renderApplied(result), {
-        runId: result.runId ?? null,
+        ...batchCommandFields(result),
         planHash: result.planHash,
         commandCount: result.results.length,
         results: result.results,

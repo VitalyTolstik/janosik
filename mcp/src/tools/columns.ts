@@ -8,7 +8,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
-import { errorResult, textOnly } from "../format.js";
+import { commandFields, errorResult, textOnly } from "../format.js";
 import { newId, stableCommandId } from "../ids.js";
 import { findColumnIndex } from "../locate.js";
 import {
@@ -63,7 +63,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
     },
     async ({ boardId, columnId, title, expectedVersion }) => {
       const newColumnId = columnId ?? newId();
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "ADD_COLUMN",
@@ -78,6 +78,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         },
       );
       return textOnly(`Created column "${title}" — \`${newColumnId}\`.`, {
+        ...commandFields(response),
         resourceId: newColumnId,
       });
     },
@@ -102,12 +103,15 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, columnId, title, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "RENAME_COLUMN", columnId, title },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Renamed column ${columnId} to "${title}".`);
+      return textOnly(
+        `Renamed column ${columnId} to "${title}".`,
+        commandFields(response),
+      );
     },
   );
 
@@ -130,7 +134,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
     async ({ boardId, columnId, position, expectedVersion }) => {
       // Indexes come from the read; `ifMatch` refuses them if the board
       // changed in between (and the read is retried).
-      const toIndex = await client.commandOnFreshBoard(
+      const moved = await client.commandOnFreshBoard(
         boardId,
         (board) => {
           const fromIndex = findColumnIndex(board, columnId);
@@ -149,8 +153,11 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         3,
         expectedVersion,
       );
-      if (toIndex === null) return columnNotFound(columnId, boardId);
-      return textOnly(`Moved column ${columnId} to position ${toIndex}.`);
+      if (moved === null) return columnNotFound(columnId, boardId);
+      return textOnly(
+        `Moved column ${columnId} to position ${moved.result}.`,
+        commandFields(moved.response),
+      );
     },
   );
 
@@ -198,8 +205,10 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         expectedVersion,
       );
       if (copy === null) return columnNotFound(columnId, boardId);
+      const { newColumnId, source } = copy.result;
       return textOnly(
-        `Duplicated column "${copy.source.title}" (${copy.source.cardIds.length} card(s)) — \`${copy.newColumnId}\`.`,
+        `Duplicated column "${source.title}" (${source.cardIds.length} card(s)) — \`${newColumnId}\`.`,
+        commandFields(copy.response),
       );
     },
   );
@@ -221,12 +230,15 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, columnId, sortBy, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "SORT_COLUMN", columnId, sortBy },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Sorted column ${columnId} by ${sortBy}.`);
+      return textOnly(
+        `Sorted column ${columnId} by ${sortBy}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -253,7 +265,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, columnId, wipLimit, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_COLUMN_WIP_LIMIT",
@@ -266,6 +278,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         wipLimit !== undefined
           ? `Set WIP limit ${wipLimit} on column ${columnId}.`
           : `Removed the WIP limit on column ${columnId}.`,
+        commandFields(response),
       );
     },
   );
@@ -300,7 +313,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, columnId, accent, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_COLUMN_ACCENT",
@@ -313,6 +326,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         accent !== undefined
           ? `Set ${accent.type} accent ${accent.value} on column ${columnId}.`
           : `Removed the accent on column ${columnId}.`,
+        commandFields(response),
       );
     },
   );
@@ -336,7 +350,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       annotations: DESTRUCTIVE,
     },
     async ({ boardId, columnId, expectedVersion, commandId, approvalId }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "ARCHIVE_COLUMN_CARDS",
@@ -348,7 +362,10 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Archived every card in column ${columnId}.`);
+      return textOnly(
+        `Archived every card in column ${columnId}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -371,7 +388,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
       annotations: DESTRUCTIVE,
     },
     async ({ boardId, columnId, expectedVersion, commandId, approvalId }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "DELETE_COLUMN", columnId },
         {
@@ -380,7 +397,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Deleted column ${columnId}.`);
+      return textOnly(`Deleted column ${columnId}.`, commandFields(response));
     },
   );
 }

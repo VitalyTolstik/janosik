@@ -6,17 +6,17 @@ info:
   summary: Board, command, agent-control, approval, plan and run endpoints.
   description: |
     Public contract for the Janosik HTTP API (TASK-166.11). The server is a
-    NestJS service; every route is served under the global prefix `/api/v1`
-    and authenticated with a Bearer credential — either a short-lived user
-    access JWT or a personal API token (`jnk_…`, "PAT").
+    NestJS service. Every route is served under the global prefix `/api/v1`.
+    Authenticated routes use a Bearer credential. The security requirements on
+    each operation specify whether it accepts a browser-session JWT, a personal
+    API token (`jnk_…`, "PAT"), or both.
 
     **Scope of this document.** It covers the complete agent-control surface
     (agent sessions, pause/resume/stop-all, approvals, plans, runs, agent
-    policy, token management) and the board/card write path (command log,
-    batch, comments, attachments, members, shares, search, activity). It is
-    not a line-by-line copy of every legacy route: credential acquisition
-    (`/auth/login`, registration, refresh, OAuth, password/email change),
-    public share routes (`/share/:token`), the master `/admin` API,
+    policy, token management), public auth config and password recovery, and
+    the board/card write path (command log, batch, comments, attachments,
+    members, shares, search, activity). Login, registration, refresh, OAuth,
+    email change, public share routes (`/share/:token`), the master `/admin` API,
     invitations addressed to an account, notifications and realtime SSE are
     documented in the site docs and intentionally omitted here. Fields marked
     optional/nullable follow the shared DTOs; no field is invented for this
@@ -51,7 +51,8 @@ servers:
   - url: https://boards.example.com/api/v1
     description: Example absolute origin; replace with your instance.
 security:
-  - bearerAuth: []
+  - browserSession: []
+  - personalApiToken: []
 tags:
   - name: Boards
     description: Board lifecycle, search, export, members and shares.
@@ -354,7 +355,7 @@ paths:
       tags: [Boards]
       operationId: listBoardPendingInvitations
       summary: List pending board invitations
-      description: Board `ADMIN` only, so a wrong invite can be withdrawn.
+      description: Board `ADMIN` access and the `admin` preset for PATs. Lists pending invitations.
       responses:
         "200":
           description: Pending membership rows.
@@ -822,6 +823,7 @@ paths:
     post:
       tags: [Agent sessions]
       operationId: startAgentSession
+      security: [personalApiToken: []]
       summary: Start an agent session
       description: |
         PAT only, board-scoped. The returned id is sent as `X-Agent-Session`
@@ -872,6 +874,7 @@ paths:
     post:
       tags: [Agent sessions]
       operationId: heartbeatAgentSession
+      security: [personalApiToken: []]
       summary: Heartbeat an agent session
       description: |
         PAT only; the same token that owns the session. Allowed while paused
@@ -933,6 +936,7 @@ paths:
     post:
       tags: [Agents]
       operationId: pauseAgentSession
+      security: [browserSession: []]
       summary: Pause one agent session
       description: |
         Browser-session board `ADMIN` only (`403 pat_forbidden` for a PAT).
@@ -962,6 +966,7 @@ paths:
     post:
       tags: [Agents]
       operationId: resumeAgentSession
+      security: [browserSession: []]
       summary: Resume one agent session
       description: Browser-session board `ADMIN` only.
       requestBody:
@@ -987,6 +992,7 @@ paths:
     post:
       tags: [Agents]
       operationId: pauseBoardAgents
+      security: [browserSession: []]
       summary: Pause every agent write on a board
       description: |
         Browser-session board `ADMIN` only. All PAT writes on the board answer
@@ -1014,6 +1020,7 @@ paths:
     post:
       tags: [Agents]
       operationId: resumeBoardAgents
+      security: [browserSession: []]
       summary: Resume agent writes on a board
       description: Browser-session board `ADMIN` only.
       requestBody:
@@ -1037,6 +1044,7 @@ paths:
     get:
       tags: [Agents]
       operationId: getAgentsOverview
+      security: [browserSession: []]
       summary: Read the cross-board agent control overview
       description: |
         Browser-session only; every PAT is refused with `403 pat_forbidden`.
@@ -1178,6 +1186,7 @@ paths:
     post:
       tags: [Agents]
       operationId: pauseAllAgentTokens
+      security: [browserSession: []]
       summary: Stop all of the owner's API tokens
       description: |
         Browser-session owner only. Sets the bulk `stopAllPausedAt` stamp on
@@ -1203,6 +1212,7 @@ paths:
     post:
       tags: [Agents]
       operationId: resumeAllAgentTokens
+      security: [browserSession: []]
       summary: Clear the bulk token pause
       description: Browser-session owner only.
       requestBody:
@@ -1271,6 +1281,7 @@ paths:
     post:
       tags: [Approvals]
       operationId: createApproval
+      security: [personalApiToken: []]
       summary: Request approval for one exact plan
       description: |
         PAT board member with the `worker` preset (or the scope the planned
@@ -1325,6 +1336,7 @@ paths:
     post:
       tags: [Approvals]
       operationId: decideApproval
+      security: [browserSession: []]
       summary: Approve or reject an approval
       description: |
         Browser-session board `ADMIN` only; a PAT gets `403 pat_forbidden`.
@@ -1507,11 +1519,16 @@ paths:
     post:
       tags: [Runs]
       operationId: revertRun
-      summary: Revert a run (human board ADMIN)
+      security:
+        - browserSession: []
+        - personalApiToken: []
+      summary: Preview or revert a run
       description: |
-        `{dryRun: true}` is the same dry run as `/revert/preview` and writes
-        nothing. A real revert is browser-session board `ADMIN` only (`403
-        pat_forbidden` for any PAT), all-or-nothing, once per run, checks
+        A PAT may call this operation only with `dryRun: true`. This mode
+        is equivalent to `/revert/preview` and writes nothing. When
+        `dryRun` is false or omitted, applying the revert requires a board
+        `ADMIN` browser session and a PAT receives `403 pat_forbidden`.
+        A revert is all-or-nothing and can be applied once per run. It checks
         conflicts under the board lock and creates a `kind: "revert"` run.
         `409 run_conflict` when already reverted or a revert of a revert;
         `409 run_expired` when pre-images were swept.
@@ -1545,6 +1562,7 @@ paths:
     get:
       tags: [Agent policy]
       operationId: getAgentPolicy
+      security: [browserSession: []]
       summary: Read the board agent policy
       description: |
         Browser-session board `ADMIN` only (`403 pat_forbidden` for a PAT).
@@ -1564,6 +1582,7 @@ paths:
     patch:
       tags: [Agent policy]
       operationId: updateAgentPolicy
+      security: [browserSession: []]
       summary: Update the board agent policy
       description: |
         Browser-session board `ADMIN` only. `policy: null` restores defaults.
@@ -2003,6 +2022,70 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/config:
+    get:
+      tags: [Account]
+      operationId: getAuthConfig
+      summary: Read public authentication configuration
+      description: Returns the effective registration and public-share flags and the current board and import limits.
+      security: []
+      responses:
+        "200":
+          description: Public runtime configuration.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthConfig" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /auth/password/reset/request:
+    post:
+      tags: [Account]
+      operationId: requestPasswordReset
+      summary: Request a password recovery code
+      description: |
+        Limited to 3 requests per hour per IP. Eligible accounts receive a
+        one-time code valid for 15 minutes. Eligible, unknown and ineligible
+        addresses get the same success response when mail is enabled. An
+        account-level cooldown can suppress another email without changing
+        the response.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+      responses:
+        "200":
+          description: Request accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusOk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Password recovery is unavailable when mail is disabled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiErrorEnvelope" }
+  /auth/password/reset/confirm:
+    post:
+      tags: [Account]
+      operationId: confirmPasswordReset
+      summary: Set a new password with the recovery code
+      description: Limited to 10 requests per minute per IP. Success consumes the code and revokes the account's refresh sessions and API tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetConfirmation" }
+      responses:
+        "200":
+          description: Password reset.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusOk" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /auth/me:
     get:
       tags: [Account]
@@ -2025,6 +2108,7 @@ paths:
     post:
       tags: [Account]
       operationId: changePassword
+      security: [browserSession: []]
       summary: Change the account password
       description: |
         Browser session only (`403 pat_forbidden` for a PAT). A password
@@ -2053,6 +2137,7 @@ paths:
     patch:
       tags: [Account]
       operationId: updateProfile
+      security: [browserSession: []]
       summary: Update the caller's profile
       description: Browser session only. Only provided keys are written; `null` clears a field.
       requestBody:
@@ -2075,6 +2160,7 @@ paths:
     delete:
       tags: [Account]
       operationId: deleteAccount
+      security: [browserSession: []]
       summary: Schedule account deletion
       description: |
         Browser session only. A password account sends `password`; an
@@ -2102,6 +2188,7 @@ paths:
     patch:
       tags: [Account]
       operationId: uploadAvatar
+      security: [browserSession: []]
       summary: Upload a profile avatar
       description: Browser session only; `multipart/form-data` with one image `file` part, at most 2 MB.
       requestBody:
@@ -2150,6 +2237,7 @@ paths:
     post:
       tags: [Account]
       operationId: requestAccountExport
+      security: [browserSession: []]
       summary: Request a data export
       description: Browser session only; returns the queued export row.
       responses:
@@ -2167,6 +2255,7 @@ paths:
     get:
       tags: [Account]
       operationId: getLatestAccountExport
+      security: [browserSession: []]
       summary: Read the latest unexpired account export
       description: Browser session only; returns null if no export exists.
       responses:
@@ -2191,6 +2280,7 @@ paths:
     get:
       tags: [Account]
       operationId: getAccountExport
+      security: [browserSession: []]
       summary: Read data-export status
       description: Browser session only.
       responses:
@@ -2214,6 +2304,7 @@ paths:
     get:
       tags: [Account]
       operationId: downloadAccountExport
+      security: [browserSession: []]
       summary: Download a ready export
       description: Browser session only; streams the JSON bundle.
       responses:
@@ -2233,6 +2324,7 @@ paths:
     post:
       tags: [Account]
       operationId: requestAccountDeletionCode
+      security: [browserSession: []]
       summary: Request an account-deletion email code
       description: |
         Browser session only, for an OAuth-only account that has no password.
@@ -2259,6 +2351,7 @@ paths:
     get:
       tags: [Account]
       operationId: listApiTokens
+      security: [browserSession: []]
       summary: List personal API tokens
       description: Browser session only (`403 pat_forbidden` for a PAT); never returns the secret.
       responses:
@@ -2276,6 +2369,7 @@ paths:
     post:
       tags: [Account]
       operationId: createApiToken
+      security: [browserSession: []]
       summary: Create a personal API token
       description: |
         Browser session only. The plaintext `token` appears exactly once. A
@@ -2305,11 +2399,14 @@ paths:
     patch:
       tags: [Account]
       operationId: updateApiToken
+      security: [browserSession: []]
       summary: Edit a personal API token
       description: |
-        Browser session owner only. Omitted fields keep their value; `null`
-        clears `boardId` or `rateLimitPerMinute`. Every change is audited; the
-        secret is never accepted or returned.
+        Browser session owner only. The owner can edit `name`, `scopePreset`,
+        `boardId`, `rateLimitPerMinute`, `readOnly` and `trustedCi`. Omitted fields
+        keep their value. Use `null` to clear `boardId` or `rateLimitPerMinute`.
+        The validation whitelist strips `expiresAt` and other unknown fields.
+        Every change is audited and the response contains metadata only.
       requestBody:
         required: true
         content:
@@ -2327,10 +2424,20 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The owned token has been revoked (`token_revoked`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiErrorEnvelope"
+                  - properties:
+                      code: { const: token_revoked }
         "429": { $ref: "#/components/responses/TooManyRequests" }
     delete:
       tags: [Account]
       operationId: revokeApiToken
+      security: [browserSession: []]
       summary: Revoke a personal API token
       description: |
         Browser session owner only. This is the irreversible kill: open
@@ -2353,6 +2460,7 @@ paths:
     post:
       tags: [Agents]
       operationId: pauseApiToken
+      security: [browserSession: []]
       summary: Pause one personal API token
       description: Browser-session owner only. Reads stay allowed; writes answer `403 agent_paused`.
       requestBody:
@@ -2378,6 +2486,7 @@ paths:
     post:
       tags: [Agents]
       operationId: resumeApiToken
+      security: [browserSession: []]
       summary: Resume one personal API token
       description: |
         Browser-session owner only. Clears only the individual pause; a token
@@ -2466,16 +2575,20 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
 components:
   securitySchemes:
-    bearerAuth:
+    browserSession:
       type: http
       scheme: bearer
-      bearerFormat: JWT or jnk_… PAT
+      bearerFormat: JWT
+      description: A user access JWT from browser sign-in or refresh.
+    personalApiToken:
+      type: http
+      scheme: bearer
+      bearerFormat: jnk_…
       description: |
-        A user access JWT from `/auth/login`/`/auth/refresh`, or a personal API
-        token (`jnk_` + 43 base64url characters). The `jnk_` prefix selects the
-        API-token strategy. A PAT acts as its owner but is limited by its
-        immutable `scopePreset`, board scope and read-only flag, and is refused
-        on every session-only route with `403 pat_forbidden`.
+        A personal API token (`jnk_` + 43 base64url characters). The PAT acts
+        as its owner within its current scope preset, board scope and read-only
+        flag. The session check rejects a PAT with `403 pat_forbidden` on
+        browser-only routes. Earlier access and rate-limit checks still apply.
   parameters:
     BoardId:
       name: boardId
@@ -2709,9 +2822,10 @@ components:
             $ref: "#/components/schemas/ApiErrorEnvelope"
     Forbidden:
       description: |
-        Not a member, no board role, or a preset denial (`scope_denied`). A
-        PAT on a session-only route gets `pat_forbidden`; a board policy hard
-        block is `destructive_denied`; a pause is `agent_paused`.
+        Board membership, role or token scope may deny access. A failed
+        browser-session check returns `pat_forbidden` for a PAT. Other
+        refusals include `scope_denied`, `pat_read_only`, `destructive_denied`
+        and `agent_paused`.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
@@ -2908,6 +3022,8 @@ components:
         - pat_required
         - pat_forbidden
         - pat_read_only
+        - token_revoked
+        - impersonation_read_only
         - approval_required
         - approval_expired
         - approval_mismatch
@@ -2928,10 +3044,36 @@ components:
         - payload_too_large
         - rate_limited
         - login_backoff
+        - current_password_invalid
+        - oauth_proof_required
+        - oauth_proof_invalid
         - export_in_progress
+        - announcement_email_active_noop
+        - announcement_locale_unsupported
+        - announcement_source_locale_required
+        - announcement_translation_incomplete
+        - announcement_translation_too_long
         - announcement_translations_incomplete
+        - announcement_translations_required
         - announcement_source_translation_required
+        - announcement_window_invalid
+        - ip_not_allowed
+        - totp_required
+        - totp_proof_required
+        - setup_stale
+        - public_shares_disabled
+        - move_stale
+        - link_self
+        - link_pair_exists
+        - link_cycle
+        - link_cap
+        - link_mismatch
         - board_write_timeout
+        - invalid_cursor
+        - invalid_filter
+        - invalid_range
+        - attachment_limit
+        - client_id_taken
         - not_found
         - validation_failed
         - unauthorized
@@ -2975,11 +3117,60 @@ components:
         status:
           type: string
           const: ok
+    AuthConfig:
+      type: object
+      required: [allowRegistration, allowPublicShares, limits]
+      properties:
+        allowRegistration:
+          type: boolean
+          description: |
+            True when registration is open and mail is enabled, or when
+            registration is open and first-account bootstrap is available
+            (no users, SMTP disabled and ALLOW_BOOTSTRAP_USER=true).
+        allowPublicShares:
+          type: boolean
+          description: Effective public-share feature flag.
+        limits:
+          type: object
+          required: [boards, importBytes]
+          properties:
+            boards:
+              type: [integer, "null"]
+              minimum: 1
+              description: Board cap per user. Null means unlimited.
+            importBytes:
+              type: integer
+              examples: [26214400]
+              description: Maximum board import body size in bytes.
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          description: Trimmed and converted to lowercase before validation.
+    PasswordResetConfirmation:
+      allOf:
+        - $ref: "#/components/schemas/PasswordResetRequest"
+        - type: object
+          required: [code, newPassword]
+          properties:
+            code:
+              type: string
+              pattern: "^[a-f0-9]{32}$"
+            newPassword:
+              type: string
+              format: password
+              minLength: 8
+              maxLength: 100
     ScopePreset:
       type: string
       enum: [observer, worker, reviewer, admin]
       description: |
-        Immutable PAT capability preset. It never raises the board role.
+        PAT capability preset. The owner may change it in a browser session.
+        It never raises the board role.
         `readOnly: true` always yields effective `observer`.
     BoardRole:
       type: string
@@ -3545,7 +3736,10 @@ components:
         expiresAt:
           type: [string, "null"]
           format: date-time
-          description: Must be in the future when expiresInHours is absent.
+          description: |
+            A supplied non-null value must be ISO-8601, including when
+            expiresInHours is present. Must be in the future when
+            expiresInHours is absent.
         expiresInHours:
           type: integer
           minimum: 1
@@ -5708,6 +5902,7 @@ components:
           type: boolean
     UpdateUserTokenRequest:
       type: object
+      description: Unknown fields such as `expiresAt` are stripped by the server.
       properties:
         name:
           type: string
@@ -5722,6 +5917,7 @@ components:
           type: boolean
         scopePreset:
           $ref: "#/components/schemas/ScopePreset"
+          description: Updates the existing token's capability preset.
         trustedCi:
           type: boolean
     CreateUserTokenResponse:

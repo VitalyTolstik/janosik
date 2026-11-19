@@ -92,7 +92,9 @@ describe("TokenEditDialog (TASK-166.15)", () => {
     await userEvent.click(
       screen.getByTestId("token-edit-board-option-board-1"),
     );
-    await userEvent.click(screen.getByTestId("token-edit-scope-preset"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Scope preset Worker" }),
+    );
     await userEvent.click(
       await screen.findByRole("menuitemradio", { name: "Reviewer" }),
     );
@@ -154,6 +156,34 @@ describe("TokenEditDialog (TASK-166.15)", () => {
 
     expect(await screen.findByTestId("token-edit-error")).toHaveTextContent(
       "Sign in with a browser session to edit an API key",
+    );
+  });
+
+  it("explains why a key revoked while editing cannot be saved", async () => {
+    const onSaved = vi.fn();
+    vi.spyOn(api, "updateToken").mockRejectedValue(
+      new ApiError(409, { code: "token_revoked", message: "Revoked" }),
+    );
+    renderDialog(token(), onSaved);
+
+    await userEvent.click(screen.getByTestId("token-edit-save"));
+
+    expect(await screen.findByTestId("token-edit-error")).toHaveTextContent(
+      "This API key has been revoked and can no longer be edited.",
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("explains that an impersonated session is read-only", async () => {
+    vi.spyOn(api, "updateToken").mockRejectedValue(
+      new ApiError(403, { code: "impersonation_read_only" }),
+    );
+    renderDialog();
+
+    await userEvent.click(screen.getByTestId("token-edit-save"));
+
+    expect(await screen.findByTestId("token-edit-error")).toHaveTextContent(
+      "End impersonation before editing an API key. The impersonated session is read-only.",
     );
   });
 });

@@ -7,8 +7,18 @@
 
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { open, realpath, type FileHandle } from "node:fs/promises";
+import {
+  link,
+  mkdtemp,
+  open,
+  realpath,
+  rm,
+  rmdir,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
+
+import { FilesystemWriteError } from "./errors.js";
 
 export interface FsOptions {
   allowFs: boolean;
@@ -19,7 +29,7 @@ export function assertFsEnabled(options: FsOptions): void {
   if (options.allowFs) return;
   throw new Error(
     "Filesystem access is disabled. Uploading/downloading attachments and " +
-      "exporting to a file read and write files on the machine running " +
+      "saving tool output read and write files on the machine running " +
       "this server, so they are opt-in: set JANOSIK_MCP_ALLOW_FS=1 (and " +
       "optionally JANOSIK_MCP_FS_ROOT=/path to confine them to a directory).",
   );
@@ -49,40 +59,54 @@ import ctypes, errno, os, stat, sys
 class OpenHow(ctypes.Structure):
     _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]
 
-try:
-    operation, target, maximum = sys.argv[1], sys.argv[2], int(sys.argv[3])
-    flags = (os.O_RDONLY | os.O_NONBLOCK) if operation == "read" else (os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-    how = OpenHow(flags | os.O_CLOEXEC, 0 if operation == "read" else 0o600, 0x08 | 0x02)
+def open_beneath(target, flags):
+    how = OpenHow(flags | os.O_CLOEXEC, 0, 0x08 | 0x02)
     libc = ctypes.CDLL(None, use_errno=True)
     fd = libc.syscall(437, 3, os.fsencode(target), ctypes.byref(how), ctypes.sizeof(how))
     if fd < 0:
         code = ctypes.get_errno()
-        if code == errno.EEXIST:
-            raise ValueError("already exists. Choose a new file name; existing files are never overwritten.")
         if code in (errno.EXDEV, errno.ELOOP):
             raise ValueError("Path is outside the allowed root or contains an unsafe symlink.")
         if code in (errno.ENOSYS, errno.EINVAL):
             raise ValueError("Secure filesystem access requires Linux openat2 support.")
         raise OSError(code, os.strerror(code))
+    return fd
+
+def read_file(target, maximum):
+    fd = open_beneath(target, os.O_RDONLY | os.O_NONBLOCK)
     try:
-        if operation == "read":
-            info = os.fstat(fd)
-            if not stat.S_ISREG(info.st_mode):
-                raise ValueError("Target is not a regular file.")
-            if info.st_size > maximum:
-                raise ValueError("File is over the %d-byte limit." % maximum)
-            remaining = maximum + 1
-            chunks = []
-            while remaining:
-                chunk = os.read(fd, min(remaining, 65536))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            if remaining == 0:
-                raise ValueError("File is over the %d-byte limit." % maximum)
-            sys.stdout.buffer.write(b"".join(chunks))
-        else:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Target is not a regular file.")
+        if info.st_size > maximum:
+            raise ValueError("File is over the %d-byte limit." % maximum)
+        remaining = maximum + 1
+        chunks = []
+        while remaining:
+            chunk = os.read(fd, min(remaining, 65536))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining == 0:
+            raise ValueError("File is over the %d-byte limit." % maximum)
+        sys.stdout.buffer.write(b"".join(chunks))
+    finally:
+        os.close(fd)
+
+def write_file(target):
+    parent, name = os.path.split(target)
+    parent_fd = open_beneath(parent or ".", os.O_PATH | os.O_DIRECTORY)
+    try:
+        # Stage on the destination filesystem without exposing a swappable
+        # temporary name. Closing the fd discards the inode on failure.
+        try:
+            fd = os.open(".", os.O_WRONLY | os.O_TMPFILE, 0o600, dir_fd=parent_fd)
+        except OSError as error:
+            if error.errno in (errno.EOPNOTSUPP, errno.EISDIR, errno.EINVAL):
+                raise ValueError("Confined file writes require a filesystem with O_TMPFILE support.") from error
+            raise
+        try:
             while True:
                 chunk = sys.stdin.buffer.read(65536)
                 if not chunk:
@@ -90,8 +114,22 @@ try:
                 offset = 0
                 while offset < len(chunk):
                     offset += os.write(fd, chunk[offset:])
+            os.fsync(fd)
+            os.link("/proc/self/fd/%d" % fd, name, dst_dir_fd=parent_fd, follow_symlinks=True)
+        finally:
+            os.close(fd)
     finally:
-        os.close(fd)
+        os.close(parent_fd)
+
+try:
+    operation, target, maximum = sys.argv[1], sys.argv[2], int(sys.argv[3])
+    if operation == "read":
+        read_file(target, maximum)
+    else:
+        write_file(target)
+except FileExistsError:
+    print("Target already exists. Choose a new file name; existing files are never overwritten.", file=sys.stderr)
+    sys.exit(1)
 except Exception as error:
     print(str(error), file=sys.stderr)
     sys.exit(1)
@@ -212,26 +250,35 @@ export async function writeSandboxedFile(
   options: FsOptions,
   data: Uint8Array | string,
 ): Promise<string> {
-  assertFsEnabled(options);
-  if (options.fsRoot) {
-    return (await rootedOperation(target, options.fsRoot, "write", 0, data))
-      .path;
-  }
-  const resolved = path.resolve(target);
-  let handle: FileHandle | undefined;
   try {
-    handle = await open(resolved, "wx");
-    await handle.writeFile(data);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new Error(
-        `${resolved} already exists. Choose a new file name; existing files are never overwritten.`,
-        { cause: error },
-      );
+    assertFsEnabled(options);
+    if (options.fsRoot) {
+      return (await rootedOperation(target, options.fsRoot, "write", 0, data))
+        .path;
     }
-    throw error;
-  } finally {
-    await handle?.close();
+    const resolved = path.resolve(target);
+    const parent = await realpath(path.dirname(resolved));
+    const staging = await mkdtemp(path.join(parent, ".janosik-mcp-"));
+    const temporary = path.join(staging, "output");
+    try {
+      await writeFile(temporary, data, {
+        mode: 0o600,
+        flag: "wx",
+        flush: true,
+      });
+      await link(temporary, path.join(parent, path.basename(resolved)));
+    } finally {
+      await rm(temporary, { force: true });
+      await rmdir(staging);
+    }
+    return resolved;
+  } catch (error) {
+    const message =
+      (error as NodeJS.ErrnoException).code === "EEXIST"
+        ? "Target already exists. Choose a new file name; existing files are never overwritten."
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    throw new FilesystemWriteError(message, { cause: error });
   }
-  return resolved;
 }

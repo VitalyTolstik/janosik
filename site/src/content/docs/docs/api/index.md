@@ -11,7 +11,7 @@ and attachments, use REST, documented in [REST endpoints](./rest/).
 The machine-readable contract is available as an
 [OpenAPI 3.1 document](/openapi.yaml). It covers the complete agent-control
 surface, the command/batch/plan write path, comments, attachments, membership,
-shares and activity. Credential acquisition, public share routes, the master
+shares, activity, public auth config and password reset. Sign-in, public share routes, the master
 `/admin` API, notifications and SSE are documented on this site instead.
 
 ## Base path and transport
@@ -23,7 +23,7 @@ Every route is served under the global prefix `/api/v1`. A route named
 Requests and responses use JSON. Request bodies are limited to 256 KB by
 default. Board import (`POST /boards/import`) accepts up to
 `MAX_IMPORT_BYTES` (25 MB), while board commands
-(`POST /boards/:id/commands`, `/commands/batch`, `/plans`, `/plans/apply`) and
+(`POST /boards/:id/commands`, `/boards/:id/commands/batch`, `/boards/:id/plans`, `/boards/:id/plans/apply`) and
 administrative command routes accept up to `MAX_COMMAND_BODY_BYTES` (10 MB).
 This allows large import envelopes and `RESTORE_*` snapshots to reach
 validation without giving commands the import budget. Individual actions are
@@ -36,7 +36,7 @@ File uploads use `multipart/form-data` with a single `file` part.
 
 ## Authentication
 
-User-facing routes accept either credential in the `Authorization` header:
+Authenticated user routes take a Bearer credential in the `Authorization` header:
 
 ```
 Authorization: Bearer <access-token>
@@ -46,7 +46,7 @@ Authorization: Bearer jnk_<43 base64url chars>
 The first is a short-lived JWT access token from the auth endpoints. The
 second is a personal API token (PAT): a value whose `jnk_` prefix tells the
 guard to authenticate it against the `ApiToken` table instead of the JWT
-strategy. Both open board-scoped routes identically.
+strategy. The route and action determine which credentials are accepted.
 
 An agent may attach `X-Agent-Session: <sessionId>` to a write. The server
 verifies that the session belongs to the same user, token and board and is not
@@ -57,9 +57,9 @@ A mismatch is `403 agent_session_invalid`; a closed session is
 
 ### Token scopes
 
-Every PAT has one immutable capability preset. A new key is `worker`; existing
-keys were migrated to `admin` with `trustedCi: true` unless they were read-only.
-A preset never raises the user's board role.
+Every PAT has a capability preset. New keys default to `worker`. The owner can
+change `scopePreset` in Account → API keys or through `PATCH /users/me/tokens/:id`
+from a browser session. The preset is bounded by the owner's board role.
 
 | Preset | Ordinary content write | Done transition | Destructive | Board administration |
 | --- | --- | --- | --- | --- |
@@ -80,43 +80,39 @@ own agent sessions and request a run-revert preview. These control operations
 do not grant permission to change board content or apply a revert.
 
 Share creation accepts either an absolute `expiresAt` or `expiresInHours`.
-When both are supplied, the relative duration takes precedence. Both expiry
-intent and the other share options are part of the idempotency and approval
-fingerprints; changing them requires a new key or approval.
+When both are supplied, the relative duration takes precedence. A non-null
+`expiresAt` must still be valid ISO-8601. The expiry intent and the other
+share options are part of the idempotency and approval fingerprints.
+Changing them requires a new key or approval.
 
 ### Session-only routes
 
-A personal API token acts as its owner for board work, but it cannot manage
-the account's credentials or the human control plane. These routes refuse a PAT
-with `403`:
+Use a browser access JWT for the routes in this table. When a PAT reaches the
+session check, the server returns `403 pat_forbidden`. Rate limits and earlier
+access checks still apply. For example, a legacy `readOnly: true` key can get
+`403 pat_read_only` on an account write before the session check.
 
-- `GET /users/me/tokens`, `POST /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id`
-- `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
-- `POST /agents/pause-all`, `POST /agents/resume-all`
-- `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
-- `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
-- `POST /boards/:id/approvals/:id/decision` (a human board ADMIN approves; an agent never approves itself)
-- `POST /boards/:id/runs/:runId/revert` (a real rollback; `dryRun`/preview is readable)
-- `GET`/`PATCH /boards/:id/agent-policy`
-- `PATCH /users/me`, `PATCH /users/me/avatar`
-- `POST /auth/password`
-- `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
-- `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline`
-- `POST /users/me/export`, `GET /users/me/export/latest`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
-- `POST /users/me/delete/request-code`, `DELETE /users/me`
-- `GET /users/me/notifications`, `GET`/`PATCH /users/me/notification-settings`
+| Area | Routes |
+| --- | --- |
+| Agent overview | `GET /agents/overview` |
+| Board policy | `GET` and `PATCH /boards/:id/agent-policy` |
+| Approval decisions | `POST /boards/:id/approvals/:approvalId/decision` |
+| Run rollback | `POST /boards/:id/runs/:runId/revert` when applying the rollback |
+| Board and global pause | `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`, `POST /agents/pause-all`, `POST /agents/resume-all` |
+| Agent-session pause | `POST /boards/:id/agent-sessions/:sessionId/pause`, `POST /boards/:id/agent-sessions/:sessionId/resume` |
+| API keys | `GET` and `POST /users/me/tokens`, `PATCH` and `DELETE /users/me/tokens/:id`, `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume` |
+| Profile and credentials | `PATCH /users/me`, `PATCH /users/me/avatar`, `POST /auth/password`, `POST /auth/email/change/request`, `POST /auth/email/change/confirm`, `POST /auth/oauth/:provider/link` |
+| Account invitations | `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline` |
+| Account export and deletion | `POST /users/me/export`, `GET /users/me/export/latest`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`, `POST /users/me/delete/request-code`, `DELETE /users/me` |
+| Notifications | `GET /users/me/notifications`, `POST /users/me/notifications/:id/read`, `POST /users/me/notifications/read-all`, `GET` and `PATCH /users/me/notification-settings` |
 
-```json
-{
-  "message": "Personal API tokens cannot manage account credentials — sign in with a browser session",
-  "code": "pat_forbidden"
-}
-```
-
-Call them with an access token from a browser sign-in. Board, member, share,
-invitation, comment, attachment and command routes keep accepting a PAT. A
-leaked key therefore cannot mint more keys, change the password or move the
-account to another mailbox.
+Board roles and token scope still apply on routes that accept both credentials.
+`POST /boards/:id/agent-sessions`, its heartbeat endpoint, and
+`POST /boards/:id/approvals` require a PAT. The owning PAT or a board ADMIN
+session can end an agent session. Either credential can preview a rollback
+through `POST /boards/:id/runs/:runId/revert/preview` or `{ "dryRun": true }`
+on the revert endpoint. Board-admin routes for listing and sending board
+invitations accept a PAT with the `admin` preset.
 
 The refresh token never appears in a response body. It rides an httpOnly
 cookie named `refresh_token`, scoped to path `/api/v1/auth` with
@@ -199,9 +195,8 @@ it. `statusCode` is kept as a compatibility mirror.
 | `503` | `service_unavailable` | maintenance or a transient outage; retry later |
 
 An unexpected server failure is `500 internal_error` with a generic message and
-no stack trace. The full, versioned code catalog is in the
-[OpenAPI document](/openapi.yaml) (`ApiErrorCode`) and
-`docs/TASK-166-launch-agent-control.md` §8.2. `code` is additive: a client must
+no stack trace. The current code catalog is `ApiErrorCode` in the
+[OpenAPI document](/openapi.yaml). `code` is additive: a client must
 tolerate an unknown code and fall back to the HTTP status.
 
 Approval, pause and run errors describe the next action: stop and ask a human,
@@ -274,6 +269,8 @@ same way: per IP on the anonymous routes, per user on the signed-in ones.
 | Route                                | Limit                  |
 | ------------------------------------ | ---------------------- |
 | `POST /auth/register`                | 5 per minute per IP    |
+| `POST /auth/password/reset/request` | 3 per hour per IP |
+| `POST /auth/password/reset/confirm` | 10 per minute per IP |
 | `POST /auth/login`                   | 5 per minute per IP    |
 | `POST /auth/password`                | 5 per minute per user  |
 | `POST /auth/email/change/request`    | 3 per hour per user    |
@@ -281,6 +278,7 @@ same way: per IP on the anonymous routes, per user on the signed-in ones.
 | `POST /auth/verify-email`            | 10 per minute per user |
 | `POST /auth/verify-email/resend`     | 3 per hour per user    |
 | `GET /auth/oauth/:provider/start`    | 20 per minute per IP   |
+| `POST /auth/oauth/:provider/link` | 5 per minute per user |
 | `GET /auth/oauth/:provider/callback` | 20 per minute per IP   |
 
 The public share API has its own per-token budget (see
@@ -382,9 +380,11 @@ and switch maintenance off.
 | Board shares (owner)  | `/boards/:id/shares`                                       | [REST endpoints](./rest/)                |
 | Public shares         | `/share/:token`                                            | [REST endpoints](./rest/)                |
 | Agent sessions        | `/boards/:id/agent-sessions`                               | [REST endpoints](./rest/#agent-sessions-and-attribution) |
+| Agent overview | `/agents/overview` | [REST endpoints](./rest/#agent-overview) |
+| Attention inbox | `/users/me/notifications`, `/users/me/notification-settings` | [Attention notifications](#attention-notifications) |
 | Pause and stop-all    | `/boards/:id/agents/*`, `/agents/*`, `/users/me/tokens/:id/*` | [REST endpoints](./rest/#pause-and-kill) |
 | Approvals             | `/boards/:id/approvals`                                    | [REST endpoints](./rest/#approvals)      |
-| Plans                 | `/boards/:id/plans`, `/plans/apply`                        | [REST endpoints](./rest/#plans) and [Command API](./commands/) |
+| Plans                 | `/boards/:id/plans`, `/boards/:id/plans/apply`                        | [REST endpoints](./rest/#plans) and [Command API](./commands/) |
 | Runs and rollback     | `/boards/:id/runs`                                         | [REST endpoints](./rest/#runs-and-rollback) |
 | Board agent policy    | `/boards/:id/agent-policy`                                 | [REST endpoints](./rest/#board-agent-policy) |
 | Activity feeds        | `/boards/:id/activity`, `/cards/:cardId/activity`          | this page and [REST endpoints](./rest/)  |
@@ -407,8 +407,10 @@ out of scope for this reference.
 | `POST` | `/auth/login`                | none           | `AuthResponseDto`                        |
 | `POST` | `/auth/refresh`              | refresh cookie | `AuthResponseDto`                        |
 | `POST` | `/auth/logout`               | refresh cookie | `{ status: "ok" }`                       |
+| `POST` | `/auth/password/reset/request` | none | `{ status: "ok" }` |
+| `POST` | `/auth/password/reset/confirm` | none | `{ status: "ok" }` |
 | `GET`  | `/auth/config`               | none           | `AuthConfigResponse`                     |
-| `GET`  | `/auth/me`                   | user           | `AuthUserDto`                            |
+| `GET`  | `/auth/me`                   | user           | `AuthMeResponseDto`                      |
 | `POST` | `/auth/password`             | session        | `{ status: "ok" }`                       |
 | `POST` | `/auth/email/change/request` | session        | `{ expiresAt: number, queued: boolean }` |
 | `POST` | `/auth/email/change/confirm` | session        | `AuthResponseDto`                        |
@@ -458,12 +460,40 @@ cookie, returning `{ status: "ok" }`.
 
 ### Config
 
-`GET /auth/config` is unauthenticated and returns the two public booleans the
-sign-in screen reads before a session exists:
+`GET /auth/config` is public. A default instance with open registration and
+SMTP enabled can return the following response.
 
 ```json
-{ "allowRegistration": true, "allowPublicShares": true }
+{
+  "allowRegistration": true,
+  "allowPublicShares": true,
+  "limits": { "boards": null, "importBytes": 26214400 }
+}
 ```
+
+`allowRegistration` requires the registration flag and either enabled SMTP
+or first-account bootstrap. Without SMTP, bootstrap requires
+`ALLOW_BOOTSTRAP_USER=true` and an empty user database. `allowPublicShares`
+reports the effective public-share flag. `limits.boards` is the per-user board
+cap (`null` means unlimited), and `limits.importBytes` is the maximum board
+import body size in bytes.
+
+### Password reset
+
+`POST /auth/password/reset/request` takes `{ "email": "user@example.com" }`
+and allows 3 requests per hour per IP. With SMTP enabled, requests with a valid email
+address get the same `200 { "status": "ok" }` whether a code was sent or
+suppressed. Enabled accounts with a verified email and a password are
+eligible. The email contains a one-time code valid for 15 minutes. Requests
+within an account's one-minute cooldown leave its existing code in place.
+With SMTP disabled the request returns `503 service_unavailable`.
+
+`POST /auth/password/reset/confirm` takes `{ email, code, newPassword }` and
+allows 10 requests per minute per IP. Supply the 32-character lowercase
+hex code and a password of 8–100 characters. Both endpoints trim and
+lowercase the email. An invalid or expired code returns `400 validation_failed`.
+Success consumes the code, revokes the account's refresh sessions and API
+tokens, and returns `200 { "status": "ok" }`.
 
 ### Me
 
@@ -542,9 +572,12 @@ accepts an optional `totpCode`. See the administrative authentication system.
 | ------ | -------------------------------- | ---- | ----------------------------------- |
 | `GET`  | `/auth/oauth/providers`          | none | `{ providers: OAuthProviderDto[] }` |
 | `GET`  | `/auth/oauth/:provider/start`    | none | `302` to the provider               |
+| `POST` | `/auth/oauth/:provider/link` | browser session | `201 { redirectUrl: string }` |
 | `GET`  | `/auth/oauth/:provider/callback` | none | `302` to the UI                     |
 
-Both redirect endpoints are full page navigations, not XHR. `providers` lists
+`start` and `callback` are browser navigations. The `link` endpoint takes
+`{ password }` for the current account, sets the OAuth state and link cookies,
+and returns the provider URL for the browser to open. `providers` lists
 only enabled providers; each entry is `{ id, label }` with `id` one of
 `google` or `yandex`.
 
@@ -567,9 +600,9 @@ OAuth-only: `POST /auth/password` sets a first password without checking
 
 ## Users and account
 
-Every route is behind user auth (JWT or PAT), except the three token routes,
-which are [session-only](#session-only-routes): an API key can neither list
-nor create nor revoke keys.
+Profile writes, exports, account deletion and token management require a
+[browser session](#session-only-routes). User avatar reads accept either
+credential.
 
 A personal API token can be scoped when created: `boardId` limits
 it to one board, `readOnly: true` refuses content writes (`403 pat_read_only`),
@@ -622,8 +655,9 @@ metadata (never the plaintext). `PATCH /users/me/tokens/:id` edits `name`,
 `boardId`, `readOnly`, `rateLimitPerMinute`, `scopePreset` or `trustedCi`;
 omitted fields keep their value, `null` clears the board/rate scope, an
 Observer or read-only key cannot enable `trustedCi`, and every change is
-audited with before/after values. It is owner-only and session-only; the
-secret is never accepted or returned. `DELETE /users/me/tokens/:id` revokes
+audited with before/after values. The validation whitelist strips `expiresAt`
+and the stored expiry stays unchanged. The owner edits metadata from a browser
+session. Editing a revoked token returns `409 token_revoked`. `DELETE /users/me/tokens/:id` revokes
 one and returns `{ status: "ok" }`. Changing the password revokes every token
 of the account. The token DTO also carries `scopePreset`, `trustedCi`,
 `individualPausedAt`/`stopAllPausedAt` (and their `*By` fields), computed
@@ -648,7 +682,7 @@ recipients, and events for boards the caller no longer belongs to are hidden.
 | `GET` | `/users/me/notification-settings` | `NotificationSettingsDto` |
 | `PATCH` | `/users/me/notification-settings` | `NotificationSettingsDto`; body `{ notifyDigest?, notifyAttention? }` |
 
-Every route is session-only; a personal API token answers `403 pat_forbidden`.
+Every route requires a browser session.
 The list is newest-first with an opaque `at:id` cursor and an `unreadCount`.
 `boardId` requires live membership. Event types are `approval.requested`,
 `approval.decided`, `approval.cancelled`, `approval.consumed`,

@@ -407,7 +407,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tokens are grandfathered to `scopePreset = "admin"` + `trustedCi = true`
   (read-only tokens keep effective observer), and clients without the header
   keep working.
-- TASK-166.2 token scopes and destructive gate: every PAT now has an immutable
+- TASK-166.2 token scopes and destructive gate: every PAT now has a capability
   preset (`observer`, `worker`, `reviewer`, `admin`) with a separate
   `trustedCi` flag. New keys default to `worker`; legacy keys stay
   `admin` + `trustedCi` unless read-only. The preset never raises the board

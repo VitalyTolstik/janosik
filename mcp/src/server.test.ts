@@ -548,7 +548,7 @@ function fakeApi(
           });
       }
     }
-    return respond({ results });
+    return respond({ results, runId: "batch-run" });
   }
   const commentMatch = /^\/cards\/([^/]+)\/comments$/.exec(path);
   if (commentMatch && method === "GET") {
@@ -889,6 +889,8 @@ describe("janosik MCP server", () => {
     expect(result.structuredContent).toMatchObject({
       ok: true,
       resourceId: action.newCardId,
+      seq: boardSeq,
+      runId: "batch-run",
     });
     await client.close();
   });
@@ -1086,6 +1088,59 @@ describe("janosik MCP server", () => {
     });
     expect(fileResult.isError).toBe(true);
     expect(firstText(fileResult)).toMatch(/read-only mode/);
+    await client.close();
+  });
+
+  it.each([
+    {
+      allowFs: false,
+      readOnly: false,
+      message: /Filesystem access is disabled/,
+    },
+    { allowFs: true, readOnly: true, message: /read-only mode/ },
+  ])(
+    "keeps card reads available but refuses file output with $message",
+    async ({ message, ...config }) => {
+      const client = await connect(config);
+      const { tools } = await client.listTools();
+      for (const name of [
+        "janosik_get_card",
+        "janosik_get_run",
+        "janosik_get_approval",
+      ]) {
+        const tool = tools.find((entry) => entry.name === name);
+        expect(tool?.inputSchema.properties).toHaveProperty("outputPath");
+        expect(tool?.annotations?.readOnlyHint).toBe(true);
+      }
+
+      const args = { boardId: "b1", cardId: "k1" };
+      const inline = await client.callTool({
+        name: "janosik_get_card",
+        arguments: args,
+      });
+      expect(inline.structuredContent).toMatchObject({ card: { id: "k1" } });
+      const file = await client.callTool({
+        name: "janosik_get_card",
+        arguments: { ...args, outputPath: "refused.json" },
+      });
+      expect(file.isError).toBe(true);
+      expect(firstText(file)).toMatch(message);
+      await client.close();
+    },
+  );
+
+  it("marks optional document output as writable when local writes are enabled", async () => {
+    const client = await connect({ allowFs: true, readOnly: false });
+    const { tools } = await client.listTools();
+    for (const name of [
+      "janosik_get_card",
+      "janosik_get_run",
+      "janosik_get_approval",
+    ]) {
+      const tool = tools.find((entry) => entry.name === name);
+      expect(tool?.inputSchema.properties).toHaveProperty("outputPath");
+      expect(tool?.annotations?.readOnlyHint).toBe(false);
+    }
     await client.close();
   });
 
@@ -1675,6 +1730,11 @@ describe("janosik MCP server", () => {
       arguments: { boardId: "b1", cardId: "k1", approvalId: "apr-1" },
     });
     expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      seq: boardSeq,
+      runId: null,
+    });
     const call = calls.find(
       (entry) =>
         entry.path === "/boards/b1/commands" && entry.method === "POST",
@@ -1889,6 +1949,7 @@ describe("janosik MCP server", () => {
     expect(applied.structuredContent).toMatchObject({
       ok: true,
       planHash: previewHash,
+      seq: boardSeq + 2,
       runId: "run-plan-1",
       commandCount: 2,
     });

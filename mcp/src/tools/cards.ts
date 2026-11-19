@@ -20,8 +20,14 @@ import {
   workflowInitialColumnId,
 } from "@janosik/shared";
 import type { BatchCommandItem, JanosikClient } from "../client.js";
-import { ApiError, describeError, errorStructuredContent } from "../errors.js";
-import { errorResult, respond, textOnly } from "../format.js";
+import { ApiError } from "../errors.js";
+import {
+  batchCommandFields,
+  commandFields,
+  errorResult,
+  respond,
+  textOnly,
+} from "../format.js";
 import { newId, stableCommandId, stableId } from "../ids.js";
 import { findCardLocation } from "../locate.js";
 import { blockedIds } from "../project.js";
@@ -34,13 +40,22 @@ import {
   commandIdSchema,
   coverSchema,
   detailSchema,
+  documentOutputPathSchema,
   expectedVersionSchema,
   idSchema,
   idempotencyKeySchema,
   prioritySchema,
   responseFormatSchema,
 } from "../schemas.js";
-import { DESTRUCTIVE, READ, WRITE, defineTool } from "./helpers.js";
+import {
+  DESTRUCTIVE,
+  READ,
+  WRITE,
+  defineTool,
+  documentAnnotations,
+  respondDocument,
+  type DocumentOutputOptions,
+} from "./helpers.js";
 
 /** Parse a due date into Unix ms, or `undefined` to clear it. */
 function parseDueDate(
@@ -116,7 +131,11 @@ async function dodBlock(
   return null;
 }
 
-export function registerCardTools(server: McpServer, client: JanosikClient) {
+export function registerCardTools(
+  server: McpServer,
+  client: JanosikClient,
+  output: DocumentOutputOptions,
+) {
   defineTool(
     server,
     "janosik_create_card",
@@ -125,7 +144,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       description:
         "Create a card in a column. Optionally set its description, priority, " +
         "assignee and due date in the same call (each applied as a command). " +
-        "Returns the new card id.",
+        "Returns the new card id, the highest board sequence in the batch and the batch run id.",
       inputSchema: {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
@@ -267,15 +286,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             : {}),
         });
       }
-      try {
-        await client.commandBatch(boardId, items);
-      } catch (error) {
-        // The batch is atomic: the card was not created, so a plain retry is
-        // safe (the same ids would otherwise leave a duplicate behind).
-        return errorResult(describeError(error), errorStructuredContent(error));
-      }
+      const response = await client.commandBatch(boardId, items);
       return textOnly(`Created card "${title}" — \`${newCardId}\`.`, {
         resourceId: newCardId,
+        ...batchCommandFields(response),
       });
     },
   );
@@ -287,29 +301,32 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       title: "Get a card",
       description:
         "Read one card in full: fields, description, checklists and links, " +
-        "plus the column it sits in.",
+        "plus the column it sits in. Pass outputPath to save large documents.",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
+        outputPath: documentOutputPathSchema,
         response_format: responseFormatSchema,
       },
-      annotations: READ,
+      annotations: documentAnnotations(output),
     },
-    async ({ boardId, cardId, response_format }) => {
+    async (args) => {
+      const { boardId, cardId } = args;
       const board = await client.getBoard(boardId);
       const card = Object.hasOwn(board.cards, cardId)
         ? board.cards[cardId]
         : undefined;
       if (!card) return cardNotFound(cardId, boardId);
       const location = findCardLocation(board, cardId);
-      return respond(
-        response_format,
+      return respondDocument(
+        output,
+        args,
         {
           card,
           columnId: location?.column.id ?? null,
           columnTitle: location?.column.title ?? null,
         },
-        renderCard(card, board.labels),
+        () => renderCard(card, board.labels),
       );
     },
   );
@@ -365,8 +382,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         ...(description !== undefined ? { description } : {}),
       };
       if (expectedDescription === undefined) {
-        await client.command(boardId, patch, { ifMatch: expectedVersion });
-        return textOnly(`Updated card ${cardId}.`);
+        const response = await client.command(boardId, patch, {
+          ifMatch: expectedVersion,
+        });
+        return textOnly(`Updated card ${cardId}.`, commandFields(response));
       }
       // `ifMatch` pins the write to the board state the comparison ran on.
       const outcome = await client.commandOnFreshBoard(
@@ -385,13 +404,16 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         expectedVersion,
       );
       if (outcome === null) return cardNotFound(cardId, boardId);
-      if (outcome === "stale") {
+      if (outcome.result === "stale") {
         return errorResult(
           `Error: card ${cardId}'s description changed since you read it. ` +
             "Re-read it with janosik_get_card, merge, and retry.",
         );
       }
-      return textOnly(`Updated card ${cardId}.`);
+      return textOnly(
+        `Updated card ${cardId}.`,
+        commandFields(outcome.response),
+      );
     },
   );
 
@@ -503,7 +525,8 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       }
       if (moved === null) return cardNotFound(cardId, boardId);
       return textOnly(
-        `Moved card ${cardId} to ${moved.title} at position ${moved.toIndex}.`,
+        `Moved card ${cardId} to ${moved.result.title} at position ${moved.result.toIndex}.`,
+        commandFields(moved.response),
       );
     },
   );
@@ -556,7 +579,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           : commandId !== undefined
             ? stableId(`duplicate:${commandId}`)
             : newId());
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "DUPLICATE_CARD",
@@ -576,6 +599,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         },
       );
       return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`, {
+        ...commandFields(response),
         resourceId: newCardId,
       });
     },
@@ -596,7 +620,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, priority, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CARD_PRIORITY",
@@ -605,7 +629,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Set priority ${priority} on card ${cardId}.`);
+      return textOnly(
+        `Set priority ${priority} on card ${cardId}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -628,7 +655,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, assigneeId, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CARD_ASSIGN",
@@ -641,6 +668,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         assigneeId
           ? `Assigned card ${cardId} to ${assigneeId}.`
           : `Unassigned card ${cardId}.`,
+        commandFields(response),
       );
     },
   );
@@ -677,7 +705,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         CLAIM_LEASE_MAX_MS,
       );
       const leaseUntil = Date.now() + duration;
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "CLAIM_CARD",
@@ -689,6 +717,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       );
       return textOnly(
         `Claimed card ${cardId} until ${new Date(leaseUntil).toISOString()}.`,
+        commandFields(response),
       );
     },
   );
@@ -739,13 +768,16 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         expectedVersion,
       );
       if (outcome === null) return cardNotFound(cardId, boardId);
-      if (outcome === "held") {
+      if (outcome.result === "held") {
         return errorResult(
           `Error: card ${cardId} has a live claim held by another user. ` +
             "Read the card and wait for its lease to expire.",
         );
       }
-      return textOnly(`Released card ${cardId}.`);
+      return textOnly(
+        `Released card ${cardId}.`,
+        commandFields(outcome.response),
+      );
     },
   );
 
@@ -788,7 +820,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           "Error: pass acceptanceCriteria and/or definitionOfDone.",
         );
       }
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CARD_TASK_SPEC",
@@ -805,7 +837,10 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       if (definitionOfDone !== undefined) {
         parts.push(`${definitionOfDone.length} definition-of-done items`);
       }
-      return textOnly(`Set ${parts.join(" and ")} on card ${cardId}.`);
+      return textOnly(
+        `Set ${parts.join(" and ")} on card ${cardId}.`,
+        commandFields(response),
+      );
     },
   );
 
@@ -828,7 +863,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
     },
     async ({ boardId, cardId, dueDate, expectedVersion }) => {
       const ms = parseDueDate(dueDate);
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CARD_DUE_DATE",
@@ -841,6 +876,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         ms !== undefined
           ? `Set due date ${new Date(ms).toISOString()} on card ${cardId}.`
           : `Cleared the due date on card ${cardId}.`,
+        commandFields(response),
       );
     },
   );
@@ -862,7 +898,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, cover, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "SET_CARD_COVER",
@@ -875,6 +911,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         cover
           ? `Set cover on card ${cardId}.`
           : `Removed the cover on card ${cardId}.`,
+        commandFields(response),
       );
     },
   );
@@ -895,12 +932,12 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: WRITE,
     },
     async ({ boardId, cardId, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "ARCHIVE_CARD", cardId },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Archived card ${cardId}.`);
+      return textOnly(`Archived card ${cardId}.`, commandFields(response));
     },
   );
 
@@ -942,7 +979,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         const board = await client.getBoard(boardId);
         destination = workflowInitialColumnId(board);
       }
-      await client.command(
+      const response = await client.command(
         boardId,
         {
           type: "UNARCHIVE_CARD",
@@ -956,7 +993,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Unarchived card ${cardId}.`);
+      return textOnly(`Unarchived card ${cardId}.`, commandFields(response));
     },
   );
 
@@ -968,7 +1005,8 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       description:
         "Remove a card and its content from the board. For routine cleanup, " +
         "use janosik_archive_card so the card and its history remain easy " +
-        "to restore. Use this tool when removal is specifically intended.",
+        "to restore. Use this tool when removal is specifically intended. " +
+        "Returns the command sequence and run id.",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
@@ -979,7 +1017,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       annotations: DESTRUCTIVE,
     },
     async ({ boardId, cardId, expectedVersion, commandId, approvalId }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "DELETE_CARD", cardId },
         {
@@ -988,7 +1026,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
-      return textOnly(`Deleted card ${cardId}.`);
+      return textOnly(`Deleted card ${cardId}.`, commandFields(response));
     },
   );
 

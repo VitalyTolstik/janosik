@@ -12,7 +12,8 @@ REST API](./rest/).
 Машиночитаемый контракт опубликован как
 [документ OpenAPI 3.1](/openapi.yaml). Он покрывает полный агентский контур,
 запись через команды/batch/планы, комментарии, вложения, участников, ссылки и
-активность. Получение учётных данных, публичные ссылки, мастер-API `/admin`,
+активность, публичную конфигурацию аутентификации и сброс пароля. Вход,
+публичные ссылки, мастер-API `/admin`,
 уведомления и SSE описаны на этом сайте.
 
 ## Базовый путь и транспорт
@@ -24,7 +25,7 @@ REST API](./rest/).
 Запросы и ответы используют JSON. Размер тела запроса по умолчанию ограничен
 256 КБ. Импорт досок (`POST /boards/import`) принимает тела до
 `MAX_IMPORT_BYTES` (25 МБ), а команды доски
-(`POST /boards/:id/commands`, `/commands/batch`, `/plans`, `/plans/apply`) и
+(`POST /boards/:id/commands`, `/boards/:id/commands/batch`, `/boards/:id/plans`, `/boards/:id/plans/apply`) и
 административные маршруты команд — до `MAX_COMMAND_BODY_BYTES` (10 МБ). Это
 позволяет передавать большие пакеты импорта и снимки `RESTORE_*` для проверки
 валидатором, не выдавая командам бюджет импорта. Размер отдельного действия
@@ -37,7 +38,7 @@ REST API](./rest/).
 
 ## Аутентификация
 
-Пользовательские маршруты принимают один из двух видов токенов в заголовке
+Пользовательские маршруты с аутентификацией используют Bearer-токен в заголовке
 `Authorization`:
 
 ```
@@ -48,7 +49,7 @@ Authorization: Bearer jnk_<43 base64url chars>
 Первый — это короткоживущий JWT access-токен из эндпоинтов аутентификации.
 Второй — это персональный API-токен (PAT): значение, чей префикс `jnk_`
 указывает обработчику аутентификации проверить его по таблице `ApiToken`, а не через
-JWT-стратегию. Оба вида токенов подходят для маршрутов доски.
+JWT-стратегию. Допустимый тип учётных данных зависит от маршрута и действия.
 
 Агент может передать `X-Agent-Session: <sessionId>` при записи. Сервер
 проверяет, что сессия принадлежит тому же пользователю, токену и доске и ещё
@@ -59,9 +60,10 @@ JWT-стратегию. Оба вида токенов подходят для �
 
 ### Области токена
 
-У каждого PAT один неизменяемый пресет возможностей. Новый ключ создаётся как
-`worker`; старые ключи миграция перевела в `admin` с `trustedCi: true`, кроме
-read-only. Пресет никогда не повышает роль пользователя на доске.
+У каждого PAT есть пресет возможностей. По умолчанию новый ключ создаётся с
+`worker`. Владелец может изменить `scopePreset` в разделе «Аккаунт → API-ключи»
+или через `PATCH /users/me/tokens/:id` из сессии браузера. Права ключа ограничены
+ролью владельца на доске.
 
 | Пресет | Обычная запись контента | Переход в Done | Destructive | Администрирование доски |
 | --- | --- | --- | --- | --- |
@@ -83,43 +85,40 @@ Observer, включая старый read-only ключ, может начат�
 изменять содержимое доски или применять откат.
 
 При создании share можно передать абсолютный `expiresAt` или относительный
-`expiresInHours`. Если указаны оба поля, действует относительный срок. Срок и
-остальные параметры входят в идемпотентность и approval; для их изменения нужен
-новый ключ или новое согласование.
+`expiresInHours`. Если указаны оба поля, действует относительный срок.
+Значение `expiresAt`, отличное от `null`, всё равно должно соответствовать
+ISO-8601. Срок и остальные параметры входят в отпечатки идемпотентности и
+согласования. Для их изменения нужен новый ключ или новое согласование.
 
 ### Маршруты только для сессии
 
-Персональный API-токен действует от имени владельца в работе с досками, но не
-может управлять учётными данными аккаунта или человеческим control plane. При
-обращении с PAT эти маршруты возвращают `403`:
+Для маршрутов в таблице нужен access JWT браузерной сессии. Если запрос
+с PAT доходит до проверки сессии, сервер возвращает `403 pat_forbidden`.
+Лимиты частоты и более ранние проверки доступа также действуют. Например,
+ключ с устаревшим `readOnly: true` может получить `403 pat_read_only` при
+записи в аккаунт ещё до проверки сессии.
 
-- `GET /users/me/tokens`, `POST /users/me/tokens`, `PATCH /users/me/tokens/:id`, `DELETE /users/me/tokens/:id`
-- `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume`
-- `POST /agents/pause-all`, `POST /agents/resume-all`
-- `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`
-- `POST /boards/:id/agent-sessions/:id/pause`, `POST /boards/:id/agent-sessions/:id/resume`
-- `POST /boards/:id/approvals/:id/decision` (решение принимает человек-ADMIN; агент не подтверждает сам себя)
-- `POST /boards/:id/runs/:runId/revert` (реальный откат; `dryRun`/preview доступен для чтения)
-- `GET`/`PATCH /boards/:id/agent-policy`
-- `PATCH /users/me`, `PATCH /users/me/avatar`
-- `POST /auth/password`
-- `POST /auth/email/change/request`, `POST /auth/email/change/confirm`
-- `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline`
-- `POST /users/me/export`, `GET /users/me/export/latest`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`
-- `POST /users/me/delete/request-code`, `DELETE /users/me`
-- `GET /users/me/notifications`, `GET`/`PATCH /users/me/notification-settings`
+| Область | Маршруты |
+| --- | --- |
+| Обзор агентов | `GET /agents/overview` |
+| Политика доски | `GET` и `PATCH /boards/:id/agent-policy` |
+| Решение по запросу | `POST /boards/:id/approvals/:approvalId/decision` |
+| Откат прогона | `POST /boards/:id/runs/:runId/revert` при применении отката |
+| Пауза доски и всех агентов | `POST /boards/:id/agents/pause`, `POST /boards/:id/agents/resume`, `POST /agents/pause-all`, `POST /agents/resume-all` |
+| Пауза сессии агента | `POST /boards/:id/agent-sessions/:sessionId/pause`, `POST /boards/:id/agent-sessions/:sessionId/resume` |
+| API-ключи | `GET` и `POST /users/me/tokens`, `PATCH` и `DELETE /users/me/tokens/:id`, `POST /users/me/tokens/:id/pause`, `POST /users/me/tokens/:id/resume` |
+| Профиль и учётные данные | `PATCH /users/me`, `PATCH /users/me/avatar`, `POST /auth/password`, `POST /auth/email/change/request`, `POST /auth/email/change/confirm`, `POST /auth/oauth/:provider/link` |
+| Приглашения аккаунта | `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/:id/decline` |
+| Экспорт и удаление аккаунта | `POST /users/me/export`, `GET /users/me/export/latest`, `GET /users/me/export/:id`, `GET /users/me/export/:id/download`, `POST /users/me/delete/request-code`, `DELETE /users/me` |
+| Уведомления | `GET /users/me/notifications`, `POST /users/me/notifications/:id/read`, `POST /users/me/notifications/read-all`, `GET` и `PATCH /users/me/notification-settings` |
 
-```json
-{
-  "message": "Personal API tokens cannot manage account credentials — sign in with a browser session",
-  "code": "pat_forbidden"
-}
-```
-
-Вызывайте их с access-токеном из входа в браузере. Маршруты досок,
-участников, ссылок, приглашений, комментариев, вложений и команд по-прежнему
-принимают PAT. Поэтому утёкший ключ не может выпустить новые ключи, сменить
-пароль или перенести аккаунт на другой почтовый ящик.
+Если маршрут принимает оба типа учётных данных, действуют ограничения роли
+на доске и области токена. PAT нужен для `POST /boards/:id/agent-sessions`,
+его heartbeat и `POST /boards/:id/approvals`. Завершить сессию агента может
+владеющий ей PAT или ADMIN доски из браузерной сессии. Оба типа учётных данных
+позволяют запросить предпросмотр через `POST /boards/:id/runs/:runId/revert/preview`
+или с `{ "dryRun": true }` на маршруте отката. Список приглашений доски и их
+отправка доступны PAT с пресетом `admin` и ролью ADMIN доски.
 
 Refresh-токен никогда не появляется в теле ответа. Он передаётся в httpOnly cookie
 с именем `refresh_token`, ограниченной путём `/api/v1/auth` и с
@@ -204,9 +203,8 @@ Refresh-токен никогда не появляется в теле отве
 | `503` | `service_unavailable` | обслуживание или временный сбой; повторите позже |
 
 Неожиданный сбой сервера — `500 internal_error` с общим текстом и без
-stack trace. Полный версионированный каталог кодов — в
-[OpenAPI-документе](/openapi.yaml) (`ApiErrorCode`) и
-`docs/TASK-166-launch-agent-control.md` §8.2. `code` расширяем: клиент обязан
+stack trace. Текущий каталог кодов `ApiErrorCode` опубликован в
+[OpenAPI-документе](/openapi.yaml). `code` расширяем: клиент обязан
 пережить неизвестный код и опереться на HTTP-статус.
 
 Ошибки approval, pause и run подсказывают следующий шаг: остановиться и
@@ -283,6 +281,8 @@ access-токена (все вкладки и устройства одного 
 | Маршрут                              | Лимит                       |
 | ------------------------------------ | --------------------------- |
 | `POST /auth/register`                | 5 в минуту на IP            |
+| `POST /auth/password/reset/request` | 3 в час на IP |
+| `POST /auth/password/reset/confirm` | 10 в минуту на IP |
 | `POST /auth/login`                   | 5 в минуту на IP            |
 | `POST /auth/password`                | 5 в минуту на пользователя  |
 | `POST /auth/email/change/request`    | 3 в час на пользователя     |
@@ -290,6 +290,7 @@ access-токена (все вкладки и устройства одного 
 | `POST /auth/verify-email`            | 10 в минуту на пользователя |
 | `POST /auth/verify-email/resend`     | 3 в час на пользователя     |
 | `GET /auth/oauth/:provider/start`    | 20 в минуту на IP           |
+| `POST /auth/oauth/:provider/link` | 5 в минуту на пользователя |
 | `GET /auth/oauth/:provider/callback` | 20 в минуту на IP           |
 
 У публичного API ссылок отдельный лимит запросов на токен (см.
@@ -392,8 +393,10 @@ email, имён файлов, комментариев или текста ка�
 | Публичные ссылки        | `/share/:token`                                            | [REST API](./rest/)               |
 | Сессии агентов           | `/boards/:id/agent-sessions`                               | [REST API](./rest/#сессии-агентов-и-атрибуция) |
 | Пауза и stop-all         | `/boards/:id/agents/*`, `/agents/*`, `/users/me/tokens/:id/*` | [REST API](./rest/#пауза-и-kill) |
+| Обзор агентов | `/agents/overview` | [REST API](./rest/#обзор-агентов) |
+| Уведомления внимания | `/users/me/notifications`, `/users/me/notification-settings` | [Уведомления внимания](#уведомления-внимания) |
 | Подтверждения            | `/boards/:id/approvals`                                    | [REST API](./rest/#подтверждения) |
-| Планы                    | `/boards/:id/plans`, `/plans/apply`                        | [REST API](./rest/#планы) и [API команд](./commands/) |
+| Планы                    | `/boards/:id/plans`, `/boards/:id/plans/apply`                        | [REST API](./rest/#планы) и [API команд](./commands/) |
 | Runs и откат             | `/boards/:id/runs`                                         | [REST API](./rest/#runs-и-откат) |
 | Политика агентов доски   | `/boards/:id/agent-policy`                                 | [REST API](./rest/#политика-агентов-доски) |
 | Ленты активности         | `/boards/:id/activity`, `/cards/:cardId/activity`          | эта страница                            |
@@ -415,8 +418,10 @@ JWT-аудиторию и cookie. Он указан здесь для полно
 | `POST` | `/auth/login`                | нет            | `AuthResponseDto`                        |
 | `POST` | `/auth/refresh`              | refresh cookie | `AuthResponseDto`                        |
 | `POST` | `/auth/logout`               | refresh cookie | `{ status: "ok" }`                       |
+| `POST` | `/auth/password/reset/request` | нет | `{ status: "ok" }` |
+| `POST` | `/auth/password/reset/confirm` | нет | `{ status: "ok" }` |
 | `GET`  | `/auth/config`               | нет            | `AuthConfigResponse`                     |
-| `GET`  | `/auth/me`                   | пользователь   | `AuthUserDto`                            |
+| `GET`  | `/auth/me`                   | пользователь   | `AuthMeResponseDto`                      |
 | `POST` | `/auth/password`             | сессия         | `{ status: "ok" }`                       |
 | `POST` | `/auth/email/change/request` | сессия         | `{ expiresAt: number, queued: boolean }` |
 | `POST` | `/auth/email/change/confirm` | сессия         | `AuthResponseDto`                        |
@@ -467,12 +472,42 @@ JWT-аудиторию и cookie. Он указан здесь для полно
 
 ### Конфигурация
 
-`GET /auth/config` не требует аутентификации и возвращает два публичных
-булевых значения, которые экран входа читает до появления сессии:
+`GET /auth/config` доступен без аутентификации. Инстанс с открытой
+регистрацией и включённым SMTP может вернуть такой ответ.
 
 ```json
-{ "allowRegistration": true, "allowPublicShares": true }
+{
+  "allowRegistration": true,
+  "allowPublicShares": true,
+  "limits": { "boards": null, "importBytes": 26214400 }
+}
 ```
+
+Для `allowRegistration: true` нужен включённый флаг регистрации и работающий
+SMTP либо возможность создать первый аккаунт. Без SMTP первый аккаунт
+можно создать при `ALLOW_BOOTSTRAP_USER=true`, пока в базе нет пользователей.
+`allowPublicShares` отражает действующий флаг публичных ссылок.
+`limits.boards` задаёт лимит досок на пользователя (`null` означает отсутствие
+лимита), а `limits.importBytes` — максимальный размер тела запроса импорта
+досок в байтах.
+
+### Сброс пароля
+
+`POST /auth/password/reset/request` принимает `{ "email": "user@example.com" }`.
+Лимит — 3 запроса в час на IP. При включённом SMTP запрос с валидным email получает
+одинаковый ответ `200 { "status": "ok" }` независимо от отправки письма.
+Одноразовый код действует 15 минут. Сервер отправляет его активным аккаунтам
+с подтверждённым адресом и паролем. Повторный запрос в течение минуты
+сохраняет действующий код. При отключённом SMTP сервер возвращает
+`503 service_unavailable`.
+
+`POST /auth/password/reset/confirm` принимает `{ email, code, newPassword }`.
+Лимит — 10 запросов в минуту на IP. Код состоит из 32 шестнадцатеричных
+символов в нижнем регистре, пароль — из 8–100 символов. Оба маршрута убирают
+пробелы по краям email и приводят его к нижнему регистру. Неверный или
+истёкший код даёт `400 validation_failed`. При успехе сервер погашает код,
+отзывает refresh-сессии и API-ключи аккаунта и возвращает
+`200 { "status": "ok" }`.
 
 ### Me
 
@@ -552,9 +587,12 @@ Refresh-cookie вызывающего остаётся действительн�
 | ----- | -------------------------------- | -------------- | ----------------------------------- |
 | `GET` | `/auth/oauth/providers`          | нет            | `{ providers: OAuthProviderDto[] }` |
 | `GET` | `/auth/oauth/:provider/start`    | нет            | `302` на провайдера                 |
+| `POST` | `/auth/oauth/:provider/link` | сессия браузера | `201 { redirectUrl: string }` |
 | `GET` | `/auth/oauth/:provider/callback` | нет            | `302` в UI                          |
 
-Оба маршрута выполняют перенаправление браузера, а не XHR-запрос. `providers`
+`start` и `callback` перенаправляют браузер. Маршрут `link` принимает
+`{ password }` текущего аккаунта, устанавливает OAuth cookies для state и
+привязки и возвращает адрес провайдера для перехода. `providers`
 перечисляет только включённые провайдеры; каждая запись имеет вид `{ id, label
 }`, где `id` принимает значение `google` или `yandex`.
 
@@ -577,9 +615,9 @@ OAuth-аккаунт без пароля. Существующий аккаун�
 
 ## Пользователи и аккаунт
 
-Все маршруты требуют пользовательской аутентификации (JWT или PAT), кроме трёх
-маршрутов токенов, которые [только для сессии](#маршруты-только-для-сессии):
-API-ключ не может ни перечислить, ни создать, ни отозвать ключи.
+Изменение профиля, экспорт, удаление аккаунта и управление ключами требуют
+[сессии браузера](#маршруты-только-для-сессии). Аватар пользователя можно
+читать с обоими типами учётных данных.
 
 Персональный API-токен можно ограничить при создании: `boardId`
 — одной доской, `readOnly: true` запрещает изменение контента (`403 pat_read_only`),
@@ -635,8 +673,10 @@ API-ключ не может ни перечислить, ни создать, �
 `rateLimitPerMinute`, `scopePreset` или `trustedCi`; пропущенные поля
 сохраняют значение, `null` очищает область доски или лимит. Observer или
 read-only ключ не может включить `trustedCi`, а каждое изменение пишется в
-аудит с парами «до/после». Маршрут доступен только владельцу из браузерной
-сессии; секрет не принимается и не возвращается.
+аудит с парами «до/после». Сервер отбрасывает `expiresAt` при валидации,
+сохранённый срок действия остаётся прежним. Владелец изменяет метаданные
+из сессии браузера. Для отозванного токена сервер возвращает
+`409 token_revoked`.
 `DELETE /users/me/tokens/:id` отзывает один токен и возвращает
 `{ status: "ok" }`. Смена пароля отзывает все токены аккаунта. DTO токена
 также содержит `scopePreset`, `trustedCi`, `individualPausedAt`/

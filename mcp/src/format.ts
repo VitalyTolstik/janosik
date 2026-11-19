@@ -5,6 +5,7 @@
  * object so a client can process it without re-parsing the text.
  */
 
+import type { CommandBatchResponse, CommandResponse } from "@janosik/shared";
 import { CHARACTER_LIMIT } from "./constants.js";
 
 export const RESPONSE_FORMATS = ["markdown", "json"] as const;
@@ -49,7 +50,10 @@ export function respond(
   }
   return {
     content: [
-      { type: "text", text: format === "json" ? jsonText : cap(markdown) },
+      {
+        type: "text",
+        text: format === "json" ? jsonText : cap(markdown, narrowHint),
+      },
     ],
     ...(oversized ? {} : { structuredContent: json }),
   };
@@ -62,6 +66,23 @@ export interface MutationStructuredContent {
   runId?: string | null;
   approvalId?: string | null;
   [key: string]: unknown;
+}
+
+/** Report the version and run supplied by the command API. */
+export function commandFields(response: CommandResponse | undefined) {
+  return response === undefined
+    ? {}
+    : { seq: response.seq, runId: response.runId ?? null };
+}
+
+/** Use the newest returned sequence, including batches that replay older commands. */
+export function batchCommandFields({ results, runId }: CommandBatchResponse) {
+  return {
+    ...(results.length === 0
+      ? {}
+      : { seq: Math.max(...results.map(({ seq }) => seq)) }),
+    runId: runId ?? null,
+  };
 }
 
 /**
@@ -97,12 +118,15 @@ export function errorResult(
 }
 
 /** Clamp a response to the character budget with a visible note. */
-export function cap(text: string): string {
+export function cap(
+  text: string,
+  narrowHint = "Narrow the query (fewer cards, a smaller page) to see the rest.",
+): string {
   if (text.length <= CHARACTER_LIMIT) return text;
   return (
     text.slice(0, CHARACTER_LIMIT) +
     `\n\n… response truncated at ${CHARACTER_LIMIT} characters. ` +
-    "Narrow the query (fewer cards, a smaller page) to see the rest."
+    narrowHint
   );
 }
 

@@ -15,6 +15,14 @@ export class ApiError extends Error {
   }
 }
 
+/** A local file could not be saved by the MCP server. */
+export class FilesystemWriteError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "FilesystemWriteError";
+  }
+}
+
 /**
  * A command the server accepted but applied as a no-op: the reducer found
  * nothing to change (an id that is not on the board, or the value was
@@ -204,6 +212,14 @@ export function errorStructuredContent(
       code: "no_change",
       retryable: false,
       message: `${error.actionType} changed nothing`,
+    };
+  }
+  if (error instanceof FilesystemWriteError) {
+    return {
+      ok: false,
+      code: "filesystem_error",
+      retryable: false,
+      message: error.message,
     };
   }
   if (error instanceof Error) {

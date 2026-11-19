@@ -241,9 +241,10 @@ describe("JanosikClient REST idempotency defaults (M17)", () => {
 });
 
 describe("JanosikClient.commandBatch", () => {
-  it("posts every command in one request and returns the results in order", async () => {
+  it("posts every command in one request and returns the batch run and ordered results", async () => {
     const { calls } = stubFetch(() =>
       json({
+        runId: "batch-run",
         results: [
           { seq: 1, versions: { "board:b1": 1 } },
           { seq: 2, versions: { "card:c1": 1 } },
@@ -252,7 +253,7 @@ describe("JanosikClient.commandBatch", () => {
     );
     const client = new JanosikClient("http://api.test", "jnk_token");
 
-    const results = await client.commandBatch("b1", [
+    const { runId, results } = await client.commandBatch("b1", [
       {
         action: {
           type: "ADD_CARD",
@@ -266,6 +267,7 @@ describe("JanosikClient.commandBatch", () => {
       { action: { type: "SET_CARD_PRIORITY", cardId: "c1", priority: "high" } },
     ]);
 
+    expect(runId).toBe("batch-run");
     expect(results.map((r) => r.seq)).toEqual([1, 2]);
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
@@ -396,7 +398,10 @@ describe("JanosikClient.commandOnFreshBoard", () => {
       undefined,
       { board, seq: 8 },
     );
-    expect(result).toBe("ok");
+    expect(result).toEqual({
+      result: "ok",
+      response: { seq: 9, versions: { "board:b1": 1 } },
+    });
     // Exactly one request — the write. The prefetched snapshot is reused, so
     // a move that already read the board costs one GET fewer (TASK-154).
     expect(calls).toHaveLength(1);
@@ -412,7 +417,7 @@ describe("JanosikClient.commandOnFreshBoard", () => {
         posts += 1;
         return posts === 1
           ? json({ conflict: "version" }, 409)
-          : json({ seq: 11, versions: { "board:b1": 1 } });
+          : json({ seq: 11, versions: { "board:b1": 1 }, runId: "retry-run" });
       }
       gets += 1;
       return boardResponse(10 + gets);
@@ -425,7 +430,10 @@ describe("JanosikClient.commandOnFreshBoard", () => {
       undefined,
       { board, seq: 10 },
     );
-    expect(result).toBe("ok");
+    expect(result).toEqual({
+      result: "ok",
+      response: { seq: 11, versions: { "board:b1": 1 }, runId: "retry-run" },
+    });
     expect(posts).toBe(2);
     expect(gets).toBe(1); // the conflict forced one fresh read
   });

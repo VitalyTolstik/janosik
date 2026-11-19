@@ -163,6 +163,27 @@ describe("API token owner edit (e2e)", () => {
     });
   });
 
+  it("strips expiresAt from PATCH and keeps the expiry set at creation", async () => {
+    const expiry = new Date(Date.now() + 86_400_000);
+    const created = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(ownerSession))
+      .send({ name: "expiring key", expiresAt: expiry.toISOString() })
+      .expect(201);
+    const { apiToken } = created.body as CreateUserTokenResponse;
+
+    const edited = await patch(
+      { scopePreset: "observer", expiresAt: null },
+      ownerSession,
+      apiToken.id,
+    ).expect(200);
+    expect(edited.body).toMatchObject({
+      scopePreset: "observer",
+      effectiveTokenScope: "observer",
+      expiresAt: expiry.getTime(),
+    });
+  });
+
   it("rejects trusted CI for an Observer/read-only key", async () => {
     await patch({ scopePreset: "observer", trustedCi: true }).expect(400);
     await patch({ readOnly: true, trustedCi: true }).expect(400);

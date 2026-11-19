@@ -28,6 +28,16 @@ export const responseFormatSchema = z
       "(machine-readable, full fields).",
   );
 
+export const documentOutputPathSchema = z
+  .string()
+  .min(1)
+  .optional()
+  .describe(
+    "Save the full JSON document to a new local file instead of returning it inline. " +
+      "Requires JANOSIK_MCP_ALLOW_FS=1 and write-enabled MCP mode. " +
+      "Relative paths resolve against JANOSIK_MCP_FS_ROOT when set.",
+  );
+
 /**
  * Every id the app mints is a UUID, a cuid or a seed slug, so ids are
  * restricted to URL-safe characters. Besides catching hallucinated values

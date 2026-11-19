@@ -349,7 +349,7 @@ export class JanosikClient {
    * whole batch back, so a retry after a failure cannot leave a half-made
    * entity behind.
    *
-   * Returns one {@link CommandResponse} per command, in order. A command
+   * Returns the batch run id and one {@link CommandResponse} per command, in order. A command
    * whose `commandId` was already applied returns its stored result. No
    * {@link NoChangeError} is raised: a batched field that is already set is
    * not a failure.
@@ -357,7 +357,7 @@ export class JanosikClient {
   async commandBatch(
     boardId: string,
     items: BatchCommandItem[],
-  ): Promise<CommandResponse[]> {
+  ): Promise<CommandBatchResponse> {
     const request: CommandBatchRequest = {
       commands: items.map((item) => ({
         commandId: item.commandId ?? newCommandId(),
@@ -371,12 +371,11 @@ export class JanosikClient {
     const approvalId = items.find(
       (item) => item.approvalId !== undefined,
     )?.approvalId;
-    const response = await this.sendCommand<CommandBatchResponse>(
+    return this.sendCommand<CommandBatchResponse>(
       apiPath`/boards/${boardId}/commands/batch`,
       request,
       approvalId,
     );
-    return response.results;
   }
 
   /**
@@ -451,7 +450,7 @@ export class JanosikClient {
     attempts = 3,
     expectedVersion?: number,
     prefetched?: { board: Board; seq: number },
-  ): Promise<R | null> {
+  ): Promise<{ result: R; response?: CommandResponse } | null> {
     const maxAttempts = expectedVersion !== undefined ? 1 : attempts;
     for (let attempt = 1; ; attempt += 1) {
       const { board, seq } =
@@ -460,9 +459,9 @@ export class JanosikClient {
           : await this.getBoardWithSeq(boardId);
       const plan = await build(board);
       if (plan === null) return null;
-      if (plan.action === undefined) return plan.result;
+      if (plan.action === undefined) return { result: plan.result };
       try {
-        await this.command(boardId, plan.action, {
+        const response = await this.command(boardId, plan.action, {
           ifMatch: expectedVersion ?? seq,
           ...(plan.commandId !== undefined
             ? { commandId: plan.commandId }
@@ -471,7 +470,7 @@ export class JanosikClient {
             ? { approvalId: plan.approvalId }
             : {}),
         });
-        return plan.result;
+        return { result: plan.result, response };
       } catch (error) {
         const stale =
           error instanceof ApiError &&

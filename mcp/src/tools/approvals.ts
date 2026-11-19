@@ -13,8 +13,15 @@ import { z } from "zod";
 import type { ApprovalRequestDto } from "@janosik/shared";
 import type { JanosikClient } from "../client.js";
 import { bullets, code, formatTimestamp, respond } from "../format.js";
-import { responseFormatSchema } from "../schemas.js";
-import { READ, WRITE, defineTool } from "./helpers.js";
+import { documentOutputPathSchema, responseFormatSchema } from "../schemas.js";
+import {
+  READ,
+  WRITE,
+  defineTool,
+  documentAnnotations,
+  respondDocument,
+  type DocumentOutputOptions,
+} from "./helpers.js";
 
 const PLAN_SCHEMA = z
   .object({
@@ -96,6 +103,7 @@ const sleep = (ms: number): Promise<void> =>
 export function registerApprovalTools(
   server: McpServer,
   client: JanosikClient,
+  output: DocumentOutputOptions,
 ) {
   defineTool(
     server,
@@ -197,17 +205,21 @@ export function registerApprovalTools(
     {
       title: "Get an approval",
       description:
-        "Read one approval request with its exact plan, status, expiry and decision.",
+        "Read one approval request with its exact plan, status, expiry and decision. Pass outputPath to save large documents.",
       inputSchema: {
         boardId: z.string().describe("Board id."),
         approvalId: z.string().describe("Approval id."),
+        outputPath: documentOutputPathSchema,
         response_format: responseFormatSchema,
       },
-      annotations: READ,
+      annotations: documentAnnotations(output),
     },
-    async ({ boardId, approvalId, response_format }) => {
+    async (args) => {
+      const { boardId, approvalId } = args;
       const approval = await client.getApproval(boardId, approvalId);
-      return respond(response_format, { approval }, renderApproval(approval));
+      return respondDocument(output, args, { approval }, () =>
+        renderApproval(approval),
+      );
     },
   );
 

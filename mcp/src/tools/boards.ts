@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import type { JanosikClient } from "../client.js";
 import { CHARACTER_LIMIT } from "../constants.js";
-import { errorResult, respond, textOnly } from "../format.js";
+import { commandFields, errorResult, respond, textOnly } from "../format.js";
 import { writeSandboxedFile, type FsOptions } from "../fs-policy.js";
 import { summarizeBoard } from "../project.js";
 import { renderBoard, renderBoardSummaries } from "../render.js";
@@ -189,12 +189,15 @@ export function registerBoardTools(
       annotations: WRITE,
     },
     async ({ boardId, title, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "RENAME_BOARD", title },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Renamed board ${boardId} to "${title}".`);
+      return textOnly(
+        `Renamed board ${boardId} to "${title}".`,
+        commandFields(response),
+      );
     },
   );
 
@@ -214,12 +217,12 @@ export function registerBoardTools(
       annotations: WRITE,
     },
     async ({ boardId, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "ARCHIVE_BOARD" },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Archived board ${boardId}.`);
+      return textOnly(`Archived board ${boardId}.`, commandFields(response));
     },
   );
 
@@ -236,12 +239,12 @@ export function registerBoardTools(
       annotations: WRITE,
     },
     async ({ boardId, expectedVersion }) => {
-      await client.command(
+      const response = await client.command(
         boardId,
         { type: "UNARCHIVE_BOARD" },
         { ifMatch: expectedVersion },
       );
-      return textOnly(`Unarchived board ${boardId}.`);
+      return textOnly(`Unarchived board ${boardId}.`, commandFields(response));
     },
   );
 

@@ -54,4 +54,43 @@ describe("Auth rate limit (e2e)", () => {
       .send({ email: "not-an-email", password: "short" })
       .expect(429);
   });
+
+  it("limits unauthenticated password-reset requests to three per hour", async () => {
+    const server = request(app.getHttpServer());
+    const requestReset = () =>
+      server.post("/api/v1/auth/password/reset/request").send({
+        email: "unknown-reset@example.com",
+      });
+
+    for (let i = 0; i < 3; i++) {
+      await requestReset().expect(200, { status: "ok" });
+    }
+    const response = await requestReset().expect(429);
+    expect(response.body).toMatchObject({
+      code: "rate_limited",
+      retryAfter: expect.any(Number),
+    });
+    expect(response.body.retryAfter).toBeGreaterThan(60);
+  });
+
+  it("limits unauthenticated password-reset confirmations to ten per minute", async () => {
+    const server = request(app.getHttpServer());
+    const confirmReset = () =>
+      server.post("/api/v1/auth/password/reset/confirm").send({
+        email: "unknown-reset@example.com",
+        code: "0".repeat(32),
+        newPassword: "new-password",
+      });
+
+    for (let i = 0; i < 10; i++) {
+      const response = await confirmReset().expect(400);
+      expect(response.body.code).toBe("validation_failed");
+    }
+    const response = await confirmReset().expect(429);
+    expect(response.body).toMatchObject({
+      code: "rate_limited",
+      retryAfter: expect.any(Number),
+    });
+    expect(response.body.retryAfter).toBeLessThanOrEqual(60);
+  });
 });

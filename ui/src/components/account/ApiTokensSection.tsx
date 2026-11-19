@@ -525,7 +525,10 @@ export function ApiTokensSection() {
                 />
               </div>
               <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
+                <span
+                  id="token-create-scope-label"
+                  className="text-xs font-medium text-muted-foreground"
+                >
                   {t("account.tokens.presetLabel")}
                 </span>
                 <DropdownMenu>
@@ -535,9 +538,12 @@ export function ApiTokensSection() {
                       variant="outline"
                       size="sm"
                       data-testid="token-scope-preset"
+                      aria-labelledby="token-create-scope-label token-create-scope-value"
                       className="w-full justify-between font-normal"
                     >
-                      {t(SCOPE_PRESET_LABELS[scopePreset])}
+                      <span id="token-create-scope-value">
+                        {t(SCOPE_PRESET_LABELS[scopePreset])}
+                      </span>
                       <ChevronDown
                         className="h-3.5 w-3.5 text-muted-foreground"
                         aria-hidden
