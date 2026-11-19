@@ -84,6 +84,8 @@ interface Options {
   send?: (boardId: string, action: BoardAction) => Promise<SendOutcome>;
   /** Called when an undo/redo command failed on the server (toast hook). */
   onSendFailed?: (failure: SendFailure) => void;
+  /** Called after local rollback, before processing deferred remote events. */
+  onUncertain?: (boardId: string, commandId: string) => void;
   /** Called when undo skipped steps a foreign change had overtaken. */
   onForeignSkipped?: () => void;
 }
@@ -94,6 +96,7 @@ export function useUndoHistory({
   apply,
   send,
   onSendFailed,
+  onUncertain,
   onForeignSkipped,
 }: Options): UndoHistory {
   // One undo/redo stack per board; created lazily, dropped on remove/import.
@@ -209,7 +212,11 @@ export function useUndoHistory({
           const outcome = await send!(boardId, applied);
           if (!outcome.ok) {
             stack.restoreUndone();
-            onSendFailed?.(outcome.failure);
+            if (outcome.uncertainCommandId !== undefined) {
+              onUncertain?.(boardId, outcome.uncertainCommandId);
+            } else {
+              onSendFailed?.(outcome.failure);
+            }
             sync();
             return;
           }
@@ -225,7 +232,11 @@ export function useUndoHistory({
               if (revert !== null) apply(revert);
               if (direction === "undo") stack.restoreUndone();
               else stack.restoreRedone();
-              onSendFailed?.(outcome.failure);
+              if (outcome.uncertainCommandId !== undefined) {
+                onUncertain?.(boardId, outcome.uncertainCommandId);
+              } else {
+                onSendFailed?.(outcome.failure);
+              }
               sync();
               return;
             }
@@ -247,6 +258,7 @@ export function useUndoHistory({
       sync,
       send,
       onSendFailed,
+      onUncertain,
       onForeignSkipped,
     ],
   );

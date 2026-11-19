@@ -3,6 +3,10 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
+import {
+  HealthNotReadyException,
+  HealthService,
+} from "@/health/health.service";
 import { setupApp } from "@/common/app-setup";
 
 describe("Health (e2e)", () => {
@@ -35,6 +39,27 @@ describe("Health (e2e)", () => {
     // No Redis in the test env → "disabled", not "down" (TASK-119).
     expect(res.body).toEqual({ status: "ok", db: "up", redis: "disabled" });
   });
+
+  it.each([
+    { status: "error", db: "down", redis: "disabled" },
+    { status: "error", db: "up", redis: "down" },
+  ] as const)(
+    "returns the top-level dependency report on 503 (%j)",
+    async (report) => {
+      const ready = jest
+        .spyOn(app.get(HealthService), "ready")
+        .mockRejectedValueOnce(new HealthNotReadyException(report));
+      try {
+        const res = await request(app.getHttpServer())
+          .get("/api/v1/health/ready")
+          .expect(503);
+        expect(res.body).toEqual(report);
+        expect(res.headers["x-request-id"]).toEqual(expect.any(String));
+      } finally {
+        ready.mockRestore();
+      }
+    },
+  );
 
   it("unknown routes use the shared error envelope", async () => {
     const res = await request(app.getHttpServer())

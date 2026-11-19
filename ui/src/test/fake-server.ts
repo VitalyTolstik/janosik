@@ -47,6 +47,7 @@ interface FakeAccount {
   id: string;
   email: string;
   password: string;
+  notifyAttention: boolean;
   displayName: string | null;
   avatarColor: UserAvatarColor | null;
   createdAt: number;
@@ -88,6 +89,7 @@ export class FakeServer {
     id: "user-1",
     email: "admin@example.com",
     password: "password123",
+    notifyAttention: true,
     displayName: "Admin",
     avatarColor: null,
     createdAt: Date.UTC(2026, 0, 15, 12, 0, 0),
@@ -531,6 +533,9 @@ export class FakeServer {
       }
       if (patch.avatarColor !== undefined) {
         this.account.avatarColor = patch.avatarColor;
+      }
+      if (patch.notifyAttention !== undefined) {
+        this.account.notifyAttention = patch.notifyAttention;
       }
       return json(200, this.publicUser());
     }
@@ -1105,6 +1110,9 @@ export class FakeServer {
       displayName: this.account.displayName,
       avatarColor: this.account.avatarColor,
       avatarPath: null,
+      ...(this.account.notifyAttention === false
+        ? { notifyAttention: false }
+        : {}),
       createdAt: this.account.createdAt,
       emailVerifiedAt: this.emailVerified ? this.account.createdAt : null,
     };

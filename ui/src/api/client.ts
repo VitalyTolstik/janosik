@@ -20,6 +20,8 @@ import type {
   BoardAggregate,
   BoardEnvelope,
   BoardInvitationDto,
+  AttentionNotificationDto,
+  AttentionNotificationPage,
   BoardMemberDto,
   BoardPendingInvitationDto,
   BoardShareDto,
@@ -1083,6 +1085,33 @@ export class ApiClient {
     );
   }
 
+  listAttentionNotifications(
+    cursor?: string,
+  ): Promise<AttentionNotificationPage> {
+    const query = new URLSearchParams({ limit: "20" });
+    if (cursor !== undefined) query.set("cursor", cursor);
+    return this.request<AttentionNotificationPage>(
+      `/users/me/notifications?${query}`,
+    );
+  }
+
+  markAttentionRead(id: string): Promise<AttentionNotificationDto> {
+    return this.request<AttentionNotificationDto>(
+      `/users/me/notifications/${encodeURIComponent(id)}/read`,
+      { method: "POST" },
+    );
+  }
+
+  markAllAttentionRead(): Promise<{ updated: number }> {
+    return this.request<{ updated: number }>(
+      "/users/me/notifications/read-all",
+      {
+        method: "POST",
+        body: {},
+      },
+    );
+  }
+
   listInvitations(): Promise<BoardInvitationDto[]> {
     return this.request<BoardInvitationDto[]>("/invitations");
   }
@@ -1528,7 +1557,12 @@ export class ApiClient {
       throw new ApiError(0, null);
     }
 
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      throw new ApiError(0, null);
+    }
     let parsed: unknown = undefined;
     if (text !== "") {
       try {

@@ -94,6 +94,69 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     expect(await screen.findByText("No invitations")).toBeInTheDocument();
   });
 
+  it("opens older attention notifications and clears the unread badge through the API", async () => {
+    const server = new FakeServer();
+    const older = {
+      id: "older",
+      type: "claim.expired",
+      title: "Claim expired",
+      body: "Review the card",
+      boardId: "b-1",
+      data: null,
+      createdAt: 1_700_000_000_000,
+      readAt: null as number | null,
+    };
+    const newest = { ...older, id: "newest", title: "Approval needed" };
+    const operations: string[] = [];
+    const handler: FetchHandler = async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notifications") {
+        const after = url.searchParams.get("cursor");
+        return Response.json({
+          items: after === "1700000000000:newest" ? [older] : [newest],
+          nextCursor: after ? null : "1700000000000:newest",
+          unreadCount: [older, newest].filter((item) => item.readAt === null)
+            .length,
+        });
+      }
+      if (url.pathname.endsWith("/older/read")) {
+        operations.push(url.pathname);
+        older.readAt = 1_700_000_000_001;
+        return Response.json(older);
+      }
+      if (url.pathname.endsWith("/notifications/read-all")) {
+        operations.push(url.pathname);
+        newest.readAt = 1_700_000_000_002;
+        return Response.json({ updated: 1 });
+      }
+      return server.handle(input, init);
+    };
+    renderBell(server, handler);
+    expect(await screen.findByTestId("notifications-badge")).toHaveTextContent(
+      "2",
+    );
+    await userEvent.click(screen.getByTestId("notifications-bell"));
+    expect(await screen.findByText("Approval needed")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Older" }));
+    expect(await screen.findByText("Claim expired")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("notifications-badge")).toHaveTextContent("1"),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("notifications-badge")).toBeNull(),
+    );
+    expect(await screen.findByText("Approval needed")).toBeVisible();
+    expect(operations).toEqual([
+      "/api/v1/users/me/notifications/older/read",
+      "/api/v1/users/me/notifications/read-all",
+    ]);
+  });
+
   it("shows a busy skeleton until the invitation list arrives", async () => {
     const server = new FakeServer();
     let release!: () => void;

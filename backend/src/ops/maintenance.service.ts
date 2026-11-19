@@ -682,6 +682,9 @@ export class MaintenanceService {
   async sweepAttention(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
+    await this.prisma.notificationMail.deleteMany({
+      where: { finishedAt: { lt: cutoff } },
+    });
     return this.purgeChunks(
       (take) =>
         this.prisma.attentionNotification.findMany({

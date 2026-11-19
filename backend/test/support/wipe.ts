@@ -22,6 +22,7 @@ const TABLES = [
   "AgentSession",
   "ApprovalRequest",
   "AttentionNotification",
+  "NotificationMail",
   "CommandPreimage",
   "SecurityAuditLog",
   "IdempotencyRecord",

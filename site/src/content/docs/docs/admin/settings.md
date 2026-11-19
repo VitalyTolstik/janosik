@@ -18,8 +18,12 @@ sees the state read-only.
 
 `/admin/email` configures the outgoing mail transport. The subtitle is
 `Outgoing mail, pick a provider, enter credentials, no code changes needed`.
-Saving reconfigures the running backend in place, with no restart and no code
-or environment change.
+Saving Email settings updates the transport in the process handling the request. Other API and queue-worker processes apply
+the saved enabled configuration at startup. Roll those processes after a
+change and keep their SMTP environment and credential encryption key aligned.
+A disabled saved row leaves the environment bootstrap in effect on startup.
+For a cluster-wide disable, clear the SMTP environment on every process before
+restarting them.
 
 ### Status
 
@@ -184,8 +188,12 @@ A chart plots requests per second over the last 60 seconds, oldest first.
 
 The limit editor is a number stepper from 1 to 1,000,000. A source badge says
 whether the limit is `set in this panel` or `from environment (THROTTLE_LIMIT)`.
-Saving takes effect on the next request, without a restart. The limit is
-owner-only; an operator sees it read-only.
+
+The limit takes effect on the next request handled by the process that saved
+it. Other running nodes keep their current limit until restart, even when Redis
+shares the request counters. Restart the remaining API nodes to apply the
+persisted limit across the deployment.
+Only the owner can edit the limit. Operators have read access.
 
 ## Demo swarm
 
@@ -297,8 +305,9 @@ are:
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
 | `sweep-idempotency` | `IdempotencyRecord` rows past their 24-hour expiry |
 
-When Redis is configured the sweep runs on a durable schedule; without Redis it
-runs inline and the schedule is lost on restart.
+API processes reconcile Redis schedules at startup and every 30 seconds.
+Missing schedules and settings changes are repaired after Redis recovers.
+With Redis unset, sweeps run on an in-process timer that starts over on restart.
 
 ### Scheduled email
 
@@ -307,7 +316,11 @@ disables it). The due reminder lead is in hours (0 to 720; 0 disables it).
 Recipients can opt out of both. The digest summarises what changed on each
 board since the last run. The reminder lists the cards assigned to a user whose
 due date falls inside the lead window. Each reminder is sent once per card,
-user and due date.
+user and due date. Reminders use the recipient's saved locale (EN or RU), with
+English as the default. Scheduled and immediate notification letters are
+staged in PostgreSQL and retried with backoff when SMTP rejects delivery.
+Queued letters stay pending while SMTP is disabled. Attention email and
+digest timestamps record SMTP acceptance.
 
 ### Queue dashboard
 
@@ -341,8 +354,9 @@ The editor shows completeness per language and a banner/email preview for both
 audiences. `Save draft` stores an unfinished announcement without emailing;
 `Publish` applies the selected policy. A published announcement cannot be
 published again by editing — the letter is queued only on the draft → active
-transition, and `Email queued` records that the queue accepted the broadcast
-(an in-process SMTP failure can still happen later). Enabling email on an
+transition, and `Email queued` records that PostgreSQL accepted the broadcast
+for delivery. Redis dispatch and SMTP delivery happen afterward. Failed
+recipients are retried individually. Enabling email on an
 already-active announcement is blocked; save it as a draft and publish again.
 If the banner start is in the future, the editor warns that saving queues the
 letter immediately.

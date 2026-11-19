@@ -739,6 +739,27 @@ describe("Attention notifications (e2e)", () => {
       .expect(200);
   });
 
+  it.each([
+    "253402300800000:year-10000",
+    "8640000000000001:overflow",
+    "9007199254740992:overflow",
+    "bad:format",
+  ])("rejects invalid notification cursor %s with 400", async (cursor) => {
+    await server()
+      .get("/api/v1/users/me/notifications")
+      .set(auth(ownerSession))
+      .query({ cursor })
+      .expect(400);
+  });
+
+  it("accepts a cursor at the last RFC 3339 millisecond", async () => {
+    await server()
+      .get("/api/v1/users/me/notifications")
+      .set(auth(ownerSession))
+      .query({ cursor: "253402300799999:boundary" })
+      .expect(200);
+  });
+
   it("includes attention categories in digest v2 and does not repeat them", async () => {
     const ops = app.get(CommsSchedulerService);
     await prisma.opsSettings.upsert({

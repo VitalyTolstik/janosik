@@ -123,6 +123,16 @@ describe("Static frontends serving (e2e)", () => {
     expect(csp).toMatch(/connect-src 'self' https:\/\/plausible\.io/);
   });
 
+  it.each(["/", "/app/", "/app/s/token123", "/api/v1/health", "/missing-path"])(
+    "keeps the HSTS policy on %s",
+    async (url) => {
+      const res = await server().get(url);
+      expect(res.headers["strict-transport-security"]).toBe(
+        "max-age=31536000; includeSubDomains",
+      );
+    },
+  );
+
   it("keeps public share pages framable and unindexed", async () => {
     const res = await server().get("/app/s/token123").expect(200);
     expect(res.text).toContain("Janosik app");

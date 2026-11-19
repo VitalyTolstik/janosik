@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
-import type { BoardInvitationDto, BoardRole } from "@janosik/shared";
+import type {
+  AttentionNotificationPage,
+  BoardInvitationDto,
+  BoardRole,
+} from "@janosik/shared";
 
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { AttentionInbox } from "@/components/notifications/AttentionInbox";
 import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
@@ -49,6 +54,10 @@ export function NotificationsBell() {
   const [invitations, setInvitations] = useState<BoardInvitationDto[] | null>(
     null,
   );
+  const [attention, setAttention] = useState<AttentionNotificationPage | null>(
+    null,
+  );
+  const [attentionError, setAttentionError] = useState(false);
   const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -59,18 +68,30 @@ export function NotificationsBell() {
     }
   }, []);
 
+  const loadAttention = useCallback(async () => {
+    try {
+      setAttention(await api.listAttentionNotifications());
+      setAttentionError(false);
+    } catch {
+      setAttentionError(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isApiEnabled() || user === null) return;
-    void load();
-    const onFocus = () => void load();
+    const onFocus = () => {
+      void load();
+      void loadAttention();
+    };
+    onFocus();
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") onFocus();
     };
     // Invitations have no per-user SSE channel yet: a low-frequency poll
     // keeps a long-lived tab from hiding a pending invitation until the user
     // switches windows. Focus/visibility still answer immediately.
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") onFocus();
     }, 30_000);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
@@ -79,14 +100,20 @@ export function NotificationsBell() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [load, user]);
+  }, [load, loadAttention, user]);
 
   if (!isApiEnabled() || user === null) return null;
 
-  const count = invitations?.length ?? 0;
+  const count = (invitations?.length ?? 0) + (attention?.unreadCount ?? 0);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) void loadAttention();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -117,8 +144,13 @@ export function NotificationsBell() {
         collisionPadding={8}
         data-testid="invitations-panel"
         aria-busy={invitations === null}
-        className="w-80 overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
+        className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
+        <AttentionInbox
+          page={attention}
+          unavailable={attentionError}
+          onReload={loadAttention}
+        />
         <NotificationsPanel
           invitations={invitations}
           onClose={() => setOpen(false)}

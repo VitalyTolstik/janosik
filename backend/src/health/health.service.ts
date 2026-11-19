@@ -15,6 +15,12 @@ export interface HealthReport {
   redis: "up" | "down" | "disabled";
 }
 
+export class HealthNotReadyException extends HttpException {
+  constructor(readonly report: HealthReport) {
+    super(report, HttpStatus.SERVICE_UNAVAILABLE);
+  }
+}
+
 export interface HealthLiveness {
   status: "ok";
 }
@@ -133,7 +139,7 @@ export class HealthService implements OnModuleDestroy {
 
   private settle(report: HealthReport): HealthReport {
     if (report.status === "error") {
-      throw new HttpException(report, HttpStatus.SERVICE_UNAVAILABLE);
+      throw new HealthNotReadyException(report);
     }
     return report;
   }

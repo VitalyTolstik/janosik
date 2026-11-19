@@ -36,7 +36,7 @@ export type SendFailure =
 
 export type SendOutcome =
   | { ok: true; versions: EntityVersions; seq: number }
-  | { ok: false; failure: SendFailure };
+  | { ok: false; failure: SendFailure; uncertainCommandId?: string };
 
 export interface ServerSyncOptions {
   /** One `POST /boards/:id/commands` round-trip. */
@@ -284,13 +284,34 @@ export class ServerSync {
         ? { ifMatchVersions: preconditions }
         : {}),
     };
-    try {
-      const response = await this.options.send(boardId, request);
-      return { ok: true, versions: response.versions, seq: response.seq };
-    } catch (error) {
-      this.failures += 1;
-      return { ok: false, failure: classify(error) };
+    let uncertain = false;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const response = await this.options.send(boardId, request);
+        if (typeof response?.seq !== "number" || !response.versions) {
+          throw new ApiError(200, null, "Invalid command response");
+        }
+        return { ok: true, versions: response.versions, seq: response.seq };
+      } catch (error) {
+        uncertain ||= commandResponseLost(error);
+        // The same key and payload replays the persisted result if the
+        // first request committed. Keep the board FIFO blocked until then.
+        if (uncertain && attempt === 0 && request.commandId && !this.disposed) {
+          continue;
+        }
+        this.failures += 1;
+        return {
+          ok: false,
+          failure: classify(error),
+          ...(uncertain ? { uncertainCommandId: request.commandId } : {}),
+        };
+      }
     }
+  }
+
+  /** A rolled-back optimistic command must no longer suppress its echo. */
+  forgetOwnCommand(boardId: string, commandId: string): void {
+    this.sentIds.get(boardId)?.delete(commandId);
   }
 
   private rememberSent(boardId: string, action: BoardAction): void {
@@ -314,6 +335,16 @@ export class ServerSync {
     if (next <= 0) this.busy.delete(boardId);
     else this.busy.set(boardId, next);
   }
+}
+
+function commandResponseLost(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.clientSide || error.code === "board_write_timeout") return false;
+  return (
+    error.offline ||
+    error.status >= 500 ||
+    (error.status >= 200 && error.status < 300)
+  );
 }
 
 /** Map an API/transport error onto the sync layer's vocabulary. */

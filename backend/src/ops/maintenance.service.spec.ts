@@ -59,6 +59,7 @@ function makePrisma(): PrismaService {
     },
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     attentionNotification: sweepable(0),
+    notificationMail: sweepable(0),
     agentSession: {
       findUnique: jest
         .fn()

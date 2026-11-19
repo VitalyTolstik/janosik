@@ -35,6 +35,7 @@ export function ProfileSection() {
   );
   // TASK-153: the documented digest opt-out was unreachable from the UI.
   const [digest, setDigest] = useState(user?.notifyDigest ?? true);
+  const [attention, setAttention] = useState(user?.notifyAttention ?? true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [changingEmail, setChangingEmail] = useState(false);
@@ -46,7 +47,8 @@ export function ProfileSection() {
   const dirty =
     trimmed !== (user.displayName ?? "") ||
     color !== user.avatarColor ||
-    digest !== (user.notifyDigest ?? true);
+    digest !== (user.notifyDigest ?? true) ||
+    attention !== (user.notifyAttention ?? true);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -57,6 +59,9 @@ export function ProfileSection() {
         displayName: trimmed === "" ? null : trimmed,
         avatarColor: color,
         notifyDigest: digest,
+        ...(attention !== (user.notifyAttention ?? true)
+          ? { notifyAttention: attention }
+          : {}),
       });
       updateUser(next);
       setName(next.displayName ?? "");
@@ -230,6 +235,22 @@ export function ProfileSection() {
             {t("account.profile.digest")}
             <span className="block text-[11px] text-muted-foreground/80">
               {t("account.profile.digestHint")}
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            data-testid="account-notify-attention"
+            className="mt-0.5 h-3.5 w-3.5 rounded border-border"
+            checked={attention}
+            onChange={(event) => setAttention(event.target.checked)}
+          />
+          <span>
+            {t("account.profile.attention")}
+            <span className="block text-[11px] text-muted-foreground/80">
+              {t("account.profile.attentionHint")}
             </span>
           </span>
         </label>

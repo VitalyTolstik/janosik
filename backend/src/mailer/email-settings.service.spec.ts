@@ -345,6 +345,11 @@ describe("EmailSettingsService", () => {
 
   describe("onModuleInit", () => {
     it("re-applies a saved enabled row after a restart", async () => {
+      const peerMailer = new MailerService();
+      const peer = new EmailSettingsService(prismaMock, peerMailer);
+      await peer.onModuleInit();
+      expect(peerMailer.enabled).toBe(false);
+
       await service.update(
         {
           provider: "gmail",
@@ -355,6 +360,9 @@ describe("EmailSettingsService", () => {
         },
         "owner@example.com",
       );
+      expect(mailer.enabled).toBe(true);
+      expect(peerMailer.enabled).toBe(false);
+      expect((await peer.getPublic()).enabled).toBe(true);
       const savedEnc = savedRow?.passwordEnc as string;
 
       // A fresh process: the saved row must bring the gmail transport back

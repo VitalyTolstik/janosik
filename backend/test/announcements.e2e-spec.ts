@@ -7,7 +7,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MailerService } from "@/mailer/mailer.service";
-import { BroadcastQueueService } from "@/ops/broadcast-queue.service";
+import { NotificationDeliveryService } from "@/mailer/notification-delivery.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "ann-owner@example.com";
@@ -28,7 +28,7 @@ describe("Announcements (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let mailer: MailerService;
-  let broadcasts: BroadcastQueueService;
+  let delivery: NotificationDeliveryService;
   let ownerToken: string;
   let operatorToken: string;
   let enToken: string;
@@ -85,7 +85,7 @@ describe("Announcements (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
-    broadcasts = app.get(BroadcastQueueService);
+    delivery = app.get(NotificationDeliveryService);
     await wipeAll(prisma);
 
     const passwordHash = await argonHash(USER_PASSWORD, { type: argon2id });
@@ -474,7 +474,7 @@ describe("Announcements (e2e)", () => {
 
   it("returns before email fan-out and claims emailSentAt once", async () => {
     const gate = new Promise<void>(() => undefined);
-    const enqueue = jest.spyOn(broadcasts, "enqueue").mockReturnValue(gate);
+    const kick = jest.spyOn(delivery, "kick").mockReturnValue(gate);
     const started = Date.now();
     const created = await postAnnouncement({
       sourceLocale: "en",
@@ -485,9 +485,14 @@ describe("Announcements (e2e)", () => {
     }).expect(201);
     expect(Date.now() - started).toBeLessThan(1_500);
     expect(created.body.emailSentAt).toEqual(expect.any(Number));
-    enqueue.mockRestore();
+    expect(kick).toHaveBeenCalledTimes(1);
+    kick.mockRestore();
+    const staged = await prisma.notificationMail.count({
+      where: { kind: "broadcast", finishedAt: null },
+    });
+    expect(staged).toBe(3);
 
-    const again = jest.spyOn(broadcasts, "enqueue");
+    const again = jest.spyOn(delivery, "kick");
     await patchAnnouncement(created.body.id as string, {
       active: true,
       version: created.body.version,
@@ -495,6 +500,7 @@ describe("Announcements (e2e)", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(again).not.toHaveBeenCalled();
     again.mockRestore();
+    await delivery.kick();
   });
 
   it("audits only the locales that actually changed", async () => {

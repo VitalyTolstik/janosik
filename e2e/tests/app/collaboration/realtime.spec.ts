@@ -228,3 +228,70 @@ test("a repeated commandId applies the command once", async ({ board }) => {
       .cardIds.filter((id) => id === cardId),
   ).toHaveLength(1);
 });
+
+for (const lostReplies of [1, 2]) {
+  test(`reconciles a committed card edit after losing ${lostReplies} command response(s)`, async ({
+    page,
+    board,
+    partner,
+    partnerBrowser,
+  }) => {
+    const todo = await board.column("Todo");
+    await board.card(todo, "Before response loss");
+    await acceptPartner(partner);
+    await board.open(page);
+    await partner.openBoard(partnerBrowser.page);
+    await expectPresence(page, 2);
+
+    const path = `/api/v1/boards/${board.id}`;
+    const ids: string[] = [];
+    const results: unknown[] = [];
+    let dropped = 0;
+    await page.route(`**${path}/commands`, async (route) => {
+      const request = route.request().postDataJSON() as {
+        commandId: string;
+        action: { title?: string };
+      };
+      if (request.action.title !== "Persisted after response loss") {
+        await route.continue();
+        return;
+      }
+      ids.push(request.commandId);
+      const committed = await route.fetch();
+      expect(committed.ok()).toBe(true);
+      results.push(await committed.json());
+      if (dropped < lostReplies) {
+        dropped += 1;
+        if (dropped === 1) await route.abort("connectionreset");
+        else await route.fulfill({ status: 504, body: "Gateway Timeout" });
+      } else {
+        await route.fulfill({ response: committed });
+      }
+    });
+    const reconciled =
+      lostReplies === 2
+        ? page.waitForResponse(
+            (response) => response.url().endsWith(path) && response.ok(),
+          )
+        : undefined;
+
+    await openCard(page, "Before response loss");
+    await cardDialog(page)
+      .getByRole("textbox", { name: "Title" })
+      .fill("Persisted after response loss");
+    await closeCardDialog(page);
+
+    await expect.poll(() => ids.length).toBe(2);
+    expect(new Set(ids).size).toBe(1);
+    await reconciled;
+    await expect(
+      cardTitle(page, "Persisted after response loss"),
+    ).toBeVisible();
+    await expect(
+      cardTitle(partnerBrowser.page, "Persisted after response loss"),
+    ).toBeVisible();
+    await expect(cardTitle(page, "Before response loss")).toHaveCount(0);
+    expect(results).toHaveLength(2);
+    expect(results[1]).toEqual(results[0]);
+  });
+}

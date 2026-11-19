@@ -1,5 +1,11 @@
 import { Global, Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
+import {
+  BROADCAST_QUEUE,
+  BroadcastQueueService,
+} from "@/ops/broadcast-queue.service";
+import { BroadcastProcessor } from "@/ops/broadcast.processor";
+import { NotificationDeliveryService } from "./notification-delivery.service";
 import { queuesEnabled } from "@/ops/queue-core";
 import { EmailSettingsService } from "./email-settings.service";
 import { MAIL_QUEUE, MailQueueService } from "./mail-queue.service";
@@ -17,14 +23,27 @@ import { MailerService } from "./mailer.service";
 @Global()
 @Module({
   imports: queuesEnabled
-    ? [BullModule.registerQueue({ name: MAIL_QUEUE })]
+    ? [
+        BullModule.registerQueue(
+          { name: MAIL_QUEUE },
+          { name: BROADCAST_QUEUE },
+        ),
+      ]
     : [],
   providers: [
     MailerService,
     EmailSettingsService,
     MailQueueService,
-    ...(queuesEnabled ? [MailProcessor] : []),
+    NotificationDeliveryService,
+    BroadcastQueueService,
+    ...(queuesEnabled ? [MailProcessor, BroadcastProcessor] : []),
   ],
-  exports: [MailerService, EmailSettingsService, MailQueueService],
+  exports: [
+    MailerService,
+    EmailSettingsService,
+    MailQueueService,
+    NotificationDeliveryService,
+    BroadcastQueueService,
+  ],
 })
 export class MailerModule {}

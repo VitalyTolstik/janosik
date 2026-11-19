@@ -1,24 +1,31 @@
 import { Processor, WorkerHost } from "@nestjs/bullmq";
 import type { Job } from "bullmq";
 import {
+  NotificationDeliveryService,
+  type NotificationMailJob,
+} from "@/mailer/notification-delivery.service";
+import {
   BROADCAST_QUEUE,
   BroadcastQueueService,
   type BroadcastJob,
 } from "./broadcast-queue.service";
 
-/**
- * BullMQ worker for the outgoing-mail fan-out (TASK-62) — registered only
- * when `REDIS_URL` is set (see `OpsModule`). It hands each job to the shared
- * `deliver()`, which is also what the in-process fallback calls, so the two
- * backends run the exact same delivery code.
- */
+/** Delivers durable broadcasts and accepts the legacy payload during upgrades. */
 @Processor(BROADCAST_QUEUE)
 export class BroadcastProcessor extends WorkerHost {
-  constructor(private readonly broadcasts: BroadcastQueueService) {
+  constructor(
+    private readonly notifications: NotificationDeliveryService,
+    private readonly broadcasts: BroadcastQueueService,
+  ) {
     super();
   }
 
-  async process(job: Job<BroadcastJob>): Promise<unknown> {
+  async process(
+    job: Job<BroadcastJob | NotificationMailJob>,
+  ): Promise<unknown> {
+    if ("deliveryId" in job.data) {
+      return this.notifications.deliver(job.data.deliveryId);
+    }
     return this.broadcasts.deliver(job.data);
   }
 }

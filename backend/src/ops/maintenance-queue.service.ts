@@ -3,6 +3,7 @@ import {
   Logger,
   Optional,
   type OnModuleInit,
+  type OnModuleDestroy,
 } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
@@ -18,6 +19,11 @@ import {
   type MaintenanceJobName,
   type MaintenanceRunResult,
 } from "./maintenance.service";
+import { ReconcileLoop } from "./reconcile-loop";
+import {
+  reconcileScheduler,
+  SCHEDULE_RECONCILE_MS,
+} from "./recurring-schedule";
 import { OpsSettingsService } from "./ops-settings.service";
 
 /**
@@ -39,8 +45,11 @@ export interface MaintenanceJob {
 }
 
 @Injectable()
-export class MaintenanceQueueService implements OnModuleInit {
+export class MaintenanceQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MaintenanceQueueService.name);
+  private readonly schedules = new ReconcileLoop(this.logger, () =>
+    this.applySchedule(),
+  );
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -56,9 +65,13 @@ export class MaintenanceQueueService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    await this.applySchedule().catch((error: unknown) => {
-      this.logger.warn(`Schedule setup failed: ${String(error)}`);
-    });
+    if (this.queue) this.schedules.start(SCHEDULE_RECONCILE_MS);
+    else await this.schedules.run();
+  }
+
+  onModuleDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+    void this.schedules.stop();
   }
 
   /** Enqueue (Redis) or run inline (fallback) one sweep / all sweeps. */
@@ -78,6 +91,10 @@ export class MaintenanceQueueService implements OnModuleInit {
     return this.maintenance.run(job);
   }
 
+  refreshSchedule(): void {
+    void this.schedules.refresh();
+  }
+
   /**
    * (Re)installs the recurring sweep from the configured interval. On Redis
    * this is `upsertJobScheduler`; without Redis it is a plain timer (skipped
@@ -87,19 +104,13 @@ export class MaintenanceQueueService implements OnModuleInit {
     const minutes =
       (await this.ops.maintenanceIntervalMinutes()) ?? DEFAULT_INTERVAL_MINUTES;
     if (this.queue) {
-      if (minutes <= 0) {
-        await this.queue.removeJobScheduler(MAINTENANCE_SCHEDULER_ID);
-        return;
-      }
-      await this.queue.upsertJobScheduler(
+      await reconcileScheduler<MaintenanceJob>(
+        this.queue,
         MAINTENANCE_SCHEDULER_ID,
-        { every: minutes * 60_000 },
+        minutes * 60_000,
         {
           name: MAINTENANCE_JOB,
           data: { job: "all" },
-          // TASK-148 (B7): without retention opts every fired job stayed in
-          // Redis forever. A sweep is cheap to re-run — keep a small window.
-          opts: { removeOnComplete: 100, removeOnFail: 100 },
         },
       );
       return;
