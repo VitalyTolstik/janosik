@@ -38,6 +38,8 @@ export const SHARE_LIMITS = {
   defaultIncludeAttachments: false,
   snapshotAttachmentCount: 500,
   snapshotAttachmentBytes: 100 * 1024 * 1024,
+  snapshotCommentCount: 1000,
+  snapshotCommentBytes: 10 * 1024 * 1024,
   /**
    * Requests per minute, per token, on the public contour (§7.9.4). A viewer
    * loads the page once plus the SSE stream, so this is generous but still

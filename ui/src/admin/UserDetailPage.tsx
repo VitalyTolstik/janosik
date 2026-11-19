@@ -37,6 +37,7 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { appPath } from "@/utils/app-path";
+import { docsPageUrl } from "@/utils/docs-url";
 import { adminApi } from "./admin-client";
 import { readReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
@@ -932,7 +933,13 @@ export function UserDetailPage() {
                 {t("admin.userDetail.overview.danger")}
               </h2>
               <div className="rounded-lg border border-danger/25 bg-danger/5 px-3 py-2.5 text-[11px] leading-5 text-muted-foreground">
-                <p>{t("admin.userDetail.overview.dangerHint")}</p>
+                <p>
+                  {t("admin.userDetail.overview.dangerHint")}{" "}
+                  {t("admin.userDetail.delete.snapshotNotice")}{" "}
+                  <a className="underline" href={docsPageUrl(lang, "security")}>
+                    {t("admin.userDetail.delete.securityPolicy")}
+                  </a>
+                </p>
                 {isOwner ? (
                   <Button
                     size="sm"

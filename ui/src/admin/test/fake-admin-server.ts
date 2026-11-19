@@ -484,7 +484,7 @@ export class FakeAdminServer {
   };
 
   /** Demo runner snapshot (TASK-57). */
-  demoStatus: AdminDemoStatusDto = {
+  private readonly idleDemoStatus: AdminDemoStatusDto = {
     running: false,
     boardId: null,
     startedAt: null,
@@ -496,6 +496,7 @@ export class FakeAdminServer {
     cleanupPending: false,
     shareToken: null,
   };
+  demoStatus = { ...this.idleDemoStatus };
 
   /** Public shares (TASK-58). */
   shares: AdminShareRowDto[] = [];
@@ -1505,12 +1506,7 @@ export class FakeAdminServer {
       if (this.sessionRole !== "OWNER") {
         return this.json({ message: "Owner rights are required" }, 403);
       }
-      this.demoStatus = {
-        ...this.demoStatus,
-        running: false,
-        cleanupPending: false,
-        shareToken: null,
-      };
+      this.demoStatus = { ...this.idleDemoStatus };
       return this.json(this.demoStatus, 201);
     }
 

@@ -427,13 +427,19 @@ decision endpoint is session-only, so a PAT gets `pat_forbidden` — the human
 token owner approves their agent's request, the agent never approves itself.
 
 TTL is `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)`
-with a five-minute floor. Pending rows transition to `expired` lazily. An
+with a five-minute floor. Overdue pending requests transition to `expired`
+on access or during the scheduled `sweep-approvals` job. A retained
 `approved` row keeps the historical decision after its apply window ends,
 and apply returns `409 approval_expired`. Submit the same plan again to
 create a fresh pending request. Ending an agent session cancels its open
 requests and approvals still within the apply window. Token revocation
 cancels the corresponding requests as well. Decisions write activity and
 `SecurityAuditLog` records and publish `approval` SSE frames.
+
+The sweep also removes rejected, cancelled, expired, consumed and lapsed
+approved requests after the configured retention window. For lapsed approved
+requests the window starts at `expiresAt`. See
+[retention settings](/docs/admin/settings/#soft-deleted-data-and-retention).
 
 The browser Inbox uses
 `GET /agents/overview?section=approvals&boardId=<id>`. Use
@@ -700,6 +706,8 @@ on a board whose policy requires approval gets `409 approval_required` with
 refresh is written to the board-share audit log. The approval is one-shot; a
 replay answers `409 approval_consumed`. Snapshot creation and refresh reject
 more than 500 captured files or 100 MiB with `413 snapshot_attachment_limit`.
+They return `413 snapshot_comment_limit` for captures exceeding 1,000 comments
+or 10 MiB of UTF-8 comment JSON.
 A rejected refresh keeps the previous capture.
 
 When public sharing is disabled (`ALLOW_PUBLIC_SHARES=false` or the
@@ -770,9 +778,9 @@ available. A file or card absent at capture answers `404`. Turning an
 inclusion flag off hides that category immediately. Enabling a category that
 was absent at capture requires a refresh before it is public. Legacy
 board-only snapshots can still show eligible source comments and files
-created by the snapshot's capture time while those rows exist. This fallback
-cannot keep those comments and files after source purge. Refreshing a legacy
-snapshot while the source is accessible saves independent copies.
+created by the snapshot's capture time while the board and source rows are
+available. Soft-deleting the source board disables this fallback. Refreshing
+a legacy snapshot while the source is accessible saves independent copies.
 
 `POST /share/:token` and any nested `POST` answer `405` with
 `"Shared boards are read-only"`. The public API states its read-only rule

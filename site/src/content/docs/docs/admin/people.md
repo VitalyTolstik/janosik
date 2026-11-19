@@ -105,11 +105,13 @@ lifetime. It is owner-only server-side.
 
 ### Delete user
 
-`Delete user` erases the account and the rows it authored in one transaction,
-then removes its blobs. Unlike `Block`, this permanently removes the account’s data. The dialog
-requires typing the account's exact email to confirm. It cannot be undone. It
-is owner-only server-side: an operator gets `403` with `Owner rights are
-required`.
+`Delete user` permanently removes the account and its source records in one
+transaction, then removes the source files. Copies already published in board
+snapshots can remain public until the snapshot is refreshed, revoked or
+expires. See the [security policy](/docs/security/).
+
+The dialog requires the account's exact email to confirm. Only an owner can
+delete a user. An operator gets `403` with `Owner rights are required`.
 
 ## User detail
 

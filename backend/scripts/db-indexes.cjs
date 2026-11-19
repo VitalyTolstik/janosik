@@ -47,18 +47,25 @@ const STATEMENTS = [
   const prisma = new PrismaClient();
   try {
     for (const sql of STATEMENTS) {
-      const name = sql.match(/"(\w+)" ON/)[1];
+      const [, name, table] = sql.match(/"(\w+)" ON ("\w+")/);
+      const [{ exists }] = await prisma.$queryRaw`
+        SELECT to_regclass(${table}) IS NOT NULL AS "exists"
+      `;
+      // Older releases may predate some of the indexed tables.
+      if (!exists) {
+        console.log(`skip ${name} (missing ${table})`);
+        continue;
+      }
       const started = Date.now();
       // An interrupted CONCURRENTLY build leaves the index present but
       // `indisvalid = false`; `IF NOT EXISTS` would keep it forever
       // (TASK-156). Drop that husk and rebuild.
-      const existing = await prisma.$queryRawUnsafe(
-        `SELECT i.indisvalid AS valid
-           FROM pg_class c
-           JOIN pg_index i ON i.indexrelid = c.oid
-          WHERE c.relname = $1`,
-        name,
-      );
+      const existing = await prisma.$queryRaw`
+        SELECT indisvalid AS valid
+        FROM pg_index
+        WHERE indexrelid = to_regclass(${`"${name}"`})
+          AND indrelid = to_regclass(${table})
+      `;
       if (existing.length > 0 && existing[0].valid === false) {
         console.log(`drop invalid ${name}`);
         await prisma.$executeRawUnsafe(

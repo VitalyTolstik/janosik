@@ -12,6 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
+import { useI18n } from "@/i18n";
+import { docsPageUrl } from "@/utils/docs-url";
 import { adminApi } from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import {
@@ -650,6 +652,7 @@ export function DeleteUserDialog({
   onDone: () => void;
 }) {
   const t = useAdminT();
+  const { lang } = useI18n();
   const toast = useToast();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -693,7 +696,11 @@ export function DeleteUserDialog({
         <DialogHeader>
           <DialogTitle>{t("admin.userDetail.action.deleteUser")}</DialogTitle>
           <DialogDescription>
-            {t("admin.userDetail.confirm.delete.body")}
+            {t("admin.userDetail.confirm.delete.body")}{" "}
+            {t("admin.userDetail.delete.snapshotNotice")}{" "}
+            <a className="underline" href={docsPageUrl(lang, "security")}>
+              {t("admin.userDetail.delete.securityPolicy")}
+            </a>
           </DialogDescription>
         </DialogHeader>
         <form noValidate onSubmit={submit} className="space-y-3">

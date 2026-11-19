@@ -219,7 +219,7 @@ sharing is disabled (`public_shares` off / `ALLOW_PUBLIC_SHARES=false`). A
 start attempt answers `409 public_shares_disabled` before any demo users or
 board rows are created.
 
-Entering a Board id targets an existing board. Starting the demo publishes a
+Saving a Board id targets an existing board. Starting the demo publishes a
 live observation link that includes the board's existing content and
 comments. Anyone with the link can read them while it is active.
 
@@ -230,8 +230,10 @@ board and user-created data are preserved, including links to demo cards
 and any demo rows those links need. A dedicated demo board is deleted only
 if it is empty after cleanup. If a dedicated board or demo account is kept
 by other rows, the run stays pending and the operator can retry. Interrupted
-starts can also be cleaned up. Older runs use surviving creation commands
-for child IDs absent from their records.
+starts can also be cleaned up. A provided-board run can finish cleanup with
+recorded demo rows still needed by user-created data. After the run is
+marked stopped, those rows remain for manual board maintenance. Older runs
+use surviving creation commands for child IDs absent from their records.
 
 Behind the scenes the runner creates a dispatcher and the requested agents on
 the reserved `@janosik.demo` domain, the five flow columns (Новые, В работе,

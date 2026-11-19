@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import {
+  LIMITS,
   SHARE_LIMITS,
   serializeExport,
   type BoardShareDto,
@@ -547,6 +548,19 @@ describe("Public board shares (e2e)", () => {
       .expect(200, "legacy");
     await server().get(`${base}/attachments/${newFile.id}/content`).expect(404);
 
+    await server()
+      .delete(`/api/v1/boards/${boardId}`)
+      .set(auth(adminToken))
+      .expect(200);
+    expect((await server().get(base).expect(200)).body).toMatchObject({
+      includeComments: false,
+      includeAttachments: false,
+      board: { id: boardId },
+    });
+    await server().get(comments).expect(404);
+    await server().get(files).expect(404);
+    await server().get(`${base}/attachments/${oldFile.id}/content`).expect(404);
+
     await prisma.board.update({
       where: { id: boardId },
       data: { deletedAt: new Date(0) },
@@ -562,66 +576,133 @@ describe("Public board shares (e2e)", () => {
     await server().get(files).expect(404);
   });
 
-  it("rejects an oversized snapshot before copying files and keeps the previous capture (M18)", async () => {
-    const { boardId, cardId } = await newBoard("Snapshot file cap");
-    const file = (
-      await server()
-        .post(`/api/v1/cards/${cardId}/attachments`)
-        .set(auth(adminToken))
-        .attach("file", Buffer.from("first capture"), "first.txt")
-        .expect(201)
-    ).body;
-    const share = await createShare(boardId, {
-      mode: "snapshot",
-      includeAttachments: true,
-    });
-    const source = await prisma.attachment.findUniqueOrThrow({
-      where: { id: file.id },
-    });
-    // The byte cap uses the stored upload sizes. No large files are needed
-    // because both requests must reject before any filesystem copy.
-    await prisma.attachment.createMany({
-      data: Array.from({ length: 4 }, (_, index) => ({
+  it.each(["count", "bytes"])(
+    "enforces the snapshot file %s limit and keeps the previous capture (M18)",
+    async (limit) => {
+      const { boardId, cardId } = await newBoard("Snapshot file cap");
+      const storage = app.get(StorageService);
+      const file = (
+        await server()
+          .post(`/api/v1/cards/${cardId}/attachments`)
+          .set(auth(adminToken))
+          .attach("file", Buffer.from("first capture"), "first.txt")
+          .expect(201)
+      ).body;
+      const tinyFile = () => ({
         boardId,
         cardId,
         uploadedById: adminId,
-        fileName: `large-${index}.txt`,
-        storedName: `${source.storedName}-${index}`,
+        fileName: "tiny.txt",
+        storedName: `${randomUUID()}.txt`,
         mimeType: "text/plain",
-        sizeBytes: SHARE_LIMITS.snapshotAttachmentBytes / 4,
-      })),
-    });
-    const priorBlobs = await prisma.boardShareSnapshotBlob.findMany({
-      where: { shareId: share.id },
-    });
-    const copy = jest.spyOn(app.get(StorageService), "copyForSnapshot");
-    const path = `/api/v1/boards/${boardId}/shares`;
-    try {
+        sizeBytes: 1,
+      });
+      if (limit === "count") {
+        const tinyFiles = Array.from({ length: 499 }, tinyFile);
+        for (const { storedName } of tinyFiles) {
+          await writeFile(storage.attachmentPath(storedName), "x");
+        }
+        await prisma.attachment.createMany({ data: tinyFiles });
+      } else {
+        // The cap uses stored byte sizes, so the fixture can use a small blob.
+        await prisma.attachment.update({
+          where: { id: file.id },
+          data: { sizeBytes: 100 * 1024 * 1024 },
+        });
+      }
+      const share = await createShare(boardId, {
+        mode: "snapshot",
+        includeAttachments: true,
+      });
+      const priorBlobs = await prisma.boardShareSnapshotBlob.findMany({
+        where: { shareId: share.id },
+        orderBy: { storedName: "asc" },
+      });
+      expect(priorBlobs).toHaveLength(limit === "count" ? 500 : 1);
+      const extraFile = tinyFile();
+      await writeFile(storage.attachmentPath(extraFile.storedName), "x");
+      await prisma.attachment.create({ data: extraFile });
+      const copy = jest.spyOn(storage, "copyForSnapshot");
+      const path = `/api/v1/boards/${boardId}/shares`;
+      try {
+        const created = await server()
+          .post(path)
+          .set(auth(adminToken))
+          .send({ mode: "snapshot", includeAttachments: true })
+          .expect(413);
+        const refreshed = await server()
+          .post(`${path}/${share.id}/refresh`)
+          .set(auth(adminToken))
+          .expect(413);
+        expect(created.body.code).toBe("snapshot_attachment_limit");
+        expect(refreshed.body.code).toBe("snapshot_attachment_limit");
+        expect(copy).not.toHaveBeenCalled();
+        expect(await prisma.boardShare.count({ where: { boardId } })).toBe(1);
+        expect(
+          await prisma.boardShareSnapshotBlob.findMany({
+            where: { shareId: share.id },
+            orderBy: { storedName: "asc" },
+          }),
+        ).toEqual(priorBlobs);
+        await server()
+          .get(`/api/v1/share/${share.token}/attachments/${file.id}/content`)
+          .expect(200, "first capture");
+      } finally {
+        copy.mockRestore();
+      }
+    },
+  );
+
+  it.each(["count", "bytes"])(
+    "rejects the snapshot comment %s overflow without replacing the capture (M18)",
+    async (limit) => {
+      const { boardId, cardId } = await newBoard("Snapshot comment cap");
+      const text = "First captured comment";
+      await prisma.comment.create({
+        data: { cardId, authorId: adminId, text },
+      });
+      const share = await createShare(boardId, {
+        mode: "snapshot",
+        includeComments: true,
+      });
+      // Multibyte text exceeds the byte cap with fewer than 1,000 comments.
+      const largeText = "漢".repeat(LIMITS.comment);
+      const count =
+        limit === "count"
+          ? SHARE_LIMITS.snapshotCommentCount
+          : Math.ceil(
+              SHARE_LIMITS.snapshotCommentBytes / Buffer.byteLength(largeText),
+            );
+      await prisma.comment.createMany({
+        data: Array.from({ length: count }, () => ({
+          cardId,
+          authorId: adminId,
+          text: limit === "count" ? "x" : largeText,
+        })),
+      });
+
+      const path = `/api/v1/boards/${boardId}/shares`;
       const created = await server()
         .post(path)
         .set(auth(adminToken))
-        .send({ mode: "snapshot", includeAttachments: true })
+        .send({ mode: "snapshot", includeComments: true })
         .expect(413);
       const refreshed = await server()
         .post(`${path}/${share.id}/refresh`)
         .set(auth(adminToken))
         .expect(413);
-      expect(created.body.code).toBe("snapshot_attachment_limit");
-      expect(refreshed.body.code).toBe("snapshot_attachment_limit");
-      expect(copy).not.toHaveBeenCalled();
+      expect(created.body.code).toBe("snapshot_comment_limit");
+      expect(refreshed.body.code).toBe("snapshot_comment_limit");
       expect(await prisma.boardShare.count({ where: { boardId } })).toBe(1);
-      expect(
-        await prisma.boardShareSnapshotBlob.findMany({
-          where: { shareId: share.id },
-        }),
-      ).toEqual(priorBlobs);
-      await server()
-        .get(`/api/v1/share/${share.token}/attachments/${file.id}/content`)
-        .expect(200, "first capture");
-    } finally {
-      copy.mockRestore();
-    }
-  });
+      const response = await server()
+        .get(`/api/v1/share/${share.token}/cards/${cardId}/comments`)
+        .expect(200);
+      expect(response.body).toEqual({
+        items: [expect.objectContaining({ text })],
+        nextCursor: null,
+      });
+    },
+  );
 
   it("retains previously published snapshot copies after source account erasure (M18)", async () => {
     const { boardId, cardId } = await newBoard("Snapshot account erasure");

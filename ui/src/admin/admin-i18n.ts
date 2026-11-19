@@ -195,7 +195,7 @@ const en = {
   "admin.userDetail.overview.recentEmpty": "No recorded activity yet.",
   "admin.userDetail.overview.danger": "Danger zone",
   "admin.userDetail.overview.dangerHint":
-    "Deleting the account erases everything it authored and cannot be undone. Owner rights are required.",
+    "Deleting the account and its source data is permanent. Owner rights are required.",
   "admin.userDetail.overview.ownerOnly":
     "Read-only for operators. Owner-only actions are hidden and enforced by the server.",
   "admin.userDetail.verified": "Verified",
@@ -217,7 +217,10 @@ const en = {
     "The account falls back behind the confirmation gate.",
   "admin.userDetail.confirm.delete.title": "Permanently erase {email}?",
   "admin.userDetail.confirm.delete.body":
-    "This deletes the account and everything it authored. It cannot be undone.",
+    "This permanently deletes the account and its source data.",
+  "admin.userDetail.delete.snapshotNotice":
+    "Copies already published in board snapshots can remain public.",
+  "admin.userDetail.delete.securityPolicy": "Security policy",
   "admin.userDetail.delete.prompt": "Type {email} to confirm",
   "admin.userDetail.delete.mismatch": "The email does not match",
   "admin.userDetail.delete.done": "User erased",
@@ -548,7 +551,8 @@ const en = {
   "admin.security.alert.locked": "locked",
   "admin.demo.startedAt": "Started",
   "admin.demo.started": "Demo started",
-  "admin.demo.stopped": "Demo stopped and recorded demo data cleaned up",
+  "admin.demo.stopped":
+    "Demo stopped. Recorded demo data cleaned up where possible",
   "admin.demo.confirmStop":
     "Stop the demo and remove its recorded rows where possible? The selected existing board and user-created data are preserved. A dedicated demo board is deleted only if it is empty after cleanup.",
   "admin.demo.cleanupPending":
@@ -1584,7 +1588,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.userDetail.overview.recentEmpty": "Записей об активности пока нет.",
   "admin.userDetail.overview.danger": "Опасная зона",
   "admin.userDetail.overview.dangerHint":
-    "Удаление аккаунта стирает всё созданное им и не отменяется. Нужны права владельца.",
+    "Аккаунт и его исходные данные удаляются безвозвратно. Нужны права владельца.",
   "admin.userDetail.overview.ownerOnly":
     "Только чтение для операторов. Owner-действия скрыты, сервер их проверяет.",
   "admin.userDetail.verified": "Подтверждён",
@@ -1606,7 +1610,10 @@ const ru: Record<AdminMessageKey, string> = {
     "Аккаунт снова окажется за гейтом подтверждения.",
   "admin.userDetail.confirm.delete.title": "Стереть {email} навсегда?",
   "admin.userDetail.confirm.delete.body":
-    "Аккаунт и всё, что он создал, будет удалено. Отменить нельзя.",
+    "Аккаунт и его исходные данные будут удалены безвозвратно.",
+  "admin.userDetail.delete.snapshotNotice":
+    "Копии, уже опубликованные в снимках досок, могут остаться общедоступными.",
+  "admin.userDetail.delete.securityPolicy": "Политика безопасности",
   "admin.userDetail.delete.prompt": "Введите {email} для подтверждения",
   "admin.userDetail.delete.mismatch": "Email не совпадает",
   "admin.userDetail.delete.done": "Пользователь стёрт",
@@ -1942,7 +1949,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.security.alert.locked": "заблокирован",
   "admin.demo.startedAt": "Запущено",
   "admin.demo.started": "Демо запущено",
-  "admin.demo.stopped": "Демо остановлено, записанные демо-данные очищены",
+  "admin.demo.stopped":
+    "Демо остановлено. Записанные демо-данные очищены там, где это возможно",
   "admin.demo.confirmStop":
     "Остановить демо и удалить записанные демо-данные там, где это возможно? Выбранная существующая доска и данные, созданные пользователями, сохранятся. Отдельная демо-доска удаляется, только если после очистки она пуста.",
   "admin.demo.cleanupPending":

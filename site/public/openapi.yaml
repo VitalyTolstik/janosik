@@ -653,7 +653,9 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413":
-          description: Snapshot exceeds 500 files or 100 MiB (`snapshot_attachment_limit`). Existing captures remain available.
+          description: |
+            Snapshot exceeds 500 files or 100 MiB of files (`snapshot_attachment_limit`),
+            or 1,000 comments or 10 MiB of UTF-8 comment JSON (`snapshot_comment_limit`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiErrorEnvelope" }
@@ -749,7 +751,10 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413":
-          description: Snapshot exceeds 500 files or 100 MiB (`snapshot_attachment_limit`). Existing captures remain available.
+          description: |
+            Snapshot exceeds 500 files or 100 MiB of files (`snapshot_attachment_limit`),
+            or 1,000 comments or 10 MiB of UTF-8 comment JSON (`snapshot_comment_limit`).
+            The previous capture remains available.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ApiErrorEnvelope" }
@@ -1457,9 +1462,11 @@ paths:
       summary: List approval requests
       description: |
         A board `ADMIN` sees every request; another token sees only its own.
-        Newest first. List entries omit `plan`. Rejected, cancelled, expired
-        and consumed requests are eligible for cleanup after the configured
-        retention window following their terminal event.
+        Newest first. List entries omit `plan`. Overdue pending requests
+        expire on access or during the scheduled `sweep-approvals` job.
+        The job removes rejected, cancelled, expired, consumed and lapsed
+        approved requests after the configured retention window.
+        For lapsed approved requests the window starts at `expiresAt`.
       responses:
         "200":
           description: Approval requests.

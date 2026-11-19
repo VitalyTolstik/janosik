@@ -347,7 +347,7 @@ export function DemoPage() {
             <p className="text-[11px] text-muted-foreground">
               {t("admin.demo.boardHint")}
             </p>
-            {boardId.trim() || selectedBoardId ? (
+            {selectedBoardId ? (
               <p className="text-xs text-muted-foreground">
                 {t("admin.demo.boardWarning")}
               </p>

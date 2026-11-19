@@ -65,6 +65,7 @@ export const SHARE_METADATA_SELECT = {
   id: true,
   token: true,
   boardId: true,
+  board: { select: { deletedAt: true } },
   mode: true,
   snapshotVersion: true,
   snapshotTakenAt: true,
@@ -89,14 +90,14 @@ export function effectiveShareFlags(
   row: Pick<
     ShareRow,
     | "mode"
-    | "boardId"
+    | "board"
     | "includeComments"
     | "includeAttachments"
     | "snapshotHasComments"
     | "snapshotHasAttachments"
   >,
 ) {
-  const legacySource = row.boardId !== null;
+  const legacySource = row.board?.deletedAt === null;
   return {
     effectiveIncludeComments:
       row.includeComments &&
@@ -851,13 +852,11 @@ export class ShareService {
       members: await this.publicMembers(boardId, tx),
     };
     const cardIds = Object.keys(envelope.boards[0].cards);
+    const comments = flags.includeComments
+      ? await this.captureComments(tx, cardIds)
+      : [];
     const blobs = flags.includeAttachments
       ? await this.captureAttachments(tx, cardIds)
-      : [];
-    const comments = flags.includeComments
-      ? await tx.comment.findMany({
-          where: { cardId: { in: cardIds }, deletedAt: null },
-        })
       : [];
     return {
       snapshot: payload as unknown as Prisma.InputJsonValue,
@@ -867,20 +866,45 @@ export class ShareService {
       snapshotHasAttachments: Boolean(flags.includeAttachments),
       snapshotBlobs: blobs.length ? { createMany: { data: blobs } } : undefined,
       snapshotComments: comments.length
-        ? {
-            createMany: {
-              data: comments.map((row) => ({
-                id: row.id,
-                cardId: row.cardId,
-                createdAt: row.createdAt,
-                payload: toPublicComment(
-                  toCommentDto(row),
-                ) as unknown as Prisma.InputJsonValue,
-              })),
-            },
-          }
+        ? { createMany: { data: comments } }
         : undefined,
     };
+  }
+
+  private async captureComments(
+    tx: Prisma.TransactionClient,
+    cardIds: string[],
+  ): Promise<Prisma.BoardShareSnapshotCommentCreateManyShareInput[]> {
+    if (cardIds.length === 0) return [];
+    const rows = await tx.comment.findMany({
+      where: { cardId: { in: cardIds }, deletedAt: null },
+      take: SHARE_LIMITS.snapshotCommentCount + 1,
+    });
+    const comments = rows.map((row) => {
+      const payload = toPublicComment(toCommentDto(row));
+      return {
+        id: row.id,
+        cardId: row.cardId,
+        createdAt: row.createdAt,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      };
+    });
+    const bytes = comments.reduce(
+      (total, { payload }) =>
+        total + Buffer.byteLength(JSON.stringify(payload)),
+      0,
+    );
+    if (
+      rows.length > SHARE_LIMITS.snapshotCommentCount ||
+      bytes > SHARE_LIMITS.snapshotCommentBytes
+    ) {
+      throw new PayloadTooLargeException({
+        code: "snapshot_comment_limit",
+        message:
+          "A snapshot can capture up to 1,000 comments and 10 MiB of comment data. Disable comments or reduce the board's comments.",
+      });
+    }
+    return comments;
   }
 
   private async captureAttachments(
@@ -992,7 +1016,7 @@ export class ShareService {
       where: {
         id: cardId,
         deletedAt: null,
-        column: { boardId: share.boardId ?? "" },
+        column: { boardId: share.boardId ?? "", board: { deletedAt: null } },
       },
       select: { id: true },
     });
