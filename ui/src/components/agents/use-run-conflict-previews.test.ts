@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe("useRunConflictPreviews", () => {
-  it("clears invalidated counts and ignores a stale in-flight success after failure", async () => {
+  it("clears the count on refresh failure and ignores a stale in-flight success", async () => {
     let finish!: (value: { conflicts: unknown[] }) => void;
     hoisted.previewRunRevert
       .mockResolvedValueOnce({ conflicts: [{}] })
@@ -39,10 +39,37 @@ describe("useRunConflictPreviews", () => {
     );
     await waitFor(() => expect(result.current.get("run-1")).toBe(1));
     rerender({ revision: 1 });
-    expect(result.current.has("run-1")).toBe(false);
     rerender({ revision: 2 });
+    await waitFor(() => expect(result.current.has("run-1")).toBe(false));
     await act(async () => finish({ conflicts: [{}, {}] }));
     expect(result.current.has("run-1")).toBe(false);
+  });
+
+  it("keeps the previous count while a revision refresh is pending", async () => {
+    let finish!: (value: { conflicts: unknown[] }) => void;
+    const rows = [...ROWS, { ...ROWS[0], id: "run-2" }];
+    hoisted.previewRunRevert
+      .mockResolvedValueOnce({ conflicts: [{}] })
+      .mockResolvedValueOnce({ conflicts: [] })
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ conflicts: [{}] });
+    const { result, rerender } = renderHook(
+      ({ revision }) => useRunConflictPreviews(rows, true, revision),
+      { initialProps: { revision: 0 } },
+    );
+    await waitFor(() => expect(result.current.get("run-1")).toBe(1));
+
+    rerender({ revision: 1 });
+    expect(result.current.get("run-1")).toBe(1);
+    await waitFor(() => expect(result.current.get("run-2")).toBe(1));
+    expect(result.current.get("run-1")).toBe(1);
+
+    await act(async () => finish({ conflicts: [] }));
+    expect(result.current.get("run-1")).toBe(0);
   });
 
   it("invalidates a cached preview when the revision changes", async () => {

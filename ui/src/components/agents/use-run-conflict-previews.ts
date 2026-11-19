@@ -15,7 +15,7 @@ export function useRunConflictPreviews(
 ): RunConflictCounts {
   const [tick, setTick] = useState(0);
   const [snapshot, setSnapshot] = useState<{
-    key: string;
+    targets: string;
     counts: RunConflictCounts;
   }>();
   const targets = JSON.stringify(
@@ -23,7 +23,6 @@ export function useRunConflictPreviews(
       .filter((row) => row.status === "applied" && row.kind !== "revert")
       .map(({ boardId, id }) => [boardId, id]),
   );
-  const key = JSON.stringify([targets, revision, tick]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -36,25 +35,31 @@ export function useRunConflictPreviews(
   useEffect(() => {
     if (!enabled || !isApiEnabled()) return;
     let alive = true;
+    const updateCount = (id: string, count?: number) => {
+      if (!alive) return;
+      setSnapshot((current) => {
+        const counts = new Map(
+          current?.targets === targets ? current.counts : [],
+        );
+        if (count === undefined) {
+          if (!counts.delete(id)) return current;
+        } else {
+          counts.set(id, count);
+        }
+        return { targets, counts };
+      });
+    };
     for (const [boardId, id] of JSON.parse(targets) as [string, string][]) {
       void api.previewRunRevert(boardId, id).then(
-        (result) => {
-          if (!alive) return;
-          setSnapshot((current) => {
-            const counts = new Map(current?.key === key ? current.counts : []);
-            counts.set(id, result.conflicts.length);
-            return { key, counts };
-          });
-        },
-        () => {
-          // A failed preview has no count in this revision.
-        },
+        (result) => updateCount(id, result.conflicts.length),
+        () => updateCount(id),
       );
     }
     return () => {
       alive = false;
     };
-  }, [enabled, key, targets]);
+  }, [enabled, revision, targets, tick]);
 
-  return enabled && snapshot?.key === key ? snapshot.counts : NO_COUNTS;
+  // Keep the last count for each target until its refreshed preview settles.
+  return enabled && snapshot?.targets === targets ? snapshot.counts : NO_COUNTS;
 }
