@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -30,6 +31,14 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { status, user, updateUser, impersonating } = useAuth();
+  // The lazy catalog can take long enough for the user to change boards,
+  // open a card or edit a filter after clicking the language. Keep the newest
+  // router location so the cleanup below edits *that* URL instead of
+  // navigating back to the click-time snapshot.
+  const latestLocation = useRef(location);
+  useEffect(() => {
+    latestLocation.current = location;
+  }, [location]);
 
   // Load the lazy catalog before switching; a failed load (offline, not yet
   // cached) leaves both the UI, the URL and the server profile on the current
@@ -45,16 +54,17 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
     void ensureLocale(next).then((ready) => {
       if (!ready) return;
       setLang(next);
-      if (new URLSearchParams(location.search).has("lng")) {
-        const params = new URLSearchParams(location.search);
+      const current = latestLocation.current;
+      if (new URLSearchParams(current.search).has("lng")) {
+        const params = new URLSearchParams(current.search);
         params.delete("lng");
         void navigate(
           {
-            pathname: location.pathname,
+            pathname: current.pathname,
             search: params.toString(),
-            hash: location.hash,
+            hash: current.hash,
           },
-          { replace: true, state: location.state },
+          { replace: true, state: current.state },
         );
       }
       if (status !== "authenticated" || user === null || impersonating) return;

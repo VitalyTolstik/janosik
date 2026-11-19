@@ -280,6 +280,10 @@ describe("BoardSettingsDialog workflow save", () => {
   it("returns focus to the gear after a clean close", async () => {
     const trigger = document.createElement("button");
     trigger.dataset.testid = "board-settings-trigger";
+    Object.defineProperty(trigger, "getClientRects", {
+      configurable: true,
+      value: () => ({ length: 1 }),
+    });
     document.body.appendChild(trigger);
     try {
       renderControlledDialog();
@@ -301,6 +305,10 @@ describe("BoardSettingsDialog workflow save", () => {
     const title = document.createElement("h2");
     title.dataset.testid = "board-title";
     title.tabIndex = -1;
+    Object.defineProperty(title, "checkVisibility", {
+      configurable: true,
+      value: () => true,
+    });
     document.body.append(trigger, title);
     try {
       renderControlledDialog();

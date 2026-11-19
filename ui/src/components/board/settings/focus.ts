@@ -6,15 +6,15 @@
  *
  * Preference order is gear → title → board main. The gear is hidden below
  * 721 px, so a bare `.focus()` on it would leave focus on BODY; the first
- * visible/focusable candidate wins instead. In jsdom (no layout engine and no
- * `checkVisibility`) every candidate is treated as visible, so tests can
- * exercise the fallback by stubbing the browser API.
+ * visible/focusable candidate wins instead. `checkVisibility()` covers modern
+ * browsers; the rect fallback also excludes `display:none` candidates in
+ * engines (or tests) without that API.
  */
 function isFocusable(target: HTMLElement): boolean {
   if (typeof target.checkVisibility === "function") {
     return target.checkVisibility();
   }
-  return true;
+  return target.getClientRects().length > 0;
 }
 
 export function restoreBoardSettingsFocus(): void {

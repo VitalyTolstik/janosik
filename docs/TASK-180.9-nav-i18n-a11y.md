@@ -4,7 +4,7 @@ Scope follows [remediation §180.9](TASK-180-bug-research-remediation.md#1809--n
 
 | ID | Implementation | Evidence |
 | --- | --- | --- |
-| H15 | Header scopes the Settings session to one board. Switching boards closes the dialog immediately and reopening starts a fresh draft; focus moves to the new board's gear when it is actually visible, otherwise to the title/main so a phone never drops focus on BODY. The workflow action carries the board ID and checks it against the active board before dispatch. | [Settings scope in Chrome](../e2e/tests/app/navigation/settings-scope.spec.ts) creates a valid draft on A, uses the palette to open B, verifies B's disabled Save and unchanged API snapshot, checks the new gear holds focus on desktop and the title at 390 px, then goes Back and checks A starts clean. [Header unit tests](../ui/src/components/Header.agents.test.tsx) and [Settings tests](../ui/src/components/board/BoardSettingsDialog.test.tsx) cover the forced-switch and hidden-gear fallback. |
+| H15 | Header scopes the Settings session to one board. Switching boards closes the dialog immediately and reopening starts a fresh draft; focus moves to the new board's gear when it is actually visible, otherwise to the title/main so a phone never drops focus on BODY. Visibility uses `checkVisibility()` when available and a `getClientRects()` fallback, so hidden mobile chrome is never chosen. The workflow action carries the board ID and checks it against the active board before dispatch. | [Settings scope in Chrome](../e2e/tests/app/navigation/settings-scope.spec.ts) creates a valid draft on A, uses the palette to open B, verifies B's disabled Save and unchanged API snapshot, checks the new gear holds focus on desktop and the title at 390 px, then goes Back and checks A starts clean. [Header unit tests](../ui/src/components/Header.agents.test.tsx) and [Settings tests](../ui/src/components/board/BoardSettingsDialog.test.tsx) cover the forced-switch and hidden-gear fallback. |
 | M1 | OAuth start carries the app URL. The callback accepts allowlisted user routes under the configured app base, checks them against the OAuth round trip and restores query and hash. The return cookie is bounded after encoding. The error screen removes only the OAuth error marker. | [Backend OAuth e2e](../backend/test/oauth.e2e-spec.ts) covers success, provider denial, invalid state, invalid destinations and Cyrillic URLs both within and over the encoded cookie limit at `/` and `/app/`. [Auth navigation in Chrome](../e2e/tests/app/auth/navigation.spec.ts) checks the start link, error cleanup and canonicalization of a directly served bare app entry. |
 | M2 | The auth gate uses a minimum viewport height and document scrolling. The login content reserves space for the site link. | [Auth navigation in Chrome](../e2e/tests/app/auth/navigation.spec.ts) uses wheel input at 568×320 and checks that the OAuth button starts below the viewport and scrolls into view, and that registration, recovery and verification controls are reachable. |
 | M38 | Letter shortcuts use Latin `KeyboardEvent.key` when available and fall back to physical `code` for layouts such as Russian. The board-filter `/` shortcut follows only the typed character: RU, QWERTZ and AZERTY layouts put `.`, `-` or `:` on the physical Slash key and those keys stay inert. Help opens when the key produces `?`. | [Board shortcut tests](../ui/src/components/ShortcutsDialog.test.tsx), [filter tests](../ui/src/components/board/FilterBar.test.tsx), [app palette tests](../ui/src/components/GlobalSearch.test.tsx), [history tests](../ui/src/store/use-undo-history.test.ts) and [admin Chrome navigation](../e2e/tests/admin/navigation.spec.ts) exercise Cyrillic values with physical codes. The board, history and filter tests also cover key-only, code-only and remapped Latin input, including a mismatched physical Slash key. |
@@ -14,7 +14,7 @@ Scope follows [remediation §180.9](TASK-180-bug-research-remediation.md#1809--n
 | L1 | The register hint controls the anonymous form. Authentication consumes `mode` before the verification gate or board shell mounts, preserving the remaining URL. | [Auth navigation in Chrome](../e2e/tests/app/auth/navigation.spec.ts) starts in register mode, checks query and fragment after submission, signs out and checks the sign-in form. |
 | L2 | Failed invitation fetches show an announced error and a retry button. Previously fetched invitations remain usable. | [Bell tests](../ui/src/components/NotificationsBell.test.tsx) check the initial 503, the end of the loading state and recovery through Retry. |
 | L6 | Login explains disabled accounts and service outages. Registration explains closed or unavailable sign-up. | [Login tests](../ui/src/components/auth/LoginPage.test.tsx) cover 403 and 503 for both modes. |
-| L27 | Explicit language selection consumes `lng` with a router `navigate(..., { replace: true })` only after the lazy catalog is ready, keeping the path, other params and hash and updating `useLocation`/`useSearchParams`; later board filters, card deep links and admin list writes therefore cannot reintroduce it. A failed load keeps `lng` for a reload retry. The M39 workflow blocker ignores only that `lng`-only change. Signed-in board users persist locale on their account. The master panel persists it in the browser’s `janosik-lang` localStorage entry. | [Language switcher tests](../ui/src/components/LanguageSwitcher.test.tsx) render a `MemoryRouter` and cover the signed-in `updateProfile({ locale })` path, query/hash preservation, a later filter write staying `lng`-free, and the failed-load case. [Chrome preferences](../e2e/tests/app/account/preferences.spec.ts) start on `?lng=ru`, switch to English, apply a board filter, reload and check English plus the filtered URL. [Admin navigation in Chrome](../e2e/tests/admin/navigation.spec.ts) also checks the tab/hash handoff and reload. |
+| L27 | Explicit language selection consumes `lng` with a router `navigate(..., { replace: true })` only after the lazy catalog is ready, keeping the path, other params and hash and updating `useLocation`/`useSearchParams`; later board filters, card deep links and admin list writes therefore cannot reintroduce it. The cleanup uses the latest router location, so a board/card/filter change made while the catalog loads survives instead of being overwritten by the click-time URL. A failed load keeps `lng` for a reload retry. The M39 workflow blocker ignores only that `lng`-only change. Signed-in board users persist locale on their account. The master panel persists it in the browser’s `janosik-lang` localStorage entry. | [Language switcher tests](../ui/src/components/LanguageSwitcher.test.tsx) render a `MemoryRouter` and cover the signed-in `updateProfile({ locale })` path, query/hash preservation, a later filter write staying `lng`-free, a deferred catalog where filter+board navigation happen before resolution, and the failed-load case. [Chrome preferences](../e2e/tests/app/account/preferences.spec.ts) start on `?lng=ru`, switch to English, apply a board filter, reload and check English plus the filtered URL. [Admin navigation in Chrome](../e2e/tests/admin/navigation.spec.ts) also checks the tab/hash handoff and reload. |
 | L28 | Recent admin destinations resolve hub, tab or detail metadata and use the matching localized name and icon. | [Admin palette tests](../ui/src/admin/GlobalSearch.test.tsx) cover a workflow detail, the Cards tab and Overview, including their distinct icons. |
 | L29 | Named board creation from search uses `LIMITS.boardTitle` (100). Search still accepts `LIMITS.query`. An overlong candidate disables creation and displays the limit. | [Switcher tests](../ui/src/components/board/BoardSwitcher.test.tsx) check 100 and 101 characters. [Chrome board creation](../e2e/tests/app/boards/create-limit.spec.ts) verifies that the 101-character attempt sends no POST and the 100-character attempt succeeds. |
 | L30 | Admin breadcrumbs link to hub and tab URLs and mark the current crumb. Detail pages reuse the same route metadata as the palette. | [Breadcrumb tests](../ui/src/admin/layout/AdminBreadcrumbs.test.tsx) check both destinations and `aria-current`. |
@@ -77,9 +77,9 @@ Scope follows [remediation §180.9](TASK-180-bug-research-remediation.md#1809--n
 
 | Finding | Root cause | Fix and evidence |
 | --- | --- | --- |
-| L27 router-state desync | Raw `history.replaceState` cleaned the address bar but left `?lng=ru` in React Router. A later board filter/card/admin-list write rebuilt the URL from stale `useSearchParams`. | `LanguageSwitcher` now uses `navigate(..., { replace: true })` after the catalog loads. [MemoryRouter tests](../ui/src/components/LanguageSwitcher.test.tsx) switch at `?lng=ru`, perform a filter-style `setSearchParams` write and assert no `lng` returns; [Chrome preferences](../e2e/tests/app/account/preferences.spec.ts) then reload and check English plus the filtered URL. |
+| L27 router-state desync | Raw `history.replaceState` cleaned the address bar but left `?lng=ru` in React Router. A later board filter/card/admin-list write rebuilt the URL from stale `useSearchParams`. A follow-up review found the router cleanup itself used the click-time location, so navigating while the lazy catalog loaded could send the user back. | `LanguageSwitcher` now navigates with the router only after the catalog loads, using a ref that follows every location change; the cleanup strips `lng` from the URL the user is on now, never the click-time snapshot. [MemoryRouter tests](../ui/src/components/LanguageSwitcher.test.tsx) cover both the filter write and a deferred catalog with filter + board navigation before resolution; [Chrome preferences](../e2e/tests/app/account/preferences.spec.ts) reload and check English plus the filtered URL. |
 | L31 nested closed overlays | `isOverlayOpen()` tested only the matched element. The app palette's `role="listbox"` has no `data-state` and stayed “open” inside a closing dialog. | The guard resolves the nearest `[data-state]` ancestor. [Overlay tests](../ui/src/utils/overlay.test.ts) cover the nested closed listbox; [shortcut tests](../ui/src/components/ShortcutsDialog.test.tsx) and Chrome open help/undo immediately after Escape closes the palette. |
-| H15 mobile focus | The focus helper always chose the gear, which is `display:none` at ≤720 px, so `.focus()` left focus on BODY. | Candidate order is gear → title → main, filtered by `checkVisibility()` when available. A jsdom `checkVisibility:false` test and [390 px Chrome test](../e2e/tests/app/navigation/settings-scope.spec.ts) verify the title fallback. |
+| H15 mobile focus | The focus helper always chose the gear, which is `display:none` at ≤720 px, so `.focus()` left focus on BODY. | Candidate order is gear → title → main, filtered by `checkVisibility()` when available and `getClientRects().length` otherwise. A jsdom hidden-gear test and [390 px Chrome test](../e2e/tests/app/navigation/settings-scope.spec.ts) verify the title fallback. |
 | H15 stale save race | A pending save resolving after unmount still called `onOpenChange(false)` and the focus helper, stealing focus from a reopened B dialog. | A mounted ref gates close/focus side effects. [Settings tests](../ui/src/components/board/BoardSettingsDialog.test.tsx) resolve the save after unmount and assert no close or focus change. |
 | M41 empty grid | `aria-expanded=true` pointed at a grid with `hidden` when no board matched. | The grid stays mounted empty under the no-match message; the switcher test asserts it stays visible while expanded. |
 
@@ -87,15 +87,15 @@ Scope follows [remediation §180.9](TASK-180-bug-research-remediation.md#1809--n
 
 | Command | Result |
 | --- | --- |
-| `npm test -w ui` | **1,864 passed in 200 files, 0 failures.** |
-| `npm run test:coverage -w ui` | **1,864 passed in 200 files, 0 failures.** All thresholds passed. Statements 91.78%, branches 83.3%, functions 91.47%, lines 93.95%. |
+| `npm test -w ui` | **1,865 passed in 200 files, 0 failures.** |
+| `npm run test:coverage -w ui` | **1,865 passed in 200 files, 0 failures.** All thresholds passed. Statements 91.78%, branches 83.2%, functions 91.47%, lines 93.95%. |
 | `UI_BASE=/ npm run test:e2e -w backend -- test/oauth.e2e-spec.ts test/auth.e2e-spec.ts` | **25 passed.** |
 | `UI_BASE=/app/ npm run test:e2e -w backend -- test/oauth.e2e-spec.ts` | **15 passed.** |
 | `npx tsc -b ui shared`, `npm run typecheck -w backend`, `npm run typecheck -w e2e` | Passed. |
 | `npm run build:backend`, `UI_BASE=/app/ npm run build -w ui`, `npm run size -w ui` | Built the API and prefixed UI. All seven bundle budgets passed. |
 | `npm run lint`, `npx prettier --check …`, `git diff --check` | Lint reported warnings and zero errors. Formatting and whitespace checks passed. |
 
-The focused UI command covered the new M38/M39/L27/L31/H15/M41 tests and the adjacent board, history and settings suites. **116 tests passed in 9 files.**
+The focused UI command covered the new M38/M39/L27/L31/H15/M41 tests and the adjacent board, history and settings suites. **117 tests passed in 9 files.**
 
 ```sh
 npm test -w ui -- src/admin/BoardWorkflowPage.test.tsx \
@@ -108,30 +108,21 @@ npm test -w ui -- src/admin/BoardWorkflowPage.test.tsx \
   src/components/board/BoardSettingsDialog.test.tsx
 ```
 
-Chrome ran against the production UI served by the local API at `/app/` on
-disposable Docker stacks (`npm run test:docker -w e2e`). The targeted app run
-passed **51** tests and the targeted admin run passed **28**. Both runs had
-zero failures.
+Chrome ran against the production UI served by the local API at `/app/` on a
+disposable Docker stack (`npm run test:docker -w e2e`). The targeted
+language/filter/settings run passed **17** tests with zero failures.
 
 ```sh
 npm run test:docker -w e2e -- \
   tests/app/account/preferences.spec.ts \
-  tests/app/navigation/settings-scope.spec.ts \
-  tests/app/search/global-search.spec.ts \
-  tests/app/history/controls.spec.ts \
-  tests/app/filters/search.spec.ts
-
-E2E_ADMIN_TEST=1 npm run test:docker -w e2e -- \
-  tests/admin/shell.spec.ts tests/admin/navigation.spec.ts \
-  tests/admin/workflow.spec.ts tests/admin/boards.spec.ts
+  tests/app/filters/search.spec.ts \
+  tests/app/navigation/settings-scope.spec.ts
 ```
 
-The app run covers the `?lng=ru` → English → board-filter → reload path,
-desktop gear and 390 px title focus after a forced switch, immediate
-undo/help after the app palette closes, the character-only `/` shortcut and
-the existing filter/search flows. The admin run covers NAV-5 after waiting
-for the debounced result, browser-Back discard, Russian-layout shortcuts and
-the admin board list/filters.
+The run covers the `?lng=ru` → English → board-filter → reload path, the
+character-only `/` shortcut, and desktop/390 px focus after a forced board
+switch. The previous round's app/admin targeted runs (51 + 28) remain
+recorded in the earlier commit.
 
 ## Residual coverage
 
@@ -140,3 +131,5 @@ the admin board list/filters.
 - Russian-layout tests inject the physical key code with the corresponding Cyrillic value. Short and mobile viewports were exercised in Chrome. OS input methods and physical devices were outside the run.
 - OAuth returns to the app root for rejected or expired destinations. The allowlist covers the root, boards and agents. The impersonation entry handles a support token and falls back to the app root if supplied as an OAuth return destination.
 - Switching boards immediately discards the previous board’s open Settings draft and now restores focus to the new board’s gear/title. The master-panel workflow editor confirms client-side navigation away from a dirty draft; a full document unload still uses the browser’s own confirmation.
+- The deferred-catalog L27 test uses a `MemoryRouter` and a controlled promise; a genuinely slow network chunk in Chrome was not throttled.
+- H15 visibility checks use `checkVisibility()`/`getClientRects()`. jsdom has no layout, so unit tests stub geometry; the real hidden-gear path is covered at a 390 px Chrome viewport.

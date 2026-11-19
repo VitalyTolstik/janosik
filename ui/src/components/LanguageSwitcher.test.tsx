@@ -1,6 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  MemoryRouter,
+  useLocation,
+  useSearchParams,
+} from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUserDto } from "@janosik/shared";
 
@@ -62,6 +67,15 @@ function QueryWriter() {
   );
 }
 
+/** SPA navigation to a different board while the catalog is still loading. */
+function BoardTwoLink() {
+  return (
+    <Link data-testid="go-board-two" to="/board/b-2?card=c-1&lng=ru#details">
+      Board two
+    </Link>
+  );
+}
+
 function renderSwitcher(
   path = "/board/b-1",
   options: { updateUser?: (next: AuthUserDto) => void } = {},
@@ -83,6 +97,7 @@ function renderSwitcher(
           <LanguageSwitcher variant="row" />
           <LocationProbe />
           <QueryWriter />
+          <BoardTwoLink />
         </MemoryRouter>
       </I18nProvider>
     </AuthContext.Provider>,
@@ -144,6 +159,42 @@ describe("LanguageSwitcher", () => {
       expect(locationText()).toBe("/board/b-1?keep=1&q=alpha"),
     );
     expect(locationText()).not.toContain("lng=");
+  });
+
+  it("cleans lng from the latest location after navigation during the load", async () => {
+    let resolveEnsure!: (ready: boolean) => void;
+    vi.spyOn(i18nModule, "ensureLocale").mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveEnsure = resolve;
+      }),
+    );
+    renderSwitcher("/board/b-1?lng=ru&keep=1#details");
+
+    await chooseLanguage("Русский");
+    expect(locationText()).toBe("/board/b-1?lng=ru&keep=1#details");
+
+    // Filter first, then switch boards elsewhere while the catalog is still
+    // loading. Both newer URLs carry the old `lng` for this stress case.
+    await userEvent.click(screen.getByTestId("apply-filter"));
+    await waitFor(() =>
+      expect(locationText()).toBe("/board/b-1?lng=ru&keep=1&q=alpha"),
+    );
+    await userEvent.click(screen.getByTestId("go-board-two"));
+    await waitFor(() =>
+      expect(locationText()).toBe("/board/b-2?card=c-1&lng=ru#details"),
+    );
+
+    await act(async () => {
+      resolveEnsure(true);
+      await Promise.resolve();
+    });
+
+    // The cleanup edits the location the user is on now; it must not navigate
+    // back to the click-time board/filter snapshot.
+    await waitFor(() =>
+      expect(locationText()).toBe("/board/b-2?card=c-1#details"),
+    );
+    expect(defaultI18n.language).toBe("ru");
   });
 
   it("keeps ?lng= when the lazy catalog fails to load", async () => {

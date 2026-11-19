@@ -122,6 +122,15 @@ function renderHeader(
   );
 }
 
+function stubVisibleLayout(): () => void {
+  const original = HTMLElement.prototype.getClientRects;
+  HTMLElement.prototype.getClientRects = () =>
+    ({ length: 1 }) as unknown as DOMRectList;
+  return () => {
+    HTMLElement.prototype.getClientRects = original;
+  };
+}
+
 describe("agent entry points in the header", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -136,21 +145,27 @@ describe("agent entry points in the header", () => {
   });
 
   it("moves focus to the new board's gear after a board switch closes Settings (H15)", async () => {
-    renderHeader("/board/board-1", new FakeServer([board, boardTwo]));
-    const settings = await screen.findByTestId("board-settings-trigger");
-    await userEvent.click(settings);
-    expect(await screen.findByTestId("board-settings-dialog")).toBeVisible();
+    // jsdom has no layout; mark candidates with a rect for the fallback path.
+    const restoreLayout = stubVisibleLayout();
+    try {
+      renderHeader("/board/board-1", new FakeServer([board, boardTwo]));
+      const settings = await screen.findByTestId("board-settings-trigger");
+      await userEvent.click(settings);
+      expect(await screen.findByTestId("board-settings-dialog")).toBeVisible();
 
-    // The palette/URL navigation unmounts the dialog without a close event.
-    fireEvent.click(screen.getByTestId("open-board-two"));
+      // The palette/URL navigation unmounts the dialog without a close event.
+      fireEvent.click(screen.getByTestId("open-board-two"));
 
-    await waitFor(() =>
-      expect(screen.queryByTestId("board-settings-dialog")).toBeNull(),
-    );
-    await waitFor(() => expect(settings).toHaveFocus());
-    expect(
-      screen.getByRole("heading", { name: "Docs board" }),
-    ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByTestId("board-settings-dialog")).toBeNull(),
+      );
+      await waitFor(() => expect(settings).toHaveFocus());
+      expect(
+        screen.getByRole("heading", { name: "Docs board" }),
+      ).toBeInTheDocument();
+    } finally {
+      restoreLayout();
+    }
   });
 
   it("keeps one board entry and returns focus to its trigger", async () => {
