@@ -11,14 +11,32 @@ import type {
   AdminTotpSetupDto,
   AdminUpdateSecurityRequest,
 } from "@janosik/shared";
-import { createHmac, randomBytes } from "node:crypto";
+import { ConflictException } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { verify as argonVerify } from "argon2";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "@/mailer/secret-box";
+import { AdminService } from "./admin.service";
 import type { AdminPrincipal } from "./admin.types";
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const PERIOD_SEC = 30;
 const DIGITS = 6;
+/** Short-lived, server-signed staging ticket for a not-yet-active secret. */
+const TOTP_SETUP_AUDIENCE = "janosik-admin-totp-setup";
+const TOTP_SETUP_TTL = "10m";
+
+/**
+ * Opaque version of the active factor. A setup ticket records the state it was
+ * issued against; a change to either the enabled flag or the encrypted secret
+ * makes every older ticket stale.
+ */
+function totpStateVersion(enabled: boolean, secretEnc: string | null): string {
+  return createHash("sha256")
+    .update(`${enabled ? "1" : "0"}:${secretEnc ?? ""}`)
+    .digest("base64url");
+}
 
 /** RFC 4648 base32 (no padding) — the encoding authenticator apps expect. */
 function base32Encode(buffer: Buffer): string {
@@ -219,37 +237,172 @@ export class SecurityService {
    */
   private readonly lastTotpStep = new Map<string, number>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly admin: AdminService,
+  ) {}
 
   // ------------------------------------------------------------------- 2FA
 
-  async setup(admin: AdminPrincipal): Promise<AdminTotpSetupDto> {
-    const secret = base32Encode(randomBytes(20));
-    await this.prisma.adminUser.update({
+  async setup(
+    admin: AdminPrincipal,
+    proof: { totpCode?: string; password?: string } = {},
+  ): Promise<AdminTotpSetupDto> {
+    const current = await this.prisma.adminUser.findUnique({
       where: { id: admin.id },
-      data: { totpSecretEnc: encryptSecret(secret) },
+      select: {
+        totpEnabled: true,
+        totpSecretEnc: true,
+        passwordHash: true,
+      },
     });
+    if (!current) throw new NotFoundException("Master not found");
+    // M12: a session that survives a stolen-cookie window must not silently
+    // replace the second factor and lock the legitimate owner out. Replacing
+    // an active secret requires the current code or the account password.
+    // The current code is checked *without* recording its step: consuming it
+    // here would make the same code fail at the next login.
+    if (current.totpEnabled) {
+      const secret =
+        current.totpSecretEnc !== null
+          ? decryptSecret(current.totpSecretEnc)
+          : null;
+      const codeValid =
+        secret !== null &&
+        proof.totpCode !== undefined &&
+        this.verifyCode(secret, proof.totpCode);
+      const passwordValid =
+        proof.password !== undefined &&
+        proof.password.length > 0 &&
+        (await argonVerify(current.passwordHash, proof.password));
+      if (!codeValid && !passwordValid) {
+        throw new UnauthorizedException({
+          message:
+            "A current two-factor code or the account password is required to replace 2FA",
+          code: "totp_proof_required",
+        });
+      }
+    }
+    const secret = base32Encode(randomBytes(20));
+    // Staging (M12): do NOT touch the active secret here. The old factor
+    // keeps working until `/security/totp/verify` confirms the new code, so
+    // a lost setup response cannot lock the master out. The ticket records
+    // the exact active state it was issued against: a later **confirmed**
+    // enrollment or replacement, a disable, or the ticket's own confirmation
+    // invalidates it. Staging another secret writes nothing, so it does not.
+    const setupToken = await this.jwt.signAsync(
+      {
+        sub: admin.id,
+        secret,
+        purpose: "totp-setup",
+        previousEnabled: current.totpEnabled,
+        previousState: totpStateVersion(
+          current.totpEnabled,
+          current.totpSecretEnc,
+        ),
+      },
+      { audience: TOTP_SETUP_AUDIENCE, expiresIn: TOTP_SETUP_TTL },
+    );
     const label = encodeURIComponent(`Janosik:${admin.email}`);
     const otpauthUrl =
       `otpauth://totp/${label}?secret=${secret}` +
       `&issuer=Janosik&algorithm=SHA1&digits=${DIGITS}&period=${PERIOD_SEC}`;
-    return { secret, otpauthUrl };
+    return { secret, otpauthUrl, setupToken };
   }
 
+  /**
+   * Finish enrollment. The setup ticket is mandatory and records the active
+   * factor state it was issued against. Under the row lock the state must
+   * still match exactly; otherwise the ticket is stale (a newer confirmed
+   * replacement, a disable, or activation after an inactive ticket) and is
+   * refused.
+   *
+   * The successful update and its audit row commit in the same transaction,
+   * and changing the secret consumes the ticket automatically: a replay or a
+   * concurrent second confirm sees a different state version.
+   */
   async confirm(
     admin: AdminPrincipal,
     code: string,
-  ): Promise<{ totpEnabled: true }> {
-    const secret = await this.secretFor(admin.id);
-    if (!secret) throw new BadRequestException("Start enrollment first");
-    if (!this.verifyCode(secret, code, admin.id)) {
+    setupToken: string,
+  ): Promise<{ totpEnabled: true; replaced: boolean }> {
+    let payload: {
+      sub?: unknown;
+      secret?: unknown;
+      purpose?: unknown;
+      previousEnabled?: unknown;
+      previousState?: unknown;
+    };
+    try {
+      payload = await this.jwt.verifyAsync(setupToken, {
+        audience: TOTP_SETUP_AUDIENCE,
+      });
+    } catch {
+      throw new UnauthorizedException("Enrollment token is invalid");
+    }
+    if (
+      payload.sub !== admin.id ||
+      payload.purpose !== "totp-setup" ||
+      typeof payload.secret !== "string" ||
+      typeof payload.previousEnabled !== "boolean" ||
+      typeof payload.previousState !== "string"
+    ) {
+      throw new UnauthorizedException("Enrollment token is invalid");
+    }
+    const staged = payload.secret;
+    if (!this.verifyCode(staged, code)) {
       throw new UnauthorizedException("Invalid code");
     }
-    await this.prisma.adminUser.update({
-      where: { id: admin.id },
-      data: { totpEnabled: true },
+
+    const replaced = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AdminUser" WHERE "id" = ${admin.id} FOR UPDATE`;
+      const current = await tx.adminUser.findUnique({
+        where: { id: admin.id },
+        select: { totpEnabled: true, totpSecretEnc: true },
+      });
+      if (!current) throw new NotFoundException("Master not found");
+      const currentState = totpStateVersion(
+        current.totpEnabled,
+        current.totpSecretEnc,
+      );
+      if (
+        current.totpEnabled !== payload.previousEnabled ||
+        currentState !== payload.previousState
+      ) {
+        throw new ConflictException({
+          message:
+            "This enrollment was superseded by a newer security change; start again",
+          code: "setup_stale",
+          retryable: false,
+        });
+      }
+      await tx.adminUser.update({
+        where: { id: admin.id },
+        data: { totpSecretEnc: encryptSecret(staged), totpEnabled: true },
+      });
+      await tx.adminAuditLog.create({
+        data: {
+          adminId: admin.id,
+          adminEmail: admin.email,
+          action: current.totpEnabled
+            ? "security.totp_replaced"
+            : "security.totp_enabled",
+          targetType: "admin",
+          targetId: admin.id,
+          details: { replaced: current.totpEnabled },
+        },
+      });
+      return current.totpEnabled;
     });
-    return { totpEnabled: true };
+    // The audit row was written inside the transaction instead of through
+    // `AdminService.audit`, which is the normal metrics-cache choke point.
+    // Drop the snapshot explicitly now that the security change committed.
+    this.admin.invalidateMetrics();
+    // The replay map is keyed by admin, not by secret: a fresh factor must not
+    // be rejected just because the old code was used in the same time step.
+    this.lastTotpStep.delete(admin.id);
+    return { totpEnabled: true, replaced };
   }
 
   private async secretFor(adminId: string): Promise<string | null> {

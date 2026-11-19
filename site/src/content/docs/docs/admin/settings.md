@@ -116,10 +116,28 @@ are not affected.
 | Enable 2FA | starts enrollment and shows a base32 secret and an `otpauth://` URL |
 | Confirm | finishes enrollment with a six-digit code |
 | Disable 2FA | turns it off; requires a valid code |
+| Replace authenticator | issues a new secret; while 2FA is active this requires the current code or the account password and is written to the master audit log |
 
 The secret is stored encrypted. The TOTP is SHA-1, six digits, a 30-second
 period, verified inside a one-step window. Once enabled, the login flow
 requires the code after the password.
+
+A replacement is staged: the new secret becomes active only after `Confirm`
+accepts a code from it and the short-lived setup ticket returned by the
+enrollment call, so a lost response cannot invalidate the working factor. The
+ticket is bound to the active factor state and is single-use; a newer
+**confirmed** enrollment or replacement, a disable or an already-consumed
+ticket answers `409 setup_stale`. Staging another secret writes nothing, so it
+does not invalidate the first ticket by itself. The current code is checked
+without consuming its step. A successful replacement is audited as
+`security.totp_replaced`; first enrollment remains `security.totp_enabled`.
+
+First enrollment (while 2FA is off) starts from an authenticated master
+session without asking for a second proof. A stolen live master session can
+therefore enroll its own authenticator before the owner does; this is a known
+residual. Enabling 2FA immediately after account creation and keeping master
+sessions short are the mitigations. Once a factor is active, replacing it
+always requires the current code or the account password.
 
 ### IP allowlist
 
@@ -187,6 +205,11 @@ Owner-only inputs:
 | Agents | 1 to 100 | |
 | Tasks | 1 to 1000 | cards to seed |
 
+The demo needs the live observation link, so it is unavailable while public
+sharing is disabled (`public_shares` off / `ALLOW_PUBLIC_SHARES=false`). A
+start attempt answers `409 public_shares_disabled` before any demo users or
+board rows are created.
+
 `Start demo` creates the demo users and cards, then starts the scenario. `Stop & clean up`
 is enabled while data created by the demo still exists; it is confirmed and deletes
 exactly the recorded rows: the board when the run created it, its cards, its
@@ -210,7 +233,7 @@ takes effect without a restart. All controls are owner-only.
 | `registration_open` | allow anyone to create a new account | env `ALLOW_REGISTRATION` |
 | `public_shares` | allow read-only public links to boards | env `ALLOW_PUBLIC_SHARES` |
 | `video_transcode` | re-encode uploaded videos to a compact MP4 | on |
-| `realtime_sse` | stream live board changes over SSE | on |
+| `realtime_sse` | stream live board changes over SSE; off closes open streams and answers `404` on the SSE routes | on |
 
 Each flag has a toggle. When a flag has per-user overrides, their count is
 shown. The effective value for a user is the per-user override when present,
@@ -269,6 +292,7 @@ are:
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |
 | `sweep-security-audit` | `SecurityAuditLog` rows older than `AUDIT_RETENTION_DAYS` (deletion lifecycle and `board.cleanup_failed` markers are kept) |
 | `sweep-accounts` | accounts whose seven-day self-service deletion window elapsed (still disabled) |
+| `sweep-unverified-users` | abandoned registrations that never confirmed their e-mail, accepted a membership or wrote content (older than `UNVERIFIED_ACCOUNT_TTL_DAYS`); releases the address |
 | `sweep-orphan-boards` | retries soft-deletion of boards left behind by an account erase (pending invites do not count) |
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
 | `sweep-idempotency` | `IdempotencyRecord` rows past their 24-hour expiry |

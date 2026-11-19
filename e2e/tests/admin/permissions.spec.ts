@@ -94,10 +94,12 @@ test("hides owner-only user actions from an operator", async ({
   });
   await page.getByTestId("admin-user-detail-actions").click();
 
-  await expect(
-    page.getByRole("menuitem", { name: "Change email", exact: true }),
-  ).toBeVisible();
+  // H7: account-takeover fields are OWNER-only, so none of these may reach an
+  // operator's menu (and the server refuses them too).
   for (const name of [
+    "Change email",
+    "Verify email",
+    "Unverify email",
     "Reset password",
     "Promote to master",
     "Impersonate",
@@ -108,6 +110,28 @@ test("hides owner-only user actions from an operator", async ({
       0,
     );
   }
+});
+
+test("shows the H7 account actions to the owner", async ({ page, admin }) => {
+  const unverified = await createUserViaAdmin(admin);
+  const verified = await createUserViaAdmin(admin, { verified: true });
+  await loginAsMaster(page, ownerCredentials());
+
+  await page.goto(adminPath(`users/${unverified.id}`), {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByTestId("admin-user-detail-actions").click();
+  await expect(page.getByTestId("admin-user-change-email")).toBeVisible();
+  await expect(page.getByTestId("admin-user-verify")).toBeVisible();
+  await expect(page.getByTestId("admin-user-unverify")).toHaveCount(0);
+
+  await page.goto(adminPath(`users/${verified.id}`), {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByTestId("admin-user-detail-actions").click();
+  await expect(page.getByTestId("admin-user-change-email")).toBeVisible();
+  await expect(page.getByTestId("admin-user-unverify")).toBeVisible();
+  await expect(page.getByTestId("admin-user-verify")).toHaveCount(0);
 });
 
 test("lets an operator block a user", async ({ page, admin }) => {

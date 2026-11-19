@@ -14,6 +14,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { CommentsService } from "@/comments/comments.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { ShareService } from "@/share/share.service";
 import { DemoQueueService } from "./demo-queue.service";
 
@@ -102,6 +103,7 @@ export class DemoService implements OnModuleDestroy {
     private readonly commands: CommandsService,
     private readonly comments: CommentsService,
     private readonly shares: ShareService,
+    private readonly flags: FeatureFlagsService,
     private readonly demoQueue: DemoQueueService,
   ) {}
 
@@ -178,10 +180,17 @@ export class DemoService implements OnModuleDestroy {
     if (this.active) {
       throw new ConflictException("A demo is already running");
     }
+    // M4: the live observation link is part of the demo product. Refuse before
+    // `cleanAllDemo`/provisioning when public sharing is off, so a start cannot
+    // leave a half-built demo board behind a 404 from ShareService.
+    await this.assertPublicSharingEnabled();
     // Clean everything a previous demo left behind, then create the new one —
     // so a fresh start never accumulates boards or demo users.
     await this.cleanAllDemo();
     this.lastRun = null;
+    // The flag is runtime state and cleanup can take a while: re-check after
+    // the boundary, before any row of the new run exists.
+    await this.assertPublicSharingEnabled();
     const agents = input.users ?? 20;
     if (!Number.isInteger(agents) || agents < 1 || agents > MAX_USERS) {
       throw new BadRequestException({
@@ -256,17 +265,30 @@ export class DemoService implements OnModuleDestroy {
     // 3b. Live observation share (TASK-58): the whole point of replacing the
     //     watcher account — open `/s/<token>` with no login and watch the
     //     swarm move. Comments are on (this is "watch how we work").
-    const share = await this.shares.create(
-      boardId,
-      startedBy,
-      {
-        mode: "live",
-        title: "Демо-рой · живой просмотр",
-        includeComments: true,
-        includeAttachments: false,
-      },
-      "admin",
-    );
+    if (!(await this.flags.isEnabled("public_shares"))) {
+      // The flag flipped while the throwaway rows were being provisioned.
+      await this.rollbackPartialStart(manifest);
+      throw this.publicSharingDisabled();
+    }
+    let share: Awaited<ReturnType<ShareService["create"]>>;
+    try {
+      share = await this.shares.create(
+        boardId,
+        startedBy,
+        {
+          mode: "live",
+          title: "Демо-рой · живой просмотр",
+          includeComments: true,
+          includeAttachments: false,
+        },
+        "admin",
+      );
+    } catch (error) {
+      // A flag flip between the boundary check and this call must not leave
+      // the dispatcher/agents/board behind; `purge` removes only manifest ids.
+      await this.rollbackPartialStart(manifest);
+      throw error;
+    }
     manifest.shareId = share.id;
     manifest.shareToken = share.token;
 
@@ -548,6 +570,40 @@ export class DemoService implements OnModuleDestroy {
       await this.processCard(run, spec, () => !stopped);
     } finally {
       clearInterval(poll);
+    }
+  }
+
+  /** M4: the live observation link is part of the demo product. */
+  private publicSharingDisabled(): ConflictException {
+    return new ConflictException({
+      message:
+        "The demo needs public sharing for its live view. Enable public shares and try again.",
+      code: "public_shares_disabled",
+    });
+  }
+
+  private async assertPublicSharingEnabled(): Promise<void> {
+    if (!(await this.flags.isEnabled("public_shares"))) {
+      throw this.publicSharingDisabled();
+    }
+  }
+
+  /** Best-effort rollback when provisioning aborts before the run is stored. */
+  private async rollbackPartialStart(manifest: DemoManifest): Promise<void> {
+    try {
+      if (manifest.boardId !== "") {
+        await this.purge(manifest);
+      } else if (manifest.userIds.length > 0) {
+        await this.prisma.user.deleteMany({
+          where: { id: { in: manifest.userIds } },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Demo rollback failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

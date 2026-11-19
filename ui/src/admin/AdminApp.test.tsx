@@ -1298,12 +1298,12 @@ describe("admin content and security pages", () => {
       await screen.findByTestId("admin-user-detail-actions"),
       { button: 0 },
     );
-    expect(
-      await screen.findByTestId("admin-user-change-email"),
-    ).toBeInTheDocument();
-    // Every owner-only action is hidden from an operator, not just delete:
-    // the server answers 403 to all of them.
+    // H7: email/verification moves are owner-only, so an operator never sees
+    // them — and the server refuses them with 403 if the request is forged.
     for (const testId of [
+      "admin-user-change-email",
+      "admin-user-unverify",
+      "admin-user-verify",
       "admin-user-reset-password",
       "admin-user-promote",
       "admin-user-impersonate",
@@ -1312,6 +1312,12 @@ describe("admin content and security pages", () => {
     ]) {
       expect(screen.queryByTestId(testId)).toBeNull();
     }
+    const forged = await fetch("/api/v1/admin/users/u-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailVerified: true }),
+    });
+    expect(forged.status).toBe(403);
   });
 
   it("leaves owner-only actions out of an operator's users row menu", async () => {
@@ -1325,10 +1331,10 @@ describe("admin content and security pages", () => {
     fireEvent.pointerDown(await screen.findByTestId("admin-row-actions-u-1"), {
       button: 0,
     });
-    expect(
-      await screen.findByText(t("admin.users.action.changeEmail")),
-    ).toBeTruthy();
     for (const key of [
+      "admin.users.action.changeEmail",
+      "admin.userDetail.action.verify",
+      "admin.userDetail.action.unverify",
       "admin.userDetail.action.resetPassword",
       "admin.userDetail.action.promote",
       "admin.userDetail.action.impersonate",

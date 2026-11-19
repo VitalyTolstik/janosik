@@ -89,6 +89,8 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
           impersonatedBy,
           authMethod: authMethodOf(raw),
           stamp: stampOf(raw),
+          accessTokenExpiresAt: expiryOf(raw),
+          sessionFamilyId: sessionFamilyOf(raw),
         };
         // TASK-147 (B3): an impersonation token is a full user token, so the
         // read-only rule is enforced here — every user-contour route,
@@ -216,6 +218,18 @@ function authMethodOf(token: string | undefined): "password" | "oauth" {
 function stampOf(token: string | undefined): string | undefined {
   const stamp = claimsOf(token)?.stamp;
   return typeof stamp === "string" ? stamp : undefined;
+}
+
+/** `exp` (seconds) of an already-verified access token, as Unix ms. */
+function expiryOf(token: string | undefined): number | undefined {
+  const exp = claimsOf(token)?.exp;
+  return typeof exp === "number" ? exp * 1000 : undefined;
+}
+
+/** `sid` (refresh-rotation family) of an already-verified access token. */
+function sessionFamilyOf(token: string | undefined): string | undefined {
+  const sid = claimsOf(token)?.sid;
+  return typeof sid === "string" ? sid : undefined;
 }
 
 function claimsOf(token: string | undefined): Record<string, unknown> | null {

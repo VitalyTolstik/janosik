@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminSecurityDto, AdminTotpSetupDto } from "@janosik/shared";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -26,8 +26,16 @@ export function SecurityPage() {
   const [security, setSecurity] = useState<AdminSecurityDto | null>(null);
   const [setup, setSetup] = useState<AdminTotpSetupDto | null>(null);
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [allowlist, setAllowlist] = useState("");
   const [busy, setBusy] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  // The setup panel replaces the enable/replace controls, so move focus to
+  // the first code box (and announce the swap below with aria-live).
+  useEffect(() => {
+    if (setup !== null) codeInputRef.current?.focus();
+  }, [setup]);
 
   const load = useCallback(() => {
     adminApi
@@ -44,30 +52,60 @@ export function SecurityPage() {
     load();
   }, [load]);
 
-  const beginSetup = useCallback(async () => {
-    try {
-      setSetup(await adminApi.setupTotp());
-    } catch {
-      toast.error(t("admin.common.actionFailed"));
-    }
-  }, [t, toast]);
+  const beginSetup = useCallback(
+    async (proof: { totpCode?: string; password?: string } = {}) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        setSetup(await adminApi.setupTotp(proof));
+        setCode("");
+        setPassword("");
+      } catch (cause) {
+        toast.error(
+          cause instanceof ApiError && cause.status === 401
+            ? t("admin.security.totp.invalid")
+            : t("admin.common.actionFailed"),
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, t, toast],
+  );
 
   const confirm = useCallback(async () => {
+    if (setup === null) return;
     setBusy(true);
     try {
-      await adminApi.verifyTotp(code);
+      // The staged secret is active only after this call succeeds; a lost
+      // setup response leaves the old factor working (M12).
+      await adminApi.verifyTotp(code, setup.setupToken);
       toast.success(t("admin.security.totp.enabled"));
       setSetup(null);
       setCode("");
       load();
-    } catch {
-      toast.error(t("admin.security.totp.invalid"));
+    } catch (cause) {
+      const stale = cause instanceof ApiError && cause.code === "setup_stale";
+      if (stale) {
+        // The ticket can never succeed now; drop the dead panel instead of
+        // inviting the operator to retry the same staged secret.
+        setSetup(null);
+        setCode("");
+        load();
+      }
+      toast.error(
+        stale
+          ? t("admin.security.totp.stale")
+          : t("admin.security.totp.invalid"),
+      );
     } finally {
       setBusy(false);
     }
-  }, [code, load, t, toast]);
+  }, [code, load, setup, t, toast]);
 
   const disable = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       const next = await adminApi.updateSecurity({
         totpEnabled: false,
@@ -78,8 +116,10 @@ export function SecurityPage() {
       toast.success(t("admin.security.totp.disabled"));
     } catch {
       toast.error(t("admin.security.totp.invalid"));
+    } finally {
+      setBusy(false);
     }
-  }, [code, t, toast]);
+  }, [busy, code, t, toast]);
 
   const saveAllowlist = useCallback(async () => {
     setBusy(true);
@@ -141,34 +181,12 @@ export function SecurityPage() {
               : t("admin.observability.off")}
           </Badge>
         </div>
-        {security.totpEnabled ? (
-          <div className="mt-3 flex items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.security.totp.code")}
-              </span>
-              <Input
-                value={code}
-                inputMode="numeric"
-                maxLength={6}
-                data-testid="admin-totp-code"
-                onChange={(event) =>
-                  setCode(event.target.value.replace(/\D/g, ""))
-                }
-              />
-            </label>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={code.length !== 6}
-              data-testid="admin-totp-disable"
-              onClick={() => void disable()}
-            >
-              {t("admin.security.totp.disable")}
-            </Button>
-          </div>
-        ) : setup ? (
-          <div className="mt-3 space-y-3">
+        {setup ? (
+          <div
+            className="mt-3 space-y-3"
+            data-testid="admin-totp-setup"
+            aria-live="polite"
+          >
             <p className="text-xs text-muted-foreground">
               {t("admin.security.totp.hint")}
             </p>
@@ -183,6 +201,7 @@ export function SecurityPage() {
                 {t("admin.security.totp.code")}
               </span>
               <Input
+                ref={codeInputRef}
                 value={code}
                 inputMode="numeric"
                 maxLength={6}
@@ -201,11 +220,64 @@ export function SecurityPage() {
               {t("admin.security.totp.confirm")}
             </Button>
           </div>
+        ) : security.totpEnabled ? (
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.security.totp.code")}
+              </span>
+              <Input
+                value={code}
+                inputMode="numeric"
+                maxLength={6}
+                data-testid="admin-totp-code"
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, ""))
+                }
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.security.totp.password")}
+              </span>
+              <Input
+                type="password"
+                value={password}
+                autoComplete="current-password"
+                data-testid="admin-totp-password"
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || (code.length !== 6 && password.length === 0)}
+              data-testid="admin-totp-replace"
+              onClick={() =>
+                void beginSetup({
+                  ...(code.length === 6 ? { totpCode: code } : {}),
+                  ...(password.length > 0 ? { password } : {}),
+                })
+              }
+            >
+              {t("admin.security.totp.replace")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={busy || code.length !== 6}
+              data-testid="admin-totp-disable"
+              onClick={() => void disable()}
+            >
+              {t("admin.security.totp.disable")}
+            </Button>
+          </div>
         ) : (
           <div className="mt-3">
             <Button
               size="sm"
               data-testid="admin-totp-enable"
+              disabled={busy}
               onClick={() => void beginSetup()}
             >
               {t("admin.security.totp.enable")}

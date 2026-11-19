@@ -291,10 +291,21 @@ paths:
       tags: [Boards]
       operationId: listBoardMembers
       summary: List board members
-      description: Every accepted member plus the caller's role context; pending invitations are masked rows.
+      description: |
+        Active accepted members by default. `includeExpired=1` additionally
+        returns lapsed VIEWER rows and is accepted only for a board `ADMIN`;
+        pickers, filters and the default directory keep the active roster.
+      parameters:
+        - name: includeExpired
+          in: query
+          required: false
+          description: Include lapsed VIEWER memberships (board `ADMIN` only).
+          schema:
+            type: string
+            enum: ["1", "true"]
       responses:
         "200":
-          description: Members and pending invitations.
+          description: Active members, plus expired rows when requested.
           content:
             application/json:
               schema:
@@ -441,7 +452,10 @@ paths:
       description: |
         Board `ADMIN` and `admin` preset. Publishing a board is sensitive and
         requires approval (`share.create`) for a PAT. `Idempotency-Key`
-        replays the first link for the same intent.
+        replays the first link for the same intent. When public sharing is
+        disabled by the operator (`ALLOW_PUBLIC_SHARES=false` or the
+        `public_shares` flag) creation answers `404`, like the rest of the
+        public share contour.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ApprovalId"
@@ -475,7 +489,8 @@ paths:
       summary: Change a share link
       description: |
         Board `ADMIN` and `admin` preset. Changing visibility is sensitive and
-        requires approval (`share.update`).
+        requires approval (`share.update`); the applied change is written to
+        the board-share audit log.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -528,7 +543,15 @@ paths:
       tags: [Boards]
       operationId: refreshBoardShare
       summary: Refresh a snapshot share
-      description: Re-freezes a snapshot share; a live share answers `400`.
+      description: |
+        Re-freezes a snapshot share; a live share answers `400`. Replacing
+        the public snapshot is a `share.update` lifecycle action: a PAT on a
+        board whose policy requires approval gets `409 approval_required` and
+        must retry with `X-Approval-Id`. Every refresh is written to the
+        board-share audit log.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/AgentSession"
       responses:
         "201":
           description: Refreshed share.
@@ -540,6 +563,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/shares/{shareId}/permanent:
     parameters:

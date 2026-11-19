@@ -190,17 +190,21 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                     .updateUser(user.id, { disabled: false })
                     .then(() => undefined),
               },
-          {
-            label: t("admin.users.action.changeEmail"),
-            run: async () => undefined,
-            renderDialog: ({ close, reload }) => (
-              <ChangeUserEmailDialog
-                user={user}
-                onClose={close}
-                onDone={reload}
-              />
-            ),
-          },
+          ...(isOwner
+            ? [
+                {
+                  label: t("admin.users.action.changeEmail"),
+                  run: async () => undefined,
+                  renderDialog: ({ close, reload }) => (
+                    <ChangeUserEmailDialog
+                      user={user}
+                      onClose={close}
+                      onDone={reload}
+                    />
+                  ),
+                } satisfies EntityAction,
+              ]
+            : []),
           {
             label: t("admin.users.action.revokeSessions"),
             destructive: true,
@@ -223,30 +227,35 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             }),
             run: () => adminApi.revokeUserTokens(user.id),
           },
-          user.emailVerifiedAt === null
-            ? {
-                label: t("admin.userDetail.action.verify"),
-                confirmTitle: t("admin.userDetail.confirm.verify.title", {
-                  email: user.email,
-                }),
-                confirmBody: t("admin.userDetail.confirm.verify.body"),
-                run: () =>
-                  adminApi
-                    .updateUser(user.id, { emailVerified: true })
-                    .then(() => undefined),
-              }
-            : {
-                label: t("admin.userDetail.action.unverify"),
-                destructive: true,
-                confirmTitle: t("admin.userDetail.confirm.unverify.title", {
-                  email: user.email,
-                }),
-                confirmBody: t("admin.userDetail.confirm.unverify.body"),
-                run: () =>
-                  adminApi
-                    .updateUser(user.id, { emailVerified: false })
-                    .then(() => undefined),
-              },
+          ...(isOwner
+            ? [
+                user.emailVerifiedAt === null
+                  ? ({
+                      label: t("admin.userDetail.action.verify"),
+                      confirmTitle: t("admin.userDetail.confirm.verify.title", {
+                        email: user.email,
+                      }),
+                      confirmBody: t("admin.userDetail.confirm.verify.body"),
+                      run: () =>
+                        adminApi
+                          .updateUser(user.id, { emailVerified: true })
+                          .then(() => undefined),
+                    } satisfies EntityAction)
+                  : ({
+                      label: t("admin.userDetail.action.unverify"),
+                      destructive: true,
+                      confirmTitle: t(
+                        "admin.userDetail.confirm.unverify.title",
+                        { email: user.email },
+                      ),
+                      confirmBody: t("admin.userDetail.confirm.unverify.body"),
+                      run: () =>
+                        adminApi
+                          .updateUser(user.id, { emailVerified: false })
+                          .then(() => undefined),
+                    } satisfies EntityAction),
+              ]
+            : []),
           {
             label: t("admin.userDetail.action.resend"),
             noToast: false,

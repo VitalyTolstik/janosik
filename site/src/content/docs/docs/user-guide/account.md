@@ -36,7 +36,10 @@ On the sign-in screen, choose **Forgot password?** and enter your email. If an e
 
 When email delivery is configured, the app asks you to `Confirm your email` after registration. It sends a
 six-digit code to your address; type it in and press `Confirm`. If the code
-does not arrive, use `Resend code`. You can also `Sign out` from this screen.
+does not arrive, use `Resend code`. If you mistyped the address, use `Use a
+different email` instead of leaving it reserved; you can also `Sign out` from
+this screen. A registration that is never confirmed is removed after the
+install's unverified-account window, releasing the address.
 
 ## The account panel
 

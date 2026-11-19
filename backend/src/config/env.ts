@@ -102,6 +102,17 @@ const nonNegativeInt = makeValidator((v) => {
   return parsed;
 });
 
+/** A whole number strictly above zero (durations, retention windows, …). */
+export function parsePositiveInt(v: string): number {
+  const parsed = Number(v);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error("must be a positive integer");
+  }
+  return parsed;
+}
+
+const positiveInt = makeValidator(parsePositiveInt);
+
 export const env = cleanEnv(process.env, {
   NODE_ENV: str({
     desc: "Runtime environment; jest sets this to 'test' automatically",
@@ -252,6 +263,17 @@ export const env = cleanEnv(process.env, {
     desc: "Delete soft-deleted rows older than this many days (fallback)",
     default: 30,
     example: "30",
+  }),
+  // M3: an abandoned registration must not keep its unique email address
+  // reserved forever. The maintenance sweep hard-deletes an unverified
+  // account — one that never accepted a membership or wrote content — after
+  // this window, releasing the address for a new registration. Zero or a
+  // negative value would make every unverified registration immediately
+  // eligible, so the window must be a positive whole number of days.
+  UNVERIFIED_ACCOUNT_TTL_DAYS: positiveInt({
+    desc: "Release e-mail addresses of abandoned unverified registrations after this many days",
+    default: 14,
+    example: "14",
   }),
   // TASK-166: server-mode board cap per account. 0 = unlimited (the
   // product default); a positive value is an operator safety cap, not a

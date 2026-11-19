@@ -839,6 +839,12 @@ export class FakeAdminServer {
     }
     const userPatch = path.match(/^\/admin\/users\/([^/]+)$/);
     if (userPatch && method === "PATCH") {
+      if (
+        this.sessionRole !== "OWNER" &&
+        (jsonBody?.email !== undefined || jsonBody?.emailVerified !== undefined)
+      ) {
+        return this.json({ message: "Owner rights are required" }, 403);
+      }
       const user = this.state.users.find((item) => item.id === userPatch[1]);
       if (!user) return this.json({ message: "User not found" }, 404);
       if (jsonBody?.disabled !== undefined) {
@@ -1981,21 +1987,44 @@ export class FakeAdminServer {
       return this.json(this.security);
     }
     if (path === "/admin/security/totp" && method === "POST") {
+      if (this.security.totpEnabled) {
+        const payload = jsonBody as { password?: string; totpCode?: string };
+        if (
+          payload.password !== "master correct horse battery" &&
+          payload.totpCode !== "123456"
+        ) {
+          return this.json(
+            {
+              message: "A current code or password is required",
+              code: "totp_proof_required",
+            },
+            401,
+          );
+        }
+      }
       return this.json(
         {
           secret: this.totpSecret,
           otpauthUrl: `otpauth://totp/Janosik:master@example.com?secret=${this.totpSecret}&issuer=Janosik`,
+          setupToken: "fake-totp-setup-token",
         },
         201,
       );
     }
     if (path === "/admin/security/totp/verify" && method === "POST") {
-      const payload = jsonBody as { code?: string };
+      const payload = jsonBody as { code?: string; setupToken?: string };
+      if (payload.setupToken !== "fake-totp-setup-token") {
+        return this.json(
+          { message: "Enrollment token is invalid", code: "setup_stale" },
+          400,
+        );
+      }
       if (payload.code !== "123456") {
         return this.json({ message: "Invalid code" }, 401);
       }
+      const replaced = this.security.totpEnabled;
       this.security = { ...this.security, totpEnabled: true };
-      return this.json({ totpEnabled: true });
+      return this.json({ totpEnabled: true, replaced });
     }
     if (path === "/admin/security" && method === "PUT") {
       const payload = jsonBody as {

@@ -66,6 +66,9 @@ describe("DemoPage", () => {
     fireEvent.change(screen.getByTestId("admin-demo-cards-input"), {
       target: { value: "8" },
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-demo-start")).not.toBeDisabled(),
+    );
     fireEvent.click(screen.getByTestId("admin-demo-start"));
 
     await waitFor(() =>
@@ -99,6 +102,9 @@ describe("DemoPage", () => {
     fireEvent.change(screen.getByTestId("admin-demo-cards-input"), {
       target: { value: "2" },
     });
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-demo-start")).not.toBeDisabled(),
+    );
     fireEvent.click(screen.getByTestId("admin-demo-start"));
 
     await waitFor(() => expect(server.demoStatus.running).toBe(true));
@@ -184,6 +190,34 @@ describe("DemoPage", () => {
     expect(screen.getByTestId("admin-demo-status")).toHaveTextContent(
       t("admin.demo.idle"),
     );
+  });
+
+  it("disables start and explains when public shares are off", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/auth/config")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              allowRegistration: true,
+              allowPublicShares: false,
+              limits: { boards: null, importBytes: 25 * 1024 * 1024 },
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      }
+      return server.fetchImpl(input, init);
+    });
+    renderDemo();
+
+    expect(
+      await screen.findByTestId("admin-demo-public-shares-off"),
+    ).toHaveTextContent(t("admin.demo.publicSharesDisabled"));
+    expect(screen.getByTestId("admin-demo-start")).toBeDisabled();
   });
 
   it("shows the runner read-only to operators", async () => {

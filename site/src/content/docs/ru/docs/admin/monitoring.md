@@ -135,15 +135,21 @@ description: Дашборд, лента активности, журнал ко�
 | Управление мастерами | `admin.create`, `admin.disable`, `admin.enable`, `admin.unlock`, `admin.update`, `admin.password_changed`, `admin.password_reset`, `admin.owner_granted` |
 | Пользователи | `user.create`, `user.update`, `user.email_changed`, `user.disable`, `user.enable`, `user.sessions_revoked`, `user.tokens_revoked`, `user.verified`, `user.unverified`, `user.verification_resent`, `user.password_reset`, `user.delete`, `user.impersonated`, `user.promoted`, `user.demoted` |
 | Доски | `board.create`, `board.archive`, `board.unarchive`, `board.delete`, `board.command`, `board.member_added`, `board.member_removed`, `board.member_role_changed`, `board.owner_transferred` |
-| Карточки и контент | `card.archive`, `card.unarchive`, `card.delete`, `attachment.delete`, `entity.restored`, `entity.bulk_deleted`, `comment.delete` |
+| Карточки и контент | `card.archive`, `card.unarchive`, `card.delete`, `attachment.delete`, `entity.restored`, `entity.bulk_deleted`, `entity.bulk_restored`, `entity.bulk_archived`, `entity.bulk_unarchived`, `comment.delete` |
 | Сессии и токены | `session.revoke`, `token.revoke` |
 | Почта | `email.settings_changed`, `email.test_sent`, `email.sent`, `email.template_changed`, `email.template_reset` |
 | Конфигурация | `oauth.settings_changed`, `throttle.settings_changed`, `flag.changed`, `ops.settings_changed` |
 | Коммуникации | `announcement.created`, `announcement.updated`, `announcement.deleted`, `comms.digest_sent`, `comms.reminder_sent` |
 | Данные | `data.exported`, `data.export_queued`, `data.export_downloaded`, `retention.changed` |
-| Безопасность | `security.totp_enabled`, `security.totp_disabled`, `security.ip_allowlist_changed` |
+| Безопасность | `security.totp_enabled`, `security.totp_replaced`, `security.totp_disabled`, `security.ip_allowlist_changed` |
 | Демо и ссылки | `demo.started`, `demo.stopped`, `share.created`, `share.refreshed`, `share.revoked` |
 | Эксплуатация | `maintenance.run`, `queue.ticket_issued` |
+
+`BoardShareAuditLog` — отдельный журнал по каждой ссылке, а не этот аудит
+мастера. В нём используются короткие имена действий: `created`, `updated`,
+`refreshed`, `revoked` и `deleted` — PATCH пишет `updated`, без префикса
+`share.`. `share.revoked` в журнале мастера — только жёсткое удаление уже
+отозванной ссылки администратором.
 
 ## Общее поведение списков
 

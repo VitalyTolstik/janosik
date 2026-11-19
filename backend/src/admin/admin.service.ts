@@ -436,6 +436,13 @@ export class AdminService {
     dto: AdminUpdateUserRequest,
     admin: AdminPrincipal,
   ): Promise<AdminUserRowDto> {
+    // H7: moving a user's sign-in address or flipping its verification is an
+    // account-takeover primitive (set it to the attacker's mailbox, request a
+    // reset, sign in as the victim). It is OWNER-only; an OPERATOR keeps the
+    // non-credential edits (name, block) and loses this one.
+    if (dto.email !== undefined || dto.emailVerified !== undefined) {
+      this.assertOwner(admin);
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException("User not found");
@@ -3537,6 +3544,11 @@ export class AdminService {
    * TASK-68: the sweep itself lives in `MaintenanceService` so the scheduled
    * job and this button run the exact same code. */
   async purgeSoftDeleted(admin: AdminPrincipal): Promise<AdminBulkResultDto> {
+    // H8: this hard-deletes every soft-deleted row past the retention window.
+    // The class-level admin guard lets an OPERATOR read data, not destroy it;
+    // the destructive retention control is OWNER-only like the other ops
+    // writes.
+    this.assertOwner(admin);
     const affected = await this.maintenance.purgeSoftDeleted();
     await this.audit(admin, "retention.changed", "retention", null, {
       purged: affected,

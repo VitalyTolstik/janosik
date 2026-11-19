@@ -132,15 +132,21 @@ Every action the audit log can carry:
 | Master management | `admin.create`, `admin.disable`, `admin.enable`, `admin.unlock`, `admin.update`, `admin.password_changed`, `admin.password_reset`, `admin.owner_granted` |
 | Users | `user.create`, `user.update`, `user.email_changed`, `user.disable`, `user.enable`, `user.sessions_revoked`, `user.tokens_revoked`, `user.verified`, `user.unverified`, `user.verification_resent`, `user.password_reset`, `user.delete`, `user.impersonated`, `user.promoted`, `user.demoted` |
 | Boards | `board.create`, `board.archive`, `board.unarchive`, `board.delete`, `board.command`, `board.member_added`, `board.member_removed`, `board.member_role_changed`, `board.owner_transferred` |
-| Cards and content | `card.archive`, `card.unarchive`, `card.delete`, `attachment.delete`, `entity.restored`, `entity.bulk_deleted`, `comment.delete` |
+| Cards and content | `card.archive`, `card.unarchive`, `card.delete`, `attachment.delete`, `entity.restored`, `entity.bulk_deleted`, `entity.bulk_restored`, `entity.bulk_archived`, `entity.bulk_unarchived`, `comment.delete` |
 | Sessions and tokens | `session.revoke`, `token.revoke` |
 | Email | `email.settings_changed`, `email.test_sent`, `email.sent`, `email.template_changed`, `email.template_reset` |
 | Configuration | `oauth.settings_changed`, `throttle.settings_changed`, `flag.changed`, `ops.settings_changed` |
 | Communications | `announcement.created`, `announcement.updated`, `announcement.deleted`, `comms.digest_sent`, `comms.reminder_sent` |
 | Data | `data.exported`, `data.export_queued`, `data.export_downloaded`, `retention.changed` |
-| Security | `security.totp_enabled`, `security.totp_disabled`, `security.ip_allowlist_changed` |
+| Security | `security.totp_enabled`, `security.totp_replaced`, `security.totp_disabled`, `security.ip_allowlist_changed` |
 | Demo and shares | `demo.started`, `demo.stopped`, `share.created`, `share.refreshed`, `share.revoked` |
 | Operations | `maintenance.run`, `queue.ticket_issued` |
+
+`BoardShareAuditLog` is a separate per-share trail, not this master audit log.
+It uses bare action names: `created`, `updated`, `refreshed`, `revoked` and
+`deleted` — a PATCH writes `updated`, without the `share.` prefix.
+`share.revoked` in the master log is only the admin hard-delete of an already
+revoked share.
 
 ## Shared list behavior
 

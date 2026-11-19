@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ApprovalsModule } from "@/approvals/approvals.module";
 import { AuthModule } from "@/auth/auth.module";
 import { MembershipGuard } from "@/common/membership.guard";
+import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { RealtimeModule } from "@/realtime/realtime.module";
 import { CommandsController } from "./commands.controller";
 import { CommandsService } from "./commands.service";
@@ -13,7 +14,12 @@ import { StreamAccessService } from "./stream-access.service";
 @Module({
   imports: [AuthModule, RealtimeModule, ApprovalsModule],
   controllers: [CommandsController, EventsController, PresenceController],
-  providers: [CommandsService, MembershipGuard, StreamAccessService],
+  providers: [
+    CommandsService,
+    MembershipGuard,
+    RealtimeFlagGuard,
+    StreamAccessService,
+  ],
   // Reused by the master panel to edit board content as the owner (TASK-43).
   exports: [CommandsService],
 })

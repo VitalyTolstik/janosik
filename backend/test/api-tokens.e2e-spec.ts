@@ -226,6 +226,56 @@ describe("API tokens gate (e2e)", () => {
     });
   });
 
+  describe("L25: trustedCi cannot be paired with an inert preset", () => {
+    it("rejects trustedCi on an observer token at create", async () => {
+      const res = await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(sessionToken))
+        .send({
+          name: "observer-ci",
+          scopePreset: "observer",
+          trustedCi: true,
+          expiresAt: null,
+        })
+        .expect(400);
+      expect(res.body.field).toBe("trustedCi");
+    });
+
+    it("rejects trustedCi on a read-only token at create", async () => {
+      const res = await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(sessionToken))
+        .send({
+          name: "readonly-ci",
+          readOnly: true,
+          trustedCi: true,
+          expiresAt: null,
+        })
+        .expect(400);
+      expect(res.body.field).toBe("trustedCi");
+    });
+
+    it("rejects a PATCH that would leave trustedCi on a read-only token", async () => {
+      const created = await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(sessionToken))
+        .send({
+          name: "worker-ci",
+          scopePreset: "worker",
+          trustedCi: true,
+          expiresAt: null,
+        })
+        .expect(201);
+
+      const res = await server()
+        .patch(`/api/v1/users/me/tokens/${created.body.apiToken.id as string}`)
+        .set(auth(sessionToken))
+        .send({ readOnly: true })
+        .expect(400);
+      expect(res.body.field).toBe("trustedCi");
+    });
+  });
+
   async function wipe(db: PrismaService): Promise<void> {
     await db.attachment.deleteMany();
     await db.cardLink.deleteMany();

@@ -100,6 +100,10 @@ export class ShareService {
     principal?: AuthPrincipal,
     approvalApplied = false,
   ): Promise<BoardShareDto> {
+    // M4: `ALLOW_PUBLIC_SHARES=false` is the operator's "no public links"
+    // promise. Minting a link that can never resolve was the gap: gate the
+    // creation path too, not only token resolution.
+    await this.assertPublicSharingEnabled();
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
       select: { id: true },
@@ -170,7 +174,7 @@ export class ShareService {
     boardId: string,
     actorId: string,
     actorType: "user" | "admin",
-    action: "created" | "revoked" | "deleted",
+    action: "created" | "updated" | "refreshed" | "revoked" | "deleted",
     attribution: RequestAttribution,
   ): Promise<void> {
     await tx.boardShareAuditLog.create({
@@ -189,6 +193,7 @@ export class ShareService {
           includeComments: share.includeComments,
           includeAttachments: share.includeAttachments,
           expiresAt: share.expiresAt?.toISOString() ?? null,
+          snapshotVersion: share.snapshotVersion,
           views: share.views,
         },
       },
@@ -227,31 +232,59 @@ export class ShareService {
     return rows.map((row) => this.toDto(row));
   }
 
-  /** Re-freeze a snapshot share with the board's current content. */
+  /**
+   * Re-freeze a snapshot share with the board's current content.
+   *
+   * M9: replacing public content is a `share.update` action — it goes through
+   * the same approval gate and the same audit trail as a PATCH, instead of
+   * silently bypassing a board policy that requires approval.
+   */
   async refreshSnapshot(
     shareId: string,
+    actorId: string,
     principal?: AuthPrincipal,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+    approvalApplied = false,
   ): Promise<BoardShareDto> {
+    // These reads happen after the controller claimed the approval. Mark every
+    // failure as pre-write so `performOperation` releases the claim instead of
+    // leaving a failed refresh with a permanently consumed approval.
+    await rollbackOnThrow(() => this.assertPublicSharingEnabled());
     const row = await this.requireShare(shareId);
     if (row.mode !== "snapshot") {
-      throw new BadRequestException("Only a snapshot share can be refreshed");
+      throw beforeWrite(
+        new BadRequestException("Only a snapshot share can be refreshed"),
+      );
     }
-    const { payload, version } = await this.captureSnapshot(
-      this.boardIdOf(row),
+    const boardId = this.boardIdOf(row);
+    const { payload, version } = await rollbackOnThrow(() =>
+      this.captureSnapshot(boardId),
     );
     const updated = await this.lifecycleTransaction(
-      row.boardId,
+      boardId,
       principal,
       attribution,
-      (tx) =>
-        tx.boardShare.update({
-          where: { id: shareId },
-          data: {
-            snapshot: payload as unknown as Prisma.InputJsonValue,
-            snapshotVersion: version,
-          },
+      async (tx) =>
+        rollbackOnThrow(async () => {
+          const current = await tx.boardShare.update({
+            where: { id: shareId },
+            data: {
+              snapshot: payload as unknown as Prisma.InputJsonValue,
+              snapshotVersion: version,
+            },
+          });
+          await this.auditShare(
+            tx,
+            current,
+            boardId,
+            actorId,
+            "user",
+            "refreshed",
+            attribution,
+          );
+          return current;
         }),
+      { action: "share.update", approvalApplied },
     );
     return this.toDto(updated);
   }
@@ -259,6 +292,7 @@ export class ShareService {
   /** Update flags/TTL/title (owner's dialog). */
   async update(
     shareId: string,
+    actorId: string,
     dto: UpdateShareDto,
     principal?: AuthPrincipal,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
@@ -302,7 +336,22 @@ export class ShareService {
               );
             }
           }
-          return tx.boardShare.update({ where: { id: row.id }, data });
+          const current = await tx.boardShare.update({
+            where: { id: row.id },
+            data,
+          });
+          if (row.boardId) {
+            await this.auditShare(
+              tx,
+              current,
+              row.boardId,
+              actorId,
+              "user",
+              "updated",
+              attribution,
+            );
+          }
+          return current;
         }),
       { action: "share.update", approvalApplied },
     );
@@ -531,6 +580,12 @@ export class ShareService {
     if (!share.includeComments) {
       throw new NotFoundException("Not found");
     }
+    // M10: archiving a live board ends every nested read, not only the main
+    // aggregate. The cards are not soft-deleted by archive, so `cardOnBoard`
+    // alone would keep serving comments/attachments.
+    if (share.mode === "live") {
+      await this.assertBoardAlive(this.boardIdOf(share));
+    }
     await this.assertCardOnBoard(share, cardId);
     const page = await this.comments.list(
       cardId,
@@ -553,6 +608,9 @@ export class ShareService {
     if (!share.includeAttachments) {
       throw new NotFoundException("Not found");
     }
+    if (share.mode === "live") {
+      await this.assertBoardAlive(this.boardIdOf(share));
+    }
     await this.assertCardOnBoard(share, cardId);
     const rows = await this.attachments.list(
       cardId,
@@ -568,6 +626,9 @@ export class ShareService {
   ): Promise<{ meta: AttachmentDto; storedName: string }> {
     if (!share.includeAttachments) {
       throw new NotFoundException("Not found");
+    }
+    if (share.mode === "live") {
+      await this.assertBoardAlive(this.boardIdOf(share));
     }
     const { meta, storedName } = await this.attachments.content(attachmentId);
     if (!(await this.cardOnBoard(share, meta.cardId))) {
@@ -742,12 +803,22 @@ export class ShareService {
   }
 
   /**
-   * The public-share master switch (TASK-58/61). The env value is the
+   * M4: the public-share master switch (TASK-58/61). The env value is the
    * fallback; an operator can override it from the panel via the
    * `public_shares` feature flag, and the check is awaited on every resolve.
    */
   private isPublicSharingEnabled(): Promise<boolean> {
     return this.flags.isEnabled("public_shares");
+  }
+
+  /**
+   * Pre-write gate shared by controllers and the demo runner. Called before
+   * approvals/idempotency so a disabled feature answers 404 instead of
+   * creating an approval request or an in-progress idempotency record.
+   */
+  async assertPublicSharingEnabled(): Promise<void> {
+    if (await this.isPublicSharingEnabled()) return;
+    throw beforeWrite(new NotFoundException("Not found"));
   }
 
   private parseExpiry(raw: string | null | undefined): Date | null {
@@ -771,7 +842,7 @@ export class ShareService {
   /** The source board, or 410 for a snapshot detached by a board purge. */
   private boardIdOf(row: ShareRow): string {
     if (row.boardId === null) {
-      throw new GoneException("The shared board no longer exists");
+      throw beforeWrite(new GoneException("The shared board no longer exists"));
     }
     return row.boardId;
   }
@@ -815,6 +886,10 @@ export function sanitizePublicBoard(board: BoardAggregate): BoardAggregate {
   delete copy.agentsPausedAt;
   delete copy.agentsPausedBy;
   delete copy.agentsPauseReason;
+  // L26: the board's agent policy (destructive mode, approval list, run
+  // limits, approval TTL) is internal control-plane data. A public reader
+  // needs neither it nor a map of where the guards are.
+  delete copy.agentPolicy;
   return copy;
 }
 

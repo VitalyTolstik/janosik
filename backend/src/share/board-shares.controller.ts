@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -66,6 +67,10 @@ export class BoardSharesController {
     @Body() dto: CreateShareDto,
     @Headers("idempotency-key") rawKey?: string,
   ): Promise<BoardShareDto> {
+    // M4: check the operator switch before approvals, idempotency and any
+    // write. A disabled feature must not mint an approval row or leave an
+    // `in_progress` record behind.
+    await this.shares.assertPublicSharingEnabled();
     const create = async (): Promise<BoardShareDto> => {
       const approval = await rollbackOnThrow(() =>
         this.approvals.authorizeOperation({
@@ -124,21 +129,56 @@ export class BoardSharesController {
   }
 
   @Post(":shareId/refresh")
-  refresh(
+  async refresh(
     @Param("id") id: string,
     @Param("shareId") shareId: string,
+    @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
     @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("x-approval-id") approvalId: string | undefined,
   ): Promise<BoardShareDto> {
-    return this.shares
-      .requireShareOnBoard(shareId, id)
-      .then(() =>
-        this.shares.refreshSnapshot(
-          shareId,
-          principal,
-          requestAttribution(principal, session?.id),
-        ),
-      );
+    // M4: same pre-write gate as create — no approval/idempotency side
+    // effects when public sharing is disabled.
+    await this.shares.assertPublicSharingEnabled();
+    const share = await this.shares.requireShareOnBoard(shareId, id);
+    // M9: a live share can never be refreshed. Reject it before creating an
+    // approval row, so a 400 leaves no approval/idempotency side effects.
+    if (share.mode !== "snapshot") {
+      throw new BadRequestException("Only a snapshot share can be refreshed");
+    }
+    // M9: replacing a snapshot's public content is `share.update`, so the
+    // board's approval policy applies exactly as it does to PATCH.
+    const approval = await rollbackOnThrow(() =>
+      this.approvals.authorizeOperation({
+        boardId: id,
+        userId: user.id,
+        role: membership.role,
+        principal,
+        agentSessionId: session?.id ?? null,
+        op: "share.update",
+        target: { boardId: id, shareId },
+        body: {},
+        ...(approvalId !== undefined ? { approvalId } : {}),
+      }),
+    );
+    const result = await this.approvals.performOperation(approval, () =>
+      this.shares.refreshSnapshot(
+        shareId,
+        user.id,
+        principal,
+        requestAttribution(principal, session?.id),
+        approval !== null,
+      ),
+    );
+    if (approval !== null) {
+      await this.approvals.consumeOperation(approval, user.id, principal, {
+        operation: "share.update",
+        shareId,
+        refresh: true,
+      });
+    }
+    return result;
   }
 
   @Patch(":shareId")
@@ -167,6 +207,7 @@ export class BoardSharesController {
     const result = await this.approvals.performOperation(approval, () =>
       this.shares.update(
         shareId,
+        user.id,
         dto,
         principal,
         requestAttribution(principal, session?.id),

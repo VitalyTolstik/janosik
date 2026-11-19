@@ -103,6 +103,12 @@ anything addressed to that mailbox:
   mailbox, loses all access. This closes the pre-account-takeover path.
 - **Invitations.** Invitations wait for the email to be confirmed: an
   unverified account sees none and cannot accept one.
+- **Abandoned registrations are released.** A never-verified account does not
+  reserve its unique address forever: the maintenance sweep deletes it after
+  `UNVERIFIED_ACCOUNT_TTL_DAYS` (14 by default) only when it never accepted a
+  membership and never wrote a comment, command or attachment. The check is
+  repeated inside the deletion transaction, so content that lands during the
+  sweep keeps the account.
 - **No account enumeration.** Inviting an address answers the same way
   whether or not an account exists for it, and the login backoff is keyed by
   address whether or not an account exists.
@@ -181,9 +187,16 @@ Two-factor authentication exists only on the master-account login: the admin
 login body accepts an optional `totpCode`. The master panel's security page at
 `/admin/security` reports whether TOTP is enabled, the configured IP allowlist,
 and a list of suspicious-activity alerts. Enabling or disabling TOTP and
-changing the allowlist are recorded in the audit trail. User accounts have no
-second factor; the 6-digit codes for email confirmation and email change are
-out-of-band confirmations, not login factors.
+changing the allowlist are recorded in the audit trail. Replacing an active
+factor requires the current code or the account password; the new secret is
+staged in a short-lived ticket bound to the current factor state and becomes
+active only after confirmation, so a superseded or replayed ticket is refused
+and the change plus its `security.totp_replaced` audit row commit together.
+First enrollment while 2FA is off does not require a second proof from the
+current session, so a stolen live master session could enroll first; enabling
+2FA immediately after account creation is the mitigation. User accounts have
+no second factor; the 6-digit codes for email confirmation and email change
+are out-of-band confirmations, not login factors.
 
 A master's IP allowlist is enforced on every admin request and on every
 session refresh, not only at sign-in, so a token or refresh cookie carried off
@@ -195,9 +208,11 @@ cannot lock yourself out mid-session.
 
 A board's SSE stream re-checks its caller on every 25-second keep-alive tick,
 not only when it opens. It closes when the membership is removed or a
-viewer's access expires, the account is disabled, the board is deleted, or
-the API key it was opened with is revoked or expires. A public live-share
-stream closes the same way once the share is revoked or expires.
+viewer's access expires, the account is disabled, the board is deleted, the
+access token expires, the security stamp changes (password/email change), the
+refresh-session family is logged out, or the API key it was opened with is
+revoked, expires or is narrowed to another board. A public live-share stream
+closes the same way once the share is revoked or expires.
 
 ### Container
 

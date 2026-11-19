@@ -52,6 +52,8 @@ import type {
   AdminSendEmailRequest,
   AdminSendEmailResponse,
   AdminTotpSetupDto,
+  AdminTotpSetupRequest,
+  AdminVerifyTotpResponse,
   AdminUpdateAnnouncementRequest,
   AdminUpdateFeatureFlagRequest,
   AdminUpdateOpsSettingsRequest,
@@ -844,18 +846,24 @@ export class AdminApiClient {
     return this.request<AdminSecurityDto>("/admin/security");
   }
 
-  setupTotp(): Promise<AdminTotpSetupDto> {
+  setupTotp(proof: AdminTotpSetupRequest = {}): Promise<AdminTotpSetupDto> {
     return this.request<AdminTotpSetupDto>("/admin/security/totp", {
       method: "POST",
-      body: {},
+      body: proof,
     });
   }
 
-  verifyTotp(code: string): Promise<{ totpEnabled: true }> {
-    return this.request<{ totpEnabled: true }>("/admin/security/totp/verify", {
-      method: "POST",
-      body: { code },
-    });
+  verifyTotp(
+    code: string,
+    setupToken: string,
+  ): Promise<AdminVerifyTotpResponse> {
+    return this.request<AdminVerifyTotpResponse>(
+      "/admin/security/totp/verify",
+      {
+        method: "POST",
+        body: { code, setupToken },
+      },
+    );
   }
 
   updateSecurity(body: AdminUpdateSecurityRequest): Promise<AdminSecurityDto> {

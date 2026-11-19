@@ -1,16 +1,28 @@
+import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Lock } from "lucide-react";
 
 import { useAdminT } from "../admin-i18n";
 import { useAdminAuth } from "../AdminAuthContext";
-import { DemoPage } from "../DemoPage";
 import { EmailSettingsPage } from "../EmailSettingsPage";
 import { OAuthSettingsPage } from "../OAuthSettingsPage";
 import { ObservabilityPage } from "../ObservabilityPage";
 import { OpsPage } from "../OpsPage";
-import { SecurityPage } from "../SecurityPage";
+import { SettingsSkeleton } from "../skeletons";
 import { TrafficSettingsPage } from "../TrafficSettingsPage";
 import { HubFrame } from "./HubTabs";
+
+// These two panels carry the TOTP flow and the demo runner. They are opened
+// rarely compared with board/card moderation, so keep them out of the admin
+// card-page budget (TASK-180.3 size gate).
+const SecurityPage = lazy(() =>
+  import("../SecurityPage").then((module) => ({
+    default: module.SecurityPage,
+  })),
+);
+const DemoPage = lazy(() =>
+  import("../DemoPage").then((module) => ({ default: module.DemoPage })),
+);
 
 /**
  * Settings hub: one predictable frame (subnav + panel) for seven screens that
@@ -41,21 +53,27 @@ export function SettingsHubPage() {
         </div>
       ) : null}
 
-      {tab === "email" ? (
-        <EmailSettingsPage />
-      ) : tab === "oauth" ? (
-        <OAuthSettingsPage />
-      ) : tab === "security" ? (
-        <SecurityPage />
-      ) : tab === "traffic" ? (
-        <TrafficSettingsPage />
-      ) : tab === "observability" ? (
-        <ObservabilityPage />
-      ) : tab === "demo" ? (
-        <DemoPage />
-      ) : (
-        <OpsPage />
-      )}
+      <Suspense
+        fallback={
+          <SettingsSkeleton testId="admin-settings-panel-skeleton" panels={2} />
+        }
+      >
+        {tab === "email" ? (
+          <EmailSettingsPage />
+        ) : tab === "oauth" ? (
+          <OAuthSettingsPage />
+        ) : tab === "security" ? (
+          <SecurityPage />
+        ) : tab === "traffic" ? (
+          <TrafficSettingsPage />
+        ) : tab === "observability" ? (
+          <ObservabilityPage />
+        ) : tab === "demo" ? (
+          <DemoPage />
+        ) : (
+          <OpsPage />
+        )}
+      </Suspense>
     </HubFrame>
   );
 }

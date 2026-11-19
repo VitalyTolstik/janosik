@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberStepper } from "@/components/ui/number-stepper";
 import { useToast } from "@/components/Toast";
-import { ApiError } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { pollWhileFocused } from "@/lib/visible-poll";
 import { appShareUrl } from "@/utils/app-path";
@@ -42,6 +42,9 @@ export function DemoPage() {
   const [selectedBoardId, setSelectedBoardId] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [publicSharesEnabled, setPublicSharesEnabled] = useState<
+    boolean | null
+  >(null);
   // "Copy share link" feedback matches the app's inline pattern: the icon
   // flips to a check for a moment instead of raising a toast.
   const [copiedLink, setCopiedLink] = useState(false);
@@ -61,6 +64,23 @@ export function DemoPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let alive = true;
+    void api
+      .authConfig()
+      .then((config) => {
+        if (alive) setPublicSharesEnabled(config.allowPublicShares);
+      })
+      .catch(() => {
+        // The start endpoint still enforces the flag; keep the control open
+        // when only the public config read failed.
+        if (alive) setPublicSharesEnabled(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Poll while the page is open so the counters advance on their own. The
   // `mounted` flag is raised here (not in the load effect): under React
@@ -105,9 +125,11 @@ export function DemoPage() {
       toast.success(t("admin.demo.started"));
     } catch (cause) {
       const message =
-        cause instanceof ApiError && cause.messageText
-          ? cause.messageText
-          : t("admin.common.error");
+        cause instanceof ApiError && cause.code === "public_shares_disabled"
+          ? t("admin.demo.publicSharesDisabled")
+          : cause instanceof ApiError && cause.messageText
+            ? cause.messageText
+            : t("admin.common.error");
       toast.error(message);
     } finally {
       setBusy(false);
@@ -365,7 +387,13 @@ export function DemoPage() {
               <Button
                 size="sm"
                 data-testid="admin-demo-start"
-                disabled={running || busy || agents === "" || cards === ""}
+                disabled={
+                  running ||
+                  busy ||
+                  agents === "" ||
+                  cards === "" ||
+                  publicSharesEnabled !== true
+                }
                 onClick={() => void start()}
               >
                 <PlayCircle className="mr-1.5 h-3.5 w-3.5" aria-hidden />
@@ -382,6 +410,14 @@ export function DemoPage() {
                 {t("admin.demo.stop")}
               </Button>
             </div>
+            {publicSharesEnabled === false ? (
+              <p
+                className="mt-2 text-xs text-muted-foreground"
+                data-testid="admin-demo-public-shares-off"
+              >
+                {t("admin.demo.publicSharesDisabled")}
+              </p>
+            ) : null}
           </div>
         </Panel>
       ) : null}

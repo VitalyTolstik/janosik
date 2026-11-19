@@ -117,6 +117,8 @@ const en = {
   "admin.demo.subtitle":
     "Seed a demo board of AI agents, watch them work, then clean up",
   "admin.demo.readonly": "Only an owner can run the demo.",
+  "admin.demo.publicSharesDisabled":
+    "Public shares are off. The demo needs its live view — enable Public shares in Operations first.",
   "admin.demo.start": "Start demo",
   "admin.demo.stop": "Stop & clean up",
   "admin.demo.running": "Running",
@@ -507,6 +509,10 @@ const en = {
     "Add this secret to your authenticator app, then enter a code to confirm.",
   "admin.security.totp.code": "6-digit code",
   "admin.security.totp.confirm": "Confirm",
+  "admin.security.totp.password": "Account password (or use the code)",
+  "admin.security.totp.replace": "Replace authenticator",
+  "admin.security.totp.stale":
+    "This enrollment was superseded by a newer security change — start again",
   "admin.security.totp.enabled": "Two-factor enabled",
   "admin.security.totp.disabled": "Two-factor disabled",
   "admin.security.totp.invalid": "Invalid code",
@@ -1496,6 +1502,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.subtitle":
     "Поднять демо-доску с ИИ-агентами, посмотреть их работу и убрать за собой",
   "admin.demo.readonly": "Запускать демо может только владелец.",
+  "admin.demo.publicSharesDisabled":
+    "Публичные ссылки выключены. Демо нужно живое представление — включите «Публичные ссылки» в разделе «Операции».",
   "admin.demo.start": "Запустить демо",
   "admin.demo.stop": "Остановить и очистить",
   "admin.demo.running": "Работает",
@@ -1890,6 +1898,10 @@ const ru: Record<AdminMessageKey, string> = {
     "Добавьте секрет в приложение-аутентификатор, затем введите код для подтверждения.",
   "admin.security.totp.code": "6-значный код",
   "admin.security.totp.confirm": "Подтвердить",
+  "admin.security.totp.password": "Пароль аккаунта (или используйте код)",
+  "admin.security.totp.replace": "Заменить аутентификатор",
+  "admin.security.totp.stale":
+    "Эта регистрация устарела из-за более нового изменения безопасности — начните заново",
   "admin.security.totp.enabled": "Двухфакторка включена",
   "admin.security.totp.disabled": "Двухфакторка отключена",
   "admin.security.totp.invalid": "Неверный код",

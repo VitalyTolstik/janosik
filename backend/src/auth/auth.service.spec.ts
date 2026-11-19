@@ -235,7 +235,12 @@ describe("AuthService", () => {
       // Audience isolation (TASK-36): user tokens are signed for this
       // contour only, so they can never pass the admin strategy.
       expect(jwtMock.signAsync).toHaveBeenCalledWith(
-        { sub: "user-1", authMethod: "password", stamp: expect.any(String) },
+        {
+          sub: "user-1",
+          authMethod: "password",
+          stamp: expect.any(String),
+          sid: expect.any(String),
+        },
         { audience: "janosik-user" },
       );
       const { passwordHash } = prismaMock.user.create.mock.calls[0][0].data;

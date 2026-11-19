@@ -70,7 +70,7 @@ describe("Security hardening (e2e)", () => {
     return res.body.id as string;
   }
 
-  it("hides an expired VIEWER from the board list and the member list", async () => {
+  it("hides an expired VIEWER from the board list but keeps them visible to admins", async () => {
     const board = (
       await server()
         .post("/api/v1/boards")
@@ -112,13 +112,17 @@ describe("Security hardening (e2e)", () => {
       board.id,
     );
 
+    // M15: the lapsed row is still a membership an ADMIN must see and
+    // revoke, so it stays on the management list with an expiry in the past.
     const members = await server()
-      .get(`/api/v1/boards/${board.id}/members`)
+      .get(`/api/v1/boards/${board.id}/members?includeExpired=1`)
       .set(auth(adminToken))
       .expect(200);
-    expect(members.body.map((m: { email: string }) => m.email)).not.toContain(
-      VIEWER_EMAIL,
+    const expired = members.body.find(
+      (m: { email: string }) => m.email === VIEWER_EMAIL,
     );
+    expect(expired).toMatchObject({ role: "VIEWER" });
+    expect(expired.expiresAt).toBeLessThan(Date.now());
   });
 
   it("drops a non-member assignee on import but keeps the importer", async () => {

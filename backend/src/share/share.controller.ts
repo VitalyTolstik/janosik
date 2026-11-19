@@ -33,6 +33,8 @@ import {
 } from "@/realtime/realtime.service";
 import { sseTiming } from "@/realtime/sse-timing";
 import { StorageService } from "@/attachments/storage.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
+import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { CurrentShare } from "./current-share.decorator";
 import { ShareAccessGuard } from "./share-access.guard";
 import { ShareThrottlerGuard } from "./share-throttler.guard";
@@ -81,6 +83,7 @@ export class ShareController {
     private readonly commands: CommandsService,
     private readonly realtime: RealtimeService,
     private readonly storage: StorageService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   /** The whole public payload: the board and its sanitized member roster. */
@@ -99,7 +102,7 @@ export class ShareController {
    * `resync` on truncation, log re-read on a gap), so a reconnect never
    * misses a move.
    */
-  @UseGuards(ShareAccessGuard)
+  @UseGuards(ShareAccessGuard, RealtimeFlagGuard)
   @Sse(":token/events")
   @Header("X-Robots-Tag", "noindex, nofollow")
   events(
@@ -134,6 +137,10 @@ export class ShareController {
     release: () => void,
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
+      // M11: the owner can turn comments off while this stream is connected.
+      // Re-read the flag on every keep-alive tick instead of freezing the
+      // value captured at connect time.
+      let includeComments = share.includeComments;
       const send = (data: object | string): void => {
         if (!subscriber.closed) {
           subscriber.next({ data: sanitizePublicFrame(data) } as MessageEvent);
@@ -152,7 +159,7 @@ export class ShareController {
         // leave the building.
         if (event.type === "presence" || event.type === "membership") return;
         if (event.type === "activity") {
-          if (share.includeComments) send(event as unknown as object);
+          if (includeComments) send(event as unknown as object);
           return;
         }
         if (event.type !== "command") return;
@@ -166,8 +173,13 @@ export class ShareController {
       // only new connections.
       const keepAlive = setInterval(() => {
         send("ping");
-        void this.tick(share, sequencer).then((allowed) => {
-          if (!allowed && !subscriber.closed) subscriber.complete();
+        void this.tick(share, sequencer, includeComments).then((current) => {
+          if (subscriber.closed) return;
+          if (!current.allowed) {
+            subscriber.complete();
+            return;
+          }
+          includeComments = current.includeComments;
         });
       }, sseTiming.keepAliveMs);
 
@@ -183,21 +195,30 @@ export class ShareController {
   private async tick(
     share: BoardShare,
     sequencer: CommandStreamSequencer,
-  ): Promise<boolean> {
+    includeComments: boolean,
+  ): Promise<{ allowed: boolean; includeComments: boolean }> {
     try {
+      if (!(await this.flags.isEnabled("realtime_sse"))) {
+        return { allowed: false, includeComments: false };
+      }
       const current = await this.shares.resolveToken(share.token);
-      await this.shares.liveBoardId(current);
+      const liveBoard = await this.shares.liveBoardId(current);
+      await sequencer.verifyCaughtUp().catch(() => undefined);
+      return {
+        allowed: liveBoard.length > 0,
+        includeComments: current.includeComments,
+      };
     } catch (error) {
-      if (error instanceof HttpException) return false;
+      if (error instanceof HttpException) {
+        return { allowed: false, includeComments: false };
+      }
       this.logger.warn(
         `Share stream check failed: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return true;
+      return { allowed: true, includeComments };
     }
-    await sequencer.verifyCaughtUp().catch(() => undefined);
-    return true;
   }
 
   /** Deterministic board preview; cached briefly at the edge. */

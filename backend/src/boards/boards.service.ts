@@ -620,12 +620,30 @@ export class BoardsService {
 
   /**
    * Accepted members of the board (§7.4) — readable by any role, VIEWER
-   * included. An expired VIEWER is left out even before a request lazily
-   * deletes the row (TASK-147, B4).
+   * included.
+   *
+   * M15: an expired VIEWER is deliberately kept visible to an ADMIN rather
+   * than silently filtered out. The row still exists until the member calls
+   * the board (lazy cleanup) or an ADMIN removes it; hiding it left the admin
+   * unable to see or revoke a lapsed guest, and the invite path then answered
+   * 409 forever.
+   *
+   * `includeExpired` is opt-in (and the controller restricts it to ADMIN):
+   * the default directory stays the *active* roster, because assignee
+   * pickers, filters and mention lists must never offer a member the server
+   * will refuse to assign.
    */
-  async listMembers(boardId: string): Promise<BoardMemberDto[]> {
+  async listMembers(
+    boardId: string,
+    includeExpired = false,
+  ): Promise<BoardMemberDto[]> {
     const members = await this.prisma.boardMember.findMany({
-      where: { boardId, ...activeMembershipWhere() },
+      where: {
+        boardId,
+        ...(includeExpired
+          ? { acceptedAt: { not: null } }
+          : activeMembershipWhere()),
+      },
       include: { user: true },
       orderBy: { createdAt: "asc" },
     });
@@ -712,6 +730,45 @@ export class BoardsService {
             where: { boardId_userId: { boardId, userId: user.id } },
           });
           if (existing) {
+            if (existing.acceptedAt !== null) {
+              // M15: a lapsed VIEWER's accepted row used to answer 409 and
+              // block re-invitation until the lazy cleanup happened. Turn it
+              // back into a fresh pending invitation instead — acceptance is
+              // required again, so no access is silently revived.
+              const expired =
+                existing.expiresAt !== null &&
+                existing.expiresAt.getTime() <= Date.now();
+              if (!expired) {
+                throw new ConflictException("User is already a board member");
+              }
+              await tx.boardMember.update({
+                where: { id: existing.id },
+                data: {
+                  role: dto.role,
+                  expiresAt,
+                  acceptedAt: null,
+                  invitedById: actorId,
+                },
+              });
+              await tx.activity.create({
+                data: {
+                  boardId,
+                  type: "member_invited",
+                  actorId,
+                  actorType: attribution.actorType,
+                  apiTokenId: attribution.apiTokenId,
+                  agentSessionId: attribution.agentSessionId,
+                  agentName: attribution.agentName,
+                  details: {
+                    userId: user.id,
+                    email: user.email,
+                    role: dto.role,
+                    expiresAt: expiresAt ? expiresAt.toISOString() : null,
+                  },
+                },
+              });
+              return null;
+            }
             if (existing.acceptedAt === null) {
               // A pending invite must not swallow a material change
               // (TASK-156, item 37): an expired one is invisible in the feed

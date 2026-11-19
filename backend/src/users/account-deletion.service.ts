@@ -339,6 +339,7 @@ export class AccountDeletionService {
     userId: string,
     actor: { actorId?: string; actorType?: ActorType } = {},
     dueCutoff?: Date,
+    unverifiedBefore?: Date,
   ): Promise<AccountDeletionSummary | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
@@ -390,6 +391,43 @@ export class AccountDeletionService {
           current.disabledAt > latest.createdAt
         )
           return false;
+      }
+      // M3 guard: a user who verified the address or acquired protection
+      // between the sweep's read and this lock must survive. The scale of the
+      // check lives in this transaction on purpose: the outer counts are only
+      // a cheap prefilter, and a membership/comment/command/attachment can
+      // commit between them and this point. A self-created board always has
+      // an accepted ADMIN membership, so the membership count also protects
+      // that case; the FK on the content tables is the final backstop if a
+      // writer still slips in after these reads.
+      if (unverifiedBefore !== undefined) {
+        const current = await tx.user.findUnique({
+          where: { id: userId },
+          select: { emailVerifiedAt: true, createdAt: true },
+        });
+        if (
+          !current ||
+          current.emailVerifiedAt !== null ||
+          current.createdAt >= unverifiedBefore
+        )
+          return false;
+        const [memberships, comments, commands, attachments] =
+          await Promise.all([
+            tx.boardMember.count({
+              where: { userId, acceptedAt: { not: null } },
+            }),
+            tx.comment.count({ where: { authorId: userId } }),
+            tx.command.count({ where: { actorId: userId } }),
+            tx.attachment.count({ where: { uploadedById: userId } }),
+          ]);
+        if (
+          memberships > 0 ||
+          comments > 0 ||
+          commands > 0 ||
+          attachments > 0
+        ) {
+          return false;
+        }
       }
       await tx.agentSession.deleteMany({ where: { userId } });
       await tx.approvalRequest.deleteMany({ where: { requestedBy: userId } });

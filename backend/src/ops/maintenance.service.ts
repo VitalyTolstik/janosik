@@ -34,6 +34,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-activity",
   "sweep-audit",
   "sweep-accounts",
+  "sweep-unverified-users",
   "sweep-orphan-boards",
   "sweep-security-audit",
   "sweep-orphan-blobs",
@@ -118,6 +119,8 @@ export class MaintenanceService {
         return this.sweepSecurityAudit();
       case "sweep-accounts":
         return this.sweepAccounts();
+      case "sweep-unverified-users":
+        return this.sweepUnverifiedUsers();
       case "sweep-orphan-boards":
         return this.accountDeletion.reapOrphanBoards();
       case "sweep-orphan-blobs":
@@ -1032,6 +1035,62 @@ export class MaintenanceService {
         // on the next run and the failure is visible in the log.
         this.logger.error(
           `Account deletion sweep failed for ${userId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * M3: release addresses held by abandoned, never-verified registrations.
+   *
+   * `User.email` is unique, so an unverified row blocks a legitimate person
+   * from registering the same address forever. Only an account that never
+   * became a member of a board and never wrote anything is eligible.
+   *
+   * The four counts here are a prefilter only: `deleteAccount` repeats every
+   * one of them inside its `FOR UPDATE` transaction, so a membership, comment,
+   * command or attachment committed between the two reads keeps the account.
+   * A self-created board always carries an accepted ADMIN membership, so the
+   * membership count covers that case as well.
+   */
+  async sweepUnverifiedUsers(): Promise<number> {
+    const cutoff = new Date(
+      Date.now() - env.UNVERIFIED_ACCOUNT_TTL_DAYS * 86_400_000,
+    );
+    const candidates = await this.prisma.user.findMany({
+      where: { emailVerifiedAt: null, createdAt: { lt: cutoff } },
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
+    });
+    let removed = 0;
+    for (const candidate of candidates) {
+      const [memberships, comments, commands, attachments] = await Promise.all([
+        this.prisma.boardMember.count({
+          where: { userId: candidate.id, acceptedAt: { not: null } },
+        }),
+        this.prisma.comment.count({ where: { authorId: candidate.id } }),
+        this.prisma.command.count({ where: { actorId: candidate.id } }),
+        this.prisma.attachment.count({
+          where: { uploadedById: candidate.id },
+        }),
+      ]);
+      if (memberships > 0 || comments > 0 || commands > 0 || attachments > 0) {
+        continue;
+      }
+      try {
+        const deleted = await this.accountDeletion.deleteAccount(
+          candidate.id,
+          { actorType: "admin" },
+          undefined,
+          cutoff,
+        );
+        if (deleted) removed += 1;
+      } catch (error) {
+        this.logger.error(
+          `Unverified-account sweep failed for ${candidate.id}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );

@@ -129,6 +129,17 @@ describe("EmailVerificationGate (TASK-53)", () => {
     }
   });
 
+  it("offers changing a mistyped address instead of reserving it (M3)", async () => {
+    const server = new FakeServer();
+    server.emailVerified = false;
+    renderGate(server);
+
+    await userEvent.click(screen.getByTestId("email-verify-change-email"));
+    expect(
+      await screen.findByTestId("email-change-dialog"),
+    ).toBeInTheDocument();
+  });
+
   it("signs out on demand", async () => {
     const server = new FakeServer();
     const { logout } = renderGate(server);

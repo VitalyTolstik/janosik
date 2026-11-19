@@ -39,7 +39,9 @@ access expires.
 
 An admin can change a member's role at any time, set or clear a viewer's
 expiry, and remove a member (behind a confirmation). A viewer's row shows
-`no expiry`, `until <date>` or `access expired`.
+`no expiry`, `until <date>` or `access expired`. An expired viewer stays on
+this list so an admin can remove the row or invite the person again; the
+lapsed row never grants access.
 
 ## Invitations
 
@@ -62,7 +64,10 @@ Your own changes are not highlighted. If
 the connection drops, the app reconnects and catches up from the last event it
 saw. If it missed too much to catch up event by event, it reloads the board
 instead. When your access to the board ends (you are removed, a viewer's
-access expires), the live connection closes.
+access expires), the live connection closes. The stream also re-checks the
+credential that opened it: an expired access token, a password/email change,
+sign-out, a revoked/expired API key or an API key narrowed to another board
+closes it on the next keep-alive.
 
 In server mode, edits are applied at once and sent to the server. If the
 server refuses a change, the app rolls it back and shows a message. If the
@@ -93,15 +98,19 @@ Each board can have up to 5 active live links and 10 active snapshots. Expired
 and revoked links do not count toward these limits. Similar links can still be
 created when separate access or snapshots are needed.
 
-Creating, revoking or permanently deleting a link from a board records an
-audit event in the server database. The record keeps the actor, time and link
-settings without storing the access token, and survives removal of the link.
-Events before this audit was introduced cannot be reconstructed.
+Creating, changing, refreshing, revoking or permanently deleting a link from a
+board records an audit event in the server database. The record keeps the
+actor, time and link settings without storing the access token, and survives
+removal of the link. Events before this audit was introduced cannot be
+reconstructed.
 
 `Create link` copies the new link to your clipboard. The active-links list
 lets you `Copy link`, copy an `Embed code` (an `<iframe>` snippet), `Refresh`
 a snapshot, or `Revoke` a link. A revoked or expired link stops working, and
-a visitor already watching a live link is disconnected.
+a visitor already watching a live link is disconnected. Refreshing a snapshot
+replaces public content, so it follows the board's `share.update` policy: a
+PAT on a board that requires approval gets `409 approval_required` and must
+retry with `X-Approval-Id`; the applied refresh is audited.
 Select Live or Snapshot to see links of that type.
 
 When copying an embed code, choose System, Light or Dark. System follows the

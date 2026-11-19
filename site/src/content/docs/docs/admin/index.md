@@ -22,7 +22,7 @@ Masters come in two tiers:
 | Role | Panel access |
 | --- | --- |
 | `OWNER` | Full data access plus the masters area and every owner-only control. |
-| `OPERATOR` | Full data access, but cannot manage masters or change owner-only settings. |
+| `OPERATOR` | Full data access, but cannot manage masters or change owner-only settings, including a user's email address or verification state. |
 
 The owner-only controls are enforced on the server, not only in the UI. An
 operator who calls one of them receives `403` with `Owner rights are

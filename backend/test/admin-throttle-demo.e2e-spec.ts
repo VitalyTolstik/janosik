@@ -6,6 +6,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 
 const OWNER_EMAIL = "throttle-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
@@ -151,6 +152,87 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .send({ limit: 0 })
       .expect(400);
+  });
+
+  it("refuses to provision a demo when public sharing is disabled (M4)", async () => {
+    await prisma.featureFlag.upsert({
+      where: { key: "public_shares" },
+      create: { key: "public_shares", enabled: false },
+      update: { enabled: false },
+    });
+    try {
+      const res = await server()
+        .post("/api/v1/admin/demo/start")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ users: 2, cards: 2, run: false })
+        .expect(409);
+      expect(res.body.code).toBe("public_shares_disabled");
+      expect(await prisma.demoRun.count()).toBe(0);
+      expect(
+        await prisma.user.count({
+          where: { email: { contains: "@janosik.demo" } },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.featureFlag.update({
+        where: { key: "public_shares" },
+        data: { enabled: true },
+      });
+    }
+  });
+
+  it("re-checks public sharing after cleanup (M4)", async () => {
+    const flags = app.get(FeatureFlagsService);
+    const spy = jest
+      .spyOn(flags, "isEnabled")
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    try {
+      const res = await server()
+        .post("/api/v1/admin/demo/start")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ users: 2, cards: 2, run: false })
+        .expect(409);
+      expect(res.body.code).toBe("public_shares_disabled");
+      expect(await prisma.demoRun.count()).toBe(0);
+      expect(
+        await prisma.user.count({
+          where: { email: { contains: "@janosik.demo" } },
+        }),
+      ).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("rolls back provisioning when public sharing flips off before the share (M4)", async () => {
+    const flags = app.get(FeatureFlagsService);
+    const spy = jest
+      .spyOn(flags, "isEnabled")
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    try {
+      const res = await server()
+        .post("/api/v1/admin/demo/start")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ users: 2, cards: 2, run: false })
+        .expect(409);
+      expect(res.body.code).toBe("public_shares_disabled");
+      expect(await prisma.demoRun.count()).toBe(0);
+      expect(
+        await prisma.user.count({
+          where: { email: { contains: "@janosik.demo" } },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.board.count({
+          where: { title: { startsWith: "Демо · рой агентов" } },
+        }),
+      ).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("runs the demo lifecycle: seed, refuse a second run, purge on stop", async () => {

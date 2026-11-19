@@ -41,10 +41,13 @@ async function enableTotp(
   const api = await loginMasterApi(playwright, operator, ip);
   const setup = await api.post("/api/v1/admin/security/totp", { data: {} });
   expect(setup.ok(), await setup.text()).toBeTruthy();
-  const { secret } = (await setup.json()) as { secret: string };
+  const { secret, setupToken } = (await setup.json()) as {
+    secret: string;
+    setupToken: string;
+  };
   const step = totpStep();
   const confirmed = await api.post("/api/v1/admin/security/totp/verify", {
-    data: { code: totp(secret, step * 30_000) },
+    data: { code: totp(secret, step * 30_000), setupToken },
   });
   expect(confirmed.ok(), await confirmed.text()).toBeTruthy();
   return { api, secret, step };

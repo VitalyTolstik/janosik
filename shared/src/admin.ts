@@ -420,6 +420,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   "data.exported",
   "retention.changed",
   "security.totp_enabled",
+  "security.totp_replaced",
   "security.totp_disabled",
   "security.ip_allowlist_changed",
   "demo.started",
@@ -1767,11 +1768,35 @@ export interface AdminTotpSetupDto {
   secret: string;
   /** `otpauth://` URL (may be rendered as text when QR is unavailable). */
   otpauthUrl: string;
+  /**
+   * Signed, short-lived staging ticket. The secret is not active until
+   * `/admin/security/totp/verify` presents this ticket and a valid code.
+   */
+  setupToken: string;
+}
+
+/**
+ * `POST /admin/security/totp` request. Empty for the first enrollment; when
+ * 2FA is already active, replacing the secret requires the current code or
+ * the account password.
+ */
+export interface AdminTotpSetupRequest {
+  totpCode?: string;
+  password?: string;
 }
 
 /** `POST /admin/security/totp/verify` — finish enrollment with a code. */
 export interface AdminVerifyTotpRequest {
   code: string;
+  /** Mandatory staging ticket returned by `POST /admin/security/totp`. */
+  setupToken: string;
+}
+
+/** `POST /admin/security/totp/verify` answer. */
+export interface AdminVerifyTotpResponse {
+  totpEnabled: true;
+  /** True when an already-active factor was replaced. */
+  replaced: boolean;
 }
 
 /** `PUT /admin/security` — ip allowlist and/or disable 2FA. */

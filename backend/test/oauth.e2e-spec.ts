@@ -6,6 +6,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "oauth-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
@@ -65,13 +66,9 @@ describe("OAuth (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
-    await prisma.oAuthProviderSettings.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.apiToken.deleteMany();
-    await prisma.user.deleteMany();
+    // Full isolation: another suite may leave a board/command graph that the
+    // FK on User would otherwise turn into an unrelated setup failure.
+    await wipeAll(prisma);
 
     await prisma.adminUser.createMany({
       data: [
@@ -101,6 +98,7 @@ describe("OAuth (e2e)", () => {
 
   afterAll(async () => {
     globalThis.fetch = realFetch;
+    await wipeAll(prisma);
     await app.close();
   });
 

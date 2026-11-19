@@ -6,6 +6,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MailerService } from "@/mailer/mailer.service";
+import { wipeAll } from "./support/wipe";
 
 const EMAIL = "verify-me@example.com";
 const SECOND_EMAIL = "auto-verified@example.com";
@@ -59,15 +60,13 @@ describe("Registration email verification (e2e)", () => {
     process.env.E2E_AUTO_VERIFY = "0";
     enabledSpy = jest.spyOn(mailer, "enabled", "get");
 
-    await prisma.emailVerificationCode.deleteMany();
-    await prisma.emailChangeCode.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
   });
 
   afterAll(async () => {
     enabledSpy.mockRestore();
     process.env.E2E_AUTO_VERIFY = "1";
+    await wipeAll(prisma);
     await app.close();
   });
 

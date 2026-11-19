@@ -124,6 +124,7 @@ import {
   AdminUpdateEmailTemplateDto,
   AdminUpdateFeatureFlagDto,
   AdminUpdateOpsDto,
+  AdminSetupTotpDto,
   AdminUpdateSecurityDto,
   AdminVerifyTotpDto,
 } from "./dto/admin-v3.dto";
@@ -1009,24 +1010,21 @@ export class AdminController {
   }
 
   @Post("security/totp")
-  setupTotp(@CurrentAdmin() admin: AdminPrincipal): Promise<AdminTotpSetupDto> {
-    return this.security.setup(admin);
+  setupTotp(
+    @Body() dto: AdminSetupTotpDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminTotpSetupDto> {
+    return this.security.setup(admin, dto);
   }
 
   @Post("security/totp/verify")
-  async verifyTotp(
+  verifyTotp(
     @Body() dto: AdminVerifyTotpDto,
     @CurrentAdmin() admin: AdminPrincipal,
-  ): Promise<{ totpEnabled: true }> {
-    const result = await this.security.confirm(admin, dto.code);
-    await this.admin.audit(
-      admin,
-      "security.totp_enabled",
-      "admin",
-      admin.id,
-      {},
-    );
-    return result;
+  ): Promise<{ totpEnabled: true; replaced: boolean }> {
+    // The service writes the enable/replace audit row inside the same
+    // transaction as the secret, so an audit failure rolls the change back.
+    return this.security.confirm(admin, dto.code, dto.setupToken);
   }
 
   @Put("security")

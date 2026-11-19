@@ -4,6 +4,7 @@ import { Loader2, LogOut, MailCheck } from "lucide-react";
 
 import { ApiError, api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { EmailChangeDialog } from "@/components/account/EmailChangeDialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ export function EmailVerificationGate() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [changingEmail, setChangingEmail] = useState(false);
   const [resendIn, setResendIn] = useState(RESEND_COOLDOWN_SECONDS);
   const resendTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -186,10 +188,23 @@ export function EmailVerificationGate() {
           </Button>
         </form>
 
+        {/* M3: the address itself can be wrong or abandoned. Changing it
+            releases the old unique email instead of reserving it forever. */}
         <Button
           type="button"
           variant="ghost"
           className="mt-2 w-full text-muted-foreground"
+          data-testid="email-verify-change-email"
+          disabled={busy}
+          onClick={() => setChangingEmail(true)}
+        >
+          {t("auth.verifyEmail.changeEmail")}
+        </Button>
+
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full text-muted-foreground"
           data-testid="email-verify-signout"
           disabled={signingOut}
           onClick={() => void handleSignOut()}
@@ -198,6 +213,7 @@ export function EmailVerificationGate() {
           {t("auth.verifyEmail.signOut")}
         </Button>
       </div>
+      <EmailChangeDialog open={changingEmail} onOpenChange={setChangingEmail} />
     </main>
   );
 }

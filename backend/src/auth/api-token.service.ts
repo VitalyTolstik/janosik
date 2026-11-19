@@ -139,16 +139,19 @@ export class ApiTokenService {
   }
 
   /**
-   * Is the token still usable right now (B-6)? Long-lived SSE streams opened
-   * with a PAT re-check this on their keep-alive tick, so revoking or
-   * expiring a key ends the agent's open streams too, not only new requests.
+   * Is the token still usable right now (B-6/M6)? Long-lived SSE streams
+   * opened with a PAT re-check this on their keep-alive tick, so revoking,
+   * expiring or re-scoping a key ends the agent's open streams too, not only
+   * new requests. `boardId` is the stream's board: a token narrowed to a
+   * different board must stop reading this one.
    */
-  async isActive(tokenId: string): Promise<boolean> {
+  async isActive(tokenId: string, boardId?: string): Promise<boolean> {
     const token = await this.prisma.apiToken.findUnique({
       where: { id: tokenId },
       select: {
         revokedAt: true,
         expiresAt: true,
+        boardId: true,
         user: { select: { disabledAt: true } },
       },
     });
@@ -156,7 +159,10 @@ export class ApiTokenService {
       token !== null &&
       token.revokedAt === null &&
       token.user.disabledAt === null &&
-      (token.expiresAt === null || token.expiresAt.getTime() > Date.now())
+      (token.expiresAt === null || token.expiresAt.getTime() > Date.now()) &&
+      (boardId === undefined ||
+        token.boardId === null ||
+        token.boardId === boardId)
     );
   }
 
@@ -213,6 +219,20 @@ export class ApiTokenService {
       throw new ForbiddenException({
         message: "trustedCi can only be enabled from a browser session",
         code: "pat_forbidden",
+      });
+    }
+    // L25: create enforces the same combination PATCH does. A trusted-CI bit
+    // on an Observer or read-only token would never be usable (and could
+    // surface later when the scope is widened), so refuse it up front.
+    if (
+      dto.trustedCi === true &&
+      (dto.readOnly === true ||
+        readScopePreset(dto.scopePreset ?? "worker") === "observer")
+    ) {
+      throw new BadRequestException({
+        message:
+          "trustedCi cannot be enabled for an Observer or read-only token",
+        field: "trustedCi",
       });
     }
     if (!options.stamp) {
