@@ -5127,20 +5127,25 @@ committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
 - Текущая очистка ломается: `Card.deleteMany` упирается в FK `RESTRICT` от
   `ChecklistItem`/`Checklist`/`CardLink`; `BoardShare`/`BoardShareAuditLog`
   остаются. Primary reset — drop/recreate demo schema
-  (`prisma migrate reset --force --skip-seed`); fallback — **full reset** demo
-  DB including admin/security state, одним ordered transaction: checklistItem → checklist →
+  (`prisma migrate reset --force --skip-seed`); fallback — **fixture +
+  admin/security account reset** (не full demo-DB): checklistItem → checklist →
   cardLink → cardLabel → comment → attachment → activity → commandPreimage →
   command → run/approval/session/token → attention → share audit/share → card →
-  label → column → member → board → demoRun → dataExport → announcementDismissal
-  → reminderSent → idempotencyRecord → securityAuditLog → refreshToken → user →
-  adminAuditLog → adminRefreshToken → adminUser. Порядок FK-корректен; раньше
-  не хватало самих таблиц. Reset дважды с non-zero rows перед **каждым** run.
+  label → column → member → board → demoRun → dataExport → reminderSent →
+  idempotencyRecord → securityAuditLog → refreshToken → user → adminAuditLog →
+  adminRefreshToken → adminUser. Retain `FeatureFlag`, `EmailSettings`,
+  `EmailTemplate`, `OpsSettings`, `ThrottleSettings`, `Announcement`,
+  `AnnouncementTranslation`; `AnnouncementDismissal` cascades with deleted users.
+  Порядок FK-корректен; раньше не хватало самих таблиц. Reset дважды с non-zero
+  rows перед **каждым** run.
 - Manifest/verifier: ровно два seed-пользователя и их board roles; `1@t.com` и
   `2@t.com` — junk, extra registration после reset валит verify.
   SecurityAuditLog/AttentionNotification/RefreshToken и admin-таблицы —
-  probe-time/out-of-fixture, не pins; оба reset-пути стирают admin login —
-  recreate `npm run admin:create -w backend -- --email <master>` (first master
-  OWNER; CLI `.env`/`.env.local` must point demo) против demo DB. Verifier также покрывает `columnId`/`position`,
+  probe-time/out-of-fixture, не pins; оба reset-пути стирают admin/security
+  account state — recreate `npm run demo:task176:admin -- --email <master>`
+  (recommended wrapper; first master OWNER) или
+  `admin:create --database-url "$DEMO_DATABASE_URL"` против demo DB; CLI
+  `--database-url` wins after dotenv; `.env` must not redirect to dev. Verifier также покрывает `columnId`/`position`,
   `priority`, `assigneeId`, `cover`, labels, named links, checklists; `dueDate`,
   task spec, claim, `archivedAt` — явно absent/empty. Assignee/cover/priority/
   move и 60 comments классифицировать.
@@ -5151,25 +5156,30 @@ committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
   `janosik_task176_demo` primary (wildcard только с явным allow), один resolved
   DB URL для всех child-процессов. `backend/src/config/env.ts:21-32` загружает
   `.env`/`.env.NODE_ENV`/`.env.local` с `override: true`, а `backend/.env:6`
-  может указывать на dev: нужен reset-only `JANOSIK_ENV_FILE` (unique 0600 temp
-  file, one-time nonce, `NODE_ENV !== "production"`, fail-closed if missing or
-  production + reset mode). `.env.local` fallback запрещён; path/nonce pass via
-  CLI/pre-dotenv env, `.env` cannot disable hook; normal boot ignores hook; stale
-  reset env/lock/temp files sweep at start. Тест: `backend/.env` → dev,
-  `DEMO_DATABASE_URL` → demo + production-boot test.
-- Dedicated backend: process group, PID/port/lock per demo DB, kill stale
-  reset-owned backend, `pg_terminate_backend` demo connections before drop, fresh
-  private port; stop before schema drop, restart after migrations for seed only,
-  stop before Prisma-only verify, stop/reap in `finally`; SIGKILL-crash rerun
-  test. `/health db: up` не доказывает identity: marker **user/board/accepted
-  ADMIN BoardMember create directly via reset Prisma**, JWT
-  `{ sub, aud: "janosik-user", stamp: securityStamp(markerUser), exp }` с
-  reset-env `JWT_SECRET`, API только `GET /boards/:marker`; correct DB 200,
-  wrong DB 404/403 abort; markers cleaned in `finally` + stale sweep.
+  может указывать на dev: нужен reset-only env file, переданный через CLI args/
+  pre-dotenv snapshot (unique 0600 temp file, one-time nonce,
+  `NODE_ENV !== "production"`, fail-closed if missing or production + reset
+  mode). `.env.local` fallback запрещён; `.env` cannot disable/redirect hook;
+  normal boot ignores hook; stale reset env/lock/temp files sweep at start.
+  Тест: `backend/.env` → dev, `DEMO_DATABASE_URL` → demo + tampered-`.env`/
+  production-boot test.
+- Dedicated backend: process group, PID/start-time/port/lock/nonce per demo DB;
+  verify `/proc/<pid>` cmdline/start time/port/nonce before killing; if ownership
+  unproven, clear stale state and fail closed (never kill an unrelated live
+  process); `pg_terminate_backend` demo connections before drop; fresh
+  loopback/owned port or reset-allocated/printed URL, port-in-use test; stop
+  before schema drop, restart after migrations for seed only, stop before
+  Prisma-only verify, stop/reap in `finally`; SIGKILL-crash rerun kills
+  wrapper/process group. `/health db: up` не доказывает identity:
+  marker **user/board/accepted ADMIN BoardMember create directly via reset
+  Prisma**, JWT `{ sub, aud: "janosik-user", stamp, exp }` с reset-env
+  `JWT_SECRET` и parameterized `securityStamp(user, secret)`; API только
+  `GET /boards/:marker`; correct DB 200, any non-200 abort; markers cleaned
+  before drop + `finally` + stale sweep, fresh connection after reset.
   `DEMO_API_URL` map в seed `API_URL`/overlay; TASK-176 overlay читает `DEMO_*`
   exclusively и валидирует DB name до `PrismaClient`; direct overlay invocation
   запрещён (only reset wrapper with one-time nonce); base pixel seed contract
-  сохраняется (DB-name guard/allowlist или strong warning, `DEMO_*` unset),
+  сохраняется (allowlist `janosik_pixel`/`*_pixel`/`*_demo`, `DEMO_*` unset),
   direct base seed — не TASK-176 reset path.
 - Verify — Prisma-only, без login/PAT/`ApiToken.lastUsedAt`; если API read
   появится, ignore `lastUsedAt` и re-mint known token. Reset/seed output
@@ -5209,17 +5219,21 @@ committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
 | 183.2 | `SET_CARD_LABEL` stamp + inverse `cardUpdatedAt` + `CARD_STAMPED_TYPES`; split reducer/DB tests; аудит label-действий | P3 |
 
 **DoD.** Demo пересоздаётся одной командой; reset дважды после checklist+link и
-с non-zero security/admin/idempotency/reminder/dismissal rows перед каждым run
-проходит; SIGKILL-crash rerun проходит; env hook (`JANOSIK_ENV_FILE`, 0600,
-one-time nonce, `NODE_ENV !== "production"`, no `.env.local`, stale sweep) не
-перетирает demo URL (`backend/.env` dev тест); marker user/board/accepted ADMIN
-BoardMember создан через reset Prisma, JWT с `aud`+`securityStamp`, wrong DB →
-404/403 abort до delete, markers cleaned; backend process group/PID/lock
-остановлен/reaped; verify Prisma-only, ровно два seed-пользователя, extra user
-валит verify; 60 comments отсутствуют или вынесены в TASK-176.9 fixture;
-reset/seed output redacted. Fallback — full demo DB reset including
-admin/security; master recreate
-`npm run admin:create -w backend -- --email <master>` после обоих путей.
+с non-zero security/admin/idempotency/reminder rows перед каждым run (плюс
+dismissal cascade) проходит; SIGKILL-wrapper rerun проходит; env hook (CLI args/
+pre-dotenv snapshot, unique 0600 file, one-time nonce, `NODE_ENV !== "production"`,
+no `.env.local`, stale sweep) не перетирает demo URL (`backend/.env` dev +
+tampered-`.env` тест); marker user/board/accepted ADMIN BoardMember создан через
+reset Prisma, JWT с `aud` + parameterized `securityStamp(user, secret)`, any
+non-200 abort до delete, markers cleaned before drop/`finally`/fresh connection;
+backend process group/PID/start-time/port/lock/nonce, ownership verified,
+unrelated live process never killed, stopped/reaped; verify Prisma-only, ровно
+два seed-пользователя, extra user валит verify; 60 comments отсутствуют или
+вынесены в TASK-176.9 fixture;
+reset/seed output redacted. Fallback — fixture + admin/security account reset;
+global settings/announcements retained; master recreate
+`npm run demo:task176:admin -- --email <master>` или
+`admin:create --database-url "$DEMO_DATABASE_URL"` после обоих путей.
 `SET_CARD_LABEL` двигает `updatedAt`/`version` один раз, undo
 восстанавливает timestamp, inverse проходит validation и `POST /commands`,
 no-op ничего не меняет; audit table закрыт тестами или follow-up. Без изменений
