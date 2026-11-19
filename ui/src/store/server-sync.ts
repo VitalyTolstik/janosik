@@ -25,7 +25,8 @@ import { ApiError } from "@/api/client";
 /** Why a command did not land on the server. */
 export type SendFailure =
   | { kind: "offline" }
-  | { kind: "wip" }
+  /** `columnId` lets the toast name the destination and its limit. */
+  | { kind: "wip"; columnId?: string }
   | { kind: "version" }
   /** The move is forbidden by the board workflow; carries the reason. */
   | { kind: "workflow"; details: WorkflowConflictDetails }
@@ -319,7 +320,13 @@ export class ServerSync {
 export function classify(error: unknown): SendFailure {
   if (error instanceof ApiError) {
     if (error.offline) return { kind: "offline" };
-    if (error.conflict === "wip") return { kind: "wip" };
+    if (error.conflict === "wip") {
+      const columnId = (error.body as { columnId?: unknown } | null)?.columnId;
+      return {
+        kind: "wip",
+        ...(typeof columnId === "string" ? { columnId } : {}),
+      };
+    }
     if (error.conflict === "version") return { kind: "version" };
     if (error.conflict === "workflow") {
       const details = (error.body as { workflow?: WorkflowConflictDetails })

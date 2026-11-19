@@ -11,7 +11,7 @@ import {
   type AgentPauseGate,
 } from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { rollbackOnThrow } from "./rollback-certainty";
+import { markGuaranteedRollback, rollbackOnThrow } from "./rollback-certainty";
 import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { currentBoardWriteContext } from "./request-context";
 
@@ -230,10 +230,14 @@ export class BoardWriteService {
           this.logger.warn(
             `board ${boardId}: transaction timed out (${error instanceof Error ? error.message : String(error)})`,
           );
-          throw new ServiceUnavailableException({
+          const timeout = new ServiceUnavailableException({
             message: "The board is busy — retry the request",
             code: "board_write_timeout",
           });
+          // L24: Prisma closed and rolled back the transaction; callers that
+          // own an idempotency record may release it on this proof.
+          markGuaranteedRollback(timeout);
+          throw timeout;
         }
         if (
           attempt >= BOARD_WRITE_MAX_ATTEMPTS ||

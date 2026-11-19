@@ -12,6 +12,7 @@ import type {
   Board,
   BoardAction,
   BoardScopedAction,
+  Checklist,
   CommandDeltaEntry,
   CommandResponse,
   ConflictError,
@@ -20,10 +21,13 @@ import {
   atWipLimit,
   boardReducer,
   cardOf,
+  duplicateChecklistId,
+  duplicateChecklistItemId,
   evaluateCardTransition,
   evaluateTransition,
   hasLinkedPair,
   LIMITS,
+  MAX_COMMAND_BYTES,
   workflowReferenceError,
   wouldCloseBlocksCycle,
 } from "@janosik/shared";
@@ -63,9 +67,17 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
+import {
+  type EntityParentageLedger,
+  loadCardLinkParentage,
+  loadChecklistItemParentage,
+  loadChecklistParentage,
+  parentageConflict,
+} from "./entity-parentage";
 import { commandDetails } from "./command-details";
 import {
   actionFingerprint,
+  actionFingerprintWithoutRestoreAssignee,
   jsonSafe,
   prepareCommandDto,
   type PreparedCommand,
@@ -165,11 +177,40 @@ export interface BatchApplyResult {
   results: CommandResponse[];
   runId: string | null;
   /**
+   * True only when this call created the run row. A replay (or an approval
+   * replay) returns an existing `runId` with `createdRun: false`, so
+   * realtime subscribers are not told about a run they already have.
+   */
+  createdRun: boolean;
+  /**
    * Ids whose rows were written by this call. An id that already existed is
    * an idempotent replay and is absent, which lets internal callers (the
    * master panel) avoid fabricating a second effect such as an audit row.
    */
   freshCommandIds: string[];
+}
+
+/** A rollback action that a preview can prove the apply would refuse. */
+export interface InversePreconditionFailure {
+  touch: string;
+  reason: "wip" | "assignee_not_member" | "payload_too_large";
+  currentVersion: number;
+}
+
+/** Best-effort entity label for a precondition conflict. */
+function inverseTouch(action: BoardAction): string {
+  const record = action as unknown as Record<string, unknown>;
+  const pairs: Array<[string, unknown]> = [
+    ["card", record.cardId],
+    ["column", record.columnId],
+    ["label", record.labelId],
+    ["checklist", record.checklistId],
+    ["checklistItem", record.itemId],
+  ];
+  for (const [kind, id] of pairs) {
+    if (typeof id === "string" && id !== "") return `${kind}:${id}`;
+  }
+  return "command:inverse";
 }
 
 /** One command plus whether this call wrote it or returned a stored replay. */
@@ -215,6 +256,21 @@ export interface ApplyOptions {
    * an admin retry stays idempotent even after the target card changed state.
    */
   beforeApplyFresh?: (tx: Prisma.TransactionClient) => Promise<void>;
+  /**
+   * TASK-180.2 M13: the internal run-revert path may restore a deleted entity
+   * past the *current* WIP/collection limits (it is putting back what the run
+   * removed). Never accepted from a request body — the command controller
+   * does not populate it; only `RunsService` does.
+   */
+  exemptRestoreLimits?: boolean;
+  /**
+   * TASK-180.2 M7: a run revert restores the pre-run claim state. That can be
+   * a release (the run acquired the lease) or an acquisition (the run claimed
+   * over a lapsed lease and the inverse restores the old holder/lease). The
+   * revert is issued by a human ADMIN acting for the run, so the holder check
+   * steps aside here. Internal only; external CLAIM_CARD callers stay guarded.
+   */
+  exemptClaimGuard?: boolean;
   /** TASK-166.7 internal post-apply hook, inside the board transaction. */
   afterRun?: (
     tx: Prisma.TransactionClient,
@@ -421,6 +477,7 @@ export class CommandsService {
         events: InternalCommandEvent[];
         consumedApproval: ApprovalRequest | null;
         runId: string | null;
+        createdRun: boolean;
         freshCommandIds: string[];
       }> => {
         // The board write lock (BoardWriteService) already serializes every
@@ -484,7 +541,12 @@ export class CommandsService {
           // collision), not a retry: answering with the first command's
           // result would tell the caller its *new* action was applied.
           if (
-            actionFingerprint(existing.payload, boardId) !== entry.fingerprint
+            !(await this.fingerprintsMatch(
+              tx,
+              boardId,
+              existing.payload,
+              entry,
+            ))
           ) {
             throw new ConflictException({
               message: "commandId already used with a different payload",
@@ -518,6 +580,7 @@ export class CommandsService {
         }
         let applyAttribution = attribution;
         let runId: string | null = null;
+        let createdRun = false;
 
         if (fresh.length === 0) {
           // Every command is a stored replay. Return their original run when
@@ -599,6 +662,7 @@ export class CommandsService {
             },
           });
           runId = run.id;
+          createdRun = true;
           // Every command of the run carries the id, so the feed and the run
           // detail agree without a second lookup.
           applyAttribution = { ...attribution, runId };
@@ -645,6 +709,11 @@ export class CommandsService {
             });
             continue;
           }
+          // H2: parentage is positional, not batch-wide. An earlier command
+          // may create the checklist/item a later duplicate derives ids from,
+          // or create a victim row at the id a later command names. Check
+          // against `running` at this command's own position.
+          await this.assertEntityParentage(tx, [entry], running);
           // TASK-166: check the preset and destructive gate at the point the
           // command would run. `running` already includes earlier commands of
           // this batch, so a create + move is judged on the moved card. Any
@@ -676,6 +745,8 @@ export class CommandsService {
             attribution: applyAttribution,
             entry,
             board: running,
+            exemptRestoreLimits: options.exemptRestoreLimits === true,
+            exemptClaimGuard: options.exemptClaimGuard === true,
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -737,6 +808,7 @@ export class CommandsService {
             events,
             consumedApproval: consumed,
             runId,
+            createdRun,
             freshCommandIds: fresh.map((entry) => entry.dto.commandId),
           };
         }
@@ -745,6 +817,7 @@ export class CommandsService {
           events,
           consumedApproval: null,
           runId,
+          createdRun,
           freshCommandIds: fresh.map((entry) => entry.dto.commandId),
         };
       },
@@ -772,14 +845,114 @@ export class CommandsService {
         });
       }
     }
+    // L38: announce a freshly created run on the board stream. Admin/internal
+    // commands never create a run, and a replay returns an existing id, so
+    // neither can fabricate a `run.created` frame. A revert run is announced
+    // by `run.reverted` after the original is marked, not here — otherwise an
+    // open list refreshes twice for one rollback. This is board-scoped on
+    // purpose; routing a run to every open `/agents` overview is TASK-180.6.
+    if (applied.createdRun && applied.runId !== null && runKind !== "revert") {
+      this.realtime.publish(boardId, {
+        type: "run",
+        op: "created",
+        runId: applied.runId,
+        at: Date.now(),
+      });
+    }
     // A successful PAT write refreshes the session heartbeat at most once a
     // minute (ADR §6.5), but only after the transaction committed.
     await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
     return {
       results: applied.responses,
       runId: applied.runId,
+      createdRun: applied.createdRun,
       freshCommandIds: applied.freshCommandIds,
     };
+  }
+
+  /**
+   * M22: run the apply-time preconditions a rollback would face, without
+   * writing. A revert preview that says `canRevert: true` must not then fail
+   * on a WIP limit, a removed assignee or an oversized inverse payload. The
+   * actions are replayed through the reducer in apply order so a run whose
+   * inverses free space for one another is not refused prematurely.
+   *
+   * This inspects the server-built inverses only; it does not add any new
+   * trust in a client-supplied `inverse` flag (TASK-180.2).
+   */
+  async inspectInversePreconditions(
+    boardId: string,
+    actions: readonly BoardAction[],
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+    options: { exemptRestoreLimits?: boolean } = {},
+  ): Promise<InversePreconditionFailure[]> {
+    let board = await loadBoardAggregate(client, boardId);
+    if (board === null) return [];
+    const currentVersion = await this.latestSeq(boardId, client);
+    const failures: InversePreconditionFailure[] = [];
+    for (const action of actions) {
+      if (
+        Buffer.byteLength(JSON.stringify(action), "utf8") > MAX_COMMAND_BYTES
+      ) {
+        failures.push({
+          touch: inverseTouch(action),
+          reason: "payload_too_large",
+          currentVersion,
+        });
+        continue;
+      }
+      try {
+        this.assertNoWipConflict(
+          board,
+          action,
+          currentVersion,
+          options.exemptRestoreLimits === true,
+        );
+      } catch (error) {
+        if (error instanceof ConflictException) {
+          const response = error.getResponse();
+          if (
+            typeof response === "object" &&
+            response !== null &&
+            (response as { conflict?: unknown }).conflict === "wip"
+          ) {
+            failures.push({
+              touch: inverseTouch(action),
+              reason: "wip",
+              currentVersion,
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
+      if (action.type === "SET_CARD_ASSIGN" && action.assigneeId !== null) {
+        const member = await client.boardMember.findFirst({
+          where: {
+            boardId,
+            userId: action.assigneeId,
+            ...activeMembershipWhere(),
+          },
+          select: { id: true },
+        });
+        if (member === null) {
+          failures.push({
+            touch: `card:${action.cardId}`,
+            reason: "assignee_not_member",
+            currentVersion,
+          });
+        }
+      }
+      const next = boardReducer(
+        [board],
+        Object.assign({}, action, { boardId }) as BoardAction,
+        { withActivity: false },
+      );
+      board = next[0] ?? board;
+    }
+    return failures;
   }
 
   /**
@@ -808,7 +981,13 @@ export class CommandsService {
     const { boardId, entry, board, attribution } = params;
     const db = this.prisma as unknown as Prisma.TransactionClient;
     await this.assertAssigneeIsBoardMember(db, boardId, entry.action);
-    await this.assertClaimIsFree(db, boardId, entry.action, attribution);
+    await this.assertClaimIsFree(
+      db,
+      boardId,
+      entry.action,
+      attribution,
+      params.actorId,
+    );
     await this.assertBoardManagement(
       db,
       boardId,
@@ -868,16 +1047,21 @@ export class CommandsService {
   async assertPlanIds(
     boardId: string,
     prepared: PreparedCommand[],
+    board?: Board,
+    ledger?: EntityParentageLedger,
   ): Promise<void> {
     const ids = new Set<string>();
     for (const entry of prepared) {
       for (const id of referencedEntityIds(entry.action)) ids.add(id);
     }
-    await this.assertIdsBelongToBoard(
-      this.prisma as unknown as Prisma.TransactionClient,
-      boardId,
-      [...ids],
-    );
+    const client = this.prisma as unknown as Prisma.TransactionClient;
+    await this.assertIdsBelongToBoard(client, boardId, [...ids]);
+    // H2 preview parity: a plan that re-parents a same-board checklist/item
+    // must be refused in the preview, not only inside the apply transaction.
+    const current = board ?? (await loadBoardAggregate(this.prisma, boardId));
+    if (current !== null) {
+      await this.assertEntityParentage(client, prepared, current, ledger);
+    }
   }
 
   /**
@@ -949,6 +1133,8 @@ export class CommandsService {
       attribution: RequestAttribution;
       entry: PreparedCommand;
       board: Board;
+      exemptRestoreLimits?: boolean;
+      exemptClaimGuard?: boolean;
     },
   ): Promise<{
     response: CommandResponse;
@@ -968,7 +1154,14 @@ export class CommandsService {
     const { dto, action } = entry;
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
-    await this.assertClaimIsFree(tx, boardId, action, attribution);
+    await this.assertClaimIsFree(
+      tx,
+      boardId,
+      action,
+      attribution,
+      actorId,
+      params.exemptClaimGuard === true,
+    );
 
     await this.assertBoardManagement(tx, boardId, actorId, action.type);
 
@@ -998,7 +1191,12 @@ export class CommandsService {
       currentVersion,
     );
     this.assertWorkflowReferences(board, action);
-    this.assertNoWipConflict(board, action, currentVersion);
+    this.assertNoWipConflict(
+      board,
+      action,
+      currentVersion,
+      params.exemptRestoreLimits === true,
+    );
 
     const at = (action as BoardScopedAction).at;
     const state = boardReducer(
@@ -1181,8 +1379,11 @@ export class CommandsService {
   }
 
   /** Highest committed `seq` of the board (0 without commands). */
-  async latestSeq(boardId: string): Promise<number> {
-    const aggregate = await this.prisma.command.aggregate({
+  async latestSeq(
+    boardId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<number> {
+    const aggregate = await client.command.aggregate({
       where: { boardId },
       _max: { seq: true },
     });
@@ -1293,6 +1494,318 @@ export class CommandsService {
   }
 
   /**
+   * L18: `RESTORE_CARD` may strip an assignee who is no longer a member
+   * before the payload is stored. Compare the exact request first; only when
+   * the incoming assignee is genuinely non-member may the comparison ignore
+   * that field. A different *valid* assignee stays a payload conflict.
+   */
+  private async fingerprintsMatch(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    storedPayload: unknown,
+    entry: PreparedCommand,
+  ): Promise<boolean> {
+    if (actionFingerprint(storedPayload, boardId) === entry.fingerprint) {
+      return true;
+    }
+    if (entry.action.type !== "RESTORE_CARD") return false;
+    // The fallback exists only when the *stored* action was actually stripped.
+    // An original payload that still carries an assignee is never compared
+    // with the assignee removed, so a changed (including non-member) assignee
+    // is not silently accepted as a replay.
+    const stored = storedPayload as { card?: unknown } | null;
+    const storedCard =
+      typeof stored?.card === "object" &&
+      stored.card !== null &&
+      !Array.isArray(stored.card)
+        ? (stored.card as Record<string, unknown>)
+        : undefined;
+    if (storedCard === undefined || Object.hasOwn(storedCard, "assigneeId")) {
+      return false;
+    }
+    const assigneeId = entry.action.card.assigneeId;
+    if (assigneeId === undefined) return false;
+    const member = await tx.boardMember.findFirst({
+      where: {
+        boardId,
+        userId: assigneeId,
+        ...activeMembershipWhere(),
+      },
+      select: { id: true },
+    });
+    if (member !== null) return false;
+    return (
+      actionFingerprintWithoutRestoreAssignee(storedPayload, boardId) ===
+      actionFingerprintWithoutRestoreAssignee(entry.action, boardId)
+    );
+  }
+
+  /**
+   * H2: every client-named checklist/item/link id must keep its stored
+   * parent. `assertIdsBelongToBoard` rejects foreign boards; this checks the
+   * same-board half: an id owned by another card/checklist would be
+   * re-parented by the upsert writers.
+   *
+   * Soft-deleted rows are deliberately allowed through *under the same
+   * parent*: undoing a delete re-sends the original id and the writer must
+   * revive that row. Under a different parent even a soft-deleted row is a
+   * theft attempt and is refused. Replays never reach here.
+   */
+  private async assertEntityParentage(
+    tx: Prisma.TransactionClient,
+    entries: PreparedCommand[],
+    board: Board,
+    ledger?: EntityParentageLedger,
+  ): Promise<void> {
+    const checklistOwner = new Map<string, { cardId: string; field: string }>();
+    const itemOwner = new Map<string, { checklistId: string; field: string }>();
+    const linkOwner = new Map<string, { fromCardId: string; field: string }>();
+
+    // The committed DB is not the whole story in a plan preview: earlier
+    // commands exist only in `running`. Build the simulated owner maps as well
+    // so preview matches apply for entities the plan creates itself.
+    const simulatedChecklistOwner = new Map<string, string>();
+    const simulatedItemOwner = new Map<string, string>();
+    const simulatedLinkOwner = new Map<string, string>();
+    for (const card of Object.values(board.cards)) {
+      for (const checklist of card.checklists ?? []) {
+        simulatedChecklistOwner.set(checklist.id, card.id);
+        for (const item of checklist.items) {
+          simulatedItemOwner.set(item.id, checklist.id);
+        }
+      }
+      for (const link of card.links ?? []) {
+        simulatedLinkOwner.set(link.id, card.id);
+      }
+    }
+
+    const expectChecklist = (
+      id: string,
+      cardId: string,
+      field: string,
+    ): void => {
+      const previous = ledger?.checklists.get(id);
+      if (previous !== undefined && previous !== cardId) {
+        parentageConflict(
+          field,
+          `Checklist id ${id} is already used by another card`,
+        );
+      }
+      const simulated = simulatedChecklistOwner.get(id);
+      if (simulated !== undefined && simulated !== cardId) {
+        parentageConflict(
+          field,
+          `Checklist id ${id} is already used by another card`,
+        );
+      }
+      const known = checklistOwner.get(id);
+      if (known !== undefined && known.cardId !== cardId) {
+        parentageConflict(
+          field,
+          `Checklist id ${id} is already used by another card`,
+        );
+      }
+      if (known === undefined) checklistOwner.set(id, { cardId, field });
+    };
+    const expectItem = (
+      id: string,
+      checklistId: string,
+      field: string,
+    ): void => {
+      const previous = ledger?.items.get(id);
+      if (previous !== undefined && previous !== checklistId) {
+        parentageConflict(
+          field,
+          `Checklist item id ${id} is already used by another checklist`,
+        );
+      }
+      const simulated = simulatedItemOwner.get(id);
+      if (simulated !== undefined && simulated !== checklistId) {
+        parentageConflict(
+          field,
+          `Checklist item id ${id} is already used by another checklist`,
+        );
+      }
+      const known = itemOwner.get(id);
+      if (known !== undefined && known.checklistId !== checklistId) {
+        parentageConflict(
+          field,
+          `Checklist item id ${id} is already used by another checklist`,
+        );
+      }
+      if (known === undefined) itemOwner.set(id, { checklistId, field });
+    };
+    const expectLink = (
+      id: string,
+      fromCardId: string,
+      field: string,
+    ): void => {
+      const previous = ledger?.links.get(id);
+      if (previous !== undefined && previous !== fromCardId) {
+        parentageConflict(
+          field,
+          `Link id ${id} is already used by another card`,
+        );
+      }
+      const simulated = simulatedLinkOwner.get(id);
+      if (simulated !== undefined && simulated !== fromCardId) {
+        parentageConflict(
+          field,
+          `Link id ${id} is already used by another card`,
+        );
+      }
+      const known = linkOwner.get(id);
+      if (known !== undefined && known.fromCardId !== fromCardId) {
+        parentageConflict(
+          field,
+          `Link id ${id} is already used by another card`,
+        );
+      }
+      if (known === undefined) linkOwner.set(id, { fromCardId, field });
+    };
+    const expectCardSnapshot = (
+      card: { id: string; checklists?: Checklist[] },
+      field: string,
+    ): void => {
+      for (const checklist of card.checklists ?? []) {
+        expectChecklist(checklist.id, card.id, field);
+        for (const item of checklist.items) {
+          expectItem(item.id, checklist.id, field);
+        }
+      }
+    };
+    /** Derived ids a DUPLICATE_CARD/COLUMN will create for one copy. */
+    const expectDuplicateCard = (
+      source: { id: string; checklists?: Checklist[] } | undefined,
+      newCardId: string,
+      field: string,
+    ): void => {
+      if (source === undefined) return;
+      for (const [checklistIndex, checklist] of (
+        source.checklists ?? []
+      ).entries()) {
+        const checklistId = duplicateChecklistId(newCardId, checklistIndex);
+        expectChecklist(checklistId, newCardId, field);
+        for (
+          let itemIndex = 0;
+          itemIndex < checklist.items.length;
+          itemIndex += 1
+        ) {
+          expectItem(
+            duplicateChecklistItemId(newCardId, checklistIndex, itemIndex),
+            checklistId,
+            field,
+          );
+        }
+      }
+    };
+
+    for (const { action } of entries) {
+      switch (action.type) {
+        case "ADD_CHECKLIST":
+          expectChecklist(
+            action.newChecklistId,
+            action.cardId,
+            "action.newChecklistId",
+          );
+          break;
+        case "RESTORE_CHECKLIST":
+          expectChecklist(
+            action.checklist.id,
+            action.cardId,
+            "action.checklist.id",
+          );
+          // Nested items are upserted by global id too: a snapshot must not
+          // move another checklist's item into this one, even if the
+          // checklist id itself is owned correctly.
+          for (const item of action.checklist.items) {
+            expectItem(item.id, action.checklist.id, "action.checklist.items");
+          }
+          break;
+        case "ADD_CHECKLIST_ITEM":
+          expectItem(action.newItemId, action.checklistId, "action.newItemId");
+          break;
+        case "RESTORE_CHECKLIST_ITEM":
+          expectItem(action.item.id, action.checklistId, "action.item.id");
+          break;
+        case "ADD_CARD_LINK":
+          expectLink(action.linkId, action.cardId, "action.linkId");
+          break;
+        case "DUPLICATE_CARD":
+          expectDuplicateCard(
+            cardOf(board, action.cardId),
+            action.newCardId,
+            "action.newCardId",
+          );
+          break;
+        case "DUPLICATE_COLUMN": {
+          const source = board.columns.find(
+            (column) => column.id === action.columnId,
+          );
+          source?.cardIds.forEach((sourceCardId, index) => {
+            const newCardId = action.newCardIds[index];
+            if (newCardId === undefined) return;
+            expectDuplicateCard(
+              cardOf(board, sourceCardId),
+              newCardId,
+              "action.newCardIds",
+            );
+          });
+          break;
+        }
+        case "RESTORE_CARD":
+          expectCardSnapshot(action.card, "action.card.checklists");
+          break;
+        case "RESTORE_COLUMN":
+          for (const card of action.cards) {
+            expectCardSnapshot(card, "action.cards.checklists");
+          }
+          break;
+        case "RESTORE_COLUMN_CARDS":
+          for (const card of action.cards) {
+            expectCardSnapshot(card, "action.cards.checklists");
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    const [checklists, items, links] = await Promise.all([
+      loadChecklistParentage(tx, [...checklistOwner.keys()]),
+      loadChecklistItemParentage(tx, [...itemOwner.keys()]),
+      loadCardLinkParentage(tx, [...linkOwner.keys()]),
+    ]);
+    for (const row of checklists) {
+      const expected = checklistOwner.get(row.id);
+      if (expected !== undefined && row.cardId !== expected.cardId) {
+        parentageConflict(
+          expected.field,
+          `Checklist id ${row.id} is already used by another card`,
+        );
+      }
+    }
+    for (const row of items) {
+      const expected = itemOwner.get(row.id);
+      if (expected !== undefined && row.checklistId !== expected.checklistId) {
+        parentageConflict(
+          expected.field,
+          `Checklist item id ${row.id} is already used by another checklist`,
+        );
+      }
+    }
+    for (const row of links) {
+      const expected = linkOwner.get(row.id);
+      if (expected !== undefined && row.fromCardId !== expected.fromCardId) {
+        parentageConflict(
+          expected.field,
+          `Link id ${row.id} is already used by another card`,
+        );
+      }
+    }
+  }
+
+  /**
    * Jira-style assignee (TASK-49): the assignee must be an active board
    * member — a row that has accepted its invitation (TASK-35 addendum)
    * and is not an expired VIEWER. TASK-80: the check is unconditional — a
@@ -1346,20 +1859,30 @@ export class CommandsService {
   }
 
   /**
-   * Atomic claim guard (TASK-157): a `CLAIM_CARD` may not take a lease that
-   * another member still holds. A lapsed lease (`leaseUntil` in the past) is
-   * free — that self-healing is the point of a lease. The read and the reject
-   * run inside the same board-write transaction, so two agents racing for one
-   * card cannot both win; the loser gets a `400` naming the current holder.
+   * Atomic claim guard (TASK-157): a `CLAIM_CARD` may not take or clear a
+   * lease that another live holder still owns. A lapsed lease (`leaseUntil`
+   * in the past) is free — that self-healing is the point of a lease. The read
+   * and the reject run inside the same board-write transaction, so two agents
+   * racing for one card cannot both win; the loser gets a `400` naming the
+   * current holder.
+   *
+   * TASK-180.2 M7: a release (`claimedBy: null`) used to short-circuit before
+   * reading the row, so any board member could clear a colleague's live claim.
+   * A release is now holder-only, compared by the same identity that claimed:
+   * agent session, then API token, then the legacy user id. Two PATs of one
+   * account are distinct holders, and a browser session cannot clear a PAT's
+   * lease (or vice versa). Board-ADMIN override is intentionally not part of
+   * this command path; the admin release flow belongs to TASK-176/180.4.
    */
   private async assertClaimIsFree(
     tx: Prisma.TransactionClient,
     boardId: string,
     action: BoardAction,
     attribution: RequestAttribution,
+    actorId: string,
+    allowAnyClaimChange = false,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
-    if (action.claimedBy === null || action.leaseUntil === null) return;
     const card = await tx.card.findFirst({
       where: { id: action.cardId, column: { boardId } },
       select: {
@@ -1377,6 +1900,36 @@ export class CommandsService {
     ) {
       return;
     }
+    // Internal run revert restores whatever claim state the run changed:
+    // release after an acquire, or the previous holder/lease after a claim
+    // over a lapsed lease. Non-wire; only `RunsService` sets it.
+    if (allowAnyClaimChange) return;
+    const releasing = action.claimedBy === null || action.leaseUntil === null;
+    const refuse = (): never => {
+      throw new BadRequestException({
+        message: `Card is claimed by another member until ${card.leaseUntil!.toISOString()}`,
+        field: "action.claimedBy",
+      });
+    };
+    if (releasing) {
+      // The stored holder and the authenticated caller must be the same
+      // *kind* of identity: a second PAT of the owner is not the holder, and
+      // neither is the owner's browser session when a PAT holds the lease.
+      const holder =
+        card.claimedBySessionId !== null
+          ? { kind: "session", id: card.claimedBySessionId }
+          : card.claimedByTokenId !== null
+            ? { kind: "token", id: card.claimedByTokenId }
+            : { kind: "user", id: card.claimedBy };
+      const caller =
+        attribution.agentSessionId !== null
+          ? { kind: "session", id: attribution.agentSessionId }
+          : attribution.apiTokenId !== null
+            ? { kind: "token", id: attribution.apiTokenId }
+            : { kind: "user", id: actorId };
+      if (holder.kind !== caller.kind || holder.id !== caller.id) refuse();
+      return;
+    }
     // TASK-166 (D23): compare the session first, then the token, then the
     // legacy user id. Two PATs of one owner are different claim holders.
     const sameHolder =
@@ -1385,12 +1938,7 @@ export class CommandsService {
         : card.claimedByTokenId !== null
           ? card.claimedByTokenId === attribution.apiTokenId
           : card.claimedBy === action.claimedBy;
-    if (!sameHolder) {
-      throw new BadRequestException({
-        message: `Card is claimed by another member until ${card.leaseUntil.toISOString()}`,
-        field: "action.claimedBy",
-      });
-    }
+    if (!sameHolder) refuse();
   }
 
   /**
@@ -1677,32 +2225,52 @@ export class CommandsService {
    * Mirror the reducer's collection guards. A command that would grow a
    * collection past a `LIMITS` bound or a column past its WIP limit is
    * refused with `409 { conflict: "wip" }` — the same `atWipLimit` predicate
-   * the client uses. TASK-80: only the `RESTORE_*` family is exempt (undo of
-   * a delete); a client-supplied `inverse` flag buys nothing.
+   * the client uses.
+   *
+   * TASK-80 used to exempt the whole `RESTORE_*` family because it is the
+   * shape of an undo. TASK-180.2 M13: the flag/type comes from the client,
+   * so a forged restore could add a 51st label, a 21st checklist, a 101st
+   * item or a card into a full column. Restores are now checked exactly like
+   * the fresh add they perform. The one exemption is internal: a run revert
+   * restoring a deleted entity may exceed the current limit, and the run
+   * path sets `exemptRestoreLimits` itself (never a wire field).
    */
   private assertNoWipConflict(
     board: Board,
     action: BoardAction,
     currentVersion: number,
+    exemptRestoreLimits = false,
   ): void {
-    if (RESTORE_ACTIONS.has(action.type)) return;
-    const reject = (): never => {
+    const reject = (columnId?: string): never => {
       throw new ConflictException({
         conflict: "wip",
         currentVersion,
+        ...(columnId !== undefined ? { columnId } : {}),
       } satisfies ConflictError);
     };
     const columnBlocked = (column: Board["columns"][number] | undefined) =>
       column !== undefined &&
       (column.cardIds.length >= LIMITS.cardsPerColumn ||
         atWipLimit(column, true));
+    const restoreExempt =
+      exemptRestoreLimits && RESTORE_ACTIONS.has(action.type);
+    const checkRestoredCard = (card: {
+      labelIds: string[];
+      checklists?: Board["cards"][string]["checklists"];
+    }): void => {
+      if (card.labelIds.length > LIMITS.labelsPerCard) reject();
+      if ((card.checklists ?? []).length > LIMITS.checklistsPerCard) reject();
+      for (const checklist of card.checklists ?? []) {
+        if (checklist.items.length > LIMITS.itemsPerChecklist) reject();
+      }
+    };
 
     switch (action.type) {
       case "ADD_CARD": {
         if (
           columnBlocked(board.columns.find((c) => c.id === action.columnId))
         ) {
-          reject();
+          reject(action.columnId);
         }
         return;
       }
@@ -1710,7 +2278,7 @@ export class CommandsService {
         const source = cardOf(board, action.cardId);
         if (!source) return;
         const column = board.columns.find((c) => c.cardIds.includes(source.id));
-        if (columnBlocked(column)) reject();
+        if (columnBlocked(column)) reject(column?.id);
         return;
       }
       case "MOVE_CARD": {
@@ -1718,7 +2286,7 @@ export class CommandsService {
         if (
           columnBlocked(board.columns.find((c) => c.id === action.toColumnId))
         ) {
-          reject();
+          reject(action.toColumnId);
         }
         return;
       }
@@ -1726,7 +2294,7 @@ export class CommandsService {
         const column =
           board.columns.find((c) => c.id === action.columnId) ??
           board.columns[0];
-        if (columnBlocked(column)) reject();
+        if (columnBlocked(column)) reject(column?.id);
         return;
       }
       case "ADD_COLUMN":
@@ -1789,6 +2357,104 @@ export class CommandsService {
           card.checklists?.find((c) => c.id === action.checklistId)?.items ??
           [];
         if (items.some((item) => item.id === action.newItemId)) return;
+        if (items.length >= LIMITS.itemsPerChecklist) reject();
+        return;
+      }
+      case "RESTORE_CARD": {
+        if (restoreExempt) return;
+        // A live id is a reducer no-op; a column-less restore lands nowhere.
+        if (Object.hasOwn(board.cards, action.card.id)) return;
+        if (action.columnId === undefined) return;
+        const column = board.columns.find((c) => c.id === action.columnId);
+        if (!column) return;
+        if (columnBlocked(column)) reject(column.id);
+        checkRestoredCard(action.card);
+        return;
+      }
+      case "RESTORE_COLUMN": {
+        if (restoreExempt) return;
+        if (board.columns.some((c) => c.id === action.column.id)) return;
+        if (board.columns.length >= LIMITS.columnsPerBoard) reject();
+        if (action.column.cardIds.length > LIMITS.cardsPerColumn) reject();
+        if (
+          action.column.wipLimit !== undefined &&
+          action.column.cardIds.length > action.column.wipLimit
+        ) {
+          reject(action.column.id);
+        }
+        for (const card of action.cards) checkRestoredCard(card);
+        return;
+      }
+      case "RESTORE_COLUMN_CARDS": {
+        if (restoreExempt) return;
+        const column = board.columns.find((c) => c.id === action.columnId);
+        if (!column) return;
+        // Count the *resulting* column, not just "one more card fits": a
+        // batch restore can add several rows at once. This mirrors
+        // `restoreColumnCards` exactly (written cards that are not archived,
+        // plus cards the column already had), so omitted action.cards do not
+        // inflate the WIP check.
+        const own = new Set(column.cardIds);
+        const byId = new Map(action.cards.map((card) => [card.id, card]));
+        const written = new Set(byId.keys());
+        const restored = [
+          ...new Set(
+            action.cardIds.filter((id) => {
+              const card = byId.get(id);
+              return card !== undefined
+                ? card.archivedAt === undefined
+                : own.has(id);
+            }),
+          ),
+        ];
+        const kept = new Set(restored);
+        const extras = column.cardIds.filter(
+          (id) => !kept.has(id) && !written.has(id),
+        );
+        const nextCount = restored.length + extras.length;
+        if (
+          nextCount > LIMITS.cardsPerColumn ||
+          (column.wipLimit !== undefined && nextCount > column.wipLimit)
+        ) {
+          reject(column.id);
+        }
+        for (const card of action.cards) checkRestoredCard(card);
+        return;
+      }
+      case "RESTORE_LABEL": {
+        if (restoreExempt) return;
+        if (board.labels.some((label) => label.id === action.label.id)) return;
+        if (board.labels.length >= LIMITS.labelsPerBoard) reject();
+        for (const { cardId } of action.assignments ?? []) {
+          const card = cardOf(board, cardId);
+          if (
+            card &&
+            !card.labelIds.includes(action.label.id) &&
+            card.labelIds.length >= LIMITS.labelsPerCard
+          ) {
+            reject();
+          }
+        }
+        return;
+      }
+      case "RESTORE_CHECKLIST": {
+        if (restoreExempt) return;
+        const card = cardOf(board, action.cardId);
+        if (!card) return;
+        const checklists = card.checklists ?? [];
+        if (checklists.some((c) => c.id === action.checklist.id)) return;
+        if (checklists.length >= LIMITS.checklistsPerCard) reject();
+        if (action.checklist.items.length > LIMITS.itemsPerChecklist) reject();
+        return;
+      }
+      case "RESTORE_CHECKLIST_ITEM": {
+        if (restoreExempt) return;
+        const card = cardOf(board, action.cardId);
+        if (!card) return;
+        const items =
+          card.checklists?.find((c) => c.id === action.checklistId)?.items ??
+          [];
+        if (items.some((item) => item.id === action.item.id)) return;
         if (items.length >= LIMITS.itemsPerChecklist) reject();
         return;
       }

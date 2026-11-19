@@ -33,6 +33,7 @@ import { SelectField } from "@/components/ui/select-field";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { createId } from "@/utils/id";
 import { pollWhileFocused } from "@/lib/visible-poll";
 import { routes } from "@/routes";
 import { adminApi } from "./admin-client";
@@ -65,7 +66,7 @@ import { BoardEditorSkeleton } from "./skeletons";
  */
 
 function uuid(): string {
-  return crypto.randomUUID();
+  return createId();
 }
 
 export function BoardContentPage() {
@@ -137,7 +138,7 @@ export function BoardContentPage() {
       try {
         await adminApi.sendBoardCommand(boardId, {
           // Every content edit is retry-safe on its own id (TASK-176.8).
-          commandId: crypto.randomUUID(),
+          commandId: uuid(),
           // `at` is the command clock the reducer stamps into the board;
           // the strict validator requires it on every board-scoped action.
           action: { ...action, at: Date.now() } as never,
@@ -152,6 +153,23 @@ export function BoardContentPage() {
         );
         return true;
       } catch (error) {
+        if (error instanceof ApiError && error.code === "move_stale") {
+          toast.error(t("admin.boardContent.move.stale"));
+          setMovingCard(null);
+          load();
+          return false;
+        }
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          (error.body as { field?: unknown } | null)?.field ===
+            "action.toColumnId"
+        ) {
+          toast.error(t("admin.boardContent.move.targetGone"));
+          setMovingCard(null);
+          load();
+          return false;
+        }
         toast.error(
           error instanceof ApiError
             ? error.messageText
@@ -162,7 +180,7 @@ export function BoardContentPage() {
         setBusy(false);
       }
     },
-    [boardId, t, toast, setSelectedColumnId],
+    [boardId, load, t, toast, setMovingCard, setSelectedColumnId],
   );
 
   if (state === "loading") return <BoardEditorSkeleton />;
@@ -231,6 +249,12 @@ export function BoardContentPage() {
     });
   };
 
+  const staleMove = () => {
+    toast.error(t("admin.boardContent.move.stale"));
+    setMovingCard(null);
+    load();
+  };
+
   const submitMove = async (event: React.FormEvent) => {
     event.preventDefault();
     if (movingCard === null) return;
@@ -240,9 +264,15 @@ export function BoardContentPage() {
     const target = board.columns.find(
       (column) => column.id === movingCard.targetColumnId,
     );
-    if (from === undefined || target === undefined) return;
+    if (from === undefined || target === undefined) {
+      staleMove();
+      return;
+    }
     const fromIndex = from.cardIds.indexOf(movingCard.id);
-    if (fromIndex < 0) return;
+    if (fromIndex < 0) {
+      staleMove();
+      return;
+    }
     const moved = await send(
       {
         type: "MOVE_CARD",

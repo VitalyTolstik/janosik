@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  *
  * Approval (pending/approved/rejected/expired/cancelled/consumed), session
  * lifecycle (active/idle/waiting_approval/completed/failed/cancelled) and run
- * status (applied/reverted/failed) all render through this component; callers
+ * status (applied/reverted) all render through this component; callers
  * keep their own label/test-id/data attributes.
  */
 export type StatusTone = "ok" | "warn" | "bad" | "primary" | "muted";

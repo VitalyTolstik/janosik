@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -33,6 +34,8 @@ import {
 } from "@/commands/run-preimage";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
+import { env } from "@/config/env";
+import { OpsSettingsService } from "@/ops/ops-settings.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { loadCommandSummaries } from "./run-summary";
 import type { RevertRunDto, RunListQueryDto } from "./dto/run.dto";
@@ -171,6 +174,7 @@ export class RunsService {
     private readonly commands: CommandsService,
     private readonly realtime: RealtimeService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly ops: OpsSettingsService,
   ) {}
 
   async list(
@@ -322,16 +326,22 @@ export class RunsService {
         requiredRoles: [Role.ADMIN],
       });
     }
-    const commandId = dto.commandId;
-    if (commandId === undefined || commandId.trim() === "") {
-      throw new ConflictException({
+    const commandId = dto.commandId?.trim();
+    if (commandId === undefined || commandId === "") {
+      // L21: a retry key is a request-shape error, not a state conflict.
+      throw new BadRequestException({
         message: "A revert requires a commandId idempotency key",
-        code: "run_conflict",
+        code: "validation_failed",
+        field: "commandId",
         reason: "command_id_required",
       });
     }
 
-    // A retry after a committed revert returns the existing revert run.
+    const currentVersion = await this.commands.latestSeq(boardId);
+
+    // A retry after a committed revert returns the existing revert run — but
+    // only when that run is *this* run's rollback. A key reused for another
+    // run is a conflict, never a handle to the wrong audit run.
     const replay = await this.prisma.agentRun.findUnique({
       where: { boardId_clientRunId: { boardId, clientRunId: commandId } },
     });
@@ -339,32 +349,62 @@ export class RunsService {
       if (replay.kind === "revert" && replay.revertsRunId === runId) {
         return this.get(boardId, replay.id, role, principal);
       }
-      throw this.conflict("clientRunId already used by another run");
+      throw this.conflict("clientRunId already used by another run", [], {
+        runId,
+        currentVersion,
+      });
     }
 
-    const run = await this.load(boardId, runId);
-    if (run.status !== "applied") {
-      throw this.conflict(`Run is already ${run.status}`);
-    }
-    if (run.kind === "revert") {
-      throw this.conflict("Reverting a revert is not supported");
-    }
+    // The preflight itself can lose the same race: a concurrent request with
+    // this key may commit between the replay lookup above and these reads.
+    // On any preflight `run_conflict`, reconcile once more against the
+    // winner before returning an error next to a reverted run.
+    let run: AgentRun;
+    let commands: CommandDeltaEntry[];
+    let analysis: RunAnalysis;
+    try {
+      run = await this.load(boardId, runId);
+      if (run.status !== "applied") {
+        throw this.conflict(`Run is already ${run.status}`, [], {
+          runId,
+          currentVersion,
+        });
+      }
+      if (run.kind === "revert") {
+        throw this.conflict("Reverting a revert is not supported", [], {
+          runId,
+          currentVersion,
+        });
+      }
 
-    const commands = await this.commandEntries(boardId, runId);
-    const analysis = await this.analyze(
-      boardId,
-      run,
-      commands,
-      await this.rawPreimages(boardId, runId),
-    );
-    if (analysis.conflicts.length > 0) {
-      throw this.conflict(
-        "Run cannot be reverted without conflicts",
-        analysis.conflicts,
+      commands = await this.commandEntries(boardId, runId);
+      analysis = await this.analyze(
+        boardId,
+        run,
+        commands,
+        await this.rawPreimages(boardId, runId),
       );
-    }
-    if (analysis.inverses.length === 0) {
-      throw this.conflict("Run has no revertable commands");
+      if (analysis.conflicts.length > 0) {
+        throw this.conflict(
+          "Run cannot be reverted without conflicts",
+          analysis.conflicts,
+          { runId, currentVersion },
+        );
+      }
+      if (analysis.inverses.length === 0) {
+        throw this.conflict("Run has no revertable commands", [], {
+          runId,
+          currentVersion,
+        });
+      }
+    } catch (error) {
+      if (this.isRunConflict(error)) {
+        const winner = await this.matchingRevert(boardId, runId, commandId);
+        if (winner !== null) {
+          return this.get(boardId, winner.id, role, principal);
+        }
+      }
+      throw error;
     }
 
     const inverseCommands = analysis.inverses.map((action) => ({
@@ -377,13 +417,22 @@ export class RunsService {
     // before any inverse command, so a write that landed in between is
     // refused instead of being overwritten.
     const revalidate = async (tx: Prisma.TransactionClient): Promise<void> => {
+      const guardedVersion = await this.commands.latestSeq(boardId, tx);
       const current = await tx.agentRun.findFirst({
         where: { id: runId, boardId },
         select: { status: true },
       });
-      if (current === null) throw this.conflict("Run no longer exists");
+      if (current === null) {
+        throw this.conflict("Run no longer exists", [], {
+          runId,
+          currentVersion: guardedVersion,
+        });
+      }
       if (current.status !== "applied") {
-        throw this.conflict(`Run is already ${current.status}`);
+        throw this.conflict(`Run is already ${current.status}`, [], {
+          runId,
+          currentVersion: guardedVersion,
+        });
       }
       const currentCommands = await this.commandEntries(boardId, runId, tx);
       const currentPreimages = await this.rawPreimages(boardId, runId, tx);
@@ -398,10 +447,18 @@ export class RunsService {
         throw this.conflict(
           "Run cannot be reverted without conflicts",
           guarded.conflicts,
+          { runId, currentVersion: guardedVersion },
         );
       }
-      if (guarded.inverses.length !== analysis.inverses.length) {
-        throw this.conflict("Run changed while the revert was being prepared");
+      if (
+        guarded.inverses.length !== analysis.inverses.length ||
+        currentCommands.length !== commands.length
+      ) {
+        throw this.conflict(
+          "Run changed while the revert was being prepared",
+          [],
+          { runId, currentVersion: guardedVersion },
+        );
       }
     };
 
@@ -414,6 +471,13 @@ export class RunsService {
         {
           actorType: "human",
           actorRole: Role.ADMIN,
+          // M13: internal only. A restore command issued by this run revert
+          // may put back rows past the board's current WIP/collection caps.
+          exemptRestoreLimits: true,
+          // M7: the run may have held the claim through its PAT/session, or
+          // claimed over a lapsed lease; the human ADMIN reverting it must be
+          // able to restore the pre-run holder/lease either way.
+          exemptClaimGuard: true,
           guard: revalidate,
           run: {
             kind: "revert",
@@ -426,7 +490,10 @@ export class RunsService {
               data: { status: "reverted", revertedAt: new Date() },
             });
             if (changed.count === 0) {
-              throw this.conflict("Run was reverted by another request");
+              throw this.conflict("Run was reverted by another request", [], {
+                runId,
+                currentVersion: await this.commands.latestSeq(boardId, tx),
+              });
             }
             await tx.activity.create({
               data: {
@@ -447,17 +514,24 @@ export class RunsService {
       );
     } catch (error) {
       // Two concurrent retries: the unique clientRunId is the one-time lock.
+      // The winner may have committed before this request reached its
+      // revalidation (a 409 "already reverted") or during run creation
+      // (P2002). Either way, the same key on the same original run is a
+      // successful replay, not an error next to a reverted banner.
+      const existing = await this.matchingRevert(boardId, runId, commandId);
+      if (existing !== null) {
+        return this.get(boardId, existing.id, role, principal);
+      }
       if (
         typeof error === "object" &&
         error !== null &&
         (error as { code?: unknown }).code === "P2002"
       ) {
-        const existing = await this.prisma.agentRun.findUnique({
-          where: { boardId_clientRunId: { boardId, clientRunId: commandId } },
+        // The key belongs to some other run: never return that run's detail.
+        throw this.conflict("clientRunId already used by another run", [], {
+          runId,
+          currentVersion: await this.commands.latestSeq(boardId),
         });
-        if (existing !== null && existing.kind === "revert") {
-          return this.get(boardId, existing.id, role, principal);
-        }
       }
       throw error;
     }
@@ -503,6 +577,30 @@ export class RunsService {
     });
     if (run === null) throw new NotFoundException("Run not found");
     return run;
+  }
+
+  /** The committed revert run for this exact key and original run, if any. */
+  private async matchingRevert(
+    boardId: string,
+    runId: string,
+    commandId: string,
+  ): Promise<AgentRun | null> {
+    const row = await this.prisma.agentRun.findUnique({
+      where: { boardId_clientRunId: { boardId, clientRunId: commandId } },
+    });
+    return row !== null && row.kind === "revert" && row.revertsRunId === runId
+      ? row
+      : null;
+  }
+
+  private isRunConflict(error: unknown): boolean {
+    if (!(error instanceof ConflictException)) return false;
+    const response = error.getResponse();
+    return (
+      typeof response === "object" &&
+      response !== null &&
+      (response as { code?: unknown }).code === "run_conflict"
+    );
   }
 
   private async commandEntries(
@@ -567,11 +665,17 @@ export class RunsService {
     preimages: Map<string, PreimageData>,
     client: Prisma.TransactionClient = this.prisma,
   ): Promise<RunAnalysis> {
-    if (commands.length === 0) {
-      throw this.expired();
+    // H6: `commandCount` is the run's own record of how many commands it
+    // applied. Fewer retained rows (or pre-images) mean retention/cleanup
+    // removed part of the run; inverting the rest would silently leave it
+    // half-applied and still mark it reverted.
+    if (commands.length !== run.commandCount) {
+      throw await this.expired(run.id);
     }
     for (const command of commands) {
-      if (!preimages.has(command.commandId ?? "")) throw this.expired();
+      if (!preimages.has(command.commandId ?? "")) {
+        throw await this.expired(run.id);
+      }
     }
 
     const boardTouch = `board:${boardId}`;
@@ -585,7 +689,7 @@ export class RunsService {
 
     for (const command of commands) {
       const data = preimages.get(command.commandId ?? "");
-      if (data === undefined) throw this.expired();
+      if (data === undefined) throw await this.expired(run.id);
       for (const entity of data.entities) {
         if (!boardChanged && entity.touch === boardTouch) continue;
         lastByTouch.set(entity.touch, entity);
@@ -594,22 +698,100 @@ export class RunsService {
 
     for (const command of [...commands].reverse()) {
       const data = preimages.get(command.commandId ?? "");
-      if (data === undefined) throw this.expired();
+      if (data === undefined) throw await this.expired(run.id);
       const hasEntity = data.entities.some(
         (entity) => entity.touch !== boardTouch || boardChanged,
       );
+      // C1: a command that wrote no entity is a no-op. Legacy pre-images
+      // (stored before the writer stopped recording a no-op inverse) may
+      // still carry `DELETE_COLUMN`/`DELETE_CARD`; never replay it.
+      if (!hasEntity) continue;
       if (data.inverse === undefined || data.inverse === null) {
-        if (hasEntity) {
-          conflicts.push({
-            touch: `command:${command.commandId ?? ""}`,
-            expectedVersion: 0,
-            currentVersion: 0,
-            reason: "not_revertable",
-          });
-        }
+        conflicts.push({
+          touch: `command:${command.commandId ?? ""}`,
+          expectedVersion: 0,
+          currentVersion: 0,
+          reason: "not_revertable",
+        });
         continue;
       }
       inverses.push(data.inverse);
+    }
+
+    // M22: a green preview must run the same preconditions apply will.
+    const preconditionFailures =
+      await this.commands.inspectInversePreconditions(
+        boardId,
+        inverses,
+        client,
+        // The revert path restores rows the run itself removed; that is the
+        // only caller allowed past the current restore limits (M13). Non-
+        // restore inverses (MOVE/UNARCHIVE) are still checked, so the M22
+        // WIP preview keeps refusing them.
+        { exemptRestoreLimits: true },
+      );
+    for (const failure of preconditionFailures) {
+      conflicts.push({
+        touch: failure.touch,
+        expectedVersion: 0,
+        currentVersion: failure.currentVersion,
+        reason: failure.reason,
+      });
+    }
+
+    // H5: archive/delete inverses can only land in their recorded source
+    // column. Walk the inverse sequence, not just the final DB state, so a
+    // column deleted *by this same run* is restored by its own
+    // `RESTORE_COLUMN` before the card inverse needs it. A column a human
+    // deleted after the run has no restore step and still blocks.
+    const inverseColumns = new Set<string>();
+    for (const action of inverses) {
+      if (action.type === "RESTORE_COLUMN") {
+        inverseColumns.add(action.column.id);
+      } else if (action.type === "DELETE_COLUMN") {
+        inverseColumns.add(action.columnId);
+      } else if (
+        (action.type === "UNARCHIVE_CARD" || action.type === "RESTORE_CARD") &&
+        action.columnId !== undefined
+      ) {
+        inverseColumns.add(action.columnId);
+      }
+    }
+    if (inverseColumns.size > 0) {
+      const columnStates = await this.currentStates(
+        boardId,
+        [...inverseColumns].map((id) => `column:${id}`),
+        client,
+      );
+      const availableColumns = new Set<string>();
+      for (const columnId of inverseColumns) {
+        const current = columnStates.get(`column:${columnId}`) ?? null;
+        if (current !== null && current.deletedAt === null) {
+          availableColumns.add(columnId);
+        }
+      }
+      for (const action of inverses) {
+        if (action.type === "RESTORE_COLUMN") {
+          availableColumns.add(action.column.id);
+          continue;
+        }
+        if (action.type === "DELETE_COLUMN") {
+          availableColumns.delete(action.columnId);
+          continue;
+        }
+        const columnId =
+          action.type === "UNARCHIVE_CARD" || action.type === "RESTORE_CARD"
+            ? action.columnId
+            : undefined;
+        if (columnId === undefined || availableColumns.has(columnId)) continue;
+        const current = columnStates.get(`column:${columnId}`) ?? null;
+        conflicts.push({
+          touch: `column:${columnId}`,
+          expectedVersion: current?.version ?? 0,
+          currentVersion: current?.version ?? 0,
+          reason: current === null ? "missing" : "deleted",
+        });
+      }
     }
 
     const currentByTouch = await this.currentStates(
@@ -649,9 +831,18 @@ export class RunsService {
         });
       }
     }
-    conflicts.sort((a, b) => a.touch.localeCompare(b.touch));
+    // One row per `touch`: the UI keys conflicts by `touch`, and H4/H5 can
+    // describe the same column from different angles. Keep the first, most
+    // specific reason (H5 deletion is added before the version comparison).
+    const byTouch = new Map<string, RevertConflictDto>();
+    for (const conflict of conflicts) {
+      if (!byTouch.has(conflict.touch)) byTouch.set(conflict.touch, conflict);
+    }
+    const deduped = [...byTouch.values()].sort((a, b) =>
+      a.touch.localeCompare(b.touch),
+    );
 
-    return { conflicts, inverses, lastByTouch, currentByTouch };
+    return { conflicts: deduped, inverses, lastByTouch, currentByTouch };
   }
 
   private async currentStates(
@@ -751,20 +942,29 @@ export class RunsService {
   private conflict(
     message: string,
     conflicts: RevertConflictDto[] = [],
+    context: { runId?: string; currentVersion?: number } = {},
   ): ConflictException {
     return new ConflictException({
       message,
       code: "run_conflict",
       retryable: false,
+      ...(context.runId !== undefined ? { runId: context.runId } : {}),
+      ...(context.currentVersion !== undefined
+        ? { currentVersion: context.currentVersion }
+        : {}),
       ...(conflicts.length > 0 ? { conflicts, details: { conflicts } } : {}),
     });
   }
 
-  private expired(): ConflictException {
+  private async expired(runId: string): Promise<ConflictException> {
+    const retentionDays =
+      (await this.ops.retentionDays()) ?? env.PURGE_AFTER_DAYS;
     return new ConflictException({
       message: "Run or its pre-images were removed by retention",
       code: "run_expired",
       retryable: false,
+      runId,
+      retentionDays,
     });
   }
 }

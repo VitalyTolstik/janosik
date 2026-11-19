@@ -37,7 +37,9 @@ TASK-179 разделяет работу с агентами на три сло�
   lifecycle-статус.
 - **Runs** — история запусков в выбранной области, сначала новые: фильтры по
   статусу, типу, времени, токену и сессии, total/load more, деталь и
-  условный откат.
+  условный откат. У запуска есть только `applied` и `reverted`; неудачная
+  пачка или план откатываются и запуск не создают, поэтому фильтра `failed`
+  нет. Новые запуски появляются на открытой вкладке Runs доски без перезагрузки.
 
 В верхней панели есть выбор доски (`All boards` или одна доска), счётчик
 раздела, поиск, `Updated Ns ago` с Refresh и **Manage tokens**
@@ -204,7 +206,7 @@ scope PAT по доскам.
 /agents?section=sessions&board=b1&token=t1
 /agents?section=attention&board=b1&approval=a1
 /agents?section=runs&board=b1&run=r1
-/agents?section=runs&board=b1&status=failed&time=24h&agent=t1
+/agents?section=runs&board=b1&status=reverted&time=24h&agent=t1
 ```
 
 Copy-link запуска всегда включает `board`; скопированный URL переживает

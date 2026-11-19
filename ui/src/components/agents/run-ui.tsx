@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
@@ -58,7 +58,6 @@ type Role = BoardRole | undefined;
 const STATUS_TONE: Record<AgentRunStatus, StatusTone> = {
   applied: "ok",
   reverted: "muted",
-  failed: "bad",
 };
 
 /** One shared run status badge: dot + label, vertically centred. */
@@ -350,6 +349,10 @@ export function RunDetail({
   const [reverting, setReverting] = useState(false);
   const [hashCopied, setHashCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // M21: one idempotency key per rollback attempt of this run. A lost
+  // response keeps the key, so "Retry" reconciles with the server's committed
+  // revert instead of sending a second, conflicting attempt.
+  const revertCommandId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isApiEnabled()) return;
@@ -366,6 +369,9 @@ export function RunDetail({
         const loaded = await api.getRun(boardId, runId);
         if (!alive) return;
         setDetail(loaded);
+        // A retry after a lost response can discover the revert already
+        // committed; do not leave the old error banner beside `reverted`.
+        if (loaded.run.status === "reverted") setActionError(null);
         if (loaded.run.status === "applied" && loaded.run.kind !== "revert") {
           await requestPreview(alive);
         }
@@ -390,6 +396,7 @@ export function RunDetail({
     setActionError(null);
     setHashCopied(false);
     setLinkCopied(false);
+    revertCommandId.current = null;
   }, [boardId, runId]);
 
   // Refresh the timeline day bucket when the fetched run changes and once a
@@ -432,14 +439,16 @@ export function RunDetail({
     setReverting(true);
     setActionError(null);
     try {
+      revertCommandId.current ??= createCommandId();
       const updated = await api.revertRun(boardId, runId, {
         dryRun: false,
-        commandId: createCommandId(),
+        commandId: revertCommandId.current,
       });
       // The explicit revert route can return the new audit run (or a replay
       // of it). The pane is pinned to the original run, so never adopt that
       // detail here: refetch the original id and let the server report
       // `reverted`. `onChanged` refreshes the list.
+      revertCommandId.current = null;
       setPreview(null);
       setPreviewError(null);
       setConfirmOpen(false);
@@ -447,6 +456,7 @@ export function RunDetail({
       setRevision((value) => value + 1);
       onChanged?.(updated);
     } catch (error) {
+      // Keep the key: the commit may have succeeded with a lost response.
       setActionError(runErrorText(error, t));
       setConfirmOpen(false);
       setRevision((value) => value + 1);
@@ -538,14 +548,12 @@ export function RunDetail({
   const storedCommands = detail.commands.length;
   const missingCommands = storedCommands === 0 && run.commandCount > 0;
   const commandsAside =
-    run.status === "failed"
-      ? t("agents.runs.commandsStoredOnly", { count: storedCommands })
-      : storedCommands === run.commandCount
-        ? t("agents.runs.appliedCount", { count: run.commandCount })
-        : t("agents.runs.commandsStored", {
-            stored: storedCommands,
-            total: run.commandCount,
-          });
+    storedCommands === run.commandCount
+      ? t("agents.runs.appliedCount", { count: run.commandCount })
+      : t("agents.runs.commandsStored", {
+          stored: storedCommands,
+          total: run.commandCount,
+        });
   const duration = Math.max(0, run.appliedAt - run.createdAt);
 
   return (
@@ -595,18 +603,6 @@ export function RunDetail({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-4">
-        {run.status === "failed" ? (
-          <Banner
-            tone="bad"
-            icon={<AlertTriangle aria-hidden />}
-            testId="agent-run-failed-banner"
-          >
-            <strong className="font-[650]">
-              {t("agents.runs.failedTitle")}
-            </strong>{" "}
-            {t("agents.runs.failedBody")}
-          </Banner>
-        ) : null}
         {run.status === "reverted" ? (
           <Banner
             tone="info"
@@ -704,13 +700,11 @@ export function RunDetail({
               label={t("agentControl.runs.created")}
               value={formatRunMoment(run.createdAt, lang, hour12, t, now)}
             />
-            {run.status !== "failed" ? (
-              <TimelineItem
-                tone="applied"
-                label={t("agentControl.runs.applied")}
-                value={formatRunMoment(run.appliedAt, lang, hour12, t, now)}
-              />
-            ) : null}
+            <TimelineItem
+              tone="applied"
+              label={t("agentControl.runs.applied")}
+              value={formatRunMoment(run.appliedAt, lang, hour12, t, now)}
+            />
             {run.revertedAt !== null ? (
               <TimelineItem
                 tone="reverted"
@@ -776,11 +770,6 @@ export function RunDetail({
                           value={afterLabel(command.action, preimage, t)}
                         />
                       </div>
-                    ) : null}
-                    {run.status === "failed" ? (
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {t("agents.runs.commandNotApplied")}
-                      </p>
                     ) : null}
                   </li>
                 );
@@ -1322,6 +1311,12 @@ function runErrorText(error: unknown, t: Translate): string {
     }
     case "run_expired":
       return t("agentControl.runs.error.expired");
+    case "limit_exceeded":
+      return t("agentControl.runs.error.limitExceeded");
+    case "validation_failed":
+      return t("agentControl.runs.error.validationFailed");
+    case "payload_too_large":
+      return t("agentControl.runs.error.payloadTooLarge");
     case "scope_denied":
       return t("agentControl.runs.error.adminOnly");
     default:
@@ -1456,6 +1451,12 @@ function conflictReasonLabel(reason: string, t: Translate): string {
       return t("agents.runs.conflictReason.deletedAtChanged");
     case "missing":
       return t("agents.runs.conflictReason.missing");
+    case "wip":
+      return t("agents.runs.conflictReason.wip");
+    case "assignee_not_member":
+      return t("agents.runs.conflictReason.assigneeNotMember");
+    case "payload_too_large":
+      return t("agents.runs.conflictReason.payloadTooLarge");
     default:
       return t("agents.runs.conflictReason.changed");
   }

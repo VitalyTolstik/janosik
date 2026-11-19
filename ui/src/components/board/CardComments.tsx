@@ -87,6 +87,7 @@ export function CardComments({
   const { activity } = useBoardLive();
 
   const [items, setItems] = useState<CommentDto[]>([]);
+  const itemsRef = useRef<CommentDto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
@@ -132,6 +133,10 @@ export function CardComments({
   }, [loadFirst]);
 
   useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
     onCountChange?.(items.length);
   }, [items.length, onCountChange]);
 
@@ -157,22 +162,47 @@ export function CardComments({
     }
   }, [cardId, serverMode]);
 
-  // An edit is not in the frame body either: re-read the newest page and
-  // replace the matching rows in place, keeping the list position (TASK-176.2).
-  const refreshEdited = useCallback(async () => {
-    if (!serverMode) return;
-    try {
-      const page = await api.listComments(cardId, undefined, PAGE_SIZE);
-      setItems((prev) => {
-        const byId = new Map(
-          page.items.map((comment) => [comment.id, comment]),
+  // An edit is not in the frame body either: re-read the loaded pages until
+  // the edited row is found and replace matching rows in place, keeping the
+  // list position (TASK-176.2). L36: an edit on page 2+ must refresh too —
+  // the previous implementation only read the first page, so an older loaded
+  // comment stayed stale until a remount.
+  const refreshEdited = useCallback(
+    async (commentId: string) => {
+      if (!serverMode) return;
+      const loaded = itemsRef.current;
+      const target = commentId === "" ? undefined : commentId;
+      // An edit of a row this client has not loaded is not rendered here.
+      if (target !== undefined && !loaded.some((item) => item.id === target)) {
+        return;
+      }
+      try {
+        const byId = new Map<string, CommentDto>();
+        let cursor: string | undefined;
+        // The loaded list is the newest N rows, so only those pages can hold
+        // a row this component shows. One extra page covers a cursor shift;
+        // the walk is therefore bounded by the already-loaded page count and
+        // never turns one SSE frame into an unbounded history scan.
+        const maxPages = Math.ceil(loaded.length / PAGE_SIZE) + 1;
+        for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+          const page = await api.listComments(cardId, cursor, PAGE_SIZE);
+          for (const comment of page.items) byId.set(comment.id, comment);
+          if (target !== undefined && page.items.some((c) => c.id === target)) {
+            break;
+          }
+          if (target === undefined && pageIndex === 0) break;
+          if (page.nextCursor === null) break;
+          cursor = page.nextCursor;
+        }
+        setItems((prev) =>
+          prev.map((comment) => byId.get(comment.id) ?? comment),
         );
-        return prev.map((comment) => byId.get(comment.id) ?? comment);
-      });
-    } catch {
-      /* best effort: the next open or frame retries */
-    }
-  }, [cardId, serverMode]);
+      } catch {
+        /* best effort: the next open or frame retries */
+      }
+    },
+    [cardId, serverMode],
+  );
 
   useEffect(() => {
     if (!serverMode) return;
@@ -183,7 +213,7 @@ export function CardComments({
         return;
       }
       if (event.kind === "comment_updated") {
-        void refreshEdited();
+        void refreshEdited(event.detail ?? "");
         return;
       }
       if (event.kind === "comment_deleted" && event.detail) {

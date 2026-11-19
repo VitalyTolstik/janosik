@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CardItem } from "@/components/board/CardItem";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 import type { CardLinkFacts } from "@/utils/links";
 import type { Card, Label } from "@janosik/shared";
 
@@ -49,9 +50,23 @@ const blockedFacts: CardLinkFacts = {
 };
 
 function wrap(ui: React.ReactNode) {
+  const live = createBoardLive();
+  live.members.set("b-1", [
+    {
+      userId: "u-boris",
+      email: "boris@example.com",
+      displayName: "Boris",
+      role: "MEMBER" as const,
+      avatarColor: null,
+      avatarPath: null,
+      expiresAt: null,
+    },
+  ]);
   return (
     <I18nProvider>
-      <TooltipProvider>{ui}</TooltipProvider>
+      <BoardLiveProvider live={live}>
+        <TooltipProvider>{ui}</TooltipProvider>
+      </BoardLiveProvider>
     </I18nProvider>
   );
 }
@@ -60,7 +75,9 @@ function renderCard(
   card: Card = richCard,
   props: Partial<React.ComponentProps<typeof CardItem>> = {},
 ) {
-  return render(wrap(<CardItem card={card} labels={labels} {...props} />));
+  return render(
+    wrap(<CardItem card={card} labels={labels} boardId="b-1" {...props} />),
+  );
 }
 
 function face(): HTMLElement {

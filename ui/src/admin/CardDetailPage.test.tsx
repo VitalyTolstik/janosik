@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -7,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { LIMITS } from "@janosik/shared";
 
 import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
@@ -15,16 +17,23 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
 import { adminMessage } from "./admin-i18n";
 import AdminApp from "./AdminApp";
-import { CardFieldsChunkBoundary, CardFieldsFallback } from "./CardDetailPage";
+import {
+  CardFieldsChunkBoundary,
+  CardFieldsFallback,
+  CardRelationsFallback,
+} from "./CardDetailPage";
 import {
   adminActivity,
   adminAttachment,
   adminBoard,
   adminCard,
+  adminCardLink,
+  adminChecklist,
   adminComment,
   adminLabel,
   adminUser,
   boardMember,
+  contentBoard,
   FakeAdminServer,
   emptyAdminState,
   type FakeAdminState,
@@ -625,7 +634,9 @@ describe("CardDetailPage admin editing pilot (TASK-176.8/176.10)", () => {
 
     expect(
       await screen.findByTestId("admin-card-description-error"),
-    ).toHaveTextContent("denied");
+    ).toHaveTextContent(
+      adminMessage("admin.cards.description.errorConflict", "en"),
+    );
     expect(screen.getByTestId("admin-card-description-dialog")).toBeTruthy();
     expect(
       screen.getByTestId("admin-card-detail-description"),
@@ -1412,5 +1423,1454 @@ describe("FakeAdminServer card field fidelity", () => {
         })
       ).status,
     ).toBe(409);
+  });
+});
+
+describe("CardDetailPage checklist and link editing (TASK-176.9 B2)", () => {
+  const CARD_IDS = ["card-1", "card-2", "card-3", "card-4", "card-5"];
+
+  interface SentCommand {
+    commandId?: string;
+    action: Record<string, unknown>;
+  }
+
+  const sentCommands = (server: FakeAdminServer): SentCommand[] =>
+    server.requests
+      .filter(
+        (request) =>
+          request.method === "POST" && request.path.endsWith("/commands"),
+      )
+      .map((request) => request.body as SentCommand);
+
+  function aggregate(links: Record<string, unknown> = {}) {
+    return contentBoard({
+      columns: [
+        {
+          id: "col-1",
+          title: "Backlog",
+          cardIds: [...CARD_IDS],
+          createdAt: 1,
+        },
+      ],
+      cards: Object.fromEntries(
+        CARD_IDS.map((id, index) => [
+          id,
+          {
+            id,
+            title: id === "card-1" ? "Moderator" : `Card ${index + 1}`,
+            createdAt: index + 1,
+            updatedAt: index + 1,
+            labelIds: [],
+            ...(links[id] === undefined ? {} : { links: links[id] }),
+          },
+        ]),
+      ) as ReturnType<typeof contentBoard>["cards"],
+    });
+  }
+
+  function relationsState(): FakeAdminState {
+    const state = emptyAdminState();
+    state.boards = [adminBoard()];
+    state.users = [adminUser()];
+    state.cards = CARD_IDS.map((id, index) =>
+      adminCard({
+        id,
+        title: id === "card-1" ? "Moderator" : `Card ${index + 1}`,
+        commentIds: [],
+      }),
+    );
+    state.cardChecklists["card-1"] = [
+      adminChecklist({
+        id: "checklist-1",
+        title: "Todo",
+        items: [
+          {
+            id: "item-1",
+            text: "First step",
+            done: true,
+            position: 0,
+            deletedAt: null,
+          },
+          {
+            id: "item-2",
+            text: "Second step",
+            done: false,
+            position: 1,
+            deletedAt: null,
+          },
+        ],
+      }),
+    ];
+    state.contentBoard = aggregate();
+    return state;
+  }
+
+  async function renderRelations(
+    state = relationsState(),
+    configure?: (server: FakeAdminServer) => void,
+  ) {
+    const server = new FakeAdminServer(state);
+    configure?.(server);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderCard("card-1");
+    await screen.findByTestId("admin-card-relations");
+    return { server, state };
+  }
+
+  it("adds, renames and deletes checklists and their items with one command each", async () => {
+    const { server, state } = await renderRelations();
+
+    expect(
+      screen.getByTestId("admin-card-relations-owner-notice"),
+    ).toHaveTextContent(adminMessage("admin.common.actingAsOwner", "en"));
+    expect(
+      screen.getByTestId("admin-checklist-progress-checklist-1"),
+    ).toHaveTextContent("1/2");
+    expect(screen.getByText("First step")).toBeTruthy();
+    expect(screen.getByText("Second step")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("admin-new-checklist-title"), {
+      target: { value: "  Acceptance  " },
+    });
+    fireEvent.click(screen.getByTestId("admin-new-checklist-add"));
+    await waitFor(() => {
+      expect(state.cardChecklists["card-1"]).toHaveLength(2);
+    });
+    const added = sentCommands(server)[0];
+    expect(added.action).toMatchObject({
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      title: "Acceptance",
+      at: expect.any(Number),
+    });
+    expect(added.commandId).toEqual(expect.any(String));
+    const newChecklistId = String(added.action.newChecklistId);
+    await screen.findByTestId(`admin-checklist-row-${newChecklistId}`);
+
+    fireEvent.click(
+      screen.getByTestId(`admin-checklist-rename-${newChecklistId}`),
+    );
+    fireEvent.change(
+      screen.getByTestId(`admin-checklist-rename-input-${newChecklistId}`),
+      { target: { value: "Acceptance renamed" } },
+    );
+    fireEvent.click(
+      screen.getByTestId(`admin-checklist-rename-save-${newChecklistId}`),
+    );
+    await waitFor(() => {
+      expect(
+        state.cardChecklists["card-1"]?.find(
+          (checklist) => checklist.id === newChecklistId,
+        )?.title,
+      ).toBe("Acceptance renamed");
+    });
+    expect(sentCommands(server)[1]?.action).toMatchObject({
+      type: "RENAME_CHECKLIST",
+      cardId: "card-1",
+      checklistId: newChecklistId,
+      title: "Acceptance renamed",
+    });
+
+    fireEvent.change(
+      screen.getByTestId(`admin-checklist-item-input-${newChecklistId}`),
+      { target: { value: "  Write a test  " } },
+    );
+    fireEvent.click(
+      screen.getByTestId(`admin-checklist-item-add-${newChecklistId}`),
+    );
+    await waitFor(() => {
+      expect(
+        state.cardChecklists["card-1"]?.find(
+          (checklist) => checklist.id === newChecklistId,
+        )?.items,
+      ).toHaveLength(1);
+    });
+    const checklist = state.cardChecklists["card-1"]!.find(
+      (entry) => entry.id === newChecklistId,
+    )!;
+    const newItemId = checklist.items[0]!.id;
+    expect(sentCommands(server)[2]?.action).toMatchObject({
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: newChecklistId,
+      newItemId,
+      text: "Write a test",
+    });
+
+    fireEvent.click(
+      await screen.findByTestId(`admin-checklist-item-toggle-${newItemId}`),
+    );
+    await waitFor(() => {
+      expect(
+        state.cardChecklists["card-1"]?.find(
+          (entry) => entry.id === newChecklistId,
+        )?.items[0]?.done,
+      ).toBe(true);
+    });
+    expect(sentCommands(server)[3]?.action).toMatchObject({
+      type: "SET_CHECKLIST_ITEM_DONE",
+      checklistId: newChecklistId,
+      itemId: newItemId,
+      done: true,
+    });
+
+    fireEvent.click(
+      await screen.findByTestId(`admin-checklist-item-rename-${newItemId}`),
+    );
+    fireEvent.change(
+      screen.getByTestId(`admin-checklist-item-rename-input-${newItemId}`),
+      { target: { value: "Rename the test" } },
+    );
+    fireEvent.click(
+      screen.getByTestId(`admin-checklist-item-rename-save-${newItemId}`),
+    );
+    await waitFor(() => {
+      expect(
+        state.cardChecklists["card-1"]?.find(
+          (entry) => entry.id === newChecklistId,
+        )?.items[0]?.text,
+      ).toBe("Rename the test");
+    });
+    expect(sentCommands(server)[4]?.action).toMatchObject({
+      type: "RENAME_CHECKLIST_ITEM",
+      checklistId: newChecklistId,
+      itemId: newItemId,
+      text: "Rename the test",
+    });
+
+    fireEvent.click(
+      await screen.findByTestId(`admin-checklist-item-delete-${newItemId}`),
+    );
+    await waitFor(() => {
+      expect(
+        state.cardChecklists["card-1"]?.find(
+          (entry) => entry.id === newChecklistId,
+        )?.items[0]?.deletedAt,
+      ).not.toBeNull();
+    });
+    expect(sentCommands(server)[5]?.action).toMatchObject({
+      type: "DELETE_CHECKLIST_ITEM",
+      checklistId: newChecklistId,
+      itemId: newItemId,
+    });
+
+    fireEvent.click(
+      screen.getByTestId(`admin-checklist-delete-${newChecklistId}`),
+    );
+    fireEvent.click(await screen.findByTestId("admin-confirm-accept"));
+    await waitFor(() => {
+      expect(
+        state.cardChecklists["card-1"]?.find(
+          (entry) => entry.id === newChecklistId,
+        )?.deletedAt,
+      ).not.toBeNull();
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId(`admin-checklist-row-${newChecklistId}`),
+      ).toBeNull();
+    });
+    const commandIds = sentCommands(server).map((entry) => entry.commandId);
+    expect(new Set(commandIds).size).toBe(commandIds.length);
+    expect(sentCommands(server)).toHaveLength(7);
+  });
+
+  it("suppresses unchanged checklist titles and blank drafts", async () => {
+    const { server } = await renderRelations();
+
+    fireEvent.click(screen.getByTestId("admin-checklist-rename-checklist-1"));
+    fireEvent.click(
+      screen.getByTestId("admin-checklist-rename-save-checklist-1"),
+    );
+    expect(sentCommands(server)).toHaveLength(0);
+
+    expect(screen.getByTestId("admin-new-checklist-add")).toBeDisabled();
+    fireEvent.change(screen.getByTestId("admin-new-checklist-title"), {
+      target: { value: "   " },
+    });
+    expect(screen.getByTestId("admin-new-checklist-add")).toBeDisabled();
+    expect(sentCommands(server)).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId("admin-checklist-item-rename-item-2"));
+    fireEvent.click(
+      screen.getByTestId("admin-checklist-item-rename-save-item-2"),
+    );
+    expect(sentCommands(server)).toHaveLength(0);
+  });
+
+  it("shows deferred checklists and items with empty states", async () => {
+    const state = relationsState();
+    state.cardChecklists["card-1"] = [
+      adminChecklist({
+        id: "deleted-checklist",
+        title: "Deleted checklist",
+        deletedAt: Date.UTC(2025, 0, 1),
+        items: [],
+      }),
+      adminChecklist({
+        id: "empty-checklist",
+        title: "Empty checklist",
+        items: [
+          {
+            id: "deleted-item",
+            text: "Deleted item",
+            done: false,
+            position: 0,
+            deletedAt: Date.UTC(2025, 0, 1),
+          },
+        ],
+      }),
+    ];
+    await renderRelations(state);
+
+    expect(screen.queryByText("Deleted checklist")).toBeNull();
+    expect(screen.queryByText("Deleted item")).toBeNull();
+    expect(screen.getByText("Empty checklist")).toBeTruthy();
+    expect(
+      screen.getByTestId("admin-checklist-items-empty-empty-checklist"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("admin-card-links-empty")).toHaveTextContent(
+      "No linked cards yet.",
+    );
+  });
+
+  it("removes outgoing and incoming links from the correct holder card", async () => {
+    const state = relationsState();
+    state.cardLinks = [
+      adminCardLink({
+        id: "link-out",
+        fromCardId: "card-1",
+        toCardId: "card-3",
+        type: "relates_to",
+      }),
+      adminCardLink({
+        id: "link-in",
+        fromCardId: "card-2",
+        toCardId: "card-1",
+        type: "blocks",
+      }),
+    ];
+    const { server } = await renderRelations(state);
+
+    const outgoing = screen.getByTestId("admin-card-link-row-link-out");
+    const incoming = screen.getByTestId("admin-card-link-row-link-in");
+    expect(outgoing).toHaveAttribute("data-direction", "out");
+    expect(incoming).toHaveAttribute("data-direction", "in");
+    expect(outgoing).toHaveTextContent("relates_to");
+    expect(outgoing).toHaveTextContent("relates to");
+    expect(incoming).toHaveTextContent("blocks");
+    expect(incoming).toHaveTextContent("is blocked by");
+
+    fireEvent.click(screen.getByTestId("admin-card-link-remove-link-out"));
+    await waitFor(() => {
+      expect(
+        state.cardLinks.find((link) => link.id === "link-out")?.deletedAt,
+      ).not.toBeNull();
+    });
+    expect(sentCommands(server)[0]?.action).toMatchObject({
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-1",
+      linkId: "link-out",
+      targetCardId: "card-3",
+      linkType: "relates_to",
+    });
+
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-remove-link-in"),
+    );
+    await waitFor(() => {
+      expect(
+        state.cardLinks.find((link) => link.id === "link-in")?.deletedAt,
+      ).not.toBeNull();
+    });
+    expect(sentCommands(server)[1]?.action).toMatchObject({
+      type: "REMOVE_CARD_LINK",
+      // The row lives on card-2, not on the card being viewed.
+      cardId: "card-2",
+      linkId: "link-in",
+      targetCardId: "card-1",
+      linkType: "blocks",
+    });
+  });
+
+  it("adds a link and supports reverse phrasing for incoming semantics", async () => {
+    const { server, state } = await renderRelations();
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 4" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-4"),
+    );
+    expect(document.activeElement).toBe(
+      screen.getByTestId("admin-card-link-target"),
+    );
+    fireEvent.click(screen.getByTestId("admin-card-link-add"));
+    await waitFor(() => {
+      expect(
+        state.cardLinks.some(
+          (link) =>
+            link.fromCardId === "card-1" &&
+            link.toCardId === "card-4" &&
+            link.deletedAt === null,
+        ),
+      ).toBe(true);
+    });
+    expect(sentCommands(server)[0]?.action).toMatchObject({
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      targetCardId: "card-4",
+      linkType: "relates_to",
+    });
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-type"), {
+      target: { value: "blockedBy" },
+    });
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 5" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-5"),
+    );
+    fireEvent.click(screen.getByTestId("admin-card-link-add"));
+    await waitFor(() => {
+      expect(
+        state.cardLinks.some(
+          (link) =>
+            link.fromCardId === "card-5" &&
+            link.toCardId === "card-1" &&
+            link.type === "blocks" &&
+            link.deletedAt === null,
+        ),
+      ).toBe(true);
+    });
+    expect(sentCommands(server)[1]?.action).toMatchObject({
+      type: "ADD_CARD_LINK",
+      // "Card 1 is blocked by Card 5" stores the row on Card 5.
+      cardId: "card-5",
+      targetCardId: "card-1",
+      linkType: "blocks",
+    });
+  });
+
+  it("excludes self and already-linked pairs from the target picker", async () => {
+    const state = relationsState();
+    state.cardLinks = [
+      adminCardLink({
+        id: "existing-pair",
+        fromCardId: "card-1",
+        toCardId: "card-2",
+        type: "relates_to",
+      }),
+    ];
+    (
+      state.contentBoard!.cards["card-1"] as {
+        links?: Array<{ id: string; type: string; targetCardId: string }>;
+      }
+    ).links = [
+      {
+        id: "existing-pair",
+        type: "relates_to",
+        targetCardId: "card-2",
+      },
+    ];
+    const { server } = await renderRelations(state);
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card" },
+    });
+    expect(
+      await screen.findByTestId("admin-card-link-suggestion-card-3"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-link-suggestion-card-1"),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("admin-card-link-suggestion-card-2"),
+    ).toBeNull();
+    expect(sentCommands(server)).toHaveLength(0);
+  });
+
+  it("blocks a blocks cycle and a holder at the outgoing cap", async () => {
+    const cycleState = relationsState();
+    cycleState.cardLinks = [
+      adminCardLink({
+        id: "cycle-existing-1",
+        fromCardId: "card-2",
+        toCardId: "card-3",
+        type: "blocks",
+      }),
+      adminCardLink({
+        id: "cycle-existing-2",
+        fromCardId: "card-3",
+        toCardId: "card-1",
+        type: "blocks",
+      }),
+    ];
+    (
+      cycleState.contentBoard!.cards["card-2"] as {
+        links?: Array<{ id: string; type: string; targetCardId: string }>;
+      }
+    ).links = [
+      {
+        id: "cycle-existing-1",
+        type: "blocks",
+        targetCardId: "card-3",
+      },
+    ];
+    (
+      cycleState.contentBoard!.cards["card-3"] as {
+        links?: Array<{ id: string; type: string; targetCardId: string }>;
+      }
+    ).links = [
+      {
+        id: "cycle-existing-2",
+        type: "blocks",
+        targetCardId: "card-1",
+      },
+    ];
+    const { server } = await renderRelations(cycleState);
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-type"), {
+      target: { value: "blocks" },
+    });
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    expect(screen.getByTestId("admin-card-link-cycle")).toHaveTextContent(
+      "That blocking link would create a cycle.",
+    );
+    expect(screen.getByTestId("admin-card-link-add")).toBeDisabled();
+    expect(sentCommands(server)).toHaveLength(0);
+  });
+
+  it("disables the add control when the holder is at 50 outgoing links", async () => {
+    const state = relationsState();
+    const capLinks = Array.from({ length: 50 }, (_, index) => ({
+      id: `cap-${index}`,
+      type: "relates_to" as const,
+      targetCardId: "card-3",
+    }));
+    state.cardLinks = capLinks.map((link) =>
+      adminCardLink({
+        id: link.id,
+        fromCardId: "card-1",
+        toCardId: link.targetCardId,
+        type: link.type,
+      }),
+    );
+    (state.contentBoard!.cards["card-1"] as { links?: unknown }).links =
+      capLinks;
+    const { server } = await renderRelations(state);
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    expect(screen.getByTestId("admin-card-links-cap")).toHaveTextContent(
+      "The holder card can have at most 50 outgoing links.",
+    );
+    expect(screen.getByTestId("admin-card-link-add")).toBeDisabled();
+    expect(sentCommands(server)).toHaveLength(0);
+  });
+
+  it("localizes a duplicate-pair rejection from the server", async () => {
+    const { server } = await renderRelations();
+    server.failNextStatuses.push({
+      path: "/commands",
+      status: 409,
+      body: { code: "link_pair_exists" },
+    });
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    fireEvent.click(screen.getByTestId("admin-card-link-add"));
+    expect(
+      await screen.findByTestId("admin-card-relations-error"),
+    ).toHaveTextContent("These cards are already linked.");
+  });
+
+  it("keeps checklist editing on an archived card and hides it when deleted", async () => {
+    const archived = relationsState();
+    archived.cards[0]!.archivedAt = Date.UTC(2025, 5, 1);
+    const { server, state } = await renderRelations(archived);
+
+    fireEvent.click(screen.getByTestId("admin-checklist-item-toggle-item-2"));
+    await waitFor(() => {
+      expect(state.cardChecklists["card-1"]?.[0]?.items[1]?.done).toBe(true);
+    });
+    expect(sentCommands(server)[0]?.action).toMatchObject({
+      type: "SET_CHECKLIST_ITEM_DONE",
+      cardId: "card-1",
+      itemId: "item-2",
+      done: true,
+    });
+
+    cleanup();
+    const deleted = relationsState();
+    deleted.cards[0]!.deletedAt = Date.UTC(2025, 5, 1);
+    vi.stubGlobal("fetch", new FakeAdminServer(deleted).fetchImpl);
+    renderCard("card-1");
+    expect(await screen.findByTestId("admin-card-detail-actions")).toBeTruthy();
+    expect(screen.queryByTestId("admin-card-relations")).toBeNull();
+    expect(screen.queryByTestId("admin-new-checklist-title")).toBeNull();
+  });
+
+  it("counts outgoing and incoming links separately", async () => {
+    const state = relationsState();
+    state.cardLinks = [
+      adminCardLink({
+        id: "out-live-1",
+        fromCardId: "card-1",
+        toCardId: "card-3",
+        type: "relates_to",
+      }),
+      adminCardLink({
+        id: "out-live-2",
+        fromCardId: "card-1",
+        toCardId: "card-4",
+        type: "duplicates",
+      }),
+      adminCardLink({
+        id: "out-deleted",
+        fromCardId: "card-1",
+        toCardId: "card-5",
+        type: "blocks",
+        deletedAt: 1,
+      }),
+      adminCardLink({
+        id: "in-live-1",
+        fromCardId: "card-2",
+        toCardId: "card-1",
+        type: "blocks",
+      }),
+      adminCardLink({
+        id: "in-live-2",
+        fromCardId: "card-3",
+        toCardId: "card-1",
+        type: "relates_to",
+      }),
+      adminCardLink({
+        id: "in-deleted",
+        fromCardId: "card-4",
+        toCardId: "card-1",
+        type: "duplicates",
+        deletedAt: 1,
+      }),
+    ];
+    await renderRelations(state);
+
+    expect(
+      screen.getByTestId("admin-card-links-outgoing-count"),
+    ).toHaveTextContent("2 of 50 outgoing links on this card");
+    expect(
+      screen.getByTestId("admin-card-links-incoming-count"),
+    ).toHaveTextContent("2 incoming links");
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 5" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-5"),
+    );
+    expect(screen.getByTestId("admin-card-link-add")).not.toBeDisabled();
+  });
+
+  it("uses the singular incoming copy for one link", async () => {
+    const state = relationsState();
+    state.cardLinks = [
+      adminCardLink({
+        id: "one-incoming",
+        fromCardId: "card-2",
+        toCardId: "card-1",
+        type: "relates_to",
+      }),
+    ];
+    await renderRelations(state);
+    expect(
+      screen.getByTestId("admin-card-links-incoming-count"),
+    ).toHaveTextContent("1 incoming link");
+  });
+
+  it("does not apply incoming links to the viewed card's outgoing cap", async () => {
+    const state = relationsState();
+    const incoming = Array.from({ length: 50 }, (_, index) => {
+      const id = `incoming-card-${index}`;
+      const linkId = `incoming-link-${index}`;
+      state.cards.push(adminCard({ id, title: `Incoming ${index}` }));
+      state.contentBoard!.columns[0]!.cardIds.push(id);
+      state.contentBoard!.cards[id] = {
+        id,
+        title: `Incoming ${index}`,
+        createdAt: 100 + index,
+        updatedAt: 100 + index,
+        labelIds: [],
+        links: [{ id: linkId, type: "relates_to", targetCardId: "card-1" }],
+      };
+      return adminCardLink({
+        id: linkId,
+        fromCardId: id,
+        toCardId: "card-1",
+        type: "relates_to",
+      });
+    });
+    // Add one query-matching unlinked card so the filtered list is provably
+    // non-empty while every "Incoming N" card is already linked.
+    state.cards.push(
+      adminCard({ id: "incoming-open", title: "Incoming open" }),
+    );
+    state.contentBoard!.columns[0]!.cardIds.push("incoming-open");
+    state.contentBoard!.cards["incoming-open"] = {
+      id: "incoming-open",
+      title: "Incoming open",
+      createdAt: 200,
+      updatedAt: 200,
+      labelIds: [],
+    };
+    state.cardLinks = incoming;
+    await renderRelations(state);
+
+    expect(
+      screen.getByTestId("admin-card-links-outgoing-count"),
+    ).toHaveTextContent("0 of 50 outgoing links on this card");
+    expect(
+      screen.getByTestId("admin-card-links-incoming-count"),
+    ).toHaveTextContent("50 incoming links");
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    const targetInput = screen.getByTestId("admin-card-link-target");
+
+    // Check the picker before selecting anything: choosing a target closes
+    // the suggestion list. "Incoming" matches the 50 linked rows and the one
+    // unlinked card, proving the picker is non-empty and the linked rows are
+    // filtered out.
+    fireEvent.change(targetInput, { target: { value: "Incoming" } });
+    expect(
+      await screen.findByTestId("admin-card-link-suggestion-incoming-open"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId("admin-card-link-suggestion-incoming-card-0"),
+    ).toBeNull();
+
+    // Now switch the query and select an unlinked card to verify the outgoing
+    // counter/cap stays independent from the 50 incoming rows.
+    fireEvent.change(targetInput, { target: { value: "Card 2" } });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    expect(screen.getByTestId("admin-card-link-add")).not.toBeDisabled();
+  });
+
+  it("shows the reverse holder cap instead of the viewed card's incoming count", async () => {
+    const state = relationsState();
+    const capLinks = Array.from({ length: 50 }, (_, index) => ({
+      id: `holder-cap-${index}`,
+      type: "relates_to" as const,
+      targetCardId: "card-3",
+    }));
+    state.cardLinks = capLinks.map((link) =>
+      adminCardLink({
+        id: link.id,
+        fromCardId: "card-2",
+        toCardId: link.targetCardId,
+        type: link.type,
+      }),
+    );
+    (state.contentBoard!.cards["card-2"] as { links?: unknown }).links =
+      capLinks;
+    const { server } = await renderRelations(state);
+
+    expect(
+      screen.getByTestId("admin-card-links-outgoing-count"),
+    ).toHaveTextContent("0 of 50 outgoing links on this card");
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    fireEvent.change(screen.getByTestId("admin-card-link-type"), {
+      target: { value: "blockedBy" },
+    });
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    expect(screen.getByTestId("admin-card-links-holder-cap")).toHaveTextContent(
+      "“Card 2” holds 50 of 50 outgoing links",
+    );
+    expect(screen.getByTestId("admin-card-link-add")).toBeDisabled();
+    expect(sentCommands(server)).toHaveLength(0);
+  });
+
+  it("disables checklist and item creation at their caps", async () => {
+    const checklistCap = relationsState();
+    checklistCap.cardChecklists["card-1"] = Array.from(
+      { length: LIMITS.checklistsPerCard },
+      (_, index) =>
+        adminChecklist({
+          id: `cap-checklist-${index}`,
+          title: `Checklist ${index}`,
+          position: index,
+        }),
+    );
+    const first = await renderRelations(checklistCap);
+    expect(screen.getByTestId("admin-new-checklist-title")).toBeDisabled();
+    expect(screen.getByTestId("admin-new-checklist-add")).toBeDisabled();
+    expect(
+      screen.getAllByText("A card can have at most 20 checklists.").length,
+    ).toBeGreaterThan(0);
+    expect(sentCommands(first.server)).toHaveLength(0);
+    cleanup();
+
+    const itemCap = relationsState();
+    itemCap.cardChecklists["card-1"] = [
+      adminChecklist({
+        id: "checklist-1",
+        title: "Full checklist",
+        items: Array.from({ length: LIMITS.itemsPerChecklist }, (_, index) => ({
+          id: `cap-item-${index}`,
+          text: `Item ${index}`,
+          done: false,
+          position: index,
+          deletedAt: null,
+        })),
+      }),
+    ];
+    const second = await renderRelations(itemCap);
+    expect(
+      screen.getByTestId("admin-checklist-item-input-checklist-1"),
+    ).toBeDisabled();
+    expect(
+      screen.getByTestId("admin-checklist-item-add-checklist-1"),
+    ).toBeDisabled();
+    expect(
+      screen.getAllByText("A checklist can have at most 100 items.").length,
+    ).toBeGreaterThan(0);
+    expect(sentCommands(second.server)).toHaveLength(0);
+  });
+
+  it("loads board content lazily, keeps it across checklist writes and refreshes after links", async () => {
+    const { server, state } = await renderRelations();
+    const contentRequests = () =>
+      server.requests.filter(
+        (request) =>
+          request.method === "GET" && request.path.endsWith("/content"),
+      ).length;
+
+    expect(contentRequests()).toBe(0);
+    fireEvent.click(screen.getByTestId("admin-checklist-item-toggle-item-2"));
+    await waitFor(() => {
+      expect(state.cardChecklists["card-1"]?.[0]?.items[1]?.done).toBe(true);
+    });
+    expect(contentRequests()).toBe(0);
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    await waitFor(() => expect(contentRequests()).toBe(1));
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    expect(screen.getByTestId("admin-card-link-selected")).toHaveTextContent(
+      "Card 2",
+    );
+
+    // A checklist write reloads the detail but must not clear the link draft
+    // or refetch the aggregate.
+    fireEvent.click(screen.getByTestId("admin-checklist-item-toggle-item-2"));
+    await waitFor(() => expect(contentRequests()).toBe(1));
+    expect(screen.getByTestId("admin-card-link-selected")).toHaveTextContent(
+      "Card 2",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-card-link-add")).not.toBeDisabled(),
+    );
+
+    fireEvent.click(screen.getByTestId("admin-card-link-add"));
+    await waitFor(() => {
+      expect(
+        state.cardLinks.some(
+          (link) =>
+            link.fromCardId === "card-1" &&
+            link.toCardId === "card-2" &&
+            link.deletedAt === null,
+        ),
+      ).toBe(true);
+    });
+    await waitFor(() => expect(contentRequests()).toBe(2));
+  });
+
+  it("retries a failed board-content load", async () => {
+    const { server } = await renderRelations();
+    server.failNextStatuses.push({ path: "/content", status: 500 });
+
+    fireEvent.click(screen.getByTestId("admin-card-link-open"));
+    expect(
+      await screen.findByTestId("admin-card-links-board-error"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByTestId("admin-card-links-board-retry"));
+    expect(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-card-links-board-error")).toBeNull();
+  });
+
+  it("clears the link draft when the header or Cancel closes the form", async () => {
+    await renderRelations();
+    const open = screen.getByTestId("admin-card-link-open");
+
+    fireEvent.click(open);
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    expect(screen.getByTestId("admin-card-link-selected")).toBeTruthy();
+
+    fireEvent.click(open);
+    expect(screen.queryByTestId("admin-card-link-form")).toBeNull();
+    fireEvent.click(open);
+    expect(screen.queryByTestId("admin-card-link-selected")).toBeNull();
+    expect(screen.getByTestId("admin-card-link-target")).toHaveValue("");
+
+    fireEvent.change(screen.getByTestId("admin-card-link-target"), {
+      target: { value: "Card 2" },
+    });
+    fireEvent.click(
+      await screen.findByTestId("admin-card-link-suggestion-card-2"),
+    );
+    fireEvent.click(screen.getByTestId("admin-card-link-cancel"));
+    expect(screen.queryByTestId("admin-card-link-form")).toBeNull();
+    fireEvent.click(open);
+    expect(screen.queryByTestId("admin-card-link-selected")).toBeNull();
+  });
+
+  it("supports keyboard selection, Escape and focus restore in the target combobox", async () => {
+    await renderRelations();
+    const open = screen.getByTestId("admin-card-link-open");
+    fireEvent.click(open);
+    const input = await screen.findByTestId("admin-card-link-target");
+    fireEvent.change(input, { target: { value: "Card" } });
+    await screen.findByTestId("admin-card-link-suggestions");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const activeId = input.getAttribute("aria-activedescendant");
+    expect(activeId).toEqual(expect.any(String));
+    expect(document.getElementById(activeId as string)).toHaveAttribute(
+      "role",
+      "option",
+    );
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("admin-card-link-selected")).toHaveTextContent(
+      "Card 2",
+    );
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByTestId("admin-card-link-selected")).toBeNull();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByTestId("admin-card-link-form")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(open));
+  });
+
+  it("keeps dangling/deleted link rows readable and removes only safe rows", async () => {
+    const state = relationsState();
+    state.cards.push(
+      adminCard({
+        id: "card-6",
+        title: "Deleted target",
+        commentIds: [],
+        deletedAt: 1,
+      }),
+      adminCard({
+        id: "card-7",
+        title: "Deleted holder",
+        commentIds: [],
+        deletedAt: 1,
+      }),
+    );
+    state.cardLinks = [
+      adminCardLink({
+        id: "dangling-out",
+        fromCardId: "card-1",
+        toCardId: "card-6",
+        type: "relates_to",
+      }),
+      adminCardLink({
+        id: "deleted-out",
+        fromCardId: "card-1",
+        toCardId: "card-5",
+        type: "blocks",
+        deletedAt: 1,
+      }),
+      adminCardLink({
+        id: "dangling-in",
+        fromCardId: "card-7",
+        toCardId: "card-1",
+        type: "duplicates",
+      }),
+    ];
+    const { server } = await renderRelations(state);
+
+    const dangling = screen.getByTestId("admin-card-link-row-dangling-out");
+    expect(dangling).toHaveTextContent("Deleted target");
+    expect(dangling).toHaveTextContent("Card deleted");
+    expect(
+      screen.getByTestId("admin-card-link-remove-dangling-out"),
+    ).toBeTruthy();
+    const deleted = screen.getByTestId("admin-card-link-row-deleted-out");
+    expect(deleted).toHaveTextContent("Deleted");
+    expect(
+      screen.queryByTestId("admin-card-link-remove-deleted-out"),
+    ).toBeNull();
+
+    // The deleted incoming holder is known from the DTO flag, so Remove is
+    // hidden before the lazy board aggregate is ever requested.
+    const incoming = screen.getByTestId("admin-card-link-row-dangling-in");
+    expect(incoming).toHaveTextContent("Deleted holder");
+    expect(incoming).toHaveTextContent("Card deleted");
+    expect(
+      screen.queryByTestId("admin-card-link-remove-dangling-in"),
+    ).toBeNull();
+    expect(
+      screen.getByTestId("admin-card-links-incoming-count"),
+    ).toHaveTextContent("0 incoming links");
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "GET" && request.path.endsWith("/content"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" && request.path.endsWith("/commands"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("names rename buttons after the checklist or item", async () => {
+    await renderRelations();
+    expect(
+      screen.getByTestId("admin-checklist-rename-checklist-1"),
+    ).toHaveAttribute("aria-label", "Rename checklist “Todo”");
+    expect(
+      screen.getByTestId("admin-checklist-item-rename-item-2"),
+    ).toHaveAttribute("aria-label", "Rename item “Second step”");
+  });
+
+  it("keeps the page usable when the relations chunk fails", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const Broken = () => {
+      throw new Error("chunk failed");
+    };
+    render(
+      <I18nProvider>
+        <CardFieldsChunkBoundary fallback={<CardRelationsFallback />}>
+          <Broken />
+        </CardFieldsChunkBoundary>
+      </I18nProvider>,
+    );
+    expect(
+      screen.getByTestId("admin-card-relations-load-error"),
+    ).toHaveTextContent(
+      "Could not load the checklist and link editor. Reload the page to try again.",
+    );
+    expect(
+      screen.getByTestId("admin-card-relations-load-reload"),
+    ).toHaveTextContent("Reload page");
+    errorSpy.mockRestore();
+  });
+});
+
+describe("FakeAdminServer relation fidelity (TASK-176.9 B2)", () => {
+  const post = (
+    server: FakeAdminServer,
+    commandId: string,
+    action: Record<string, unknown>,
+  ) =>
+    server.fetchImpl("http://api.test/api/v1/admin/boards/b-1/commands", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commandId, action }),
+    });
+
+  function fakeRelationsState(): FakeAdminState {
+    const state = emptyAdminState();
+    state.boards = [adminBoard()];
+    state.cards = [
+      adminCard({ id: "card-1", commentIds: [] }),
+      adminCard({ id: "card-2", title: "Target", commentIds: [] }),
+      adminCard({ id: "card-3", title: "Cycle", commentIds: [] }),
+    ];
+    state.contentBoard = contentBoard({
+      columns: [
+        {
+          id: "col-1",
+          title: "Backlog",
+          cardIds: ["card-1", "card-2", "card-3"],
+          createdAt: 1,
+        },
+      ],
+      cards: {
+        "card-1": {
+          id: "card-1",
+          title: "Moderate me",
+          createdAt: 1,
+          updatedAt: 1,
+          labelIds: [],
+        },
+        "card-2": {
+          id: "card-2",
+          title: "Target",
+          createdAt: 2,
+          updatedAt: 2,
+          labelIds: [],
+        },
+        "card-3": {
+          id: "card-3",
+          title: "Cycle",
+          createdAt: 3,
+          updatedAt: 3,
+          labelIds: [],
+        },
+      },
+    });
+    return state;
+  }
+
+  it("persists checklists and links and exposes them in the card detail", async () => {
+    const server = new FakeAdminServer(fakeRelationsState());
+    const checklistId = crypto.randomUUID();
+    const itemId = crypto.randomUUID();
+    const linkId = crypto.randomUUID();
+
+    expect(
+      (
+        await post(server, crypto.randomUUID(), {
+          type: "ADD_CHECKLIST",
+          cardId: "card-1",
+          newChecklistId: checklistId,
+          title: "Steps",
+          at: 1,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await post(server, crypto.randomUUID(), {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: "card-1",
+          checklistId,
+          newItemId: itemId,
+          text: "First",
+          at: 2,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await post(server, crypto.randomUUID(), {
+          type: "ADD_CARD_LINK",
+          cardId: "card-1",
+          linkId,
+          targetCardId: "card-2",
+          linkType: "relates_to",
+          at: 3,
+        })
+      ).status,
+    ).toBe(200);
+
+    const detailResponse = await server.fetchImpl(
+      "http://api.test/api/v1/admin/cards/card-1/detail",
+    );
+    const detail = (await detailResponse.json()) as {
+      checklists: Array<{
+        id: string;
+        title: string;
+        items: Array<{ id: string; text: string; done: boolean }>;
+      }>;
+      linksOut: Array<{
+        id: string;
+        otherCardId: string;
+        otherCardTitle: string;
+        type: string;
+      }>;
+    };
+    expect(detail.checklists).toEqual([
+      expect.objectContaining({
+        id: checklistId,
+        title: "Steps",
+        items: [
+          expect.objectContaining({ id: itemId, text: "First", done: false }),
+        ],
+      }),
+    ]);
+    expect(detail.linksOut).toEqual([
+      expect.objectContaining({
+        id: linkId,
+        otherCardId: "card-2",
+        otherCardTitle: "Target",
+        type: "relates_to",
+      }),
+    ]);
+    expect(server.state.commands).toHaveLength(3);
+  });
+
+  it("rejects invalid checklist/link writes without a command or audit row", async () => {
+    const state = fakeRelationsState();
+    state.cardChecklists["card-1"] = [
+      adminChecklist({
+        id: "checklist-1",
+        title: "Checklist",
+        items: [
+          {
+            id: "item-1",
+            text: "Item",
+            done: false,
+            position: 0,
+            deletedAt: null,
+          },
+        ],
+      }),
+    ];
+    const server = new FakeAdminServer(state);
+    const reject = async (status: number, action: Record<string, unknown>) => {
+      const response = await post(server, crypto.randomUUID(), {
+        ...action,
+        at: 1,
+      });
+      expect(response.status).toBe(status);
+    };
+
+    await reject(404, {
+      type: "RENAME_CHECKLIST",
+      cardId: "card-1",
+      checklistId: "missing",
+      title: "Missing",
+    });
+    await reject(404, {
+      type: "SET_CHECKLIST_ITEM_DONE",
+      cardId: "card-1",
+      checklistId: "checklist-1",
+      itemId: "missing",
+      done: true,
+    });
+    await reject(409, {
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: "checklist-1",
+      title: "Live id",
+    });
+    await reject(400, {
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: crypto.randomUUID(),
+      targetCardId: "card-1",
+      linkType: "relates_to",
+    });
+    await reject(404, {
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: crypto.randomUUID(),
+      targetCardId: "missing",
+      linkType: "relates_to",
+    });
+
+    state.cardLinks = [
+      adminCardLink({
+        id: "existing",
+        fromCardId: "card-1",
+        toCardId: "card-2",
+        type: "relates_to",
+      }),
+      adminCardLink({
+        id: "cycle-1",
+        fromCardId: "card-2",
+        toCardId: "card-3",
+        type: "blocks",
+      }),
+      adminCardLink({
+        id: "cycle-2",
+        fromCardId: "card-3",
+        toCardId: "card-1",
+        type: "blocks",
+      }),
+    ];
+    await reject(409, {
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: crypto.randomUUID(),
+      targetCardId: "card-2",
+      linkType: "blocks",
+    });
+    await reject(409, {
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: crypto.randomUUID(),
+      targetCardId: "card-3",
+      linkType: "blocks",
+    });
+    await reject(404, {
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-2",
+      linkId: "existing",
+      targetCardId: "card-2",
+      linkType: "relates_to",
+    });
+    await reject(409, {
+      type: "REMOVE_CARD_LINK",
+      cardId: "card-1",
+      linkId: "existing",
+      targetCardId: "card-2",
+      linkType: "blocks",
+    });
+
+    expect(server.state.commands).toHaveLength(0);
+    expect(server.state.audit).toHaveLength(0);
+  });
+
+  it("rejects fresh checklist/item adds at their caps without writing a command", async () => {
+    const state = fakeRelationsState();
+    state.cardChecklists["card-1"] = Array.from(
+      { length: LIMITS.checklistsPerCard },
+      (_, index) =>
+        adminChecklist({
+          id: `cap-checklist-${index}`,
+          title: `Checklist ${index}`,
+          position: index,
+          items:
+            index === 0
+              ? Array.from(
+                  { length: LIMITS.itemsPerChecklist },
+                  (__, itemIndex) => ({
+                    id: `cap-item-${itemIndex}`,
+                    text: `Item ${itemIndex}`,
+                    done: false,
+                    position: itemIndex,
+                    deletedAt: null,
+                  }),
+                )
+              : [],
+        }),
+    );
+    const server = new FakeAdminServer(state);
+    const responses = await Promise.all([
+      post(server, crypto.randomUUID(), {
+        type: "ADD_CHECKLIST",
+        cardId: "card-1",
+        newChecklistId: crypto.randomUUID(),
+        title: "Over the checklist cap",
+        at: 1,
+      }),
+      post(server, crypto.randomUUID(), {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: "card-1",
+        checklistId: "cap-checklist-0",
+        newItemId: crypto.randomUUID(),
+        text: "Over the item cap",
+        at: 2,
+      }),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([409, 409]);
+    expect(server.state.commands).toHaveLength(0);
+    expect(server.state.audit).toHaveLength(0);
+  });
+
+  it("validates text/link types and scopes pair/cap guards to the board", async () => {
+    const state = fakeRelationsState();
+    state.cardChecklists["card-1"] = [
+      adminChecklist({
+        id: "checklist-1",
+        title: "Checklist",
+        items: [],
+      }),
+    ];
+    const server = new FakeAdminServer(state);
+    const reject = async (action: Record<string, unknown>) => {
+      const response = await post(server, crypto.randomUUID(), {
+        ...action,
+        at: 1,
+      });
+      expect(response.status).toBe(400);
+    };
+
+    await reject({
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: crypto.randomUUID(),
+      title: "   ",
+    });
+    await reject({
+      type: "ADD_CHECKLIST",
+      cardId: "card-1",
+      newChecklistId: crypto.randomUUID(),
+      title: "x".repeat(LIMITS.checklistTitle + 1),
+    });
+    await reject({
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "checklist-1",
+      newItemId: crypto.randomUUID(),
+      text: "   ",
+    });
+    await reject({
+      type: "ADD_CHECKLIST_ITEM",
+      cardId: "card-1",
+      checklistId: "checklist-1",
+      newItemId: crypto.randomUUID(),
+      text: "x".repeat(LIMITS.checklistItem + 1),
+    });
+    await reject({
+      type: "ADD_CARD_LINK",
+      cardId: "card-1",
+      linkId: crypto.randomUUID(),
+      targetCardId: "card-2",
+      linkType: "sideways",
+    });
+    expect(server.state.commands).toHaveLength(0);
+    expect(server.state.audit).toHaveLength(0);
+
+    // A pair and 50 rows on another board must not mark this pair/card as
+    // linked or capped.
+    state.cardLinks = Array.from({ length: 50 }, (_, index) =>
+      adminCardLink({
+        id: `other-board-${index}`,
+        boardId: "b-2",
+        fromCardId: "card-1",
+        toCardId: index === 0 ? "card-2" : "card-3",
+        type: "relates_to",
+      }),
+    );
+    expect(
+      (
+        await post(server, crypto.randomUUID(), {
+          type: "ADD_CARD_LINK",
+          cardId: "card-1",
+          linkId: crypto.randomUUID(),
+          targetCardId: "card-2",
+          linkType: "relates_to",
+          at: 2,
+        })
+      ).status,
+    ).toBe(200);
+    expect(server.state.commands).toHaveLength(1);
   });
 });

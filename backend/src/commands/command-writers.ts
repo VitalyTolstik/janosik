@@ -42,6 +42,92 @@ const attachmentIds = (text: string | undefined): Set<string> =>
     ),
   );
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * TASK-180.2 L19: remove every reference to a deleted attachment from a
+ * markdown body. Handles image/link syntax, `::image/video/audio` directives
+ * and a bare URL (with or without the `/api/v1` prefix). The id is matched
+ * exactly so deleting `a` never touches `a2`.
+ *
+ * The cleanup is line-local: only whitespace at the removed reference's
+ * boundary and its own line are touched. Indented code blocks, tabs, aligned
+ * text and markdown two-space hard breaks elsewhere in the body stay
+ * byte-identical.
+ */
+export function stripAttachmentReference(
+  text: string | undefined,
+  attachmentId: string,
+): string | undefined {
+  if (text === undefined || !text.includes(attachmentId)) return text;
+  const id = escapeRegExp(attachmentId);
+  // Consume the optional `/api/v1` prefix as part of the URL: matching only
+  // from `/attachments` left a dangling `/api/v1` behind a bare URL.
+  const url = `(?:https?:\\/\\/[^\\s()<>"']*)?(?:\\/api\\/v1)?\\/attachments\\/${id}\\/content(?:\\?[^\\s()<>"']*)?`;
+  const reference = `(?:::(?:image|video|audio)\\{[^}]*${url}[^}]*\\}|!\\[[^\\]]*\\]\\(${url}\\)|\\[[^\\]]*\\]\\(${url}\\)|${url})`;
+  const token = new RegExp(reference, "g");
+
+  const lines = text.split("\n");
+  const removed = new Set<number>();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (!line.includes(attachmentId)) continue;
+    let cursor = 0;
+    let next = "";
+    let lastEnd = -1;
+    for (const match of line.matchAll(token)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      const before = line.slice(cursor, start);
+      let afterStart = end;
+      const after = line.slice(afterStart);
+      if (/[ \t]$/.test(before) && /^[ \t]/.test(after)) {
+        // Keep a single separator, and keep pure indentation before a
+        // reference that starts a line.
+        next += /^[ \t]*$/.test(before)
+          ? before
+          : before.replace(/[ \t]+$/, " ");
+        while (line[afterStart] === " " || line[afterStart] === "\t") {
+          afterStart += 1;
+        }
+      } else if (/[ \t]$/.test(before) && after === "") {
+        next += before.replace(/[ \t]+$/, "");
+      } else if (before === "" && /^[ \t]/.test(after)) {
+        while (line[afterStart] === " " || line[afterStart] === "\t") {
+          afterStart += 1;
+        }
+      } else {
+        next += before;
+      }
+      lastEnd = afterStart;
+      cursor = afterStart;
+    }
+    next += line.slice(cursor);
+    if (lastEnd === line.length) next = next.replace(/[ \t]+$/, "");
+    if (next.trim() === "") {
+      removed.add(index);
+    } else {
+      lines[index] = next;
+    }
+  }
+  // Drop one adjacent blank line when a reference-only line had blank lines
+  // on both sides, so a standalone image/directive does not leave a double
+  // gap. No other blank line is touched.
+  const referenceLines = [...removed];
+  for (const index of referenceLines) {
+    if (
+      lines[index - 1]?.trim() === "" &&
+      lines[index + 1]?.trim() === "" &&
+      !removed.has(index + 1)
+    ) {
+      removed.add(index + 1);
+    }
+  }
+  return lines.filter((_, index) => !removed.has(index)).join("\n");
+}
+
 /** Keep description uploads reversible: detached blobs remain readable for
  * undo and snapshots, but disappear from the live attachment list. */
 export async function reconcileDescriptionAttachments(
@@ -202,6 +288,24 @@ async function writeCardPositions(
       WHERE c."id" = v.id
     `;
   }
+  // H4: card membership/order is part of a column's value. Bump its version
+  // even though the aggregate has no column `updatedAt` and the rewrite above
+  // deliberately keeps `Card.updatedAt` untouched. Without this a run that
+  // created the column would see its pre-image `postVersion` unchanged after
+  // a human added/moved a card later, and its `DELETE_COLUMN` inverse would
+  // delete that card with a clean preview.
+  await bumpColumnVersion(tx, columnId);
+}
+
+/**
+ * Change a column's row version without touching its `updatedAt` (bookkeeping
+ * order/membership changes are not column edits). Kept raw for the same
+ * reason as the position writer.
+ */
+async function bumpColumnVersion(tx: Tx, columnId: string): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE "Column" SET "version" = "version" + 1 WHERE "id" = ${columnId}
+  `;
 }
 
 /**
@@ -545,6 +649,14 @@ function touchCards(ids: string[]): string[] {
   return ids.map(touch.card);
 }
 
+/** Checklist + item touches for commands that create/restore whole cards. */
+function touchChecklists(checklists: Checklist[] | undefined): string[] {
+  return (checklists ?? []).flatMap((checklist) => [
+    touch.checklist(checklist.id),
+    ...checklist.items.map((item) => touch.checklistItem(item.id)),
+  ]);
+}
+
 /**
  * Apply one command's result to the normalized tables and return the
  * `Command.touches` labels (without the board, which the caller adds).
@@ -712,9 +824,20 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         if (!card) continue;
         await upsertCard(tx, card, copy.id, position, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
+        // H3: checklists/items are part of the copy. Their ids are derived
+        // from the new card id by the reducer, so writing them here keeps
+        // the reloaded aggregate equal to the optimistic board.
+        await writeChecklists(tx, card.id, card.checklists);
       }
       await writeColumnPositions(tx, after.columns);
-      return [boardTouch, touch.column(copy.id), ...touchCards(copy.cardIds)];
+      return [
+        boardTouch,
+        touch.column(copy.id),
+        ...touchCards(copy.cardIds),
+        ...copy.cardIds.flatMap((id) =>
+          touchChecklists(cardOf(after, id)?.checklists),
+        ),
+      ];
     }
 
     case "MOVE_COLUMN": {
@@ -802,6 +925,9 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const now = new Date(ctx.at);
       const card = cardOf(before, action.cardId);
       if (!card) return [boardTouch];
+      const sourceColumn = before.columns.find((column) =>
+        column.cardIds.includes(card.id),
+      );
       const checklists = await tx.checklist.findMany({
         where: { cardId: card.id, deletedAt: null },
         select: { id: true },
@@ -830,9 +956,16 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           version: { increment: 1 },
         },
       });
+      if (sourceColumn !== undefined) {
+        await bumpColumnVersion(tx, sourceColumn.id);
+      }
       return [
         boardTouch,
         touch.card(card.id),
+        // The bump above is a real write: it must be visible in `touches`,
+        // `versions` and the run pre-image, or a later command in the same
+        // run would compare its pre-image against a stale column version.
+        ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -870,6 +1003,9 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         });
         archived.push(id);
       }
+      if (archived.length > 0) {
+        await bumpColumnVersion(tx, action.columnId);
+      }
       return [
         boardTouch,
         touch.column(action.columnId),
@@ -893,7 +1029,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
         await writeCardPositions(tx, column.id, column.cardIds);
-        return [boardTouch, touch.card(card.id), touch.column(column.id)];
+        return [
+          boardTouch,
+          touch.card(card.id),
+          touch.column(column.id),
+          ...touchChecklists(card.checklists),
+        ];
       }
       // No target column: the reducer puts the card back only into the
       // `cards` map and changes no `column.cardIds`. Park it in the board's
@@ -903,7 +1044,11 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await upsertCard(tx, card, orphanId, 0, ctx.actorId);
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeChecklists(tx, card.id, card.checklists);
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...touchChecklists(card.checklists),
+      ];
     }
 
     case "RESTORE_COLUMN": {
@@ -944,7 +1089,10 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         await upsertCard(tx, card, action.column.id, cardPosition, ctx.actorId);
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
-        touchList.push(touch.card(card.id));
+        touchList.push(
+          touch.card(card.id),
+          ...touchChecklists(card.checklists),
+        );
       }
       return touchList;
     }
@@ -953,18 +1101,30 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       const column = columnOf(after, action.columnId);
       if (!column) return [boardTouch];
       const touchList = [boardTouch, touch.column(column.id)];
+      let orphanId: string | undefined;
       for (const card of action.cards) {
         const cardPosition = column.cardIds.indexOf(card.id);
+        // The reducer keeps a card listed in `cards` but omitted from
+        // `cardIds` in the aggregate's card map while taking it out of the
+        // column. Park it in the invisible orphan column to reproduce that
+        // exact state — writing every card into the restored column made the
+        // reload disagree with the reducer (M13).
+        if (cardPosition < 0) {
+          orphanId ??= await ensureOrphanColumn(tx, boardId, ctx.at);
+        }
         await upsertCard(
           tx,
           card,
-          column.id,
+          cardPosition < 0 ? orphanId! : column.id,
           cardPosition < 0 ? 0 : cardPosition,
           ctx.actorId,
         );
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
         await writeChecklists(tx, card.id, card.checklists);
-        touchList.push(touch.card(card.id));
+        touchList.push(
+          touch.card(card.id),
+          ...touchChecklists(card.checklists),
+        );
       }
       await writeCardPositions(tx, column.id, column.cardIds);
       return touchList;
@@ -1254,7 +1414,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [
         boardTouch,
         touch.card(card.id),
-        touch.checklist(action.checklist.id),
+        ...touchChecklists([action.checklist]),
       ];
     }
 
@@ -1280,8 +1440,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       return [
         boardTouch,
         touch.card(card.id),
-        touch.checklist(action.checklistId),
-        touch.checklistItem(action.item.id),
+        ...(checklist
+          ? touchChecklists([checklist])
+          : [
+              touch.checklist(action.checklistId),
+              touch.checklistItem(action.item.id),
+            ]),
       ];
     }
 
@@ -1326,8 +1490,14 @@ async function writeCardAction(
       ctx.actorId,
     );
     await writeCardLabels(tx, boardId, copy.id, copy.labelIds);
+    await writeChecklists(tx, copy.id, copy.checklists);
     await writeCardPositions(tx, column.id, column.cardIds);
-    return [boardTouch, touch.column(column.id), touch.card(copy.id)];
+    return [
+      boardTouch,
+      touch.column(column.id),
+      touch.card(copy.id),
+      ...touchChecklists(copy.checklists),
+    ];
   }
 
   const card = cardId ? cardOf(after, cardId) : undefined;
@@ -1407,7 +1577,11 @@ async function writeCardAction(
           cardIdsOf(after, sourceColumn.id),
         );
       }
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+      ];
     }
 
     case "UNARCHIVE_CARD": {

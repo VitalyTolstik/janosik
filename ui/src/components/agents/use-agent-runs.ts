@@ -55,8 +55,10 @@ export interface AgentRunsState {
  * so this fans out with a small concurrency bound, keeps a cursor per board
  * and merges the pages newest-first. A network failure keeps the last known
  * rows and reports the affected boards; a 403/404 drops them because access
- * (not freshness) changed. A committed rollback arrives as `run.reverted` and
- * refreshes the loaded pages without a reload.
+ * (not freshness) changed. A committed run arrives as `run.created` and a
+ * rollback as `run.reverted`; both refresh the loaded pages without a reload.
+ * Only the active board's stream is routed here today; the global `/agents`
+ * fan-out across boards is TASK-180.6.
  */
 export function useAgentRuns(
   boards: readonly RunBoardScope[],

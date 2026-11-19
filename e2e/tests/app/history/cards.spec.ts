@@ -608,3 +608,60 @@ test("undo and redo removing a card link", async ({ page, board }) => {
   await openCard(page, "Source task");
   await expect(dialog.getByTestId("card-link-row")).toHaveCount(0);
 });
+
+test("refuses a WIP-blocked move undo and keeps the step (M16)", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.column("Doing");
+  await board.card(todo, "Move me");
+  await board.card(todo, "Occupant");
+  // Lower the limit while both cards are still there: moving "Move me" out
+  // leaves Todo at 1/1, so its undo would be the second card again. This is
+  // set before the move, so the recorded step is not overtaken by a later
+  // command to the same column.
+  await board.command({
+    type: "SET_COLUMN_WIP_LIMIT",
+    columnId: todo,
+    wipLimit: 1,
+  });
+  await board.open(page);
+
+  // Move from the dialog's column row: the same MOVE_CARD command as a drag,
+  // without depending on dnd-kit pointer geometry in this environment.
+  await openCard(page, "Move me");
+  const card = cardDialog(page);
+  await card.getByRole("button", { name: "Todo", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Doing", exact: true }).click();
+  await expect(
+    card.getByRole("button", { name: "Doing", exact: true }),
+  ).toBeVisible();
+  await closeCardDialog(page);
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toBeVisible();
+
+  await expectHistory(page, { undo: true, redo: false });
+  await undo(page);
+  // No optimistic move: the card stayed in Doing and the undo step survived.
+  // Exact localized copy, with the column title and limit interpolated.
+  await expect(
+    page.getByText(
+      "“Todo” is at its WIP limit (1) — the card stays in its column.",
+    ),
+  ).toBeVisible();
+  await expect(
+    columnSection(page, "Doing").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toBeVisible();
+  await expect(
+    columnSection(page, "Todo").getByTestId("card-title").filter({
+      hasText: "Move me",
+    }),
+  ).toHaveCount(0);
+  await expectHistory(page, { undo: true, redo: false });
+});

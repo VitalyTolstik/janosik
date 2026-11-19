@@ -95,13 +95,17 @@ describe("MembershipGuard", () => {
   it("only allows the explicit read-only control POST routes", () => {
     for (const path of [
       "/api/v1/boards/b/runs/r/revert/preview",
+      // L21: the generic route must reach the controller so `{dryRun:true}`
+      // works for a read-only PAT; a real revert is PAT-forbidden by the
+      // service, not by the read-only scope gate.
+      "/api/v1/boards/b/runs/r/revert",
       "/api/v1/boards/b/agent-sessions",
       "/api/v1/boards/b/agent-sessions/s/heartbeat",
       "/api/v1/boards/b/agent-sessions/s/end",
     ])
       expect(isReadOnlyControlOperation("POST", path)).toBe(true);
     for (const path of [
-      "/api/v1/boards/b/runs/r/revert",
+      "/api/v1/boards/b/runs/r/revert/extra",
       "/api/v1/boards/b/commands",
       "/api/v1/boards/b/agent-sessions/s/pause",
       "/api/v1/boards/b/agent-sessions/s/end/extra",

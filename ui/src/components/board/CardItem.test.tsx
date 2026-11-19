@@ -462,4 +462,13 @@ describe("assignee badge (TASK-49)", () => {
 
     expect(screen.queryByTestId("card-assignee")).toBeNull();
   });
+
+  it("hides an assignee the roster no longer contains (L35)", () => {
+    const live = createBoardLive();
+    live.members.set("b-1", []);
+    renderWithLive(live, { ...baseCard, assigneeId: "u-removed" });
+
+    // The dialog says Unassigned for this card; the face must agree.
+    expect(screen.queryByTestId("card-assignee")).toBeNull();
+  });
 });

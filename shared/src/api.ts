@@ -116,6 +116,8 @@ export interface WorkflowConflictDetails {
 export interface ConflictError {
   conflict: CommandConflict;
   currentVersion: number;
+  /** Only for `conflict: "wip"`: the column whose limit was reached. */
+  columnId?: string;
   /** Only for `conflict: "workflow"`. */
   workflow?: WorkflowConflictDetails;
 }
@@ -202,6 +204,8 @@ export interface ApiErrorEnvelope {
   details?: Record<string, unknown>;
   /** Legacy conflict category — same value as the matching `*_conflict` code. */
   conflict?: CommandConflict;
+  /** Column whose WIP/absolute cap refused a `conflict: "wip"`. */
+  columnId?: string;
   /** Only for a workflow conflict; unchanged from `ConflictError`. */
   workflow?: WorkflowConflictDetails;
   /** Destinations the card may move to on a workflow conflict. */
@@ -242,6 +246,8 @@ export interface ApiErrorEnvelope {
   status?: string;
   /** Run that consumed an approval. */
   runId?: string | null;
+  /** Retention window (days) behind a `run_expired` refusal. */
+  retentionDays?: number;
 }
 
 /** Header carrying a REST idempotency key (ADR §6.12). */
@@ -425,19 +431,30 @@ export interface ApprovalSseEvent {
 }
 
 /**
- * TASK-166.7: a run-level lifecycle event on the board stream. A successful
- * human rollback emits `run.reverted` after its transaction commits; the
- * original run is `runId`, the new audit run is `revertRunId`.
+ * Board-scoped run lifecycle (TASK-166.15, L38).
+ *
+ * `created` announces a freshly committed non-revert run so an open board
+ * runs list can refresh without a reload. `reverted` preserves the original
+ * rollback frame (the original run is `runId`, the new audit run is
+ * `revertRunId`); a revert run is announced only by that frame. Both are
+ * emitted on the active board's stream only; fanning every run into the
+ * global `/agents` overview is TASK-180.6.
  */
-export interface RunSseEvent {
-  type: "run";
-  op: "reverted";
-  runId: string;
-  revertRunId: string;
-  at: number;
-}
+export type RunSseEvent =
+  | {
+      type: "run";
+      op: "created";
+      runId: string;
+      at: number;
+    }
+  | {
+      type: "run";
+      op: "reverted";
+      runId: string;
+      revertRunId: string;
+      at: number;
+    };
 
-/** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 /**
  * The server could not replay the full gap since `?since=` (the delta hit
  * its cap, or the requested seq is older than the retained log): the client
@@ -447,6 +464,7 @@ export interface ResyncSseEvent {
   type: "resync";
 }
 
+/** Discriminated union of every `GET /boards/:id/events` event (§7.4). */
 export type BoardSseEvent =
   | CommandSseEvent
   | PresenceSseEvent
@@ -1299,7 +1317,12 @@ export interface ApprovalListQuery {
 export const AGENT_RUN_KINDS = ["batch", "plan", "single", "revert"] as const;
 export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number];
 
-export const AGENT_RUN_STATUSES = ["applied", "reverted", "failed"] as const;
+/**
+ * L37: a run has only the two states a committed transaction can produce.
+ * Failed batches/plans roll back and never create a run; the old `failed`
+ * status had no writer. TASK-180.5 re-checks the public contract.
+ */
+export const AGENT_RUN_STATUSES = ["applied", "reverted"] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
 /**
@@ -1516,7 +1539,6 @@ export interface AgentsOverviewRunCounts {
   total: number;
   applied: number;
   reverted: number;
-  failed: number;
 }
 
 /**

@@ -101,6 +101,7 @@ const RESERVED_BODY_KEYS = new Set([
   "field",
   "details",
   "conflict",
+  "columnId",
   "workflow",
   "allowedToColumnIds",
   "missingLocales",
@@ -123,6 +124,7 @@ const RESERVED_BODY_KEYS = new Set([
   "scope",
   "pausedAt",
   "runId",
+  "retentionDays",
 ]);
 
 type RawBody = Record<string, unknown>;
@@ -308,6 +310,9 @@ export function apiErrorEnvelope(
         }
       : {}),
     ...(conflict !== undefined ? { conflict } : {}),
+    ...(stringField(body?.columnId) !== undefined
+      ? { columnId: stringField(body?.columnId) as string }
+      : {}),
     ...(workflow !== undefined ? { workflow } : {}),
     ...(allowedToColumnIds !== undefined ? { allowedToColumnIds } : {}),
     ...(missingLocales !== undefined ? { missingLocales } : {}),
@@ -382,6 +387,9 @@ export function apiErrorEnvelope(
       : stringField(body?.runId) !== undefined
         ? { runId: stringField(body?.runId) as string }
         : {}),
+    ...(numberField(body?.retentionDays) !== undefined
+      ? { retentionDays: numberField(body?.retentionDays) as number }
+      : {}),
   };
 }
 

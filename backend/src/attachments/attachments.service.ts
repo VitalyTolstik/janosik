@@ -7,6 +7,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import type { AttachmentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
@@ -24,6 +25,10 @@ import {
   requestJobAttribution,
 } from "@/auth/request-attribution";
 import { touchAgentSessionAfterWrite } from "@/agent-sessions/agent-session-context";
+import {
+  reconcileDescriptionAttachments,
+  stripAttachmentReference,
+} from "@/commands/command-writers";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import {
@@ -197,6 +202,8 @@ export class AttachmentsService {
         new BadRequestException({
           message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
           field: "file",
+          code: "attachment_limit",
+          limit: LIMITS.attachmentsPerCard,
         }),
       );
     }
@@ -244,6 +251,8 @@ export class AttachmentsService {
             throw new BadRequestException({
               message: `Card must hold at most ${LIMITS.attachmentsPerCard} attachments`,
               field: "file",
+              code: "attachment_limit",
+              limit: LIMITS.attachmentsPerCard,
             });
           }
           const row = await tx.attachment.create({
@@ -366,6 +375,18 @@ export class AttachmentsService {
   }
 
   /**
+   * TASK-180.2 L20: the per-card budget counts every live blob, including
+   * inline/description media that the list endpoint deliberately hides. The
+   * UI reads this alongside the list so its cap is the server's cap, not
+   * `items.length`.
+   */
+  async countLive(cardId: string): Promise<number> {
+    return this.prisma.attachment.count({
+      where: { cardId, deletedAt: null },
+    });
+  }
+
+  /**
    * Resolve a live attachment for streaming — the guard has already proven
    * the caller is a member of the owning board.
    */
@@ -378,6 +399,59 @@ export class AttachmentsService {
     });
     if (!row) throw new NotFoundException();
     return { meta: toAttachmentDto(row), storedName: row.storedName };
+  }
+
+  /**
+   * TASK-180.2 L19: a deleted attachment must not leave a dead
+   * `/attachments/<id>/content` URL in a description or comment. The row is
+   * already soft-deleted and stays readable for the retention/undo window;
+   * this only scrubs the bodies that still point at it and re-runs the
+   * existing reconcile so the other embedded files keep their detached
+   * state and the card badge stays honest.
+   */
+  private async scrubDeletedAttachment(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    attachmentId: string,
+  ): Promise<void> {
+    const url = `/attachments/${attachmentId}/content`;
+    const [cards, comments] = await Promise.all([
+      tx.card.findMany({
+        where: {
+          column: { boardId },
+          deletedAt: null,
+          description: { contains: url },
+        },
+        select: { id: true, description: true },
+      }),
+      tx.comment.findMany({
+        where: {
+          card: { column: { boardId }, deletedAt: null },
+          deletedAt: null,
+          text: { contains: url },
+        },
+        select: { id: true, text: true },
+      }),
+    ]);
+    for (const card of cards) {
+      const before = card.description ?? undefined;
+      const after = stripAttachmentReference(before, attachmentId);
+      if (after === before) continue;
+      await tx.card.update({
+        where: { id: card.id },
+        data: { description: after ?? null, version: { increment: 1 } },
+      });
+      await reconcileDescriptionAttachments(tx, boardId, before, after);
+    }
+    for (const comment of comments) {
+      const after = stripAttachmentReference(comment.text, attachmentId);
+      if (after === comment.text) continue;
+      await tx.comment.update({
+        where: { id: comment.id },
+        data: { text: after ?? "", editedAt: new Date() },
+      });
+      await reconcileDescriptionAttachments(tx, boardId, comment.text, after);
+    }
   }
 
   async remove(
@@ -468,6 +542,7 @@ export class AttachmentsService {
               data: { attachmentCount: { decrement: 1 } },
             });
           }
+          await this.scrubDeletedAttachment(tx, row.boardId, attachmentId);
           const activity = await tx.activity.create({
             data: {
               boardId: row.boardId,

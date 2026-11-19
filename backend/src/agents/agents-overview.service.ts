@@ -366,7 +366,6 @@ export class AgentsOverviewService {
         total: totalRuns,
         applied: runByStatus.get("applied") ?? 0,
         reverted: runByStatus.get("reverted") ?? 0,
-        failed: runByStatus.get("failed") ?? 0,
       },
     };
   }

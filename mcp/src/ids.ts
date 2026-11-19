@@ -15,6 +15,15 @@ export function newCommandId(): string {
   return `mcp-${crypto.randomUUID()}`;
 }
 
+/**
+ * TASK-180.2 M17: a fresh REST `Idempotency-Key` for an aggregate write
+ * (board create/import, share, comment, attachment). Same alphabet/length as
+ * a command id; kept distinct so a tool never confuses the two.
+ */
+export function newIdempotencyKey(): string {
+  return `mcp-${crypto.randomUUID()}`;
+}
+
 /** A stable, bounded idempotency key for one operation on a client id. */
 export function stableCommandId(entityId: string, operation: string): string {
   if (operation === "create" && entityId.length <= 64) return entityId;

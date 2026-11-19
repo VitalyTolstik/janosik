@@ -235,20 +235,18 @@ export interface BoardScopedAction {
   /**
    * Set by `invert()`: this command undoes another one (TASK-21.7d).
    *
-   * Collection guards — `LIMITS` on cards/columns/labels/checklists and the
-   * WIP limit — exist to stop *new* content from growing past what the app
-   * can hold. An inverse adds nothing new: it puts back what was just taken
-   * away, so it is never refused. A refused undo is the worst outcome
-   * available — Ctrl+Z silently does nothing and the card the user deleted
-   * by accident is gone for good; a column briefly over its limit is a
-   * state the app already has (an import, or a limit lowered under the
-   * current count) and shows honestly with a red counter until it is back
-   * under. Text clamps still apply: they bound a field, not a collection.
+   * The flag keeps the *local* reducer responsive during an undo, but it is
+   * not proof of anything: TASK-180.2 M13 made the server check every
+   * `RESTORE_*` (and MOVE/UNARCHIVE) against the current WIP/collection
+   * limits, ignoring a client-supplied `inverse:true`. Client undo of
+   * `MOVE_CARD`/`UNARCHIVE_CARD` waits for that server answer instead of
+   * applying optimistically (M16), and a refusal keeps the undo step.
    *
-   * Two structural caps hold even here: `columnsPerBoard` and
-   * `cardsPerColumn`. The flag comes from the client, so without them a
-   * crafted "inverse" restore could grow a board without bound; and a
-   * restore never overwrites an id that is still on the board.
+   * Two structural caps hold even in the reducer: `columnsPerBoard` and
+   * `cardsPerColumn`; a restore never overwrites an id that is still on the
+   * board. Text clamps still apply: they bound a field, not a collection.
+   * The only caller allowed past the server's restore limits is the internal
+   * run-revert path, which passes its own non-wire option.
    */
   inverse?: boolean;
   /**
@@ -1116,10 +1114,80 @@ function archiveColumnCards(
 }
 
 /**
+ * TASK-180.2 H3: deterministic ids for the checklist/item rows a duplicate
+ * creates. They are derived from the *new card id*, which the caller already
+ * minted, so the client reducer and the server writers produce the same ids
+ * without carrying an extra id map on the wire. Reusing the source ids is
+ * wrong: the global-id upsert would re-parent the original card's checklist
+ * to the copy.
+ */
+const FNV_OFFSET_A = 0xcbf29ce484222325n;
+const FNV_OFFSET_B = 0x84222325cbf29ce4n;
+const FNV_PRIME = 0x100000001b3n;
+
+/** 64-bit FNV-1a, kept deterministic across client and server. */
+function fnv1a64(value: string, offset: bigint): bigint {
+  let hash = offset;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= BigInt(value.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * FNV_PRIME);
+  }
+  return hash;
+}
+
+function hex64(value: bigint): string {
+  return value.toString(16).padStart(16, "0");
+}
+
+/**
+ * Collision-resistant, colon-free base for derived duplicate ids.
+ *
+ * A truncated raw card id was wrong twice: two long ids sharing the first
+ * N characters derived the same checklist ids, and a colon in the source id
+ * broke `Command.touches` (`kind:id` split on the first colon). Two FNV-1a
+ * lanes over the *whole* id give 128 bits while staying deterministic in the
+ * browser (no async crypto) and short enough for the 128-char wire id bound.
+ */
+function duplicateIdBase(cardId: string): string {
+  return `dup-${hex64(fnv1a64(cardId, FNV_OFFSET_A))}${hex64(
+    fnv1a64(cardId, FNV_OFFSET_B),
+  )}`;
+}
+
+export function duplicateChecklistId(cardId: string, index: number): string {
+  return `${duplicateIdBase(cardId)}~cl~${index}`;
+}
+
+export function duplicateChecklistItemId(
+  cardId: string,
+  checklistIndex: number,
+  itemIndex: number,
+): string {
+  return `${duplicateIdBase(cardId)}~cl~${checklistIndex}~i~${itemIndex}`;
+}
+
+/** Clone a card's checklists with fresh ids derived from the copy's card id. */
+function duplicateChecklists(
+  checklists: Checklist[] | undefined,
+  cardId: string,
+): Checklist[] | undefined {
+  if (!checklists) return undefined;
+  return checklists.map((checklist, checklistIndex) => ({
+    ...checklist,
+    id: duplicateChecklistId(cardId, checklistIndex),
+    items: checklist.items.map((item, itemIndex) => ({
+      ...item,
+      id: duplicateChecklistItemId(cardId, checklistIndex, itemIndex),
+    })),
+  }));
+}
+
+/**
  * Duplicate a card in place: the copy lands right below the original with
  * all content (description, checklists, due date, cover, labels) but fresh
- * ids and timestamps. Deep-clones nested structures so the copies don't
- * share mutable state with the source.
+ * ids and timestamps. Links are intentionally not copied: a copy starts
+ * unlinked. Deep-clones nested structures so the copies don't share mutable
+ * state with the source.
  */
 function duplicateCard(
   board: Board,
@@ -1144,9 +1212,7 @@ function duplicateCard(
     title: action.title ?? source.title,
     // Deep-copy nested content so later edits never alias the original.
     description: source.description,
-    checklists: source.checklists
-      ? (structuredClone(source.checklists) as Checklist[])
-      : undefined,
+    checklists: duplicateChecklists(source.checklists, action.newCardId),
     dueDate: source.dueDate,
     cover: source.cover
       ? (structuredClone(source.cover) as CardCover)
@@ -1187,8 +1253,9 @@ function duplicateCard(
 
 /**
  * Duplicate a column with every card in it. The copy is placed immediately
- * to the right of the original; all cards get fresh ids (their checklist
- * ids stay as-is — they are unique per card).
+ * to the right of the original; all cards and their checklists/items get
+ * fresh derived ids (TASK-180.2 H3), so the copy can never re-parent the
+ * source's rows through the global-id upserts. Links are not copied.
  */
 function duplicateColumn(
   board: Board,
@@ -1220,9 +1287,7 @@ function duplicateColumn(
     const cardCopy: Card = {
       ...sourceCard,
       id: cardIds[index],
-      checklists: sourceCard.checklists
-        ? (structuredClone(sourceCard.checklists) as Checklist[])
-        : undefined,
+      checklists: duplicateChecklists(sourceCard.checklists, cardIds[index]),
       dueDate: sourceCard.dueDate,
       cover: sourceCard.cover
         ? (structuredClone(sourceCard.cover) as CardCover)

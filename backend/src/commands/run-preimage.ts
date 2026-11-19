@@ -176,14 +176,34 @@ function candidateIds(before: Board, action: BoardAction): CandidateIds {
     }
   }
 
-  // Destructive writers touch nested rows as well.
+  /**
+   * The column a card sits in, for writers that bump its version even though
+   * no `columnId` is in the action payload.
+   */
+  const sourceColumn = (cardId: string | undefined) =>
+    cardId === undefined
+      ? undefined
+      : before.columns.find((column) => column.cardIds.includes(cardId));
+
   switch (action.type) {
     case "DELETE_CARD": {
       const card = before.cards[action.cardId];
+      const column = sourceColumn(action.cardId);
+      if (column !== undefined) add(ids, "column", column.id);
       for (const checklist of card?.checklists ?? []) {
         add(ids, "checklist", checklist.id);
         for (const item of checklist.items) add(ids, "checklistItem", item.id);
       }
+      break;
+    }
+    case "ARCHIVE_CARD": {
+      const column = sourceColumn(action.cardId);
+      if (column !== undefined) add(ids, "column", column.id);
+      break;
+    }
+    case "DUPLICATE_CARD": {
+      const column = sourceColumn(action.cardId);
+      if (column !== undefined) add(ids, "column", column.id);
       break;
     }
     case "DELETE_COLUMN": {
@@ -475,11 +495,16 @@ export async function finalizePreimage(
     });
   }
 
+  // C1: `touches` is what the command actually wrote. An empty entity list
+  // means the reducer and the writers changed nothing — a no-op such as
+  // `ADD_COLUMN` with an existing id or `SET_CARD_LABEL` already on. Such a
+  // command must not carry the inverse of its destructive *name* (which would
+  // delete the pre-existing column/label/checklist on a later rollback).
   return {
     schemaVersion: 1,
     boardVersion: seed.boardVersion,
     entities,
-    inverse,
+    inverse: entities.length === 0 ? null : inverse,
   };
 }
 

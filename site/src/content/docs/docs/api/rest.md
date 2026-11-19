@@ -478,7 +478,7 @@ board. A browser batch and ordinary non-destructive browser edits create no run
 
 `RunSummaryDto` carries `id`, `boardId`, `apiTokenId`, `agentSessionId`,
 `actorId`, `kind` (`batch`, `plan`, `single`, `revert`), `status` (`applied`,
-`reverted`, `failed`), `clientRunId`, `planHash`, `approvalId`, `commandCount`,
+`reverted`; a failed transaction rolls back and creates no run), `clientRunId`, `planHash`, `approvalId`, `commandCount`,
 `firstSeq`/`lastSeq`, `revertsRunId`, `createdAt`, `appliedAt` and
 `revertedAt`. Detail adds the command timeline and `preimages`. A PAT sees the
 summary and commands but **not** the before-state snapshots, even when its owner
@@ -512,9 +512,13 @@ the `expectedVersion` recorded when the run applied and the
 `currentVersion` now. A real revert is all-or-nothing, re-checks conflicts under
 the board lock, is allowed once per run (no revert of a revert) and creates a
 new `kind: "revert"` run with `revertsRunId`; the original becomes `reverted`.
-`409 run_conflict` means the run state forbids it, `409 run_expired` that
-pre-images were swept by retention. A `commandId` is required for a real revert
-so a network retry is idempotent.
+`409 run_conflict` means the run state forbids it and carries `runId` plus the
+board `currentVersion`; `409 run_expired` means commands/pre-images were swept
+by retention and carries `runId` plus `retentionDays`. A `commandId` is required
+for a real revert so a network retry is idempotent; omitting it is a
+`400 validation_failed` naming `commandId`. A read-only PAT may call the
+generic `revert` route with `{ "dryRun": true }`; a real revert stays
+PAT-forbidden (`403 pat_forbidden`).
 
 ## Board agent policy
 

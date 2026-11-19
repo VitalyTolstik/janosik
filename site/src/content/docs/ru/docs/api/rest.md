@@ -474,7 +474,7 @@ PAT, применения плана или человеческого отка�
 
 `RunSummaryDto` содержит `id`, `boardId`, `apiTokenId`, `agentSessionId`,
 `actorId`, `kind` (`batch`, `plan`, `single`, `revert`), `status` (`applied`,
-`reverted`, `failed`), `clientRunId`, `planHash`, `approvalId`, `commandCount`,
+`reverted`; неудачная транзакция откатывается и запуск не создаёт), `clientRunId`, `planHash`, `approvalId`, `commandCount`,
 `firstSeq`/`lastSeq`, `revertsRunId`, `createdAt`, `appliedAt` и
 `revertedAt`. Деталь добавляет таймлайн команд и `preimages`. PAT видит
 сводку и команды, но **не** снимки «до», даже если его владелец — board ADMIN.
@@ -507,9 +507,13 @@ Preview возвращает `{ dryRun: true, run, conflicts, canRevert }`; `dif
 сейчас. Реальный откат all-or-nothing, повторно проверяет конфликты под
 блокировкой доски, разрешён один раз на run (откат отката запрещён) и создаёт
 новый run `kind: "revert"` с `revertsRunId`; исходный становится `reverted`.
-`409 run_conflict` означает, что состояние run это запрещает, `409 run_expired`
-— pre-images удалены retention. Для реального отката нужен `commandId`, чтобы
-сетевой повтор был идемпотентным.
+`409 run_conflict` означает, что состояние run это запрещает, и содержит
+`runId` и `currentVersion` доски; `409 run_expired` означает, что команды или
+pre-images удалены retention, и содержит `runId` и `retentionDays`. Для
+реального отката нужен `commandId`, чтобы сетевой повтор был идемпотентным;
+без него ответ — `400 validation_failed` с полем `commandId`. Read-only PAT
+может вызвать общий маршрут `revert` с `{ "dryRun": true }`; реальный откат
+для PAT по-прежнему запрещён (`403 pat_forbidden`).
 
 ## Политика агентов доски
 

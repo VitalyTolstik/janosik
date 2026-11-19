@@ -18,7 +18,6 @@ export type Translate = ReturnType<typeof useI18n>["t"];
 export const RUN_STATUS_KEYS: Record<AgentRunStatus, MessageKey> = {
   applied: "agentControl.runs.status.applied",
   reverted: "agentControl.runs.status.reverted",
-  failed: "agentControl.runs.status.failed",
 };
 
 export const RUN_KIND_KEYS: Record<AgentRunKind, MessageKey> = {
@@ -32,8 +31,9 @@ export const RUN_KIND_KEYS: Record<AgentRunKind, MessageKey> = {
  * TASK-179.5 run filters. The server runs endpoint takes the concrete values;
  * this module is the single URL/query contract shared by `/agents` and the
  * board-scoped Agent Control Runs tab. Unlike the session filter, run statuses
- * are the three stored lifecycles; `expired` is a rollback error, not a run
- * status, and is rendered beside the rollback preview.
+ * are the two stored lifecycles. `expired` is a rollback error, not a run
+ * status, and is rendered beside the rollback preview; `failed` is gone
+ * because a failed transaction rolls back and creates no run (L37).
  */
 
 export type RunStatusFilter = "all" | AgentRunStatus;
@@ -89,7 +89,7 @@ export function runFrom(
   return now - RUN_TIME_WINDOWS_MS[filter];
 }
 
-/** The moment a run is ordered by: apply time, or creation for a failed run. */
+/** The moment a run is ordered by: apply time, or creation if missing. */
 export function runTime(
   run: Pick<RunSummaryDto, "appliedAt" | "createdAt">,
 ): number {
@@ -238,13 +238,9 @@ export function runTitle(
     if (action === null) {
       action = t("agents.runs.title.appliedCommands", { count });
     }
-    const phrase =
-      run.status === "failed"
-        ? t("agents.runs.title.failed", { count })
-        : action;
     return token === undefined || token === "" || token.endsWith("…")
-      ? phrase
-      : `${token} ${phrase}`;
+      ? action
+      : `${token} ${action}`;
   }
   return t("agents.runs.rowTitle", {
     kind: t(RUN_KIND_KEYS[run.kind]),
@@ -261,7 +257,7 @@ export function runFilterOptions(t: Translate): {
   return {
     status: [
       { value: "all", label: t("agents.runs.filters.allStatuses") },
-      ...(["applied", "reverted", "failed"] as const).map((value) => ({
+      ...AGENT_RUN_STATUSES.map((value) => ({
         value,
         label: t(RUN_STATUS_KEYS[value]),
       })),

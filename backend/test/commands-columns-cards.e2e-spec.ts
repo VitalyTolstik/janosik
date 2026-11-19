@@ -9,7 +9,11 @@ import type {
   CommandDeltaEntry,
   CommandResponse,
 } from "@janosik/shared";
-import { boardReducer } from "@janosik/shared";
+import {
+  boardReducer,
+  duplicateChecklistId,
+  duplicateChecklistItemId,
+} from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -653,6 +657,329 @@ describe("Commands API (e2e)", () => {
     });
   });
 
+  describe("duplicate content (H3)", () => {
+    it("writes duplicated card checklists with fresh ids and survives reload", async () => {
+      const boardId = await importBoard("Duplicate checklist card", {
+        checklists: [
+          {
+            id: "cl-src",
+            title: "Steps",
+            items: [{ id: "it-src", text: "One", done: false }],
+          },
+        ],
+      });
+      const sourceId = await firstCardId(boardId);
+      const before = await getAggregate(boardId);
+      const sourceChecklist = before.cards[sourceId].checklists![0];
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_CARD",
+          cardId: sourceId,
+          newCardId: "card-copy-h3",
+        }),
+      );
+      // Re-read: the copy is not allowed to lose its checklists on reload.
+      const after = await getAggregate(boardId);
+      const copy = after.cards["card-copy-h3"];
+      expect(copy.checklists).toHaveLength(1);
+      expect(copy.checklists![0].id).not.toBe(sourceChecklist.id);
+      expect(copy.checklists![0].title).toBe("Steps");
+      expect(copy.checklists![0].items[0].id).not.toBe(
+        sourceChecklist.items[0].id,
+      );
+      expect(copy.checklists![0].items[0]).toMatchObject({
+        text: "One",
+        done: false,
+      });
+      // The source row is still owned by the source card.
+      expect(after.cards[sourceId].checklists![0].id).toBe(sourceChecklist.id);
+      expect(
+        await prisma.checklist.count({
+          where: { cardId: "card-copy-h3", deletedAt: null },
+        }),
+      ).toBe(1);
+
+      const command = await prisma.command.findFirst({
+        where: { boardId, type: "DUPLICATE_CARD" },
+      });
+      expect(command?.touches).toEqual(
+        expect.arrayContaining([
+          `card:card-copy-h3`,
+          `checklist:${copy.checklists![0].id}`,
+          `checklistItem:${copy.checklists![0].items[0].id}`,
+        ]),
+      );
+
+      // Deleting the copy's checklist must leave the original intact.
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: "card-copy-h3",
+          checklistId: copy.checklists![0].id,
+        }),
+      );
+      const remaining = await getAggregate(boardId);
+      expect(remaining.cards["card-copy-h3"].checklists).toBeUndefined();
+      expect(remaining.cards[sourceId].checklists![0].id).toBe(
+        sourceChecklist.id,
+      );
+    });
+
+    it("writes duplicated column checklists with fresh ids and survives reload", async () => {
+      const boardId = await importBoard("Duplicate checklist column", {
+        checklists: [
+          {
+            id: "cl-src",
+            title: "Steps",
+            items: [{ id: "it-src", text: "One", done: false }],
+          },
+        ],
+      });
+      const before = await getAggregate(boardId);
+      const column = before.columns[0];
+      const sourceCard = before.cards[column.cardIds[0]];
+      const sourceChecklist = sourceCard.checklists![0];
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_COLUMN",
+          columnId: column.id,
+          newColumnId: "col-copy-h3",
+          newCardIds: column.cardIds.map((id) => `${id}-copy`),
+        }),
+      );
+      const after = await getAggregate(boardId);
+      const copyColumn = after.columns.find((c) => c.id === "col-copy-h3")!;
+      const copy = after.cards[copyColumn.cardIds[0]];
+      expect(copy.checklists).toHaveLength(1);
+      expect(copy.checklists![0].id).not.toBe(sourceChecklist.id);
+      expect(copy.checklists![0].items[0].id).not.toBe(
+        sourceChecklist.items[0].id,
+      );
+      expect(after.cards[sourceCard.id].checklists![0].id).toBe(
+        sourceChecklist.id,
+      );
+      expect(copy.links).toBeUndefined();
+      expect(
+        await prisma.checklist.count({
+          where: { cardId: copy.id, deletedAt: null },
+        }),
+      ).toBe(1);
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: copy.id,
+          checklistId: copy.checklists![0].id,
+        }),
+      );
+      const remaining = await getAggregate(boardId);
+      expect(remaining.cards[sourceCard.id].checklists![0].id).toBe(
+        sourceChecklist.id,
+      );
+      expect(remaining.cards[copy.id].checklists).toBeUndefined();
+    });
+
+    it("refuses duplicate-card derived ids owned by another card", async () => {
+      const boardId = await createBoard("Duplicate id collision card");
+      const columnId = `col-${randomUUID()}`;
+      const sourceId = `source-${randomUUID()}`;
+      const victimId = `victim-${randomUUID()}`;
+      const copyId = `copy-${randomUUID()}`;
+      const sourceChecklistId = `src-cl-${randomUUID()}`;
+      const stolenChecklistId = duplicateChecklistId(copyId, 0);
+      const stolenItemId = duplicateChecklistItemId(copyId, 0, 0);
+
+      for (const action of [
+        { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+        { type: "ADD_CARD", newCardId: sourceId, columnId, title: "Source" },
+        { type: "ADD_CARD", newCardId: victimId, columnId, title: "Victim" },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: sourceId,
+          newChecklistId: sourceChecklistId,
+          title: "Source steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: sourceId,
+          checklistId: sourceChecklistId,
+          newItemId: `src-it-${randomUUID()}`,
+          text: "One",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: victimId,
+          newChecklistId: stolenChecklistId,
+          title: "Victim steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: victimId,
+          checklistId: stolenChecklistId,
+          newItemId: stolenItemId,
+          text: "Keep me",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_CARD",
+          cardId: sourceId,
+          newCardId: copyId,
+        }),
+      ).expect(409);
+      expect(res.body).toMatchObject({
+        code: "id_conflict",
+        conflict: "id",
+      });
+
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards[copyId]).toBeUndefined();
+      expect(aggregate.cards[victimId].checklists?.[0]).toMatchObject({
+        id: stolenChecklistId,
+        items: [{ id: stolenItemId, text: "Keep me", done: false }],
+      });
+    });
+
+    it("checks duplicate parentage against the batch state at its position", async () => {
+      const boardId = await createBoard("Duplicate batch parentage board");
+      const columnId = `col-${randomUUID()}`;
+      const sourceId = `source-${randomUUID()}`;
+      const victimId = `victim-${randomUUID()}`;
+      const copyId = `copy-${randomUUID()}`;
+      const stolenChecklistId = duplicateChecklistId(copyId, 0);
+      for (const action of [
+        { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+        { type: "ADD_CARD", newCardId: sourceId, columnId, title: "Source" },
+        { type: "ADD_CARD", newCardId: victimId, columnId, title: "Victim" },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: victimId,
+          newChecklistId: stolenChecklistId,
+          title: "Victim steps",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+
+      // Source initially has no checklist, so a pre-batch parentage pass sees
+      // no derived ids. The first batch command creates one; the duplicate at
+      // position 1 must derive from that running state and collide with the
+      // victim's pre-existing checklist.
+      const res = await server()
+        .post(`/api/v1/boards/${boardId}/commands/batch`)
+        .set(auth(adminToken))
+        .send({
+          commands: [
+            {
+              commandId: randomUUID(),
+              action: scoped(boardId, {
+                type: "ADD_CHECKLIST",
+                cardId: sourceId,
+                newChecklistId: `src-cl-${randomUUID()}`,
+                title: "Source steps",
+              }),
+            },
+            {
+              commandId: randomUUID(),
+              action: scoped(boardId, {
+                type: "DUPLICATE_CARD",
+                cardId: sourceId,
+                newCardId: copyId,
+              }),
+            },
+          ],
+        })
+        .expect(409);
+      expect(res.body).toMatchObject({
+        code: "id_conflict",
+        conflict: "id",
+      });
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards[sourceId].checklists).toBeUndefined();
+      expect(aggregate.cards[victimId].checklists?.[0].id).toBe(
+        stolenChecklistId,
+      );
+      expect(aggregate.cards[copyId]).toBeUndefined();
+    });
+
+    it("refuses duplicate-column derived ids owned by another card", async () => {
+      const boardId = await createBoard("Duplicate id collision column");
+      const columnId = `col-${randomUUID()}`;
+      const victimColumnId = `victim-col-${randomUUID()}`;
+      const sourceId = `source-${randomUUID()}`;
+      const victimId = `victim-${randomUUID()}`;
+      const copyCardId = `copy-${randomUUID()}`;
+      const stolenChecklistId = duplicateChecklistId(copyCardId, 0);
+      const stolenItemId = duplicateChecklistItemId(copyCardId, 0, 0);
+
+      for (const action of [
+        { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+        {
+          type: "ADD_COLUMN",
+          newColumnId: victimColumnId,
+          title: "Victim",
+        },
+        { type: "ADD_CARD", newCardId: sourceId, columnId, title: "Source" },
+        {
+          type: "ADD_CARD",
+          newCardId: victimId,
+          columnId: victimColumnId,
+          title: "Victim",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: sourceId,
+          newChecklistId: `src-cl-${randomUUID()}`,
+          title: "Source steps",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: victimId,
+          newChecklistId: stolenChecklistId,
+          title: "Victim steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: victimId,
+          checklistId: stolenChecklistId,
+          newItemId: stolenItemId,
+          text: "Keep me",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "DUPLICATE_COLUMN",
+          columnId,
+          newColumnId: `copy-col-${randomUUID()}`,
+          newCardIds: [copyCardId],
+        }),
+      ).expect(409);
+      expect(res.body).toMatchObject({
+        code: "id_conflict",
+        conflict: "id",
+      });
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards[copyCardId]).toBeUndefined();
+      expect(aggregate.cards[victimId].checklists?.[0].id).toBe(
+        stolenChecklistId,
+      );
+    });
+  });
+
   describe("attribution: lastActorId follows the writer", () => {
     it("stamps card writes, follows a member edit, skips reorders", async () => {
       const boardId = await createBoard("Attribution board");
@@ -944,6 +1271,314 @@ describe("Commands API (e2e)", () => {
         }),
       );
       expect(restored.columns[0].cardIds).toContain("card-w1");
+    });
+
+    it("refuses RESTORE_CARD into a full WIP column (M13)", async () => {
+      const boardId = await createBoard("Restore WIP board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rw-a",
+          title: "A",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rw-b",
+          title: "B",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rw-a",
+          wipLimit: 1,
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rw-victim",
+          columnId: "col-rw-b",
+          title: "Victim",
+        }),
+      );
+      const beforeDelete = await getAggregate(boardId);
+      const snapshot = beforeDelete.cards["card-rw-victim"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "DELETE_CARD", cardId: "card-rw-victim" }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rw-filler",
+          columnId: "col-rw-a",
+          title: "Filler",
+        }),
+      );
+
+      // A forged inverse must not bypass the destination's WIP limit.
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CARD",
+          card: snapshot,
+          columnId: "col-rw-a",
+          index: 0,
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body.conflict).toBe("wip");
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards["card-rw-victim"]).toBeUndefined();
+      expect(
+        aggregate.columns.find((c) => c.id === "col-rw-a")?.cardIds,
+      ).toEqual(["card-rw-filler"]);
+
+      // The same restore is still a normal undo when the destination has room.
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CARD",
+          card: snapshot,
+          columnId: "col-rw-b",
+          index: 0,
+          inverse: true,
+        }),
+      );
+    });
+
+    it("refuses RESTORE_COLUMN_CARDS that would exceed WIP (M13)", async () => {
+      const boardId = await createBoard("Restore cards WIP board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rc",
+          title: "C",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rc",
+          wipLimit: 2,
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rc-1",
+          columnId: "col-rc",
+          title: "One",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-rc-2",
+          columnId: "col-rc",
+          title: "Two",
+        }),
+      );
+      const beforeArchive = await getAggregate(boardId);
+      const restoreSnapshot = beforeArchive.cards["card-rc-2"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "ARCHIVE_CARD", cardId: "card-rc-2" }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rc",
+          wipLimit: 1,
+        }),
+      );
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-rc",
+          cardIds: ["card-rc-1", "card-rc-2"],
+          cards: [restoreSnapshot],
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body.conflict).toBe("wip");
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.cards["card-rc-2"].archivedAt).toEqual(
+        expect.any(Number),
+      );
+      expect(aggregate.columns.find((c) => c.id === "col-rc")?.cardIds).toEqual(
+        ["card-rc-1"],
+      );
+    });
+
+    it("counts every card in a RESTORE_COLUMN_CARDS batch against WIP", async () => {
+      const boardId = await createBoard("Restore many WIP board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rm",
+          title: "Many",
+        }),
+      );
+      for (const id of ["a", "b", "c", "d"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ADD_CARD",
+            newCardId: `card-rm-${id}`,
+            columnId: "col-rm",
+            title: id,
+          }),
+        );
+      }
+      const beforeArchive = await getAggregate(boardId);
+      const snapshots = ["a", "b"].map(
+        (id) => beforeArchive.cards[`card-rm-${id}`],
+      );
+      for (const id of ["a", "b"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ARCHIVE_CARD",
+            cardId: `card-rm-${id}`,
+          }),
+        );
+      }
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_COLUMN_WIP_LIMIT",
+          columnId: "col-rm",
+          wipLimit: 2,
+        }),
+      );
+
+      const res = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-rm",
+          cardIds: ["card-rm-a", "card-rm-b"],
+          cards: snapshots,
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(res.body).toMatchObject({ conflict: "wip", columnId: "col-rm" });
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.columns.find((c) => c.id === "col-rm")?.cardIds).toEqual(
+        ["card-rm-c", "card-rm-d"],
+      );
+    });
+
+    it("keeps cards omitted from cardIds out of the restored column", async () => {
+      const boardId = await createBoard("Restore mismatch board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-rmx",
+          title: "Mix",
+        }),
+      );
+      for (const id of ["a", "b", "c"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ADD_CARD",
+            newCardId: `card-rmx-${id}`,
+            columnId: "col-rmx",
+            title: id,
+          }),
+        );
+      }
+      const beforeArchive = await getAggregate(boardId);
+      const snapshots = ["a", "b"].map(
+        (id) => beforeArchive.cards[`card-rmx-${id}`],
+      );
+      for (const id of ["a", "b"]) {
+        await apply(
+          boardId,
+          scoped(boardId, {
+            type: "ARCHIVE_CARD",
+            cardId: `card-rmx-${id}`,
+          }),
+        );
+      }
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-rmx",
+          cardIds: ["card-rmx-a"],
+          cards: snapshots,
+          inverse: true,
+        }),
+      );
+      const aggregate = await getAggregate(boardId);
+      const column = aggregate.columns.find((c) => c.id === "col-rmx");
+      expect(column?.cardIds).toContain("card-rmx-a");
+      expect(column?.cardIds).not.toContain("card-rmx-b");
+      expect(aggregate.cards["card-rmx-b"]).toMatchObject({
+        id: "card-rmx-b",
+      });
+      expect(aggregate.cards["card-rmx-b"].archivedAt).toBeUndefined();
+    });
+
+    it("restores one archived card into a column with room", async () => {
+      const boardId = await createBoard("Restore one board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-r1",
+          title: "One",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-r1",
+          columnId: "col-r1",
+          title: "One",
+        }),
+      );
+      const before = await getAggregate(boardId);
+      const snapshot = before.cards["card-r1"];
+      await apply(
+        boardId,
+        scoped(boardId, { type: "ARCHIVE_CARD", cardId: "card-r1" }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_COLUMN_CARDS",
+          columnId: "col-r1",
+          cardIds: ["card-r1"],
+          cards: [snapshot],
+          inverse: true,
+        }),
+      );
+      const aggregate = await getAggregate(boardId);
+      expect(aggregate.columns[0].cardIds).toEqual(["card-r1"]);
+      expect(aggregate.cards["card-r1"].archivedAt).toBeUndefined();
     });
 
     it("409s a stale ifMatch with conflict 'version' and currentVersion", async () => {

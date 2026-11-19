@@ -471,7 +471,7 @@ model AgentRun {
   agentSessionId String?
   actorId        String
   kind           String // batch|plan|single|revert
-  status         String    @default("applied") // applied|reverted|failed
+  status         String    @default("applied") // applied|reverted
   clientRunId    String?
   planHash       String?
   approvalId     String?   @unique
@@ -497,7 +497,9 @@ model AgentRun {
   revert creates a new run with `kind = "revert"` and `revertsRunId`.
 - `approvalId` is filled when an approved plan is applied; uniqueness
   guarantees one-time use.
-- `firstSeq`/`lastSeq` are the `Command.seq` range; nullable for a failed run.
+- `firstSeq`/`lastSeq` are the `Command.seq` range; a failed batch/plan
+  rolls back and creates no run, so the fields are nullable only while a run
+  row is being created.
 
 ### 6.7. `ApprovalRequest`
 
@@ -829,7 +831,7 @@ interface AgentSessionDto {
   summary: string | null;
 }
 
-type AgentRunStatus = "applied" | "reverted" | "failed";
+type AgentRunStatus = "applied" | "reverted";
 
 interface AgentRunDto {
   id: string;
