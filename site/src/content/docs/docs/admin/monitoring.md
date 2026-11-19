@@ -88,7 +88,7 @@ The `Audit` link opens `/app/admin/audit?tab=audit&commandId=<command id>`, whic
 the audit trail to the exact row recorded for that command. Only commands
 issued through the master panel are correlated; normal user commands and
 historical rows keep a dash.
-The legacy path `/app/admin/log` redirects to `/app/admin/commands`.
+The legacy path `/app/admin/log` redirects to `/app/admin/audit?tab=commands`.
 
 ## Audit trail
 

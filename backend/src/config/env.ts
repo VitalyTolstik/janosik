@@ -229,12 +229,10 @@ export const env = cleanEnv(process.env, {
     desc: "Master switch for public read-only board share links",
     default: true,
   }),
-  // Open sign-up (TASK-38a, §7.8). On by default so the very first run can
-  // create its admin account; a public instance should set it to `false`
-  // after that, otherwise anyone can register. Drives the `registration_open`
-  // feature flag default and is surfaced to the UI via `GET /auth/config`.
+  // Default for the registration_open feature flag. Password signup requires
+  // SMTP or one-time bootstrap, as reported by GET /api/v1/auth/config.
   ALLOW_REGISTRATION: bool({
-    desc: "Allow anyone to create an account; off = sign-up is refused",
+    desc: "Allow password signup when SMTP or one-time bootstrap is available",
     default: true,
   }),
   // Fresh-install bootstrap without SMTP. It only works while the User table
@@ -377,7 +375,7 @@ export const env = cleanEnv(process.env, {
   // Queue dashboard (TASK-73). Off by default: the Bull Board SPA is mounted
   // at /api/v1/admin/queues only when this is true (and Redis is configured).
   QUEUES_DASHBOARD: bool({
-    desc: "Mount the Bull Board queue dashboard at /admin/queues (OWNER-only)",
+    desc: "Mount the Bull Board queue dashboard at /api/v1/admin/queues (OWNER-only)",
     default: false,
   }),
   // Master-panel mail settings (TASK-52): SMTP credentials saved from the

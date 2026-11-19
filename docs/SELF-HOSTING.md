@@ -259,7 +259,7 @@ that matter most:
 | `PUBLIC_ORIGIN` | `http://localhost:3000` | Public URL. Builds OAuth callbacks; must be `https://…` for `COOKIE_SECURE=true`. |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials (created on first `up`). |
 | `COOKIE_SECURE` | `true` (compose default) | `Secure` flag on the refresh cookie. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial. A production install served over HTTP with it unset/`true` **refuses to boot**. |
-| `ALLOW_REGISTRATION` | `true` | Open sign-up. Turn off after creating your account. |
+| `ALLOW_REGISTRATION` | `true` | Allow password sign-up when SMTP or one-time bootstrap is available. Set `false` for a private instance. |
 | `ALLOW_BOOTSTRAP_USER` | `false` | One-time bootstrap without SMTP: allows exactly the first account and auto-verifies it. Inert once a user exists; set `false` after setup. The local installer enables it. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
@@ -298,6 +298,17 @@ setup needs, where the app (`:5173`) and the site (`:4321`) are always two
 servers: `VITE_SITE_URL=http://localhost:4321/ npm run dev` and
 `PUBLIC_APP_URL=http://localhost:5173 npm run dev:site`. The image already sets
 both for the single-origin layout (`UI_BASE=/app/`, `PUBLIC_APP_URL=/app/`).
+
+When nginx serves the static builds from `deploy/nginx.conf`, build the site with
+its public origin because nginx cannot rewrite canonical URLs, Open Graph URLs or
+sitemaps at runtime. For a site with a path prefix, use for example
+`SITE_BASE=/janosik/ SITE_URL=https://public-host PUBLIC_APP_URL=/app/ npm run build -w site`.
+Mount the output at `/janosik/` and copy its `404.html` to nginx's document root
+for the sample fallback. Keep `PUBLIC_APP_URL=/app/` if the app is on the same
+origin at `/app/`, or use the full URL of your app. `SITE_BASE` prefixes
+generated navigation, assets and SEO URLs. Root-relative links authored in the
+docs body still resolve from the origin root. Serve those paths there or use a
+root site build if every inline docs link must work without extra routing.
 
 ---
 

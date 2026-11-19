@@ -20,7 +20,7 @@ This is an **npm workspaces monorepo** with one root lockfile. `ui`, `shared` an
 
 | Workspace | npm name | What it is | How it runs |
 | --- | --- | --- | --- |
-| **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table/watch views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the `/app/admin` master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`) or is served as static files from `ui/dist` |
+| **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table/watch views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`, master panel at `/admin`) or static files from `ui/dist` (master panel at `/app/admin` in the self-host image) |
 | **`shared/`** | `@janosik/shared` | A **TypeScript library with no build step and no runtime of its own**: the domain model (`Board`/`Column`/`Card`/`Label`), the pure `boardReducer` (the single implementation of every board operation), its inverse for undo, command validation, export/import serialization, storage keys — plus the **typed API contracts** (user and admin DTOs). | Nothing to run. `ui` and `backend` import its `.ts` sources directly through aliases, so client and server literally share the same types and the same reducer logic |
 | **`backend/`** | `@janosik/backend` | The **server**: a NestJS API on PostgreSQL — auth (JWT + refresh rotation + argon2id), boards/members, the command log that persists UI actions, comments/activity, and the isolated master-admin contour (`/api/v1/admin/*`). | Node process (`npm run build:backend` + `npm run start -w backend`); dev DB via Docker Compose |
 | **`brand/`** | `@janosik/brand` | Shared brand assets and design tokens. | Imported by the UI and site; has its own tests and lint script. |
@@ -150,7 +150,7 @@ cp backend/.env.example backend/.env
 #    already point at the container.
 
 # 2. Start the dev database (container `janosik-postgres`, port 5433)
-docker compose -f backend/docker-compose.yml up -d
+docker compose --env-file backend/.env -f backend/docker-compose.yml up -d
 
 # 3. Apply migrations and build + start the API (port 3000)
 npm run prisma:deploy -w backend
@@ -296,7 +296,7 @@ Environment variables (see `.env.example` for the full annotated list):
 | `PUBLIC_ORIGIN` | `http://localhost:3000` | Public URL users open; builds OAuth callbacks |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `janosik` / — / `janosik` | Database credentials |
 | `COOKIE_SECURE` | `true` | `Secure` cookie flag. Keep `true` behind HTTPS (the API refuses to boot on HTTP in production); set `false` only for a plain-HTTP trial. |
-| `ALLOW_REGISTRATION` | `true` | Open sign-up; turn off after creating your account |
+| `ALLOW_REGISTRATION` | `true` | Allow password sign-up when SMTP or one-time bootstrap is available. Set `false` for a private instance. |
 | `ALLOW_BOOTSTRAP_USER` | `false` | One-time first-account bootstrap without SMTP; inert after the first user. The local installer enables it. |
 | `TRUST_PROXY` | `0` | Reverse-proxy hops (set `1` behind nginx/Caddy/Traefik) |
 | `SMTP_*` | unset | Outgoing email. Unset = log mode; in production codes are withheld from the log, so configure SMTP to deliver them. |

@@ -299,11 +299,14 @@ optional Plausible script, and reduced-motion/accessibility tests cover paused
 clips, the skip link, landmarks and visible focus. The 404 tests verify the
 status, English and Russian copy, the docs link, language switch and noindex.
 The site is public, so these tests need no account, fixture or API setup.
+Against a built deployment, `tests/site/deployment.spec.ts` checks GET and HEAD
+redirects for bare directories. Set `E2E_SITE_URL` and `E2E_APP_URL` to the nginx
+or Node origins to run the same check against either server.
 
 `tests/docs/` covers the Starlight documentation under `/docs/` and
-`/ru/docs/`: all 23 English and 23 Russian pages (status, `<html lang>`, one
+`/ru/docs/`: all documentation pages in both locales (status, `<html lang>`, one
 H1, title, description and canonical), a full crawl of every internal link and
-`#fragment` across those 46 pages, the landing and the five sidebar groups,
+`#fragment` across those pages, the landing and the five sidebar groups,
 Pagefind search (header button and Ctrl/Cmd+K, English and Russian indexes,
 opening a result, keyboard navigation and focus return, empty query, no matches
 and a recoverable bundle failure), code-block copy, tables, heading anchors,

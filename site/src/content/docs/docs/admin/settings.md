@@ -255,7 +255,7 @@ SMTP environment variables and the credential encryption key affect startup.
 
 | Flag | Description | Default source |
 | --- | --- | --- |
-| `registration_open` | allow anyone to create a new account | env `ALLOW_REGISTRATION` |
+| `registration_open` | allow password sign-up when SMTP or one-time bootstrap is available | env `ALLOW_REGISTRATION` |
 | `public_shares` | allow read-only public links to boards | env `ALLOW_PUBLIC_SHARES` |
 | `video_transcode` | re-encode uploaded videos to a compact MP4 | on |
 | `realtime_sse` | stream live board changes over SSE; off closes open streams and answers `404` on the SSE routes | on |
@@ -275,8 +275,8 @@ the sign-in stay open, so an owner can switch it off.
 
 The per-user limit is a number stepper from 1 to 100,000 requests per minute.
 An empty value disables it, leaving only the global IP limit. The limit applies
-to every account equally, each with its own counter. The API routes under `/admin`, `/auth` and
-`/health` paths are exempt.
+to every account equally, each with its own counter. Routes under `/api/v1/admin`,
+`/api/v1/auth` and `/api/v1/health` are exempt.
 
 ### Soft-deleted data and retention
 

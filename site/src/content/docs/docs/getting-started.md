@@ -48,7 +48,7 @@ Configure the API **first**, then start the database: the dev compose file reads
 
 ```bash
 cp backend/.env.example backend/.env                 # set JWT_SECRET
-docker compose -f backend/docker-compose.yml up -d   # PostgreSQL on :5433
+docker compose --env-file backend/.env -f backend/docker-compose.yml up -d   # PostgreSQL on :5433
 npm run prisma:deploy -w backend
 npm run build:backend
 npm run start -w backend                             # API on :3000

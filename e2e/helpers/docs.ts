@@ -4,24 +4,23 @@ import { appUrl, siteUrl } from "./urls.js";
 
 export type DocsLang = "en" | "ru";
 
-/**
- * Every documentation page below the locale root. The 23 slugs are the same
- * in English and Russian (Starlight falls back to the translated file when it
- * exists), so one list drives the full 46-page crawl.
- */
+/** Every documentation page below the locale root, in both languages. */
 export const DOCS_PAGES = [
   "",
   "getting-started/",
   "self-hosting/",
   "runbooks/",
+  "agent-launch/",
   "user-guide/",
   "user-guide/boards/",
+  "user-guide/agents/",
   "user-guide/workflow/",
   "user-guide/views/",
   "user-guide/cards/",
   "user-guide/collaboration/",
   "user-guide/account/",
   "admin/",
+  "admin/redesign/",
   "admin/monitoring/",
   "admin/people/",
   "admin/content/",

@@ -20,8 +20,26 @@ Implemented on the `feat/TASK-180.8-docs-deploy` branch from `bed2f350`.
 - Playwright passed for shipped-base admin navigation (7), mail-disabled authentication (3), the prefixed site (12), and the root site and docs on both Node and nginx (17 per server, including all 46 EN/RU docs pages and internal fragments).
 - Repository ESLint and Prettier checks, `git diff --check`, `bash -n install.sh` and `docker compose config --quiet` passed. The README first-run link was checked against the corresponding Markdown heading slug.
 
+## Spec review follow-up
+
+- **Manual first-run check.** Started the built API with a fresh disposable
+  PostgreSQL database, no SMTP and bootstrap disabled. The app hid sign-up and
+  `POST /api/v1/auth/register` returned `503`. The CLI created the owner. In
+  Chrome the owner created and verified the first board user and that user
+  signed in. The Vite master panel also signed in at `/admin`. Compose
+  interpolation passed for the root and backend templates.
+- **Automated checks.** The docs crawl now covers 52 pages and their internal
+  links and anchors. The focused site and docs Playwright suites passed on Node
+  and nginx at the root (20 each), and prefixed nginx passed 17 tests covering
+  SEO, docs pages, pricing and the 404. The deployment spec checks relative
+  GET and HEAD redirects and query preservation for `/app`, `/docs` and
+  `/screens`. The SEO spec checks the `text/markdown` pricing response.
+  `nginx -t` passed on both mounts with build-generated CSP includes.
+- **Manual no-JavaScript check.** A missing Russian path under `/janosik/`
+  returned status `404` and the static English page with JavaScript disabled.
+
 ## Residual risks
 
 - The install dry run used locally built frontends and API, a fresh disposable PostgreSQL container and the shipped configuration contract. Published-image installation, live SMTP delivery and the full Docker/browser matrix were outside this run.
-- The static 404 falls back to English without JavaScript. A site built with a non-root `SITE_BASE` must be mounted at that path by its host.
+- The static 404 falls back to English without JavaScript. A site built with a non-root `SITE_BASE` must be mounted at that path. Root-relative links authored in docs content need routes at the origin root or a root site build.
 - The backup check covered product claims and runbook links. It did not execute an operator backup or restore drill.

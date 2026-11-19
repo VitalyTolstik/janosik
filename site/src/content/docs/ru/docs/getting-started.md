@@ -50,7 +50,7 @@ curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install
 
 ```bash
 cp backend/.env.example backend/.env                 # задайте JWT_SECRET
-docker compose -f backend/docker-compose.yml up -d   # PostgreSQL на :5433
+docker compose --env-file backend/.env -f backend/docker-compose.yml up -d   # PostgreSQL на :5433
 npm run prisma:deploy -w backend
 npm run build:backend
 npm run start -w backend                             # API на :3000

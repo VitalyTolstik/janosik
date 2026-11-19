@@ -1,6 +1,6 @@
 ---
 title: Account, keys and preferences
-description: Sign in, manage your profile, password and API keys, set preferences, and back up your data.
+description: Sign in, manage your profile, password and API keys, set preferences, and see how operators back up PostgreSQL and uploaded files.
 ---
 
 Janosik runs in server mode: an account is required, and the app opens to the

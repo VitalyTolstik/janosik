@@ -51,16 +51,21 @@ file reads `POSTGRES_*` from `backend/.env`.
 
 ```bash
 cp backend/.env.example backend/.env                 # set JWT_SECRET
-docker compose -f backend/docker-compose.yml up -d   # janosik-postgres on :5433
+docker compose --env-file backend/.env -f backend/docker-compose.yml up -d # PostgreSQL on :5433
 npm run prisma:deploy -w backend
 npm run build:backend
 npm run start -w backend                             # API on :3000
 ```
 
-Register at <http://localhost:5173> once the API is up. The marketing site runs
-on its own dev server (`npm run dev:site`, port 4321) — point its
-`PUBLIC_APP_URL` at the UI dev server so the "Sign in" CTA works in dev (see the
-README).
+With the default `backend/.env.example` settings, create the first master
+from the repository root with `npm run admin:create -w backend -- --email me@example.com`.
+Sign in at <http://localhost:5173/admin> and choose **Users → Create user**.
+Open the user's details and choose **Actions → Verify email** for an address you control.
+Sign in with the board account at <http://localhost:5173/>.
+
+The marketing site runs on its own dev server (`npm run dev:site`, port 4321).
+Point its `PUBLIC_APP_URL` at the UI dev server so the "Sign in" CTA works in
+dev (see the README).
 
 `README.md` has the full walkthrough, including self-hosting with Docker and the
 master-admin CLI.

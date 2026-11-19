@@ -295,7 +295,7 @@ compose stack fills the ones it needs from `.env`.
 | `SITE_DIR` | empty | Built marketing site directory served at `/`. Empty means not served. The image sets `/app/site`. |
 | `UI_BASE` | `/` | Sub-path the app is served from, used for OAuth redirects. The image sets `/app/`. |
 | `ALLOW_PUBLIC_SHARES` | `true` | Master switch for public read-only share links. `false` also blocks creating new links (and the Share dialog hides), not only token resolution; the public share API answers `404`. |
-| `ALLOW_REGISTRATION` | `true` | Open sign-up. Set `false` after your account exists. The container logs a warning at start while it is `true`. |
+| `ALLOW_REGISTRATION` | `true` | Allow password sign-up when SMTP or one-time bootstrap is available. Set `false` for a private instance. The container logs a warning at start while it is `true`. |
 | `ALLOW_BOOTSTRAP_USER` | `false` | One-time bootstrap without SMTP: allows exactly the first account and auto-verifies it. Inert once a user exists; set `false` after setup. The local installer enables it. |
 | `COOKIE_SECURE` | `true` (compose default) | Force the `Secure` cookie attribute. Keep `true` behind HTTPS; set `false` only for a plain-HTTP trial (the app then refuses to boot with it on). Choices are empty (auto: on in production), `true`, `false`. |
 | `PURGE_AFTER_DAYS` | `30` | Delete soft-deleted rows older than this many days. Used when the panel has no retention setting. |
@@ -384,7 +384,7 @@ cp backend/.env.example backend/.env
 #   set JWT_SECRET (openssl rand -hex 32; on PowerShell see the Windows section)
 
 # 2. dev PostgreSQL (container janosik-postgres on port 5433)
-docker compose -f backend/docker-compose.yml up -d
+docker compose --env-file backend/.env -f backend/docker-compose.yml up -d
 
 # 3. migrate, build and start the API (port 3000)
 npm run prisma:deploy -w backend
@@ -448,8 +448,19 @@ PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 ### Serve the frontends with nginx
 
 The included `deploy/nginx.conf` is for deployments where nginx serves both
-static builds itself. Generate its CSP include from the exact app and site
-builds you serve, after building the backend and both frontends. Regenerate it
+static builds itself. Build the site with its public origin because nginx cannot
+rewrite canonical URLs, Open Graph URLs or sitemaps at runtime. For a site under
+`/janosik/`, use `SITE_BASE=/janosik/ SITE_URL=https://public-host PUBLIC_APP_URL=/app/ npm run build -w site`
+and mount the output under `/janosik/`. Copy the built `404.html` to nginx's
+document root for the sample fallback. Keep `PUBLIC_APP_URL=/app/` for an app on
+the same origin at `/app/`, or use the full public URL of your app.
+`SITE_BASE` prefixes generated navigation, assets and SEO URLs. Root-relative
+links authored in the docs body still resolve from the origin root. Serve those
+paths there or use a root site build if every inline docs link must work without
+extra routing.
+
+Generate the CSP include from the exact app and site builds you serve, after
+building the backend and both frontends. Regenerate it
 on each frontend rebuild. The include is required. A missing file makes
 `nginx -t` fail. Reload nginx after the configuration check passes.
 
