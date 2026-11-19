@@ -139,7 +139,7 @@ Every action the audit log can carry:
 | Communications | `announcement.created`, `announcement.updated`, `announcement.deleted`, `comms.digest_sent`, `comms.reminder_sent` |
 | Data | `data.exported`, `data.export_queued`, `data.export_downloaded`, `retention.changed` |
 | Security | `security.totp_enabled`, `security.totp_replaced`, `security.totp_disabled`, `security.ip_allowlist_changed` |
-| Demo and shares | `demo.started`, `demo.stopped`, `share.created`, `share.refreshed`, `share.revoked` |
+| Demo and shares | `demo.started`, `demo.stopped`, `share.created`, `share.updated`, `share.refreshed`, `share.revoked` |
 | Operations | `maintenance.run`, `queue.ticket_issued` |
 
 ## Shared list behavior

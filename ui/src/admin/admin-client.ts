@@ -855,13 +855,13 @@ export class AdminApiClient {
 
   verifyTotp(
     code: string,
-    setupToken?: string,
+    setupToken: string,
   ): Promise<AdminVerifyTotpResponse> {
     return this.request<AdminVerifyTotpResponse>(
       "/admin/security/totp/verify",
       {
         method: "POST",
-        body: { code, ...(setupToken === undefined ? {} : { setupToken }) },
+        body: { code, setupToken },
       },
     );
   }

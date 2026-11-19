@@ -322,6 +322,24 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(screen.queryAllByText("quiet@example.com")).toHaveLength(0);
   });
 
+  it("shows an expired VIEWER and lets an admin remove them", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([
+      ADMIN,
+      { ...MEMBER, role: "VIEWER", expiresAt: Date.now() - 1_000 },
+    ]);
+    const remove = vi
+      .spyOn(api, "removeMember")
+      .mockResolvedValue({ status: "ok" });
+
+    renderPanel(true);
+    expect(await screen.findByText(/access expired/)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove — quiet@example.com" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, remove" }));
+    expect(remove).toHaveBeenCalledWith("board-1", "user-2");
+  });
+
   it("gives MEMBER/VIEWER the same list read-only", async () => {
     const list = vi
       .spyOn(api, "listMembers")

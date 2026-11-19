@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminSecurityDto, AdminTotpSetupDto } from "@janosik/shared";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,13 @@ export function SecurityPage() {
   const [password, setPassword] = useState("");
   const [allowlist, setAllowlist] = useState("");
   const [busy, setBusy] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  // The setup panel replaces the enable/replace controls, so move focus to
+  // the first code box (and announce the swap below with aria-live).
+  useEffect(() => {
+    if (setup !== null) codeInputRef.current?.focus();
+  }, [setup]);
 
   const load = useCallback(() => {
     adminApi
@@ -53,8 +60,12 @@ export function SecurityPage() {
         setSetup(await adminApi.setupTotp(proof));
         setCode("");
         setPassword("");
-      } catch {
-        toast.error(t("admin.common.actionFailed"));
+      } catch (cause) {
+        toast.error(
+          cause instanceof ApiError && cause.status === 401
+            ? t("admin.security.totp.invalid")
+            : t("admin.common.actionFailed"),
+        );
       } finally {
         setBusy(false);
       }
@@ -73,8 +84,12 @@ export function SecurityPage() {
       setSetup(null);
       setCode("");
       load();
-    } catch {
-      toast.error(t("admin.security.totp.invalid"));
+    } catch (cause) {
+      toast.error(
+        cause instanceof ApiError && cause.code === "setup_stale"
+          ? t("admin.security.totp.stale")
+          : t("admin.security.totp.invalid"),
+      );
     } finally {
       setBusy(false);
     }
@@ -155,7 +170,11 @@ export function SecurityPage() {
           </Badge>
         </div>
         {setup ? (
-          <div className="mt-3 space-y-3">
+          <div
+            className="mt-3 space-y-3"
+            data-testid="admin-totp-setup"
+            aria-live="polite"
+          >
             <p className="text-xs text-muted-foreground">
               {t("admin.security.totp.hint")}
             </p>
@@ -170,6 +189,7 @@ export function SecurityPage() {
                 {t("admin.security.totp.code")}
               </span>
               <Input
+                ref={codeInputRef}
                 value={code}
                 inputMode="numeric"
                 maxLength={6}

@@ -123,8 +123,11 @@ period, verified inside a one-step window. Once enabled, the login flow
 requires the code after the password.
 
 A replacement is staged: the new secret becomes active only after `Confirm`
-accepts a code from it, so a lost response cannot invalidate the working
-factor. The current code is checked without consuming its step. A successful
+accepts a code from it and the short-lived setup ticket returned by the
+enrollment call, so a lost response cannot invalidate the working factor. The
+ticket is bound to the active factor state and is single-use; a newer
+enrollment, a disable or an already-consumed ticket answers `409 setup_stale`.
+The current code is checked without consuming its step. A successful
 replacement is audited as `security.totp_replaced`; first enrollment remains
 `security.totp_enabled`.
 

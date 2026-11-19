@@ -82,6 +82,13 @@ response header carrying the command `seq` the aggregate reflects. A client
 resumes the SSE stream from that value. An unknown or soft-deleted board
 answers `404`. The aggregate carries `workflow` when the board has one.
 
+`GET /boards/:id/members` returns only **active** accepted memberships by
+default; an expired `VIEWER` is omitted so assignee pickers and filters never
+offer a member the server will refuse. A board `ADMIN` may add
+`?includeExpired=1` to include lapsed `VIEWER` rows for the member-management
+dialog; other roles get `403` for that query. Pending invitations never appear
+here.
+
 `GET /boards/:id/search?q=` returns `{ cardIds }` — the cards whose title,
 description, a checklist item or a comment contains `q` (case-insensitive
 substring). It reaches comment text, which is not part of the board aggregate.
@@ -622,7 +629,18 @@ A live share reads the board as it is now and follows it over SSE.
 to `true` for a live share and `false` for a snapshot; `includeAttachments`
 defaults to `false`. An `expiresAt` in the past answers `400`.
 
-`POST .../refresh` re-freezes a snapshot share. A live share answers `400`.
+`POST .../refresh` re-freezes a snapshot share; a live share answers `400`
+before any approval is created. It is a `share.update` lifecycle action: a PAT
+on a board whose policy requires approval gets `409 approval_required` with
+`approvalId`/`planHash`, and the retry must carry `X-Approval-Id`. An applied
+refresh is written to the board-share audit log. The approval is one-shot; a
+replay answers `409 approval_consumed`.
+
+When public sharing is disabled (`ALLOW_PUBLIC_SHARES=false` or the
+`public_shares` flag), creation and refresh answer `404` before approvals or
+idempotency records are touched.
+
+`PATCH`/`DELETE` changes are audited as `share.updated` / `share.revoked`.
 
 `DELETE` revokes a share: its token stops resolving at once. Revoking is
 idempotent.

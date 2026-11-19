@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "@/i18n";
 import { defaultI18n, ensureLocale } from "@/i18n/i18n";
@@ -71,5 +71,90 @@ describe.each([
     expect(screen.getByText(noIp)).toBeTruthy();
     expect(screen.getByText("192.0.2.1")).toBeTruthy();
     expect(screen.getByText(new RegExp(count))).toBeTruthy();
+  });
+});
+
+describe("2FA replacement staging", () => {
+  it("maps a rejected current proof to the invalid-code message", async () => {
+    await ensureLocale("en");
+    await defaultI18n.changeLanguage("en");
+    const server = new FakeAdminServer();
+    server.security = {
+      ...server.security,
+      totpEnabled: true,
+      alerts: [],
+    };
+    vi.stubGlobal("fetch", server.fetchImpl);
+    render(
+      <ThemeProvider>
+        <I18nProvider>
+          <ToastProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/admin/security"]}>
+                <Routes>
+                  <Route path="/admin/*" element={<AdminApp />} />
+                </Routes>
+              </MemoryRouter>
+            </TooltipProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+
+    fireEvent.change(await screen.findByTestId("admin-totp-password"), {
+      target: { value: "wrong password" },
+    });
+    fireEvent.click(screen.getByTestId("admin-totp-replace"));
+    expect(await screen.findByText("Invalid code")).toBeTruthy();
+    expect(screen.queryByTestId("admin-totp-setup")).toBeNull();
+  });
+
+  it("uses the password proof, focuses the setup panel and sends its ticket", async () => {
+    await ensureLocale("en");
+    await defaultI18n.changeLanguage("en");
+    const server = new FakeAdminServer();
+    server.security = {
+      ...server.security,
+      totpEnabled: true,
+      alerts: [],
+    };
+    vi.stubGlobal("fetch", server.fetchImpl);
+    render(
+      <ThemeProvider>
+        <I18nProvider>
+          <ToastProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/admin/security"]}>
+                <Routes>
+                  <Route path="/admin/*" element={<AdminApp />} />
+                </Routes>
+              </MemoryRouter>
+            </TooltipProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+
+    fireEvent.change(await screen.findByTestId("admin-totp-password"), {
+      target: { value: "master correct horse battery" },
+    });
+    fireEvent.click(screen.getByTestId("admin-totp-replace"));
+    const setup = await screen.findByTestId("admin-totp-setup");
+    expect(setup).toHaveAttribute("aria-live", "polite");
+    const code = screen.getByTestId("admin-totp-code");
+    await waitFor(() => expect(code).toHaveFocus());
+
+    fireEvent.change(code, { target: { value: "123456" } });
+    fireEvent.click(screen.getByTestId("admin-totp-confirm"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.path === "/admin/security/totp/verify" &&
+            (request.body as { setupToken?: string } | undefined)
+              ?.setupToken === "fake-totp-setup-token",
+        ),
+      ).toBe(true),
+    );
   });
 });
