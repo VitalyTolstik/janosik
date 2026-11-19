@@ -5099,7 +5099,7 @@ apply-window — намеренное поведение; e2e уже обнов�
 
 ### 7.30. Фильтры админских списков (TASK-181)
 
-> **Статус:** запланировано (2026-11-19; ревизия 5 после product/technical review). База — `main` @ `002a31ec`;
+> **Статус:** запланировано (2026-11-19; ревизия 6 после product/technical review). База — `main` @ `002a31ec`;
 > TASK-176.1–176.7 уже в main (176.5/176.6 — PR #268), 176.8–176.10 остаются
 > review-ветками и не блокируют остальные фильтры; `commandId`-чип появится
 > только после merge 176.10.
@@ -5154,7 +5154,8 @@ apply-window — намеренное поведение; e2e уже обнов�
 **Что осознанно не входит:** filters на shares (177.5), status-фильтр сессий до
 честного списка revoked/expired, новый tab checklist items (176.12),
 detail-панели, board members/dashboard, saved filter views/localStorage,
-счётчики вариантов фильтра, MCP/публичный API.
+счётчики вариантов фильтра, MCP/публичный API. Duplicate-only chip compaction —
+follow-up backlog без нового номера, не часть 181.7.
 
 **Подзадачи.**
 

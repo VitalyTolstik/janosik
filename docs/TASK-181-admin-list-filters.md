@@ -2,8 +2,8 @@
 
 **Status:** planned
 
-**Revision:** 5 (2026-11-19) — chip-width/390 blocker and the non-blocking
-notes are addressed; see the resolved decisions in §14.
+**Revision:** 6 (2026-11-19) — announcements-status blocker and the
+non-blocking notes are addressed; see the resolved decisions in §14.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -400,7 +400,7 @@ Sessions/Tokens stay and are regression-tested.
 | Tokens (`/admin/access?tab=tokens`) | Keep existing period tab; no new user/status filters | Backend supports status, but the page has no status tabs; a small follow-up can reuse the filter kit later. |
 | Masters (`/admin/access?tab=masters`) | No filters | Owner-only, small roster; search would be more useful than filters. |
 | Shares (`/admin/communications?tab=shares`) | Defer to TASK-177.5 | TASK-177.5 owns truthful pagination/expiry. Adding filters before the list is honest would compound the problem. A later pass can add board/mode/status/creator. |
-| Announcements history | Keep status only | Small list; status already exists. Period/locale/level filters are speculative. |
+| Announcements history | Active/Disabled only; `deleted` stays a supported legacy alias for inactive | Small list; status already exists. Period/locale/level filters are speculative. |
 | Security (`/admin/settings?tab=security`) | No filters | It is a settings page with a bounded recent-alert panel, not a full security log. TASK-161/168 own a real event list if needed. |
 | User detail tabs | No v1 filters | The parent user already narrows comments/attachments/sessions/tokens/commands/activity. Board/period could help later; not worth a second filter system now. |
 | Card detail windows | No v1 filters | Parent card + live/all windows are enough; timeline is a command/activity merge, not a filterable log. |
@@ -477,7 +477,7 @@ request by the UI parser.
 | sessions | `from`/`to` | — | period only (existing) |
 | tokens | `status`, `from`/`to` | — | period only (existing) |
 | shares | `boardId`, `from`/`to` | — | none (TASK-177.5) |
-| announcements | `status` | — | status only |
+| announcements | `status` | — | Active/Disabled in UI; `deleted` is a supported legacy alias for inactive |
 | boardMembers | `boardId`, `status` | — | none |
 | cardLabels | `boardId`, `columnId`, `labelId`, `cardId` | — | none (no tab) |
 | admins | owner-only custom endpoint, no generic filter | — | none |
@@ -683,10 +683,11 @@ short ids are `shrink-0` and always visible; they are never the part that is
 ellipsized. At 390 the maximum chip width is the viewport minus the page
 padding, so a near-limit card title truncates rather than widening the row; the
 row wraps and the page keeps `scrollWidth <= innerWidth`. The remove control
-stays a real focusable button with an accessible name containing the full title
-and own/parent ids, so keyboard/screen-reader users can remove a chip without
-hover or a tooltip. Own ids stay always visible in v1 for deterministic
-disambiguation; duplicate-only compaction is deferred to 181.7.
+is `shrink-0` with a minimum 24×24 px hit target and stays a real focusable
+button with an accessible name containing the full title and own/parent ids, so
+keyboard/screen-reader users can remove a chip without hover or a tooltip. Own
+ids stay always visible in v1 for deterministic disambiguation; duplicate-only
+compaction is a follow-up backlog item, not part of 181.7.
 
 ### 6.5 Clear, empty and error states
 
@@ -776,12 +777,13 @@ disambiguation; duplicate-only compaction is deferred to 181.7.
   and sheet control is visible/reachable with a bounding box inside the
   viewport — `scrollWidth` alone is not evidence.
 - **Long-title fixture at 390:** seed a 100-char board title, a 100-char column
-  title and a near-limit 300-char card title, activate several filters
-  together, and assert each chip's bounding box is inside the viewport (width
-  ≤ viewport minus page padding), the title span ellipsizes while `title`/the
-  accessible name keep the full text, own/parent short ids remain visible, the
-  row wraps, and each remove button is reachable/removable by keyboard. Do not
-  use only short duplicate names for this test.
+  title and a near-limit 300-char card title (one of them archived/deleted with
+  its suffix), activate several filters together, and assert each chip's
+  bounding box is inside the viewport (width ≤ viewport minus page padding), the
+  title span ellipsizes while `title`/the accessible name keep the full text,
+  own/parent short ids remain visible, the row wraps, and each remove button is
+  reachable/removable by keyboard with a bounding box ≥24×24 px. Do not use only
+  short duplicate names for this test.
 - Touch targets: at least 32×32 px in the dense desktop panel; at least 44 px
   rows/buttons inside the mobile sheet (TASK-179.9 precedent). The remove `X`
   on a chip must be at least 24×24 px and have a larger hit area.
@@ -945,9 +947,10 @@ is a validation error rather than first-value-wins.
   remaining values are: users `active/disabled`; boards/cards
   `active/archived/deleted`; columns/labels/checklists/checklistItems/cardLinks/
   comments/attachments `active/deleted`; tokens/boardMembers
-  `active/disabled`; announcements `active/disabled` (`deleted` is not a
-  stored status and is not accepted). The same strict guard is called by the
-  generic `/admin/entities/:entity` route and every specialized list route
+  `active/disabled`; announcements `active/disabled/deleted`, where `deleted`
+  is a supported-but-not-offered legacy alias that maps to `active=false` (the
+  UI keeps Active/Disabled only). The same strict guard is called by the generic
+  `/admin/entities/:entity` route and every specialized list route
   (`/admin/cards`, `/admin/comments`, …); e2e covers both families plus
   default/no-status and explicit `status=all` on every surface.
 - `unsupported_filter` response shape:
@@ -1215,8 +1218,9 @@ New files under `ui/src/admin/filters/`:
 - `LabelMatchControl.tsx` — Any/All segmented radio inside the Labels section
   and the `labelMatch=all` mode chip.
 - `FilterChip.tsx` — icon, truncating full-title span, visible **own + parent
-  short ids**, suffix, remove button; enforces the §6.4 max-width policy and
-  keeps the full title in `title`/accessible names.
+  short ids**, suffix, `shrink-0` remove button with a ≥24×24 px hit target;
+  enforces the §6.4 max-width policy and keeps the full title in
+  `title`/accessible names.
 - `use-filter-options.ts` — debounce, abort/generation, in-memory cache,
   resolve-by-id; `auditActor` only for actor chips/pickers.
 - `filter-registry.ts` — `AdminFilterKey`, per-entity definitions, labels,
@@ -1328,6 +1332,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 - Shared types/constants: `AdminFilterKey`, supported/offered registry (matrix
   §5.8), max values, lookup DTOs, canonicalization helpers.
+- Perf harness: add `scripts/perf/seed-admin-filters.mjs`,
+  `scripts/perf/admin-filter-bench.mjs` and root `npm run perf:admin-filters`
+  in this PR; the scripts are committed, not merely referenced by §7.6.
 - `admin-list-query.ts`: arrays, booleans, enums, per-surface supported parsing,
   sorted serialization, stable key.
 - `use-admin-list.ts`/`use-admin-list-query.ts`: send only supported filters;
@@ -1521,7 +1528,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   examples, mobile/keyboard behavior).
 - CHANGELOG entry.
 - Final browser matrix and screenshots 1440/1024/390, RU + EN.
-- Perf evidence and any index migration notes.
+- Perf evidence from `npm run perf:admin-filters` (5k PR gate + full 25k manual
+  run) and any index migration notes.
 - A short “what is intentionally not filterable” section in the docs.
 
 **Acceptance**
@@ -1593,6 +1601,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - `status=all` and an omitted status are accepted on every surface, including
   sessions, shares, audit, commands, activity and boardMembers; a non-`all`
   status outside that entity's allowlist is 400. Test both route families.
+- `GET /admin/entities/announcements?status=deleted` returns the inactive rows
+  with 200 (legacy alias), same as `status=disabled`; it is not a 400.
 - Table-driven legacy matrix: every entity/pair in §5.8 returns exactly the old
   rows and never 400; only keys outside `supported` are 400. Sessions/tokens
   keep their existing period tabs and `from`/`to` behavior.
@@ -1647,9 +1657,10 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   no horizontal overflow. At 390 assert each tab/chip/sheet control has a
   bounding box inside the viewport and is visible/reachable, not only
   `scrollWidth <= innerWidth`. The long-title fixture from §6.8 (100-char
-  board/column + near-limit card title + several filters) asserts per-chip
-  width, ellipsis + full `title`/accessible name, visible own/parent ids and
-  keyboard removal.
+  board/column + near-limit card title + several filters, one archived/deleted
+  entity) asserts per-chip width, ellipsis + full `title`/accessible name,
+  visible own/parent ids, visible archived/deleted suffix and keyboard removal;
+  assert each remove button’s bounding box is ≥24×24 px.
 - Cards: assignee/priority/due/attachments/label-all; period tab; exact total
   matches seeded count; empty state.
 - Board change clears dependent filters with announcement; conflicting deep link
@@ -1741,6 +1752,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   member filters.
 - Detail-page filter panels, dashboard filters, announcement period/locale.
 - Per-user saved filter sets, localStorage auto-restore, filter presets by role.
+- Duplicate-only chip compaction (show own ids only for duplicate names) is a
+  follow-up backlog item, not part of 181.7.
 - Filter-option match counts, CSV export of filtered lists, analytics.
 - MCP/public API exposure, master-authored edits, agent control (TASK-176.11).
 - Changes to global search ranking/caps (TASK-177.10 owns the user-facing cap).
@@ -1761,8 +1774,9 @@ preserves only `boardId`; existing out-of-scope parents are conflicts, hard-
 deleted ids are Unknown (not conflicts); deleted entities keep the name +
 suffix; the Clear copy is “Clear search and filters”; v1 shows no filter-option
 counts; sessions/tokens keep their existing period tabs and add no new
-user/status filters; `priority=medium` includes unset cards, with no separate
-Unset option in v1.
+user/status filters; `status=all` is universal and `announcements?status=deleted`
+remains a supported inactive alias; `priority=medium` includes unset cards, with
+no separate Unset option in v1.
 
 1. **Checklist items:** keep TASK-176.12 deferred (recommended) or add a tab
    with board/card/checklist/done? Requires support evidence.
