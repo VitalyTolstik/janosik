@@ -42,6 +42,8 @@ let reorderOnConflict: boolean;
 let boardWorkflow: unknown;
 let approvalStatus:
   "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
+/** Command action type that answers 409 approval_required without a header. */
+let approvalRequiredFor: string | null;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -131,6 +133,7 @@ function fakeApi(
   method: string,
   body: unknown,
   searchParams: URLSearchParams,
+  headers: Record<string, string>,
 ): Response {
   if (path === "/boards" && method === "GET") {
     return respond([
@@ -461,6 +464,22 @@ function fakeApi(
       action: { type: string; dueDate?: number };
     };
     commandPayload = commandPayload || JSON.stringify(request);
+    if (
+      approvalRequiredFor === request.action.type &&
+      headers["X-Approval-Id"] === undefined
+    ) {
+      return respond(
+        {
+          message: "Human approval is required for this destructive action",
+          code: "approval_required",
+          approvalId: "apr-1",
+          planHash: "a".repeat(64),
+          expiresAt: Date.now() + 3_600_000,
+          retryable: false,
+        },
+        409,
+      );
+    }
     if (request.ifMatch !== undefined) {
       if (staleWrites > 0) {
         staleWrites -= 1;
@@ -599,15 +618,17 @@ beforeEach(() => {
   reorderOnConflict = false;
   boardWorkflow = null;
   approvalStatus = "pending";
+  approvalRequiredFor = null;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const headers = (init?.headers ?? {}) as Record<string, string>;
     calls.push({
       path: url.pathname.replace("/api/v1", ""),
       method,
       body,
-      headers: (init?.headers ?? {}) as Record<string, string>,
+      headers,
     });
     return Promise.resolve(
       fakeApi(
@@ -615,6 +636,7 @@ beforeEach(() => {
         method,
         body,
         url.searchParams,
+        headers,
       ),
     );
   });
@@ -1658,6 +1680,115 @@ describe("janosik MCP server", () => {
         entry.path === "/boards/b1/commands" && entry.method === "POST",
     );
     expect(call?.headers?.["X-Approval-Id"]).toBe("apr-1");
+    await client.close();
+  });
+
+  it.each<[string, Record<string, unknown>]>([
+    ["janosik_delete_card", { cardId: "k1" }],
+    ["janosik_unarchive_card", { cardId: "k9" }],
+    ["janosik_move_card", { cardId: "k1", toColumnId: "col1", position: 0 }],
+    ["janosik_duplicate_card", { cardId: "k1", newCardId: "copy-1" }],
+    ["janosik_clear_column", { columnId: "col1" }],
+    ["janosik_delete_column", { columnId: "col1" }],
+    ["janosik_delete_label", { labelId: "label-1" }],
+    ["janosik_delete_checklist", { cardId: "k1", checklistId: "checklist-1" }],
+    [
+      "janosik_delete_checklist_item",
+      { cardId: "k1", checklistId: "checklist-1", itemId: "item-1" },
+    ],
+  ])(
+    "%s reuses the same default commandId on a repeated call",
+    async (name, extra) => {
+      const client = await connect();
+      const args = { boardId: "b1", ...extra };
+      await client.callTool({ name, arguments: args });
+      await client.callTool({ name, arguments: args });
+      const writes = calls.filter(
+        (entry) =>
+          (entry.path === "/boards/b1/commands" ||
+            entry.path === "/boards/b1/commands/batch") &&
+          entry.method === "POST",
+      );
+      expect(writes).toHaveLength(2);
+      const ids = writes.map((entry) => {
+        const body = entry.body as {
+          commandId?: string;
+          commands?: Array<{ commandId?: string }>;
+        };
+        return body.commandId ?? body.commands?.[0]?.commandId;
+      });
+      expect(ids[0]).toEqual(expect.any(String));
+      expect(ids[1]).toBe(ids[0]);
+      await client.close();
+    },
+  );
+
+  it("creates a card with a stable commandId seeded plan", async () => {
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      columnId: "col1",
+      title: "Approval-created card",
+      commandId: "cmd-create-approved",
+    };
+    await client.callTool({ name: "janosik_create_card", arguments: args });
+    await client.callTool({ name: "janosik_create_card", arguments: args });
+    const writes = calls.filter(
+      (entry) =>
+        entry.path === "/boards/b1/commands/batch" && entry.method === "POST",
+    );
+    expect(writes).toHaveLength(2);
+    const bodies = writes.map(
+      (entry) =>
+        entry.body as {
+          commands: Array<{
+            commandId: string;
+            action: { newCardId?: string };
+          }>;
+        },
+    );
+    expect(bodies[0]!.commands[0]!.commandId).toBe("cmd-create-approved");
+    expect(bodies[1]!.commands[0]!.commandId).toBe("cmd-create-approved");
+    expect(bodies[1]!.commands[0]!.action.newCardId).toBe(
+      bodies[0]!.commands[0]!.action.newCardId,
+    );
+    await client.close();
+  });
+
+  it("applies a destructive MCP action after approval with the same plan command", async () => {
+    approvalRequiredFor = "DELETE_LABEL";
+    const client = await connect();
+    const args = {
+      boardId: "b1",
+      labelId: "label-1",
+      expectedVersion: 3,
+    };
+    const refused = await client.callTool({
+      name: "janosik_delete_label",
+      arguments: args,
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.structuredContent).toMatchObject({
+      ok: false,
+      code: "approval_required",
+      approvalId: "apr-1",
+    });
+
+    const approved = await client.callTool({
+      name: "janosik_delete_label",
+      arguments: { ...args, approvalId: "apr-1" },
+    });
+    expect(approved.isError).toBeFalsy();
+
+    const writes = calls.filter(
+      (entry) =>
+        entry.path === "/boards/b1/commands" && entry.method === "POST",
+    );
+    expect(writes).toHaveLength(2);
+    const bodies = writes.map((entry) => entry.body as { commandId: string });
+    expect(bodies[1]!.commandId).toBe(bodies[0]!.commandId);
+    expect(writes[0]!.headers?.["X-Approval-Id"]).toBeUndefined();
+    expect(writes[1]!.headers?.["X-Approval-Id"]).toBe("apr-1");
     await client.close();
   });
 

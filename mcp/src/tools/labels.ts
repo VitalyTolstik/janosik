@@ -16,6 +16,7 @@ import {
   approvalIdSchema,
   boardIdSchema,
   cardIdSchema,
+  commandIdSchema,
   expectedVersionSchema,
   labelColorSchema,
   responseFormatSchema,
@@ -152,16 +153,18 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         labelId: idSchema.describe("Label id."),
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, labelId, expectedVersion, approvalId }) => {
+    async ({ boardId, labelId, expectedVersion, commandId, approvalId }) => {
       await client.command(
         boardId,
         { type: "DELETE_LABEL", labelId },
         {
           ifMatch: expectedVersion,
+          commandId: commandId ?? stableCommandId(labelId, "delete-label"),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

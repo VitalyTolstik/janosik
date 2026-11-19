@@ -14,6 +14,7 @@ import {
   approvalIdSchema,
   boardIdSchema,
   cardIdSchema,
+  commandIdSchema,
   expectedVersionSchema,
   idSchema,
 } from "../schemas.js";
@@ -235,6 +236,7 @@ export function registerChecklistTools(
         checklistId: checklistIdSchema,
         itemId: itemIdSchema,
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
@@ -245,6 +247,7 @@ export function registerChecklistTools(
       checklistId,
       itemId,
       expectedVersion,
+      commandId,
       approvalId,
     }) => {
       await client.command(
@@ -257,6 +260,12 @@ export function registerChecklistTools(
         },
         {
           ifMatch: expectedVersion,
+          commandId:
+            commandId ??
+            stableCommandId(
+              `${cardId}:${checklistId}:${itemId}`,
+              "delete-checklist-item",
+            ),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
@@ -275,11 +284,19 @@ export function registerChecklistTools(
         cardId: cardIdSchema,
         checklistId: checklistIdSchema,
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, cardId, checklistId, expectedVersion, approvalId }) => {
+    async ({
+      boardId,
+      cardId,
+      checklistId,
+      expectedVersion,
+      commandId,
+      approvalId,
+    }) => {
       await client.command(
         boardId,
         {
@@ -289,6 +306,9 @@ export function registerChecklistTools(
         },
         {
           ifMatch: expectedVersion,
+          commandId:
+            commandId ??
+            stableCommandId(`${cardId}:${checklistId}`, "delete-checklist"),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

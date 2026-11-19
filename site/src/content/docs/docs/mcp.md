@@ -83,8 +83,12 @@ call. `janosik_get_approval`/`janosik_list_approvals` show the status, and
 `janosik_cancel_approval` withdraws the agent's own pending request. A human
 board ADMIN decides in the browser; no MCP tool can approve a request. Once
 approved, repeat the same write with its `approvalId` argument, which is sent
-as `X-Approval-Id`. Do not change command ids or fields between request and
-apply — a different plan is `approval_mismatch`. An approval is one-time:
+as `X-Approval-Id`. Destructive command tools accept an optional `commandId`
+and default to a stable id derived from the target/action, so the repeated
+call reuses the approved plan commands without copying them by hand; the plan
+from `janosik_get_approval` is authoritative if a custom id was used. Do not
+change command ids or fields between request and apply — a different plan is
+`approval_mismatch`. An approval is one-time:
 after success it is `consumed`, and repeating the same applied commands is an
 idempotent replay.
 
