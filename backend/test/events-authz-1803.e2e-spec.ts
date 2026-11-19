@@ -77,6 +77,20 @@ describe("SSE authz (e2e)", () => {
     };
   }
 
+  /**
+   * One account covers the flag/expiry/refresh/PAT tests: registration is
+   * throttled to 5/minute per IP, and separate throwaway accounts would hit
+   * that limiter before the subject under test (M6) does.
+   */
+  let sharedAccountPromise: Promise<{
+    token: string;
+    userId: string;
+    refresh: string;
+    boardId: string;
+  }> | null = null;
+  const sharedAccount = () =>
+    (sharedAccountPromise ??= account("shared-events-owner"));
+
   function openStream(
     boardId: string,
     token: string,
@@ -116,7 +130,7 @@ describe("SSE authz (e2e)", () => {
   }
 
   it("M5: the realtime flag disables new streams and closes open ones", async () => {
-    const owner = await account("flag-owner");
+    const owner = await sharedAccount();
     await prisma.featureFlag.upsert({
       where: { key: "realtime_sse" },
       create: { key: "realtime_sse", enabled: false },
@@ -148,7 +162,7 @@ describe("SSE authz (e2e)", () => {
   });
 
   it("M6: closes a stream when the access token expires", async () => {
-    const owner = await account("expiry-owner");
+    const owner = await sharedAccount();
     const jwt = app.get(JwtService);
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: owner.userId },
@@ -193,8 +207,57 @@ describe("SSE authz (e2e)", () => {
     expect(await closesWithin(open)).toBe(true);
   });
 
+  it("M6: keeps a stream open through normal refresh rotation", async () => {
+    const owner = await sharedAccount();
+    const open = await openStream(owner.boardId, owner.token);
+    expect(open.status).toBe(200);
+
+    const rotated = await server()
+      .post("/api/v1/auth/refresh")
+      .set("Cookie", `refresh_token=${owner.refresh}`)
+      .expect(200);
+    expect(rotated.body.accessToken).toEqual(expect.any(String));
+    // Same rotation family: the old access token's stream is still entitled.
+    expect(await closesWithin(open, 700)).toBe(false);
+  });
+
+  it("M6: closes a PAT stream when the token is revoked", async () => {
+    const owner = await sharedAccount();
+    const created = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(owner.token))
+      .send({ name: "revoke-agent", scopePreset: "observer", expiresAt: null })
+      .expect(201);
+    const pat = created.body.token as string;
+    const open = await openStream(owner.boardId, pat);
+    expect(open.status).toBe(200);
+
+    await server()
+      .delete(`/api/v1/users/me/tokens/${created.body.apiToken.id as string}`)
+      .set(auth(owner.token))
+      .expect(200);
+    expect(await closesWithin(open)).toBe(true);
+  });
+
+  it("M6: closes a PAT stream when the token expires", async () => {
+    const owner = await sharedAccount();
+    const created = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(owner.token))
+      .send({
+        name: "expiring-agent",
+        scopePreset: "observer",
+        expiresAt: new Date(Date.now() + 2_000).toISOString(),
+      })
+      .expect(201);
+    const open = await openStream(owner.boardId, created.body.token as string);
+    expect(open.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 2_200));
+    expect(await closesWithin(open)).toBe(true);
+  });
+
   it("M6: closes a PAT stream when the token is narrowed to another board", async () => {
-    const owner = await account("scope-owner");
+    const owner = await sharedAccount();
     const other = await server()
       .post("/api/v1/boards")
       .set(auth(owner.token))

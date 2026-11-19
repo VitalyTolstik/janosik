@@ -337,8 +337,23 @@ describe("Boards API (e2e)", () => {
 
       // The lapsed row is no longer access, but it is still a membership an
       // ADMIN must be able to see and revoke.
-      const visible = await server()
+      const activeOnly = await server()
         .get(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        activeOnly.body.some(
+          (member: { email: string }) => member.email === OUTSIDER_EMAIL,
+        ),
+      ).toBe(false);
+
+      await server()
+        .get(`/api/v1/boards/${boardId}/members?includeExpired=1`)
+        .set(auth(memberToken))
+        .expect(403);
+
+      const visible = await server()
+        .get(`/api/v1/boards/${boardId}/members?includeExpired=1`)
         .set(auth(adminToken))
         .expect(200);
       expect(

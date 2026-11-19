@@ -1010,33 +1010,22 @@ export class AdminController {
   }
 
   @Post("security/totp")
-  async setupTotp(
+  setupTotp(
     @Body() dto: AdminSetupTotpDto,
     @CurrentAdmin() admin: AdminPrincipal,
   ): Promise<AdminTotpSetupDto> {
-    const replacing = await this.security.isEnabled(admin.id);
-    const result = await this.security.setup(admin, dto);
-    if (replacing) {
-      await this.admin.audit(
-        admin,
-        "security.totp_replaced",
-        "admin",
-        admin.id,
-        {},
-      );
-    }
-    return result;
+    return this.security.setup(admin, dto);
   }
 
   @Post("security/totp/verify")
   async verifyTotp(
     @Body() dto: AdminVerifyTotpDto,
     @CurrentAdmin() admin: AdminPrincipal,
-  ): Promise<{ totpEnabled: true }> {
-    const result = await this.security.confirm(admin, dto.code);
+  ): Promise<{ totpEnabled: true; replaced: boolean }> {
+    const result = await this.security.confirm(admin, dto.code, dto.setupToken);
     await this.admin.audit(
       admin,
-      "security.totp_enabled",
+      result.replaced ? "security.totp_replaced" : "security.totp_enabled",
       "admin",
       admin.id,
       {},

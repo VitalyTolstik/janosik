@@ -622,16 +622,28 @@ export class BoardsService {
    * Accepted members of the board (§7.4) — readable by any role, VIEWER
    * included.
    *
-   * M15: an expired VIEWER is deliberately kept visible here rather than
-   * silently filtered out. The row still exists until the member calls the
-   * board (lazy cleanup) or an ADMIN removes it; hiding it left the admin
+   * M15: an expired VIEWER is deliberately kept visible to an ADMIN rather
+   * than silently filtered out. The row still exists until the member calls
+   * the board (lazy cleanup) or an ADMIN removes it; hiding it left the admin
    * unable to see or revoke a lapsed guest, and the invite path then answered
-   * 409 forever. The UI already renders the "access expired" badge from
-   * `expiresAt`.
+   * 409 forever.
+   *
+   * `includeExpired` is opt-in (and the controller restricts it to ADMIN):
+   * the default directory stays the *active* roster, because assignee
+   * pickers, filters and mention lists must never offer a member the server
+   * will refuse to assign.
    */
-  async listMembers(boardId: string): Promise<BoardMemberDto[]> {
+  async listMembers(
+    boardId: string,
+    includeExpired = false,
+  ): Promise<BoardMemberDto[]> {
     const members = await this.prisma.boardMember.findMany({
-      where: { boardId, acceptedAt: { not: null } },
+      where: {
+        boardId,
+        ...(includeExpired
+          ? { acceptedAt: { not: null } }
+          : activeMembershipWhere()),
+      },
       include: { user: true },
       orderBy: { createdAt: "asc" },
     });

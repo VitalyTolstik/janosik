@@ -1048,10 +1048,13 @@ export class MaintenanceService {
    *
    * `User.email` is unique, so an unverified row blocks a legitimate person
    * from registering the same address forever. Only an account that never
-   * became a member of a board and never wrote anything is eligible: a
-   * mailbox squatter cannot erase a real user's content, and a user who
-   * verified between the sweep's read and the deletion lock is kept by
-   * `AccountDeletionService.deleteAccount`'s in-transaction guard.
+   * became a member of a board and never wrote anything is eligible.
+   *
+   * The four counts here are a prefilter only: `deleteAccount` repeats every
+   * one of them inside its `FOR UPDATE` transaction, so a membership, comment,
+   * command or attachment committed between the two reads keeps the account.
+   * A self-created board always carries an accepted ADMIN membership, so the
+   * membership count covers that case as well.
    */
   async sweepUnverifiedUsers(): Promise<number> {
     const cutoff = new Date(

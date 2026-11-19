@@ -142,24 +142,50 @@ describe("Share authz (e2e)", () => {
   }
 
   it("M4: the public-sharing flag gates creation and the runtime config", async () => {
+    const snapshot = await createShare(boardId, { mode: "snapshot" });
+    const pat = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(ownerToken))
+      .send({ name: "flag-agent", scopePreset: "admin", expiresAt: null })
+      .expect(201);
+    const token = pat.body.token as string;
+
     await prisma.featureFlag.upsert({
       where: { key: "public_shares" },
       create: { key: "public_shares", enabled: false },
       update: { enabled: false },
     });
+    try {
+      const config = await server().get("/api/v1/auth/config").expect(200);
+      expect(config.body.allowPublicShares).toBe(false);
+      const approvalsBefore = await prisma.approvalRequest.count({
+        where: { boardId },
+      });
+      const idempotencyBefore = await prisma.idempotencyRecord.count();
 
-    const config = await server().get("/api/v1/auth/config").expect(200);
-    expect(config.body.allowPublicShares).toBe(false);
-    await server()
-      .post(`/api/v1/boards/${boardId}/shares`)
-      .set(auth(ownerToken))
-      .send({ mode: "live" })
-      .expect(404);
+      // A PAT on an approval-policy board and a retry key must still get the
+      // feature 404 first — no approval row, no in-progress idempotency.
+      await server()
+        .post(`/api/v1/boards/${boardId}/shares`)
+        .set(auth(token))
+        .set("Idempotency-Key", "flag-off-create")
+        .send({ mode: "live" })
+        .expect(404);
+      await server()
+        .post(`/api/v1/boards/${boardId}/shares/${snapshot.id}/refresh`)
+        .set(auth(token))
+        .expect(404);
 
-    await prisma.featureFlag.update({
-      where: { key: "public_shares" },
-      data: { enabled: true },
-    });
+      expect(await prisma.approvalRequest.count({ where: { boardId } })).toBe(
+        approvalsBefore,
+      );
+      expect(await prisma.idempotencyRecord.count()).toBe(idempotencyBefore);
+    } finally {
+      await prisma.featureFlag.update({
+        where: { key: "public_shares" },
+        data: { enabled: true },
+      });
+    }
   });
 
   it("M5: the realtime flag disables the public share stream too", async () => {
@@ -215,6 +241,14 @@ describe("Share authz (e2e)", () => {
       .set(auth(pat))
       .set("X-Approval-Id", String(refused.body.approvalId))
       .expect(201);
+
+    // The approval is one-shot: a replay must not refresh again.
+    const replay = await server()
+      .post(`/api/v1/boards/${boardId}/shares/${snapshot.id}/refresh`)
+      .set(auth(pat))
+      .set("X-Approval-Id", String(refused.body.approvalId))
+      .expect(409);
+    expect(replay.body.code).toBe("approval_consumed");
 
     const audit = await prisma.boardShareAuditLog.findFirst({
       where: { shareId: snapshot.id, action: "refreshed" },
@@ -307,6 +341,10 @@ describe("Share authz (e2e)", () => {
       .set(auth(ownerToken))
       .send({ includeComments: false })
       .expect(200);
+    const patched = await prisma.boardShareAuditLog.findFirst({
+      where: { shareId: live.id, action: "updated" },
+    });
+    expect(patched).not.toBeNull();
     await server()
       .get(`/api/v1/share/${live.token}/cards/${streamCard}/comments`)
       .expect(404);

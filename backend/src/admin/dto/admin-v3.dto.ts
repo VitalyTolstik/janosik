@@ -326,6 +326,11 @@ export class AdminVerifyTotpDto {
   @MinLength(6)
   @MaxLength(6)
   code!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  setupToken?: string;
 }
 
 /**

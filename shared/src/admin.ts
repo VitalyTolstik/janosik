@@ -1768,6 +1768,11 @@ export interface AdminTotpSetupDto {
   secret: string;
   /** `otpauth://` URL (may be rendered as text when QR is unavailable). */
   otpauthUrl: string;
+  /**
+   * Signed, short-lived staging ticket. The secret is not active until
+   * `/admin/security/totp/verify` presents this ticket and a valid code.
+   */
+  setupToken: string;
 }
 
 /**
@@ -1783,6 +1788,15 @@ export interface AdminTotpSetupRequest {
 /** `POST /admin/security/totp/verify` — finish enrollment with a code. */
 export interface AdminVerifyTotpRequest {
   code: string;
+  /** Staging ticket returned by `POST /admin/security/totp`. */
+  setupToken?: string;
+}
+
+/** `POST /admin/security/totp/verify` answer. */
+export interface AdminVerifyTotpResponse {
+  totpEnabled: true;
+  /** True when an already-active factor was replaced. */
+  replaced: boolean;
 }
 
 /** `PUT /admin/security` — ip allowlist and/or disable 2FA. */

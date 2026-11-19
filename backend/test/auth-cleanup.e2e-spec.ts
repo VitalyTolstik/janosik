@@ -7,6 +7,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
+import { AccountDeletionService } from "@/users/account-deletion.service";
 import { wipeAll } from "./support/wipe";
 
 const PASSWORD = "correct horse battery";
@@ -22,6 +23,7 @@ describe("Unverified registration cleanup (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let maintenance: MaintenanceService;
+  let accountDeletion: AccountDeletionService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -32,6 +34,7 @@ describe("Unverified registration cleanup (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     maintenance = app.get(MaintenanceService);
+    accountDeletion = app.get(AccountDeletionService);
     await wipeAll(prisma);
   });
 
@@ -58,6 +61,31 @@ describe("Unverified registration cleanup (e2e)", () => {
       },
     });
     return user.id;
+  }
+
+  async function boardCard(
+    label: string,
+  ): Promise<{ boardId: string; cardId: string }> {
+    const board = await prisma.board.create({ data: { title: label } });
+    const column = await prisma.column.create({
+      data: {
+        id: `${label}-col`,
+        boardId: board.id,
+        title: "Todo",
+        position: 0,
+      },
+    });
+    const card = await prisma.card.create({
+      data: {
+        id: `${label}-card`,
+        columnId: column.id,
+        title: "Card",
+        position: 0,
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+      },
+    });
+    return { boardId: board.id, cardId: card.id };
   }
 
   it("deletes an abandoned unverified row and releases its address", async () => {
@@ -115,6 +143,85 @@ describe("Unverified registration cleanup (e2e)", () => {
     expect(
       await prisma.user.findUnique({ where: { id: userId } }),
     ).not.toBeNull();
+  });
+
+  it("keeps content-bearing accounts (comment, command, attachment)", async () => {
+    const old = new Date(Date.now() - 20 * DAY_MS);
+    const commenter = await createUser("commenter@example.com", {
+      createdAt: old,
+    });
+    const commander = await createUser("commander@example.com", {
+      createdAt: old,
+    });
+    const uploader = await createUser("uploader@example.com", {
+      createdAt: old,
+    });
+    const { boardId, cardId } = await boardCard("cleanup-content");
+    await prisma.comment.create({
+      data: { cardId, authorId: commenter, text: "keep me" },
+    });
+    await prisma.command.create({
+      data: {
+        id: "cleanup-command",
+        boardId,
+        actorId: commander,
+        type: "ADD_CARD",
+        payload: { type: "ADD_CARD" },
+        result: { seq: 1 },
+        touches: [],
+      },
+    });
+    await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId,
+        fileName: "keep.txt",
+        storedName: "cleanup-keep.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        uploadedById: uploader,
+      },
+    });
+
+    const result = await maintenance.run("sweep-unverified-users");
+    expect(result[0]?.removed).toBe(0);
+    for (const id of [commenter, commander, uploader]) {
+      expect(await prisma.user.findUnique({ where: { id } })).not.toBeNull();
+    }
+  });
+
+  it("re-checks eligibility after the prefilter when a membership lands", async () => {
+    const old = new Date(Date.now() - 20 * DAY_MS);
+    const userId = await createUser("raced@example.com", { createdAt: old });
+    const board = await prisma.board.create({ data: { title: "Race board" } });
+
+    const original = accountDeletion.deleteAccount.bind(accountDeletion);
+    const spy = jest
+      .spyOn(accountDeletion, "deleteAccount")
+      .mockImplementation(
+        async (target, actor, dueCutoff, unverifiedBefore) => {
+          // Simulates a writer that commits after the sweep's outer prefilter
+          // but before deleteAccount locks the user row.
+          await prisma.boardMember.create({
+            data: {
+              boardId: board.id,
+              userId: target,
+              role: "MEMBER",
+              acceptedAt: new Date(),
+            },
+          });
+          return original(target, actor, dueCutoff, unverifiedBefore);
+        },
+      );
+    try {
+      const result = await maintenance.run("sweep-unverified-users");
+      expect(result[0]?.removed).toBe(0);
+      expect(
+        await prisma.user.findUnique({ where: { id: userId } }),
+      ).not.toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("does not touch a fresh unverified registration", async () => {

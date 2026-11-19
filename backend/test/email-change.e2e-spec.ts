@@ -6,6 +6,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { wipeAll } from "./support/wipe";
 import { MailerService } from "@/mailer/mailer.service";
 import {
   ADMIN_REFRESH_COOKIE,
@@ -57,12 +58,9 @@ describe("Email change API (e2e)", () => {
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
 
-    await prisma.emailChangeCode.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
+    // Full isolation: another suite may have left a board/command graph that
+    // the FK on User would otherwise turn into an unrelated setup failure.
+    await wipeAll(prisma);
 
     await prisma.adminUser.create({
       data: {
@@ -75,6 +73,7 @@ describe("Email change API (e2e)", () => {
   });
 
   afterAll(async () => {
+    await wipeAll(prisma);
     await app.close();
   });
 

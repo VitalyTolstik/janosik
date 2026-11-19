@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
+import { createHmac } from "node:crypto";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -14,6 +15,36 @@ const OPERATOR_EMAIL = "operator-1803@example.com";
 const MASTER_PASSWORD = "master correct horse battery";
 const VICTIM_PASSWORD = "victim correct horse battery";
 const VICTIM_EMAIL = "victim-1803@example.com";
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/** Minimal RFC 6238 code generator for the e2e proof paths. */
+function totp(secretBase32: string, at = Date.now()): string {
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+  for (const char of secretBase32.replace(/=+$/g, "").toUpperCase()) {
+    const index = BASE32.indexOf(char);
+    if (index === -1) continue;
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  const secret = Buffer.from(bytes);
+  const counter = Math.floor(at / 1000 / 30);
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter));
+  const hmac = createHmac("sha1", secret).update(buf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  return (code % 1_000_000).toString().padStart(6, "0");
+}
 
 /**
  * H7/H8/M12 (TASK-180.3): the operator/owner boundary in the master panel.
@@ -156,7 +187,7 @@ describe("Admin authz matrix (e2e)", () => {
   });
 
   describe("M12: replacing an active TOTP secret needs proof", () => {
-    it("refuses a silent replacement and audits a proven one", async () => {
+    it("stages a proven replacement and audits it only after confirmation", async () => {
       const oldSecret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
       await prisma.adminUser.update({
         where: { id: ownerId },
@@ -179,21 +210,125 @@ describe("Admin authz matrix (e2e)", () => {
         .send({ password: "wrong password" })
         .expect(401);
 
-      const replaced = await server()
+      const staged = await server()
         .post("/api/v1/admin/security/totp")
         .set(auth(ownerToken))
         .send({ password: MASTER_PASSWORD })
         .expect(201);
+      expect(staged.body.secret).toEqual(expect.any(String));
+      expect(staged.body.setupToken).toEqual(expect.any(String));
 
-      expect(replaced.body.secret).toEqual(expect.any(String));
+      // The old factor is still active: a lost setup response cannot lock the
+      // master out, and nothing is audited as replaced yet.
+      let row = await prisma.adminUser.findUniqueOrThrow({
+        where: { id: ownerId },
+      });
+      expect(decryptSecret(row.totpSecretEnc!)).toBe(oldSecret);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "security.totp_replaced", targetId: ownerId },
+        }),
+      ).toBe(0);
+
+      const confirmed = await server()
+        .post("/api/v1/admin/security/totp/verify")
+        .set(auth(ownerToken))
+        .send({
+          code: totp(staged.body.secret as string),
+          setupToken: staged.body.setupToken,
+        })
+        .expect(201);
+      expect(confirmed.body).toMatchObject({
+        totpEnabled: true,
+        replaced: true,
+      });
+
+      row = await prisma.adminUser.findUniqueOrThrow({
+        where: { id: ownerId },
+      });
+      expect(decryptSecret(row.totpSecretEnc!)).toBe(staged.body.secret);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "security.totp_replaced", targetId: ownerId },
+        }),
+      ).toBe(1);
+
+      // The same code step must not be pre-consumed by the proof check: the
+      // new factor has to work at the very next login.
+      await server()
+        .post("/api/v1/admin/auth/login")
+        .send({
+          email: OWNER_EMAIL,
+          password: MASTER_PASSWORD,
+          totpCode: totp(staged.body.secret as string),
+        })
+        .expect(200);
+    });
+
+    it("accepts the current code as proof and serializes concurrent replacement", async () => {
       const row = await prisma.adminUser.findUniqueOrThrow({
         where: { id: ownerId },
       });
-      expect(decryptSecret(row.totpSecretEnc!)).not.toBe(oldSecret);
-      const audit = await prisma.adminAuditLog.findFirst({
-        where: { action: "security.totp_replaced", targetId: ownerId },
+      const current = decryptSecret(row.totpSecretEnc!);
+
+      // The proof code is checked without recording its step, so it remains
+      // usable for the next login.
+      await server()
+        .post("/api/v1/admin/security/totp")
+        .set(auth(ownerToken))
+        .send({ totpCode: totp(current) })
+        .expect(201);
+
+      const [first, second] = await Promise.all([
+        server()
+          .post("/api/v1/admin/security/totp")
+          .set(auth(ownerToken))
+          .send({ password: MASTER_PASSWORD })
+          .expect(201),
+        server()
+          .post("/api/v1/admin/security/totp")
+          .set(auth(ownerToken))
+          .send({ password: MASTER_PASSWORD })
+          .expect(201),
+      ]);
+      expect(first.body.setupToken).not.toBe(second.body.setupToken);
+
+      // Staging does not touch the active factor; confirmation is row-locked.
+      const stillCurrent = await prisma.adminUser.findUniqueOrThrow({
+        where: { id: ownerId },
       });
-      expect(audit).not.toBeNull();
+      expect(decryptSecret(stillCurrent.totpSecretEnc!)).toBe(current);
+
+      const results = await Promise.all([
+        server()
+          .post("/api/v1/admin/security/totp/verify")
+          .set(auth(ownerToken))
+          .send({
+            code: totp(first.body.secret as string),
+            setupToken: first.body.setupToken,
+          })
+          .expect(201),
+        server()
+          .post("/api/v1/admin/security/totp/verify")
+          .set(auth(ownerToken))
+          .send({
+            code: totp(second.body.secret as string),
+            setupToken: second.body.setupToken,
+          })
+          .expect(201),
+      ]);
+      for (const result of results) {
+        expect(result.body).toMatchObject({
+          totpEnabled: true,
+          replaced: true,
+        });
+      }
+      const final = await prisma.adminUser.findUniqueOrThrow({
+        where: { id: ownerId },
+      });
+      expect([first.body.secret, second.body.secret]).toContain(
+        decryptSecret(final.totpSecretEnc!),
+      );
     });
   });
 });

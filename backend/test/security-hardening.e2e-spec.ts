@@ -115,7 +115,7 @@ describe("Security hardening (e2e)", () => {
     // M15: the lapsed row is still a membership an ADMIN must see and
     // revoke, so it stays on the management list with an expiry in the past.
     const members = await server()
-      .get(`/api/v1/boards/${board.id}/members`)
+      .get(`/api/v1/boards/${board.id}/members?includeExpired=1`)
       .set(auth(adminToken))
       .expect(200);
     const expired = members.body.find(

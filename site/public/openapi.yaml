@@ -291,10 +291,21 @@ paths:
       tags: [Boards]
       operationId: listBoardMembers
       summary: List board members
-      description: Every accepted member plus the caller's role context; pending invitations are masked rows.
+      description: |
+        Active accepted members by default. `includeExpired=1` additionally
+        returns lapsed VIEWER rows and is accepted only for a board `ADMIN`;
+        pickers, filters and the default directory keep the active roster.
+      parameters:
+        - name: includeExpired
+          in: query
+          required: false
+          description: Include lapsed VIEWER memberships (board `ADMIN` only).
+          schema:
+            type: string
+            enum: ["1", "true"]
       responses:
         "200":
-          description: Members and pending invitations.
+          description: Active members, plus expired rows when requested.
           content:
             application/json:
               schema:
@@ -478,7 +489,8 @@ paths:
       summary: Change a share link
       description: |
         Board `ADMIN` and `admin` preset. Changing visibility is sensitive and
-        requires approval (`share.update`).
+        requires approval (`share.update`); the applied change is written to
+        the board-share audit log.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"

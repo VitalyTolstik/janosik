@@ -153,6 +153,33 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
       .expect(400);
   });
 
+  it("refuses to provision a demo when public sharing is disabled (M4)", async () => {
+    await prisma.featureFlag.upsert({
+      where: { key: "public_shares" },
+      create: { key: "public_shares", enabled: false },
+      update: { enabled: false },
+    });
+    try {
+      const res = await server()
+        .post("/api/v1/admin/demo/start")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({ users: 2, cards: 2, run: false })
+        .expect(409);
+      expect(res.body.code).toBe("public_shares_disabled");
+      expect(await prisma.demoRun.count()).toBe(0);
+      expect(
+        await prisma.user.count({
+          where: { email: { contains: "@janosik.demo" } },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.featureFlag.update({
+        where: { key: "public_shares" },
+        data: { enabled: true },
+      });
+    }
+  });
+
   it("runs the demo lifecycle: seed, refuse a second run, purge on stop", async () => {
     await server()
       .get("/api/v1/admin/demo")

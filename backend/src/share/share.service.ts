@@ -103,9 +103,7 @@ export class ShareService {
     // M4: `ALLOW_PUBLIC_SHARES=false` is the operator's "no public links"
     // promise. Minting a link that can never resolve was the gap: gate the
     // creation path too, not only token resolution.
-    if (!(await this.isPublicSharingEnabled())) {
-      throw new NotFoundException("Not found");
-    }
+    await this.assertPublicSharingEnabled();
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
       select: { id: true },
@@ -176,7 +174,7 @@ export class ShareService {
     boardId: string,
     actorId: string,
     actorType: "user" | "admin",
-    action: "created" | "refreshed" | "revoked" | "deleted",
+    action: "created" | "updated" | "refreshed" | "revoked" | "deleted",
     attribution: RequestAttribution,
   ): Promise<void> {
     await tx.boardShareAuditLog.create({
@@ -248,9 +246,7 @@ export class ShareService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     approvalApplied = false,
   ): Promise<BoardShareDto> {
-    if (!(await this.isPublicSharingEnabled())) {
-      throw new NotFoundException("Not found");
-    }
+    await this.assertPublicSharingEnabled();
     const row = await this.requireShare(shareId);
     if (row.mode !== "snapshot") {
       throw new BadRequestException("Only a snapshot share can be refreshed");
@@ -289,6 +285,7 @@ export class ShareService {
   /** Update flags/TTL/title (owner's dialog). */
   async update(
     shareId: string,
+    actorId: string,
     dto: UpdateShareDto,
     principal?: AuthPrincipal,
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
@@ -332,7 +329,22 @@ export class ShareService {
               );
             }
           }
-          return tx.boardShare.update({ where: { id: row.id }, data });
+          const current = await tx.boardShare.update({
+            where: { id: row.id },
+            data,
+          });
+          if (row.boardId) {
+            await this.auditShare(
+              tx,
+              current,
+              row.boardId,
+              actorId,
+              "user",
+              "updated",
+              attribution,
+            );
+          }
+          return current;
         }),
       { action: "share.update", approvalApplied },
     );
@@ -784,12 +796,22 @@ export class ShareService {
   }
 
   /**
-   * The public-share master switch (TASK-58/61). The env value is the
+   * M4: the public-share master switch (TASK-58/61). The env value is the
    * fallback; an operator can override it from the panel via the
    * `public_shares` feature flag, and the check is awaited on every resolve.
    */
   private isPublicSharingEnabled(): Promise<boolean> {
     return this.flags.isEnabled("public_shares");
+  }
+
+  /**
+   * Pre-write gate shared by controllers and the demo runner. Called before
+   * approvals/idempotency so a disabled feature answers 404 instead of
+   * creating an approval request or an in-progress idempotency record.
+   */
+  async assertPublicSharingEnabled(): Promise<void> {
+    if (await this.isPublicSharingEnabled()) return;
+    throw beforeWrite(new NotFoundException("Not found"));
   }
 
   private parseExpiry(raw: string | null | undefined): Date | null {

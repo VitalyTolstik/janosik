@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -225,8 +226,21 @@ export class BoardsController {
 
   @UseGuards(MembershipGuard)
   @Get(":id/members")
-  members(@Param("id") id: string): Promise<BoardMemberDto[]> {
-    return this.boards.listMembers(id);
+  members(
+    @Param("id") id: string,
+    @CurrentMembership() membership: BoardMember,
+    @Query("includeExpired") includeExpired?: string,
+  ): Promise<BoardMemberDto[]> {
+    const wantsExpired = includeExpired === "1" || includeExpired === "true";
+    // M15: lapsed rows are management data. The default directory stays the
+    // active roster (pickers/filters assign only live members); the member
+    // dialog explicitly asks for expired rows and is ADMIN-only.
+    if (wantsExpired && membership.role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        "Only board admins can list expired memberships",
+      );
+    }
+    return this.boards.listMembers(id, wantsExpired);
   }
 
   /** Pending invitations (ADMIN only), so a wrong invite can be cancelled. */

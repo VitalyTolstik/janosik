@@ -14,6 +14,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { CommentsService } from "@/comments/comments.service";
+import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { ShareService } from "@/share/share.service";
 import { DemoQueueService } from "./demo-queue.service";
 
@@ -102,6 +103,7 @@ export class DemoService implements OnModuleDestroy {
     private readonly commands: CommandsService,
     private readonly comments: CommentsService,
     private readonly shares: ShareService,
+    private readonly flags: FeatureFlagsService,
     private readonly demoQueue: DemoQueueService,
   ) {}
 
@@ -177,6 +179,16 @@ export class DemoService implements OnModuleDestroy {
   ): Promise<AdminDemoStatusDto> {
     if (this.active) {
       throw new ConflictException("A demo is already running");
+    }
+    // M4: the live observation link is part of the demo product. Refuse before
+    // `cleanAllDemo`/provisioning when public sharing is off, so a start cannot
+    // leave a half-built demo board behind a 404 from ShareService.
+    if (!(await this.flags.isEnabled("public_shares"))) {
+      throw new ConflictException({
+        message:
+          "The demo needs public sharing for its live view. Enable public shares and try again.",
+        code: "public_shares_disabled",
+      });
     }
     // Clean everything a previous demo left behind, then create the new one —
     // so a fresh start never accumulates boards or demo users.
