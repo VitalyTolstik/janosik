@@ -15,9 +15,9 @@ info:
     (agent sessions, pause/resume/stop-all, approvals, plans, runs, agent
     policy, token management), public auth config and password recovery, and
     the board/card write path (command log, batch, comments, attachments,
-    members, shares, search, activity). Login, registration, refresh, OAuth,
+    members, shares, search, activity), health probes and the attention inbox. Login, registration, refresh, OAuth,
     email change, public share routes (`/share/:token`), the master `/admin` API,
-    invitations addressed to an account, notifications and realtime SSE are
+    invitations addressed to an account and realtime SSE are
     documented in the site docs and intentionally omitted here. Fields marked
     optional/nullable follow the shared DTOs; no field is invented for this
     document.
@@ -26,8 +26,8 @@ info:
     version (`"1"`), not the server release. `GET /auth/me` returns the live
     server release as `server.version` and `server.apiVersion`.
 
-    **Errors.** Every error uses `ApiErrorEnvelope`: branch on `code`, not on
-    `message`. `retryable` says whether the identical request may be retried.
+    **Errors.** API errors use `ApiErrorEnvelope`; callers branch on `code`.
+    The readiness probe returns `ReadinessReport` for both 200 and 503. `retryable` says whether the identical request may be retried.
     HTTP statuses are preserved for compatibility.
 
     **Concurrency and idempotency.** Board writes carry the board sequence in
@@ -82,7 +82,177 @@ tags:
     description: Identity, personal API tokens, profile, export and deletion.
   - name: Announcements
     description: Per-user in-app announcement banners and their dismissals.
+  - name: Health
+    description: Liveness and dependency readiness.
 paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: getLiveness
+      security: []
+      summary: Check process liveness without dependency I/O
+      description: Unauthenticated and exempt from the global rate limit.
+      responses:
+        "200":
+          description: The process is responding.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { const: ok }
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      security: []
+      summary: Check database and configured Redis readiness
+      description: The dependency report is briefly cached. Redis is disabled when REDIS_URL is unset.
+      responses:
+        "200":
+          description: The database and any configured Redis are available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessReport"
+              example: { status: ok, db: up, redis: disabled }
+        "503":
+          description: A dependency is unavailable. The probe returns its top-level report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessReport"
+              example: { status: error, db: up, redis: down }
+  /users/me/notifications:
+    get:
+      tags: [Account]
+      operationId: listAttentionNotifications
+      security: [browserSession: []]
+      summary: List the caller's attention notifications newest first
+      description: Board-scoped entries are visible to active members. Reuse nextCursor for the next page.
+      parameters:
+        - name: boardId
+          in: query
+          description: Board filter. Requires active membership.
+          schema: { type: string }
+        - name: unreadOnly
+          in: query
+          schema: { type: boolean }
+        - name: cursor
+          in: query
+          description: |
+            Opaque nextCursor from the previous page. A malformed cursor or
+            a timestamp after 9999-12-31T23:59:59.999Z returns 400. To start
+            again from the newest page, omit the cursor.
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Inbox page and total visible unread count.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttentionNotificationPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/notifications/{id}/read:
+    post:
+      tags: [Account]
+      operationId: markAttentionNotificationRead
+      security: [browserSession: []]
+      summary: Mark one attention notification read
+      description: Only the recipient can update a visible notification. Repeating the request preserves its read timestamp.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttentionNotification"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/notifications/read-all:
+    post:
+      tags: [Account]
+      operationId: markAllAttentionNotificationsRead
+      security: [browserSession: []]
+      summary: Mark all visible attention notifications read
+      description: With no boardId, the request covers all visible board and account notifications.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                boardId: { type: string }
+      responses:
+        "200":
+          description: Number of notifications marked read.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated: { type: integer, minimum: 0 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /users/me/notification-settings:
+    get:
+      tags: [Account]
+      operationId: getNotificationSettings
+      security: [browserSession: []]
+      summary: Read notification email preferences
+      description: Browser sessions can read the preferences for their own account.
+      responses:
+        "200":
+          description: Current preferences.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSettings"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    patch:
+      tags: [Account]
+      operationId: updateNotificationSettings
+      security: [browserSession: []]
+      summary: Update notification email preferences
+      description: Only provided preferences change. The in-app inbox is always active.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notifyDigest: { type: boolean }
+                notifyAttention: { type: boolean }
+      responses:
+        "200":
+          description: Updated preferences.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSettings"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards:
     get:
       tags: [Boards]
@@ -646,8 +816,10 @@ paths:
         command `seq` and the versions of touched entities. A PAT command that
         creates a run also sets `X-Run-Id`. Destructive actions require
         `X-Approval-Id` unless the token is trusted CI; `commandId` makes a
-        retry idempotent. `Idempotency-Key` is additionally honoured for
-        `DUPLICATE_CARD`.
+        retry idempotent. After a lost response or HTTP 408 from a proxy,
+        resend the same command ID, action and version preconditions to
+        retrieve the committed result if the first request was applied.
+        `Idempotency-Key` is additionally honoured for `DUPLICATE_CARD`.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -2902,6 +3074,57 @@ components:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
   schemas:
+    ReadinessReport:
+      type: object
+      required: [status, db, redis]
+      properties:
+        status: { enum: [ok, error] }
+        db: { enum: [up, down] }
+        redis: { enum: [up, down, disabled] }
+    AttentionNotification:
+      type: object
+      required: [id, type, boardId, title, body, data, readAt, createdAt]
+      properties:
+        id: { type: string }
+        type:
+          enum:
+            - approval.requested
+            - approval.decided
+            - approval.cancelled
+            - approval.consumed
+            - approval.expired
+            - agent.blocked
+            - agent.needs_human
+            - claim.expired
+            - quota.exceeded
+            - token.revoked
+        boardId: { type: [string, "null"] }
+        title: { type: string }
+        body: { type: [string, "null"] }
+        data: { type: [object, "null"] }
+        readAt: { type: [integer, "null"], description: Unix milliseconds. }
+        createdAt: { type: integer, description: Unix milliseconds. }
+    AttentionNotificationPage:
+      type: object
+      required: [items, nextCursor, unreadCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttentionNotification"
+        nextCursor: { type: [string, "null"] }
+        unreadCount: { type: integer, minimum: 0 }
+    NotificationSettings:
+      type: object
+      required: [notifyDigest, notifyAttention]
+      properties:
+        notifyDigest:
+          { type: boolean, description: Scheduled digests and due reminders. }
+        notifyAttention:
+          {
+            type: boolean,
+            description: Immediate emails. The in-app inbox is always active.,
+          }
     ApiErrorEnvelope:
       type: object
       description: |

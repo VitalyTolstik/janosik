@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import {
   Injectable,
   Logger,
   Optional,
   type OnModuleInit,
+  type OnModuleDestroy,
 } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
@@ -13,8 +15,17 @@ import {
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { activeMembershipWhere } from "@/common/membership";
-import { MailQueueService } from "@/mailer/mail-queue.service";
-import type { DigestAttentionCount } from "@/mailer/templates";
+import {
+  NotificationDeliveryService,
+  notificationMailId,
+} from "@/mailer/notification-delivery.service";
+import type { MailLocale } from "@/mailer/mail.types";
+import { ReconcileLoop } from "./reconcile-loop";
+import {
+  reconcileScheduler,
+  SCHEDULE_RECONCILE_MS,
+} from "./recurring-schedule";
+import { escapeHtml, type DigestAttentionCount } from "@/mailer/templates";
 import { EmailTemplateService } from "./email-template.service";
 import { OpsSettingsService } from "./ops-settings.service";
 import { QUEUE_NAMES, redisQueueStats, type QueueStats } from "./queue-core";
@@ -42,15 +53,20 @@ export interface CommsJob {
 }
 
 @Injectable()
-export class CommsSchedulerService implements OnModuleInit {
+export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CommsSchedulerService.name);
-  private digestTimer: NodeJS.Timeout | null = null;
-  private reminderTimer: NodeJS.Timeout | null = null;
+  private readonly schedules = new ReconcileLoop(this.logger, () =>
+    this.applySchedule(),
+  );
+  private readonly timers = new Map<
+    CommsJobKind,
+    { interval: number; handle: NodeJS.Timeout }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly ops: OpsSettingsService,
-    private readonly mail: MailQueueService,
+    private readonly delivery: NotificationDeliveryService,
     private readonly templates: EmailTemplateService,
     @Optional()
     @InjectQueue(COMMS_QUEUE)
@@ -61,10 +77,18 @@ export class CommsSchedulerService implements OnModuleInit {
     return this.queue !== undefined;
   }
 
-  async onModuleInit(): Promise<void> {
-    await this.applySchedule().catch((error: unknown) => {
-      this.logger.warn(`Comms schedule setup failed: ${String(error)}`);
-    });
+  onModuleInit(): void {
+    this.schedules.start(SCHEDULE_RECONCILE_MS);
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.schedules.stop();
+    for (const { handle } of this.timers.values()) clearTimeout(handle);
+    this.timers.clear();
+  }
+
+  refreshSchedule(): void {
+    void this.schedules.refresh();
   }
 
   /** (Re)installs both recurring jobs from the configured cadence. */
@@ -72,48 +96,44 @@ export class CommsSchedulerService implements OnModuleInit {
     const digest = (await this.ops.digestIntervalHours()) ?? 0;
     const lead = (await this.ops.reminderLeadHours()) ?? 0;
     if (this.queue) {
-      await this.upsert(this.queue, DIGEST_SCHEDULER_ID, "digest", digest);
-      await this.upsert(
-        this.queue,
-        REMINDERS_SCHEDULER_ID,
-        "due-reminders",
-        lead,
-      );
+      await Promise.all([
+        reconcileScheduler<CommsJob>(
+          this.queue,
+          DIGEST_SCHEDULER_ID,
+          digest * 3_600_000,
+          {
+            name: COMMS_JOB,
+            data: { kind: "digest" },
+          },
+        ),
+        reconcileScheduler<CommsJob>(
+          this.queue,
+          REMINDERS_SCHEDULER_ID,
+          lead * 3_600_000,
+          {
+            name: COMMS_JOB,
+            data: { kind: "due-reminders" },
+          },
+        ),
+      ]);
       return;
     }
-    this.clearTimers();
     if (env.NODE_ENV === "test") return;
-    // Fallback cadence mirrors the BullMQ path (TASK-83): the reminder job
-    // runs every `lead` hours, not every hour — otherwise a `lead`-wide window
-    // fires the same reminder once per hour. Large cadences are chunked
-    // because `setTimeout` caps at 2^31-1 ms.
-    if (digest > 0) {
-      this.armRecurring(
-        "digest",
-        digest * 3_600_000,
-        () => void this.run("digest").catch(() => undefined),
-      );
-    }
-    if (lead > 0) {
-      this.armRecurring(
-        "reminder",
-        lead * 3_600_000,
-        () => void this.run("due-reminders").catch(() => undefined),
-      );
-    }
+    this.reconcileTimer("digest", digest * 3_600_000);
+    this.reconcileTimer("due-reminders", lead * 3_600_000);
   }
 
-  /**
-   * Recurring timer that survives a cadence beyond `setTimeout`'s 2^31-1 ms
-   * cap by waiting in chunks (TASK-83). The latest pending handle is kept in
-   * `digestTimer`/`reminderTimer`, so `clearTimers` stops the chain (a cleared
-   * timeout never fires, and only a fired timeout re-arms).
-   */
-  private armRecurring(
-    slot: "digest" | "reminder",
-    ms: number,
-    run: () => void,
-  ): void {
+  private reconcileTimer(kind: CommsJobKind, interval: number): void {
+    const current = this.timers.get(kind);
+    if (current?.interval === interval) return;
+    if (current) clearTimeout(current.handle);
+    if (interval <= 0) {
+      this.timers.delete(kind);
+      return;
+    }
+
+    // Keep the next tick intact across successful settings reads. Chunk
+    // large intervals because setTimeout caps delays at 2^31-1 ms.
     const arm = (remaining: number): void => {
       const handle = setTimeout(
         () => {
@@ -121,65 +141,46 @@ export class CommsSchedulerService implements OnModuleInit {
             arm(remaining - MAX_TIMER_MS);
             return;
           }
-          run();
-          arm(ms);
+          void this.run(kind).catch((error: unknown) => {
+            this.logger.warn(`Comms ${kind} tick failed: ${String(error)}`);
+          });
+          arm(interval);
         },
         Math.min(remaining, MAX_TIMER_MS),
       );
       handle.unref();
-      if (slot === "digest") this.digestTimer = handle;
-      else this.reminderTimer = handle;
+      this.timers.set(kind, { interval, handle });
     };
-    arm(ms);
-  }
-
-  private async upsert(
-    queue: Queue<CommsJob>,
-    id: string,
-    kind: CommsJobKind,
-    hours: number,
-  ): Promise<void> {
-    if (hours <= 0) {
-      await queue.removeJobScheduler(id);
-      return;
-    }
-    await queue.upsertJobScheduler(
-      id,
-      { every: hours * 3_600_000 },
-      {
-        name: COMMS_JOB,
-        data: { kind },
-        // TASK-148 (B7): bound the completed/failed history the scheduler
-        // leaves in Redis; each fired letter job used to stay forever.
-        opts: { removeOnComplete: 100, removeOnFail: 100 },
-      },
-    );
+    arm(interval);
   }
 
   /** Runs one comms job (worker entry point + inline fallback). */
-  async run(kind: CommsJobKind): Promise<{ sent: number }> {
+  async run(
+    kind: CommsJobKind,
+    runId: string = randomUUID(),
+  ): Promise<{ sent: number }> {
     const sent =
-      kind === "digest" ? await this.sendDigests() : await this.sendReminders();
+      kind === "digest"
+        ? await this.sendDigests(runId)
+        : await this.sendReminders();
+    if (sent > 0) void this.delivery.kick();
     this.logger.log(`comms ${kind}: ${sent} letter(s) queued`);
     return { sent };
   }
 
   /** Per-board summary of activity and undigested attention since the window. */
-  private async sendDigests(): Promise<number> {
+  private async sendDigests(runId: string): Promise<number> {
     const hours = (await this.ops.digestIntervalHours()) ?? 0;
     if (hours <= 0) return 0;
     const now = new Date();
     const since = new Date(now.getTime() - hours * 3_600_000);
-    // TASK-166.9 digest v2: attention rows are collected first so a board
-    // with only an approval/blocker event (and no content change) still
-    // produces a digest. `digestedAt` is the per-recipient bookmark: an event
-    // appears in exactly one scheduled letter, while a failed/interrupted run
-    // leaves it for the next one.
+    // Unreserved attention survives a missed schedule. Staged rows belong to
+    // their durable letter until the worker delivers or cancels it.
     const attentionRows = await this.prisma.attentionNotification.findMany({
       where: {
         boardId: { not: null },
         digestedAt: null,
-        createdAt: { gte: since },
+        digestMailId: null,
       },
       select: { id: true, userId: true, boardId: true, type: true },
     });
@@ -248,13 +249,38 @@ export class CommsSchedulerService implements OnModuleInit {
           locale,
           digestCounts(mine),
         );
-        await this.mail.enqueue({ to: user.email, ...message });
-        sent += 1;
-        if (mine.length > 0) {
-          await this.prisma.attentionNotification.updateMany({
-            where: { id: { in: mine.map((row) => row.id) } },
-            data: { digestedAt: now },
+        const id = notificationMailId("digest", runId, board.id, user.id);
+        try {
+          await this.prisma.$transaction(async (tx) => {
+            const inserted = await tx.notificationMail.createMany({
+              data: [
+                {
+                  id,
+                  kind: "digest",
+                  userId: user.id,
+                  boardIds: [board.id],
+                  message: { to: user.email, ...message },
+                },
+              ],
+              skipDuplicates: true,
+            });
+            if (inserted.count === 0) throw new ConcurrentMailReservation();
+            if (mine.length > 0) {
+              const reserved = await tx.attentionNotification.updateMany({
+                where: {
+                  id: { in: mine.map((row) => row.id) },
+                  digestedAt: null,
+                  digestMailId: null,
+                },
+                data: { digestMailId: id },
+              });
+              if (reserved.count !== mine.length)
+                throw new ConcurrentMailReservation();
+            }
           });
+          sent += 1;
+        } catch (error) {
+          if (!(error instanceof ConcurrentMailReservation)) throw error;
         }
       }
     }
@@ -289,6 +315,7 @@ export class CommsSchedulerService implements OnModuleInit {
             id: true,
             email: true,
             notifyDigest: true,
+            locale: true,
             disabledAt: true,
           },
         },
@@ -302,10 +329,12 @@ export class CommsSchedulerService implements OnModuleInit {
       string,
       {
         email: string;
+        locale: MailLocale;
         items: Array<{
           cardId: string;
           title: string;
           board: string;
+          boardId: string;
           due: Date;
         }>;
       }
@@ -319,18 +348,20 @@ export class CommsSchedulerService implements OnModuleInit {
       if (!memberKeys.has(`${card.column.boardId}:${assignee.id}`)) continue;
       const entry = byUser.get(assignee.id) ?? {
         email: assignee.email,
+        locale: assignee.locale === "ru" ? "ru" : "en",
         items: [],
       };
       entry.items.push({
         cardId: card.id,
         title: card.title,
         board: card.column.board.title,
+        boardId: card.column.boardId,
         due: card.dueDate,
       });
       byUser.set(assignee.id, entry);
     }
     let sent = 0;
-    for (const [userId, { email, items }] of byUser.entries()) {
+    for (const [userId, { email, locale, items }] of byUser.entries()) {
       // Persistent dedupe (TASK-83): never remind the same (card, user,
       // dueDate) twice, even across a restart or an overlapping run. A
       // rescheduled card has a new dueDate, so it re-arms naturally.
@@ -345,27 +376,52 @@ export class CommsSchedulerService implements OnModuleInit {
         (item) => !reminded.has(`${item.cardId}:${item.due.getTime()}`),
       );
       if (fresh.length === 0) continue;
+      const dueLabel = locale === "ru" ? "срок" : "due";
+      const date = new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "UTC",
+      });
       const tasksHtml = fresh
         .map(
           (item) =>
-            `<li><strong>${escapeHtml(item.title)}</strong> (${escapeHtml(item.board)}) — due ${item.due.toISOString()}</li>`,
+            `<li><strong>${escapeHtml(item.title)}</strong> (${escapeHtml(item.board)}) — ${dueLabel} ${date.format(item.due)} UTC</li>`,
         )
         .join("");
       const message = await this.templates.dueReminderEmail(
         fresh.length,
         tasksHtml,
-        "en",
+        locale,
       );
-      await this.mail.enqueue({ to: email, ...message });
-      await this.prisma.reminderSent.createMany({
-        data: fresh.map((item) => ({
-          cardId: item.cardId,
-          userId,
-          dueDate: item.due,
-        })),
-        skipDuplicates: true,
-      });
-      sent += 1;
+      const keys = fresh
+        .map((item) => `${item.cardId}:${item.due.toISOString()}`)
+        .sort();
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const reserved = await tx.reminderSent.createMany({
+            data: fresh.map((item) => ({
+              cardId: item.cardId,
+              userId,
+              dueDate: item.due,
+            })),
+            skipDuplicates: true,
+          });
+          if (reserved.count !== fresh.length)
+            throw new ConcurrentMailReservation();
+          await tx.notificationMail.create({
+            data: {
+              id: notificationMailId("reminder", userId, ...keys),
+              kind: "reminder",
+              userId,
+              boardIds: [...new Set(fresh.map((item) => item.boardId))],
+              message: { to: email, ...message },
+            },
+          });
+        });
+        sent += 1;
+      } catch (error) {
+        if (!(error instanceof ConcurrentMailReservation)) throw error;
+      }
     }
     return sent;
   }
@@ -405,22 +461,9 @@ export class CommsSchedulerService implements OnModuleInit {
     if (this.queue) return redisQueueStats(this.queue);
     return { pending: 0, processed: 0, failed: 0, backend: "memory" };
   }
-
-  private clearTimers(): void {
-    if (this.digestTimer) clearInterval(this.digestTimer);
-    if (this.reminderTimer) clearInterval(this.reminderTimer);
-    this.digestTimer = null;
-    this.reminderTimer = null;
-  }
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+class ConcurrentMailReservation extends Error {}
 
 const KNOWN_ATTENTION_TYPES = new Set<string>(ATTENTION_NOTIFICATION_TYPES);
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -30,11 +31,16 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { pickLocale, type MailLocale } from "@/mailer/mail.types";
 import { announcementEmail } from "@/mailer/templates";
 import { MailerService } from "@/mailer/mailer.service";
-import { BroadcastQueueService } from "@/ops/broadcast-queue.service";
+import {
+  NotificationDeliveryService,
+  notificationMailId,
+} from "@/mailer/notification-delivery.service";
 import { EmailTemplateService } from "@/ops/email-template.service";
 
 const TITLE_MAX = 200;
 const BODY_MAX = 2000;
+const MAIL_INSERT_BATCH_SIZE = 1_000;
+const PUBLISH_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
 type AnnouncementWithTranslations = Prisma.AnnouncementGetPayload<{
   include: { translations: true };
@@ -51,6 +57,7 @@ interface TranslationInput {
 }
 
 interface RecipientProfile {
+  userId: string | null;
   email: string;
   locale: MailLocale | null;
 }
@@ -77,7 +84,7 @@ export class CommsService {
     private readonly prisma: PrismaService,
     private readonly mailer: MailerService,
     private readonly templates: EmailTemplateService,
-    private readonly broadcasts: BroadcastQueueService,
+    private readonly delivery: NotificationDeliveryService,
   ) {}
 
   // --------------------------------------------------------- announcements
@@ -186,41 +193,64 @@ export class CommsService {
       legacy: parsed.legacy,
     });
 
-    let row = await this.prisma.announcement.create({
-      data: {
-        title: parsed.legacy?.title ?? null,
-        body: parsed.legacy?.body ?? null,
-        sourceLocale: parsed.sourceLocale,
-        fallbackPolicy: parsed.fallbackPolicy,
-        level: dto.level ?? "info",
-        audience: dto.audience ?? "all",
-        segment: dto.segment ?? null,
-        active,
-        sendEmail: dto.sendEmail ?? false,
-        startsAt: parsed.startsAt,
-        endsAt: parsed.endsAt,
-        createdBy,
-        ...(parsed.translations.length > 0
-          ? {
-              translations: {
-                create: parsed.translations.map((translation) => ({
-                  ...translation,
-                  origin: "human",
-                  reviewedAt: new Date(),
-                  updatedBy: createdBy,
-                })),
-              },
-            }
-          : {}),
-      },
-      include: { translations: true },
-    });
+    const sendNow = active && dto.sendEmail === true && this.mailer.enabled;
+    const id = randomUUID();
+    const audience = dto.audience ?? "all";
+    const segment = dto.segment ?? null;
+    const letters = sendNow
+      ? await this.prepareLocalizedEmail({
+          id,
+          audience,
+          segment,
+          sourceLocale: parsed.sourceLocale,
+          translations: parsed.translations.map(({ locale, title, body }) => ({
+            locale,
+            title,
+            body,
+          })),
+          legacy: parsed.legacy ?? undefined,
+        })
+      : [];
+    const row = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.announcement.create({
+          data: {
+            id,
+            title: parsed.legacy?.title ?? null,
+            body: parsed.legacy?.body ?? null,
+            sourceLocale: parsed.sourceLocale,
+            fallbackPolicy: parsed.fallbackPolicy,
+            level: dto.level ?? "info",
+            audience,
+            segment,
+            active,
+            sendEmail: dto.sendEmail ?? false,
+            ...(sendNow ? { emailSentAt: new Date() } : {}),
+            startsAt: parsed.startsAt,
+            endsAt: parsed.endsAt,
+            createdBy,
+            ...(parsed.translations.length > 0
+              ? {
+                  translations: {
+                    create: parsed.translations.map((translation) => ({
+                      ...translation,
+                      origin: "human",
+                      reviewedAt: new Date(),
+                      updatedBy: createdBy,
+                    })),
+                  },
+                }
+              : {}),
+          },
+          include: { translations: true },
+        });
 
-    // Publishing is the only moment a letter may leave. A draft stays silent;
-    // activation through PATCH later reuses the same path.
-    if (row.active && row.sendEmail) {
-      row = await this.claimAndScheduleEmail(row);
-    }
+        await this.stageLocalizedEmail(tx, letters);
+        return created;
+      },
+      sendNow ? PUBLISH_TRANSACTION_OPTIONS : undefined,
+    );
+    if (sendNow) void this.delivery.kick();
     return this.toAnnouncement(row);
   }
 
@@ -469,9 +499,7 @@ export class CommsService {
     );
     const sourceUpdatedAt = new Date();
     const finalSendEmail = dto.sendEmail ?? exists.sendEmail;
-    // Claim the letter atomically with the draft → active transition. The
-    // actual recipient fan-out happens after this request returns; a retry
-    // sees `emailSentAt` set and cannot duplicate the broadcast.
+    // Stage the letter with the draft → active transition and claim.
     const sendNow =
       !exists.active &&
       active &&
@@ -482,12 +510,37 @@ export class CommsService {
       (legacyTitle ?? null) !== (exists.title ?? null) ||
       (legacyBody ?? null) !== (exists.body ?? null);
 
+    const audience = dto.audience ?? exists.audience;
+    const segment = dto.segment !== undefined ? dto.segment : exists.segment;
+    const letters = sendNow
+      ? await this.prepareLocalizedEmail({
+          id,
+          audience,
+          segment,
+          sourceLocale,
+          translations: finalTranslations.map((translation) => {
+            const stored = exists.translations.find(
+              (row) => row.locale === translation.locale,
+            );
+            return {
+              locale: translation.locale,
+              title: translation.title,
+              body: translation.body,
+              origin: changedTranslations.includes(translation)
+                ? "human"
+                : stored?.origin,
+              reviewedAt: stored?.reviewedAt?.getTime(),
+            };
+          }),
+          legacy: { title: legacyTitle, body: legacyBody },
+        })
+      : [];
     const data: Prisma.AnnouncementUpdateInput = {
       sourceLocale,
       fallbackPolicy,
       level: dto.level ?? exists.level,
-      audience: dto.audience ?? exists.audience,
-      segment: dto.segment !== undefined ? dto.segment : exists.segment,
+      audience,
+      segment,
       active,
       sendEmail: finalSendEmail,
       ...(sendNow ? { emailSentAt: new Date() } : {}),
@@ -508,70 +561,71 @@ export class CommsService {
       body: legacyBody,
     };
 
-    const row = await this.prisma.$transaction(async (tx) => {
-      if (removedLocales.length > 0) {
-        await tx.announcementTranslation.deleteMany({
-          where: { announcementId: id, locale: { in: removedLocales } },
-        });
-      }
-      for (const translation of changedTranslations) {
-        const isSource = translation.locale === sourceLocale;
-        await tx.announcementTranslation.upsert({
-          where: {
-            announcementId_locale: {
+    const row = await this.prisma.$transaction(
+      async (tx) => {
+        if (removedLocales.length > 0) {
+          await tx.announcementTranslation.deleteMany({
+            where: { announcementId: id, locale: { in: removedLocales } },
+          });
+        }
+        for (const translation of changedTranslations) {
+          const isSource = translation.locale === sourceLocale;
+          await tx.announcementTranslation.upsert({
+            where: {
+              announcementId_locale: {
+                announcementId: id,
+                locale: translation.locale,
+              },
+            },
+            create: {
               announcementId: id,
               locale: translation.locale,
+              title: translation.title,
+              body: translation.body,
+              origin: "human",
+              translatedFrom: isSource ? null : sourceLocale,
+              sourceUpdatedAt: isSource
+                ? null
+                : (sourceRow?.updatedAt ?? sourceUpdatedAt),
+              reviewedAt: sourceUpdatedAt,
+              updatedBy: updatedBy ?? null,
             },
-          },
-          create: {
-            announcementId: id,
-            locale: translation.locale,
-            title: translation.title,
-            body: translation.body,
-            origin: "human",
-            translatedFrom: isSource ? null : sourceLocale,
-            sourceUpdatedAt: isSource
-              ? null
-              : (sourceRow?.updatedAt ?? sourceUpdatedAt),
-            reviewedAt: sourceUpdatedAt,
-            updatedBy: updatedBy ?? null,
-          },
-          update: {
-            title: translation.title,
-            body: translation.body,
-            origin: "human",
-            translatedFrom: isSource ? null : sourceLocale,
-            sourceUpdatedAt: isSource
-              ? null
-              : (sourceRow?.updatedAt ?? sourceUpdatedAt),
-            reviewedAt: sourceUpdatedAt,
-            updatedBy: updatedBy ?? null,
-          },
+            update: {
+              title: translation.title,
+              body: translation.body,
+              origin: "human",
+              translatedFrom: isSource ? null : sourceLocale,
+              sourceUpdatedAt: isSource
+                ? null
+                : (sourceRow?.updatedAt ?? sourceUpdatedAt),
+              reviewedAt: sourceUpdatedAt,
+              updatedBy: updatedBy ?? null,
+            },
+          });
+        }
+        const updated = await tx.announcement.updateMany({
+          where: { id, version: exists.version },
+          data,
         });
-      }
-      const updated = await tx.announcement.updateMany({
-        where: { id, version: exists.version },
-        data,
-      });
-      if (updated.count === 0) {
-        throw new ConflictException({
-          statusCode: 409,
-          conflict: "version",
-          currentVersion: exists.version,
-          message: "The announcement was changed by someone else",
+        if (updated.count === 0) {
+          throw new ConflictException({
+            statusCode: 409,
+            conflict: "version",
+            currentVersion: exists.version,
+            message: "The announcement was changed by someone else",
+          });
+        }
+        const current = await tx.announcement.findUniqueOrThrow({
+          where: { id },
+          include: { translations: true },
         });
-      }
-      return tx.announcement.findUniqueOrThrow({
-        where: { id },
-        include: { translations: true },
-      });
-    });
+        await this.stageLocalizedEmail(tx, letters);
+        return current;
+      },
+      sendNow ? PUBLISH_TRANSACTION_OPTIONS : undefined,
+    );
 
-    if (sendNow) {
-      // Fire-and-forget: the HTTP response must not wait for recipient lookup
-      // or SMTP/queue drains. `emailSentAt` above is the durable claim.
-      void this.dispatchLocalizedEmail(row);
-    }
+    if (sendNow) void this.delivery.kick();
     return {
       announcement: this.toAnnouncement(row),
       changedLocales: [
@@ -969,7 +1023,7 @@ export class CommsService {
       if (entries.length === 0) return [];
       const users = await this.prisma.user.findMany({
         where: { email: { in: entries } },
-        select: { email: true, locale: true, disabledAt: true },
+        select: { id: true, email: true, locale: true, disabledAt: true },
       });
       const byEmail = new Map(
         users.map((user) => [user.email.toLowerCase(), user]),
@@ -979,6 +1033,7 @@ export class CommsService {
         if (user?.disabledAt) return [];
         return [
           {
+            userId: user?.id ?? null,
             email: user?.email ?? entry,
             locale: isMailLocale(user?.locale) ? user.locale : null,
           },
@@ -987,123 +1042,81 @@ export class CommsService {
     }
     const users = await this.prisma.user.findMany({
       where: { disabledAt: null },
-      select: { email: true, locale: true },
+      select: { id: true, email: true, locale: true },
     });
     return users.map((user) => ({
+      userId: user.id,
       email: user.email,
       locale: isMailLocale(user.locale) ? user.locale : null,
     }));
   }
 
-  /**
-   * Atomically claim the letter for a freshly published announcement, then
-   * run the fan-out in the background. The claim is what makes a retried
-   * request harmless: the next one sees `emailSentAt` already set.
-   */
-  private async claimAndScheduleEmail(
-    row: AnnouncementWithTranslations,
-  ): Promise<AnnouncementWithTranslations> {
-    if (!this.mailer.enabled) return row;
-    const claimed = await this.prisma.announcement.updateMany({
-      where: {
-        id: row.id,
-        active: true,
-        sendEmail: true,
-        emailSentAt: null,
-      },
-      data: { emailSentAt: new Date() },
-    });
-    if (claimed.count === 0) return row;
-    const current = await this.prisma.announcement.findUniqueOrThrow({
-      where: { id: row.id },
-      include: { translations: true },
-    });
-    void this.dispatchLocalizedEmail(current);
-    return current;
+  private async prepareLocalizedEmail({
+    id,
+    audience,
+    segment,
+    sourceLocale,
+    translations,
+    legacy,
+  }: {
+    id: string;
+    audience: string;
+    segment: string | null;
+    sourceLocale: AnnouncementLocale | null;
+    translations: AnnouncementTranslationLike[];
+    legacy?: { title: string | null; body: string | null };
+  }): Promise<Prisma.NotificationMailCreateManyInput[]> {
+    const recipients = await this.recipientProfiles(audience, segment);
+    const letters: Prisma.NotificationMailCreateManyInput[] = [];
+    for (const locale of ["en", "ru"] as const) {
+      const localizedRecipients = recipients.filter(
+        (recipient) => (recipient.locale ?? "en") === locale,
+      );
+      if (localizedRecipients.length === 0) continue;
+      const content = resolveAnnouncementContent({
+        requestedLocale: locale,
+        sourceLocale,
+        translations,
+        legacy,
+      });
+      if (content === null) {
+        this.logger.warn(
+          `announcement_email_no_content id=${id} locale=${locale}`,
+        );
+        continue;
+      }
+      const letter = announcementEmail({
+        title: content.title,
+        body: content.body,
+        contentLocale: content.contentLocale,
+        recipientLocale: locale,
+        isFallback: content.isFallback,
+      });
+      for (const { email, userId } of localizedRecipients) {
+        letters.push({
+          id: notificationMailId("broadcast", id, email),
+          kind: "broadcast",
+          userId,
+          message: { to: email, ...letter },
+        });
+      }
+    }
+    return letters;
   }
 
-  /**
-   * Background recipient fan-out. Never awaited by the admin request: SMTP
-   * and a large `audience=all` must not hold the HTTP response open.
-   */
-  private async dispatchLocalizedEmail(
-    row: AnnouncementWithTranslations,
+  private async stageLocalizedEmail(
+    tx: Prisma.TransactionClient,
+    letters: Prisma.NotificationMailCreateManyInput[],
   ): Promise<void> {
-    if (!this.mailer.enabled) return;
-    try {
-      const recipients = await this.recipientProfiles(
-        row.audience,
-        row.segment,
-      );
-      interface Group {
-        contentLocale: AnnouncementLocale | null;
-        recipientLocale: MailLocale;
-        isFallback: boolean;
-        emails: string[];
-      }
-      const groups = new Map<string, Group>();
-      const translationLikes = this.translationLikes(row.translations);
-      for (const recipient of recipients) {
-        const recipientLocale: MailLocale = recipient.locale ?? "en";
-        const content = resolveAnnouncementContent({
-          requestedLocale: recipientLocale,
-          sourceLocale: isAnnouncementLocale(row.sourceLocale)
-            ? row.sourceLocale
-            : null,
-          translations: translationLikes,
-          legacy: { title: row.title, body: row.body },
-        });
-        if (!content) {
-          this.logger.warn(
-            `announcement_email_no_content id=${row.id} to=${recipient.email}`,
-          );
-          continue;
-        }
-        const key = `${content.contentLocale ?? "legacy"}:${recipientLocale}:${
-          content.isFallback ? "fallback" : "exact"
-        }`;
-        const group = groups.get(key) ?? {
-          contentLocale: content.contentLocale,
-          recipientLocale,
-          isFallback: content.isFallback,
-          emails: [],
-        };
-        group.emails.push(recipient.email);
-        groups.set(key, group);
-      }
-
-      for (const [key, group] of groups) {
-        if (group.emails.length === 0) continue;
-        const content = resolveAnnouncementContent({
-          requestedLocale: group.recipientLocale,
-          sourceLocale: isAnnouncementLocale(row.sourceLocale)
-            ? row.sourceLocale
-            : null,
-          translations: translationLikes,
-          legacy: { title: row.title, body: row.body },
-        });
-        if (!content) continue;
-        const mail = announcementEmail({
-          title: content.title,
-          body: content.body,
-          contentLocale: content.contentLocale,
-          recipientLocale: group.recipientLocale,
-          isFallback: content.isFallback,
-        });
-        await this.broadcasts.enqueue({
-          // `row.id:key` is stable: a retry or a second dispatch of the same
-          // group reuses the same deterministic job ids.
-          id: `${row.id}:${key}`,
-          emails: group.emails,
-          ...mail,
-        });
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Announcement email ${row.id} failed: ${
-          error instanceof Error ? error.message : "unknown"
-        }`,
-      );
+    for (
+      let offset = 0;
+      offset < letters.length;
+      offset += MAIL_INSERT_BATCH_SIZE
+    ) {
+      await tx.notificationMail.createMany({
+        data: letters.slice(offset, offset + MAIL_INSERT_BATCH_SIZE),
+        skipDuplicates: true,
+      });
     }
   }
 

@@ -684,6 +684,8 @@ recipients, and events for boards the caller no longer belongs to are hidden.
 
 Every route requires a browser session.
 The list is newest-first with an opaque `at:id` cursor and an `unreadCount`.
+Pass `nextCursor` unchanged to fetch an older page. Malformed cursors and
+timestamps outside the supported date range return `400 bad_request`.
 `boardId` requires live membership. Event types are `approval.requested`,
 `approval.decided`, `approval.cancelled`, `approval.consumed`,
 `approval.expired`, `agent.blocked`, `agent.needs_human`, `claim.expired`,
@@ -745,7 +747,8 @@ exempt from the global rate limit.
 
 When `REDIS_URL` is unset, `redis` is `disabled`. If the database or a configured
 Redis is unavailable, readiness returns `503` with `status: "error"` and the
-dependency states (`up` or `down`).
+dependency states (`up` or `down`) in the same top-level `{status, db, redis}`
+report. Other API errors use the standard error envelope.
 
 ## Announcements
 

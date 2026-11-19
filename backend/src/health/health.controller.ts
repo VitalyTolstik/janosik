@@ -1,6 +1,26 @@
-import { Controller, Get } from "@nestjs/common";
+import {
+  Catch,
+  Controller,
+  Get,
+  UseFilters,
+  type ArgumentsHost,
+  type ExceptionFilter,
+} from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
-import { HealthService } from "./health.service";
+import type { Response } from "express";
+import { HealthNotReadyException, HealthService } from "./health.service";
+
+/** Readiness consumers inspect the same probe report on both HTTP statuses. */
+@Catch(HealthNotReadyException)
+class ReadinessExceptionFilter implements ExceptionFilter<HealthNotReadyException> {
+  catch(exception: HealthNotReadyException, host: ArgumentsHost): void {
+    host
+      .switchToHttp()
+      .getResponse<Response>()
+      .status(exception.getStatus())
+      .json(exception.report);
+  }
+}
 
 /**
  * Health probes (TASK-119, split into liveness/readiness in TASK-147/B2).
@@ -23,6 +43,7 @@ export class HealthController {
   }
 
   @Get("ready")
+  @UseFilters(ReadinessExceptionFilter)
   ready(): ReturnType<HealthService["ready"]> {
     return this.health.ready();
   }

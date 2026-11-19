@@ -17,6 +17,6 @@ export class CommsProcessor extends WorkerHost {
   }
 
   async process(job: Job<CommsJob>): Promise<unknown> {
-    return this.comms.run(job.data.kind);
+    return this.comms.run(job.data.kind, job.id);
   }
 }

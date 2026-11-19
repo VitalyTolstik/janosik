@@ -109,6 +109,29 @@ describe("AccountDialog (TASK-36.1)", () => {
     );
   });
 
+  it("saves the immediate attention email opt-out", async () => {
+    const server = new FakeServer();
+    await openPanel(server);
+    const attention = screen.getByTestId("account-notify-attention");
+    expect(attention).toBeChecked();
+
+    await userEvent.click(attention);
+    await userEvent.click(screen.getByTestId("account-profile-save"));
+
+    await waitFor(() => expect(server.account.notifyAttention).toBe(false));
+    expect(server.requests).toContainEqual(
+      expect.objectContaining({
+        method: "PATCH",
+        path: "/api/v1/users/me",
+        body: expect.objectContaining({
+          notifyAttention: false,
+          notifyDigest: true,
+        }),
+      }),
+    );
+    expect(attention).not.toBeChecked();
+  });
+
   it("switches between the sections without closing", async () => {
     const server = new FakeServer();
     await openPanel(server);

@@ -59,6 +59,7 @@ function makePrisma(): PrismaService {
     },
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     attentionNotification: sweepable(0),
+    notificationMail: sweepable(0),
     agentSession: {
       findUnique: jest
         .fn()
@@ -123,6 +124,26 @@ describe("MaintenanceService", () => {
     // codes 2+1, tokens 4+1, shares 3, invitations 5.
     expect(total).toBe(16);
     expect(results.map((entry) => entry.job)).toContain("sweep-codes");
+  });
+
+  it("prunes finished notification mail, including terminal failures, at the retention cutoff", async () => {
+    const prisma = makePrisma();
+    (opsMock.retentionDays as jest.Mock).mockResolvedValue(2);
+    jest.useFakeTimers({ now: new Date("2026-11-19T12:00:00Z") });
+    try {
+      await new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+      ).sweepAttention();
+      expect(prisma.notificationMail.deleteMany).toHaveBeenCalledWith({
+        where: { finishedAt: { lt: new Date("2026-11-17T12:00:00Z") } },
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("clears a lapsed claim, notifies once and is idempotent on re-run", async () => {

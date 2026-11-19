@@ -415,6 +415,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, []);
   // The rollback refetch drain (declared further down, next to the refetch
   // itself) — read from command callbacks that are created before it.
+  const refetchWantedRef = useRef(new Set<string>());
   const drainRefetchRef = useRef<(boardId: string) => void>(() => undefined);
   const userIdRef = useRef(user?.id);
   useEffect(() => {
@@ -719,6 +720,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     [toast, t, getActiveBoard],
   );
 
+  const reconcileUncertainCommand = useCallback(
+    (boardId: string, commandId: string, reverted = true): void => {
+      // A reverted command needs its own echo replayed. If newer local
+      // edits prevented rollback, the snapshot reorders them safely.
+      if (reverted) sync.forgetOwnCommand(boardId, commandId);
+      toast.error(t("sync.uncertain"));
+      realtimeRef.current?.settled(boardId);
+      refetchWantedRef.current.add(boardId);
+      drainRefetchRef.current(boardId);
+    },
+    [sync, toast, t],
+  );
+
   /**
    * Undo/redo transport (TASK-29): the inverse command rides the same queue
    * as ordinary commands, with version preconditions for text so a stale
@@ -738,10 +752,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         // Same post-commit signal as dispatch: undo/redo writes history rows.
         live.commits.publish(boardId, cardIdsTouchedBy(action));
         realtimeRef.current?.settled(boardId, outcome.seq);
-      } else {
+      } else if (outcome.uncertainCommandId === undefined) {
         realtimeRef.current?.settled(boardId);
       }
-      drainRefetchRef.current(boardId);
+      if (outcome.ok || outcome.uncertainCommandId === undefined) {
+        drainRefetchRef.current(boardId);
+      }
       return outcome;
     },
     [sync, preconditionsFor, mergeVersions, live, bumpEpoch],
@@ -773,6 +789,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       ? {
           send: sendUndoRedo,
           onSendFailed: showFailure,
+          onUncertain: reconcileUncertainCommand,
           onForeignSkipped,
         }
       : {}),
@@ -1358,21 +1375,23 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [serverMode, refetchBoard]);
 
   /**
-   * A refetch wanted once the board's queue is idle (U-4: a refused command
-   * whose optimistic state cannot be taken back exactly). Retried after the
-   * next command settles when commands are still running.
+   * Reconcile an uncertain command or a rollback that needs a snapshot
+   * (U-4) once the board's queue is idle and the browser is online.
    */
-  const refetchWantedRef = useRef(new Set<string>());
   const drainRefetch = useCallback(
     (boardId: string): void => {
       const wanted = refetchWantedRef.current;
-      if (!wanted.has(boardId) || sync.isBusy(boardId)) return;
+      if (!wanted.has(boardId) || sync.isBusy(boardId) || !navigator.onLine) {
+        return;
+      }
       wanted.delete(boardId);
       void refetchBoard(boardId, true).then((result) => {
-        if (result !== "busy") return;
+        if (result !== "busy" && result !== "failed") return;
         wanted.add(boardId);
         // Commands that ran meanwhile may all be answered already.
-        if (!sync.isBusy(boardId)) drainRefetchRef.current(boardId);
+        if (result === "busy" && !sync.isBusy(boardId)) {
+          drainRefetchRef.current(boardId);
+        }
       });
     },
     [sync, refetchBoard],
@@ -1511,17 +1530,29 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!serverMode) return;
-    const onFocus = () => void refetchActiveBoard();
+    const onFocus = () => {
+      const boardId = activeIdRef.current;
+      if (boardId !== undefined && refetchWantedRef.current.has(boardId)) {
+        drainRefetch(boardId);
+      } else {
+        void refetchActiveBoard();
+      }
+    };
+    const onOnline = () => {
+      for (const boardId of refetchWantedRef.current) drainRefetch(boardId);
+    };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void refetchActiveBoard();
+      if (document.visibilityState === "visible") onFocus();
     };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [serverMode, refetchActiveBoard]);
+  }, [serverMode, refetchActiveBoard, drainRefetch]);
 
   // The realtime connection (TASK-30) lives in a lazily imported chunk: it
   // is needed only once a board is on screen, and its reconnect/dedupe logic
@@ -1648,8 +1679,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           drainRefetch(boardId);
           return true;
         }
-        realtimeRef.current?.settled(boardId);
-        showFailure(outcome.failure);
+        let reverted = true;
         if (before !== undefined) {
           const rollback = rollbackStep(boardId, scoped);
           const current = stateRef.current.find((b) => b.id === boardId);
@@ -1666,10 +1696,22 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             // those, and leaving the optimistic state would keep a change the
             // server refused. Only the server knows the truth: re-read it as
             // soon as the queue is idle.
-            scheduleRefetch(boardId);
+            reverted = false;
+            if (outcome.uncertainCommandId === undefined)
+              scheduleRefetch(boardId);
           }
         }
-        drainRefetch(boardId);
+        if (outcome.uncertainCommandId !== undefined) {
+          reconcileUncertainCommand(
+            boardId,
+            outcome.uncertainCommandId,
+            reverted,
+          );
+        } else {
+          showFailure(outcome.failure);
+          realtimeRef.current?.settled(boardId);
+          drainRefetch(boardId);
+        }
         return false;
       });
     },
@@ -1685,6 +1727,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       bumpEpoch,
       drainRefetch,
       scheduleRefetch,
+      reconcileUncertainCommand,
     ],
   );
 

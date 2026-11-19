@@ -12,8 +12,8 @@ import { currentRequestId } from "./request-context";
 import { TrafficService } from "./traffic.service";
 
 /**
- * TASK-166.4: the app-wide exception filter. Every exception — Nest's own,
- * an explicit `HttpException` from a service, or an unexpected bug — leaves
+ * TASK-166.4: the default exception filter. Unhandled exceptions — Nest's own,
+ * an explicit `HttpException` from a service, or an unexpected bug — leave
  * the process as the ADR §8 envelope with the request id already printed on
  * `X-Request-Id`.
  *

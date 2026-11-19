@@ -1,7 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { EmailTemplateService } from "@/ops/email-template.service";
-import type { MailQueueService } from "@/mailer/mail-queue.service";
+import type { NotificationDeliveryService } from "@/mailer/notification-delivery.service";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import { AttentionService } from "./attention.service";
 
@@ -60,7 +60,11 @@ function makePrisma(admins: RecipientFixture[]) {
     count: jest.fn().mockResolvedValue(0),
     updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   };
+  const notificationMail = { create: jest.fn().mockResolvedValue({}) };
   const prisma = {
+    notificationMail,
+    $transaction: async (work: (tx: PrismaService) => Promise<unknown>) =>
+      work(prisma),
     board: { findFirst: jest.fn().mockResolvedValue({ title: "Board" }) },
     boardMember: {
       findMany: jest.fn().mockResolvedValue(admins.map((user) => ({ user }))),
@@ -79,9 +83,9 @@ function makePrisma(admins: RecipientFixture[]) {
 }
 
 function makeService(prisma: PrismaService) {
-  const mail = {
-    enqueue: jest.fn().mockResolvedValue(undefined),
-  } as unknown as MailQueueService & { enqueue: jest.Mock };
+  const delivery = {
+    kick: jest.fn().mockResolvedValue(undefined),
+  } as unknown as NotificationDeliveryService;
   const templates = {
     attentionEmail: jest.fn().mockResolvedValue({
       subject: "Attention",
@@ -90,8 +94,8 @@ function makeService(prisma: PrismaService) {
     }),
   } as unknown as EmailTemplateService & { attentionEmail: jest.Mock };
   return {
-    service: new AttentionService(prisma, mail, templates),
-    mail,
+    service: new AttentionService(prisma, delivery, templates),
+    mail: prisma.notificationMail,
     templates,
   };
 }
@@ -121,9 +125,13 @@ describe("AttentionService", () => {
       "approval.requested",
       "approval.requested",
     ]);
-    expect(mail.enqueue).toHaveBeenCalledTimes(2);
-    expect(mail.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "admin-1@example.com" }),
+    expect(mail.create).toHaveBeenCalledTimes(2);
+    expect(mail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          message: expect.objectContaining({ to: "admin-1@example.com" }),
+        }),
+      }),
     );
   });
 
@@ -136,7 +144,7 @@ describe("AttentionService", () => {
     await flush();
 
     expect(rows).toHaveLength(1);
-    expect(mail.enqueue).toHaveBeenCalledTimes(1);
+    expect(mail.create).toHaveBeenCalledTimes(1);
   });
 
   it("notifies the requester and the cancelling user once", async () => {
@@ -167,7 +175,7 @@ describe("AttentionService", () => {
       new Set(["requester", "canceller"]),
     );
     expect(rows[0]!.type).toBe("approval.cancelled");
-    expect(mail.enqueue).toHaveBeenCalledTimes(2);
+    expect(mail.create).toHaveBeenCalledTimes(2);
   });
 
   it("notifies the requester and decision actor once when consumed", async () => {
@@ -194,7 +202,7 @@ describe("AttentionService", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]!.type).toBe("approval.consumed");
     expect((rows[0]!.data as { runId: string }).runId).toBe("run-1");
-    expect(mail.enqueue).toHaveBeenCalledTimes(2);
+    expect(mail.create).toHaveBeenCalledTimes(2);
   });
 
   it("notifies only the token owner when a key is revoked, once", async () => {
@@ -223,9 +231,13 @@ describe("AttentionService", () => {
         boardId: null,
       }),
     );
-    expect(mail.enqueue).toHaveBeenCalledTimes(1);
-    expect(mail.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "owner@example.com" }),
+    expect(mail.create).toHaveBeenCalledTimes(1);
+    expect(mail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          message: expect.objectContaining({ to: "owner@example.com" }),
+        }),
+      }),
     );
   });
 
@@ -239,7 +251,7 @@ describe("AttentionService", () => {
     await flush();
 
     expect(rows).toHaveLength(1);
-    expect(mail.enqueue).not.toHaveBeenCalled();
+    expect(mail.create).not.toHaveBeenCalled();
   });
 
   it("drops disabled accounts before writing an attention row", async () => {
@@ -252,7 +264,7 @@ describe("AttentionService", () => {
     await flush();
 
     expect(rows).toHaveLength(0);
-    expect(mail.enqueue).not.toHaveBeenCalled();
+    expect(mail.create).not.toHaveBeenCalled();
   });
 
   it("deduplicates quota warnings for one account and day", async () => {
@@ -274,7 +286,7 @@ describe("AttentionService", () => {
     await flush();
 
     expect(rows).toHaveLength(1);
-    expect(mail.enqueue).toHaveBeenCalledTimes(1);
+    expect(mail.create).toHaveBeenCalledTimes(1);
   });
 
   it("converts a 409 limit_exceeded envelope into a quota event", async () => {

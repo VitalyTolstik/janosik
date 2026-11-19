@@ -50,6 +50,16 @@ the board, who invited you, the role and a viewer's expiry. Use `Accept` to
 join the board — it then appears in your switcher — or `Decline` to refuse.
 Invitations appear only once you have confirmed your email address.
 
+## Attention inbox
+
+Open the bell in the header to see attention notifications and pending board
+invitations. The badge counts unread attention notifications and pending
+invitations. You can browse older notifications and mark one or all as read.
+
+To stop immediate emails for these events, open **Account → Profile** and turn
+off **Attention emails**. You can still read events in the bell. Scheduled
+digests and due reminders use the separate digest preference.
+
 ## Realtime updates and presence
 
 While a board is open, changes made by other members appear without a reload,

@@ -16,7 +16,10 @@ import type {
 } from "@janosik/shared";
 import { activeMembershipWhere } from "@/common/membership";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { MailQueueService } from "@/mailer/mail-queue.service";
+import {
+  NotificationDeliveryService,
+  notificationMailId,
+} from "@/mailer/notification-delivery.service";
 import type { MailLocale } from "@/mailer/mail.types";
 import { attentionEmail, type AttentionEmailVars } from "@/mailer/templates";
 import { EmailTemplateService } from "@/ops/email-template.service";
@@ -24,6 +27,8 @@ import { EmailTemplateService } from "@/ops/email-template.service";
 /** Default/maximum page size of the in-app attention inbox. */
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+// Prisma transmits Date values as RFC 3339, whose year has four digits.
+const MAX_CURSOR_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
 /** How long a repeated quota warning stays deduplicated (one UTC day). */
 const QUOTA_DEDUP_WINDOW_MS = 86_400_000;
 
@@ -97,7 +102,7 @@ export class AttentionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mail: MailQueueService,
+    private readonly delivery: NotificationDeliveryService,
     private readonly templates: EmailTemplateService,
   ) {}
 
@@ -509,8 +514,8 @@ export class AttentionService {
     if (cursor !== null) {
       filters.push({
         OR: [
-          { createdAt: { lt: new Date(cursor.at) } },
-          { createdAt: new Date(cursor.at), id: { lt: cursor.id } },
+          { createdAt: { lt: cursor.at } },
+          { createdAt: cursor.at, id: { lt: cursor.id } },
         ],
       });
     }
@@ -634,8 +639,8 @@ export class AttentionService {
    * ------------------------------------------------------------------ */
 
   /**
-   * Insert one row per recipient and fire the letter. A duplicate key means
-   * the event was already delivered: no second row, no second e-mail.
+   * Insert the inbox row and its optional email atomically. The dedup key
+   * keeps repeat events from staging a second letter.
    */
   private async notify(input: AttentionInput): Promise<number> {
     const seen = new Set<string>();
@@ -652,22 +657,42 @@ export class AttentionService {
       const [title = "Attention", ...rest] = letter.text.split("\n");
       const body = rest.join("\n").trim();
       const dedupKey = `${input.dedupKey}:${recipient.id}`;
-      let row;
+      const attentionMailId = recipient.notifyAttention
+        ? notificationMailId("attention", dedupKey)
+        : null;
+      const data = {
+        userId: recipient.id,
+        boardId: input.boardId,
+        type: input.type,
+        dedupKey,
+        title,
+        body: body === "" ? null : body,
+        data: input.data as Prisma.InputJsonValue | undefined,
+        attentionMailId,
+      };
       try {
-        row = await this.prisma.attentionNotification.create({
-          data: {
-            userId: recipient.id,
-            boardId: input.boardId,
-            type: input.type,
-            dedupKey,
-            title,
-            body: body === "" ? null : body,
-            data:
-              input.data === undefined
-                ? undefined
-                : (input.data as Prisma.InputJsonValue),
-          },
-        });
+        if (attentionMailId === null) {
+          await this.prisma.attentionNotification.create({ data });
+        } else {
+          const message = await this.templates
+            .attentionEmail(input.type, input.emailVars(locale), locale)
+            .catch((error: unknown) => {
+              this.warn(`attention template ${input.type}`, error);
+              return letter;
+            });
+          await this.prisma.$transaction(async (tx) => {
+            await tx.attentionNotification.create({ data });
+            await tx.notificationMail.create({
+              data: {
+                id: attentionMailId,
+                kind: "attention",
+                userId: recipient.id,
+                boardIds: input.boardId === null ? [] : [input.boardId],
+                message: { to: recipient.email, ...message },
+              },
+            });
+          });
+        }
       } catch (error) {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -679,33 +704,9 @@ export class AttentionService {
         continue;
       }
       created += 1;
-      if (recipient.notifyAttention) {
-        void this.sendEmail(row.id, recipient, input, locale);
-      }
+      if (attentionMailId !== null) void this.delivery.kick();
     }
     return created;
-  }
-
-  private async sendEmail(
-    notificationId: string,
-    recipient: AttentionRecipient,
-    input: AttentionInput,
-    locale: MailLocale,
-  ): Promise<void> {
-    try {
-      const message = await this.templates.attentionEmail(
-        input.type,
-        input.emailVars(locale),
-        locale,
-      );
-      await this.mail.enqueue({ to: recipient.email, ...message });
-      await this.prisma.attentionNotification.updateMany({
-        where: { id: notificationId, emailedAt: null },
-        data: { emailedAt: new Date() },
-      });
-    } catch (error) {
-      this.warn(`attention e-mail ${input.type}`, error);
-    }
   }
 
   private async boardTitle(boardId: string): Promise<string | null> {
@@ -820,7 +821,7 @@ function parseLimit(raw: number | undefined): number {
 }
 
 interface AttentionCursor {
-  at: number;
+  at: Date;
   id: string;
 }
 
@@ -830,8 +831,8 @@ function parseCursor(raw: string): AttentionCursor {
     throw new BadRequestException("cursor is malformed");
   }
   const at = Number(match[1]);
-  if (!Number.isSafeInteger(at) || at < 0) {
+  if (!Number.isSafeInteger(at) || at > MAX_CURSOR_MS) {
     throw new BadRequestException("cursor is malformed");
   }
-  return { at, id: match[2]! };
+  return { at: new Date(at), id: match[2]! };
 }

@@ -18,8 +18,13 @@ sees the state read-only.
 
 `/admin/email` configures the outgoing mail transport. The subtitle is
 `Outgoing mail, pick a provider, enter credentials, no code changes needed`.
-Saving reconfigures the running backend in place, with no restart and no code
-or environment change.
+Saving Email settings updates the transport in the process handling the
+request. Other API and queue-worker processes apply the saved enabled
+configuration at startup. Restart those processes after a change and keep
+their SMTP environment and credential encryption key aligned.
+A disabled saved row leaves the environment bootstrap in effect on startup.
+For a cluster-wide disable, clear the SMTP environment on every process before
+restarting them.
 
 ### Status
 
@@ -184,8 +189,12 @@ A chart plots requests per second over the last 60 seconds, oldest first.
 
 The limit editor is a number stepper from 1 to 1,000,000. A source badge says
 whether the limit is `set in this panel` or `from environment (THROTTLE_LIMIT)`.
-Saving takes effect on the next request, without a restart. The limit is
-owner-only; an operator sees it read-only.
+
+The limit takes effect on the next request handled by the process that saved
+it. Other running nodes keep their current limit until restart, even when Redis
+shares the request counters. Restart the remaining API nodes to apply the
+persisted limit across the deployment.
+Only the owner can edit the limit. Operators have read access.
 
 ## Demo swarm
 
@@ -223,8 +232,12 @@ drives the cards across the flow. Every id it creates is recorded, so cleanup us
 ## Operations
 
 `/admin/ops` is the runtime control panel. The subtitle is `Flags,
-maintenance, rate limits and data retention`. Every control writes through and
-takes effect without a restart. All controls are owner-only.
+maintenance, rate limits and data retention`. All controls are owner-only.
+The live global traffic limit and SMTP transport are process-local. Their
+settings apply immediately to the process that handled the save. Restart the
+remaining API nodes for the global limit and the remaining API and mail worker
+processes for SMTP. The [Email service](#email-service) section explains how
+SMTP environment variables and the credential encryption key affect startup.
 
 ### Feature flags
 
@@ -297,8 +310,11 @@ are:
 | `sweep-orphan-blobs` | blobs no row points at (and abandoned `.tmp-*` files), older than a one-hour grace window |
 | `sweep-idempotency` | `IdempotencyRecord` rows past their 24-hour expiry |
 
-When Redis is configured the sweep runs on a durable schedule; without Redis it
-runs inline and the schedule is lost on restart.
+API processes reconcile Redis schedules at startup and every 30 seconds.
+Missing schedules and settings changes are repaired after Redis recovers.
+With Redis unset, maintenance and mail schedules use in-process timers. The
+30-second reconciliation also retries failed settings reads on this path and
+keeps the next tick when cadence is unchanged. These timers start over on restart.
 
 ### Scheduled email
 
@@ -307,7 +323,18 @@ disables it). The due reminder lead is in hours (0 to 720; 0 disables it).
 Recipients can opt out of both. The digest summarises what changed on each
 board since the last run. The reminder lists the cards assigned to a user whose
 due date falls inside the lead window. Each reminder is sent once per card,
-user and due date.
+user and due date. Reminders use the recipient's saved locale (EN or RU), with
+English as the default. A grouped reminder can be canceled if the recipient
+opts out or loses access to any board in the letter. The card, user and due-date
+markers remain reserved, so restoring access or opting back in does not requeue
+that reminder for the same due date.
+
+Scheduled and immediate notification letters are staged in PostgreSQL. Queued
+letters stay pending while SMTP is disabled. Transient failures retry with
+backoff and stop after eight attempts. A permanent SMTP 5xx reply stops
+delivery immediately. Terminal failures are logged and their delivery records
+are pruned according to the retention window. Attention email and digest
+timestamps record SMTP acceptance.
 
 ### Queue dashboard
 
@@ -338,12 +365,18 @@ is `Announcements, mail and templates`. Writes are owner-only.
 | Schedule | optional start and end times for the banner |
 
 The editor shows completeness per language and a banner/email preview for both
-audiences. `Save draft` stores an unfinished announcement without emailing;
-`Publish` applies the selected policy. A published announcement cannot be
-published again by editing — the letter is queued only on the draft → active
-transition, and `Email queued` records that the queue accepted the broadcast
-(an in-process SMTP failure can still happen later). Enabling email on an
-already-active announcement is blocked; save it as a draft and publish again.
+audiences. `Save draft` stores an unfinished announcement. `Publish` applies
+the selected policy. With SMTP enabled on the publishing process, the
+letter is staged on active creation or on the first eligible draft → active
+transition. `Email queued` records staging in PostgreSQL. With SMTP disabled,
+the banner still publishes and no mail is staged. Restoring SMTP alone does
+not queue that announcement.
+
+Redis dispatch and SMTP delivery happen afterward. With Redis unset, the API
+process dispatches directly. Each recipient is retried independently. The
+worker skips accounts that have since been disabled or deleted or whose address
+changed. Editing an active announcement updates the banner. To email a previous
+announcement with no queued mail, return it to draft and publish with SMTP enabled.
 If the banner start is in the future, the editor warns that saving queues the
 letter immediately.
 

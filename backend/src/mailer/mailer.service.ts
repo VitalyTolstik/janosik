@@ -64,6 +64,8 @@ export class MailerService {
       secure: config.secure,
       // Keeps a misconfigured host from hanging sends for a minute.
       connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
       auth:
         config.username === ""
           ? undefined
@@ -99,12 +101,7 @@ export class MailerService {
     return this.fromAddress;
   }
 
-  async send(email: {
-    to: string;
-    subject: string;
-    text: string;
-    html: string;
-  }) {
+  async send(email: SentEmail, messageId?: string): Promise<boolean> {
     if (this.transporter === null) {
       this.outbox.push(email);
       if (this.outbox.length > OUTBOX_LIMIT) this.outbox.shift();
@@ -117,13 +114,16 @@ export class MailerService {
           ? `[mail suppressed] to=${email.to} subject withheld (no SMTP configured)`
           : `[mail suppressed] to=${email.to} subject="${email.subject}"\n${email.text}`,
       );
-      return;
+      // E2E tests use the outbox as their accepting transport.
+      return env.NODE_ENV === "test";
     }
     try {
       await this.transporter.sendMail({
         from: this.fromAddress,
         ...email,
+        messageId,
       });
+      return true;
     } catch (cause) {
       this.logger.error(
         `Failed to send email to ${email.to}: ${String(cause)}`,

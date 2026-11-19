@@ -1,6 +1,10 @@
 import { Processor, WorkerHost } from "@nestjs/bullmq";
 import type { Job } from "bullmq";
 import {
+  NotificationDeliveryService,
+  type NotificationMailJob,
+} from "@/mailer/notification-delivery.service";
+import {
   MAIL_QUEUE,
   MailQueueService,
   type MailJob,
@@ -13,11 +17,17 @@ import {
  */
 @Processor(MAIL_QUEUE)
 export class MailProcessor extends WorkerHost {
-  constructor(private readonly mail: MailQueueService) {
+  constructor(
+    private readonly notifications: NotificationDeliveryService,
+    private readonly mail: MailQueueService,
+  ) {
     super();
   }
 
-  async process(job: Job<MailJob>): Promise<unknown> {
+  async process(job: Job<MailJob | NotificationMailJob>): Promise<unknown> {
+    if ("deliveryId" in job.data) {
+      return this.notifications.deliver(job.data.deliveryId);
+    }
     await this.mail.deliver(job.data);
     return { to: job.data.to };
   }

@@ -41,6 +41,26 @@ export function inlineScriptHashes(dirs: Array<string | undefined>): string[] {
   return [...hashes].sort();
 }
 
+/** Shared by Helmet and the nginx configuration generator. */
+export function frontendCspDirectives(dirs: Array<string | undefined>) {
+  const analyticsOrigin = "https://plausible.io";
+  return {
+    "script-src": [
+      "'self'",
+      "'wasm-unsafe-eval'",
+      analyticsOrigin,
+      ...inlineScriptHashes(dirs),
+    ],
+    "style-src": ["'self'", "'unsafe-inline'"],
+    "img-src": ["'self'", "data:", "blob:"],
+    "media-src": ["'self'", "blob:"],
+    "connect-src": ["'self'", analyticsOrigin],
+    "worker-src": ["'self'", "blob:"],
+    "font-src": ["'self'", "data:"],
+    "upgrade-insecure-requests": null,
+  };
+}
+
 function htmlFiles(root: string): string[] {
   const found: string[] = [];
   const stack = [root];

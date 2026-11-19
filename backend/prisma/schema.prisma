@@ -943,22 +943,25 @@ model ReminderSent {
 // fighting the account/board purge. `boardId` is null for account-level
 // events (the board quota).
 model AttentionNotification {
-  id         String    @id @default(cuid())
-  userId     String
-  boardId    String?
-  type       String // approval.requested|approval.decided|approval.expired|agent.blocked|agent.needs_human|claim.expired|quota.exceeded
-  dedupKey   String    @unique @db.VarChar(300)
-  title      String    @db.VarChar(300)
-  body       String?   @db.Text
-  data       Json?
-  readAt     DateTime?
-  emailedAt  DateTime?
-  digestedAt DateTime?
-  createdAt  DateTime  @default(now())
+  id              String    @id @default(cuid())
+  userId          String
+  boardId         String?
+  type            String // approval.requested|approval.decided|approval.expired|agent.blocked|agent.needs_human|claim.expired|quota.exceeded
+  dedupKey        String    @unique @db.VarChar(300)
+  title           String    @db.VarChar(300)
+  body            String?   @db.Text
+  data            Json?
+  readAt          DateTime?
+  emailedAt       DateTime?
+  digestedAt      DateTime?
+  attentionMailId String?   @unique
+  digestMailId    String?
+  createdAt       DateTime  @default(now())
 
   @@index([userId, createdAt])
   @@index([userId, readAt])
   @@index([userId, digestedAt])
+  @@index([digestMailId])
   @@index([boardId, createdAt])
   @@index([createdAt]) // attention retention sweep
 }
@@ -982,9 +985,9 @@ model Announcement {
   segment        String? // CSV of user emails when audience = segment
   active         Boolean                   @default(true)
   // TASK-62 broadcast: when true the letter is also queued to every
-  // recipient's inbox (behind the in-process broadcast queue).
+  // recipient's inbox through the durable broadcast outbox.
   sendEmail      Boolean                   @default(false)
-  // When the localized letter was queued; null = never sent.
+  // When the localized delivery was staged; null = never staged.
   emailSentAt    DateTime?
   startsAt       DateTime?
   endsAt         DateTime?
@@ -1050,4 +1053,28 @@ model EmailTemplate {
   bodyHtml  String   @db.Text
   updatedBy String?
   updatedAt DateTime @updatedAt
+}
+
+// Durable notification mail. Redis carries only the id; PostgreSQL owns the
+// payload, retry state and completion record.
+enum NotificationMailKind {
+  broadcast
+  attention
+  digest
+  reminder
+}
+
+model NotificationMail {
+  id            String               @id
+  kind          NotificationMailKind
+  message       Json?
+  userId        String?
+  boardIds      String[]             @default([])
+  attempts      Int                  @default(0)
+  nextAttemptAt DateTime             @default(now())
+  finishedAt    DateTime?
+  failedAt      DateTime?
+
+  @@index([finishedAt, nextAttemptAt, id])
+  @@index([userId])
 }

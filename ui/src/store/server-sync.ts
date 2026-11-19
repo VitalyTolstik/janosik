@@ -36,7 +36,7 @@ export type SendFailure =
 
 export type SendOutcome =
   | { ok: true; versions: EntityVersions; seq: number }
-  | { ok: false; failure: SendFailure };
+  | { ok: false; failure: SendFailure; uncertainCommandId?: string };
 
 export interface ServerSyncOptions {
   /** One `POST /boards/:id/commands` round-trip. */
@@ -114,6 +114,9 @@ export class ServerSync {
   ): Promise<SendOutcome> {
     if (this.disposed) {
       return Promise.resolve({ ok: false, failure: { kind: "offline" } });
+    }
+    if (globalThis.navigator?.onLine === false) {
+      return Promise.resolve(this.recordFailure({ kind: "offline" }));
     }
     if (action.type === "UPDATE_CARD" && action.quiet === true) {
       return this.deferQuiet(boardId, action);
@@ -257,9 +260,6 @@ export class ServerSync {
     preconditions?: Record<string, number>,
   ): Promise<SendOutcome> {
     this.bump(boardId, 1);
-    // Remembered before the request leaves: the server echoes a command on
-    // the stream before it answers the POST, so the echo may beat the ack.
-    this.rememberSent(boardId, action);
     const chain = this.chains.get(boardId) ?? Promise.resolve();
     const run = chain.then(() => this.attempt(boardId, action, preconditions));
     this.chains.set(
@@ -284,13 +284,54 @@ export class ServerSync {
         ? { ifMatchVersions: preconditions }
         : {}),
     };
-    try {
-      const response = await this.options.send(boardId, request);
-      return { ok: true, versions: response.versions, seq: response.seq };
-    } catch (error) {
-      this.failures += 1;
-      return { ok: false, failure: classify(error) };
+    let uncertain = false;
+    for (let attempt = 0; ; attempt += 1) {
+      // Check again after the queue or a failed attempt. If a request was
+      // already sent, going offline does not resolve its outcome.
+      if (globalThis.navigator?.onLine === false) {
+        return this.recordFailure(
+          { kind: "offline" },
+          uncertain ? request.commandId : undefined,
+        );
+      }
+      // The server may echo the command on the stream before the POST returns.
+      if (attempt === 0) this.rememberSent(boardId, action);
+      try {
+        const response = await this.options.send(boardId, request);
+        if (typeof response?.seq !== "number" || !response.versions) {
+          throw new ApiError(200, null, "Invalid command response");
+        }
+        return { ok: true, versions: response.versions, seq: response.seq };
+      } catch (error) {
+        uncertain ||= commandResponseLost(error);
+        // The same key and payload replays the persisted result if the
+        // first request committed. Keep the board FIFO blocked until then.
+        if (uncertain && attempt === 0 && request.commandId && !this.disposed) {
+          continue;
+        }
+        return this.recordFailure(
+          classify(error),
+          uncertain ? request.commandId : undefined,
+        );
+      }
     }
+  }
+
+  private recordFailure(
+    failure: SendFailure,
+    uncertainCommandId?: string,
+  ): SendOutcome {
+    this.failures += 1;
+    return {
+      ok: false,
+      failure,
+      ...(uncertainCommandId !== undefined ? { uncertainCommandId } : {}),
+    };
+  }
+
+  /** A rolled-back optimistic command must no longer suppress its echo. */
+  forgetOwnCommand(boardId: string, commandId: string): void {
+    this.sentIds.get(boardId)?.delete(commandId);
   }
 
   private rememberSent(boardId: string, action: BoardAction): void {
@@ -314,6 +355,17 @@ export class ServerSync {
     if (next <= 0) this.busy.delete(boardId);
     else this.busy.set(boardId, next);
   }
+}
+
+function commandResponseLost(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.clientSide || error.code === "board_write_timeout") return false;
+  return (
+    error.offline ||
+    error.status === 408 ||
+    error.status >= 500 ||
+    (error.status >= 200 && error.status < 300)
+  );
 }
 
 /** Map an API/transport error onto the sync layer's vocabulary. */

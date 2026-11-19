@@ -2,11 +2,6 @@ import { Global, Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { AttachmentsModule } from "@/attachments/attachments.module";
 import { queuesEnabled } from "./queue-core";
-import { BroadcastProcessor } from "./broadcast.processor";
-import {
-  BROADCAST_QUEUE,
-  BroadcastQueueService,
-} from "./broadcast-queue.service";
 import { EmailTemplateService } from "./email-template.service";
 import { FeatureFlagsService } from "./feature-flags.service";
 import { MaintenanceProcessor } from "./maintenance.processor";
@@ -26,10 +21,6 @@ import { COMMS_QUEUE, CommsSchedulerService } from "./comms-scheduler.service";
  * the provider through. The admin panel drives it; nothing here imports the
  * admin module, so there is no cycle.
  *
- * TASK-62: when `REDIS_URL` is configured, the outgoing-mail broadcast runs
- * as a BullMQ queue (Redis-backed, retried, scalable); the worker is only
- * registered then, and `BroadcastQueueService` otherwise falls back to an
- * in-process drain — so a self-host without Redis is unchanged.
  */
 @Global()
 @Module({
@@ -37,7 +28,6 @@ import { COMMS_QUEUE, CommsSchedulerService } from "./comms-scheduler.service";
     AttachmentsModule,
     ...(queuesEnabled
       ? [
-          BullModule.registerQueue({ name: BROADCAST_QUEUE }),
           BullModule.registerQueue({ name: MAINTENANCE_QUEUE }),
           BullModule.registerQueue({ name: COMMS_QUEUE }),
         ]
@@ -47,19 +37,15 @@ import { COMMS_QUEUE, CommsSchedulerService } from "./comms-scheduler.service";
     FeatureFlagsService,
     OpsSettingsService,
     EmailTemplateService,
-    BroadcastQueueService,
     MaintenanceService,
     MaintenanceQueueService,
     CommsSchedulerService,
-    ...(queuesEnabled
-      ? [BroadcastProcessor, MaintenanceProcessor, CommsProcessor]
-      : []),
+    ...(queuesEnabled ? [MaintenanceProcessor, CommsProcessor] : []),
   ],
   exports: [
     FeatureFlagsService,
     OpsSettingsService,
     EmailTemplateService,
-    BroadcastQueueService,
     MaintenanceService,
     MaintenanceQueueService,
     CommsSchedulerService,

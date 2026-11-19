@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { env } from "@/config/env";
 import { apiErrorEnvelope } from "./api-error";
-import { inlineScriptHashes } from "./csp";
+import { frontendCspDirectives } from "./csp";
 import { requestContext } from "./request-context";
 
 /** JSON body cap for every route that is not import/commands. */
@@ -59,30 +59,14 @@ export function setupApp(
   // The marketing site can opt into a cookieless Plausible script at build
   // time (`PUBLIC_ANALYTICS_DOMAIN`), so its origin must be allowed here too;
   // otherwise the script and its event beacon are silently blocked.
-  const analyticsOrigin = "https://plausible.io";
-  const scriptHashes = inlineScriptHashes([
-    env.STATIC_DIR,
-    options.siteDir ?? env.SITE_DIR,
-  ]);
   app.use(
     helmet({
       contentSecurityPolicy: {
         useDefaults: true,
-        directives: {
-          "script-src": [
-            "'self'",
-            "'wasm-unsafe-eval'",
-            analyticsOrigin,
-            ...scriptHashes,
-          ],
-          "style-src": ["'self'", "'unsafe-inline'"],
-          "img-src": ["'self'", "data:", "blob:"],
-          "media-src": ["'self'", "blob:"],
-          "connect-src": ["'self'", analyticsOrigin],
-          "worker-src": ["'self'", "blob:"],
-          "font-src": ["'self'", "data:"],
-          "upgrade-insecure-requests": null,
-        },
+        directives: frontendCspDirectives([
+          env.STATIC_DIR,
+          options.siteDir ?? env.SITE_DIR,
+        ]),
       },
     }),
   );

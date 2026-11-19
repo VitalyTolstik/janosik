@@ -217,6 +217,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("BoardProvider in server mode", () => {
@@ -1174,6 +1175,43 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
 
   const sleep = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("drains a pending command reconciliation when the browser comes online", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const online = vi.spyOn(navigator, "onLine", "get");
+    vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+      const response = await server.handle(input, init);
+      if (input.endsWith("/boards/b-1/commands")) {
+        online.mockReturnValue(false);
+        throw new TypeError("Connection lost after commit");
+      }
+      return response;
+    });
+    renderApp();
+    await waitReady();
+    await waitStream(server);
+    const before = snapshotGets(server);
+
+    fireEvent.click(screen.getByTestId("edit"));
+    expect(
+      await screen.findByText(
+        "Could not confirm the change. Syncing with the server.",
+      ),
+    ).toBeInTheDocument();
+    expect(snapshotGets(server)).toBe(before);
+
+    online.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(snapshotGets(server)).toBe(before + 1);
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Mine");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(snapshotGets(server)).toBe(before + 1);
+  });
 
   it("applies a same-account agent's command held back while our command is in flight (U-1)", async () => {
     const server = new FakeServer([seedBoard()]);

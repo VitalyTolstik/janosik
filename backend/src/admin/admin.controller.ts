@@ -787,13 +787,13 @@ export class AdminController {
     });
     // Re-install the recurring jobs when their cadence changed.
     if (dto.maintenanceIntervalMinutes !== undefined && this.maintenanceQueue) {
-      await this.maintenanceQueue.applySchedule().catch(() => undefined);
+      this.maintenanceQueue.refreshSchedule();
     }
     if (
       dto.digestIntervalHours !== undefined ||
       dto.reminderLeadHours !== undefined
     ) {
-      await this.commsScheduler.applySchedule().catch(() => undefined);
+      this.commsScheduler.refreshSchedule();
     }
     return settings;
   }

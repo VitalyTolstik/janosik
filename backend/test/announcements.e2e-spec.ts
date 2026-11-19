@@ -7,7 +7,10 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MailerService } from "@/mailer/mailer.service";
-import { BroadcastQueueService } from "@/ops/broadcast-queue.service";
+import {
+  NotificationDeliveryService,
+  notificationMailId,
+} from "@/mailer/notification-delivery.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "ann-owner@example.com";
@@ -28,7 +31,7 @@ describe("Announcements (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let mailer: MailerService;
-  let broadcasts: BroadcastQueueService;
+  let delivery: NotificationDeliveryService;
   let ownerToken: string;
   let operatorToken: string;
   let enToken: string;
@@ -71,11 +74,6 @@ describe("Announcements (e2e)", () => {
     }
     return undefined;
   };
-  const waitForOutboxCount = (count: number, timeoutMs = 2_000) =>
-    waitForOutbox(() => mailer.outbox.length >= count, timeoutMs).then(
-      () => mailer.outbox.length,
-    );
-
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -85,7 +83,7 @@ describe("Announcements (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
     mailer = app.get(MailerService);
-    broadcasts = app.get(BroadcastQueueService);
+    delivery = app.get(NotificationDeliveryService);
     await wipeAll(prisma);
 
     const passwordHash = await argonHash(USER_PASSWORD, { type: argon2id });
@@ -474,7 +472,7 @@ describe("Announcements (e2e)", () => {
 
   it("returns before email fan-out and claims emailSentAt once", async () => {
     const gate = new Promise<void>(() => undefined);
-    const enqueue = jest.spyOn(broadcasts, "enqueue").mockReturnValue(gate);
+    const kick = jest.spyOn(delivery, "kick").mockReturnValue(gate);
     const started = Date.now();
     const created = await postAnnouncement({
       sourceLocale: "en",
@@ -485,9 +483,22 @@ describe("Announcements (e2e)", () => {
     }).expect(201);
     expect(Date.now() - started).toBeLessThan(1_500);
     expect(created.body.emailSentAt).toEqual(expect.any(Number));
-    enqueue.mockRestore();
+    expect(kick).toHaveBeenCalledTimes(1);
+    kick.mockRestore();
+    const staged = await prisma.notificationMail.count({
+      where: {
+        kind: "broadcast",
+        finishedAt: null,
+        id: {
+          in: [EN_EMAIL, RU_EMAIL, NULL_EMAIL].map((email) =>
+            notificationMailId("broadcast", created.body.id as string, email),
+          ),
+        },
+      },
+    });
+    expect(staged).toBe(3);
 
-    const again = jest.spyOn(broadcasts, "enqueue");
+    const again = jest.spyOn(delivery, "kick");
     await patchAnnouncement(created.body.id as string, {
       active: true,
       version: created.body.version,
@@ -495,7 +506,122 @@ describe("Announcements (e2e)", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(again).not.toHaveBeenCalled();
     again.mockRestore();
+    await delivery.kick();
   });
+
+  it("publishes the banner without staging an email when SMTP is disabled", async () => {
+    jest.spyOn(mailer, "enabled", "get").mockReturnValueOnce(false);
+    const created = await postAnnouncement({
+      sourceLocale: "en",
+      fallbackPolicy: "require_all",
+      translations: both,
+      sendEmail: true,
+    }).expect(201);
+    expect(created.body).toMatchObject({
+      active: true,
+      sendEmail: true,
+      emailSentAt: null,
+    });
+    expect(
+      await prisma.notificationMail.count({
+        where: {
+          id: {
+            in: [EN_EMAIL, RU_EMAIL, NULL_EMAIL].map((email) =>
+              notificationMailId("broadcast", created.body.id as string, email),
+            ),
+          },
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it("publishes and atomically stages every recipient for an audience above 20,000", async () => {
+    const total = 20_005;
+    const prefix = "large-ann-";
+    const email = (index: number) => `${prefix}${index}@example.com`;
+    const kick = jest.spyOn(delivery, "kick").mockResolvedValue(undefined);
+    const announcementIds: string[] = [];
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO "User" (id, email, locale)
+        SELECT ${prefix} || i, ${prefix} || i || '@example.com',
+          CASE WHEN i % 2 = 0 THEN 'ru' ELSE 'en' END
+        FROM generate_series(0, ${total - 1}::integer) AS n(i)
+      `;
+      const payload = {
+        sourceLocale: "en",
+        fallbackPolicy: "require_all",
+        translations: {
+          en: { ...both.en, body: both.en.body.repeat(40) },
+          ru: { ...both.ru, body: both.ru.body.repeat(40) },
+        },
+        sendEmail: true,
+      };
+      const draft = await postAnnouncement({
+        ...payload,
+        active: false,
+      }).expect(201);
+      const draftId = draft.body.id as string;
+      announcementIds.push(draftId);
+      expect(draft.body.emailSentAt).toBeNull();
+      expect(kick).not.toHaveBeenCalled();
+      const publishedDraft = await patchAnnouncement(draftId, {
+        active: true,
+        version: draft.body.version,
+      }).expect(200);
+      const publishedNew = await postAnnouncement({
+        ...payload,
+        active: true,
+      }).expect(201);
+      announcementIds.push(publishedNew.body.id as string);
+
+      for (const [index, response] of [
+        publishedDraft,
+        publishedNew,
+      ].entries()) {
+        expect(response.body.active).toBe(true);
+        expect(response.body.emailSentAt).toEqual(expect.any(Number));
+        const id = announcementIds[index];
+        const deliveryId = (address: string) =>
+          notificationMailId("broadcast", id, address);
+        const ids = [
+          ...Array.from({ length: total }, (_, i) => deliveryId(email(i))),
+          ...[EN_EMAIL, RU_EMAIL, NULL_EMAIL].map(deliveryId),
+        ];
+        expect(
+          await prisma.notificationMail.count({
+            where: { kind: "broadcast", finishedAt: null, id: { in: ids } },
+          }),
+        ).toBe(total + 3);
+        const last = await prisma.notificationMail.findUniqueOrThrow({
+          where: { id: deliveryId(email(total - 1)) },
+        });
+        expect(last).toMatchObject({
+          userId: `${prefix}${total - 1}`,
+          message: { to: email(total - 1), subject: both.ru.title },
+        });
+      }
+      expect(kick).toHaveBeenCalledTimes(2);
+      expect(mailer.outbox).toHaveLength(0);
+    } finally {
+      for (const id of announcementIds) {
+        await prisma.notificationMail.deleteMany({
+          where: {
+            id: {
+              in: [EN_EMAIL, RU_EMAIL, NULL_EMAIL].map((address) =>
+                notificationMailId("broadcast", id, address),
+              ),
+            },
+          },
+        });
+      }
+      await prisma.notificationMail.deleteMany({
+        where: { userId: { startsWith: prefix } },
+      });
+      await prisma.user.deleteMany({ where: { id: { startsWith: prefix } } });
+      kick.mockRestore();
+    }
+  }, 75_000);
 
   it("audits only the locales that actually changed", async () => {
     const created = await postAnnouncement({
@@ -650,8 +776,10 @@ describe("Announcements (e2e)", () => {
     const activated = await patchAnnouncement(created.body.id as string, {
       active: true,
     }).expect(200);
-    await waitForOutboxCount(1);
-    expect(mailer.outbox.length).toBeGreaterThan(0);
+    await delivery.kick();
+    expect(mailer.outbox.map(({ to }) => to).sort()).toEqual(
+      [EN_EMAIL, RU_EMAIL, NULL_EMAIL].sort(),
+    );
     expect(activated.body.emailSentAt).toEqual(expect.any(Number));
 
     const before = mailer.outbox.length;
