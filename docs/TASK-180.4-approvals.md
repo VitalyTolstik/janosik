@@ -16,7 +16,7 @@
 | M24, L17 | Global Attention sends board, token, search and approval status filters to the server. It displays matching counts and follows a cursor even for an empty loaded page. Scope totals remain available to the rail. Archived boards stay outside the console scope. | The seeded database search finds a pending row beyond an unfiltered 100-row page. UI tests check search parameters, exact 150-row counts and the empty-page cursor. |
 | M26 | Detail polls update the mounted view, including its rejection draft and focus. The global stream publishes approval frames to the detail store. Decisions update a polite live region and the mobile detail stays open. | A fake-clock UI test holds a 30-second refresh in flight and verifies the draft, focused textarea and rendered plan. Another test sends a split SSE frame through the production parser and observes the external rejection close the decision controls. |
 | M27, M28 | Explicit and write-triggered heartbeats share a persisted publication timestamp. Each successful write checks the publication window independently of the liveness stamp. Board Live coalesces agent events and uses polling as a fallback. Approval and run counts refresh only for the corresponding events. Paused sessions stay out of the stale-session prompt. | Unit tests exercise heartbeats at 0, 30 and 61 seconds. A connected HTTP SSE consumer verifies explicit and write-triggered frames, including a write with an overdue publication and a fresh liveness stamp. Existing focused tests cover pause state and stale classification. |
-| L39 | Conflict counts are keyed to the run-list revision and preview window. Invalidated counts clear while a new preview loads and stale responses cannot restore them. | Deferred-response UI tests cover revision changes, failures and a late superseded success. |
+| L39 | Conflict counts are keyed to the run-list revision and preview window. Previous counts stay visible while a refresh is pending. A failed refresh clears the count, and stale responses cannot restore it. | Deferred-response UI tests cover revision changes, failures and a late superseded success. |
 
 The live MCP regression runs in `backend/test/agent-sessions.e2e-spec.ts`
 through `mcp/test/live-approval.mjs`. The Nest e2e runner uses the configured
@@ -24,7 +24,7 @@ PostgreSQL test database and applies the Prisma migration before running the
 approval, overview, session and security suites.
 
 Backend, shared, MCP and UI type checks passed. Review verification passed
-all 1,812 UI tests, 51 targeted backend unit tests, 68 targeted backend e2e
+all 1,813 UI tests, 51 targeted backend unit tests, 68 targeted backend e2e
 tests and 155 MCP tests. One MCP test was skipped by the suite. ESLint
 completed with zero errors. Prettier, `git diff --check`, Prisma validation,
 OpenAPI validation and its five validator tests passed. The REST guides were
