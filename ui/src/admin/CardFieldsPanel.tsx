@@ -31,6 +31,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { createId } from "@/utils/id";
 import { COVER_COLOR_KEYS, COVER_GRADIENT_KEYS } from "@/utils/palette-keys";
 import { PRIORITY_META, priorityLabel } from "@/utils/priority";
 import { adminApi } from "./admin-client";
@@ -269,7 +270,7 @@ export function CardFieldsPanel({
     clearError(field);
     try {
       await adminApi.sendBoardCommand(card.boardId, {
-        commandId: crypto.randomUUID(),
+        commandId: createId(),
         action: {
           ...action,
           cardId: card.id,

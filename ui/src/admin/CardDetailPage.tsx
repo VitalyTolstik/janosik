@@ -27,6 +27,7 @@ import type {
   AdminCardDetailSection,
 } from "@janosik/shared";
 import { formatDate, useHour12, useI18n } from "@/i18n";
+import { createId } from "@/utils/id";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,6 +79,17 @@ const CardFieldsPanel = lazy(() =>
 );
 
 /**
+ * Checklists and links use the shared command model but need their own
+ * admin-native controls. Keeping them in a second lazy chunk leaves both the
+ * shell and the field editor budget untouched.
+ */
+const CardRelationsPanel = lazy(() =>
+  import("./CardRelationsPanel").then((module) => ({
+    default: module.CardRelationsPanel,
+  })),
+);
+
+/**
  * A failed lazy import must not replace the whole admin route with the global
  * crash screen. This local boundary keeps the card page usable and offers the
  * only reliable recovery for a cached rejected dynamic import: a page reload.
@@ -115,6 +127,29 @@ export function CardFieldsFallback() {
         size="sm"
         variant="outline"
         data-testid="admin-card-fields-reload"
+        onClick={() => window.location.reload()}
+      >
+        <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+        {t("admin.cards.fields.reload")}
+      </Button>
+    </Panel>
+  );
+}
+
+export function CardRelationsFallback() {
+  const t = useAdminT();
+  return (
+    <Panel
+      className="flex flex-wrap items-center justify-between gap-3 p-3"
+      data-testid="admin-card-relations-load-error"
+    >
+      <p role="alert" className="text-xs text-danger">
+        {t("admin.cards.relations.loadFailed")}
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="admin-card-relations-load-reload"
         onClick={() => window.location.reload()}
       >
         <RotateCcw className="h-3.5 w-3.5" aria-hidden />
@@ -351,7 +386,7 @@ export function CardDetailPage() {
     setDescriptionError(null);
     try {
       await adminApi.sendBoardCommand(card.boardId, {
-        commandId: crypto.randomUUID(),
+        commandId: createId(),
         action: {
           type: "UPDATE_CARD",
           cardId: card.id,
@@ -363,11 +398,23 @@ export function CardDetailPage() {
       setDescriptionOpen(false);
       reload();
     } catch (cause) {
-      setDescriptionError(
-        cause instanceof ApiError && cause.messageText
-          ? cause.messageText
-          : t("admin.common.actionFailed"),
-      );
+      if (cause instanceof ApiError) {
+        if (cause.status === 403) {
+          setDescriptionError(t("admin.common.forbidden"));
+        } else if (cause.status === 404) {
+          setDescriptionError(t("admin.cards.description.errorNotFound"));
+        } else if (cause.status === 400) {
+          setDescriptionError(t("admin.cards.description.errorInvalid"));
+        } else if (cause.status === 409) {
+          setDescriptionError(t("admin.cards.description.errorConflict"));
+        } else if (lang === "en" && cause.messageText) {
+          setDescriptionError(cause.messageText);
+        } else {
+          setDescriptionError(t("admin.common.actionFailed"));
+        }
+      } else {
+        setDescriptionError(t("admin.common.actionFailed"));
+      }
     } finally {
       setDescriptionBusy(false);
     }
@@ -668,22 +715,47 @@ export function CardDetailPage() {
       </Panel>
 
       {card.deletedAt === null ? (
-        <CardFieldsChunkBoundary fallback={<CardFieldsFallback />}>
-          <Suspense
-            fallback={
-              <div
-                data-testid="admin-card-fields-loading"
-                className="h-48 animate-pulse rounded-xl border border-border bg-card/70"
-              />
-            }
-          >
-            <CardFieldsPanel
-              card={card}
-              cardLabels={detail.labels}
-              onSaved={reload}
-            />
-          </Suspense>
-        </CardFieldsChunkBoundary>
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <div className="min-w-0">
+            <CardFieldsChunkBoundary fallback={<CardFieldsFallback />}>
+              <Suspense
+                fallback={
+                  <div
+                    data-testid="admin-card-fields-loading"
+                    className="h-48 animate-pulse rounded-xl border border-border bg-card/70"
+                  />
+                }
+              >
+                <CardFieldsPanel
+                  card={card}
+                  cardLabels={detail.labels}
+                  onSaved={reload}
+                />
+              </Suspense>
+            </CardFieldsChunkBoundary>
+          </div>
+          <div className="min-w-0">
+            <CardFieldsChunkBoundary fallback={<CardRelationsFallback />}>
+              <Suspense
+                fallback={
+                  <div
+                    data-testid="admin-card-relations-loading"
+                    className="h-48 animate-pulse rounded-xl border border-border bg-card/70"
+                  />
+                }
+              >
+                <CardRelationsPanel
+                  key={card.id}
+                  card={card}
+                  checklists={detail.checklists}
+                  linksOut={detail.linksOut}
+                  linksIn={detail.linksIn}
+                  onSaved={reload}
+                />
+              </Suspense>
+            </CardFieldsChunkBoundary>
+          </div>
+        </div>
       ) : null}
 
       {card.description ? (
@@ -708,7 +780,7 @@ export function CardDetailPage() {
         </div>
       ) : null}
 
-      {detail.checklists.length > 0 ? (
+      {card.deletedAt !== null && detail.checklists.length > 0 ? (
         <Panel
           className="space-y-2.5 p-3"
           data-testid="admin-card-detail-checklists"
@@ -759,7 +831,8 @@ export function CardDetailPage() {
         </Panel>
       ) : null}
 
-      {detail.linksOut.length + detail.linksIn.length > 0 ? (
+      {card.deletedAt !== null &&
+      detail.linksOut.length + detail.linksIn.length > 0 ? (
         <Panel className="p-3" data-testid="admin-card-detail-links">
           <p className="pb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.links")}

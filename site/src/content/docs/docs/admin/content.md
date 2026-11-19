@@ -56,9 +56,13 @@ request is limited to 500 ids; the panel refuses a larger selection with a
 message instead of truncating it. Bulk deletion requires confirmation and does
 not support ordinary undo. If the server refuses some ids, exactly those rows
 stay selected for a retry. Soft-deleted records can be restored until they are
-permanently purged. Deleting a column takes its cards down with it (they are
-soft-deleted, never left pointing at a deleted column), and restoring the
-column brings them back.
+permanently purged. Deleting a column soft-deletes its active cards but they
+keep their stored `columnId` on the deleted column; restoring the column brings
+those cards back. Archived cards are different: `DELETE_COLUMN` repoints them
+to the board's internal soft-deleted `orphan:<boardId>` column so the original
+column can purge. Those archived orphan cards remain visible and
+field-editable on `/admin/cards/:id`, but moving them is rejected because
+archived cards cannot be moved.
 
 ### Workflow
 
@@ -140,7 +144,13 @@ Each edit is submitted as a board command through
 `POST /admin/boards/:id/commands` on behalf of the board owner, the board's
 first accepted `ADMIN`. The server re-validates each action with the shared
 strict validator, so a rejected action (for example, due to a WIP or size limit)
-shows a notification and leaves the board unchanged. The editor sends
+shows a notification and leaves the board unchanged. The move dialog re-checks
+its snapshot before sending: if the card left the source column, or the target
+column disappeared, it shows a reload message. A fresh server move with a stale
+source (including a non-archived card parked in a deleted/orphan column) is
+rejected as `409 conflict: "version"`; a missing, deleted or foreign target
+column is `404` — both before any command or audit row. An exact retry of
+a stored `commandId` still returns its stored result. The editor sends
 `ADD_COLUMN`, `ADD_CARD`, `RENAME_COLUMN`, `UPDATE_CARD`, `MOVE_CARD`,
 `ARCHIVE_CARD` and `DELETE_COLUMN`, each stamped with the command clock. The
 command log, versions and the board UI stay consistent.
@@ -151,8 +161,11 @@ history and command log keep the owner as the actor; the audit trail records
 the master who issued the command (`masterId`, `masterEmail`) and the shared
 `commandId`.
 
-A column delete is a soft delete: the column and its cards disappear for
-members. The confirm dialog states this.
+A column delete is a soft delete: active cards disappear for members and keep
+their `columnId` until the column is restored or purged. Archived cards are
+repointed to the internal soft-deleted `orphan:<boardId>` column. They remain
+visible and field-editable on `/admin/cards/:id`; a move is rejected with the
+archived-card `409`. The confirm dialog states the soft-delete behavior.
 
 ## Cards
 
@@ -215,7 +228,47 @@ value. The assignee list contains accepted, unexpired members; disabled users
 are hidden from new choices for UX (a current disabled assignee stays visible
 as the current value), although the backend would still accept an active
 membership. Labels are the board's live labels only, and a card is capped at
-20. Checklists and links stay read-only here.
+20.
+
+### Checklists and links
+
+Non-deleted cards also show a `Checklists and links` panel beside the
+properties editor. It uses the same owner-attribution banner and sends one
+fresh command per change:
+
+| Change | Command |
+| --- | --- |
+| Add, rename or delete a checklist | `ADD_CHECKLIST`, `RENAME_CHECKLIST`, `DELETE_CHECKLIST` |
+| Add, toggle, rename or delete an item | `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM` |
+| Add or remove a card link | `ADD_CARD_LINK`, `REMOVE_CARD_LINK` |
+
+Checklists are capped at 20 per card and 100 items per checklist; the server
+also refuses a fresh add at either cap with `409 conflict: "wip"` before any
+command or audit row is written. Deleted checklists and items are filtered out
+of the editor. Deleting a checklist asks for confirmation. Links show both
+directions with the stored type and a readable phrase: outgoing `blocks` reads
+as “blocks”, incoming as “is blocked by” (the same reverse phrasing is offered
+when adding: relates to, blocks, is blocked by, duplicates, is duplicated by).
+The counters separate the viewed card's live outgoing rows (which own its
+50-link cap) from live incoming rows; a live incoming row whose holder card is
+deleted remains readable as dangling but is not counted. With a reverse option
+the form shows the
+selected target holder's own outgoing count and cap. Incoming rows are removed
+through their holder card, not through the viewed card. The target combobox is
+loaded lazily from the board content when the link editor opens and excludes
+the current card, archived cards and already-linked pairs; a `blocks` edge that
+would create a cycle is refused. Checklist/item commands do not refetch the
+board or close the link editor. Both link commands refetch the aggregate;
+`ADD_CARD_LINK` closes the editor after success, while `REMOVE_CARD_LINK`
+leaves it open. Dangling or soft-deleted link
+rows stay readable, and a live dangling row can still be removed to free the
+cap.
+
+Deleted cards hide the editor. Archived cards keep checklist and link editing;
+only moving an archived card is blocked. Every accepted change appears as a
+`board.command` audit row with `commandId`, `masterId` and `masterEmail`, while
+the board history still names the owner. A rejected fresh write creates no
+command or audit row.
 
 ### Sections
 
@@ -223,10 +276,12 @@ membership. Labels are the board's live labels only, and a card is capped at
   opens `Edit description`, which sends an `UPDATE_CARD` command through the
   same owner-attribution banner and command log as the content editor.
 - Labels, as color chips.
-- Checklists, each with a title, a `done/total` count and its live items.
+- Checklists, each with a title, a `done/total` progress count, its live items
+  and inline add/rename/toggle/delete controls.
 - Links, both directions: outgoing links with an up-right arrow and incoming
-  links with a down-left arrow, each with a type badge and a `Deleted` badge
-  when applicable. Types are `blocks`, `relates_to` and `duplicates`.
+  links with a down-left arrow, each with the stored `blocks`, `relates_to` or
+  `duplicates` type, a readable relation phrase, a `Deleted` badge when the
+  row is soft-deleted, and a `Card deleted` badge for a dangling target.
 - Attachments table: File (thumbnail, name, download), Size, Uploaded by,
   Created, Status, Actions.
 - Comments table: Comment, Author (linked), Created, Status, Actions.
