@@ -1710,6 +1710,7 @@ TASK-36 и TASK-37.)*
 | 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
 | 112 | TASK-181 `admin-list-filters` | `docs/TASK-181-admin-list-filters.md` → отдельные `feat/TASK-181.x-*` | §7.30: сделать фильтры админских списков обнаруживаемыми и честными — supported/offered matrix вместо молчаливых no-op, панель «Фильтры»/чипы с человеческими названиями и visible short-id, карточки (board/column/label any-all/assignee/priority/due/attachments/period), moderation (author/kind/uploader/MIME/period/inline badge), audit/commands/activity (audit-visible actor/action/type/target), users/boards (accepted ADMIN)/content lists; parent-conflict vs unknown vs valid zero; `status=all` universal; URL/deep links, exact totals, bulk-selection contract, EN/RU, 1440/1024/390 | **Запланировано:** 7 подзадач; wave 1 — 181.1 контракт + lookup, 181.2 панель/чипы на карточках, 181.3 полный набор карточек; wave 2 — 181.4 moderation, 181.5 content lists, 181.6 audit hub; 181.7 docs/visual/perf. Зависит от 176.5/176.6 (уже в main); 176.10 — для `commandId`; shares — TASK-177.5; 180.9 — до 181.2. См. §7.30 |
 | 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: help-поповер у заголовка Labels + один обновляемый keyed success-toast (без label command concurrency/dedup) и card-local fallback для падения lazy-календаря due-date: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear только после accepted команды, fresh append, timer/map cleanup; `SET_CARD_LABEL`/cap/`onSaved: () => void` не меняются, а `send`/`toggleLabel` получают optional key, keyed clear/success и post-await card/mounted guard для toast/onSaved/errors/busy; inline-ошибки остаются; same-label double-click и reload ordering — residual out of scope. Фаза 2 — `calendarFallback: ComponentType<...>` заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
+| 114 | TASK-183 `demo-label-integrity` | `docs/TASK-183-demo-label-integrity.md` → отдельные `feat/TASK-183.x-*` | §7.32: две независимые находки TASK-176 demo investigation — (1) воспроизводимый demo-fixture: полный mutation inventory, drop/recreate reset, manifest/verify, DB/API binding guard и удаление ручных артефактов `Card claim visibility 123`, `фывфыв`, checklist `123`, random link, 60 comments, extra users/admin/security rows; (2) `SET_CARD_LABEL` обновляет `Card.updatedAt` вместе с версией, inverse `cardUpdatedAt` проходит `CARD_STAMPED_TYPES`, аудит `DELETE_LABEL`/`RESTORE_LABEL` и тесты | **Запланировано:** docs-only spec; 183.1 demo hygiene, 183.2 label timestamp; reset дважды после checklist+link; без изменений admin demo runner и TASK-176.9. См. §7.32 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5205,6 +5206,9 @@ dir/i18n base; **181.3 — `listCards`; 181.4 — `listComments`+`listAttachment
 `listActivity`**; правки в `admin.service.ts`/`admin-entities.service.ts`
 сериализуются по волнам, `EntityPage`/`HubTabs` не редактировать параллельно;
 181.7 — docs. Индексы — отдельной миграцией после замера.
+
+---
+
 ### 7.31. Метки и календарь в админ-карточке (TASK-182)
 
 > **Статус:** предложено (docs-only, 2026-11-19); production-кода в этой
@@ -5319,6 +5323,157 @@ Dev-cache — environment/runbook, не product acceptance.
 сверяет code map. Обе фазы трогают `CardFieldsPanel.tsx` и `admin-i18n.ts`;
 при параллельном запуске phase 2 ребейзится на phase 1 (или общие изменения
 выносятся отдельно). TASK-181/§7.30/строка 112 — reserved, не трогать.
+
+---
+
+### 7.32. Demo fixture hygiene и timestamp метки карточки (TASK-183)
+
+> **Статус:** запланировано (docs-only, 2026-11-19).
+> **Полный spec:** [`docs/TASK-183-demo-label-integrity.md`](docs/TASK-183-demo-label-integrity.md).
+> **Источник:** TASK-176 demo investigation + read-only проверка `janosik_task176_demo` 2026-11-19.
+> **Не входит:** TASK-176.9 (редактор карточки) и admin demo runner (TASK-57/69; H9 принадлежит TASK-180.7). Новых схем, API и production-кода в этой docs-only задаче нет.
+
+**Зачем.** Demo-база `janosik_task176_demo` больше не воспроизводится из
+committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
+`фывфыв`, checklist `123`/`1`, random-UUID link, 18 лишних label-тогглов, а
+также незакоммиченные TASK-176 label/checklist/links и 60 `t176-comment-*`
+(9 soft-deleted, 51 live). Это не corruption — aggregate и API валидны, — но
+чистый demo нельзя пересоздать, а manual drift молча накапливается. Отдельно
+`SET_CARD_LABEL` меняет `labelIds` и версию, но не `Card.updatedAt`; inverse
+теряет `cardUpdatedAt` ещё и в validation.
+
+**183.1 — demo fixture hygiene (P2).**
+
+- Seed `scripts/seed-agent-pixel-demo.mjs`: 13 card rows (12 createMany +
+  `px-card-expired-retention` через `ADD_CARD`), 12 live; run 124 помечен
+  `reverted`, но `DELETE_CARD` остался применён — это не настоящий revert.
+  Seed не создаёт labels/checklists/links/comments; печатает raw tokens/password
+  — output должен быть redacted by default.
+- Текущая очистка ломается: `Card.deleteMany` упирается в FK `RESTRICT` от
+  `ChecklistItem`/`Checklist`/`CardLink`; `BoardShare`/`BoardShareAuditLog`
+  остаются. Primary reset — drop/recreate demo schema
+  (`prisma migrate reset --force --skip-seed`); fallback — **fixture +
+  admin/security account reset** (не full demo-DB): checklistItem → checklist →
+  cardLink → cardLabel → comment → attachment → activity → commandPreimage →
+  command → run/approval/session/token → attention → share audit/share → card →
+  label → column → member → board → demoRun → dataExport → reminderSent →
+  idempotencyRecord → securityAuditLog → refreshToken → user → adminAuditLog →
+  adminRefreshToken → adminUser. Retain `FeatureFlag`, `EmailSettings`,
+  `EmailTemplate`, `OpsSettings`, `ThrottleSettings`, `Announcement`,
+  `AnnouncementTranslation`; `AnnouncementDismissal` cascades with deleted users.
+  Retained `EmailSettings` требует same `SETTINGS_SECRET`/original `JWT_SECRET`
+  или SMTP credential re-entry. Порядок FK-корректен; раньше не хватало самих
+  таблиц. Reset дважды с non-zero rows перед **каждым** run.
+- Manifest/verifier: ровно два seed-пользователя и их board roles; `1@t.com` и
+  `2@t.com` — junk, extra registration после reset валит verify.
+  SecurityAuditLog/AttentionNotification/RefreshToken и admin-таблицы —
+  probe-time/out-of-fixture, не pins; оба reset-пути стирают admin/security
+  account state — recreate `npm run demo:task176:admin -- --email <master>`
+  (only documented path; URL via 0600 env/child env, never argv; first master
+  OWNER) против demo DB. Verifier также покрывает `columnId`/`position`,
+  `priority`, `assigneeId`, `cover`, labels, named links, checklists; `dueDate`,
+  task spec, claim, `archivedAt` — явно absent/empty. Assignee/cover/priority/
+  move и 60 comments классифицировать.
+- Inventory: `ADD_LABEL` seq 14, initial `SET_CARD_LABEL` seq 15; Agent Ops delta
+  46 entries for seq 1–51 — это board-scoped, seq 9–13 Website commands, не
+  ожидать 51 на одной доске. Raw command IDs — в spec §2.2.
+- Reset требует `DEMO_DATABASE_URL`/`DEMO_API_URL` без defaults, exact
+  `janosik_task176_demo` primary (wildcard только с явным allow), один resolved
+  DB URL для всех child-процессов. `backend/src/config/env.ts:21-32` загружает
+  `.env`/`.env.NODE_ENV`/`.env.local` с `override: true`, а `backend/.env:6`
+  может указывать на dev: нужен reset-only env file, переданный через CLI args/
+  pre-dotenv snapshot (unique 0600 temp file, one-time nonce,
+  `NODE_ENV !== "production"`, fail-closed if missing or production + reset
+  mode). `.env.local` fallback запрещён; `.env` cannot disable/redirect hook;
+  normal boot ignores hook; stale reset env/lock/temp files sweep at start.
+  Тест: `backend/.env` → dev, `DEMO_DATABASE_URL` → demo + tampered-`.env`/
+  production-boot test.
+- Dedicated backend: process group, PID/start-time/port/lock/nonce per demo DB;
+  verify `/proc/<pid>` (Linux/WSL prerequisite) или fail-closed `ps` fallback
+  cmdline/start time/port/nonce before killing; if ownership unproven, clear
+  stale state and fail closed (never kill an unrelated live process);
+  `pg_terminate_backend` demo connections before drop, excluding reset backend
+  PID, print terminated PIDs/database; fresh loopback/owned port or
+  reset-allocated/printed URL, port-in-use test; stop before schema drop, restart
+  after migrations for seed only, stop before Prisma-only verify, stop/reap in
+  `finally`; SIGKILL-crash rerun kills wrapper/process group. `/health db: up` не доказывает identity:
+  marker **user/board/accepted ADMIN BoardMember create directly via reset
+  Prisma**, JWT `{ sub, aud: "janosik-user", stamp, exp }` с reset-env
+  `JWT_SECRET` и parameterized `securityStamp(user, secret)`; API только
+  `GET /boards/:marker`; correct DB 200, any non-200 abort; markers cleaned
+  before drop + `finally` + stale sweep, fresh connection after reset.
+  `DEMO_API_URL` map в seed `API_URL`/overlay; TASK-176 overlay читает `DEMO_*`
+  exclusively и валидирует DB name до `PrismaClient`; direct overlay invocation
+  запрещён (only reset wrapper with one-time nonce); base pixel seed contract
+  сохраняется (allowlist only `janosik_pixel`/`*_pixel`; explicit reject
+  `janosik_task176_demo`; `*_demo` only overlay/nonce; `DEMO_*` unset),
+  direct base seed — не TASK-176 reset path.
+- Verify — Prisma-only, без login/PAT/`ApiToken.lastUsedAt`; если API read
+  появится, ignore `lastUsedAt` и re-mint known token. Reset/seed output
+  redacted; raw secrets только через 0600 file. Docs: backend build,
+  `JWT_SECRET`/`SETTINGS_SECRET` (или original `JWT_SECRET`)/`PUBLIC_ORIGIN`/
+  `COOKIE_SECURE=false`/port, initial `migrate deploy`, DB create/drop/
+  `pg_terminate_backend` privileges, admin recreate.
+
+**183.2 — label timestamp (P3).**
+
+- `shared/src/store/board-reducer.ts:1267-1308`: `setCardLabel` не ставит
+  `updatedAt: cardStamp(action)`.
+- `backend/src/commands/command-writers.ts:371-378`: `bumpCard` пишет
+  `new Date(card.updatedAt)`, то есть старое значение; `:973-978` вызывает его
+  для `SET_CARD_LABEL`. Версия растёт, timestamp — нет.
+- `shared/src/store/invert.ts:449-462`: inverse не несёт `cardUpdatedAt`.
+- `shared/src/store/validate.ts:61-90,377-389`: `CARD_STAMPED_TYPES` не
+  содержит `SET_CARD_LABEL`, поэтому validation молча выбрасывает
+  `cardUpdatedAt`; добавить тип и `validate.test.ts` + inverse через
+  `POST /commands`.
+- Reducer test: только `updatedAt`/`labelIds`; persisted row: `updatedAt`,
+  `version = previous + 1`, `lastActorId = actor`, `labelIds` after-state. Не
+  проверять server-only `version`/`lastActorId` на shared `Card`.
+- `ui/src/store/board-diff.ts:58-70` и тест `:123`: updatedAt-fast-path
+  пропускает label change, `labelIds` fallback маскирует stale timestamp;
+  после фикса обновить комментарий/тест, fallback оставить как compatibility.
+- Аудит: `DELETE_LABEL` (`command-writers.ts:1059`, reducer `:1361`) и
+  `RESTORE_LABEL` (`:1118`, reducer `:2277`) — тот же класс, multi-card:
+  forward stamp всем затронутым карточкам, inverse — per-card pre-delete
+  timestamp в `RestoreLabelAction.assignments` + validation, либо named
+  follow-up с тестом. Rename/color метки карточный timestamp не меняют.
+
+**Подзадачи.**
+
+| ID | Что делаем | Приоритет |
+| --- | --- | --- |
+| 183.1 | Fixture manifest, полный reset/verify, DB/API binding guard, классификация drift, docs | P2 |
+| 183.2 | `SET_CARD_LABEL` stamp + inverse `cardUpdatedAt` + `CARD_STAMPED_TYPES`; split reducer/DB tests; аудит label-действий | P3 |
+
+**DoD.** Demo пересоздаётся одной командой; reset дважды после checklist+link и
+с non-zero security/admin/idempotency/reminder rows перед каждым run (плюс
+dismissal cascade) проходит; SIGKILL-wrapper rerun проходит; env hook (CLI args/
+pre-dotenv snapshot, unique 0600 file, one-time nonce, `NODE_ENV !== "production"`,
+no `.env.local`, stale sweep) не перетирает demo URL (`backend/.env` dev +
+tampered-`.env` тест); marker user/board/accepted ADMIN BoardMember создан через
+reset Prisma, JWT с `aud` + parameterized `securityStamp(user, secret)`, any
+non-200 abort до delete, markers cleaned before drop/`finally`/fresh connection;
+backend process group/PID/start-time/port/lock/nonce, ownership verified,
+unrelated live process never killed, stopped/reaped; verify Prisma-only, ровно
+два seed-пользователя, extra user валит verify; 60 comments отсутствуют или
+вынесены в TASK-176.9 fixture;
+reset/seed output redacted. Fallback — fixture + admin/security account reset;
+global settings/announcements retained; retained `EmailSettings` uses same
+`SETTINGS_SECRET`/original `JWT_SECRET` or documented SMTP re-entry; master
+recreate `npm run demo:task176:admin -- --email <master>` (only documented path;
+URL via 0600 env/child env, never argv) после обоих путей.
+`SET_CARD_LABEL` двигает `updatedAt`/`version` один раз, undo
+восстанавливает timestamp, inverse проходит validation и `POST /commands`,
+no-op ничего не меняет; audit table закрыт тестами или follow-up. Без изменений
+admin demo runner, H9 и TASK-176.9. CHANGELOG/docs и reset integration test
+входят в implementation DoD.
+
+**Зависимости.** TASK-156 (label-only workaround), TASK-150 (focus diff),
+TASK-21.7d (inverse timestamps, `invert.ts` + `validate.ts`), TASK-180.7 — только
+координация по demo lifecycle. Backend-схемы и forward API-контракта не
+меняем; `SET_CARD_LABEL` не получает нового обязательного поля. Demo reset
+добавляет только fail-closed env-precedence hook; новых миграций нет.
 
 ---
 
