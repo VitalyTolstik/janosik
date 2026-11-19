@@ -1375,20 +1375,23 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, [serverMode, refetchBoard]);
 
   /**
-   * A refetch wanted once the board's queue is idle (U-4: a refused command
-   * whose optimistic state cannot be taken back exactly). Retried after the
-   * next command settles when commands are still running.
+   * Reconcile an uncertain command or a rollback that needs a snapshot
+   * (U-4) once the board's queue is idle and the browser is online.
    */
   const drainRefetch = useCallback(
     (boardId: string): void => {
       const wanted = refetchWantedRef.current;
-      if (!wanted.has(boardId) || sync.isBusy(boardId)) return;
+      if (!wanted.has(boardId) || sync.isBusy(boardId) || !navigator.onLine) {
+        return;
+      }
       wanted.delete(boardId);
       void refetchBoard(boardId, true).then((result) => {
-        if (result !== "busy") return;
+        if (result !== "busy" && result !== "failed") return;
         wanted.add(boardId);
         // Commands that ran meanwhile may all be answered already.
-        if (!sync.isBusy(boardId)) drainRefetchRef.current(boardId);
+        if (result === "busy" && !sync.isBusy(boardId)) {
+          drainRefetchRef.current(boardId);
+        }
       });
     },
     [sync, refetchBoard],
@@ -1527,19 +1530,29 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!serverMode) return;
-    const onFocus = () => void refetchActiveBoard();
+    const onFocus = () => {
+      const boardId = activeIdRef.current;
+      if (boardId !== undefined && refetchWantedRef.current.has(boardId)) {
+        drainRefetch(boardId);
+      } else {
+        void refetchActiveBoard();
+      }
+    };
+    const onOnline = () => {
+      for (const boardId of refetchWantedRef.current) drainRefetch(boardId);
+    };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void refetchActiveBoard();
+      if (document.visibilityState === "visible") onFocus();
     };
     window.addEventListener("focus", onFocus);
-    window.addEventListener("online", onFocus);
+    window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("online", onFocus);
+      window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [serverMode, refetchActiveBoard]);
+  }, [serverMode, refetchActiveBoard, drainRefetch]);
 
   // The realtime connection (TASK-30) lives in a lazily imported chunk: it
   // is needed only once a board is on screen, and its reconnect/dedupe logic

@@ -46,6 +46,7 @@ const okResponse = (): CommandResponse => ({ seq: 1, versions: {} });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("ServerSync", () => {
@@ -237,6 +238,39 @@ describe("ServerSync", () => {
         }
       }
     }
+  });
+
+  it("rejects regular and quiet commands immediately when already offline", async () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    const send = vi.fn(okResponse);
+    const sync = new ServerSync({ send: async () => send() });
+
+    for (const action of [renameColumn("cd-1"), quietEdit("cd-2", "X")]) {
+      await expect(sync.enqueue("b-1", action)).resolves.toEqual({
+        ok: false,
+        failure: { kind: "offline" },
+      });
+    }
+    expect(send).not.toHaveBeenCalled();
+    expect(sync.isBusy("b-1")).toBe(false);
+    expect(sync.failureCount).toBe(2);
+  });
+
+  it("keeps an in-flight command uncertain if the browser goes offline", async () => {
+    const network = { onLine: true };
+    vi.stubGlobal("navigator", network);
+    const send = vi.fn(async () => {
+      network.onLine = false;
+      throw new ApiError(0, null);
+    });
+    const sync = new ServerSync({ send });
+
+    await expect(sync.enqueue("b-1", renameColumn("cd-1"))).resolves.toEqual({
+      ok: false,
+      failure: { kind: "offline" },
+      uncertainCommandId: "cd-1",
+    });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it.each([

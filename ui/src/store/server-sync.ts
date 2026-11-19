@@ -115,6 +115,9 @@ export class ServerSync {
     if (this.disposed) {
       return Promise.resolve({ ok: false, failure: { kind: "offline" } });
     }
+    if (globalThis.navigator?.onLine === false) {
+      return Promise.resolve(this.recordFailure({ kind: "offline" }));
+    }
     if (action.type === "UPDATE_CARD" && action.quiet === true) {
       return this.deferQuiet(boardId, action);
     }
@@ -257,9 +260,6 @@ export class ServerSync {
     preconditions?: Record<string, number>,
   ): Promise<SendOutcome> {
     this.bump(boardId, 1);
-    // Remembered before the request leaves: the server echoes a command on
-    // the stream before it answers the POST, so the echo may beat the ack.
-    this.rememberSent(boardId, action);
     const chain = this.chains.get(boardId) ?? Promise.resolve();
     const run = chain.then(() => this.attempt(boardId, action, preconditions));
     this.chains.set(
@@ -286,6 +286,16 @@ export class ServerSync {
     };
     let uncertain = false;
     for (let attempt = 0; ; attempt += 1) {
+      // Check again after the queue or a failed attempt. If a request was
+      // already sent, going offline does not resolve its outcome.
+      if (globalThis.navigator?.onLine === false) {
+        return this.recordFailure(
+          { kind: "offline" },
+          uncertain ? request.commandId : undefined,
+        );
+      }
+      // The server may echo the command on the stream before the POST returns.
+      if (attempt === 0) this.rememberSent(boardId, action);
       try {
         const response = await this.options.send(boardId, request);
         if (typeof response?.seq !== "number" || !response.versions) {
@@ -299,14 +309,24 @@ export class ServerSync {
         if (uncertain && attempt === 0 && request.commandId && !this.disposed) {
           continue;
         }
-        this.failures += 1;
-        return {
-          ok: false,
-          failure: classify(error),
-          ...(uncertain ? { uncertainCommandId: request.commandId } : {}),
-        };
+        return this.recordFailure(
+          classify(error),
+          uncertain ? request.commandId : undefined,
+        );
       }
     }
+  }
+
+  private recordFailure(
+    failure: SendFailure,
+    uncertainCommandId?: string,
+  ): SendOutcome {
+    this.failures += 1;
+    return {
+      ok: false,
+      failure,
+      ...(uncertainCommandId !== undefined ? { uncertainCommandId } : {}),
+    };
   }
 
   /** A rolled-back optimistic command must no longer suppress its echo. */
