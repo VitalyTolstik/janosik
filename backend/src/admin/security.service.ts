@@ -11,9 +11,10 @@ import type {
   AdminTotpSetupDto,
   AdminUpdateSecurityRequest,
 } from "@janosik/shared";
+import { ConflictException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { verify as argonVerify } from "argon2";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "@/mailer/secret-box";
 import type { AdminPrincipal } from "./admin.types";
@@ -24,6 +25,17 @@ const DIGITS = 6;
 /** Short-lived, server-signed staging ticket for a not-yet-active secret. */
 const TOTP_SETUP_AUDIENCE = "janosik-admin-totp-setup";
 const TOTP_SETUP_TTL = "10m";
+
+/**
+ * Opaque version of the active factor. A setup ticket records the state it was
+ * issued against; a change to either the enabled flag or the encrypted secret
+ * makes every older ticket stale.
+ */
+function totpStateVersion(enabled: boolean, secretEnc: string | null): string {
+  return createHash("sha256")
+    .update(`${enabled ? "1" : "0"}:${secretEnc ?? ""}`)
+    .digest("base64url");
+}
 
 /** RFC 4648 base32 (no padding) — the encoding authenticator apps expect. */
 function base32Encode(buffer: Buffer): string {
@@ -273,9 +285,20 @@ export class SecurityService {
     const secret = base32Encode(randomBytes(20));
     // Staging (M12): do NOT touch the active secret here. The old factor
     // keeps working until `/security/totp/verify` confirms the new code, so
-    // a lost setup response cannot lock the master out.
+    // a lost setup response cannot lock the master out. The ticket records
+    // the exact active state it was issued against: a later enrollment,
+    // replacement, disable or newer staged ticket invalidates it.
     const setupToken = await this.jwt.signAsync(
-      { sub: admin.id, secret, purpose: "totp-setup" },
+      {
+        sub: admin.id,
+        secret,
+        purpose: "totp-setup",
+        previousEnabled: current.totpEnabled,
+        previousState: totpStateVersion(
+          current.totpEnabled,
+          current.totpSecretEnc,
+        ),
+      },
       { audience: TOTP_SETUP_AUDIENCE, expiresIn: TOTP_SETUP_TTL },
     );
     const label = encodeURIComponent(`Janosik:${admin.email}`);
@@ -286,52 +309,85 @@ export class SecurityService {
   }
 
   /**
-   * Finish enrollment. A `setupToken` carries the staged secret; the active
-   * DB secret is replaced only inside the row-locked transaction below and
-   * `replaced` is returned from that same transaction for the audit row.
-   * The code is verified statelessly so retrying a lost response works.
+   * Finish enrollment. The setup ticket is mandatory and records the active
+   * factor state it was issued against. Under the row lock the state must
+   * still match exactly; otherwise the ticket is stale (a newer replacement,
+   * a disable, or activation after an inactive ticket) and is refused.
+   *
+   * The successful update and its audit row commit in the same transaction,
+   * and changing the secret consumes the ticket automatically: a replay or a
+   * concurrent second confirm sees a different state version.
    */
   async confirm(
     admin: AdminPrincipal,
     code: string,
-    setupToken?: string,
+    setupToken: string,
   ): Promise<{ totpEnabled: true; replaced: boolean }> {
-    let secret: string | null = null;
-    if (setupToken !== undefined) {
-      let payload: { sub?: unknown; secret?: unknown; purpose?: unknown };
-      try {
-        payload = await this.jwt.verifyAsync(setupToken, {
-          audience: TOTP_SETUP_AUDIENCE,
-        });
-      } catch {
-        throw new UnauthorizedException("Enrollment token is invalid");
-      }
-      if (
-        payload.sub !== admin.id ||
-        payload.purpose !== "totp-setup" ||
-        typeof payload.secret !== "string"
-      ) {
-        throw new UnauthorizedException("Enrollment token is invalid");
-      }
-      secret = payload.secret;
-    } else {
-      secret = await this.secretFor(admin.id);
+    let payload: {
+      sub?: unknown;
+      secret?: unknown;
+      purpose?: unknown;
+      previousEnabled?: unknown;
+      previousState?: unknown;
+    };
+    try {
+      payload = await this.jwt.verifyAsync(setupToken, {
+        audience: TOTP_SETUP_AUDIENCE,
+      });
+    } catch {
+      throw new UnauthorizedException("Enrollment token is invalid");
     }
-    if (!secret) throw new BadRequestException("Start enrollment first");
-    if (!this.verifyCode(secret, code)) {
+    if (
+      payload.sub !== admin.id ||
+      payload.purpose !== "totp-setup" ||
+      typeof payload.secret !== "string" ||
+      typeof payload.previousEnabled !== "boolean" ||
+      typeof payload.previousState !== "string"
+    ) {
+      throw new UnauthorizedException("Enrollment token is invalid");
+    }
+    const staged = payload.secret;
+    if (!this.verifyCode(staged, code)) {
       throw new UnauthorizedException("Invalid code");
     }
-    const staged = secret;
+
     const replaced = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "AdminUser" WHERE "id" = ${admin.id} FOR UPDATE`;
       const current = await tx.adminUser.findUnique({
         where: { id: admin.id },
-        select: { totpEnabled: true },
+        select: { totpEnabled: true, totpSecretEnc: true },
       });
       if (!current) throw new NotFoundException("Master not found");
+      const currentState = totpStateVersion(
+        current.totpEnabled,
+        current.totpSecretEnc,
+      );
+      if (
+        current.totpEnabled !== payload.previousEnabled ||
+        currentState !== payload.previousState
+      ) {
+        throw new ConflictException({
+          message:
+            "This enrollment was superseded by a newer security change; start again",
+          code: "setup_stale",
+          retryable: false,
+        });
+      }
       await tx.adminUser.update({
         where: { id: admin.id },
         data: { totpSecretEnc: encryptSecret(staged), totpEnabled: true },
+      });
+      await tx.adminAuditLog.create({
+        data: {
+          adminId: admin.id,
+          adminEmail: admin.email,
+          action: current.totpEnabled
+            ? "security.totp_replaced"
+            : "security.totp_enabled",
+          targetType: "admin",
+          targetId: admin.id,
+          details: { replaced: current.totpEnabled },
+        },
       });
       return current.totpEnabled;
     });

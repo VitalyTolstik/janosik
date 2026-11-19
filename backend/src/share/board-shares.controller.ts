@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -140,7 +141,12 @@ export class BoardSharesController {
     // M4: same pre-write gate as create — no approval/idempotency side
     // effects when public sharing is disabled.
     await this.shares.assertPublicSharingEnabled();
-    await this.shares.requireShareOnBoard(shareId, id);
+    const share = await this.shares.requireShareOnBoard(shareId, id);
+    // M9: a live share can never be refreshed. Reject it before creating an
+    // approval row, so a 400 leaves no approval/idempotency side effects.
+    if (share.mode !== "snapshot") {
+      throw new BadRequestException("Only a snapshot share can be refreshed");
+    }
     // M9: replacing a snapshot's public content is `share.update`, so the
     // board's approval policy applies exactly as it does to PATCH.
     const approval = await rollbackOnThrow(() =>

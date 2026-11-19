@@ -103,13 +103,15 @@ const nonNegativeInt = makeValidator((v) => {
 });
 
 /** A whole number strictly above zero (durations, retention windows, …). */
-const positiveInt = makeValidator((v) => {
+export function parsePositiveInt(v: string): number {
   const parsed = Number(v);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error("must be a positive integer");
   }
   return parsed;
-});
+}
+
+const positiveInt = makeValidator(parsePositiveInt);
 
 export const env = cleanEnv(process.env, {
   NODE_ENV: str({

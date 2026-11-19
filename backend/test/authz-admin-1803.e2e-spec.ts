@@ -299,36 +299,151 @@ describe("Admin authz matrix (e2e)", () => {
       });
       expect(decryptSecret(stillCurrent.totpSecretEnc!)).toBe(current);
 
-      const results = await Promise.all([
+      const [firstConfirm, secondConfirm] = await Promise.all([
         server()
           .post("/api/v1/admin/security/totp/verify")
           .set(auth(ownerToken))
           .send({
             code: totp(first.body.secret as string),
             setupToken: first.body.setupToken,
-          })
-          .expect(201),
+          }),
         server()
           .post("/api/v1/admin/security/totp/verify")
           .set(auth(ownerToken))
           .send({
             code: totp(second.body.secret as string),
             setupToken: second.body.setupToken,
-          })
-          .expect(201),
+          }),
       ]);
-      for (const result of results) {
-        expect(result.body).toMatchObject({
-          totpEnabled: true,
-          replaced: true,
-        });
-      }
+      const winner =
+        firstConfirm.status === 201
+          ? {
+              setup: first,
+              response: firstConfirm,
+              other: secondConfirm,
+            }
+          : {
+              setup: second,
+              response: secondConfirm,
+              other: firstConfirm,
+            };
+      expect(winner.response.status).toBe(201);
+      expect(winner.response.body).toMatchObject({
+        totpEnabled: true,
+        replaced: true,
+      });
+      expect(winner.other.status).toBe(409);
+      expect(winner.other.body.code).toBe("setup_stale");
+
       const final = await prisma.adminUser.findUniqueOrThrow({
         where: { id: ownerId },
       });
-      expect([first.body.secret, second.body.secret]).toContain(
-        decryptSecret(final.totpSecretEnc!),
+      expect(decryptSecret(final.totpSecretEnc!)).toBe(
+        winner.setup.body.secret,
       );
+
+      // A ticket is single-use even within its TTL: replaying the winner
+      // changes nothing and is refused as stale.
+      const replay = await server()
+        .post("/api/v1/admin/security/totp/verify")
+        .set(auth(ownerToken))
+        .send({
+          code: totp(winner.setup.body.secret as string),
+          setupToken: winner.setup.body.setupToken,
+        })
+        .expect(409);
+      expect(replay.body.code).toBe("setup_stale");
+    });
+
+    it("refuses a ticket issued before the factor became active", async () => {
+      // Start from a disabled factor, then issue two tickets against it.
+      await prisma.adminUser.update({
+        where: { id: ownerId },
+        data: { totpEnabled: false, totpSecretEnc: null },
+      });
+      const first = await server()
+        .post("/api/v1/admin/security/totp")
+        .set(auth(ownerToken))
+        .send({})
+        .expect(201);
+      const stale = await server()
+        .post("/api/v1/admin/security/totp")
+        .set(auth(ownerToken))
+        .send({})
+        .expect(201);
+
+      const activated = await server()
+        .post("/api/v1/admin/security/totp/verify")
+        .set(auth(ownerToken))
+        .send({
+          code: totp(first.body.secret as string),
+          setupToken: first.body.setupToken,
+        })
+        .expect(201);
+      expect(activated.body.replaced).toBe(false);
+
+      const refused = await server()
+        .post("/api/v1/admin/security/totp/verify")
+        .set(auth(ownerToken))
+        .send({
+          code: totp(stale.body.secret as string),
+          setupToken: stale.body.setupToken,
+        })
+        .expect(409);
+      expect(refused.body.code).toBe("setup_stale");
+
+      // The setup ticket is mandatory; the old silent legacy path is gone.
+      await server()
+        .post("/api/v1/admin/security/totp/verify")
+        .set(auth(ownerToken))
+        .send({ code: "123456" })
+        .expect(400);
+    });
+
+    it("rolls the secret back when the audit write fails", async () => {
+      const staged = await server()
+        .post("/api/v1/admin/security/totp")
+        .set(auth(ownerToken))
+        .send({ password: MASTER_PASSWORD })
+        .expect(201);
+      const before = await prisma.adminUser.findUniqueOrThrow({
+        where: { id: ownerId },
+      });
+      // Force the audit insert to fail at the database, so the assertion is
+      // about the real transaction boundary rather than a Prisma mock.
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION janosik_test_failing_audit() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'audit unavailable';
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER janosik_failing_audit
+        BEFORE INSERT ON "AdminAuditLog"
+        FOR EACH ROW EXECUTE FUNCTION janosik_test_failing_audit();
+      `);
+      try {
+        await server()
+          .post("/api/v1/admin/security/totp/verify")
+          .set(auth(ownerToken))
+          .send({
+            code: totp(staged.body.secret as string),
+            setupToken: staged.body.setupToken,
+          })
+          .expect(500);
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'DROP TRIGGER IF EXISTS janosik_failing_audit ON "AdminAuditLog"',
+        );
+        await prisma.$executeRawUnsafe(
+          "DROP FUNCTION IF EXISTS janosik_test_failing_audit()",
+        );
+      }
+      const after = await prisma.adminUser.findUniqueOrThrow({
+        where: { id: ownerId },
+      });
+      expect(after.totpSecretEnc).toBe(before.totpSecretEnc);
     });
   });
 });

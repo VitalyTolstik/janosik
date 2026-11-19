@@ -5,6 +5,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { wipeAll } from "./support/wipe";
 import { REFRESH_REUSE_GRACE_MS } from "@/auth/auth.service";
 import { refreshCookieValue } from "./support/cookies";
 
@@ -28,14 +29,11 @@ describe("Refresh token reuse detection (e2e)", () => {
     setupApp(app);
     await app.init();
     prisma = app.get(PrismaService);
-    // Refresh tokens first: the FK restricts deleting a user with sessions.
-    await prisma.apiToken.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.attachment.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
   });
 
   afterAll(async () => {
+    await wipeAll(prisma);
     await app.close();
   });
 

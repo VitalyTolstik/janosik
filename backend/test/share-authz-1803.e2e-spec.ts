@@ -218,6 +218,20 @@ describe("Share authz (e2e)", () => {
       .expect(201);
     const pat = token.body.token as string;
 
+    // A live share is not refreshable. The 400 must happen before the
+    // approval gate creates a request.
+    const live = await createShare(boardId, { mode: "live" });
+    const approvalsBefore = await prisma.approvalRequest.count({
+      where: { boardId },
+    });
+    await server()
+      .post(`/api/v1/boards/${boardId}/shares/${live.id}/refresh`)
+      .set(auth(pat))
+      .expect(400);
+    expect(await prisma.approvalRequest.count({ where: { boardId } })).toBe(
+      approvalsBefore,
+    );
+
     const refused = await server()
       .post(`/api/v1/boards/${boardId}/shares/${snapshot.id}/refresh`)
       .set(auth(pat))

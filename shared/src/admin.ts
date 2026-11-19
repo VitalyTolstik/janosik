@@ -1788,8 +1788,8 @@ export interface AdminTotpSetupRequest {
 /** `POST /admin/security/totp/verify` — finish enrollment with a code. */
 export interface AdminVerifyTotpRequest {
   code: string;
-  /** Staging ticket returned by `POST /admin/security/totp`. */
-  setupToken?: string;
+  /** Mandatory staging ticket returned by `POST /admin/security/totp`. */
+  setupToken: string;
 }
 
 /** `POST /admin/security/totp/verify` answer. */

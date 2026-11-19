@@ -145,6 +145,33 @@ describe("Unverified registration cleanup (e2e)", () => {
     ).not.toBeNull();
   });
 
+  it("keeps an unverified user who created a contentless board", async () => {
+    const old = new Date(Date.now() - 20 * DAY_MS);
+    const userId = await createUser("board-owner@example.com", {
+      createdAt: old,
+    });
+    const board = await prisma.board.create({
+      data: { title: "Self-created empty board" },
+    });
+    await prisma.boardMember.create({
+      data: {
+        boardId: board.id,
+        userId,
+        role: "ADMIN",
+        acceptedAt: new Date(),
+      },
+    });
+
+    const result = await maintenance.run("sweep-unverified-users");
+    expect(result[0]?.removed).toBe(0);
+    expect(
+      await prisma.user.findUnique({ where: { id: userId } }),
+    ).not.toBeNull();
+    expect(
+      await prisma.board.findUnique({ where: { id: board.id } }),
+    ).not.toBeNull();
+  });
+
   it("keeps content-bearing accounts (comment, command, attachment)", async () => {
     const old = new Date(Date.now() - 20 * DAY_MS);
     const commenter = await createUser("commenter@example.com", {
@@ -188,6 +215,50 @@ describe("Unverified registration cleanup (e2e)", () => {
     for (const id of [commenter, commander, uploader]) {
       expect(await prisma.user.findUnique({ where: { id } })).not.toBeNull();
     }
+  });
+
+  it("keeps the user when a writer lands after the inner counts (FK backstop)", async () => {
+    const old = new Date(Date.now() - 20 * DAY_MS);
+    const userId = await createUser("late-writer@example.com", {
+      createdAt: old,
+    });
+    const board = await prisma.board.create({
+      data: { title: "Late-writer board" },
+    });
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION janosik_test_late_membership() RETURNS trigger AS $$
+      BEGIN
+        INSERT INTO "BoardMember" ("id", "boardId", "userId", "role", "acceptedAt", "createdAt")
+        VALUES ('late-' || NEW."id", '${board.id}', NEW."id", 'MEMBER', now(), now());
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER janosik_late_membership
+      BEFORE DELETE ON "User"
+      FOR EACH ROW EXECUTE FUNCTION janosik_test_late_membership();
+    `);
+    try {
+      await expect(
+        accountDeletion.deleteAccount(
+          userId,
+          { actorType: "admin" },
+          undefined,
+          new Date(Date.now() - 14 * DAY_MS),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS janosik_late_membership ON "User"',
+      );
+      await prisma.$executeRawUnsafe(
+        "DROP FUNCTION IF EXISTS janosik_test_late_membership()",
+      );
+    }
+    expect(
+      await prisma.user.findUnique({ where: { id: userId } }),
+    ).not.toBeNull();
   });
 
   it("re-checks eligibility after the prefilter when a membership lands", async () => {

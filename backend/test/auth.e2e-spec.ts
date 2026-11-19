@@ -7,6 +7,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { refreshCookie, refreshCookieValue } from "./support/cookies";
+import { wipeAll } from "./support/wipe";
 
 const FIRST_EMAIL = "cycle-first@example.com";
 const SECOND_EMAIL = "cycle-second@example.com";
@@ -34,14 +35,11 @@ describe("Auth API (e2e)", () => {
     setupApp(app);
     await app.init();
     prisma = app.get(PrismaService);
-    // Refresh tokens first: the FK restricts deleting a user with sessions.
-    await prisma.apiToken.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.attachment.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
   });
 
   afterAll(async () => {
+    await wipeAll(prisma);
     await app.close();
   });
 
