@@ -2,7 +2,7 @@
 
 **Status:** planned
 
-**Revision:** 6 (2026-11-19) — announcements-status blocker and the
+**Revision:** 7 (2026-11-19) — announcements UI alias normalization and the
 non-blocking notes are addressed; see the resolved decisions in §14.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
@@ -400,7 +400,7 @@ Sessions/Tokens stay and are regression-tested.
 | Tokens (`/admin/access?tab=tokens`) | Keep existing period tab; no new user/status filters | Backend supports status, but the page has no status tabs; a small follow-up can reuse the filter kit later. |
 | Masters (`/admin/access?tab=masters`) | No filters | Owner-only, small roster; search would be more useful than filters. |
 | Shares (`/admin/communications?tab=shares`) | Defer to TASK-177.5 | TASK-177.5 owns truthful pagination/expiry. Adding filters before the list is honest would compound the problem. A later pass can add board/mode/status/creator. |
-| Announcements history | Active/Disabled only; `deleted` stays a supported legacy alias for inactive | Small list; status already exists. Period/locale/level filters are speculative. |
+| Announcements history | Active/Disabled in UI; `deleted` is a supported API alias normalized to Disabled in URL state | Small list; status already exists. Period/locale/level filters are speculative. |
 | Security (`/admin/settings?tab=security`) | No filters | It is a settings page with a bounded recent-alert panel, not a full security log. TASK-161/168 own a real event list if needed. |
 | User detail tabs | No v1 filters | The parent user already narrows comments/attachments/sessions/tokens/commands/activity. Board/period could help later; not worth a second filter system now. |
 | Card detail windows | No v1 filters | Parent card + live/all windows are enough; timeline is a command/activity merge, not a filterable log. |
@@ -477,7 +477,7 @@ request by the UI parser.
 | sessions | `from`/`to` | — | period only (existing) |
 | tokens | `status`, `from`/`to` | — | period only (existing) |
 | shares | `boardId`, `from`/`to` | — | none (TASK-177.5) |
-| announcements | `status` | — | Active/Disabled in UI; `deleted` is a supported legacy alias for inactive |
+| announcements | `status` | — | Active/Disabled UI; `deleted` API alias normalized to Disabled in URL state |
 | boardMembers | `boardId`, `status` | — | none |
 | cardLabels | `boardId`, `columnId`, `labelId`, `cardId` | — | none (no tab) |
 | admins | owner-only custom endpoint, no generic filter | — | none |
@@ -737,6 +737,11 @@ compaction is a follow-up backlog item, not part of 181.7.
 - Canonical URL: sort repeated values lexicographically, dedupe, omit defaults
   (`status=all`, `period=any`, default `limit`, `offset=0`), and preserve
   unknown hub/detail keys (`tab`, `comment`, `attachment`, `returnTo`).
+- **Entity-specific alias normalization:** on announcements,
+  `status=deleted` is read as `disabled` and the canonical URL is rewritten to
+  `status=disabled`; the Disabled tab is selected and the request carries
+  `status=disabled`. The API accepts `deleted` directly, but the UI does not
+  keep it as an unselected/All state.
 - Example deep links:
   - `/admin/boards?tab=cards&boardId=b1&labelId=l1&labelId=l2&labelMatch=all&assigneeId=u1&priority=blocker&due=overdue&status=active`
   - `/admin/moderation?tab=comments&authorId=u1&kind=blocker&kind=question&period=7d`
@@ -779,11 +784,12 @@ compaction is a follow-up backlog item, not part of 181.7.
 - **Long-title fixture at 390:** seed a 100-char board title, a 100-char column
   title and a near-limit 300-char card title (one of them archived/deleted with
   its suffix), activate several filters together, and assert each chip's
-  bounding box is inside the viewport (width ≤ viewport minus page padding), the
-  title span ellipsizes while `title`/the accessible name keep the full text,
-  own/parent short ids remain visible, the row wraps, and each remove button is
-  reachable/removable by keyboard with a bounding box ≥24×24 px. Do not use only
-  short duplicate names for this test.
+  bounding box is inside the viewport (width ≤
+  `min(20rem, viewport − 2rem)`), the title span ellipsizes while `title`/the
+  accessible name keep the full text, own/parent short ids remain visible, the
+  row wraps, and each remove button is reachable/removable by keyboard with a
+  bounding box ≥24×24 px. Include a 50-char label and a 100-char checklist title
+  in the fixture. Do not use only short duplicate names for this test.
 - Touch targets: at least 32×32 px in the dense desktop panel; at least 44 px
   rows/buttons inside the mobile sheet (TASK-179.9 precedent). The remove `X`
   on a chip must be at least 24×24 px and have a larger hit area.
@@ -948,11 +954,13 @@ is a validation error rather than first-value-wins.
   `active/archived/deleted`; columns/labels/checklists/checklistItems/cardLinks/
   comments/attachments `active/deleted`; tokens/boardMembers
   `active/disabled`; announcements `active/disabled/deleted`, where `deleted`
-  is a supported-but-not-offered legacy alias that maps to `active=false` (the
-  UI keeps Active/Disabled only). The same strict guard is called by the generic
-  `/admin/entities/:entity` route and every specialized list route
-  (`/admin/cards`, `/admin/comments`, …); e2e covers both families plus
-  default/no-status and explicit `status=all` on every surface.
+  is a supported API alias for inactive. The **UI parser normalizes**
+  announcements `status=deleted` to `disabled` and rewrites the URL to
+  `status=disabled`, so the Disabled tab is selected and the request is
+  `status=disabled`; the direct API still accepts `deleted`. The same strict
+  guard is called by the generic `/admin/entities/:entity` route and every
+  specialized list route (`/admin/cards`, `/admin/comments`, …); e2e covers both
+  families plus default/no-status and explicit `status=all` on every surface.
 - `unsupported_filter` response shape:
   `{ statusCode: 400, error: "Bad Request", code: "unsupported_filter",
   filter: "<offending key>", message: "Filter <key> is not supported for
@@ -1209,7 +1217,8 @@ const ENTITY_FILTERS: Record<
 
 New files under `ui/src/admin/filters/`:
 
-- `AdminFilterBar.tsx` — button, badge, chip row, clear all, live region.
+- `AdminFilterBar.tsx` — button, badge, chip row, Clear search and filters,
+  live region.
 - `AdminFilterPopover.tsx` — dialog/sheet shell, sections, Apply/Cancel.
 - `FilterFacetPicker.tsx` — single/multi listbox or checkbox list, search,
   pinned selected rows, “Use id …”.
@@ -1336,7 +1345,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   `scripts/perf/admin-filter-bench.mjs` and root `npm run perf:admin-filters`
   in this PR; the scripts are committed, not merely referenced by §7.6.
 - `admin-list-query.ts`: arrays, booleans, enums, per-surface supported parsing,
-  sorted serialization, stable key.
+  sorted serialization, stable key; announcements `status=deleted` →
+  `disabled` normalization in both read and write.
 - `use-admin-list.ts`/`use-admin-list-query.ts`: send only supported filters;
   no behavior change to search/back/forward.
 - `AdminListQueryDto`: new optional fields with strict validation; repeated
@@ -1354,6 +1364,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   removed; >20 values is a readable 400/UI error.
 - Every legacy pair in §5.8 still returns exactly the old rows; a key outside
   the matrix is 400, not silently ignored.
+- `/admin/communications?tab=history&status=deleted` selects the Disabled tab,
+  rewrites the URL to `status=disabled`, and requests inactive rows; direct
+  `GET /admin/entities/announcements?status=deleted` still returns 200.
 - Lookup resolves board/column/label/user/card/auditActor by id and search;
   dependent options return parent `boardId`/`columnId`; `type=admin` is rejected;
   OPERATOR gets only audit-visible actor id/email and cannot enumerate
@@ -1383,8 +1396,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   dependent chips via their parent `boardId`; duplicate column titles or label
   names within one board remain distinguishable by the dependent entity's own
   visible short id.
-- Removing a chip/clear all updates the URL and the list; reload/back/forward
-  restore the exact filtered view; `returnTo` still works.
+- Removing a chip/Clear search and filters updates the URL and the list;
+  reload/back/forward restore the exact filtered view; `returnTo` still works.
 - Changing the board clears column/label/card dependents in one URL change and
   announces the clear; a conflicting deep link shows a Remove conflict banner
   and does not silently widen.
@@ -1547,7 +1560,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 ### Unit / shared
 
 - URL parser/writer: arrays, booleans, enums, defaults, canonical ordering,
-  duplicates, cap, unsupported keys, crafted values, `returnTo` preservation.
+  duplicates, cap, unsupported keys, crafted values, `returnTo` preservation;
+  announcements `status=deleted` normalizes to `disabled` in read and write.
 - Supported/offered matrix: every entity's supported set and offered set match
   §5.8; backend and UI lists agree (table-driven test).
 - Semantics: priority null=medium, label any/all (including one `labels.some`
@@ -1565,8 +1579,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 ### Component
 
-- `AdminFilterBar`: open/close, badge count, chip add/remove, clear all,
-  loading/error/fallback labels, max-values hint.
+- `AdminFilterBar`: open/close, badge count, chip add/remove, Clear search and
+  filters, loading/error/fallback labels, max-values hint.
 - Pickers: debounce, stale-response abort, keyboard arrows/Home/End/Enter/Space/
   Escape, focus return, “Use id …”.
 - Choice facets: `hasAttachments`, `verified`, `due`, `mime`, `transcode`
@@ -1652,15 +1666,17 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 ### Browser (Playwright admin suite)
 
-- 1440/1024/390: add board/column/label via picker, chip text is a name plus the
-  visible board short id, remove, clear all, reload, back/forward, `returnTo`;
-  no horizontal overflow. At 390 assert each tab/chip/sheet control has a
-  bounding box inside the viewport and is visible/reachable, not only
-  `scrollWidth <= innerWidth`. The long-title fixture from §6.8 (100-char
-  board/column + near-limit card title + several filters, one archived/deleted
-  entity) asserts per-chip width, ellipsis + full `title`/accessible name,
-  visible own/parent ids, visible archived/deleted suffix and keyboard removal;
-  assert each remove button’s bounding box is ≥24×24 px.
+- 1440/1024/390: add board/column/label via picker, chip text is a name plus
+  visible own/parent short ids, remove, Clear search and filters, reload,
+  back/forward, `returnTo`; no horizontal overflow. At 390 assert each
+  tab/chip/sheet control has a bounding box inside the viewport and is
+  visible/reachable, not only `scrollWidth <= innerWidth`. The long-title
+  fixture from §6.8 (100-char board/column + near-limit card title + 50-char
+  label + 100-char checklist + several filters, one archived/deleted entity)
+  asserts per-chip width is ≤ min(20rem, viewport − 2rem), ellipsis + full
+  `title`/accessible name, visible own/parent ids, visible archived/deleted
+  suffix and keyboard removal; assert each remove button’s bounding box is
+  ≥24×24 px.
 - Cards: assignee/priority/due/attachments/label-all; period tab; exact total
   matches seeded count; empty state.
 - Board change clears dependent filters with announcement; conflicting deep link
@@ -1672,6 +1688,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   zero rows shows the normal empty state, not the conflict banner.
 - Moderation: comment author/kind; attachment uploader/MIME; period tabs; board
   preserved across tabs.
+- Communications history: `/admin/communications?tab=history&status=deleted`
+  selects Disabled, rewrites the URL to `status=disabled` and requests inactive
+  rows; the direct API `status=deleted` e2e remains 200.
 - Audit: actor/action/target/period; command 176.10 deep link; OPERATOR actor
   filter uses text and cannot open Masters.
 - Keyboard-only full flow; Escape focus return; RU locale flow.
@@ -1775,8 +1794,8 @@ deleted ids are Unknown (not conflicts); deleted entities keep the name +
 suffix; the Clear copy is “Clear search and filters”; v1 shows no filter-option
 counts; sessions/tokens keep their existing period tabs and add no new
 user/status filters; `status=all` is universal and `announcements?status=deleted`
-remains a supported inactive alias; `priority=medium` includes unset cards, with
-no separate Unset option in v1.
+is a supported API alias that the UI normalizes to `status=disabled`; `priority=medium`
+includes unset cards, with no separate Unset option in v1.
 
 1. **Checklist items:** keep TASK-176.12 deferred (recommended) or add a tab
    with board/card/checklist/done? Requires support evidence.
@@ -1802,8 +1821,10 @@ no separate Unset option in v1.
   keyboard removal works.
 - The supported/offered matrix in §5.8 is enforced in UI and API: every legacy
   176.5/6 pair still works, 400 only outside `supported`, and no old-server
-  mixed-version promise remains. Board changes clear dependents with an
-  announcement; conflicting deep links show a Remove conflict.
+  mixed-version promise remains. Announcements `status=deleted` remains an API
+  alias and normalizes to Disabled in the UI URL/request. Board changes clear
+  dependents with an announcement; conflicting deep links show a Remove
+  conflict.
 - Period is a header tab on cards/users/comments/attachments (with `from`/`to`
   predicates where missing), never a chip; choice facets and label-match mode
   have exact controls, chips, aria-labels and tests. Sessions/tokens keep their

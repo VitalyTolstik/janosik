@@ -5099,7 +5099,7 @@ apply-window — намеренное поведение; e2e уже обнов�
 
 ### 7.30. Фильтры админских списков (TASK-181)
 
-> **Статус:** запланировано (2026-11-19; ревизия 6 после product/technical review). База — `main` @ `002a31ec`;
+> **Статус:** запланировано (2026-11-19; ревизия 7 после product/technical review). База — `main` @ `002a31ec`;
 > TASK-176.1–176.7 уже в main (176.5/176.6 — PR #268), 176.8–176.10 остаются
 > review-ветками и не блокируют остальные фильтры; `commandId`-чип появится
 > только после merge 176.10.
@@ -5185,13 +5185,14 @@ label any/all имеют control/chip/aria/EN-RU; `hasAttachments`/recount уч�
 id — Unknown, parent match + zero — normal empty; deep links/`returnTo`/пагинация/
 выделение честные; multi-value и boolean валидируются;
 `auditActor` не отдаёт roster/roles/disabled и недоступен как `type=admin`;
-`status=all` универсален, per-entity allowlists общие для generic и specialized
-routes; `unsupported_filter` (с offending filter) даёт explicit Remove; есть
-query-plan/замеры на определённом seed, индексы только по необходимости; EN/RU,
-1440/1024/390 с visibility/reachability, keyboard/focus/screen-reader;
-`format:check`, lint, tsc, unit/shared/backend e2e/browser зелёные без
-ослабления тестов; 390 long-title chips truncate within viewport with visible
-ids and keyboard removal.
+`status=all` универсален, announcements `status=deleted` остаётся API-alias и
+нормализуется в UI до `disabled`; per-entity allowlists общие для generic и
+specialized routes; `unsupported_filter` (с offending filter) даёт explicit
+Remove; есть query-plan/замеры на определённом seed, индексы только по
+необходимости; EN/RU, 1440/1024/390 с visibility/reachability, keyboard/focus/
+screen-reader; `format:check`, lint, tsc, unit/shared/backend e2e/browser
+зелёные без ослабления тестов; 390 long-title chips truncate within viewport
+with visible ids and keyboard removal.
 
 **Зависимости.** Жёсткая — 176.5/176.6 (уже в main); 176.8–176.10 не нужны
 для остальных фильтров, но `commandId`-чип появляется только после merge
