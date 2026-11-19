@@ -52,8 +52,37 @@ export function ShareDialog() {
   const { t } = useI18n();
   const { board, roleOf } = useBoard();
   const [open, setOpen] = useState(false);
+  // M4: `ALLOW_PUBLIC_SHARES=false` must hide the entry point, not only make
+  // the minted token 404. `null` = config not read yet, so the trigger does
+  // not flash before the answer; a failed read keeps the control visible (the
+  // server still refuses creation independently).
+  const [publicSharesEnabled, setPublicSharesEnabled] = useState<
+    boolean | null
+  >(() => (isApiEnabled() ? null : true));
 
-  if (!isApiEnabled() || !board || roleOf(board.id) !== "ADMIN") return null;
+  useEffect(() => {
+    if (!isApiEnabled()) return;
+    let alive = true;
+    void api
+      .authConfig()
+      .then((config) => {
+        if (alive) setPublicSharesEnabled(config.allowPublicShares);
+      })
+      .catch(() => {
+        if (alive) setPublicSharesEnabled(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (
+    !isApiEnabled() ||
+    !board ||
+    roleOf(board.id) !== "ADMIN" ||
+    publicSharesEnabled !== true
+  )
+    return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

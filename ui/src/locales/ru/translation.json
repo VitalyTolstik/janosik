@@ -682,6 +682,7 @@
   "auth.validation.emailInvalid": "Укажите корректный адрес электронной почты.",
   "auth.validation.emailRequired": "Укажите адрес электронной почты.",
   "auth.validation.passwordRequired": "Введите пароль.",
+  "auth.verifyEmail.changeEmail": "Указать другой email",
   "auth.verifyEmail.error.generic": "Что-то пошло не так — попробуйте ещё раз",
   "auth.verifyEmail.error.invalidCode": "Неверный код подтверждения",
   "auth.verifyEmail.error.sendFailed": "Не удалось отправить письмо — попробуйте переслать код",

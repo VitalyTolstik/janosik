@@ -44,13 +44,17 @@ export function SecurityPage() {
     load();
   }, [load]);
 
-  const beginSetup = useCallback(async () => {
-    try {
-      setSetup(await adminApi.setupTotp());
-    } catch {
-      toast.error(t("admin.common.actionFailed"));
-    }
-  }, [t, toast]);
+  const beginSetup = useCallback(
+    async (proof: { totpCode?: string } = {}) => {
+      try {
+        setSetup(await adminApi.setupTotp(proof));
+        setCode("");
+      } catch {
+        toast.error(t("admin.common.actionFailed"));
+      }
+    },
+    [t, toast],
+  );
 
   const confirm = useCallback(async () => {
     setBusy(true);
@@ -141,33 +145,7 @@ export function SecurityPage() {
               : t("admin.observability.off")}
           </Badge>
         </div>
-        {security.totpEnabled ? (
-          <div className="mt-3 flex items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">
-                {t("admin.security.totp.code")}
-              </span>
-              <Input
-                value={code}
-                inputMode="numeric"
-                maxLength={6}
-                data-testid="admin-totp-code"
-                onChange={(event) =>
-                  setCode(event.target.value.replace(/\D/g, ""))
-                }
-              />
-            </label>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={code.length !== 6}
-              data-testid="admin-totp-disable"
-              onClick={() => void disable()}
-            >
-              {t("admin.security.totp.disable")}
-            </Button>
-          </div>
-        ) : setup ? (
+        {setup ? (
           <div className="mt-3 space-y-3">
             <p className="text-xs text-muted-foreground">
               {t("admin.security.totp.hint")}
@@ -199,6 +177,41 @@ export function SecurityPage() {
               onClick={() => void confirm()}
             >
               {t("admin.security.totp.confirm")}
+            </Button>
+          </div>
+        ) : security.totpEnabled ? (
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {t("admin.security.totp.code")}
+              </span>
+              <Input
+                value={code}
+                inputMode="numeric"
+                maxLength={6}
+                data-testid="admin-totp-code"
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, ""))
+                }
+              />
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={code.length !== 6}
+              data-testid="admin-totp-replace"
+              onClick={() => void beginSetup({ totpCode: code })}
+            >
+              {t("admin.security.totp.replace")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={code.length !== 6}
+              data-testid="admin-totp-disable"
+              onClick={() => void disable()}
+            >
+              {t("admin.security.totp.disable")}
             </Button>
           </div>
         ) : (

@@ -52,6 +52,7 @@ import type {
   AdminSendEmailRequest,
   AdminSendEmailResponse,
   AdminTotpSetupDto,
+  AdminTotpSetupRequest,
   AdminUpdateAnnouncementRequest,
   AdminUpdateFeatureFlagRequest,
   AdminUpdateOpsSettingsRequest,
@@ -844,10 +845,10 @@ export class AdminApiClient {
     return this.request<AdminSecurityDto>("/admin/security");
   }
 
-  setupTotp(): Promise<AdminTotpSetupDto> {
+  setupTotp(proof: AdminTotpSetupRequest = {}): Promise<AdminTotpSetupDto> {
     return this.request<AdminTotpSetupDto>("/admin/security/totp", {
       method: "POST",
-      body: {},
+      body: proof,
     });
   }
 

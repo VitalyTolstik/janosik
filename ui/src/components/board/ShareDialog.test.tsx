@@ -71,6 +71,7 @@ function openStream(): ReadableStream<Uint8Array> {
 }
 
 let shares: BoardShareDto[];
+let publicSharesEnabled = true;
 const requests: Array<{ method: string; path: string; body: unknown }> = [];
 
 function router(input: RequestInfo | URL, init?: RequestInit): Response {
@@ -80,6 +81,13 @@ function router(input: RequestInfo | URL, init?: RequestInit): Response {
   const body = init?.body ? JSON.parse(String(init.body)) : undefined;
   requests.push({ method, path, body });
 
+  if (path === "/auth/config" && method === "GET") {
+    return json({
+      allowRegistration: true,
+      allowPublicShares: publicSharesEnabled,
+      limits: { boards: null, importBytes: 25 * 1024 * 1024 },
+    });
+  }
   if (path === "/boards" && method === "GET") {
     return json([
       {
@@ -143,6 +151,7 @@ function renderDialog() {
 
 beforeEach(() => {
   shares = [];
+  publicSharesEnabled = true;
   requests.length = 0;
   vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
@@ -156,6 +165,15 @@ afterEach(() => {
 });
 
 describe("ShareDialog", () => {
+  it("hides the entry point when the operator disabled public shares (M4)", async () => {
+    publicSharesEnabled = false;
+    renderDialog();
+    await waitFor(() =>
+      expect(screen.queryByTestId("share-trigger")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("share-trigger")).toBeNull();
+  });
+
   it("shows a busy list skeleton while the links load", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
