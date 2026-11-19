@@ -1,7 +1,12 @@
 import { useEffect, useRef } from "react";
-import type { AgentSseEvent, BoardSseEvent } from "@janosik/shared";
+import type {
+  AgentSseEvent,
+  ApprovalSseEvent,
+  BoardSseEvent,
+} from "@janosik/shared";
 
 import { api, apiBaseUrl, isApiEnabled } from "@/api/client";
+import { useBoardLive } from "@/store/board-live";
 
 /**
  * A live-only, control-plane subscription to the agent lifecycle frames of
@@ -12,7 +17,7 @@ import { api, apiBaseUrl, isApiEnabled } from "@/api/client";
  * through the full `BoardRealtime` bridge per board would duplicate presence
  * and command replay; this lightweight reader asks for no presence and resumes
  * from the highest safe seq, so the server sends no command backlog and only
- * the `agent` frames reach the caller. Those frames have no seq, so a
+ * control-plane frames reach subscribers. Those frames have no seq, so a
  * reconnect loses nothing but the events while the tab was offline — the
  * console also polls, and the next action refreshes the row.
  */
@@ -24,10 +29,11 @@ type AgentEventHandler = (boardId: string, event: AgentSseEvent) => void;
 
 export function useAgentSessionEvents(
   boardIds: readonly string[],
-  onEvent: AgentEventHandler,
+  onEvent: AgentEventHandler | undefined,
   enabled = true,
   onAccessLost?: (boardId: string) => void,
 ): void {
+  const { agentControl } = useBoardLive();
   const handlerRef = useRef(onEvent);
   const accessLostRef = useRef(onAccessLost);
   useEffect(() => {
@@ -53,6 +59,7 @@ export function useAgentSessionEvents(
           controllers[index].signal,
           parseEventStream,
           handlerRef,
+          (event) => agentControl.publishApproval(event),
           accessLostRef,
         );
       }
@@ -62,7 +69,7 @@ export function useAgentSessionEvents(
       stopped = true;
       for (const controller of controllers) controller.abort();
     };
-  }, [boardKey, enabled]);
+  }, [agentControl, boardKey, enabled]);
 }
 
 async function followAgents(
@@ -71,7 +78,8 @@ async function followAgents(
   parseEventStream: (
     stream: ReadableStream<Uint8Array>,
   ) => AsyncGenerator<BoardSseEvent>,
-  handlerRef: { current: AgentEventHandler },
+  handlerRef: { current: AgentEventHandler | undefined },
+  onApproval: (event: ApprovalSseEvent) => void,
   accessLostRef: { current: ((boardId: string) => void) | undefined },
 ): Promise<void> {
   let attempt = 0;
@@ -105,7 +113,8 @@ async function followAgents(
       attempt = 0;
       for await (const event of parseEventStream(response.body)) {
         if (signal.aborted) return;
-        if (event.type === "agent") handlerRef.current(boardId, event);
+        if (event.type === "agent") handlerRef.current?.(boardId, event);
+        if (event.type === "approval") onApproval(event);
       }
     } catch {
       if (signal.aborted) return;

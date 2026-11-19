@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RunSummaryDto } from "@janosik/shared";
@@ -23,6 +23,28 @@ beforeEach(() => {
 });
 
 describe("useRunConflictPreviews", () => {
+  it("clears invalidated counts and ignores a stale in-flight success after failure", async () => {
+    let finish!: (value: { conflicts: unknown[] }) => void;
+    hoisted.previewRunRevert
+      .mockResolvedValueOnce({ conflicts: [{}] })
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      )
+      .mockRejectedValueOnce(new Error("offline"));
+    const { result, rerender } = renderHook(
+      ({ revision }) => useRunConflictPreviews(ROWS, true, revision),
+      { initialProps: { revision: 0 } },
+    );
+    await waitFor(() => expect(result.current.get("run-1")).toBe(1));
+    rerender({ revision: 1 });
+    expect(result.current.has("run-1")).toBe(false);
+    rerender({ revision: 2 });
+    await act(async () => finish({ conflicts: [{}, {}] }));
+    expect(result.current.has("run-1")).toBe(false);
+  });
+
   it("invalidates a cached preview when the revision changes", async () => {
     hoisted.previewRunRevert
       .mockResolvedValueOnce({ conflicts: [{}] } as never)

@@ -1696,32 +1696,30 @@ describe("janosik MCP server", () => {
       "janosik_delete_checklist_item",
       { cardId: "k1", checklistId: "checklist-1", itemId: "item-1" },
     ],
-  ])(
-    "%s reuses the same default commandId on a repeated call",
-    async (name, extra) => {
-      const client = await connect();
-      const args = { boardId: "b1", ...extra };
-      await client.callTool({ name, arguments: args });
-      await client.callTool({ name, arguments: args });
-      const writes = calls.filter(
-        (entry) =>
-          (entry.path === "/boards/b1/commands" ||
-            entry.path === "/boards/b1/commands/batch") &&
-          entry.method === "POST",
-      );
-      expect(writes).toHaveLength(2);
-      const ids = writes.map((entry) => {
-        const body = entry.body as {
-          commandId?: string;
-          commands?: Array<{ commandId?: string }>;
-        };
-        return body.commandId ?? body.commands?.[0]?.commandId;
-      });
-      expect(ids[0]).toEqual(expect.any(String));
-      expect(ids[1]).toBe(ids[0]);
-      await client.close();
-    },
-  );
+  ])("%s uses a fresh commandId for each invocation", async (name, extra) => {
+    const client = await connect();
+    const args = { boardId: "b1", ...extra };
+    await client.callTool({ name, arguments: args });
+    await client.callTool({ name, arguments: args });
+    const writes = calls.filter(
+      (entry) =>
+        (entry.path === "/boards/b1/commands" ||
+          entry.path === "/boards/b1/commands/batch") &&
+        entry.method === "POST",
+    );
+    expect(writes).toHaveLength(2);
+    const ids = writes.map((entry) => {
+      const body = entry.body as {
+        commandId?: string;
+        commands?: Array<{ commandId?: string }>;
+      };
+      return body.commandId ?? body.commands?.[0]?.commandId;
+    });
+    expect(ids[0]).toEqual(expect.any(String));
+    expect(ids[1]).toEqual(expect.any(String));
+    expect(ids[1]).not.toBe(ids[0]);
+    await client.close();
+  });
 
   it("creates a card with a stable commandId seeded plan", async () => {
     const client = await connect();
@@ -1774,9 +1772,17 @@ describe("janosik MCP server", () => {
       approvalId: "apr-1",
     });
 
+    const requestedCommand = calls.find(
+      (entry) =>
+        entry.path === "/boards/b1/commands" && entry.method === "POST",
+    )!.body as { commandId: string };
     const approved = await client.callTool({
       name: "janosik_delete_label",
-      arguments: { ...args, approvalId: "apr-1" },
+      arguments: {
+        ...args,
+        approvalId: "apr-1",
+        commandId: requestedCommand.commandId,
+      },
     });
     expect(approved.isError).toBeFalsy();
 

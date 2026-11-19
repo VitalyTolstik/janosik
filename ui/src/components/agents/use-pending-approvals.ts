@@ -1,16 +1,16 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type {
   AgentsOverviewApprovalItem,
+  AgentsOverviewApprovalCounts,
+  AgentsOverviewQuery,
   AgentsOverviewApprovalsResponse,
-  AgentsOverviewResponse,
   BoardRole,
 } from "@janosik/shared";
 
-import { api, isApiEnabled } from "@/api/client";
+import { isApiEnabled } from "@/api/client";
+import { fetchApprovalPage, refreshApprovalPages } from "./approval-pages";
 
 const POLL_MS = 30_000;
-/** One exact count plus the first page of rows; the server owns the totals. */
-const ROW_LIMIT = 100;
 
 /** The minimal board summary needed to gate the request client-side. */
 export interface PendingApprovalsBoard {
@@ -28,6 +28,9 @@ export interface PendingApprovalsOptions {
    */
   boards?: readonly PendingApprovalsBoard[];
   enabled?: boolean;
+  q?: string;
+  tokenId?: string;
+  status?: "all" | "pending" | "decided";
   /**
    * Explicit role gate for surfaces that already know the board role and do
    * not keep the full board list (the board header trigger).
@@ -38,6 +41,7 @@ export interface PendingApprovalsOptions {
 export interface PendingApprovalsSnapshot {
   /** Effective-status approval rows for the current scope. */
   rows: readonly AgentsOverviewApprovalItem[];
+  matchingCounts: AgentsOverviewApprovalCounts | null;
   /** Board id → exact pending count, or `null` when the caller is not ADMIN. */
   counts: Readonly<Record<string, number | null>>;
   /** Exact pending count for the current scope; `null` means unknown. */
@@ -54,7 +58,7 @@ export interface PendingApprovalsSnapshot {
   forbidden: boolean;
   stale: boolean;
   refreshedAt: number | null;
-  /** The server has another page beyond `rows` (cursor or total). */
+  /** The server has another page beyond `rows`. */
   truncated: boolean;
   /** Opaque cursor for {@link PendingApprovalsState.loadMore}. */
   nextCursor: string | null;
@@ -72,6 +76,7 @@ const NO_COUNTS: Readonly<Record<string, number | null>> = Object.freeze({});
 const EMPTY_SNAPSHOT: PendingApprovalsSnapshot = Object.freeze({
   rows: NO_ROWS,
   counts: NO_COUNTS,
+  matchingCounts: null,
   pendingCount: null,
   totalCount: null,
   loading: false,
@@ -93,6 +98,8 @@ interface Entry {
   generation: number;
   inFlight: boolean;
   loadingMore: boolean;
+  reloadPending: boolean;
+  page: AgentsOverviewApprovalsResponse | null;
 }
 
 /**
@@ -113,6 +120,8 @@ function getEntry(key: string): Entry {
     generation: 0,
     inFlight: false,
     loadingMore: false,
+    reloadPending: false,
+    page: null,
   };
   entries.set(key, created);
   return created;
@@ -131,10 +140,9 @@ function statusOf(error: unknown): number {
 }
 
 function snapshotFromResponse(
-  response: AgentsOverviewResponse,
-  rows: readonly AgentsOverviewApprovalItem[],
-  nextCursor: string | null,
+  response: AgentsOverviewApprovalsResponse,
 ): PendingApprovalsSnapshot {
+  const { nextCursor, items: rows } = response;
   const counts: Record<string, number | null> = {};
   let totalCount = 0;
   let hasAdminBoard = false;
@@ -148,6 +156,7 @@ function snapshotFromResponse(
   return {
     rows,
     counts,
+    matchingCounts: response.matchingCounts,
     pendingCount: response.scope.canViewApprovals
       ? response.counts.approvals.pending
       : null,
@@ -159,69 +168,33 @@ function snapshotFromResponse(
     forbidden: false,
     stale: false,
     refreshedAt: response.refreshedAt,
-    truncated: nextCursor !== null || response.total > rows.length,
+    truncated: nextCursor !== null,
     nextCursor,
   };
 }
 
-function mergeRows(
-  previous: readonly AgentsOverviewApprovalItem[],
-  next: readonly AgentsOverviewApprovalItem[],
-): AgentsOverviewApprovalItem[] {
-  const merged = new Map<string, AgentsOverviewApprovalItem>();
-  for (const row of previous) merged.set(row.id, row);
-  for (const row of next) merged.set(row.id, row);
-  return [...merged.values()];
-}
-
-function queryFor(key: string, cursor?: string) {
+function queryFor(key: string): AgentsOverviewQuery {
+  const [boardId, q, tokenId, status] = JSON.parse(key) as [
+    string | null,
+    string,
+    string | null,
+    PendingApprovalsOptions["status"],
+  ];
   return {
-    section: "approvals" as const,
-    ...(key === "all" ? {} : { boardId: key }),
-    limit: ROW_LIMIT,
-    ...(cursor === undefined ? {} : { cursor }),
+    ...(boardId === null ? {} : { boardId }),
+    ...(q === "" ? {} : { q }),
+    ...(tokenId === null ? {} : { tokenId }),
+    ...(status === "all" ? {} : { status }),
   };
-}
-
-/**
- * Fetch the first page plus enough follow-up pages to keep a previously
- * expanded queue expanded. A poll must not shrink 150 reachable rows back to
- * 100 while the operator is reading them (M24).
- */
-async function fetchPages(
-  key: string,
-  targetCount: number,
-): Promise<{
-  response: AgentsOverviewApprovalsResponse;
-  rows: AgentsOverviewApprovalItem[];
-  nextCursor: string | null;
-}> {
-  const first = await api.agentsOverview(queryFor(key));
-  if (first.section !== "approvals") {
-    throw new Error("Agents overview returned a non-approval section");
-  }
-  let response = first;
-  let rows = [...first.items];
-  let nextCursor = first.nextCursor;
-  const seen = new Set<string>();
-  while (nextCursor !== null && rows.length < targetCount) {
-    // A buggy or stale server page must not spin the loop forever.
-    if (seen.has(nextCursor)) break;
-    seen.add(nextCursor);
-    const page = await api.agentsOverview(queryFor(key, nextCursor));
-    if (page.section !== "approvals") {
-      throw new Error("Agents overview returned a non-approval section");
-    }
-    response = page;
-    rows = mergeRows(rows, page.items);
-    nextCursor = page.nextCursor;
-  }
-  return { response, rows, nextCursor };
 }
 
 async function load(key: string): Promise<void> {
   const entry = getEntry(key);
-  if (entry.inFlight || entry.loadingMore || entry.snapshot.forbidden) return;
+  if (entry.snapshot.forbidden) return;
+  if (entry.inFlight || entry.loadingMore) {
+    entry.reloadPending = true;
+    return;
+  }
   entry.inFlight = true;
   const generation = ++entry.generation;
   const previousRows = entry.snapshot.rows;
@@ -232,12 +205,10 @@ async function load(key: string): Promise<void> {
   };
   notify(entry);
   try {
-    const { response, rows, nextCursor } = await fetchPages(
-      key,
-      previousRows.length,
-    );
+    const page = await refreshApprovalPages(queryFor(key), previousRows.length);
     if (generation !== entry.generation) return;
-    entry.snapshot = snapshotFromResponse(response, rows, nextCursor);
+    entry.page = page;
+    entry.snapshot = snapshotFromResponse(page);
   } catch (error) {
     if (generation !== entry.generation) return;
     const status = statusOf(error);
@@ -246,6 +217,7 @@ async function load(key: string): Promise<void> {
       // the rows, stop polling and do not offer Retry: that would be the
       // 403 + Retry trap.
       stopPolling(entry);
+      entry.page = null;
       entry.snapshot = {
         ...EMPTY_SNAPSHOT,
         forbidden: true,
@@ -263,17 +235,19 @@ async function load(key: string): Promise<void> {
   } finally {
     if (generation === entry.generation) entry.inFlight = false;
     notify(entry);
+    flushReload(key, entry);
   }
 }
 
 async function loadMorePage(key: string): Promise<void> {
   const entry = getEntry(key);
-  const cursor = entry.snapshot.nextCursor;
+  const previous = entry.page;
   if (
     entry.inFlight ||
     entry.loadingMore ||
     entry.snapshot.forbidden ||
-    cursor === null
+    previous === null ||
+    previous.nextCursor === null
   ) {
     return;
   }
@@ -282,18 +256,16 @@ async function loadMorePage(key: string): Promise<void> {
   notify(entry);
   const generation = entry.generation;
   try {
-    const page = await api.agentsOverview(queryFor(key, cursor));
+    const page = await fetchApprovalPage(queryFor(key), previous);
     if (generation !== entry.generation) return;
-    if (page.section !== "approvals") {
-      throw new Error("Agents overview returned a non-approval section");
-    }
-    const rows = mergeRows(entry.snapshot.rows, page.items);
-    entry.snapshot = snapshotFromResponse(page, rows, page.nextCursor);
+    entry.page = page;
+    entry.snapshot = snapshotFromResponse(page);
   } catch (error) {
     if (generation !== entry.generation) return;
     const status = statusOf(error);
     if (status === 403 || status === 404) {
       stopPolling(entry);
+      entry.page = null;
       entry.snapshot = { ...EMPTY_SNAPSHOT, forbidden: true };
     } else {
       entry.snapshot = {
@@ -306,7 +278,14 @@ async function loadMorePage(key: string): Promise<void> {
   } finally {
     entry.loadingMore = false;
     notify(entry);
+    flushReload(key, entry);
   }
+}
+
+function flushReload(key: string, entry: Entry) {
+  if (!entry.reloadPending || entry.listeners.size === 0) return;
+  entry.reloadPending = false;
+  void load(key);
 }
 
 function startPolling(key: string, entry: Entry): void {
@@ -371,14 +350,18 @@ function canReadApprovals(options: PendingApprovalsOptions): boolean {
  * it is read-only (no lazy `expireOverdue`), returns exact scope counts and
  * computes the effective approval status in one server time slice. A MEMBER
  * or VIEWER scope never calls it for approvals; an unknown/error count is
- * `null`, never a fabricated zero. A truncated first page is reachable via
- * `loadMore`, instead of showing a `99+` rail beside an unreachable tail.
+ * `null`, never a fabricated zero. `loadMore` follows the server cursor.
  */
 export function usePendingApprovals(
   options: PendingApprovalsOptions = {},
 ): PendingApprovalsState {
   const { boardId = null, enabled = true } = options;
-  const key = boardId ?? "all";
+  const key = JSON.stringify([
+    boardId,
+    options.q?.trim() ?? "",
+    options.tokenId ?? null,
+    options.status ?? "all",
+  ]);
   const active = enabled && isApiEnabled() && canReadApprovals(options);
 
   const subscribe = useCallback(

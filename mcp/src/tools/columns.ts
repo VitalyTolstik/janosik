@@ -344,7 +344,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         },
         {
           ifMatch: expectedVersion,
-          commandId: commandId ?? stableCommandId(columnId, "clear-column"),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
@@ -376,7 +376,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         { type: "DELETE_COLUMN", columnId },
         {
           ifMatch: expectedVersion,
-          commandId: commandId ?? stableCommandId(columnId, "delete-column"),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

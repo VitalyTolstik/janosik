@@ -46,9 +46,6 @@ export function RunsPanel({ role }: { role: Role }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [conflicts, setConflicts] = useState<Map<string, number>>(
-    () => new Map(),
-  );
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -101,14 +98,10 @@ export function RunsPanel({ role }: { role: Role }) {
     () => runs.rows.slice(0, visibleCount),
     [runs.rows, visibleCount],
   );
-  const previewedConflicts = useRunConflictPreviews(
+  const displayedConflicts = useRunConflictPreviews(
     visibleRows,
     true,
-    runs.lastLoadedAt ?? 0,
-  );
-  const displayedConflicts = useMemo(
-    () => new Map([...previewedConflicts, ...conflicts]),
-    [conflicts, previewedConflicts],
+    runs.revision,
   );
   const shown = visibleRows.length;
   const total = runs.rows.length;
@@ -207,14 +200,6 @@ export function RunsPanel({ role }: { role: Role }) {
   }, [runs.rows]);
   const selected: RunSummaryDto | null =
     runs.rows.find((row) => row.id === selectedId) ?? runs.rows[0] ?? null;
-  const noteConflicts = (runId: string, count: number) => {
-    setConflicts((current) => {
-      const next = new Map(current);
-      next.set(runId, count);
-      return next;
-    });
-  };
-
   if (!isApiEnabled()) {
     return (
       <p className="p-4 text-[11px] text-muted-foreground">
@@ -554,7 +539,6 @@ export function RunsPanel({ role }: { role: Role }) {
               sessionLabel={sessionLabel}
               onClose={() => setMobileDetailOpen(false)}
               onChanged={() => runs.reload()}
-              onPreview={noteConflicts}
             />
           )}
         </div>

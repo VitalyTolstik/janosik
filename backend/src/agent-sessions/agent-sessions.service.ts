@@ -16,6 +16,7 @@ import { assertAgentCanWriteInTransaction } from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { publishAgentHeartbeat } from "./agent-session-context";
 import type {
   AgentSessionHeartbeatDto,
   CreateAgentSessionDto,
@@ -40,14 +41,6 @@ const ALL_STATUSES = new Set<AgentSessionStatus>([
   "failed",
   "cancelled",
 ]);
-
-/**
- * Board Live refetches a session row when a heartbeat arrives, so a heartbeat
- * must not turn into one refetch per agent every few seconds. One frame per
- * session per minute is enough to keep the visible `lastHeartbeatAt`/`stale`
- * state honest while an operator watches the panel.
- */
-export const HEARTBEAT_SSE_INTERVAL_MS = 60_000;
 
 /** Why a session is paused (overlay; the DB stores each level separately). */
 export interface PauseContext {
@@ -193,21 +186,7 @@ export class AgentSessionsService {
         sessionId,
       });
     }
-    // Heartbeats are the only liveness signal a watching Board Live panel
-    // has. Publish a throttled control-plane frame after the committed
-    // update; the row itself stays the source of truth and the UI refetches.
-    if (
-      now.getTime() - session.lastHeartbeatAt.getTime() >=
-      HEARTBEAT_SSE_INTERVAL_MS
-    ) {
-      this.realtime.publish(boardId, {
-        type: "agent",
-        op: "heartbeat",
-        sessionId: session.id,
-        scope: "session",
-        at: now.getTime(),
-      });
-    }
+    await publishAgentHeartbeat(this.prisma, this.realtime, session, now);
     // The successful update is the linearization point. Build the response
     // from that snapshot instead of re-reading, so a concurrently committed
     // `end` cannot make this 200 look like an open session with `endedAt` set.
@@ -274,7 +253,7 @@ export class AgentSessionsService {
         where: { id: session.id },
       });
       if (changed.count === 0) {
-        return { row, changed: false, releasedClaims: 0 };
+        return { row, changed: false, cancelledApprovals: [] };
       }
       // §9.4: ending a session releases the claims it owns. Legacy claims
       // without a session id keep their lease until it expires.
@@ -293,6 +272,16 @@ export class AgentSessionsService {
           },
         });
       }
+      const cancelledApprovals = await tx.approvalRequest.updateManyAndReturn({
+        where: {
+          boardId,
+          agentSessionId: session.id,
+          status: { in: ["pending", "approved"] },
+          expiresAt: { gt: endedAt },
+        },
+        data: { status: "cancelled", decidedAt: endedAt, decidedBy: userId },
+        select: { id: true, cardId: true },
+      });
       await tx.activity.create({
         data: {
           boardId,
@@ -313,10 +302,19 @@ export class AgentSessionsService {
           },
         },
       });
-      return { row, changed: true, releasedClaims: claimed.length };
+      return { row, changed: true, cancelledApprovals };
     });
 
     if (result.changed) {
+      for (const approval of result.cancelledApprovals) {
+        this.realtime.publish(boardId, {
+          type: "approval",
+          approvalId: approval.id,
+          status: "cancelled",
+          ...(approval.cardId !== null ? { cardId: approval.cardId } : {}),
+          at: endedAt.getTime(),
+        });
+      }
       this.realtime.publish(boardId, {
         type: "agent",
         op: "ended",

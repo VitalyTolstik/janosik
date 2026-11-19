@@ -163,7 +163,7 @@ export function BoardScopeSelect({
                     data-state={stale ? "stale" : "fresh"}
                     title={stale ? t("agents.pending.stale") : undefined}
                   >
-                    {count > 99 ? "99+" : count}
+                    {count}
                   </span>
                 ) : null}
                 {selected ? (

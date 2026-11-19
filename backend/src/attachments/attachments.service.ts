@@ -318,6 +318,7 @@ export class AttachmentsService {
         }
         await touchAgentSessionAfterWrite(
           this.prisma,
+          this.realtime,
           attribution.agentSessionId,
         );
         return toAttachmentDto(created.row);
@@ -345,6 +346,7 @@ export class AttachmentsService {
       );
       await touchAgentSessionAfterWrite(
         this.prisma,
+        this.realtime,
         attribution.agentSessionId,
       );
       return toAttachmentDto(created.row);
@@ -591,7 +593,11 @@ export class AttachmentsService {
       attachmentId,
       attribution,
     );
-    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
   }
 
   private publish(

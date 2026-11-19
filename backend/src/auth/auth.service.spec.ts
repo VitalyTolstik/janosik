@@ -41,6 +41,7 @@ const prismaMock = {
   },
   passwordResetToken: { deleteMany: jest.fn() },
   agentSession: { updateMany: jest.fn() },
+  approvalRequest: { updateMany: jest.fn() },
   card: { findMany: jest.fn(), updateMany: jest.fn() },
   $executeRaw: jest.fn(),
   $queryRaw: jest.fn(),

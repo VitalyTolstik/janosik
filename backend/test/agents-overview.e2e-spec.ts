@@ -1267,6 +1267,79 @@ describe("Agents overview aggregation (e2e)", () => {
     );
   });
 
+  it("pages 101 pending and 105 decided rows once each, and searches past the first page", async () => {
+    const boardId = (await createBoard("Queue capacity")).id;
+    await member(boardId, owner.id, Role.ADMIN);
+    const now = Date.now();
+    const seed = Array.from({ length: 206 }, (_, index) => ({
+      boardId,
+      requestedBy: owner.id,
+      requestedByTokenId: ownerToken.id,
+      kind: "destructive",
+      actionType: "DELETE_CARD",
+      summary:
+        index === 100 || index === 205
+          ? "Queue search sentinel"
+          : `Queue item ${index}`,
+      status: index < 101 ? "pending" : "rejected",
+      expiresAt: new Date(now + 60_000 + index),
+      decidedAt: index < 101 ? null : new Date(now - index),
+      plan: plan(boardId, alphaCard) as never,
+      planHash: hash(`queue-${index}`),
+    }));
+    try {
+      await prisma.approvalRequest.createMany({ data: seed });
+      const first = await approvalsPage(owner.accessToken, {
+        boardId,
+        limit: 100,
+      });
+      expect(first.total).toBe(206);
+      expect(first.matchingCounts).toEqual({
+        pending: 101,
+        decided: 105,
+        total: 206,
+      });
+      expect(first.items).toHaveLength(100);
+      expect(first.items.every((row) => row.status === "pending")).toBe(true);
+      expect(
+        first.items.every((row) => row.summary !== "Queue search sentinel"),
+      ).toBe(true);
+
+      const all = await allPages<AgentsOverviewApprovalsResponse>(
+        owner.accessToken,
+        {
+          boardId,
+          section: "approvals",
+          limit: 100,
+        },
+      );
+      expect(all.map((row) => row.status)).toEqual([
+        ...Array<string>(101).fill("pending"),
+        ...Array<string>(105).fill("rejected"),
+      ]);
+      expect(new Set(all.map((row) => row.id)).size).toBe(206);
+      const search = await approvalsPage(owner.accessToken, {
+        boardId,
+        status: "pending",
+        q: "queue search sentinel",
+        tokenId: ownerToken.id,
+        limit: 100,
+      });
+      expect(search.total).toBe(1);
+      expect(search.matchingCounts).toEqual({
+        pending: 1,
+        decided: 1,
+        total: 2,
+      });
+      expect(search.items.map((row) => row.id)).toEqual([all[100]?.id]);
+      expect(search.nextCursor).toBeNull();
+    } finally {
+      await prisma.approvalRequest.deleteMany({ where: { boardId } });
+      await prisma.boardMember.deleteMany({ where: { boardId } });
+      await prisma.board.delete({ where: { id: boardId } });
+    }
+  });
+
   it("applies the section filter whitelist and stable cursor binding", async () => {
     const pending = await approvalsPage(owner.accessToken, {
       status: "pending",

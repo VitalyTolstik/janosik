@@ -232,6 +232,8 @@ export interface ApiErrorEnvelope {
   /** Prefixes of the expected/actual hash when a plan did not match. */
   expectedPlanHash?: string;
   actualPlanHash?: string;
+  /** Stored plan returned on an authorized approval hash mismatch. */
+  plan?: ApprovalPlan;
   /** Action name for scope/policy/approval errors (`DELETE_CARD`, …). */
   action?: string;
   /** `board_policy`, `board_scope`, … */
@@ -1654,6 +1656,8 @@ export interface AgentsOverviewResponseBase {
 export interface AgentsOverviewApprovalsResponse extends AgentsOverviewResponseBase {
   section: "approvals";
   items: AgentsOverviewApprovalItem[];
+  /** Counts after search and scope filters, across all approval statuses. */
+  matchingCounts: AgentsOverviewApprovalCounts;
 }
 
 export interface AgentsOverviewSessionsResponse extends AgentsOverviewResponseBase {

@@ -391,7 +391,8 @@ lifecycle-операция (`board.delete`, `member.*`, `share.*`,
 `requestedByTokenId` должен совпадать с текущим PAT; если запрос записал
 агентскую сессию, `X-Agent-Session` тоже должен совпасть. Подтверждение
 одноразовое: те же уже применённые команды — идемпотентный повтор, другой
-план получает `approval_mismatch` или `approval_consumed`. Применение
+план получает `approval_mismatch` или `approval_consumed`. Ответ
+`approval_mismatch` для владельца запроса включает сохранённый `plan`. Применение
 batch/commands создаёт `AgentRun` с `approvalId`, проставляет `runId` каждой
 команде и пишет `approval_consumed`; lifecycle-операция оставляет `runId`
 `null`. Решение доступно только браузерной сессии, PAT получает
@@ -399,12 +400,22 @@ batch/commands создаёт `AgentRun` с `approvalId`, проставляет
 подтверждает себя сам.
 
 TTL = `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)` с
-нижней границей 5 минут. Просроченные строки переводятся в `expired` лениво
-при чтении, решении и применении; остальные может добрать maintenance-sweep.
-Каждый шаг пишет `Activity` (`approval_requested`, `approval_approved`,
-`approval_rejected`, `approval_cancelled`, `approval_expired`,
-`approval_consumed`) и публикует SSE-кадр `approval`; решение также попадает
-в `SecurityAuditLog` (`approval.decided`).
+нижней границей 5 минут. Просроченные запросы в статусе `pending` лениво
+переходят в `expired`. Строка в статусе `approved` сохраняет решение после
+окончания срока применения, а попытка применения возвращает
+`409 approval_expired`. Отправьте тот же план ещё раз, чтобы создать новый
+запрос. Завершение сессии отменяет ожидающие запросы и одобрения этой
+сессии, срок действия которых ещё не истёк. Отзыв токена также отменяет
+его действующие запросы. Решения записываются в журнал активности и
+`SecurityAuditLog` и публикуются в SSE-кадрах `approval`.
+
+Очередь в браузере использует
+`GET /agents/overview?section=approvals&boardId=<id>`. Параметры
+`status=pending` и `status=decided` возвращают отдельные очереди.
+Передавайте `nextCursor` с теми же фильтрами для получения следующей
+страницы. `total` содержит число совпадений до разбивки на страницы.
+`matchingCounts` учитывает поиск и фильтры области по всем статусам,
+а `counts` содержит общие показатели области.
 
 Сессии браузера не проходят через пресет/destructive gate; их правила ролей на
 доске не меняются (включая обычный undo). PAT никогда не отправляет команды

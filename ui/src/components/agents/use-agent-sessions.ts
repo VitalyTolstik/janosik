@@ -295,8 +295,9 @@ export function useAgentSessions(): AgentSessionsState {
   );
   useAgentSessionEvents(
     liveBoards,
-    (boardId) => {
-      void refreshBoard(boardId);
+    (boardId, event) => {
+      // The poll covers liveness; lifecycle and pause events still refresh immediately.
+      if (event.op !== "heartbeat") void refreshBoard(boardId);
     },
     serverMode,
     handleAccessLost,

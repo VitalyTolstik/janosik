@@ -105,6 +105,11 @@ export function overviewResponse(
     items,
     nextCursor: null,
     total: options.total ?? items.length,
+    matchingCounts: {
+      pending,
+      decided: Math.max(0, totalApprovals - pending),
+      total: totalApprovals,
+    },
     counts: {
       boards: boards.map((board) => ({
         id: board.id,

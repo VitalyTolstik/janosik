@@ -379,6 +379,111 @@ describe("Agent sessions and attribution (e2e)", () => {
     }
   }, 45_000);
 
+  it("applies an approved destructive MCP plan once and gives later writes fresh ids", async () => {
+    const approvalBoard = await createBoard("MCP approvals");
+    const pat = await createToken("mcp-approvals");
+    await promisify(execFile)(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        path.resolve(process.cwd(), "../mcp/test/live-approval.mjs"),
+      ],
+      {
+        cwd: path.resolve(process.cwd(), "../mcp"),
+        env: {
+          ...process.env,
+          LIVE_URL: baseUrl.replace(/\/api\/v1$/, ""),
+          LIVE_PAT: pat,
+          LIVE_HUMAN: session,
+          LIVE_BOARD: approvalBoard,
+        },
+        timeout: 30_000,
+      },
+    );
+    expect(
+      await prisma.approvalRequest.count({
+        where: { boardId: approvalBoard, status: "consumed" },
+      }),
+    ).toBe(4);
+    expect(
+      await prisma.command.count({
+        where: {
+          boardId: approvalBoard,
+          OR: [
+            { payload: { path: ["type"], equals: "ARCHIVE_COLUMN_CARDS" } },
+            { payload: { path: ["type"], equals: "DELETE_CARD" } },
+          ],
+        },
+      }),
+    ).toBe(4);
+  }, 45_000);
+
+  it("publishes throttled heartbeat frames to a connected SSE consumer", async () => {
+    const agent = await start(tokenA, { name: "Heartbeat SSE" });
+    const stream = await fetch(
+      `${baseUrl}/boards/${boardId}/events?since=${await boardSeq()}&presence=0`,
+      { headers: auth(session) },
+    );
+    expect(stream.status).toBe(200);
+    const isHeartbeat = (frame: SseFrame) =>
+      frame.type === "agent" && frame.op === "heartbeat";
+    const frames = readFrames(stream, isHeartbeat, 3);
+    const heartbeat = () =>
+      server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions/${agent.id}/heartbeat`)
+        .set(auth(tokenA))
+        .send({})
+        .expect(200);
+
+    await heartbeat();
+    const first = await prisma.agentSession.findUniqueOrThrow({
+      where: { id: agent.id },
+    });
+    await heartbeat();
+    const second = await prisma.agentSession.findUniqueOrThrow({
+      where: { id: agent.id },
+    });
+    expect(second.lastHeartbeatPublishedAt).toEqual(
+      first.lastHeartbeatPublishedAt,
+    );
+
+    // Age only the publication timestamp. A recent write/heartbeat must not
+    // suppress the next frame when the publication interval has elapsed.
+    await prisma.agentSession.update({
+      where: { id: agent.id },
+      data: { lastHeartbeatPublishedAt: new Date(Date.now() - 61_000) },
+    });
+    await heartbeat();
+    const overdue = new Date(Date.now() - 61_000);
+    await prisma.agentSession.update({
+      where: { id: agent.id },
+      data: { lastHeartbeatPublishedAt: overdue, lastHeartbeatAt: overdue },
+    });
+    await command(
+      tokenA,
+      {
+        type: "ADD_CARD",
+        newCardId: randomUUID(),
+        columnId: "col-agent",
+        title: "Write heartbeat",
+      },
+      agent.id,
+    );
+    expect(await frames).toHaveLength(3);
+    for (const frame of await frames) {
+      expect(frame).toMatchObject({
+        sessionId: agent.id,
+        op: "heartbeat",
+        scope: "session",
+      });
+    }
+    const latest = await prisma.agentSession.findUniqueOrThrow({
+      where: { id: agent.id },
+    });
+    expect(latest.lastHeartbeatPublishedAt).toEqual(latest.lastHeartbeatAt);
+  });
+
   it("exposes the token identity on whoami and the token list", async () => {
     const me = await server()
       .get("/api/v1/auth/me")
@@ -1128,6 +1233,17 @@ describe("Agent sessions and attribution (e2e)", () => {
   }
 
   async function readCommandFrame(response: Response): Promise<SseFrame> {
+    return (
+      await readFrames(response, (frame) => frame.type === "command", 1)
+    )[0]!;
+  }
+
+  async function readFrames(
+    response: Response,
+    accept: (frame: SseFrame) => boolean,
+    count: number,
+  ): Promise<SseFrame[]> {
+    const frames: SseFrame[] = [];
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No SSE body");
     const decoder = new TextDecoder();
@@ -1151,7 +1267,8 @@ describe("Agent sessions and attribution (e2e)", () => {
             if (payload === "ping") continue;
             const frame = JSON.parse(payload) as SseFrame;
             if (frame.type === "keepalive") continue;
-            if (frame.type === "command") return frame;
+            if (accept(frame)) frames.push(frame);
+            if (frames.length === count) return frames;
           }
         }
       }

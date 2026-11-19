@@ -384,12 +384,15 @@ When a destructive tool answers `approval_required`, nothing was applied. The
 error names the created `approvalId`, its `planHash` and `expiresAt`; use
 `janosik_get_approval`/`janosik_wait_for_decision` (up to 60 seconds per call)
 and ask a human board ADMIN to approve it in the browser. A human cannot approve
-from MCP, and an agent must never try to. After approval, repeat the same tool
-call with its `approvalId` argument (sent as `X-Approval-Id`); the plan must be
-byte-for-byte the same, or the server answers `approval_mismatch`. The approval
-is consumed once; repeating the same applied commands is an idempotent replay,
-while a different plan gets `approval_consumed`. `janosik_cancel_approval`
-withdraws the agent's own pending request. A human can also pause the session,
+from MCP, and an agent must never try to. After approval, read the exact plan
+with `janosik_get_approval` (`response_format: "json"`). Pass its command ID
+and unchanged inputs with `approvalId` to the original tool, or pass the
+stored `plan.commands`, `planHash` and `approvalId` to `janosik_apply_plan`.
+New destructive calls generate fresh command IDs. An authorized
+`approval_mismatch` returns the stored plan. Exact applied commands replay
+the original result after the approval is consumed. If the approval expires
+before apply, submit the same plan again for a new decision.
+`janosik_cancel_approval` withdraws the agent's own pending request. A human can also pause the session,
 the board or every key; new writes then answer `403 agent_paused` (with
 `pauseScope`), while reads, heartbeat and end-session stay available. The MCP
 server exposes no pause/resume tools: only a browser session can resume. Revoke

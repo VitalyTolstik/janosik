@@ -260,12 +260,7 @@ export function registerChecklistTools(
         },
         {
           ifMatch: expectedVersion,
-          commandId:
-            commandId ??
-            stableCommandId(
-              `${cardId}:${checklistId}:${itemId}`,
-              "delete-checklist-item",
-            ),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
@@ -306,9 +301,7 @@ export function registerChecklistTools(
         },
         {
           ifMatch: expectedVersion,
-          commandId:
-            commandId ??
-            stableCommandId(`${cardId}:${checklistId}`, "delete-checklist"),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

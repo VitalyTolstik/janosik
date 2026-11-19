@@ -164,7 +164,7 @@ export function registerLabelTools(server: McpServer, client: JanosikClient) {
         { type: "DELETE_LABEL", labelId },
         {
           ifMatch: expectedVersion,
-          commandId: commandId ?? stableCommandId(labelId, "delete-label"),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

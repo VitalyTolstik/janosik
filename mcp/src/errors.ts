@@ -296,7 +296,7 @@ function describeApiErrorBody(error: ApiError): string {
   if (code === "approval_mismatch") {
     return (
       "Error: the approval does not match this plan (planHash mismatch). " +
-      "Re-read the plan and request a new approval; do not reuse this id."
+      "Re-read with janosik_get_approval with response_format=json. Apply its exact commands with janosik_apply_plan, or request a new approval for the changed plan."
     );
   }
   if (code === "run_conflict" || code === "run_expired") {

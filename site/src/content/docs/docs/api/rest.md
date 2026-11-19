@@ -380,19 +380,28 @@ To apply, repeat the identical plan/commands with `X-Approval-Id: <id>` on
 `requestedByTokenId` must match the current PAT; if the request recorded an
 agent session, `X-Agent-Session` must match too. A consumed approval is
 one-time: the same applied commands are an idempotent replay, a different plan
-gets `approval_mismatch` or `approval_consumed`. Batch/command application
+gets `approval_mismatch` or `approval_consumed`. An authorized
+`approval_mismatch` includes the stored `plan`. Batch/command application
 creates an `AgentRun` with `approvalId`, stamps `runId` on every command and
 writes `approval_consumed`; a lifecycle operation leaves `runId` null. The
 decision endpoint is session-only, so a PAT gets `pat_forbidden` — the human
 token owner approves their agent's request, the agent never approves itself.
 
 TTL is `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)`
-with a five-minute floor. Expired rows are transitioned lazily on read,
-decision and apply, and a maintenance sweep may finish the rest. Every step
-writes an `Activity` row (`approval_requested`, `approval_approved`,
-`approval_rejected`, `approval_cancelled`, `approval_expired`,
-`approval_consumed`) and publishes an `approval` SSE frame; decision audit also
-lands in `SecurityAuditLog` (`approval.decided`).
+with a five-minute floor. Pending rows transition to `expired` lazily. An
+`approved` row keeps the historical decision after its apply window ends,
+and apply returns `409 approval_expired`. Submit the same plan again to
+create a fresh pending request. Ending an agent session cancels its open
+requests and approvals still within the apply window. Token revocation
+cancels the corresponding requests as well. Decisions write activity and
+`SecurityAuditLog` records and publish `approval` SSE frames.
+
+The browser Inbox uses
+`GET /agents/overview?section=approvals&boardId=<id>`. Use
+`status=pending` or `status=decided` for independent queues, and follow
+`nextCursor` with the same filters. `total` counts matching rows before
+pagination. `matchingCounts` applies search and scope filters across all
+statuses, and `counts` supplies unfiltered scope totals.
 
 Browser sessions do not pass through the preset/destructive gate; their board
 role rules are unchanged (including ordinary undo). A PAT can never send

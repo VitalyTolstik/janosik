@@ -1,4 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +17,8 @@ import type {
 
 import { I18nProvider } from "@/i18n";
 import { overviewItem } from "@/test/agents-overview";
+import { useAgentSessionEvents } from "@/components/agents/use-agent-events";
+import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 import { AgentControlFooterContext } from "@/components/agents/agent-control-footer-context";
 
 const hoisted = vi.hoisted(() => ({
@@ -39,7 +48,9 @@ vi.mock("@/api/client", () => {
   return {
     ApiError,
     isApiEnabled: () => true,
+    apiBaseUrl: () => "http://api.test/api/v1",
     api: {
+      getAccessToken: () => null,
       getApproval: hoisted.getApproval,
       getBoard: hoisted.getBoard,
       listMembers: hoisted.listMembers,
@@ -397,6 +408,114 @@ describe("AttentionApprovals", () => {
     const staticToken = await screen.findByTestId("approval-token-static");
     expect(staticToken).toHaveTextContent("Token: px-token…rchive");
     expect(staticToken).not.toHaveTextContent("px-token-rele…");
+  });
+
+  it("keeps typed text and focus during the 30-second detail refresh", async () => {
+    vi.useFakeTimers();
+    try {
+      const detail = approval();
+      renderDetail(detail);
+      await act(async () => {});
+      fireEvent.click(screen.getByTestId("approval-reject"));
+      const reason = screen.getByRole("textbox");
+      reason.focus();
+      fireEvent.change(reason, { target: { value: "Preserve evidence" } });
+      let finish!: (value: ApprovalRequestDto) => void;
+      hoisted.getApproval.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+
+      await act(async () => vi.advanceTimersByTimeAsync(30_000));
+      expect(hoisted.getApproval).toHaveBeenCalledTimes(2);
+      expect(
+        screen.getByRole("status", { name: "Refreshing approval" }),
+      ).toBeVisible();
+      expect(screen.getByTestId("approval-plan")).toBeVisible();
+      expect(reason).toHaveValue("Preserve evidence");
+      expect(reason).toHaveFocus();
+
+      await act(async () => finish(detail));
+      expect(screen.getByRole("textbox")).toBe(reason);
+      expect(reason).toHaveValue("Preserve evidence");
+      expect(reason).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("announces an external decision from the global stream's SSE parser", async () => {
+    const pending = approval();
+    hoisted.getApproval.mockResolvedValue(pending);
+    const live = createBoardLive();
+    let writer!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        writer = controller;
+      },
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(stream));
+    function GlobalDetail() {
+      useAgentSessionEvents(["board-1"], undefined);
+      return (
+        <AttentionApprovalDetail
+          boardId="board-1"
+          approvalId={pending.id}
+          boardTitle="Launch"
+          onChanged={() => {}}
+        />
+      );
+    }
+    const { unmount } = render(
+      <MemoryRouter>
+        <I18nProvider>
+          <BoardLiveProvider live={live}>
+            <GlobalDetail />
+          </BoardLiveProvider>
+        </I18nProvider>
+      </MemoryRouter>,
+    );
+    try {
+      expect(await screen.findByTestId("approval-approve")).toBeVisible();
+      await waitFor(() =>
+        expect(fetchSpy).toHaveBeenCalledWith(
+          expect.stringContaining("/boards/board-1/events?presence=0"),
+          expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        ),
+      );
+      hoisted.getApproval.mockResolvedValue(
+        approval({ status: "rejected", decisionComment: "External decision" }),
+      );
+      const encoder = new TextEncoder();
+      await act(async () => {
+        writer.enqueue(
+          encoder.encode('data: {"type":"approval","approvalId":'),
+        );
+        writer.enqueue(
+          encoder.encode(
+            JSON.stringify(pending.id) + ',"status":"rejected","at":1}\r\n\r\n',
+          ),
+        );
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId("approval-status")).toHaveAttribute(
+          "data-status",
+          "rejected",
+        ),
+      );
+      expect(screen.getByTestId("approval-status")).toHaveAttribute(
+        "role",
+        "status",
+      );
+      expect(screen.queryByTestId("approval-approve")).toBeNull();
+    } finally {
+      unmount();
+      writer.close();
+      fetchSpy.mockRestore();
+    }
   });
 
   it("keeps the global decided footer Close detail at 32 px", async () => {

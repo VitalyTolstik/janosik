@@ -308,7 +308,6 @@ export interface RunDetailProps {
   sessionLabel?: (sessionId: string | null) => string;
   onClose?: () => void;
   onChanged?: (run: RunDetailDto) => void;
-  onPreview?: (runId: string, conflicts: number) => void;
   onOpenSession?: (sessionId: string) => void;
 }
 
@@ -329,7 +328,6 @@ export function RunDetail({
   sessionLabel,
   onClose,
   onChanged,
-  onPreview,
   onOpenSession,
 }: RunDetailProps) {
   const { t, lang } = useI18n();
@@ -353,6 +351,7 @@ export function RunDetail({
   // response keeps the key, so "Retry" reconciles with the server's committed
   // revert instead of sending a second, conflicting attempt.
   const revertCommandId = useRef<string | null>(null);
+  const previewGeneration = useRef(0);
 
   useEffect(() => {
     if (!isApiEnabled()) return;
@@ -364,6 +363,7 @@ export function RunDetail({
     setDetailError(null);
     setPreview(null);
     setPreviewError(null);
+    setPreviewing(false);
     void (async () => {
       try {
         const loaded = await api.getRun(boardId, runId);
@@ -373,7 +373,7 @@ export function RunDetail({
         // committed; do not leave the old error banner beside `reverted`.
         if (loaded.run.status === "reverted") setActionError(null);
         if (loaded.run.status === "applied" && loaded.run.kind !== "revert") {
-          await requestPreview(alive);
+          await requestPreview();
         }
       } catch (error) {
         if (alive) setDetailError(error);
@@ -381,6 +381,7 @@ export function RunDetail({
     })();
     return () => {
       alive = false;
+      previewGeneration.current += 1;
     };
     // `requestPreview` closes over the current board/run; the effect is the
     // single place that seeds both panes.
@@ -418,19 +419,18 @@ export function RunDetail({
     [live, runId],
   );
 
-  async function requestPreview(alive = true): Promise<void> {
+  async function requestPreview(): Promise<void> {
+    const request = ++previewGeneration.current;
+    setPreview(null);
     setPreviewing(true);
     setPreviewError(null);
     try {
       const result = await api.previewRunRevert(boardId, runId);
-      if (alive) {
-        setPreview(result);
-        onPreview?.(runId, result.conflicts.length);
-      }
+      if (request === previewGeneration.current) setPreview(result);
     } catch (error) {
-      if (alive) setPreviewError(error);
+      if (request === previewGeneration.current) setPreviewError(error);
     } finally {
-      if (alive) setPreviewing(false);
+      if (request === previewGeneration.current) setPreviewing(false);
     }
   }
 

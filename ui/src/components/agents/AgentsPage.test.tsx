@@ -1141,6 +1141,7 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("1");
     expect(hoisted.agentsOverview).toHaveBeenCalledWith({
       section: "approvals",
+      status: "pending",
       boardId: "board-1",
       limit: 100,
     });
@@ -1187,6 +1188,7 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("1");
     expect(hoisted.agentsOverview).toHaveBeenCalledWith({
       section: "approvals",
+      status: "pending",
       limit: 100,
     });
     await userEvent.click(screen.getByTestId("agents-filter-board"));
@@ -1198,7 +1200,7 @@ describe("AgentsPage", () => {
     ).not.toHaveTextContent(/\d/);
   });
 
-  it("renders 99+ for large exact counts", async () => {
+  it("renders large exact counts in the rail, heading and filters", async () => {
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse([overviewItem()], {
         boards: BOARDS,
@@ -1212,14 +1214,20 @@ describe("AgentsPage", () => {
 
     expect(
       await screen.findByTestId("agents-count-attention"),
-    ).toHaveTextContent("99+");
+    ).toHaveTextContent("150");
+    expect(
+      await screen.findByRole("heading", { name: "150 decisions are waiting" }),
+    ).toBeVisible();
+    expect(
+      screen.getByTestId("agents-approvals-filter-needs"),
+    ).toHaveTextContent("150");
     await userEvent.click(screen.getByTestId("agents-filter-board"));
     expect(
       screen.getByTestId("agents-filter-board-option-all"),
-    ).toHaveTextContent("99+");
+    ).toHaveTextContent("150");
     expect(
       screen.getByTestId("agents-filter-board-option-board-1"),
-    ).toHaveTextContent("99+");
+    ).toHaveTextContent("150");
   });
 
   it("loads the next approval page from the server cursor", async () => {
@@ -1259,6 +1267,76 @@ describe("AgentsPage", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull(),
     );
+  });
+
+  it("sends search and token filters to the server and finds a match beyond page one", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      overviewItem({
+        id: `page-one-${index}`,
+        summary: `Routine action ${index}`,
+      }),
+    );
+    const match = overviewItem({
+      id: "beyond-page",
+      summary: "Unique audit request",
+    });
+    hoisted.agentsOverview.mockImplementation(
+      async (query: { q?: string; status?: string; tokenId?: string }) => {
+        const matches = query.q === "Unique audit";
+        return {
+          ...overviewResponse(matches ? [match] : firstPage, {
+            boards: BOARDS,
+            pendingTotal: 150,
+            totalApprovals: 150,
+            total: matches ? 1 : 150,
+          }),
+          matchingCounts: matches
+            ? { pending: 1, decided: 0, total: 1 }
+            : { pending: 150, decided: 0, total: 150 },
+          nextCursor: matches ? null : "page-2",
+        };
+      },
+    );
+    renderPage("/agents?section=attention&q=Unique%20audit&token=token-1");
+    expect(
+      await screen.findByTestId("agents-approval-beyond-page"),
+    ).toBeVisible();
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "Unique audit",
+        status: "pending",
+        tokenId: "token-1",
+      }),
+    );
+    expect(
+      screen.getByTestId("agents-approvals-filter-needs"),
+    ).toHaveTextContent("1");
+    expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull();
+  });
+
+  it("offers the server cursor even when the loaded approval page is empty", async () => {
+    hoisted.agentsOverview.mockImplementation(
+      async (query: { cursor?: string }) => ({
+        ...overviewResponse(
+          query.cursor ? [overviewItem({ id: "next-match" })] : [],
+          {
+            boards: BOARDS,
+            pendingTotal: 1,
+            totalApprovals: 1,
+            total: 1,
+          },
+        ),
+        nextCursor: query.cursor ? null : "next",
+      }),
+    );
+    renderPage("/agents?section=attention");
+    await userEvent.click(
+      await screen.findByTestId("agents-approvals-load-more"),
+    );
+    expect(
+      await screen.findByTestId("agents-approval-next-match"),
+    ).toBeVisible();
+    expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull();
   });
 
   it("renders an unknown count as unknown and retries a network failure", async () => {

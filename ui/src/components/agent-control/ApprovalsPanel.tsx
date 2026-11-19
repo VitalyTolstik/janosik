@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Inbox, RefreshCw, Search } from "lucide-react";
 import type {
   AgentSessionDto,
   ApprovalRequestDto,
-  BoardRole,
   UserTokenDto,
 } from "@janosik/shared";
 
@@ -17,7 +16,6 @@ import {
   effectiveApprovalStatus,
   formatApprovalMoment,
 } from "@/utils/approval";
-import { useBoardLive } from "@/store/board-live";
 import { useBoardState } from "@/store/BoardContext";
 import { ApprovalStatusBadge } from "@/components/approvals/approval-ui";
 import { AttentionApprovalDetail } from "@/components/agents/AttentionApprovals";
@@ -25,6 +23,7 @@ import { shortTokenId } from "@/components/agents/agent-model";
 import { AgentControlFooterPortal } from "@/components/agents/AgentControlFooterPortal";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { AgentControlError } from "./AgentControlError";
+import type { BoardApprovalQueue } from "./use-board-approval-queue";
 
 /**
  * The approval queue of one board (TASK-166.14, TASK-179.3).
@@ -35,8 +34,7 @@ import { AgentControlError } from "./AgentControlError";
  * applies a plan — the agent repeats the same command with `X-Approval-Id`.
  *
  * The component is mounted only while the dialog is open, so drafts reset by
- * remount (AGENT.md). SSE approval frames bump `revision`; list and detail
- * refetch in place without reloading the page.
+ * remount (AGENT.md). Approval events refresh the list and detail in place.
  */
 
 type ApprovalFilter = "needs" | "decided" | "all";
@@ -74,23 +72,16 @@ function QueueSkeleton() {
 }
 
 export function ApprovalsPanel({
-  onChanged,
+  queueState,
 }: {
-  role: BoardRole | undefined;
-  onChanged?: () => void;
+  queueState: BoardApprovalQueue;
 }) {
   const { t, lang } = useI18n();
   const { board } = useBoardState();
-  const live = useBoardLive();
   const [params, setParams] = useSearchParams();
-  // Only the approval present when the panel opened is a real deep link. A row
-  // the user selects later must not stay pinned when a filter hides it.
-  const initialApprovalRef = useRef(params.get("approval"));
   const mobile = useMediaQuery("(max-width: 760px)");
   const [filter, setFilter] = useState<ApprovalFilter>("needs");
   const [search, setSearch] = useState("");
-  const [rows, setRows] = useState<ApprovalRequestDto[] | null>(null);
-  const [listError, setListError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     params.get("approval"),
   );
@@ -99,48 +90,35 @@ export function ApprovalsPanel({
   const [mobileDetailOpen, setMobileDetailOpen] = useState(
     () => params.get("approval") !== null,
   );
-  const [revision, setRevision] = useState(0);
   const [tokens, setTokens] = useState<UserTokenDto[]>([]);
   const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
   const now = useNow();
   const boardId = board?.id;
 
-  useEffect(
-    () => live.agentControl.subscribeApproval(() => setRevision((v) => v + 1)),
-    [live],
-  );
-
-  useEffect(() => {
-    if (boardId === undefined || !isApiEnabled()) return;
-    let alive = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- start the request with a clean error state
-    setListError(false);
-    // The newest 100 rows of *all* statuses can hide an old pending request
-    // behind 100 newer decided ones. Fetch the pending queue first and merge
-    // it over the recent page; that is the server-owned queue, not a client
-    // filter over a truncated slice.
-    void Promise.all([
-      api.listApprovals(boardId, { status: "pending", limit: 100 }),
-      api.listApprovals(boardId, { limit: 100 }),
-    ])
-      .then(([pending, recent]) => {
-        if (!alive) return;
-        const merged = new Map<string, ApprovalRequestDto>();
-        for (const row of pending) merged.set(row.id, row);
-        for (const row of recent) {
-          if (!merged.has(row.id)) merged.set(row.id, row);
-        }
-        setRows([...merged.values()]);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setListError(true);
-        setRows([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [boardId, revision]);
+  const { current, reload, loadMore } = queueState;
+  const pending = current?.pending;
+  const decided = current?.decided;
+  const listError =
+    current !== null &&
+    (filter === "needs"
+      ? pending === undefined && current.pendingError
+      : filter === "decided"
+        ? decided === undefined && current.decidedError
+        : pending === undefined &&
+          decided === undefined &&
+          current.pendingError &&
+          current.decidedError);
+  const partialError =
+    current !== null &&
+    !listError &&
+    ((filter !== "decided" && current.pendingError) ||
+      (filter !== "needs" && current.decidedError));
+  const moreStatus =
+    filter !== "decided" && pending?.nextCursor
+      ? "pending"
+      : filter !== "needs" && decided?.nextCursor
+        ? "decided"
+        : null;
 
   useEffect(() => {
     if (boardId === undefined || !isApiEnabled()) return;
@@ -156,7 +134,7 @@ export function ApprovalsPanel({
     return () => {
       alive = false;
     };
-  }, [boardId, revision]);
+  }, [boardId]);
 
   const agentNameFor = (row: ApprovalRequestDto): string => {
     const token = tokens.find((entry) => entry.id === row.requestedByTokenId);
@@ -174,22 +152,26 @@ export function ApprovalsPanel({
     );
   };
 
-  const queue = useMemo(() => rows ?? [], [rows]);
+  const queue = useMemo(() => {
+    const merged = new Map<string, ApprovalRequestDto>();
+    for (const row of pending?.items ?? []) merged.set(row.id, row);
+    for (const row of decided?.items ?? []) {
+      if (!merged.has(row.id)) merged.set(row.id, row);
+    }
+    return [...merged.values()];
+  }, [pending, decided]);
   const selectedRow =
     selectedId === null
       ? undefined
       : queue.find((row) => row.id === selectedId);
-  const counts = useMemo(() => {
-    let needs = 0;
-    for (const row of queue) {
-      if (
-        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending"
-      ) {
-        needs += 1;
-      }
-    }
-    return { needs, decided: queue.length - needs, all: queue.length };
-  }, [now, queue]);
+  const counts = {
+    needs: current?.pendingError ? null : (pending?.total ?? null),
+    decided: current?.decidedError ? null : (decided?.total ?? null),
+    all:
+      current?.pendingError || current?.decidedError || !pending || !decided
+        ? null
+        : pending.total + decided.total,
+  };
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return queue.filter((row) => {
@@ -219,37 +201,22 @@ export function ApprovalsPanel({
   const searchActive = search.trim() !== "";
   const requestedApprovalId = params.get("approval");
   useEffect(() => {
-    // Selection follows the visible list: never keep a detail that the active
-    // Needs/Decided filter hides. A valid board deep link wins over the first
-    // visible row; anything else repairs to the first visible request.
-    setSelectedId((current) => {
-      // An explicit board `?approval=` deep link wins even when the row is in
-      // Decided/expired. Only the value present on mount is pinned; later
-      // selections follow the visible queue when a filter hides them.
-      if (
-        requestedApprovalId !== null &&
-        requestedApprovalId === initialApprovalRef.current
-      ) {
-        // An explicit deep link wins even when the row is outside the loaded
-        // page; the detail endpoint addresses it directly. Dropping it here
-        // was the silent "nothing happened" failure on old/decided links.
-        return requestedApprovalId;
-      }
-      if (current !== null && filtered.some((row) => row.id === current)) {
-        return current;
-      }
-      return filtered[0]?.id ?? null;
-    });
-  }, [filtered, requestedApprovalId, rows]);
+    // Keep the open detail when another actor decides the request. Filter
+    // changes clear the selection in their handlers, and a deep link can
+    // resolve directly even when its row is outside the loaded page.
+    const next = requestedApprovalId ?? selectedId ?? filtered[0]?.id ?? null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the URL or seed an empty selection
+    if (next !== selectedId) setSelectedId(next);
+  }, [filtered, requestedApprovalId, selectedId]);
   // Once the list has loaded, a null selection means the queue has no
   // visible row: close the mobile sheet so the user lands on the list/empty
   // state instead of a detail pane with no Back affordance.
   useEffect(() => {
-    if (rows === null || !mobile) return;
+    if (current === null || !mobile) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- close the sheet once the loaded queue has no selectable row
     if (selectedId === null) setMobileDetailOpen(false);
-  }, [mobile, rows, selectedId]);
-  const loadingList = rows === null && !listError;
+  }, [current, mobile, selectedId]);
+  const loadingList = current === null;
   const pendingRows = useMemo(
     () =>
       filtered.filter(
@@ -266,17 +233,6 @@ export function ApprovalsPanel({
       ),
     [filtered, now],
   );
-  const nextPendingId = useMemo(() => {
-    if (selectedId === null) return null;
-    const pending = filtered.filter(
-      (row) =>
-        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
-    );
-    if (pending.length < 2) return null;
-    const index = pending.findIndex((row) => row.id === selectedId);
-    return pending[(index + 1) % pending.length]?.id ?? null;
-  }, [filtered, now, selectedId]);
-
   if (listError) {
     return (
       <div
@@ -290,10 +246,7 @@ export function ApprovalsPanel({
           <AgentControlError
             title={t("agentControl.approvals.loadError")}
             body={t("agentControl.approvals.loadErrorBody")}
-            onRetry={() => {
-              setRevision((value) => value + 1);
-              onChanged?.();
-            }}
+            onRetry={() => void reload()}
             testId="agent-approvals-error-card"
             retryTestId="agent-approvals-retry"
           />
@@ -337,9 +290,9 @@ export function ApprovalsPanel({
     changeFilter("needs");
   };
 
-  const selectApproval = (id: string) => {
+  const selectApproval = (id: string, openDetail = true) => {
     setSelectedId(id);
-    setMobileDetailOpen(true);
+    setMobileDetailOpen(openDetail);
     const next = new URLSearchParams(params);
     next.set("approval", id);
     setParams(next, { replace: true });
@@ -427,9 +380,7 @@ export function ApprovalsPanel({
               className={cn("chip", filter === value && "primary")}
             >
               {t(key)}
-              <b className="tabular-nums">
-                {loadingList ? "—" : counts[countKey]}
-              </b>
+              <b className="tabular-nums">{counts[countKey] ?? "—"}</b>
             </button>
           ))}
         </div>
@@ -450,10 +401,7 @@ export function ApprovalsPanel({
           className="icon-btn-sm"
           data-testid="approval-refresh"
           aria-label={t("agentControl.approvals.refresh")}
-          onClick={() => {
-            setRevision((value) => value + 1);
-            onChanged?.();
-          }}
+          onClick={() => void reload()}
         >
           <RefreshCw className="icon" aria-hidden="true" />
         </button>
@@ -482,14 +430,17 @@ export function ApprovalsPanel({
               <QueueSkeleton />
             </div>
           ) : null}
-          {listError ? (
-            <div className="flex flex-col items-center gap-2 p-6 text-center text-xs text-muted-foreground">
+          {partialError ? (
+            <div
+              role="alert"
+              className="flex flex-col items-center gap-2 p-6 text-center text-xs text-muted-foreground"
+            >
               <p>{t("agentControl.approvals.loadError")}</p>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => setRevision((value) => value + 1)}
+                onClick={() => void reload()}
                 className="max-md:min-h-11"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden />
@@ -542,7 +493,7 @@ export function ApprovalsPanel({
                   <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-[11px] tracking-[0.06em] uppercase text-muted-foreground">
                     <span>{t("agentControl.approvals.listHeadNeeds")}</span>
                     <span className="ml-auto tabular-nums">
-                      {pendingRows.length}
+                      {counts.needs ?? "—"}
                     </span>
                   </div>
                   {pendingRows.map((row) => renderRow(row, true))}
@@ -553,12 +504,26 @@ export function ApprovalsPanel({
                   <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-[11px] tracking-[0.06em] uppercase text-muted-foreground">
                     <span>{t("agentControl.approvals.listHeadDecided")}</span>
                     <span className="ml-auto tabular-nums">
-                      {decidedRows.length}
+                      {counts.decided ?? "—"}
                     </span>
                   </div>
                   {decidedRows.map((row) => renderRow(row, false))}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+          {moreStatus !== null ? (
+            <div className="p-2 text-center">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                data-testid="approval-load-more"
+                disabled={current?.loadingMore !== undefined}
+                onClick={() => void loadMore(moreStatus)}
+              >
+                {t("agentControl.runs.loadMore")}
+              </Button>
             </div>
           ) : null}
         </div>
@@ -585,16 +550,13 @@ export function ApprovalsPanel({
                     : agentNameFor(selectedRow)
                 }
                 footerActive={!mobile || mobileDetailOpen}
+                focusBack={mobile && mobileDetailOpen}
                 onBack={() => setMobileDetailOpen(false)}
                 onChanged={() => {
-                  setRevision((value) => value + 1);
-                  onChanged?.();
+                  if (selectedId !== null)
+                    selectApproval(selectedId, mobileDetailOpen);
+                  void reload();
                 }}
-                onNextPending={
-                  nextPendingId === null
-                    ? undefined
-                    : () => setSelectedId(nextPendingId)
-                }
               />
             )}
           </div>

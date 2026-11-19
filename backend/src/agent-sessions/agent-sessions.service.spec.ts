@@ -19,6 +19,7 @@ function row(overrides: Partial<AgentSession> = {}): AgentSession {
     currentRunId: null,
     startedAt: new Date(1_000),
     lastHeartbeatAt: new Date(2_000),
+    lastHeartbeatPublishedAt: null,
     endedAt: null,
     endReason: null,
     pausedAt: null,
@@ -108,7 +109,12 @@ describe("heartbeat SSE (TASK-180.4 M27)", () => {
     const prisma = {
       agentSession: {
         findUnique: jest.fn(async () => session),
-        updateMany: jest.fn(async () => ({ count: 1 })),
+        updateMany: jest.fn(
+          async ({ data }: { data: Partial<AgentSession> }) => {
+            Object.assign(session, data);
+            return { count: 1 };
+          },
+        ),
       },
       board: {
         findUnique: jest.fn(async () => ({ agentsPausedAt: null })),
@@ -161,9 +167,34 @@ describe("heartbeat SSE (TASK-180.4 M27)", () => {
     );
   });
 
+  it("publishes at 0 and 61 seconds with a heartbeat at 30 seconds", async () => {
+    jest.useFakeTimers();
+    try {
+      const { service: sessions, realtime } = service(row());
+      const start = Date.now();
+      for (const [elapsed, frames] of [
+        [0, 1],
+        [30_000, 1],
+        [61_000, 2],
+      ]) {
+        jest.setSystemTime(start + elapsed);
+        await sessions.heartbeat(
+          "board-1",
+          "sess-1",
+          "user-1",
+          principal as never,
+          {},
+        );
+        expect(realtime.publish).toHaveBeenCalledTimes(frames);
+      }
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("does not publish for a heartbeat inside the throttle window", async () => {
     const { service: sessions, realtime } = service(
-      row({ lastHeartbeatAt: new Date(Date.now() - 10_000) }),
+      row({ lastHeartbeatPublishedAt: new Date(Date.now() - 10_000) }),
     );
     await sessions.heartbeat(
       "board-1",

@@ -2,6 +2,7 @@ import { HttpException, HttpStatus } from "@nestjs/common";
 import type {
   ApiErrorCode,
   ApiErrorEnvelope,
+  ApprovalPlan,
   CommandConflict,
   WorkflowConflictDetails,
 } from "@janosik/shared";
@@ -117,6 +118,7 @@ const RESERVED_BODY_KEYS = new Set([
   "planHash",
   "expectedPlanHash",
   "actualPlanHash",
+  "plan",
   "expiresAt",
   "action",
   "reason",
@@ -359,6 +361,9 @@ export function apiErrorEnvelope(
       : {}),
     ...(stringField(body?.actualPlanHash) !== undefined
       ? { actualPlanHash: stringField(body?.actualPlanHash) as string }
+      : {}),
+    ...(body?.code === "approval_mismatch" && asRecord(body.plan) !== undefined
+      ? { plan: body.plan as unknown as ApprovalPlan }
       : {}),
     ...(numberField(body?.expiresAt) !== undefined
       ? { expiresAt: numberField(body?.expiresAt) as number }

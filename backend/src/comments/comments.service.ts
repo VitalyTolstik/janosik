@@ -217,7 +217,11 @@ export class CommentsService {
       created.comment.id,
       attribution,
     );
-    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
     // TASK-166.9: only typed, agent-authored blocker/handoff comments raise
     // the human attention flag. The service is best-effort and never fails
     // the comment write.
@@ -349,7 +353,11 @@ export class CommentsService {
       comment.id,
       attribution,
     );
-    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
     return toCommentDto(updated.comment);
   }
 
@@ -490,7 +498,11 @@ export class CommentsService {
       comment.id,
       attribution,
     );
-    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
   }
 
   /** Delete only the author's inline files that no remaining content uses. */

@@ -26,6 +26,7 @@ const prismaMock = {
   },
   agentSession: { updateMany: jest.fn(), findMany: jest.fn() },
   card: { updateMany: jest.fn(), findMany: jest.fn() },
+  approvalRequest: { updateMany: jest.fn() },
   boardMember: {
     findUnique: jest.fn(),
   },
@@ -46,6 +47,7 @@ const prismaMock = {
   >;
   agentSession: Record<"updateMany" | "findMany", jest.Mock>;
   card: Record<"updateMany" | "findMany", jest.Mock>;
+  approvalRequest: Record<"updateMany", jest.Mock>;
   boardMember: Record<"findUnique", jest.Mock>;
   user: Record<"findUnique", jest.Mock>;
   $executeRaw: jest.Mock;
@@ -537,6 +539,14 @@ describe("ApiTokenService", () => {
           endedAt: expect.any(Date),
           endReason: "cancelled",
         },
+      });
+      expect(prismaMock.approvalRequest.updateMany).toHaveBeenCalledWith({
+        where: {
+          requestedByTokenId: { in: ["token-1"] },
+          status: { in: ["pending", "approved"] },
+          expiresAt: { gt: expect.any(Date) },
+        },
+        data: { status: "cancelled", decidedAt: expect.any(Date) },
       });
       expect(prismaMock.card.updateMany).toHaveBeenCalledWith({
         where: { claimedByTokenId: { in: ["token-1"] } },

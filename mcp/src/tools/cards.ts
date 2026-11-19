@@ -487,17 +487,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
               toIndex,
             },
             result: { title: destination.title, toIndex },
-            // The exact resolved action seeds the default id. A version retry
-            // that resolves a different source slot gets a fresh id (no
-            // accidental idempotency conflict); an unchanged retry after
-            // approval reuses it, so the approved plan hash still matches.
-            commandId:
-              commandId ??
-              stableCommandId(
-                `${cardId}:${location.column.id}:${location.index}:` +
-                  `${destinationId}:${toIndex}`,
-                "move-card",
-              ),
+            ...(commandId !== undefined ? { commandId } : {}),
             ...(approvalId !== undefined ? { approvalId } : {}),
           };
         },
@@ -582,9 +572,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             ? { commandId }
             : idempotencyKey !== undefined
               ? { commandId: stableCommandId(idempotencyKey, "duplicate") }
-              : requestedCardId !== undefined
-                ? { commandId: stableCommandId(newCardId, "duplicate") }
-                : {}),
+              : {}),
         },
       );
       return textOnly(`Duplicated card ${cardId} — \`${newCardId}\`.`, {
@@ -964,12 +952,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         },
         {
           ifMatch: expectedVersion,
-          commandId:
-            commandId ??
-            stableCommandId(
-              `${cardId}:${destination ?? "auto"}:${position ?? "end"}`,
-              "unarchive-card",
-            ),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
@@ -1001,7 +984,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         { type: "DELETE_CARD", cardId },
         {
           ifMatch: expectedVersion,
-          commandId: commandId ?? stableCommandId(cardId, "delete-card"),
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
