@@ -58,8 +58,10 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly schedules = new ReconcileLoop(this.logger, () =>
     this.applySchedule(),
   );
-  private digestTimer: NodeJS.Timeout | null = null;
-  private reminderTimer: NodeJS.Timeout | null = null;
+  private readonly timers = new Map<
+    CommsJobKind,
+    { interval: number; handle: NodeJS.Timeout }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -75,14 +77,14 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
     return this.queue !== undefined;
   }
 
-  async onModuleInit(): Promise<void> {
-    if (this.queue) this.schedules.start(SCHEDULE_RECONCILE_MS);
-    else await this.schedules.run();
+  onModuleInit(): void {
+    this.schedules.start(SCHEDULE_RECONCILE_MS);
   }
 
-  onModuleDestroy(): void {
-    this.clearTimers();
-    void this.schedules.stop();
+  async onModuleDestroy(): Promise<void> {
+    await this.schedules.stop();
+    for (const { handle } of this.timers.values()) clearTimeout(handle);
+    this.timers.clear();
   }
 
   refreshSchedule(): void {
@@ -116,39 +118,22 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
       ]);
       return;
     }
-    this.clearTimers();
     if (env.NODE_ENV === "test") return;
-    // Fallback cadence mirrors the BullMQ path (TASK-83): the reminder job
-    // runs every `lead` hours, not every hour — otherwise a `lead`-wide window
-    // fires the same reminder once per hour. Large cadences are chunked
-    // because `setTimeout` caps at 2^31-1 ms.
-    if (digest > 0) {
-      this.armRecurring(
-        "digest",
-        digest * 3_600_000,
-        () => void this.run("digest").catch(() => undefined),
-      );
-    }
-    if (lead > 0) {
-      this.armRecurring(
-        "reminder",
-        lead * 3_600_000,
-        () => void this.run("due-reminders").catch(() => undefined),
-      );
-    }
+    this.reconcileTimer("digest", digest * 3_600_000);
+    this.reconcileTimer("due-reminders", lead * 3_600_000);
   }
 
-  /**
-   * Recurring timer that survives a cadence beyond `setTimeout`'s 2^31-1 ms
-   * cap by waiting in chunks (TASK-83). The latest pending handle is kept in
-   * `digestTimer`/`reminderTimer`, so `clearTimers` stops the chain (a cleared
-   * timeout never fires, and only a fired timeout re-arms).
-   */
-  private armRecurring(
-    slot: "digest" | "reminder",
-    ms: number,
-    run: () => void,
-  ): void {
+  private reconcileTimer(kind: CommsJobKind, interval: number): void {
+    const current = this.timers.get(kind);
+    if (current?.interval === interval) return;
+    if (current) clearTimeout(current.handle);
+    if (interval <= 0) {
+      this.timers.delete(kind);
+      return;
+    }
+
+    // Keep the next tick intact across successful settings reads. Chunk
+    // large intervals because setTimeout caps delays at 2^31-1 ms.
     const arm = (remaining: number): void => {
       const handle = setTimeout(
         () => {
@@ -156,16 +141,17 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
             arm(remaining - MAX_TIMER_MS);
             return;
           }
-          run();
-          arm(ms);
+          void this.run(kind).catch((error: unknown) => {
+            this.logger.warn(`Comms ${kind} tick failed: ${String(error)}`);
+          });
+          arm(interval);
         },
         Math.min(remaining, MAX_TIMER_MS),
       );
       handle.unref();
-      if (slot === "digest") this.digestTimer = handle;
-      else this.reminderTimer = handle;
+      this.timers.set(kind, { interval, handle });
     };
-    arm(ms);
+    arm(interval);
   }
 
   /** Runs one comms job (worker entry point + inline fallback). */
@@ -474,13 +460,6 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
   async stats(): Promise<QueueStats> {
     if (this.queue) return redisQueueStats(this.queue);
     return { pending: 0, processed: 0, failed: 0, backend: "memory" };
-  }
-
-  private clearTimers(): void {
-    if (this.digestTimer) clearInterval(this.digestTimer);
-    if (this.reminderTimer) clearInterval(this.reminderTimer);
-    this.digestTimer = null;
-    this.reminderTimer = null;
   }
 }
 

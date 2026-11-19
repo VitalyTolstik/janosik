@@ -20,12 +20,15 @@ export function AttentionInbox({ page, unavailable, onReload }: Props) {
   const [busy, setBusy] = useState(false);
   const visible = olderPage ?? page;
 
-  async function run(action: () => Promise<void>): Promise<void> {
+  async function run(
+    action: () => Promise<void>,
+    errorMessage = t("notifications.attention.error"),
+  ): Promise<void> {
     setBusy(true);
     try {
       await action();
     } catch {
-      toast.error(t("notifications.attention.error"));
+      toast.error(errorMessage);
     } finally {
       setBusy(false);
     }
@@ -58,16 +61,27 @@ export function AttentionInbox({ page, unavailable, onReload }: Props) {
         ) : null}
       </div>
 
-      {visible === null ? (
-        <div className="px-4 pb-3 text-xs text-muted-foreground">
-          {unavailable ? (
-            <Button variant="ghost" size="sm" onClick={() => void onReload()}>
-              {t("notifications.attention.retry")}
-            </Button>
-          ) : (
-            <p role="status">{t("notifications.attention.loading")}</p>
-          )}
+      {unavailable && (
+        <div className="px-4 pb-3 text-xs">
+          <p role="alert" className="text-danger">
+            {t("notifications.attention.loadError")}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => void run(onReload)}
+          >
+            {t("notifications.attention.retry")}
+          </Button>
         </div>
+      )}
+      {visible === null ? (
+        !unavailable && (
+          <p role="status" className="px-4 pb-3 text-xs text-muted-foreground">
+            {t("notifications.attention.loading")}
+          </p>
+        )
       ) : visible.items.length === 0 ? (
         <p className="px-4 pb-4 text-sm text-muted-foreground">
           {t("notifications.attention.empty")}
@@ -150,7 +164,7 @@ export function AttentionInbox({ page, unavailable, onReload }: Props) {
                       visible.nextCursor ?? undefined,
                     ),
                   );
-                })
+                }, t("notifications.attention.olderError"))
               }
             >
               {t("notifications.attention.older")}

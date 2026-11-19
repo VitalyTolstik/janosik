@@ -126,6 +126,26 @@ describe("MaintenanceService", () => {
     expect(results.map((entry) => entry.job)).toContain("sweep-codes");
   });
 
+  it("prunes finished notification mail, including terminal failures, at the retention cutoff", async () => {
+    const prisma = makePrisma();
+    (opsMock.retentionDays as jest.Mock).mockResolvedValue(2);
+    jest.useFakeTimers({ now: new Date("2026-11-19T12:00:00Z") });
+    try {
+      await new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+      ).sweepAttention();
+      expect(prisma.notificationMail.deleteMany).toHaveBeenCalledWith({
+        where: { finishedAt: { lt: new Date("2026-11-17T12:00:00Z") } },
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("clears a lapsed claim, notifies once and is idempotent on re-run", async () => {
     const prisma = makePrisma();
     const leaseUntil = new Date(Date.now() - 60_000);

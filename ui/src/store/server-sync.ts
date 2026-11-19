@@ -342,6 +342,7 @@ function commandResponseLost(error: unknown): boolean {
   if (error.clientSide || error.code === "board_write_timeout") return false;
   return (
     error.offline ||
+    error.status === 408 ||
     error.status >= 500 ||
     (error.status >= 200 && error.status < 300)
   );

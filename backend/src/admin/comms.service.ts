@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -38,6 +39,8 @@ import { EmailTemplateService } from "@/ops/email-template.service";
 
 const TITLE_MAX = 200;
 const BODY_MAX = 2000;
+const MAIL_INSERT_BATCH_SIZE = 1_000;
+const PUBLISH_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
 type AnnouncementWithTranslations = Prisma.AnnouncementGetPayload<{
   include: { translations: true };
@@ -54,6 +57,7 @@ interface TranslationInput {
 }
 
 interface RecipientProfile {
+  userId: string | null;
   email: string;
   locale: MailLocale | null;
 }
@@ -190,41 +194,62 @@ export class CommsService {
     });
 
     const sendNow = active && dto.sendEmail === true && this.mailer.enabled;
-    const row = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.announcement.create({
-        data: {
-          title: parsed.legacy?.title ?? null,
-          body: parsed.legacy?.body ?? null,
+    const id = randomUUID();
+    const audience = dto.audience ?? "all";
+    const segment = dto.segment ?? null;
+    const letters = sendNow
+      ? await this.prepareLocalizedEmail({
+          id,
+          audience,
+          segment,
           sourceLocale: parsed.sourceLocale,
-          fallbackPolicy: parsed.fallbackPolicy,
-          level: dto.level ?? "info",
-          audience: dto.audience ?? "all",
-          segment: dto.segment ?? null,
-          active,
-          sendEmail: dto.sendEmail ?? false,
-          ...(sendNow ? { emailSentAt: new Date() } : {}),
-          startsAt: parsed.startsAt,
-          endsAt: parsed.endsAt,
-          createdBy,
-          ...(parsed.translations.length > 0
-            ? {
-                translations: {
-                  create: parsed.translations.map((translation) => ({
-                    ...translation,
-                    origin: "human",
-                    reviewedAt: new Date(),
-                    updatedBy: createdBy,
-                  })),
-                },
-              }
-            : {}),
-        },
-        include: { translations: true },
-      });
+          translations: parsed.translations.map(({ locale, title, body }) => ({
+            locale,
+            title,
+            body,
+          })),
+          legacy: parsed.legacy ?? undefined,
+        })
+      : [];
+    const row = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.announcement.create({
+          data: {
+            id,
+            title: parsed.legacy?.title ?? null,
+            body: parsed.legacy?.body ?? null,
+            sourceLocale: parsed.sourceLocale,
+            fallbackPolicy: parsed.fallbackPolicy,
+            level: dto.level ?? "info",
+            audience,
+            segment,
+            active,
+            sendEmail: dto.sendEmail ?? false,
+            ...(sendNow ? { emailSentAt: new Date() } : {}),
+            startsAt: parsed.startsAt,
+            endsAt: parsed.endsAt,
+            createdBy,
+            ...(parsed.translations.length > 0
+              ? {
+                  translations: {
+                    create: parsed.translations.map((translation) => ({
+                      ...translation,
+                      origin: "human",
+                      reviewedAt: new Date(),
+                      updatedBy: createdBy,
+                    })),
+                  },
+                }
+              : {}),
+          },
+          include: { translations: true },
+        });
 
-      if (sendNow) await this.stageLocalizedEmail(tx, created);
-      return created;
-    });
+        await this.stageLocalizedEmail(tx, letters);
+        return created;
+      },
+      sendNow ? PUBLISH_TRANSACTION_OPTIONS : undefined,
+    );
     if (sendNow) void this.delivery.kick();
     return this.toAnnouncement(row);
   }
@@ -485,12 +510,37 @@ export class CommsService {
       (legacyTitle ?? null) !== (exists.title ?? null) ||
       (legacyBody ?? null) !== (exists.body ?? null);
 
+    const audience = dto.audience ?? exists.audience;
+    const segment = dto.segment !== undefined ? dto.segment : exists.segment;
+    const letters = sendNow
+      ? await this.prepareLocalizedEmail({
+          id,
+          audience,
+          segment,
+          sourceLocale,
+          translations: finalTranslations.map((translation) => {
+            const stored = exists.translations.find(
+              (row) => row.locale === translation.locale,
+            );
+            return {
+              locale: translation.locale,
+              title: translation.title,
+              body: translation.body,
+              origin: changedTranslations.includes(translation)
+                ? "human"
+                : stored?.origin,
+              reviewedAt: stored?.reviewedAt?.getTime(),
+            };
+          }),
+          legacy: { title: legacyTitle, body: legacyBody },
+        })
+      : [];
     const data: Prisma.AnnouncementUpdateInput = {
       sourceLocale,
       fallbackPolicy,
       level: dto.level ?? exists.level,
-      audience: dto.audience ?? exists.audience,
-      segment: dto.segment !== undefined ? dto.segment : exists.segment,
+      audience,
+      segment,
       active,
       sendEmail: finalSendEmail,
       ...(sendNow ? { emailSentAt: new Date() } : {}),
@@ -511,66 +561,69 @@ export class CommsService {
       body: legacyBody,
     };
 
-    const row = await this.prisma.$transaction(async (tx) => {
-      if (removedLocales.length > 0) {
-        await tx.announcementTranslation.deleteMany({
-          where: { announcementId: id, locale: { in: removedLocales } },
-        });
-      }
-      for (const translation of changedTranslations) {
-        const isSource = translation.locale === sourceLocale;
-        await tx.announcementTranslation.upsert({
-          where: {
-            announcementId_locale: {
+    const row = await this.prisma.$transaction(
+      async (tx) => {
+        if (removedLocales.length > 0) {
+          await tx.announcementTranslation.deleteMany({
+            where: { announcementId: id, locale: { in: removedLocales } },
+          });
+        }
+        for (const translation of changedTranslations) {
+          const isSource = translation.locale === sourceLocale;
+          await tx.announcementTranslation.upsert({
+            where: {
+              announcementId_locale: {
+                announcementId: id,
+                locale: translation.locale,
+              },
+            },
+            create: {
               announcementId: id,
               locale: translation.locale,
+              title: translation.title,
+              body: translation.body,
+              origin: "human",
+              translatedFrom: isSource ? null : sourceLocale,
+              sourceUpdatedAt: isSource
+                ? null
+                : (sourceRow?.updatedAt ?? sourceUpdatedAt),
+              reviewedAt: sourceUpdatedAt,
+              updatedBy: updatedBy ?? null,
             },
-          },
-          create: {
-            announcementId: id,
-            locale: translation.locale,
-            title: translation.title,
-            body: translation.body,
-            origin: "human",
-            translatedFrom: isSource ? null : sourceLocale,
-            sourceUpdatedAt: isSource
-              ? null
-              : (sourceRow?.updatedAt ?? sourceUpdatedAt),
-            reviewedAt: sourceUpdatedAt,
-            updatedBy: updatedBy ?? null,
-          },
-          update: {
-            title: translation.title,
-            body: translation.body,
-            origin: "human",
-            translatedFrom: isSource ? null : sourceLocale,
-            sourceUpdatedAt: isSource
-              ? null
-              : (sourceRow?.updatedAt ?? sourceUpdatedAt),
-            reviewedAt: sourceUpdatedAt,
-            updatedBy: updatedBy ?? null,
-          },
+            update: {
+              title: translation.title,
+              body: translation.body,
+              origin: "human",
+              translatedFrom: isSource ? null : sourceLocale,
+              sourceUpdatedAt: isSource
+                ? null
+                : (sourceRow?.updatedAt ?? sourceUpdatedAt),
+              reviewedAt: sourceUpdatedAt,
+              updatedBy: updatedBy ?? null,
+            },
+          });
+        }
+        const updated = await tx.announcement.updateMany({
+          where: { id, version: exists.version },
+          data,
         });
-      }
-      const updated = await tx.announcement.updateMany({
-        where: { id, version: exists.version },
-        data,
-      });
-      if (updated.count === 0) {
-        throw new ConflictException({
-          statusCode: 409,
-          conflict: "version",
-          currentVersion: exists.version,
-          message: "The announcement was changed by someone else",
+        if (updated.count === 0) {
+          throw new ConflictException({
+            statusCode: 409,
+            conflict: "version",
+            currentVersion: exists.version,
+            message: "The announcement was changed by someone else",
+          });
+        }
+        const current = await tx.announcement.findUniqueOrThrow({
+          where: { id },
+          include: { translations: true },
         });
-      }
-      const current = await tx.announcement.findUniqueOrThrow({
-        where: { id },
-        include: { translations: true },
-      });
-      if (sendNow) await this.stageLocalizedEmail(tx, current);
-      return current;
-    });
+        await this.stageLocalizedEmail(tx, letters);
+        return current;
+      },
+      sendNow ? PUBLISH_TRANSACTION_OPTIONS : undefined,
+    );
 
     if (sendNow) void this.delivery.kick();
     return {
@@ -955,7 +1008,6 @@ export class CommsService {
 
   /** Resolves the inbox list and per-recipient language. */
   private async recipientProfiles(
-    tx: Prisma.TransactionClient,
     audience: string,
     segment: string | null,
   ): Promise<RecipientProfile[]> {
@@ -969,9 +1021,9 @@ export class CommsService {
         ),
       ];
       if (entries.length === 0) return [];
-      const users = await tx.user.findMany({
+      const users = await this.prisma.user.findMany({
         where: { email: { in: entries } },
-        select: { email: true, locale: true, disabledAt: true },
+        select: { id: true, email: true, locale: true, disabledAt: true },
       });
       const byEmail = new Map(
         users.map((user) => [user.email.toLowerCase(), user]),
@@ -981,49 +1033,55 @@ export class CommsService {
         if (user?.disabledAt) return [];
         return [
           {
+            userId: user?.id ?? null,
             email: user?.email ?? entry,
             locale: isMailLocale(user?.locale) ? user.locale : null,
           },
         ];
       });
     }
-    const users = await tx.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { disabledAt: null },
-      select: { email: true, locale: true },
+      select: { id: true, email: true, locale: true },
     });
     return users.map((user) => ({
+      userId: user.id,
       email: user.email,
       locale: isMailLocale(user.locale) ? user.locale : null,
     }));
   }
 
-  private async stageLocalizedEmail(
-    tx: Prisma.TransactionClient,
-    row: AnnouncementWithTranslations,
-  ): Promise<void> {
-    const recipients = await this.recipientProfiles(
-      tx,
-      row.audience,
-      row.segment,
-    );
-    const translations = this.translationLikes(row.translations);
+  private async prepareLocalizedEmail({
+    id,
+    audience,
+    segment,
+    sourceLocale,
+    translations,
+    legacy,
+  }: {
+    id: string;
+    audience: string;
+    segment: string | null;
+    sourceLocale: AnnouncementLocale | null;
+    translations: AnnouncementTranslationLike[];
+    legacy?: { title: string | null; body: string | null };
+  }): Promise<Prisma.NotificationMailCreateManyInput[]> {
+    const recipients = await this.recipientProfiles(audience, segment);
     const letters: Prisma.NotificationMailCreateManyInput[] = [];
     for (const locale of ["en", "ru"] as const) {
-      const audience = recipients.filter(
+      const localizedRecipients = recipients.filter(
         (recipient) => (recipient.locale ?? "en") === locale,
       );
-      if (audience.length === 0) continue;
+      if (localizedRecipients.length === 0) continue;
       const content = resolveAnnouncementContent({
         requestedLocale: locale,
-        sourceLocale: isAnnouncementLocale(row.sourceLocale)
-          ? row.sourceLocale
-          : null,
+        sourceLocale,
         translations,
-        legacy: { title: row.title, body: row.body },
+        legacy,
       });
       if (content === null) {
         this.logger.warn(
-          `announcement_email_no_content id=${row.id} locale=${locale}`,
+          `announcement_email_no_content id=${id} locale=${locale}`,
         );
         continue;
       }
@@ -1034,17 +1092,29 @@ export class CommsService {
         recipientLocale: locale,
         isFallback: content.isFallback,
       });
-      for (const { email } of audience) {
+      for (const { email, userId } of localizedRecipients) {
         letters.push({
-          id: notificationMailId("broadcast", row.id, email),
+          id: notificationMailId("broadcast", id, email),
           kind: "broadcast",
+          userId,
           message: { to: email, ...letter },
         });
       }
     }
-    if (letters.length > 0) {
+    return letters;
+  }
+
+  private async stageLocalizedEmail(
+    tx: Prisma.TransactionClient,
+    letters: Prisma.NotificationMailCreateManyInput[],
+  ): Promise<void> {
+    for (
+      let offset = 0;
+      offset < letters.length;
+      offset += MAIL_INSERT_BATCH_SIZE
+    ) {
       await tx.notificationMail.createMany({
-        data: letters,
+        data: letters.slice(offset, offset + MAIL_INSERT_BATCH_SIZE),
         skipDuplicates: true,
       });
     }

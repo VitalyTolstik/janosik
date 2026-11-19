@@ -17,6 +17,12 @@ import {
 } from "./maintenance-queue.service";
 import { SCHEDULE_RECONCILE_MS } from "./recurring-schedule";
 
+jest.mock("@/config/env", () => {
+  const actual =
+    jest.requireActual<typeof import("@/config/env")>("@/config/env");
+  return { ...actual, env: { ...actual.env, NODE_ENV: "development" } };
+});
+
 function redisSchedules<Data>() {
   const active = new Map<string, number>();
   const upsert = jest.fn(async (id: string, { every }: { every: number }) => {
@@ -95,8 +101,51 @@ it("reconciles digest, reminders and maintenance after startup Redis failure and
     expect(commsRedis.active.has(DIGEST_SCHEDULER_ID)).toBe(false);
     expect(commsRedis.remove).toHaveBeenCalledWith(DIGEST_SCHEDULER_ID);
   } finally {
-    comms.onModuleDestroy();
-    maintenance.onModuleDestroy();
+    await Promise.all([comms.onModuleDestroy(), maintenance.onModuleDestroy()]);
+    jest.useRealTimers();
+  }
+});
+
+it("recovers local timers after a startup settings failure and preserves their cadence", async () => {
+  jest.useFakeTimers();
+  const digestIntervalHours = jest
+    .fn()
+    .mockRejectedValueOnce(new Error("DB unavailable"))
+    .mockResolvedValue(1);
+  const maintenanceIntervalMinutes = jest
+    .fn()
+    .mockRejectedValueOnce(new Error("DB unavailable"))
+    .mockResolvedValue(1);
+  const ops = {
+    digestIntervalHours,
+    reminderLeadHours: async () => 0,
+    maintenanceIntervalMinutes,
+  } as unknown as OpsSettingsService;
+  const comms = new CommsSchedulerService(
+    {} as PrismaService,
+    ops,
+    {} as NotificationDeliveryService,
+    {} as EmailTemplateService,
+  );
+  const commsRun = jest.spyOn(comms, "run").mockResolvedValue({ sent: 0 });
+  const maintenanceRun = jest.fn().mockResolvedValue([]);
+  const maintenance = new MaintenanceQueueService(
+    { run: maintenanceRun } as unknown as MaintenanceService,
+    ops,
+  );
+  try {
+    comms.onModuleInit();
+    maintenance.onModuleInit();
+    await jest.advanceTimersByTimeAsync(SCHEDULE_RECONCILE_MS);
+    expect(digestIntervalHours).toHaveBeenCalledTimes(2);
+    expect(maintenanceIntervalMinutes).toHaveBeenCalledTimes(2);
+    expect(maintenanceRun).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(3_600_000);
+    expect(commsRun).toHaveBeenCalledTimes(1);
+    expect(commsRun).toHaveBeenCalledWith("digest");
+    expect(maintenanceRun).toHaveBeenCalledTimes(60);
+  } finally {
+    await Promise.all([comms.onModuleDestroy(), maintenance.onModuleDestroy()]);
     jest.useRealTimers();
   }
 });

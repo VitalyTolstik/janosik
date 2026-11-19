@@ -446,16 +446,20 @@ PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 The included `deploy/nginx.conf` is for deployments where nginx serves both
 static builds itself. Generate its CSP include from the exact app and site
 builds you serve, after building the backend and both frontends. Regenerate it
-on each frontend rebuild and reload nginx.
+on each frontend rebuild. The include is required. A missing file makes
+`nginx -t` fail. Reload nginx after the configuration check passes.
 
 ```bash
-node scripts/generate-nginx-csp.mjs ui/dist site/dist > /etc/nginx/janosik-csp.conf
+node scripts/generate-nginx-csp.mjs ui/dist site/dist > /etc/nginx/janosik-csp.conf.next &&
+  mv /etc/nginx/janosik-csp.conf.next /etc/nginx/janosik-csp.conf &&
+  nginx -t
 ```
 
 The include uses the same inline-script hashes and policy as the Node server.
 Public share pages retain their framing policy. The sample sets HSTS on static
-responses and forwards API security headers from Node. Serve the public hostname
-over HTTPS to apply HSTS in browsers.
+responses and forwards API security headers from Node. For responses generated
+by nginx itself, including API 413 and 502 errors, nginx supplies HSTS and a
+restrictive CSP. Serve the public hostname over HTTPS to apply HSTS in browsers.
 
 ## Data locations
 

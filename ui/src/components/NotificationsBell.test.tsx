@@ -89,6 +89,7 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
       }),
     );
     expect(screen.queryByTestId("notifications-badge")).toBeNull();
+    expect(bell).toHaveAccessibleName("Notifications");
 
     await userEvent.click(bell);
     expect(await screen.findByText("No invitations")).toBeInTheDocument();
@@ -135,8 +136,17 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     expect(await screen.findByTestId("notifications-badge")).toHaveTextContent(
       "2",
     );
-    await userEvent.click(screen.getByTestId("notifications-bell"));
+    const bell = screen.getByRole("button", {
+      name: "Notifications (2 unread)",
+    });
+    await userEvent.click(bell);
     expect(await screen.findByText("Approval needed")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Older" }));
+    expect(await screen.findByText("Claim expired")).toBeVisible();
+    await userEvent.click(bell);
+    await userEvent.click(bell);
+    expect(await screen.findByText("Approval needed")).toBeVisible();
+    expect(screen.queryByText("Claim expired")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Older" }));
     expect(await screen.findByText("Claim expired")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Mark as read" }));
@@ -155,6 +165,75 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
       "/api/v1/users/me/notifications/older/read",
       "/api/v1/users/me/notifications/read-all",
     ]);
+  });
+
+  it("shows an older-page error for an invalid cursor and leaves the newest page visible", async () => {
+    const server = new FakeServer();
+    const handler: FetchHandler = async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname !== "/api/v1/users/me/notifications")
+        return server.handle(input, init);
+      if (url.searchParams.get("cursor") === "expired-cursor")
+        return Response.json({ message: "Invalid cursor" }, { status: 400 });
+      return Response.json({
+        items: [],
+        nextCursor: "expired-cursor",
+        unreadCount: 0,
+      });
+    };
+    renderBell(server, handler);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Notifications" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Older" }));
+    expect(
+      await screen.findByText("Could not load older notifications."),
+    ).toBeVisible();
+    expect(screen.getByText("No attention notifications.")).toBeVisible();
+    expect(
+      screen.queryByText("Could not load attention notifications."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reports a failed inbox refresh after a successful read and retries loading", async () => {
+    const server = new FakeServer();
+    let marked = false;
+    let failRefresh = true;
+    const handler: FetchHandler = async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notifications/read-all") {
+        marked = true;
+        return Response.json({ updated: 1 });
+      }
+      if (url.pathname === "/api/v1/users/me/notifications") {
+        if (marked && failRefresh)
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        return Response.json({
+          items: [],
+          nextCursor: null,
+          unreadCount: marked ? 0 : 1,
+        });
+      }
+      return server.handle(input, init);
+    };
+    renderBell(server, handler);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Notifications (1 unread)" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Mark all as read" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load attention notifications.",
+    );
+    failRefresh = false;
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retry loading notifications" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
   });
 
   it("shows a busy skeleton until the invitation list arrives", async () => {

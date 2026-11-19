@@ -141,7 +141,10 @@ paths:
           schema: { type: boolean }
         - name: cursor
           in: query
-          description: Opaque nextCursor from the previous page. A malformed or out-of-range timestamp returns 400.
+          description: |
+            Opaque nextCursor from the previous page. A malformed cursor or
+            a timestamp after 9999-12-31T23:59:59.999Z returns 400. To start
+            again from the newest page, omit the cursor.
           schema: { type: string }
         - name: limit
           in: query
@@ -813,8 +816,10 @@ paths:
         command `seq` and the versions of touched entities. A PAT command that
         creates a run also sets `X-Run-Id`. Destructive actions require
         `X-Approval-Id` unless the token is trusted CI; `commandId` makes a
-        retry idempotent. `Idempotency-Key` is additionally honoured for
-        `DUPLICATE_CARD`.
+        retry idempotent. After a lost response or HTTP 408 from a proxy,
+        resend the same command ID, action and version preconditions to
+        retrieve the committed result if the first request was applied.
+        `Idempotency-Key` is additionally honoured for `DUPLICATE_CARD`.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"

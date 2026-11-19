@@ -4,7 +4,9 @@ import { Queue, Worker } from "bullmq";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MailerService } from "@/mailer/mailer.service";
 import {
+  MAX_NOTIFICATION_ATTEMPTS,
   NotificationDeliveryService,
+  notificationMailId,
   type NotificationMailJob,
 } from "@/mailer/notification-delivery.service";
 import { AttentionService } from "@/notifications/attention.service";
@@ -19,7 +21,7 @@ import { wipeAll } from "./support/wipe";
 /** An SMTP endpoint that can reject RCPT, then accept the retried message. */
 function smtpEndpoint() {
   const accepted: Array<{ to: string; data: string }> = [];
-  const rejecting = new Set<string>();
+  const rejecting = new Map<string, number>();
   const server = createServer((socket) => {
     socket.setEncoding("utf8");
     socket.write("220 localhost ready\r\n");
@@ -44,9 +46,10 @@ function smtpEndpoint() {
           socket.write("250 localhost\r\n");
         } else if (/^RCPT TO:/i.test(line)) {
           to = /<([^>]+)>/.exec(line)?.[1] ?? "";
+          const rejection = rejecting.get(to);
           socket.write(
-            rejecting.has(to)
-              ? "451 mailbox unavailable\r\n"
+            rejection
+              ? `${rejection} mailbox unavailable\r\n`
               : "250 recipient accepted\r\n",
           );
         } else if (line === "DATA") {
@@ -162,7 +165,7 @@ describe("durable notification delivery (e2e)", () => {
       expiresAt: new Date(Date.now() + 3_600_000),
     };
 
-    smtp.rejecting.add(EN);
+    smtp.rejecting.set(EN, 451);
     await attention.notifyApprovalRequested(approval);
     await delivery.kick();
 
@@ -259,6 +262,102 @@ describe("durable notification delivery (e2e)", () => {
     expect(await scheduler.run("due-reminders")).toEqual({ sent: 0 });
   });
 
+  async function stageBroadcast(addresses: string[]) {
+    const stagedDelivery = new NotificationDeliveryService(prisma, mailer);
+    jest.spyOn(stagedDelivery, "kick").mockResolvedValue(undefined);
+    const comms = new CommsService(prisma, mailer, templates, stagedDelivery);
+    const announcement = await comms.createAnnouncement(
+      {
+        audience: "segment",
+        segment: addresses.join(","),
+        sendEmail: true,
+        title: "News",
+        body: "Test announcement",
+      },
+      "test-admin",
+    );
+    return (address: string) =>
+      notificationMailId("broadcast", announcement.id, address);
+  }
+
+  it("skips staged recipients disabled or deleted before dispatch and delivers to external addresses", async () => {
+    const [en, ru] = await Promise.all([
+      prisma.user.create({ data: { email: EN } }),
+      prisma.user.create({ data: { email: RU } }),
+    ]);
+    const external = "external@example.com";
+    const id = await stageBroadcast([EN, RU, external]);
+    expect(
+      await prisma.notificationMail.findUnique({ where: { id: id(EN) } }),
+    ).toMatchObject({ userId: en.id });
+    expect(
+      await prisma.notificationMail.findUnique({ where: { id: id(RU) } }),
+    ).toMatchObject({ userId: ru.id });
+    await prisma.user.update({
+      where: { id: en.id },
+      data: { disabledAt: new Date() },
+    });
+    await prisma.user.delete({ where: { id: ru.id } });
+    await delivery.kick();
+    expect(smtp.accepted.map(({ to }) => to)).toEqual([external]);
+    for (const address of [EN, RU, external]) {
+      expect(
+        await prisma.notificationMail.findUnique({
+          where: { id: id(address) },
+        }),
+      ).toMatchObject({
+        finishedAt: expect.any(Date),
+        message: null,
+        userId: null,
+      });
+    }
+  });
+
+  it("records terminal SMTP failures and stops retrying these deliveries", async () => {
+    const id = await stageBroadcast([EN, RU]);
+    smtp.rejecting.set(EN, 550);
+    smtp.rejecting.set(RU, 451);
+    for (let attempt = 1; attempt <= MAX_NOTIFICATION_ATTEMPTS; attempt += 1) {
+      await prisma.notificationMail.updateMany({
+        where: { finishedAt: null },
+        data: { nextAttemptAt: new Date(0) },
+      });
+      await delivery.kick();
+      const transient = await prisma.notificationMail.findUniqueOrThrow({
+        where: { id: id(RU) },
+      });
+      expect(transient.attempts).toBe(attempt);
+      if (attempt < MAX_NOTIFICATION_ATTEMPTS) {
+        expect(transient.failedAt).toBeNull();
+        expect(transient.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+      }
+    }
+    for (const [address, attempts] of [
+      [EN, 1],
+      [RU, MAX_NOTIFICATION_ATTEMPTS],
+    ] as const) {
+      const row = await prisma.notificationMail.findUniqueOrThrow({
+        where: { id: id(address) },
+      });
+      expect(row).toMatchObject({
+        failedAt: expect.any(Date),
+        finishedAt: row.failedAt,
+        message: null,
+        attempts,
+      });
+    }
+    smtp.rejecting.clear();
+    await delivery.kick();
+    expect(smtp.accepted).toHaveLength(0);
+    expect(
+      await new BroadcastQueueService(mailer, prisma).stats(),
+    ).toMatchObject({
+      pending: 0,
+      processed: 0,
+      failed: 2,
+    });
+  });
+
   const redisUrl = process.env.TASK1806_TEST_REDIS_URL;
   (redisUrl ? it : it.skip)(
     "replays a partially accepted BullMQ broadcast and recovers from SMTP failure without re-sending successful recipients",
@@ -280,11 +379,11 @@ describe("durable notification delivery (e2e)", () => {
         redisDelivery,
         new BroadcastQueueService(mailer, prisma, queue),
       );
-      const add = queue.add.bind(queue);
+      const addBulk = queue.addBulk.bind(queue);
       const loseEnqueueReply = jest
-        .spyOn(queue, "add")
-        .mockImplementationOnce(async (...args) => {
-          await add(...args);
+        .spyOn(queue, "addBulk")
+        .mockImplementationOnce(async (jobs) => {
+          await addBulk(jobs.slice(0, 1));
           throw new Error("Redis reply lost after enqueue");
         });
       let worker: Worker<NotificationMailJob> | undefined;
@@ -318,7 +417,12 @@ describe("durable notification delivery (e2e)", () => {
             (job) => job.id === job.data.deliveryId && !job.id.includes(":"),
           ),
         ).toBe(true);
-        smtp.rejecting.add(EN);
+        // Drop Redis jobs while keeping the authoritative PostgreSQL rows.
+        await queue.drain();
+        expect(await queue.getWaitingCount()).toBe(0);
+        await redisDelivery.kick();
+        expect(await queue.getWaitingCount()).toBe(2);
+        smtp.rejecting.set(EN, 451);
         worker = new Worker<NotificationMailJob>(
           "broadcast",
           (job) => processor.process(job),

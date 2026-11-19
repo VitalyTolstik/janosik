@@ -50,7 +50,7 @@ export class MaintenanceQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly schedules = new ReconcileLoop(this.logger, () =>
     this.applySchedule(),
   );
-  private timer: NodeJS.Timeout | null = null;
+  private timer?: { interval: number; handle: NodeJS.Timeout };
 
   constructor(
     private readonly maintenance: MaintenanceService,
@@ -64,14 +64,13 @@ export class MaintenanceQueueService implements OnModuleInit, OnModuleDestroy {
     return this.queue !== undefined;
   }
 
-  async onModuleInit(): Promise<void> {
-    if (this.queue) this.schedules.start(SCHEDULE_RECONCILE_MS);
-    else await this.schedules.run();
+  onModuleInit(): void {
+    this.schedules.start(SCHEDULE_RECONCILE_MS);
   }
 
-  onModuleDestroy(): void {
-    if (this.timer) clearInterval(this.timer);
-    void this.schedules.stop();
+  async onModuleDestroy(): Promise<void> {
+    await this.schedules.stop();
+    if (this.timer) clearInterval(this.timer.handle);
   }
 
   /** Enqueue (Redis) or run inline (fallback) one sweep / all sweeps. */
@@ -115,15 +114,17 @@ export class MaintenanceQueueService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-    if (minutes <= 0 || env.NODE_ENV === "test") return;
-    this.timer = setInterval(() => {
+    if (env.NODE_ENV === "test") return;
+    const interval = minutes * 60_000;
+    if (this.timer?.interval === interval) return;
+    if (this.timer) clearInterval(this.timer.handle);
+    this.timer = undefined;
+    if (interval <= 0) return;
+    const handle = setInterval(() => {
       void this.maintenance.run("all").catch(() => undefined);
-    }, minutes * 60_000);
-    this.timer.unref();
+    }, interval);
+    handle.unref();
+    this.timer = { interval, handle };
   }
 
   async stats(): Promise<QueueStats> {

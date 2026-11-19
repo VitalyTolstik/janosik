@@ -1073,7 +1073,8 @@ model NotificationMail {
   attempts      Int                  @default(0)
   nextAttemptAt DateTime             @default(now())
   finishedAt    DateTime?
+  failedAt      DateTime?
 
-  @@index([finishedAt, nextAttemptAt])
+  @@index([finishedAt, nextAttemptAt, id])
   @@index([userId])
 }

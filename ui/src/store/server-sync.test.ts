@@ -239,6 +239,71 @@ describe("ServerSync", () => {
     }
   });
 
+  it.each([
+    {
+      name: "lost response followed by the committed result",
+      first: new ApiError(200, null, "Invalid command response"),
+      second: null,
+      outcome: { ok: true, seq: 1, versions: {} },
+    },
+    {
+      name: "lost response followed by another lost response",
+      first: new ApiError(200, null, "Invalid command response"),
+      second: new ApiError(504, null),
+      outcome: {
+        ok: false,
+        failure: { kind: "rejected", status: 504 },
+        uncertainCommandId: "cd-1",
+      },
+    },
+    {
+      name: "lost response followed by a definitive 4xx",
+      first: new ApiError(200, null, "Invalid command response"),
+      second: new ApiError(400, { field: "action.title" }),
+      outcome: {
+        ok: false,
+        failure: { kind: "rejected", status: 400, field: "action.title" },
+        uncertainCommandId: "cd-1",
+      },
+    },
+    {
+      name: "offline transport on both attempts",
+      first: new ApiError(0, null),
+      second: new ApiError(0, null),
+      outcome: {
+        ok: false,
+        failure: { kind: "offline" },
+        uncertainCommandId: "cd-1",
+      },
+    },
+    {
+      name: "HTTP 408 followed by the committed result",
+      first: new ApiError(408, null),
+      second: null,
+      outcome: { ok: true, seq: 1, versions: {} },
+    },
+  ])(
+    "replays the identical request once for $name",
+    async ({ first, second, outcome }) => {
+      const send = vi.fn().mockRejectedValueOnce(first);
+      if (second) send.mockRejectedValueOnce(second);
+      else send.mockResolvedValueOnce(okResponse());
+      const sync = new ServerSync({ send });
+      const action = renameColumn("cd-1");
+      const versions = { "col-1": 2 };
+
+      await expect(sync.enqueue("b-1", action, versions)).resolves.toEqual(
+        outcome,
+      );
+      expect(send.mock.calls).toEqual(
+        Array.from({ length: 2 }, () => [
+          "b-1",
+          { commandId: "cd-1", action, ifMatchVersions: versions },
+        ]),
+      );
+    },
+  );
+
   it("reports busy while a command is in flight", async () => {
     const control: { release: (() => void) | null } = { release: null };
     const sync = new ServerSync({

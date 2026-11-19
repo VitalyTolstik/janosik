@@ -34,10 +34,16 @@ export class BroadcastQueueService {
         where: { kind: "broadcast", finishedAt: null },
       }),
       this.prisma.notificationMail.count({
-        where: { kind: "broadcast", finishedAt: { not: null } },
+        where: { kind: "broadcast", finishedAt: { not: null }, failedAt: null },
       }),
       this.prisma.notificationMail.count({
-        where: { kind: "broadcast", finishedAt: null, attempts: { gt: 0 } },
+        where: {
+          kind: "broadcast",
+          OR: [
+            { finishedAt: null, attempts: { gt: 0 } },
+            { failedAt: { not: null } },
+          ],
+        },
       }),
     ]);
     return {

@@ -461,16 +461,20 @@ PUBLIC_APP_URL=http://localhost:5173 npm run dev:site
 Конфигурация `deploy/nginx.conf` подходит для установки, в которой nginx
 сам отдаёт обе статические сборки. После сборки backend и обоих фронтендов
 сгенерируйте файл CSP из тех же каталогов, которые обслуживает nginx.
-После каждой новой сборки создайте файл заново и перезагрузите nginx.
+После каждой новой сборки создайте файл заново. Без этого файла проверка
+`nginx -t` завершится ошибкой. Перезагрузите nginx после успешной проверки.
 
 ```bash
-node scripts/generate-nginx-csp.mjs ui/dist site/dist > /etc/nginx/janosik-csp.conf
+node scripts/generate-nginx-csp.mjs ui/dist site/dist > /etc/nginx/janosik-csp.conf.next &&
+  mv /etc/nginx/janosik-csp.conf.next /etc/nginx/janosik-csp.conf &&
+  nginx -t
 ```
 
 Файл использует ту же политику и хеши встроенных скриптов, что и Node.
 Публичные ссылки по-прежнему можно встраивать. Конфигурация добавляет HSTS
-к статическим ответам и передаёт заголовки API от Node. Откройте публичный
-домен по HTTPS, чтобы браузеры могли применить HSTS.
+к статическим ответам и передаёт заголовки API от Node. Для собственных ответов
+nginx, в том числе ошибок API 413 и 502, nginx добавляет HSTS и строгую CSP.
+Откройте публичный домен по HTTPS, чтобы браузеры могли применить HSTS.
 
 ## Расположение данных
 

@@ -27,8 +27,13 @@ function policy(frameAncestors) {
 }
 
 process.stdout.write(`# Generated from the served builds and Helmet's CSP.
+map $upstream_http_content_security_policy $janosik_api_csp {
+  "" "default-src 'none'; frame-ancestors 'none'";
+  default "";
+}
+
 map $uri $janosik_csp {
-  ~^/api/ "";
+  ~^/api/ $janosik_api_csp;
   default "${policy("'self'")}";
 }
 

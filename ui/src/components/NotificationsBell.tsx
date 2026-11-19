@@ -59,6 +59,7 @@ export function NotificationsBell() {
   );
   const [attentionError, setAttentionError] = useState(false);
   const [open, setOpen] = useState(false);
+  const [inboxSession, setInboxSession] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -111,14 +112,21 @@ export function NotificationsBell() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) void loadAttention();
+        if (next) {
+          setInboxSession((session) => session + 1);
+          void loadAttention();
+        }
       }}
     >
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          aria-label={t("notifications.aria")}
+          aria-label={
+            count > 0
+              ? t("notifications.ariaUnread", { count })
+              : t("common.notifications")
+          }
           data-testid="notifications-bell"
           className={cn(
             "relative max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 md:h-8 md:w-8 md:min-w-8",
@@ -130,6 +138,7 @@ export function NotificationsBell() {
           <LazyAnimatedIcon name="bell" size={16} />
           {count > 0 ? (
             <span
+              aria-hidden="true"
               data-testid="notifications-badge"
               className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-white"
             >
@@ -147,6 +156,7 @@ export function NotificationsBell() {
         className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         <AttentionInbox
+          key={inboxSession}
           page={attention}
           unavailable={attentionError}
           onReload={loadAttention}

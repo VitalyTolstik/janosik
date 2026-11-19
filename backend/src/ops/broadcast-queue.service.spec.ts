@@ -33,7 +33,7 @@ function fixture() {
     notificationMail: { count, findMany },
   } as unknown as PrismaService;
   const mailer = { send } as unknown as MailerService;
-  const add = jest.fn();
+  const addBulk = jest.fn();
   const getJobCounts = jest.fn().mockResolvedValue({
     waiting: 3,
     active: 1,
@@ -41,36 +41,67 @@ function fixture() {
     completed: 10,
     failed: 1,
   });
-  const queue = { add, getJobCounts } as unknown as Queue<NotificationMailJob>;
-  return { send, ids, prisma, mailer, add, queue, findMany, count };
+  const queue = {
+    addBulk,
+    getJobCounts,
+  } as unknown as Queue<NotificationMailJob>;
+  return { send, ids, prisma, mailer, addBulk, queue, findMany, count };
 }
 
 describe("broadcast delivery", () => {
   it("queues one stable, BullMQ-safe id per recipient through an ambiguous Redis failure", async () => {
-    const { send, ids, prisma, mailer, add, queue } = fixture();
+    const { send, ids, prisma, mailer, addBulk, queue } = fixture();
     const delivery = new NotificationDeliveryService(
       prisma,
       mailer,
       undefined,
       queue,
     );
-    add.mockRejectedValueOnce(new Error("enqueue reply lost"));
+    addBulk.mockRejectedValueOnce(new Error("enqueue reply lost"));
     await delivery.kick();
     expect(send).not.toHaveBeenCalled();
-    expect(add).toHaveBeenCalledTimes(1);
+    expect(addBulk).toHaveBeenCalledTimes(1);
     await delivery.kick();
-    expect(add).toHaveBeenCalledTimes(3);
+    expect(addBulk).toHaveBeenCalledTimes(2);
     expect(ids[0]).not.toContain(":");
     expect(ids[0]).not.toBe(ids[1]);
-    for (const id of ids) {
-      expect(add).toHaveBeenCalledWith(
-        "broadcast",
-        { deliveryId: id },
-        expect.objectContaining({ jobId: id }),
-      );
-    }
-    expect(add.mock.calls[0]).toEqual(add.mock.calls[1]);
+    expect(addBulk).toHaveBeenCalledWith(
+      ids.map((id) => ({
+        name: "broadcast",
+        data: { deliveryId: id },
+        opts: expect.objectContaining({ jobId: id }),
+      })),
+    );
+    expect(addBulk.mock.calls[0]).toEqual(addBulk.mock.calls[1]);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("dispatches all due pages, including rows with the same retry timestamp", async () => {
+    const { prisma, mailer, queue, addBulk, findMany } = fixture();
+    const nextAttemptAt = new Date(0);
+    const rows = Array.from({ length: 205 }, (_, index) => ({
+      id: `row-${index.toString().padStart(3, "0")}`,
+      kind: "broadcast",
+      nextAttemptAt,
+    }));
+    findMany.mockImplementation(async ({ where, take }) => {
+      const afterId = where.OR?.[1].id.gt ?? "";
+      return rows.filter(({ id }) => id > afterId).slice(0, take);
+    });
+    await new NotificationDeliveryService(
+      prisma,
+      mailer,
+      undefined,
+      queue,
+    ).kick();
+    expect(addBulk.mock.calls.map(([jobs]) => jobs.length)).toEqual([
+      100, 100, 5,
+    ]);
+    expect(
+      addBulk.mock.calls.flatMap(([jobs]) =>
+        jobs.map((job: { data: NotificationMailJob }) => job.data.deliveryId),
+      ),
+    ).toEqual(rows.map(({ id }) => id));
   });
 
   it("reports Redis job counts and durable attempts", async () => {
@@ -116,7 +147,7 @@ describe("broadcast delivery", () => {
   });
 
   it("ignores an empty outbox", async () => {
-    const { send, prisma, mailer, queue, add, findMany } = fixture();
+    const { send, prisma, mailer, queue, addBulk, findMany } = fixture();
     findMany.mockResolvedValueOnce([]);
     await new NotificationDeliveryService(
       prisma,
@@ -125,6 +156,6 @@ describe("broadcast delivery", () => {
       queue,
     ).kick();
     expect(send).not.toHaveBeenCalled();
-    expect(add).not.toHaveBeenCalled();
+    expect(addBulk).not.toHaveBeenCalled();
   });
 });

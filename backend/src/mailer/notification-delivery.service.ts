@@ -26,6 +26,15 @@ export interface NotificationMailJob {
 const RETRY_DELAY_MS = 2_000;
 const MAX_RETRY_DELAY_MS = 300_000;
 const BATCH_SIZE = 100;
+export const MAX_NOTIFICATION_ATTEMPTS = 8;
+
+function smtpReplyCode(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("responseCode" in error))
+    return undefined;
+  return typeof error.responseCode === "number"
+    ? error.responseCode
+    : undefined;
+}
 
 export function notificationMailId(...key: string[]): string {
   // The prefix keeps even an all-decimal hash valid as a BullMQ custom id.
@@ -73,32 +82,75 @@ export class NotificationDeliveryService
   private async reconcile(): Promise<void> {
     if (!this.mailer.enabled && env.NODE_ENV !== "test") return;
     const now = new Date();
-    const due = await this.prisma.notificationMail.findMany({
-      where: { finishedAt: null, nextAttemptAt: { lte: now } },
-      orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
-      take: BATCH_SIZE,
-      select: { id: true, kind: true },
-    });
-    for (const row of due) {
-      const queue =
-        row.kind === "broadcast" ? this.broadcastQueue : this.mailQueue;
-      if (queue) {
-        await queue.add(
-          row.kind === "broadcast" ? BROADCAST_JOB : MAIL_JOB,
-          { deliveryId: row.id },
-          { jobId: row.id, removeOnComplete: true, removeOnFail: true },
-        );
-      } else if (queuesEnabled) {
-        throw new Error(`Notification queue unavailable for ${row.kind}`);
-      } else {
-        await this.deliver(row.id);
-      }
+    let after: { nextAttemptAt: Date; id: string } | undefined;
+    for (;;) {
+      const due = await this.prisma.notificationMail.findMany({
+        where: {
+          finishedAt: null,
+          nextAttemptAt: { lte: now },
+          ...(after && {
+            OR: [
+              { nextAttemptAt: { gt: after.nextAttemptAt } },
+              { nextAttemptAt: after.nextAttemptAt, id: { gt: after.id } },
+            ],
+          }),
+        },
+        orderBy: [{ nextAttemptAt: "asc" }, { id: "asc" }],
+        take: BATCH_SIZE,
+        select: { id: true, kind: true, nextAttemptAt: true },
+      });
+      await this.dispatchPage(
+        due.filter((row) => row.kind === "broadcast"),
+        this.broadcastQueue,
+        BROADCAST_JOB,
+      );
+      await this.dispatchPage(
+        due.filter((row) => row.kind !== "broadcast"),
+        this.mailQueue,
+        MAIL_JOB,
+      );
+      if (due.length < BATCH_SIZE) return;
+      after = due[due.length - 1];
     }
   }
 
+  private async dispatchPage(
+    rows: { id: string }[],
+    queue: Queue<NotificationMailJob> | undefined,
+    name: string,
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    if (queue) {
+      await queue.addBulk(
+        rows.map(({ id }) => ({
+          name,
+          data: { deliveryId: id },
+          opts: { jobId: id, removeOnComplete: true, removeOnFail: true },
+        })),
+      );
+      return;
+    }
+    if (queuesEnabled)
+      throw new Error(`Notification queue unavailable for ${name}`);
+    for (const { id } of rows) await this.deliver(id);
+  }
+
   async deliver(id: string): Promise<void> {
+    if (!this.mailer.enabled && env.NODE_ENV !== "test") return;
     await this.prisma.$transaction(
       async (tx) => {
+        // Account deletion locks the user before deleting their outbox rows.
+        // Use the same lock order and hold eligibility stable through SMTP.
+        const [broadcastRecipient] = await tx.$queryRaw<{ id: string }[]>`
+          SELECT recipient.id
+          FROM "NotificationMail" AS mail
+          JOIN "User" AS recipient ON recipient.id = mail."userId"
+          WHERE mail.id = ${id} AND mail.kind = 'broadcast'
+            AND mail."finishedAt" IS NULL AND mail."nextAttemptAt" <= NOW()
+            AND recipient."disabledAt" IS NULL
+            AND recipient.email = mail.message->>'to'
+          FOR SHARE OF recipient
+        `;
         // Only one worker can send a row, even if a queue is reset during a send.
         const [row] = await tx.$queryRaw<NotificationMail[]>`
         SELECT * FROM "NotificationMail"
@@ -107,43 +159,66 @@ export class NotificationDeliveryService
       `;
         if (!row) return;
 
-        const eligible = await this.eligible(tx, row);
+        const eligible =
+          row.kind === "broadcast"
+            ? row.userId === null || broadcastRecipient?.id === row.userId
+            : await this.eligible(tx, row);
+        let failedAttempts = row.attempts;
+        let terminalFailure = false;
         if (eligible) {
           try {
             const accepted = await this.mailer.send(
               row.message as unknown as SentEmail,
               `<${id}@janosik>`,
             );
-            if (!accepted) throw new Error("SMTP is disabled");
+            if (!accepted) return;
           } catch (error) {
-            const attempts = row.attempts + 1;
-            const delay = Math.min(
-              MAX_RETRY_DELAY_MS,
-              RETRY_DELAY_MS * 2 ** Math.min(attempts - 1, 8),
-            );
-            await tx.notificationMail.update({
-              where: { id },
-              data: { attempts, nextAttemptAt: new Date(Date.now() + delay) },
-            });
-            this.logger.warn(
-              `Notification ${id} (${row.kind}) delivery failed on attempt ${attempts}: ${error instanceof Error ? error.name : "unknown error"}`,
-            );
-            return;
+            failedAttempts += 1;
+            const code = smtpReplyCode(error);
+            terminalFailure =
+              (code !== undefined && code >= 500 && code < 600) ||
+              failedAttempts >= MAX_NOTIFICATION_ATTEMPTS;
+            const reason =
+              code ?? (error instanceof Error ? error.name : "unknown error");
+            if (terminalFailure) {
+              this.logger.error(
+                `Notification ${id} (${row.kind}) delivery stopped after ${failedAttempts} attempt(s): ${reason}`,
+              );
+            } else {
+              const delay = Math.min(
+                MAX_RETRY_DELAY_MS,
+                RETRY_DELAY_MS * 2 ** (failedAttempts - 1),
+              );
+              await tx.notificationMail.update({
+                where: { id },
+                data: {
+                  attempts: failedAttempts,
+                  nextAttemptAt: new Date(Date.now() + delay),
+                },
+              });
+              this.logger.warn(
+                `Notification ${id} (${row.kind}) delivery failed on attempt ${failedAttempts}: ${reason}`,
+              );
+              return;
+            }
           }
         }
         const finishedAt = new Date();
-        if (row.kind === "attention" && eligible) {
+        const delivered = eligible && !terminalFailure;
+        if (row.kind === "attention" && delivered) {
           await tx.attentionNotification.updateMany({
             where: { attentionMailId: id, emailedAt: null },
             data: { emailedAt: finishedAt },
           });
         }
-        if (row.kind === "digest") {
+        // A terminal digest keeps its reservations until attention retention
+        // removes them; otherwise the next run would retry the same events.
+        if (row.kind === "digest" && !terminalFailure) {
           await tx.attentionNotification.updateMany({
             where: { digestMailId: id, digestedAt: null },
             data: {
               digestMailId: null,
-              ...(eligible ? { digestedAt: finishedAt } : {}),
+              ...(delivered ? { digestedAt: finishedAt } : {}),
             },
           });
         }
@@ -151,6 +226,9 @@ export class NotificationDeliveryService
           where: { id },
           data: {
             finishedAt,
+            ...(terminalFailure
+              ? { failedAt: finishedAt, attempts: failedAttempts }
+              : {}),
             message: Prisma.DbNull,
             userId: null,
             boardIds: [],
