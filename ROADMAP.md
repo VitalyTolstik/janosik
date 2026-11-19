@@ -467,7 +467,7 @@
 | 34 | TASK-43 `master-admin-panel` | ✅ реализовано вне очереди по запросу — мастер-контур (§7.0/§7.4): `AdminUser` (OWNER/OPERATOR, отдельные cookie/JWT-аудиенция/refresh-таблица), `/admin/auth/*` + `/admin/*` (метрики с runtime, юзеры, доски, **карточки, комментарии, сессии, API-токены**, журнал команд, аудит), **редактор контента доски через командный лог от имени владельца**, модерация (блок юзера + ревок сессий/токенов по одной, архив/soft-delete доски и карточки, удаление комментария), управление мастерами только у OWNER, CLI `admin:create/passwd/list`, аудит каждого действия, lockout и anti-timing логина, ID всех сущностей с копированием, поиск по ID, удаление `User.isSuperAdmin`; **таблицы schema-first** (`Board.id`/`BoardMember.userId`/`Card.columnId`/`Comment.authorId`/…, FK-айди как значения, поиск по айди, без счётчиков, скролл-вьюпорт со sticky-шапкой) | гейты: ui 483, shared 325, backend 22 unit + 100 e2e, build/lint/format, size 204.66/210 KB + ленивый admin-чанк 20.7/30 KB; live-смоук: CLI → браузер (вход мастера, создание мастера из панели, блок юзера, Playwright-смоук) |
 | 35 | TASK-35 `board-members-ui` | ✅ реализовано, PR #74 — участники доски из UI (§7.6.1): модалка «Участники (N)» из шапки (`BoardMembersDialog` + `UserAvatar`), инвайт по email, смена роли, `expiresAt` для VIEWER с бейджем «доступ истёк», исключение с инлайн-подтверждением, последний ADMIN защищён (disabled + тултип-причина), ошибки API → тосты; **VIEWER получает read-only UI** (нет drag/композеров/меню/инлайн-редакторов, диалог карточки только для чтения, `roleOf` → `readOnly` через BoardSection); `GET /boards/:id/members` уже отдавал `userId`/`displayName`/`email` — бэкенд не менялся | гейты: ui 512 (485+27, покрытие выше порогов), shared 325, backend 22 unit + 100 e2e не тронуты, build/lint/format; live-смоук |
 | 30 | TASK-30 `realtime-sse` | ✅ реализовано, ветка `feature/TASK-30-realtime-sse`; доборы — TASK-30.1 ✅ (`touches` в событии + бюджет ленивого чанка) и TASK-30.2 ✅ (audit hardening) — §7.5 — SSE `GET /boards/:id/events` (`{type:"command", seq, action, actorId}`) + догон `?since=`; `X-Board-Seq` на агрегате; UI-мост в ленивом чанке (`fetch`-ридер с Authorization вместо EventSource+ticket), чужие экшены через тот же `boardReducer`, дедуп по seq, defer при in-flight командах, focus refetch остался fallback | два браузера видят правки без перезагрузки; обрыв догоняется дельтой (live-смоук 8/8, включая `setOffline`) |
-| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25), TASK-176 — отдельный admin/comment backlog (§7.26), TASK-177 — human-last-mile backlog (§7.27), TASK-178 — редизайн настроек доски ✅, TASK-179 — agent surfaces redesign ✅ (§7.28), TASK-180 — bug-research remediation backlog (§7.29). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
+| — | TASK-36…41 | совместный UI, релиз и полировка — **порядок и DoD в §7.7** (TASK-22…29, TASK-35…37 и TASK-43 сделаны); детали: совместный UI — §7.6.1, релиз и E2E — §7.8. **Открыты:** TASK-40/41, TASK-31, TASK-159, TASK-161 — сведены в TASK-168 (§7.25); TASK-131 (отложено). TASK-166–172 запланированы, TASK-173–175 отложены (§7.23–§7.25), TASK-176 — отдельный admin/comment backlog (§7.26), TASK-177 — human-last-mile backlog (§7.27), TASK-178 — редизайн настроек доски ✅, TASK-179 — agent surfaces redesign ✅ (§7.28), TASK-180 — bug-research remediation backlog (§7.29), TASK-181 — фильтры админских списков (§7.30). TASK-32 и TASK-39 отменены; TASK-140/141 и TASK-158 завершены |
 
 ### 6.0.1. Укрепление фундамента перед бэкендом (TASK-21.1…21.11)
 
@@ -1708,6 +1708,9 @@ TASK-36 и TASK-37.)*
 | 109 | TASK-178 `board-settings-rail` ✅ | `docs/TASK-178-board-settings-rail.md` → `feat/board-settings-rail-redesign` | Редизайн «Настройки доски» по направлению **01 «Рельс доски»**: один surface, рельс колонок, список правил, инспектор 316 px, матрица как вкладка, компактные global/start-done, responsive/a11y, мастер-панель без диалогового shell | **Выполнено:** PR #242, merge `360938b`; все 5 фаз, unit/browser/mobile-тесты, EN/RU user-guide, CHANGELOG. Модель `BoardWorkflow` не менялась. См. spec и `design/board-settings-redesign/REPORT.md` |
 | 110 | TASK-179 `agent-surfaces-redesign` | `docs/TASK-179-agent-surfaces-redesign.md` → отдельные `feat/TASK-179.x-*` | §7.28: единая IA агентских поверхностей — один board Bot-icon, глобальный `/agents` inbox (Attention/Sessions/Runs), board-scoped Agent Control (Inbox/Live/Runs), Policy в Board Settings → Agents & automation, scope-correct pending count, permissions/mobile/a11y, session-only read-only aggregation API | **✅ Сделано:** 12 подзадач merged (PR #247–#268, cleanup/docs 179.11 — PR #270). `/agents` + модалка + policy, scope-correct counts, MEMBER/VIEWER read-only, session-only aggregation, prototype sync. Migration table — `docs/TASK-179-url-testid-migration.md`; EN/RU docs — `user-guide/agents`; 1440/1024/390 visual acceptance. Independent review accepted; 177.14 поглощён 179.2/179.3; 177.6 остаётся владельцем bell |
 | 111 | TASK-180 `bug-research-remediation` | `docs/TASK-180-bug-research-remediation.md` → отдельные `feat/TASK-180.x-*` | §7.29: закрыть 99 находок 10-стримового bug research (1 critical, 15 high, 41 medium, 42 low) — rollback/data integrity, auth/roles/PAT/shares, approvals/Agent Control, MCP/API contracts, notifications/realtime, demo/retention, docs/deploy, navigation/i18n/a11y | **Запланировано:** 9 подзадач с полным ID-map; wave 1 — 180.1 rollback, 180.2 write integrity, 180.3 authz, 180.4 approvals, 180.7 data lifecycle; затем 180.5/180.6/180.8/180.9. Каждая подзадача — отдельная ветка/PR; H11 re-check after #276. См. §7.29 |
+| 112 | TASK-181 `admin-list-filters` | `docs/TASK-181-admin-list-filters.md` → отдельные `feat/TASK-181.x-*` | §7.30: сделать фильтры админских списков обнаруживаемыми и честными — supported/offered matrix вместо молчаливых no-op, панель «Фильтры»/чипы с человеческими названиями и visible short-id, карточки (board/column/label any-all/assignee/priority/due/attachments/period), moderation (author/kind/uploader/MIME/period/inline badge), audit/commands/activity (audit-visible actor/action/type/target), users/boards (accepted ADMIN)/content lists; parent-conflict vs unknown vs valid zero; `status=all` universal; URL/deep links, exact totals, bulk-selection contract, EN/RU, 1440/1024/390 | **Запланировано:** 7 подзадач; wave 1 — 181.1 контракт + lookup, 181.2 панель/чипы на карточках, 181.3 полный набор карточек; wave 2 — 181.4 moderation, 181.5 content lists, 181.6 audit hub; 181.7 docs/visual/perf. Зависит от 176.5/176.6 (уже в main); 176.10 — для `commandId`; shares — TASK-177.5; 180.9 — до 181.2. См. §7.30 |
+| 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: help-поповер у заголовка Labels + один обновляемый keyed success-toast (без label command concurrency/dedup) и card-local fallback для падения lazy-календаря due-date: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear только после accepted команды, fresh append, timer/map cleanup; `SET_CARD_LABEL`/cap/`onSaved: () => void` не меняются, а `send`/`toggleLabel` получают optional key, keyed clear/success и post-await card/mounted guard для toast/onSaved/errors/busy; inline-ошибки остаются; same-label double-click и reload ordering — residual out of scope. Фаза 2 — `calendarFallback: ComponentType<...>` заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
+| 114 | TASK-183 `demo-label-integrity` | `docs/TASK-183-demo-label-integrity.md` → отдельные `feat/TASK-183.x-*` | §7.32: две независимые находки TASK-176 demo investigation — (1) воспроизводимый demo-fixture: полный mutation inventory, drop/recreate reset, manifest/verify, DB/API binding guard и удаление ручных артефактов `Card claim visibility 123`, `фывфыв`, checklist `123`, random link, 60 comments, extra users/admin/security rows; (2) `SET_CARD_LABEL` обновляет `Card.updatedAt` вместе с версией, inverse `cardUpdatedAt` проходит `CARD_STAMPED_TYPES`, аудит `DELETE_LABEL`/`RESTORE_LABEL` и тесты | **Запланировано:** docs-only spec; 183.1 demo hygiene, 183.2 label timestamp; reset дважды после checklist+link; без изменений admin demo runner и TASK-176.9. См. §7.32 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5095,6 +5098,384 @@ backend unit/e2e (включая security-contract), `tsc -b`, build, OpenAPI и
 browser matrix зелёные. **H11:** после #276 `approved` после истечения
 apply-window — намеренное поведение; e2e уже обновлён; не возвращать silent
 `expired`.
+
+---
+
+### 7.30. Фильтры админских списков (TASK-181)
+
+> **Статус:** запланировано (2026-11-19; ревизия 7 после product/technical review). База — `main` @ `002a31ec`;
+> TASK-176.1–176.7 уже в main (176.5/176.6 — PR #268), 176.8–176.10 остаются
+> review-ветками и не блокируют остальные фильтры; `commandId`-чип появится
+> только после merge 176.10.
+> **Полный spec:** [`docs/TASK-181-admin-list-filters.md`](docs/TASK-181-admin-list-filters.md).
+> **Источник:** read-only research текущей админки (`EntityPage`,
+> `use-admin-list-query`, `admin-list-query`, `entity-configs`, hubs,
+> admin backend) и ручная проверка `/admin` на 1440/390 (2026-11-19): фильтры
+> `boardId`/`columnId`/`labelId` добавляются только через URL, чипы показывают
+> сырые id, а unsupported-фильтры молча игнорируются. 1024 входит в тестовую
+> матрицу реализации.
+> **Связь:** 176.5/176.6 — готовая URL/chips-основа; 177.5 владеет честной
+> пагинацией shares; 180.9 — admin mobile/nav/breadcrumbs; 176.12 (отдельный
+> browser checklist items) остаётся deferred; граница 176.11 не меняется.
+
+**Зачем.** Админские списки — основной инструмент поддержки, но сузить
+глобальную выборку до конкретной доски, колонки, метки, автора или действия
+можно только вручную в URL. Чипы нечитаемы (одинаковые названия досок и меток
+не различить), а часть известных ключей принимается на каждом списке и молча
+не применяется сервером — интерфейс выглядит отфильтрованным, хотя это не так.
+Нужна обнаруживаемая панель фильтров с человеческими названиями, точными
+счётчиками и deep links, но без превращения `/admin` во второй board-клиент.
+
+**Что входит.**
+
+- Единый **supported/offered matrix**: UI-парсер, запрос, чипы и backend-валидация
+  читают один реестр; legacy-пары 176.5/6 остаются supported, 400 — только вне
+  матрицы; неподдерживаемый фильтр не может стать no-op чипом.
+- Кнопка **Filters**, popover/bottom sheet, add/remove, Clear search and filters,
+  клавиатура, EN/RU, 390 px без горизонтального скролла.
+- Человеческие чипы через read-only `GET /admin/filter-options`: название
+  доски/колонки/метки/карточки, имя/email пользователя, явный fallback для
+  удалённых/неизвестных id; board и dependent-чипы с visible own short-id,
+  dependent также с parent board/column; сырой id — только для command id и
+  missing.
+- Inline-вложения видны в moderation tab с badge, но не входят в card-face
+  `hasAttachments`; `descriptionDetached=false` — единственный счётчик.
+- Карточки: board/column/label (any/all), assignee (+unassigned), priority,
+  due (overdue/soon/none), has-attachments, status, period.
+- Период — всегда header-tab, не чип: cards/users/comments/attachments получают
+  `periods: true` и `from`/`to`; choice facets (unassigned/hasAttachments/
+  verified/due/MIME/transcode) — radio/checkbox с точными чипами и aria.
+- Moderation: comments (board/card/author/kind/period), attachments
+  (board/card/uploader/MIME/transcode/period); board-контекст переживает смену
+  вкладки.
+- Audit hub: audit (**audit-visible actor/master**, action, target type/id),
+  commands (actor, type, board/card/column), activity (actor, type, board/card).
+- Content lists: users (verified/period), boards (**accepted ADMIN member**),
+  columns/labels/checklists (board/card), card links (type/card).
+- URL/deep links/`returnTo`, exact `total`, сброс offset, bulk-selection
+  contract 176.1, пустые состояния, EN/RU docs и browser matrix.
+
+**Что осознанно не входит:** filters на shares (177.5), status-фильтр сессий до
+честного списка revoked/expired, новый tab checklist items (176.12),
+detail-панели, board members/dashboard, saved filter views/localStorage,
+счётчики вариантов фильтра, MCP/публичный API. Duplicate-only chip compaction —
+follow-up backlog без нового номера, не часть 181.7.
+
+**Подзадачи.**
+
+| ID | Что делаем | Приоритет | Волна |
+| --- | --- | --- | --- |
+| 181.1 | Контракт: supported/offered matrix, URL arrays/booleans/enums, строгая DTO-валидация, `GET /admin/filter-options` (auditActor, q≤200/ids≤20), общий client-кэш | P1 | 1 |
+| 181.2 | Панель Filters + popover/bottom sheet + чипы с lookup; пилот на cards: board/column/label; смена board чистит зависимые; keyboard/a11y/390/EN-RU | P1 | 1 |
+| 181.3 | Cards полностью: assignee/unassigned, priority (null=medium), due, has-attachments, label any/all + mode chip, period (`dateRange`); query plan/индексы | P1 | 1 |
+| 181.4 | Moderation: comments author/kind, attachments uploader/MIME/transcode, period; сохранять boardId между вкладками | P2 | 2 |
+| 181.5 | Content lists: users verified/period, boards accepted ADMIN member, columns/labels/checklists/links; без нового checklist-items tab | P2 | 2 |
+| 181.6 | Audit hub: actor/action/target, commands actor/type, activity actor/type; **audit-visible actor only**, OPERATOR без roster | P2 | 2 |
+| 181.7 | EN/RU admin docs, CHANGELOG, visual/a11y/perf acceptance, финальный URL/regression sweep | P2 | 3 |
+
+**Порядок.** Wave 1: **181.1 → 181.2 → 181.3** — сначала контракт и lookup,
+затем панель на самом ценном списке, затем полный набор facets карточек.
+Wave 2: **181.4 / 181.5 / 181.6** можно вести параллельно после 181.2, по
+одной ветке/PR на подзадачу. Wave 3: **181.7** после merge всех фич.
+
+**DoD.** Реализован подтверждённый инвентарь §5.7 spec и supported/offered
+матрица §5.8: legacy 176.5/6-пары работают, 400 только вне матрицы; чипы везде
+человеческие (board-чип с видимым short-id, зависимые — с parent board/column),
+no-op фильтры невозможны; период — header-tab на cards/users/comments/attachments
+с `from`/`to`, sessions/tokens сохраняют свои period tabs; choice facets и
+label any/all имеют control/chip/aria/EN-RU; `hasAttachments`/recount учитывают
+`descriptionDetached=false`, inline rows видны с badge; смена board чистит
+зависимые фильтры, existing out-of-scope parent даёт conflict banner, hard-deleted
+id — Unknown, parent match + zero — normal empty; deep links/`returnTo`/пагинация/
+выделение честные; multi-value и boolean валидируются;
+`auditActor` не отдаёт roster/roles/disabled и недоступен как `type=admin`;
+`status=all` универсален, announcements `status=deleted` остаётся API-alias и
+нормализуется в UI до `disabled`; per-entity allowlists общие для generic и
+specialized routes; `unsupported_filter` (с offending filter) даёт explicit
+Remove; есть query-plan/замеры на определённом seed, индексы только по
+необходимости; EN/RU, 1440/1024/390 с visibility/reachability, keyboard/focus/
+screen-reader; `format:check`, lint, tsc, unit/shared/backend e2e/browser
+зелёные без ослабления тестов; 390 long-title chips truncate within viewport
+with visible ids and keyboard removal.
+
+**Зависимости.** Жёсткая — 176.5/176.6 (уже в main); 176.8–176.10 не нужны
+для остальных фильтров, но `commandId`-чип появляется только после merge
+176.10. 177.5 остаётся владельцем shares, 180.9 — admin mobile/nav; **180.9
+мержить до 181.2** (иначе rebase + 390-прогон), **176.10 — до 181.6**. 181.1
+владеет shared/list DTO/URL-хуками; 181.2 — `EntityPage`/`HubTabs`/filters
+dir/i18n base; **181.3 — `listCards`; 181.4 — `listComments`+`listAttachments`;
+181.5 — `listUsers`/`listBoards`+content lists; 181.6 — `listCommands`/`listAudit`+
+`listActivity`**; правки в `admin.service.ts`/`admin-entities.service.ts`
+сериализуются по волнам, `EntityPage`/`HubTabs` не редактировать параллельно;
+181.7 — docs. Индексы — отдельной миграцией после замера.
+
+---
+
+### 7.31. Метки и календарь в админ-карточке (TASK-182)
+
+> **Статус:** предложено (docs-only, 2026-11-19); production-кода в этой
+> задаче нет. Две независимые PR-фазы: сначала метки (P2), затем календарь
+> (P1); номера фаз — порядок поставки, не приоритет. Метки идут первыми как
+> маленький изолированный PR; календарь P1 от них не зависит и может идти
+> сразу после или параллельно.
+>
+> **Полный spec:** [`docs/TASK-182-admin-label-and-calendar-ux.md`](docs/TASK-182-admin-label-and-calendar-ux.md).
+>
+> **База:** известный tip `feat/TASK-176.9-admin-card-relations` @ `7bb2848b`
+> (B1 fields + B2 relations); docs-ветка от `origin/main` @ `002a31ec`.
+> Implementation PR ребейзится на финальный tip/merge TASK-176.9 и заново
+> сверяет code map, а не на этот docs-baseline.
+>
+> **Соседство:** TASK-181, §7.30 и строка 112 зарезервированы под параллельную
+> задачу admin-фильтров; placeholder-строка 112 сохраняет reserved-номер и
+> видна в таблице, но не обязательна для валидности GFM (113 после 111 тоже
+> парсится) и в scope TASK-182 не входит.
+
+**Зачем.** Два дефекта в `/admin/cards/:id` → Properties. (1) Каждый клик по
+метке отправляет реальный `SET_CARD_LABEL` и рисует новый `Label updated`;
+быстрые переключения складывают одинаковые тосты по 4,5 с, а рядом с полем нет
+объяснения, что метки сохраняются сразу, клик прикрепляет/открепляет и
+изменение попадает в историю доски. (2) Падение lazy-календаря due-date в
+демо-стенде заменяло всю панель Properties на «Could not load the card field
+editor. Reload the page to try again.»: рабочая гипотеза — общий
+`node_modules/.vite` у параллельных worktree (mismatched prebundles,
+production build работал), но product bug — слишком широкий
+`CardFieldsChunkBoundary`, который ловит ошибку вложенного `Calendar` и скрывает
+title/assignee/due/priority/cover/labels. Field-level retry отсутствует; Vite-
+причина в CI не воспроизведена и остаётся environment-триггером.
+
+**Фаза 1 — метки.** Info-кнопка с доступным именем «About labels» / «О метках»
+рядом с заголовком Labels открывает Radix `Popover` (не tooltip: нужны
+клавиатура, touch, Escape/outside-click и многострочный текст). Copy: метки
+сохраняются сразу, клик прикрепляет/открепляет, изменения видны в истории
+доски. Тосты: opt-in `key` у success-toast (`toast.success(message, { key })`)
+плюс `toast.clear(key)`, который снимает item, таймер и key→toast map entry;
+manual close и авто-dismiss тоже удаляют entry. Ключ —
+`admin.card.labels:${card.id}`. Тост очищается только после того, как команда
+принята (busy guard прошёл, запрос стартовал); blocked click/`send === false`
+предыдущий тост не трогает. При ошибке, смене карточки/unmount — очистка;
+успех **добавляет новый item после clear**, а не обновляет старый in place
+(для повторного aria-live announcement). Unkeyed success и все `error`
+остаются аддитивными; ошибки лейблов — по-прежнему inline.
+
+Точная delta: `SET_CARD_LABEL`, cap guard и `onSaved: () => void` не меняются;
+`send()`/`toggleLabel()` получают опциональный label toast key, keyed
+clear/success и post-await current-card/mounted guard. Guard закрывает **все**
+post-await effects: keyed toast, `onSaved`, `setErrors`, `setBusy`; поздний A
+success/failure после перехода на B не показывает A-тост, не пишет A-ошибку,
+не вызывает A-`onSaved` (нет B reload) и не сбрасывает busy B. Command
+concurrency, timeout, resync, label state и reload ordering не входят (см.
+residual в полном spec). Тесты: help + browser 1440/1024/390; keyed label path
+(clear/success, не generic unkeyed); blocked click не чистит прошлый тост;
+clear/timer/dismiss/re-add; success→failure; A→B без toast/error/B reload;
+unkeyed success/error; a11y.
+
+**Фаза 2 — календарь.** `DateTimeField` получает опциональные
+`calendarLoader` и `calendarFallback: ComponentType<CalendarFallbackState>` с
+`{ value, onChange, time, calendarProps, retry }`; fallback рендерится как
+компонент (`createElement`/JSX), не вызывается как обычная функция, поэтому
+может использовать hooks; `CalendarFallbackState`/`CalendarProps`
+экспортируются рядом с `DateTimeField`/`calendar-lazy`, а fallback-компонент
+определён на module level.
+Fallback заменяет **пару calendar + TimePickerPanel**, а не только календарь:
+native `<input type="datetime-local">` получает draft value и time, имеет
+доступный label, а существующие Save/Remove снаружи сохраняют draft. При
+отсутствии этих props `DateTimeField` ведёт себя как сегодня; announcements
+(`AnnouncementEditorDialog`) и board consumers (`CardDueDate`, `FilterBar`,
+`BoardMembersDialog`; `CardDialog` — косвенно, `CalendarView`/`calendar-parts`
+`calendar-lazy` не импортируют) не меняются. `CardFieldsPanel` получает
+опциональный `calendarLoader` (test seam, production omits) и передаёт
+card-local native fallback; trigger/popover и остальные поля остаются
+смонтированными. Retry делает новый lazy attempt через
+`createCalendar(loader)`; rejected `react-day-picker/locale` import ловится и
+не даёт unhandled rejection. Внешний `CardFieldsChunkBoundary` сохраняется для
+panel-level ошибок; generic fallback остаётся для panel chunk или uncaught
+non-calendar render error, а calendar failure до него больше не доходит.
+
+**DoD.** Help-кнопка: mouse/keyboard, Escape/outside-click, focus return, EN/RU,
+browser 1440/1024/390. Keyed toast: clear только после accepted команды
+(busy guard прошёл/запрос стартовал), blocked click прошлый тост не чистит;
+fresh append на success с reset timer; clear/dismiss удаляет item+таймер+map
+entry; manual close/auto-dismiss через UI (или documented seam) допускают
+re-add; unkeyed success/error остаются аддитивными. Late A success/failure после
+перехода на B не показывает A-тост, не пишет A-ошибку, не вызывает A-`onSaved`
+(нет B reload) и не сбрасывает busy B. Exact delta: `SET_CARD_LABEL`, cap guard,
+`onSaved: () => void` не меняются; `send`/`toggleLabel` получают optional label
+toast key, keyed clear/success и post-await current-card/mounted guard **для всех**
+post-await effects (toast, onSaved, setErrors, setBusy). Тест доказывает keyed
+label path (не generic unkeyed), blocked click и A→B без B reload. Label command
+concurrency, timeout, in-flight labels, resync, label state и reload ordering не
+входят (residual в spec). Calendar: отдельный normal-path тест кликает
+`admin-card-due-input` и монтирует lazy-календарь; отдельный reject-once тест
+даёт alert/fallback, а реальная команда (например `SET_CARD_PRIORITY`) проходит
+при сломанном календаре; Retry возвращает calendar+time и позволяет сохранить
+due; persistent failure даёт native input с label и сохранением через
+существующий Save, без duplicate time; locale rejection не даёт unhandled
+rejection; outer boundary-test рендерит панель внутри
+`CardFieldsChunkBoundary`/fallback и не показывает generic fallback при calendar
+failure; browser 1440/1024/390 проверяет и layout native fallback. Гейты
+implementation PR: `npm test -w ui`,
+`npx tsc -b ui/tsconfig.json --force` (или `npm run build -w ui`),
+`npm run build -w ui`, `npm run size -w ui` (бюджет admin card page 113 KB
+gzip), lint/Prettier, `git diff --check`, CHANGELOG/docs при необходимости.
+Dev-cache — environment/runbook, не product acceptance.
+
+**Зависимости.** TASK-176.9 B1/B2 ещё не в `main`; implementation PR
+ребейзится на финальный tip/merge TASK-176.9 (известный tip `7bb2848b`) и
+сверяет code map. Обе фазы трогают `CardFieldsPanel.tsx` и `admin-i18n.ts`;
+при параллельном запуске phase 2 ребейзится на phase 1 (или общие изменения
+выносятся отдельно). TASK-181/§7.30/строка 112 — reserved, не трогать.
+
+---
+
+### 7.32. Demo fixture hygiene и timestamp метки карточки (TASK-183)
+
+> **Статус:** запланировано (docs-only, 2026-11-19).
+> **Полный spec:** [`docs/TASK-183-demo-label-integrity.md`](docs/TASK-183-demo-label-integrity.md).
+> **Источник:** TASK-176 demo investigation + read-only проверка `janosik_task176_demo` 2026-11-19.
+> **Не входит:** TASK-176.9 (редактор карточки) и admin demo runner (TASK-57/69; H9 принадлежит TASK-180.7). Новых схем, API и production-кода в этой docs-only задаче нет.
+
+**Зачем.** Demo-база `janosik_task176_demo` больше не воспроизводится из
+committed seed: на `px-card-card-claim` есть `Card claim visibility 123`,
+`фывфыв`, checklist `123`/`1`, random-UUID link, 18 лишних label-тогглов, а
+также незакоммиченные TASK-176 label/checklist/links и 60 `t176-comment-*`
+(9 soft-deleted, 51 live). Это не corruption — aggregate и API валидны, — но
+чистый demo нельзя пересоздать, а manual drift молча накапливается. Отдельно
+`SET_CARD_LABEL` меняет `labelIds` и версию, но не `Card.updatedAt`; inverse
+теряет `cardUpdatedAt` ещё и в validation.
+
+**183.1 — demo fixture hygiene (P2).**
+
+- Seed `scripts/seed-agent-pixel-demo.mjs`: 13 card rows (12 createMany +
+  `px-card-expired-retention` через `ADD_CARD`), 12 live; run 124 помечен
+  `reverted`, но `DELETE_CARD` остался применён — это не настоящий revert.
+  Seed не создаёт labels/checklists/links/comments; печатает raw tokens/password
+  — output должен быть redacted by default.
+- Текущая очистка ломается: `Card.deleteMany` упирается в FK `RESTRICT` от
+  `ChecklistItem`/`Checklist`/`CardLink`; `BoardShare`/`BoardShareAuditLog`
+  остаются. Primary reset — drop/recreate demo schema
+  (`prisma migrate reset --force --skip-seed`); fallback — **fixture +
+  admin/security account reset** (не full demo-DB): checklistItem → checklist →
+  cardLink → cardLabel → comment → attachment → activity → commandPreimage →
+  command → run/approval/session/token → attention → share audit/share → card →
+  label → column → member → board → demoRun → dataExport → reminderSent →
+  idempotencyRecord → securityAuditLog → refreshToken → user → adminAuditLog →
+  adminRefreshToken → adminUser. Retain `FeatureFlag`, `EmailSettings`,
+  `EmailTemplate`, `OpsSettings`, `ThrottleSettings`, `Announcement`,
+  `AnnouncementTranslation`; `AnnouncementDismissal` cascades with deleted users.
+  Retained `EmailSettings` требует same `SETTINGS_SECRET`/original `JWT_SECRET`
+  или SMTP credential re-entry. Порядок FK-корректен; раньше не хватало самих
+  таблиц. Reset дважды с non-zero rows перед **каждым** run.
+- Manifest/verifier: ровно два seed-пользователя и их board roles; `1@t.com` и
+  `2@t.com` — junk, extra registration после reset валит verify.
+  SecurityAuditLog/AttentionNotification/RefreshToken и admin-таблицы —
+  probe-time/out-of-fixture, не pins; оба reset-пути стирают admin/security
+  account state — recreate `npm run demo:task176:admin -- --email <master>`
+  (only documented path; URL via 0600 env/child env, never argv; first master
+  OWNER) против demo DB. Verifier также покрывает `columnId`/`position`,
+  `priority`, `assigneeId`, `cover`, labels, named links, checklists; `dueDate`,
+  task spec, claim, `archivedAt` — явно absent/empty. Assignee/cover/priority/
+  move и 60 comments классифицировать.
+- Inventory: `ADD_LABEL` seq 14, initial `SET_CARD_LABEL` seq 15; Agent Ops delta
+  46 entries for seq 1–51 — это board-scoped, seq 9–13 Website commands, не
+  ожидать 51 на одной доске. Raw command IDs — в spec §2.2.
+- Reset требует `DEMO_DATABASE_URL`/`DEMO_API_URL` без defaults, exact
+  `janosik_task176_demo` primary (wildcard только с явным allow), один resolved
+  DB URL для всех child-процессов. `backend/src/config/env.ts:21-32` загружает
+  `.env`/`.env.NODE_ENV`/`.env.local` с `override: true`, а `backend/.env:6`
+  может указывать на dev: нужен reset-only env file, переданный через CLI args/
+  pre-dotenv snapshot (unique 0600 temp file, one-time nonce,
+  `NODE_ENV !== "production"`, fail-closed if missing or production + reset
+  mode). `.env.local` fallback запрещён; `.env` cannot disable/redirect hook;
+  normal boot ignores hook; stale reset env/lock/temp files sweep at start.
+  Тест: `backend/.env` → dev, `DEMO_DATABASE_URL` → demo + tampered-`.env`/
+  production-boot test.
+- Dedicated backend: process group, PID/start-time/port/lock/nonce per demo DB;
+  verify `/proc/<pid>` (Linux/WSL prerequisite) или fail-closed `ps` fallback
+  cmdline/start time/port/nonce before killing; if ownership unproven, clear
+  stale state and fail closed (never kill an unrelated live process);
+  `pg_terminate_backend` demo connections before drop, excluding reset backend
+  PID, print terminated PIDs/database; fresh loopback/owned port or
+  reset-allocated/printed URL, port-in-use test; stop before schema drop, restart
+  after migrations for seed only, stop before Prisma-only verify, stop/reap in
+  `finally`; SIGKILL-crash rerun kills wrapper/process group. `/health db: up` не доказывает identity:
+  marker **user/board/accepted ADMIN BoardMember create directly via reset
+  Prisma**, JWT `{ sub, aud: "janosik-user", stamp, exp }` с reset-env
+  `JWT_SECRET` и parameterized `securityStamp(user, secret)`; API только
+  `GET /boards/:marker`; correct DB 200, any non-200 abort; markers cleaned
+  before drop + `finally` + stale sweep, fresh connection after reset.
+  `DEMO_API_URL` map в seed `API_URL`/overlay; TASK-176 overlay читает `DEMO_*`
+  exclusively и валидирует DB name до `PrismaClient`; direct overlay invocation
+  запрещён (only reset wrapper with one-time nonce); base pixel seed contract
+  сохраняется (allowlist only `janosik_pixel`/`*_pixel`; explicit reject
+  `janosik_task176_demo`; `*_demo` only overlay/nonce; `DEMO_*` unset),
+  direct base seed — не TASK-176 reset path.
+- Verify — Prisma-only, без login/PAT/`ApiToken.lastUsedAt`; если API read
+  появится, ignore `lastUsedAt` и re-mint known token. Reset/seed output
+  redacted; raw secrets только через 0600 file. Docs: backend build,
+  `JWT_SECRET`/`SETTINGS_SECRET` (или original `JWT_SECRET`)/`PUBLIC_ORIGIN`/
+  `COOKIE_SECURE=false`/port, initial `migrate deploy`, DB create/drop/
+  `pg_terminate_backend` privileges, admin recreate.
+
+**183.2 — label timestamp (P3).**
+
+- `shared/src/store/board-reducer.ts:1267-1308`: `setCardLabel` не ставит
+  `updatedAt: cardStamp(action)`.
+- `backend/src/commands/command-writers.ts:371-378`: `bumpCard` пишет
+  `new Date(card.updatedAt)`, то есть старое значение; `:973-978` вызывает его
+  для `SET_CARD_LABEL`. Версия растёт, timestamp — нет.
+- `shared/src/store/invert.ts:449-462`: inverse не несёт `cardUpdatedAt`.
+- `shared/src/store/validate.ts:61-90,377-389`: `CARD_STAMPED_TYPES` не
+  содержит `SET_CARD_LABEL`, поэтому validation молча выбрасывает
+  `cardUpdatedAt`; добавить тип и `validate.test.ts` + inverse через
+  `POST /commands`.
+- Reducer test: только `updatedAt`/`labelIds`; persisted row: `updatedAt`,
+  `version = previous + 1`, `lastActorId = actor`, `labelIds` after-state. Не
+  проверять server-only `version`/`lastActorId` на shared `Card`.
+- `ui/src/store/board-diff.ts:58-70` и тест `:123`: updatedAt-fast-path
+  пропускает label change, `labelIds` fallback маскирует stale timestamp;
+  после фикса обновить комментарий/тест, fallback оставить как compatibility.
+- Аудит: `DELETE_LABEL` (`command-writers.ts:1059`, reducer `:1361`) и
+  `RESTORE_LABEL` (`:1118`, reducer `:2277`) — тот же класс, multi-card:
+  forward stamp всем затронутым карточкам, inverse — per-card pre-delete
+  timestamp в `RestoreLabelAction.assignments` + validation, либо named
+  follow-up с тестом. Rename/color метки карточный timestamp не меняют.
+
+**Подзадачи.**
+
+| ID | Что делаем | Приоритет |
+| --- | --- | --- |
+| 183.1 | Fixture manifest, полный reset/verify, DB/API binding guard, классификация drift, docs | P2 |
+| 183.2 | `SET_CARD_LABEL` stamp + inverse `cardUpdatedAt` + `CARD_STAMPED_TYPES`; split reducer/DB tests; аудит label-действий | P3 |
+
+**DoD.** Demo пересоздаётся одной командой; reset дважды после checklist+link и
+с non-zero security/admin/idempotency/reminder rows перед каждым run (плюс
+dismissal cascade) проходит; SIGKILL-wrapper rerun проходит; env hook (CLI args/
+pre-dotenv snapshot, unique 0600 file, one-time nonce, `NODE_ENV !== "production"`,
+no `.env.local`, stale sweep) не перетирает demo URL (`backend/.env` dev +
+tampered-`.env` тест); marker user/board/accepted ADMIN BoardMember создан через
+reset Prisma, JWT с `aud` + parameterized `securityStamp(user, secret)`, any
+non-200 abort до delete, markers cleaned before drop/`finally`/fresh connection;
+backend process group/PID/start-time/port/lock/nonce, ownership verified,
+unrelated live process never killed, stopped/reaped; verify Prisma-only, ровно
+два seed-пользователя, extra user валит verify; 60 comments отсутствуют или
+вынесены в TASK-176.9 fixture;
+reset/seed output redacted. Fallback — fixture + admin/security account reset;
+global settings/announcements retained; retained `EmailSettings` uses same
+`SETTINGS_SECRET`/original `JWT_SECRET` or documented SMTP re-entry; master
+recreate `npm run demo:task176:admin -- --email <master>` (only documented path;
+URL via 0600 env/child env, never argv) после обоих путей.
+`SET_CARD_LABEL` двигает `updatedAt`/`version` один раз, undo
+восстанавливает timestamp, inverse проходит validation и `POST /commands`,
+no-op ничего не меняет; audit table закрыт тестами или follow-up. Без изменений
+admin demo runner, H9 и TASK-176.9. CHANGELOG/docs и reset integration test
+входят в implementation DoD.
+
+**Зависимости.** TASK-156 (label-only workaround), TASK-150 (focus diff),
+TASK-21.7d (inverse timestamps, `invert.ts` + `validate.ts`), TASK-180.7 — только
+координация по demo lifecycle. Backend-схемы и forward API-контракта не
+меняем; `SET_CARD_LABEL` не получает нового обязательного поля. Demo reset
+добавляет только fail-closed env-precedence hook; новых миграций нет.
 
 ---
 
