@@ -54,4 +54,21 @@ describe("isOverlayOpen", () => {
       expect(isOverlayOpen()).toBe(false);
     }
   });
+
+  it("ignores nested role-bearing content inside a closed surface", () => {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("data-state", "closed");
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    dialog.append(listbox);
+    document.body.append(dialog);
+
+    // The app palette keeps its listbox mounted during the exit animation;
+    // it has no data-state of its own.
+    expect(isOverlayOpen()).toBe(false);
+
+    dialog.setAttribute("data-state", "open");
+    expect(isOverlayOpen()).toBe(true);
+  });
 });

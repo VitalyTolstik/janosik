@@ -1,6 +1,34 @@
 import { test, expect } from "@/fixtures/board.js";
 import { createExtraBoard } from "@/helpers/boards.js";
 
+test("forced board switch on a phone focuses the board title, not BODY", async ({
+  page,
+  board,
+}) => {
+  const other = await createExtraBoard(board.api, "Phone workflow board");
+  await board.open(page);
+
+  const settings = page.getByTestId("board-settings-trigger");
+  await settings.click();
+  const dialog = page.getByRole("dialog", {
+    name: `Board settings: ${board.title}`,
+  });
+  await expect(dialog).toBeVisible();
+
+  // The gear is display:none at this width; the fallback must be the title.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.keyboard.press("Control+k");
+  const search = page.getByRole("combobox", {
+    name: "Search cards and boards",
+  });
+  await search.fill(other.title);
+  await page.getByRole("option", { name: other.title }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/board/${other.id}$`));
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("board-title")).toBeFocused();
+});
+
 test("switching boards closes the settings draft before another board can save", async ({
   page,
   board,

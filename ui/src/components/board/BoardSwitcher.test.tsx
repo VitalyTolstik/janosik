@@ -172,6 +172,12 @@ describe("BoardSwitcher", () => {
     fireEvent.change(input, { target: { value: "zzz" } });
     expect(screen.getByText("No boards match")).toBeInTheDocument();
     expect(input).toHaveAttribute("aria-expanded", "true");
+    // `aria-expanded=true` must not point at a hidden grid: the empty
+    // result list stays mounted (with no rows) under the message.
+    expect(screen.getByRole("grid", { name: "Switch board" })).toBeVisible();
+    expect(
+      screen.getByRole("grid", { name: "Switch board" }),
+    ).not.toHaveAttribute("hidden");
 
     fireEvent.keyDown(input, { key: "Escape" });
     await waitFor(() =>

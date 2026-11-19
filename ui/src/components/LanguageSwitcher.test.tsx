@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUserDto } from "@janosik/shared";
 
@@ -12,9 +13,9 @@ import * as i18nModule from "@/i18n/i18n";
 
 /**
  * Language switcher (L27/M39): a catalog is loaded before the UI changes, a
- * successful signed-in choice persists to the server profile, and the
- * one-shot `?lng=` handoff is consumed with `history.replaceState` so a dirty
- * workflow draft never sees a router navigation.
+ * successful signed-in choice persists to the server profile, and the one-shot
+ * `?lng=` handoff is consumed through the router so later URL rebuilds cannot
+ * reintroduce it. The workflow blocker (M39) ignores only that change.
  */
 
 const user: AuthUserDto = {
@@ -27,11 +28,44 @@ const user: AuthUserDto = {
   createdAt: 1,
 };
 
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+      {location.hash}
+    </output>
+  );
+}
+
+/** A later board-filter/list write that rebuilds from `useSearchParams`. */
+function QueryWriter() {
+  const [, setParams] = useSearchParams();
+  return (
+    <button
+      type="button"
+      data-testid="apply-filter"
+      onClick={() =>
+        setParams(
+          (current) => {
+            const next = new URLSearchParams(current);
+            next.set("q", "alpha");
+            return next;
+          },
+          { replace: true },
+        )
+      }
+    >
+      Apply filter
+    </button>
+  );
+}
+
 function renderSwitcher(
   path = "/board/b-1",
   options: { updateUser?: (next: AuthUserDto) => void } = {},
 ) {
-  window.history.replaceState({}, "", path);
   const updateUser = options.updateUser ?? vi.fn();
   const auth: AuthValue = {
     status: "authenticated",
@@ -45,11 +79,19 @@ function renderSwitcher(
   render(
     <AuthContext.Provider value={auth}>
       <I18nProvider>
-        <LanguageSwitcher variant="row" />
+        <MemoryRouter initialEntries={[path]}>
+          <LanguageSwitcher variant="row" />
+          <LocationProbe />
+          <QueryWriter />
+        </MemoryRouter>
       </I18nProvider>
     </AuthContext.Provider>,
   );
   return { updateUser };
+}
+
+function locationText(): string {
+  return screen.getByTestId("location").textContent ?? "";
 }
 
 async function chooseLanguage(name: "English" | "Русский") {
@@ -60,7 +102,6 @@ async function chooseLanguage(name: "English" | "Русский") {
 describe("LanguageSwitcher", () => {
   beforeEach(async () => {
     await defaultI18n.changeLanguage("en");
-    window.history.replaceState({}, "", "/");
   });
 
   afterEach(() => {
@@ -84,15 +125,25 @@ describe("LanguageSwitcher", () => {
     expect(localStorage.getItem("janosik-lang")).toBe("ru");
   });
 
-  it("consumes ?lng= without a router navigation and preserves query/hash", async () => {
+  it("consumes ?lng= through the router and keeps later query writes clean", async () => {
     renderSwitcher("/board/b-1?lng=ru&keep=1#details");
 
     await chooseLanguage("Русский");
 
-    await waitFor(() => expect(window.location.pathname).toBe("/board/b-1"));
-    expect(window.location.search).toBe("?keep=1");
-    expect(window.location.hash).toBe("#details");
+    await waitFor(() =>
+      expect(locationText()).toBe("/board/b-1?keep=1#details"),
+    );
+    expect(locationText()).not.toContain("lng=");
     expect(defaultI18n.language).toBe("ru");
+    expect(localStorage.getItem("janosik-lang")).toBe("ru");
+
+    // The board filter/admin list rebuild their URL from useSearchParams.
+    // A stale router location would carry `lng` back into the new URL.
+    await userEvent.click(screen.getByTestId("apply-filter"));
+    await waitFor(() =>
+      expect(locationText()).toBe("/board/b-1?keep=1&q=alpha"),
+    );
+    expect(locationText()).not.toContain("lng=");
   });
 
   it("keeps ?lng= when the lazy catalog fails to load", async () => {
@@ -105,7 +156,7 @@ describe("LanguageSwitcher", () => {
     await chooseLanguage("Русский");
 
     await waitFor(() => expect(ensureLocale).toHaveBeenCalledWith("ru"));
-    expect(window.location.search).toBe("?lng=ru&keep=1");
+    expect(locationText()).toBe("/board/b-1?lng=ru&keep=1#details");
     expect(defaultI18n.language).toBe("en");
     expect(updateProfile).not.toHaveBeenCalled();
   });

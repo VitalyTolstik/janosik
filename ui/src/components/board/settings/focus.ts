@@ -4,19 +4,33 @@
  * board switch unmounts the dialog outright, so both paths resolve the target
  * here.
  *
- * Preference: the new board's Settings gear. A board the user cannot
- * administer has no gear, so the board title (or the board main region) takes
- * focus instead of dropping it on BODY.
+ * Preference order is gear → title → board main. The gear is hidden below
+ * 721 px, so a bare `.focus()` on it would leave focus on BODY; the first
+ * visible/focusable candidate wins instead. In jsdom (no layout engine and no
+ * `checkVisibility`) every candidate is treated as visible, so tests can
+ * exercise the fallback by stubbing the browser API.
  */
+function isFocusable(target: HTMLElement): boolean {
+  if (typeof target.checkVisibility === "function") {
+    return target.checkVisibility();
+  }
+  return true;
+}
+
 export function restoreBoardSettingsFocus(): void {
   const focusTrigger = () => {
-    const target =
-      document.querySelector<HTMLElement>(
-        '[data-testid="board-settings-trigger"]',
-      ) ??
-      document.querySelector<HTMLElement>('[data-testid="board-title"]') ??
-      document.querySelector<HTMLElement>('[data-testid="board-main"]');
-    target?.focus();
+    const candidates = [
+      '[data-testid="board-settings-trigger"]',
+      '[data-testid="board-title"]',
+      '[data-testid="board-main"]',
+    ];
+    for (const selector of candidates) {
+      const target = document.querySelector<HTMLElement>(selector);
+      if (target !== null && isFocusable(target)) {
+        target.focus();
+        return;
+      }
+    }
   };
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(focusTrigger);

@@ -275,11 +275,27 @@ describe("keyboard shortcuts", () => {
     const closing = document.createElement("div");
     closing.setAttribute("role", "dialog");
     closing.setAttribute("data-state", "closed");
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    closing.append(listbox);
     document.body.append(closing);
 
     pressKey("?");
     expect(screen.getByTestId("shortcuts-table")).toBeInTheDocument();
     closing.remove();
+  });
+
+  it("opens help immediately after Escape closes the app palette", async () => {
+    renderBoard();
+    pressKey("k", { ctrlKey: true });
+    const palette = await screen.findByRole("dialog", {
+      name: "Search cards and boards",
+    });
+
+    fireEvent.keyDown(palette, { key: "Escape" });
+    pressKey("?");
+
+    expect(await screen.findByTestId("shortcuts-table")).toBeInTheDocument();
   });
 
   it("focuses the board search with slash unless an overlay is open", () => {

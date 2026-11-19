@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
@@ -180,6 +186,43 @@ describe("BoardSettingsDialog workflow save", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
+  it("does not close or steal focus when a save resolves after unmount", async () => {
+    let resolveSave!: (value: boolean) => void;
+    mocks.setBoardWorkflow.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    const trigger = document.createElement("button");
+    trigger.dataset.testid = "board-settings-trigger";
+    document.body.append(trigger);
+
+    const onOpenChange = vi.fn();
+    const view = render(
+      <I18nProvider>
+        <BoardSettingsDialog open onOpenChange={onOpenChange} />
+      </I18nProvider>,
+    );
+    try {
+      fireEvent.click(screen.getByTestId("workflow-enabled"));
+      fireEvent.click(screen.getByTestId("workflow-allow-doing"));
+      fireEvent.click(screen.getByTestId("workflow-save"));
+      await waitFor(() => expect(mocks.setBoardWorkflow).toHaveBeenCalled());
+      view.unmount();
+
+      await act(async () => {
+        resolveSave(true);
+        await Promise.resolve();
+      });
+      await new Promise((resolve) => window.setTimeout(resolve, 30));
+
+      expect(onOpenChange).not.toHaveBeenCalled();
+      expect(document.activeElement).not.toBe(trigger);
+    } finally {
+      trigger.remove();
+    }
+  });
+
   it("asks before closing a dirty workflow draft", () => {
     const { onOpenChange } = openDialog();
 
@@ -244,6 +287,28 @@ describe("BoardSettingsDialog workflow save", () => {
       await waitFor(() => expect(document.activeElement).toBe(trigger));
     } finally {
       trigger.remove();
+    }
+  });
+
+  it("falls back to the board title when the gear is hidden (H15 mobile)", async () => {
+    const trigger = document.createElement("button");
+    trigger.dataset.testid = "board-settings-trigger";
+    // 390 px: the gear exists but its wrapper is display:none.
+    Object.defineProperty(trigger, "checkVisibility", {
+      configurable: true,
+      value: () => false,
+    });
+    const title = document.createElement("h2");
+    title.dataset.testid = "board-title";
+    title.tabIndex = -1;
+    document.body.append(trigger, title);
+    try {
+      renderControlledDialog();
+      fireEvent.click(screen.getByTestId("workflow-close"));
+      await waitFor(() => expect(document.activeElement).toBe(title));
+    } finally {
+      trigger.remove();
+      title.remove();
     }
   });
 });

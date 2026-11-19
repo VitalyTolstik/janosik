@@ -73,6 +73,21 @@ test("Ctrl+Z and Ctrl+Shift+Z undo and redo", async ({ page, board }) => {
   await expect(todoCard(page, "Keyboard task")).toBeVisible();
 });
 
+test("Ctrl+Z works immediately after the app palette closes", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.open(page);
+  await addCard(page, "Palette undo task");
+  await page.keyboard.press("Control+k");
+  await expect(page.getByTestId("global-search-input")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await pressUndo(page);
+  await expect(todoCard(page, "Palette undo task")).toHaveCount(0);
+});
+
 test("Ctrl+Y also redoes", async ({ page, board }) => {
   await board.column("Todo");
   await board.open(page);

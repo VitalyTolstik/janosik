@@ -18,9 +18,13 @@ const OVERLAY_SELECTOR = [
  * A surface that is animating out keeps its role for the exit duration but
  * already has `data-state="closed"`; it no longer owns the keyboard, so the
  * first Ctrl+Z or `?` after closing must work instead of being swallowed.
+ * Radix nests role-bearing descendants (for example the app palette's
+ * listbox) that carry no `data-state` of their own, so resolve the nearest
+ * stateful ancestor rather than only the matched element.
  */
 export function isOverlayOpen(): boolean {
   return [...document.querySelectorAll(OVERLAY_SELECTOR)].some(
-    (overlay) => overlay.getAttribute("data-state") !== "closed",
+    (overlay) =>
+      overlay.closest("[data-state]")?.getAttribute("data-state") !== "closed",
   );
 }

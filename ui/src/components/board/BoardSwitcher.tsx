@@ -351,7 +351,6 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
           role="grid"
           aria-label={t("board.switcher.aria")}
           aria-busy={pendingBoardCount > 0}
-          hidden={groups.flat.length === 0}
         >
           {groups.flat.map((b, index) => {
             const isActive = b.id === board?.id;
