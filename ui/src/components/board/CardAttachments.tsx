@@ -135,6 +135,9 @@ export function CardAttachments({
 
   const [items, setItems] = useState<AttachmentDto[]>([]);
   const [detachedItems, setDetachedItems] = useState<AttachmentDto[]>([]);
+  // Server-owned live total (includes inline/description media the lists
+  // hide). `null` falls back to the loaded rows until the first header.
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   // The first response decides between an empty list and a loading list.
   const [loaded, setLoaded] = useState(!serverMode);
   const aliveRef = useRef(true);
@@ -168,6 +171,15 @@ export function CardAttachments({
     if (nextItems.status === "rejected") {
       toast.error(t("card.attachments.loadError"));
     }
+    const total = api.attachmentTotal(cardId);
+    if (total !== undefined) {
+      setTotalCount(total);
+    } else if (
+      nextItems.status === "fulfilled" &&
+      nextDetached.status === "fulfilled"
+    ) {
+      setTotalCount(nextItems.value.length + nextDetached.value.length);
+    }
     setLoaded(true);
   }, [cardId, serverMode, t, toast]);
 
@@ -187,8 +199,14 @@ export function CardAttachments({
   const refreshNewest = useCallback(async () => {
     if (!serverMode) return;
     try {
-      setItems(await api.listAttachments(cardId));
-      setDetachedItems(await api.listDetachedAttachments(cardId));
+      const [nextItems, nextDetached] = await Promise.all([
+        api.listAttachments(cardId),
+        api.listDetachedAttachments(cardId),
+      ]);
+      setItems(nextItems);
+      setDetachedItems(nextDetached);
+      const total = api.attachmentTotal(cardId);
+      setTotalCount(total ?? nextItems.length + nextDetached.length);
     } catch {
       /* best effort: the next open or frame retries */
     }
@@ -223,7 +241,8 @@ export function CardAttachments({
 
   const canWrite = serverMode && !readOnly;
   const atCap =
-    items.length + detachedItems.length >= LIMITS.attachmentsPerCard;
+    (totalCount ?? items.length + detachedItems.length) >=
+    LIMITS.attachmentsPerCard;
 
   const onPick = async (file: File | undefined) => {
     if (!file || uploading) return;
@@ -231,9 +250,19 @@ export function CardAttachments({
     try {
       const created = await api.uploadAttachment(cardId, file);
       setItems((prev) => [created, ...prev]);
+      setTotalCount((prev) => (prev === null ? prev : prev + 1));
     } catch (error) {
       if (error instanceof ApiError && error.status === 413) {
         toast.error(t("card.attachments.tooLarge", { max: 25 }));
+      } else if (
+        error instanceof ApiError &&
+        error.code === "attachment_limit"
+      ) {
+        // L20: the server's per-card cap is not a bad file type.
+        setTotalCount(LIMITS.attachmentsPerCard);
+        toast.error(
+          t("card.attachments.atCap", { max: LIMITS.attachmentsPerCard }),
+        );
       } else if (error instanceof ApiError && error.field === "file") {
         toast.error(t("card.attachments.badType"));
       } else {
@@ -263,6 +292,7 @@ export function CardAttachments({
       await api.deleteAttachment(target.id);
       setItems((prev) => prev.filter((item) => item.id !== target.id));
       setDetachedItems((prev) => prev.filter((item) => item.id !== target.id));
+      setTotalCount((prev) => (prev === null ? prev : Math.max(0, prev - 1)));
     } catch {
       toast.error(t("card.attachments.deleteError"));
     }

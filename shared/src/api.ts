@@ -116,6 +116,8 @@ export interface WorkflowConflictDetails {
 export interface ConflictError {
   conflict: CommandConflict;
   currentVersion: number;
+  /** Only for `conflict: "wip"`: the column whose limit was reached. */
+  columnId?: string;
   /** Only for `conflict: "workflow"`. */
   workflow?: WorkflowConflictDetails;
 }
@@ -202,6 +204,8 @@ export interface ApiErrorEnvelope {
   details?: Record<string, unknown>;
   /** Legacy conflict category — same value as the matching `*_conflict` code. */
   conflict?: CommandConflict;
+  /** Column whose WIP/absolute cap refused a `conflict: "wip"`. */
+  columnId?: string;
   /** Only for a workflow conflict; unchanged from `ConflictError`. */
   workflow?: WorkflowConflictDetails;
   /** Destinations the card may move to on a workflow conflict. */

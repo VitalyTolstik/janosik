@@ -1797,7 +1797,11 @@ paths:
       tags: [Attachments]
       operationId: listAttachments
       summary: List card attachments
-      description: Live attachments, newest first. `detached=1` also lists hidden inline/description blobs.
+      description: |
+        Live attachments, newest first. `detached=1` also lists hidden
+        inline/description blobs. `X-Attachment-Count` is the total live
+        budget including inline/description media, so a client can enforce
+        the same 20-file cap as the server.
       parameters:
         - name: detached
           in: query
@@ -1808,6 +1812,12 @@ paths:
       responses:
         "200":
           description: Attachment metadata.
+          headers:
+            X-Attachment-Count:
+              description: Total live attachment rows for the card (all kinds).
+              schema:
+                type: integer
+                minimum: 0
           content:
             application/json:
               schema:
@@ -2787,6 +2797,9 @@ components:
         conflict:
           type: string
           enum: [version, wip, id, workflow]
+        columnId:
+          type: string
+          description: "Column whose WIP/absolute limit refused a `conflict: wip`."
         workflow:
           $ref: "#/components/schemas/WorkflowConflictDetails"
         allowedToColumnIds:

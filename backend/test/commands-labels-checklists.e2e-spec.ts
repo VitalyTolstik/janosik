@@ -550,6 +550,267 @@ describe("Commands API — labels & checklists (e2e)", () => {
     });
   });
 
+  describe("same-board parentage (H2)", () => {
+    interface ParentageIds {
+      boardId: string;
+      columnId: string;
+      cardA: string;
+      cardB: string;
+      checklistA: string;
+      checklistB: string;
+      itemA: string;
+      linkA: string;
+    }
+
+    async function parentageBoard(): Promise<ParentageIds> {
+      // Ids are global primary keys; a second test must not reuse the first
+      // fixture's ids or the cross-board guard would answer before parentage.
+      const suffix = randomUUID().slice(0, 8);
+      const ids = {
+        columnId: `col-p-${suffix}`,
+        cardA: `card-a-${suffix}`,
+        cardB: `card-b-${suffix}`,
+        checklistA: `cl-a-${suffix}`,
+        checklistB: `cl-b-${suffix}`,
+        itemA: `it-a-${suffix}`,
+        linkA: `link-a-${suffix}`,
+      };
+      const boardId = await createBoard(`Parentage board ${suffix}`);
+      for (const action of [
+        {
+          type: "ADD_COLUMN",
+          newColumnId: ids.columnId,
+          title: "Todo",
+        },
+        {
+          type: "ADD_CARD",
+          newCardId: ids.cardA,
+          columnId: ids.columnId,
+          title: "A",
+        },
+        {
+          type: "ADD_CARD",
+          newCardId: ids.cardB,
+          columnId: ids.columnId,
+          title: "B",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardA,
+          newChecklistId: ids.checklistA,
+          title: "A steps",
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+          newItemId: ids.itemA,
+          text: "Do it",
+        },
+        {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardB,
+          newChecklistId: ids.checklistB,
+          title: "B steps",
+        },
+        {
+          type: "ADD_CARD_LINK",
+          cardId: ids.cardA,
+          linkId: ids.linkA,
+          targetCardId: ids.cardB,
+          linkType: "relates_to",
+        },
+      ]) {
+        await apply(boardId, scoped(boardId, action));
+      }
+      return { boardId, ...ids };
+    }
+
+    it("refuses same-board checklist/item/link re-parenting and moves no row", async () => {
+      const ids = await parentageBoard();
+      const attempts: Array<Record<string, unknown>> = [
+        {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardB,
+          newChecklistId: ids.checklistA,
+          title: "Stolen",
+        },
+        {
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardB,
+          checklist: { id: ids.checklistA, title: "Stolen", items: [] },
+          index: 0,
+        },
+        {
+          // The checklist id is owned by B here, but its nested victim item
+          // belongs to A's checklist; `upsertChecklist` must not move it.
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardB,
+          checklist: {
+            id: ids.checklistB,
+            title: "Stolen",
+            items: [{ id: ids.itemA, text: "Stolen", done: false }],
+          },
+          index: 0,
+        },
+        {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: ids.cardB,
+          checklistId: ids.checklistB,
+          newItemId: ids.itemA,
+          text: "Stolen",
+        },
+        {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId: ids.cardB,
+          checklistId: ids.checklistB,
+          item: { id: ids.itemA, text: "Stolen", done: false },
+          index: 0,
+        },
+        {
+          type: "ADD_CARD_LINK",
+          cardId: ids.cardB,
+          linkId: ids.linkA,
+          targetCardId: ids.cardA,
+          linkType: "relates_to",
+        },
+      ];
+      for (const attempt of attempts) {
+        const res = await post(
+          ids.boardId,
+          scoped(ids.boardId, attempt),
+        ).expect(409);
+        expect(res.body).toMatchObject({
+          code: "id_conflict",
+          conflict: "id",
+        });
+      }
+      const aggregate = await getAggregate(ids.boardId);
+      expect(aggregate.cards[ids.cardA].checklists?.map((c) => c.id)).toEqual([
+        ids.checklistA,
+      ]);
+      expect(aggregate.cards[ids.cardA].checklists?.[0].items).toEqual([
+        { id: ids.itemA, text: "Do it", done: false },
+      ]);
+      expect(aggregate.cards[ids.cardB].checklists?.map((c) => c.id)).toEqual([
+        ids.checklistB,
+      ]);
+      expect(aggregate.cards[ids.cardA].links?.map((l) => l.id)).toEqual([
+        ids.linkA,
+      ]);
+      expect(aggregate.cards[ids.cardB].links).toBeUndefined();
+    });
+
+    it("revives a soft-deleted id only under its original owner", async () => {
+      const ids = await parentageBoard();
+      const before = await getAggregate(ids.boardId);
+      const checklist = before.cards[ids.cardA].checklists?.find(
+        (entry) => entry.id === ids.checklistA,
+      );
+      expect(checklist).toBeDefined();
+      const item = checklist?.items[0];
+      expect(item).toBeDefined();
+
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+        }),
+      );
+      // A soft-deleted checklist is still owned by card A.
+      await post(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardB,
+          checklist: checklist!,
+          index: 0,
+        }),
+      ).expect(409);
+      await applyAndAssert(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST",
+          cardId: ids.cardA,
+          checklist: checklist!,
+          index: 0,
+        }),
+      );
+
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "DELETE_CHECKLIST_ITEM",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+          itemId: ids.itemA,
+        }),
+      );
+      await post(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId: ids.cardB,
+          checklistId: ids.checklistB,
+          item: item!,
+          index: 0,
+        }),
+      ).expect(409);
+      await applyAndAssert(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+          item: item!,
+          index: 0,
+        }),
+      );
+
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "REMOVE_CARD_LINK",
+          cardId: ids.cardA,
+          linkId: ids.linkA,
+          targetCardId: ids.cardB,
+          linkType: "relates_to",
+        }),
+      );
+      await applyAndAssert(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "ADD_CARD_LINK",
+          cardId: ids.cardA,
+          linkId: ids.linkA,
+          targetCardId: ids.cardB,
+          linkType: "relates_to",
+        }),
+      );
+
+      // The same replay after a second delete still cannot move the row to B.
+      await apply(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId: ids.cardA,
+          checklistId: ids.checklistA,
+        }),
+      );
+      await post(
+        ids.boardId,
+        scoped(ids.boardId, {
+          type: "ADD_CHECKLIST",
+          cardId: ids.cardB,
+          newChecklistId: ids.checklistA,
+          title: "Stolen",
+        }),
+      ).expect(409);
+    });
+  });
+
   describe("card labels", () => {
     it("persists the m2m order with positions in the database", async () => {
       const boardId = await createBoard("M2M board");
@@ -757,7 +1018,7 @@ describe("Commands API — labels & checklists (e2e)", () => {
       );
     });
 
-    it("409s the 51st label on the board but never an inverse", async () => {
+    it("409s the 51st label and an over-cap RESTORE (M13)", async () => {
       const boardId = await importBoard("Board label limit", {
         labels: Array.from({ length: LIMITS.labelsPerBoard }, (_, index) => ({
           id: `l-${index}`,
@@ -776,8 +1037,10 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ).expect(409);
       expect(res.body.conflict).toBe("wip");
 
-      // An inverse adds nothing new (undo of a delete): always allowed.
-      await applyAndAssert(
+      // A client-forged inverse buys no exemption: a fresh restore that
+      // would be the 51st label is refused just like ADD_LABEL.
+      const beforeRestore = await getAggregate(boardId);
+      const overCap = await post(
         boardId,
         scoped(boardId, {
           type: "RESTORE_LABEL",
@@ -785,13 +1048,32 @@ describe("Commands API — labels & checklists (e2e)", () => {
           index: 0,
           inverse: true,
         }),
+      ).expect(409);
+      expect(overCap.body.conflict).toBe("wip");
+
+      // Genuine undo: delete a real label (50 -> 49), then restore it.
+      const victim = beforeRestore.labels[0];
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, { type: "DELETE_LABEL", labelId: victim.id }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_LABEL",
+          label: victim,
+          index: 0,
+          inverse: true,
+        }),
       );
       const aggregate = await getAggregate(boardId);
-      expect(aggregate.labels).toHaveLength(LIMITS.labelsPerBoard + 1);
-      expect(aggregate.labels[0].id).toBe("l-restored");
+      expect(aggregate.labels).toHaveLength(LIMITS.labelsPerBoard);
+      expect(aggregate.labels.some((label) => label.id === victim.id)).toBe(
+        true,
+      );
     });
 
-    it("409s the 21st checklist and the 101st item, but never an inverse", async () => {
+    it("409s the 21st checklist/101st item and over-cap RESTOREs (M13)", async () => {
       const boardId = await importBoard("Checklist limits", {
         card: {
           checklists: Array.from(
@@ -829,22 +1111,10 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ).expect(409);
       expect(checklist.body.conflict).toBe("wip");
 
-      // Import remaps ids, so the full checklist is taken from the aggregate.
+      // Import remaps ids, so the rows are taken from the aggregate.
       const imported = await getAggregate(boardId);
-      const fullChecklistId = imported.cards[cardId].checklists![0].id;
-      const item = await post(
-        boardId,
-        scoped(boardId, {
-          type: "ADD_CHECKLIST_ITEM",
-          cardId,
-          checklistId: fullChecklistId,
-          newItemId: "it-extra",
-          text: "Extra",
-        }),
-      ).expect(409);
-      expect(item.body.conflict).toBe("wip");
-
-      await applyAndAssert(
+      const fullChecklist = imported.cards[cardId].checklists![0];
+      const overCapChecklist = await post(
         boardId,
         scoped(boardId, {
           type: "RESTORE_CHECKLIST",
@@ -853,12 +1123,85 @@ describe("Commands API — labels & checklists (e2e)", () => {
           index: 0,
           inverse: true,
         }),
+      ).expect(409);
+      expect(overCapChecklist.body.conflict).toBe("wip");
+
+      // Genuine undo of a checklist delete: 20 -> 19 -> 20.
+      const victimChecklist = imported.cards[cardId].checklists![1];
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST",
+          cardId,
+          checklistId: victimChecklist.id,
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CHECKLIST",
+          cardId,
+          checklist: victimChecklist,
+          index: 1,
+          inverse: true,
+        }),
+      );
+
+      const item = await post(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          newItemId: "it-extra",
+          text: "Extra",
+        }),
+      ).expect(409);
+      expect(item.body.conflict).toBe("wip");
+
+      const overCapItem = await post(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          item: { id: "it-restored", text: "Restored", done: false },
+          index: 0,
+          inverse: true,
+        }),
+      ).expect(409);
+      expect(overCapItem.body.conflict).toBe("wip");
+
+      const victimItem = fullChecklist.items[0];
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "DELETE_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          itemId: victimItem.id,
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RESTORE_CHECKLIST_ITEM",
+          cardId,
+          checklistId: fullChecklist.id,
+          item: victimItem,
+          index: 0,
+          inverse: true,
+        }),
       );
       const aggregate = await getAggregate(boardId);
       expect(aggregate.cards[cardId].checklists).toHaveLength(
-        LIMITS.checklistsPerCard + 1,
+        LIMITS.checklistsPerCard,
       );
-      expect(aggregate.cards[cardId].checklists?.[0].id).toBe("cl-restored");
+      expect(
+        aggregate.cards[cardId].checklists?.find(
+          (entry) => entry.id === fullChecklist.id,
+        )?.items,
+      ).toHaveLength(LIMITS.itemsPerChecklist);
     });
 
     it("lets a non-admin member attach labels and check checklists", async () => {

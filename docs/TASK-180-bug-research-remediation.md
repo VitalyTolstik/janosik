@@ -112,8 +112,9 @@ client-supplied ID cannot reparent another entity or bypass a guard.
 
 - H2: `ADD_CHECKLIST/ITEM/LINK` must reject IDs that belong to another card;
   no global-ID upsert reparenting.
-- H3: duplicate card/column must copy checklists/items/links with fresh IDs,
-  not reuse source IDs; reload must not lose them.
+- H3: duplicate card/column must copy checklists/items with fresh IDs, not
+  reuse source IDs; reload must not lose them. Links are intentionally not
+  copied — a duplicate starts unlinked.
 - M7: only the current claim holder (or an explicit admin flow) may release a
   live claim.
 - M13: `inverse:true` must be server-authenticated, not trusted from the

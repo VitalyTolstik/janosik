@@ -236,6 +236,12 @@ export class IdempotencyService {
     } catch (error) {
       // A failure after commit is indistinguishable from a failed response.
       // Only reopen when the operation explicitly proved it rolled back.
+      //
+      // L24: a write-transaction P2028 is marked by the caller at the point
+      // the interactive transaction failed. A P2028 from a *post-commit* read
+      // (getAggregate/list) is just as ambiguous as any other network/db
+      // failure and must keep the in-progress record; blanket-checking the
+      // code here let a committed board be created twice.
       if (isGuaranteedRollback(error)) {
         await this.prisma.idempotencyRecord
           .delete({ where: { id: record.id } })

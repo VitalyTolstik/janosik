@@ -150,11 +150,20 @@ export class AttachmentsController {
 
   /** Live attachments of one card, newest-first. */
   @Get("cards/:cardId/attachments")
-  list(
+  async list(
     @Param("cardId") cardId: string,
-    @Query("detached") detached?: string,
+    @Query("detached") detached: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AttachmentDto[]> {
-    return this.attachments.list(cardId, undefined, detached === "1");
+    const [items, total] = await Promise.all([
+      this.attachments.list(cardId, undefined, detached === "1"),
+      this.attachments.countLive(cardId),
+    ]);
+    // L20: the UI's cap must include inline/description media, which the
+    // list hides. A header keeps the body shape (and every existing client)
+    // unchanged.
+    res.setHeader("X-Attachment-Count", String(total));
+    return items;
   }
 
   /**

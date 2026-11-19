@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import type { PrismaService } from "@/common/prisma/prisma.service";
+import { isGuaranteedRollback } from "@/common/rollback-certainty";
 import { BoardsService } from "./boards.service";
 
 /** TASK-101: the board list must not run a per-board card count. */
@@ -201,5 +202,31 @@ describe("BoardsService.inviteMember — reviving a pending invite", () => {
     await expect(
       service.inviteMember("board-1", actorId, dto("MEMBER")),
     ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe("BoardsService.createBoard — L24 rollback proof", () => {
+  it("marks a write-transaction P2028 as a guaranteed rollback", async () => {
+    const timeout = Object.assign(
+      new Error("Transaction already closed after timeout"),
+      { code: "P2028" },
+    );
+    const prisma = {
+      $transaction: jest.fn().mockRejectedValue(timeout),
+    } as unknown as PrismaService;
+    const attention = { notifyLimitExceeded: jest.fn().mockResolvedValue(0) };
+    const service = new BoardsService(
+      prisma,
+      {} as never,
+      {} as never,
+      attention as never,
+      {} as never,
+    );
+
+    await expect(service.createBoard("u1", { title: "Board" })).rejects.toBe(
+      timeout,
+    );
+    expect(isGuaranteedRollback(timeout)).toBe(true);
+    expect(attention.notifyLimitExceeded).toHaveBeenCalled();
   });
 });

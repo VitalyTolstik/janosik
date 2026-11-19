@@ -68,8 +68,11 @@ export function invert(before: Board, action: BoardAction): BoardAction | null {
   return {
     ...inverse,
     // Undo is a return to a previous state, not a fresh edit: it restores
-    // the board's own `updatedAt`, and the collection guards step aside for
-    // it (`BoardScopedAction.inverse`) so an undo is never refused.
+    // the board's own `updatedAt`. `inverse` still keeps the *local* reducer
+    // responsive, but TASK-180.2 M13/M16 makes the server authoritative:
+    // a restore/move/unarchive can be refused by the current WIP/collection
+    // caps, and the two WIP-sensitive undos wait for that answer instead of
+    // applying optimistically.
     boardUpdatedAt: before.updatedAt,
     inverse: true,
   } as BoardAction;

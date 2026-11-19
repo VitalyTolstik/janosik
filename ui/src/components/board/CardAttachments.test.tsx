@@ -72,6 +72,7 @@ function renderSection(
 
 describe("CardAttachments", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([]);
   });
@@ -336,5 +337,43 @@ describe("CardAttachments", () => {
     await user.click(screen.getByRole("button", { name: "Delete file" }));
     await waitFor(() => expect(group).not.toBeInTheDocument());
     expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");
+  });
+
+  it("counts inline attachments from the server total (L20)", async () => {
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([]);
+    vi.spyOn(api, "attachmentTotal").mockReturnValue(20);
+    renderSection();
+
+    const upload = await screen.findByTestId("card-attachments-upload");
+    await waitFor(() => expect(upload).toBeDisabled());
+    expect(upload).toHaveTextContent("Up to 20 files per card");
+  });
+
+  it("maps the server's attachment cap to the cap message, not bad type (L20)", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([]);
+    vi.spyOn(api, "attachmentTotal").mockReturnValue(0);
+    vi.spyOn(api, "uploadAttachment").mockRejectedValue(
+      new ApiError(400, {
+        code: "attachment_limit",
+        field: "file",
+        message: "Card must hold at most 20 attachments",
+      }),
+    );
+    renderSection();
+
+    const input = await screen.findByTestId("card-attachments-input");
+    await user.upload(
+      input,
+      new File(["pixels"], "valid.png", { type: "image/png" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Up to 20 files per card")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("This file type is not allowed"),
+    ).not.toBeInTheDocument();
   });
 });

@@ -202,6 +202,19 @@ function stableStringify(value: unknown): string {
   });
 }
 
+function canonicalAction(
+  action: unknown,
+  boardId: string | undefined,
+): Record<string, unknown> | null {
+  if (action === null || typeof action !== "object") return null;
+  const rest: Record<string, unknown> = {
+    ...(jsonSafe(action) as Record<string, unknown>),
+  };
+  if (boardId !== undefined) rest.boardId = boardId;
+  delete rest.at;
+  return rest;
+}
+
 /**
  * Stable identity of an action for the idempotency check: canonical JSON
  * without `at` (the client clock is not part of *what* the command does, and
@@ -210,14 +223,32 @@ function stableStringify(value: unknown): string {
  * retry matching a row written before ingress stamping existed.
  */
 export function actionFingerprint(action: unknown, boardId?: string): string {
-  if (action === null || typeof action !== "object") {
-    return stableStringify(action);
+  const rest = canonicalAction(action, boardId);
+  return stableStringify(rest ?? action);
+}
+
+/**
+ * L18 fallback: compare two `RESTORE_CARD` payloads after removing the
+ * assignee. The caller may only use this when that assignee is *not* an
+ * active board member (the exact case where the server strips it); a
+ * different valid assignee must stay an `idempotency_conflict`.
+ */
+export function actionFingerprintWithoutRestoreAssignee(
+  action: unknown,
+  boardId?: string,
+): string {
+  const rest = canonicalAction(action, boardId);
+  if (rest === null) return stableStringify(action);
+  if (
+    rest.type === "RESTORE_CARD" &&
+    typeof rest.card === "object" &&
+    rest.card !== null &&
+    !Array.isArray(rest.card)
+  ) {
+    const card: Record<string, unknown> = { ...rest.card };
+    delete card.assigneeId;
+    rest.card = card;
   }
-  const rest: Record<string, unknown> = {
-    ...(jsonSafe(action) as Record<string, unknown>),
-  };
-  if (boardId !== undefined) rest.boardId = boardId;
-  delete rest.at;
   return stableStringify(rest);
 }
 

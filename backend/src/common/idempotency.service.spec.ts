@@ -168,6 +168,48 @@ describe("IdempotencyService (TASK-166.4)", () => {
     });
   });
 
+  it("releases the key after a marked P2028 write rollback (L24)", async () => {
+    const prisma = makePrisma();
+    prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });
+    const service = new IdempotencyService(prisma as unknown as PrismaService);
+    const timeout = beforeWrite(
+      Object.assign(new Error("Transaction already closed"), {
+        code: "P2028",
+      }),
+    );
+    await expect(
+      service.run({
+        ...base,
+        run: async () => {
+          throw timeout;
+        },
+      }),
+    ).rejects.toBe(timeout);
+    expect(prisma.idempotencyRecord.delete).toHaveBeenCalledWith({
+      where: { id: "rec-1" },
+    });
+  });
+
+  it("retains the key for an unmarked post-commit P2028 read (L24)", async () => {
+    const prisma = makePrisma();
+    prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });
+    const service = new IdempotencyService(prisma as unknown as PrismaService);
+    const timeout = Object.assign(
+      new Error("Transaction already closed after commit"),
+      { code: "P2028" },
+    );
+    await expect(
+      service.run({
+        ...base,
+        run: async () => {
+          throw timeout;
+        },
+      }),
+    ).rejects.toBe(timeout);
+    // The write may have committed; deleting would let a retry duplicate it.
+    expect(prisma.idempotencyRecord.delete).not.toHaveBeenCalled();
+  });
+
   it("retains the key when the outcome may have committed", async () => {
     const prisma = makePrisma();
     prisma.idempotencyRecord.create.mockResolvedValue({ id: "rec-1" });

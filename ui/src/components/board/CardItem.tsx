@@ -628,10 +628,11 @@ export const CardItem = memo(CardItemView);
 
 /**
  * The assignee's avatar in the card face's footer row (TASK-49, reworked
- * to a fixed-size tile). Resolves display data from the member directory;
- * falls back to initials when the assignee has left the board (the id
- * survives in the aggregate). Rendered only when the card is assigned —
- * the footer stays quiet otherwise.
+ * to a fixed-size tile). Resolves display data from the member directory.
+ * TASK-180.2 L35: a removed/expired assignee is "Unassigned" in the card
+ * dialog, so the face must not keep showing an initials avatar for an id the
+ * roster no longer contains. The id survives in the aggregate; the badge
+ * simply renders nothing until a current member owns it.
  */
 function AssigneeBadge({
   assigneeId,
@@ -643,7 +644,8 @@ function AssigneeBadge({
   const { t } = useI18n();
   const openProfile = useOpenProfile();
   const member = useBoardMember(boardId, assigneeId);
-  const name = userLabel(member?.displayName ?? null, member?.email ?? "");
+  if (member === undefined) return null;
+  const name = userLabel(member.displayName, member.email);
 
   return (
     <Tooltip>

@@ -384,6 +384,10 @@ export class BoardsService {
         { timeout: 15_000, maxWait: 10_000 },
       )
       .catch(async (error: unknown) => {
+        // L24: only a timeout from the *write* transaction proves a rollback.
+        // A later `getAggregate` P2028 runs outside this catch and stays
+        // ambiguous, so the idempotency record is retained.
+        if (isTransactionTimeout(error)) markGuaranteedRollback(error);
         // TASK-166.9: the refusal already carries limit/current; record one
         // attention row, then rethrow the original 409 unchanged.
         await this.attention.notifyLimitExceeded(userId, error, {
@@ -1096,7 +1100,14 @@ export class BoardsService {
       // A large envelope can outlive the budget; that is a retryable overload,
       // not a 500 (TASK-156).
       if (isTransactionTimeout(error)) {
-        throw new ServiceUnavailableException("Import timed out; please retry");
+        // L24: the transaction rolled back; the idempotency key must be
+        // released so the caller can retry immediately instead of waiting
+        // out the 24 h in-progress TTL.
+        const timeout = new ServiceUnavailableException(
+          "Import timed out; please retry",
+        );
+        markGuaranteedRollback(timeout);
+        throw timeout;
       }
       // TASK-166.9: the board cap is also a quota attention event.
       await this.attention.notifyLimitExceeded(userId, error, {
