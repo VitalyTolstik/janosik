@@ -8,6 +8,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.9 B2 admin card checklists and links: `/admin/cards/:id` now shows a
+  lazy `Checklists and links` panel beside the field editor on non-deleted
+  cards. It is admin-native (no `BoardContext`), uses the same owner-attribution
+  banner, and sends one fresh `commandId` per change: `ADD_CHECKLIST`,
+  `RENAME_CHECKLIST`, `DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`,
+  `SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`,
+  `ADD_CARD_LINK` and `REMOVE_CARD_LINK`. Checklists are capped at 20 per card,
+  items at 100 per checklist; unchanged values send no command, deleted
+  checklists/items are filtered out, and checklist deletion asks for
+  confirmation. Links show both directions with the stored type plus a readable
+  phrase (`blocks` / `is blocked by`, `duplicates` / `is duplicated by`), and
+  incoming removal targets the holder card. The target combobox loads
+  `GET /admin/boards/:id/content`, excludes self, archived and already-linked
+  pairs, enforces the holder's 50-link cap and blocks `blocks` cycles; reverse
+  phrasing is available when adding. Checklist/item commands neither refetch
+  board content nor clear the link draft; link commands refetch it, and
+  `ADD_CARD_LINK` closes the editor after success while `REMOVE_CARD_LINK`
+  leaves the draft open. Dangling/soft-deleted link rows stay readable and live
+  dangling rows remain removable. Deleted cards hide the
+  editor; archived cards keep editing. The backend fresh-command guard now
+  covers all nine actions: live/same-board source card and checklist/item with
+  exact ownership (`404`), new ids free or a soft-deleted row owned by the same
+  card/checklist, live/same-board link target (`404`), self-link (`400`),
+  existing pair/cycle/cap (`409`), and a live holder-owned row for removal.
+  Fresh checklist/item adds at 20/100 now return `409 conflict: "wip"` before a
+  command or audit row exists. Rejected fresh writes create no command or audit
+  row; exact replays stay idempotent. The relation counters separate live
+  outgoing rows (the holder cap) from live incoming rows; a live incoming row
+  whose holder is deleted stays readable as dangling but is not counted. A
+  reverse link option shows the target holder's own cap. The lazy relations chunk is part of the
+  size gate: the second lazy panel split the shared admin `ui` chunk out of
+  `AdminApp`, and the panel also loads the existing board `links` chunk, so the
+  entry now measures `AdminApp` + both lazy panels + those shared chunks.
+  **final 112.39 kB gzip against an explicit 113 kB budget**, leaving 0.61 kB
+  headroom (the DTO flag and follow-ups added about 0.59 kB; B1’s historical
+  baseline was 101.62 kB against 102 kB and measured only the shell + field
+  panel). EN/RU admin content docs
+  describe the editor and counters; the monitoring note records the audit
+  correlation.
+
 - TASK-176.9 B1 admin card fields: `/admin/cards/:id` now has a compact
   `Properties` panel for the card title, assignee, due date, priority, cover
   and labels. Each change is one fresh owner-attributed board command
@@ -35,15 +75,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   another column through `MOVE_CARD`. Both dialogs show the explicit
   owner-attribution banner; the command log and board history still name the
   board owner, while `AdminAuditLog.details` now carries `commandId`,
-  `masterId` and `masterEmail` for the real master. Command rows and card
-  timeline commands expose `auditId` when correlated (historical and normal
-  user commands stay `null`), adding an `Audit` link in the command log and
-  card timeline. The link filters by the **command id** (not the audit row
+  `masterId` and `masterEmail` for the real master. `GET /admin/commands` rows
+  and card-timeline commands expose `auditId` when correlated (historical and
+  normal user commands stay `null`), adding an `Audit` link in the command log
+  and card timeline only. The link filters by the **command id** (not the audit row
   id), and `GET /admin/audit` plus `GET /admin/commands` accept the same
   exact validated `commandId`; the audit query is pinned to `board.command`.
   `/admin/audit?tab=audit&commandId=<command id>` is a shareable deep link.
   The admin `UPDATE_CARD` / `MOVE_CARD` path rejects soft-deleted/missing cards
-  with `404` and archived-card moves with `409`, and a replay of an existing
+  with `404` and archived-card moves with `409`; a fresh move with a stale
+  source column is `409 conflict: "version"` (`move_stale`), and a
+  missing/deleted/foreign target column is `404`, both before any command or
+  audit row. Archived cards repointed to the internal soft-deleted orphan
+  column by `DELETE_COLUMN` keep their field editing. A replay of an existing
   `commandId` never fabricates a second master audit row. No feature flag is
   added:
   product sign-off is recorded in TASK-176.8/176.10. EN/RU admin docs record

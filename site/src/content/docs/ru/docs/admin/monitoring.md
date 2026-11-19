@@ -116,7 +116,14 @@ description: Дашборд, лента активности, журнал ко�
 карточки на `/admin/cards/:id` дают такую же строку `board.command`:
 `UPDATE_CARD`, `SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`,
 `SET_CARD_COVER` и `SET_CARD_LABEL` получают собственный `commandId` и
-атрибуцию мастера.
+атрибуцию мастера. Правки чек-листов и связей связываются так же:
+`ADD_CHECKLIST`, `RENAME_CHECKLIST`, `DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`,
+`SET_CHECKLIST_ITEM_DONE`, `RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`,
+`ADD_CARD_LINK` и `REMOVE_CARD_LINK` дают по одной строке `board.command` для
+принятой свежей записи. Отклонённая свежая запись (нет строки или она удалена,
+чужой id, ссылка на себя, дубль, цикл или лимит) не создаёт ни команду, ни
+строку аудита, а повтор сохранённого `commandId` возвращает результат без
+второй строки аудита.
 
 ### Действия аудита
 

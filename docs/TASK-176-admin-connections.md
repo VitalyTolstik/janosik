@@ -1,9 +1,11 @@
 # TASK-176 — Admin connections, honest data, and comment editing
 
-**Status:** planned  
-**Base:** `main` = `a858c75`  
-**Source:** `design/admin-connections-review/REVIEW.md` (independent verification of `design/admin-ui-study/MISSING-CONNECTIONS.md`)  
-**Scope:** master panel `/admin/*`, shared admin DTOs, admin backend, comment editing in the normal user product.
+- **Status:** 176.1–176.7 merged on `main`; 176.8–176.10 delivered in review branches (not merged); 176.11 closed docs-only; 176.12 deferred.
+- **Planning base:** `main` = `a858c75` (the base this spec was written against).
+- **Delivery bases:** 176.8/176.10 — review branch `feat/TASK-176.8-admin-card-edit`; 176.9 B1 — `feat/TASK-176.9-admin-card-fields` (base `05d0df30`); 176.9 B2 — `feat/TASK-176.9-admin-card-relations` (base `2469b1c6`). None of these review branches is merged.
+- **Owner sign-off (2026-11-18):** the owner instructed “добивать 176” (complete TASK-176), approving 176.8, 176.9 and 176.10 under the owner-attribution model: the board owner stays the board-facing actor in history, while the real master is recorded in the command-linked audit (`commandId`, `masterId`, `masterEmail`).
+- **Source:** `design/admin-connections-review/REVIEW.md` (independent verification of `design/admin-ui-study/MISSING-CONNECTIONS.md`)
+- **Scope:** master panel `/admin/*`, shared admin DTOs, admin backend, comment editing in the normal user product. TASK-176.9 is the field/checklist/link editor on `/admin/cards/:id`, not a full board client; master-authored comments/uploads remain a separate product decision.
 
 This document turns the audit into an executable task. It does not re-open intentional product boundaries; those are listed in §2 and §10.
 
@@ -34,7 +36,7 @@ Separately, the product has no way for a user to edit their own comment, althoug
 
 ### Non-goals / deliberate boundaries
 
-- Do **not** make `/admin/cards/:id` a full card editor in this task. A narrow pilot is 176.8; the broad editor is a separate product decision (176.9).
+- Do **not** turn `/admin/cards/:id` into a full board client. A narrow pilot is 176.8; 176.9 adds the field/checklist/link editor on that page, not a board client or master-authored comments/uploads.
 - Do **not** add a master-wide agent control section. The agent contour stays in `/agents` and the board-scoped `AgentControlDialog` (176.11).
 - Do **not** allow masters to edit other users' comment text. 176.2 is author-only. Admin editing of someone else's comment is a separate product/attribution decision.
 - Do **not** weaken tests, remove audit, or make destructive operations silent.
@@ -57,7 +59,7 @@ Separately, the product has no way for a user to edit their own comment, althoug
 | 176.11 | Admin agent section / boundary documentation | P3 | S | Deliberate boundary | done (docs-only) |
 | 176.12 | Checklist-item browser / search | P3 | M | Low value | deferred |
 
-Waves are a recommendation, not a hard dependency. 176.1–176.3 are the first PR set. 176.4–176.7 can run in parallel after the first merge. 176.8–176.10 require explicit product sign-off; 176.11 is closed as a docs-only boundary.
+Waves are a recommendation, not a hard dependency. 176.1–176.3 are the first PR set. 176.4–176.7 can run in parallel after the first merge. **Historical plan (answered 2026-11-18):** 176.8–176.10 required explicit product sign-off; that sign-off is recorded above and those tasks are delivered in review branches, while 176.11 is closed as a docs-only boundary.
 
 ---
 
@@ -314,7 +316,9 @@ This is the smallest useful admin content edit. It does **not** open the full ed
 - Add `commandId` (or a correlation id) and `masterId` to the admin audit for these actions before shipping; do not silently attribute a master edit to the owner.
 - Keep it behind a product flag until attribution is accepted.
 
-Do not proceed without owner sign-off. If approved, ship separately from 176.1–176.7.
+**Historical gate (answered 2026-11-18):** do not proceed without owner
+sign-off. The owner sign-off is recorded above; the task shipped in its review
+branch, not merged.
 
 **Delivered (2026-11-18, TASK-176.8):** owner sign-off is recorded for this task, so
 the pilot ships **without a product flag** (the flag sentence above is
@@ -323,10 +327,14 @@ editor moves cards through `UPDATE_CARD` / `MOVE_CARD`; both dialogs show the
 owner-attribution banner. The command log and board history still name the
 owner, while the audit row records `commandId`, `masterId` and `masterEmail`.
 Deleted cards are rejected before a fresh `UPDATE_CARD` / `MOVE_CARD` is
-logged, missing cards answer `404` and archived-card moves answer `409`; an
-exact admin replay of an existing `commandId` still returns its stored result
-even after the card is archived or deleted, and does not create a second audit
-row. Implemented in commit
+logged, missing cards answer `404` and archived-card moves answer `409`; a
+fresh move with a stale source column answers `409 conflict: "version"`
+(`move_stale`), while a missing, deleted or foreign target column answers
+`404` before any command or audit row. Archived cards repointed to the internal
+soft-deleted orphan column by `DELETE_COLUMN` keep field editing. An exact
+admin replay of an existing `commandId` still returns its stored result even
+after the card is archived or deleted, and does not create a second audit row.
+Implemented in commit
 `d04dd441` plus this review-fix follow-up.
 
 ---
@@ -363,7 +371,60 @@ was 100 kB), leaving 0.38 kB headroom. Checklists and links are deliberately
 **not** part of B1. Implemented on `feat/TASK-176.9-admin-card-fields` (base
 `05d0df30`).
 
-Master-authored comments/uploads are also a separate product decision: decide the author identity, history display and responsibility before adding the controls.
+**Delivered — B2 (2026-11-18, TASK-176.9):** `/admin/cards/:id` now shows a
+lazy `Checklists and links` panel beside the field editor on non-deleted cards.
+It is admin-native: the normal `CardChecklists`/`CardLinks` editors need
+`BoardContext`, which `/admin` never mounts, so the panel reuses the shared
+action types, limits and link invariants but sends one fresh
+owner-attributed command per change (`ADD_CHECKLIST`, `RENAME_CHECKLIST`,
+`DELETE_CHECKLIST`, `ADD_CHECKLIST_ITEM`, `SET_CHECKLIST_ITEM_DONE`,
+`RENAME_CHECKLIST_ITEM`, `DELETE_CHECKLIST_ITEM`, `ADD_CARD_LINK`,
+`REMOVE_CARD_LINK`). Deleted checklists/items and unchanged drafts are
+suppressed; caps are 20 checklists per card and 100 items per checklist.
+Links show both directions with the stored type and a readable phrase
+(outgoing `blocks` / incoming `is blocked by`, etc.); incoming removal targets
+the holder card, not the viewed card. The target combobox loads
+`adminApi.getBoardContent(boardId)`, excludes self, archived and already-linked
+cards, checks the holder's 50-link cap and refuses a `blocks` cycle. Deleted
+cards hide the editor; archived cards keep editing. Dangling or soft-deleted
+link rows stay readable, and live dangling rows remain removable.
+
+The backend `beforeApplyFresh` guard now covers all nine actions: the source
+card must be live and on the same board (`404`); checklists/items must exist on
+that card/checklist and be live (`404` on `action.checklistId` /
+`action.itemId`); a new checklist/item/link id must be free or a soft-deleted
+row owned by the same card/checklist; link targets must be live on the board
+(`404`), and self-links (`400`), existing pairs, `blocks` cycles, the 50-link
+holder cap and fresh adds at the 20-checklist / 100-item collection caps
+(`409 conflict: "wip"`) are refused. `REMOVE_CARD_LINK` requires a live row
+owned by `action.cardId` with a matching target/type. Rejected fresh writes
+create no command or audit row; exact replays skip the guard and stay
+idempotent. Archived cards allow checklist/link edits — only `MOVE_CARD`
+remains blocked.
+
+The relation counters separate live outgoing rows (the viewed card's holder
+cap) from live incoming rows. When a reverse option is selected, the form shows
+the selected target holder's own outgoing count and cap instead of applying
+the incoming count to the viewed card.
+
+The combined size gate now measures the real card page: `AdminApp`,
+`CardFieldsPanel`, `CardRelationsPanel`, the shared admin `ui` chunk split out
+by the second lazy panel, and the existing board `links` chunk that the panel
+now loads. **Final: 112.39 kB gzip against an explicit 113 kB budget**, leaving
+0.61 kB headroom. B1’s 101.62 kB / 102 kB measurement is the historical
+baseline (shell + field panel only); the DTO flag and follow-ups added about
+0.59 kB, so the budget was adjusted from 112 kB explicitly. The lazy relations
+chunk is not omitted.
+
+**Sign-off (2026-11-18):** the owner instructed “добивать 176” (complete
+TASK-176) and approved 176.9. The approved scope is the field/checklist/link
+editor on `/admin/cards/:id` plus the existing board-content move, not a full
+board client. Master-authored comments/uploads remain a separate product
+decision.
+
+Master-authored comments/uploads are also a separate product decision: decide
+the author identity, history display and responsibility before adding the
+controls.
 
 ---
 
@@ -382,6 +443,10 @@ commands expose `auditId` only for correlated master-issued commands, with an
 `GET /admin/audit` accept the same validated `commandId`; the audit filter is
 pinned to `board.command`. Replays never fabricate a master audit row, and
 historical/user commands stay `null`. No backfill was attempted.
+
+**Sign-off (2026-11-18):** the same “добивать 176” instruction covers 176.10;
+the owner chose owner-facing board history with master correlation in this audit
+row (see §18, decision 2).
 
 ---
 
@@ -461,7 +526,7 @@ Every subtask PR must include:
 - `npm run format:check`, lint, typecheck and the relevant test suites;
 - no unrelated refactors or formatting churn.
 
-Suggested PR split:
+**Historical suggested PR split (planning-era; no merge is claimed):**
 
 1. **176.1** — one small PR, highest urgency.
 2. **176.2** — backend + shared + UI + docs in one PR (migration included).
@@ -471,10 +536,13 @@ Suggested PR split:
 6. **176.8** — only after explicit product sign-off; separate PR.
 7. **176.9 / 176.10** — separate product decisions.
 
+The 2026-11-18 sign-off answers the product gates above; 176.8–176.10 are
+delivered on review branches (A/B1/B2) without merge.
+
 ## 18. Open product decisions
 
 1. Comment editing: should masters ever edit another user's comment? (Current answer: no; author-only.)
-2. Should a master edit appear as the owner or as the master in board history? (176.8 must answer before shipping.)
+2. Should a master edit appear as the owner or as the master in board history? **Answered 2026-11-18 (owner sign-off for 176.8–176.10):** the owner remains the board-facing actor in board history; the real master is recorded in the command-linked audit as `commandId`, `masterId` and `masterEmail`. The owner instructed “добивать 176” (complete TASK-176).
 3. Is cross-board agent oversight needed in `/admin`, or is `/agents` + board dialog enough? (Current answer: enough; recorded as a deliberate boundary in the admin docs and ADR-166 §18 by 176.11.)
 4. Is cross-page bulk selection the desired contract, or should selection be page-local? (176.1 recommends cross-page with a 500 guard.)
 5. Should deleted/revoked rows be hidden by default or shown with a filter? (176.3 recommends hidden by default with an explicit filter.)
