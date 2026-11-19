@@ -182,12 +182,14 @@ export function isSessionPaused(
 
 /**
  * A paused session has no expected heartbeat, so it must not compete for one
- * of the two "Needs a nudge" cards. It stays visible in the live preview.
+ * of the two "Needs a nudge" cards. This is the *effective* pause: a board or
+ * token pause masks the session's own `pausedAt`, and both leave the session
+ * in the live preview instead of the nudge block.
  */
 export function needsNudge(
-  session: Pick<AgentSessionDto, "stale" | "pausedAt">,
+  session: Pick<AgentSessionDto, "stale" | "pausedAt" | "paused">,
 ): boolean {
-  return session.stale && !isSessionPaused(session);
+  return session.stale && !isSessionPaused(session) && !session.paused;
 }
 
 /** A session the control plane still considers open. */

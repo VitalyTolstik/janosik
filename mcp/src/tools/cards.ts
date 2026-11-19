@@ -162,6 +162,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .describe(
             "Zero-based insert position in the column (defaults to the end).",
           ),
+        commandId: commandIdSchema.optional(),
         expectedVersion: expectedVersionSchema,
         approvalId: approvalIdSchema,
       },
@@ -178,6 +179,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       priority,
       assigneeId,
       dueDate,
+      commandId,
       expectedVersion,
       approvalId,
     }) => {
@@ -195,7 +197,13 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         }
       }
 
-      const newCardId = cardId ?? newId();
+      // A supplied command id is also a stable seed for the card id, so an
+      // approved `ADD_CARD`-in-Done plan can be repeated byte-for-byte even
+      // when the caller did not pass `cardId`.
+      const newCardId =
+        cardId ??
+        (commandId !== undefined ? stableId(`create:${commandId}`) : newId());
+      const anchor = commandId ?? cardId;
       // Create the card and set its fields in one batch (TASK-160): one
       // round-trip and one board lock instead of one per command, and
       // all-or-nothing — a bad field rolls the whole batch back, so a failure
@@ -213,29 +221,38 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           ...(expectedVersion !== undefined
             ? { ifMatch: expectedVersion }
             : {}),
-          // A client id determines the idempotency key, so a retry replays.
-          ...(cardId ? { commandId: stableCommandId(cardId, "create") } : {}),
+          // A client id (or command id) determines every idempotency key, so
+          // a retry replays and an approved plan hash stays applicable.
+          ...(anchor !== undefined
+            ? {
+                commandId: commandId ?? stableCommandId(anchor, "create"),
+              }
+            : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       ];
       if (description !== undefined) {
         items.push({
           action: { type: "UPDATE_CARD", cardId: newCardId, description },
-          ...(cardId
-            ? { commandId: stableCommandId(cardId, "description") }
+          ...(anchor !== undefined
+            ? { commandId: stableCommandId(anchor, "description") }
             : {}),
         });
       }
       if (priority !== undefined) {
         items.push({
           action: { type: "SET_CARD_PRIORITY", cardId: newCardId, priority },
-          ...(cardId ? { commandId: stableCommandId(cardId, "priority") } : {}),
+          ...(anchor !== undefined
+            ? { commandId: stableCommandId(anchor, "priority") }
+            : {}),
         });
       }
       if (assigneeId !== undefined) {
         items.push({
           action: { type: "SET_CARD_ASSIGN", cardId: newCardId, assigneeId },
-          ...(cardId ? { commandId: stableCommandId(cardId, "assignee") } : {}),
+          ...(anchor !== undefined
+            ? { commandId: stableCommandId(anchor, "assignee") }
+            : {}),
         });
       }
       if (due !== undefined) {
@@ -245,7 +262,9 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
             cardId: newCardId,
             dueDate: due,
           },
-          ...(cardId ? { commandId: stableCommandId(cardId, "dueDate") } : {}),
+          ...(anchor !== undefined
+            ? { commandId: stableCommandId(anchor, "dueDate") }
+            : {}),
         });
       }
       try {
@@ -534,7 +553,9 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         requestedCardId ??
         (idempotencyKey !== undefined
           ? stableId(`duplicate:${idempotencyKey}`)
-          : newId());
+          : commandId !== undefined
+            ? stableId(`duplicate:${commandId}`)
+            : newId());
       await client.command(
         boardId,
         {
@@ -901,6 +922,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
           .min(0)
           .optional()
           .describe("Zero-based insert position."),
+        commandId: commandIdSchema.optional(),
         expectedVersion: expectedVersionSchema,
         approvalId: approvalIdSchema,
       },
@@ -911,6 +933,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
       cardId,
       columnId,
       position,
+      commandId,
       expectedVersion,
       approvalId,
     }) => {
@@ -929,6 +952,7 @@ export function registerCardTools(server: McpServer, client: JanosikClient) {
         },
         {
           ifMatch: expectedVersion,
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

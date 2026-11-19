@@ -55,6 +55,14 @@ export async function revokeApiTokens(
     where: { apiTokenId: { in: tokenIds }, endedAt: null },
     data: { status: "cancelled", endedAt: at, endReason: "cancelled" },
   });
+  await tx.approvalRequest.updateMany({
+    where: {
+      requestedByTokenId: { in: tokenIds },
+      status: { in: ["pending", "approved"] },
+      expiresAt: { gt: at },
+    },
+    data: { status: "cancelled", decidedAt: at },
+  });
   await tx.card.updateMany({
     where: { claimedByTokenId: { in: tokenIds } },
     data: {

@@ -16,6 +16,7 @@ import {
   APPROVAL_KINDS,
   type AgentRunKind,
   type AgentsOverviewApprovalItem,
+  type AgentsOverviewApprovalsResponse,
   type AgentsOverviewApprovalStatus,
   type AgentsOverviewCounts,
   type AgentsOverviewFacets,
@@ -178,13 +179,14 @@ export class AgentsOverviewService {
     const refreshedAt = now.getTime();
 
     if (section === "approvals") {
-      const page = await this.approvalPage(context, query);
+      const page = await this.approvalPage(context, query, counts.approvals);
       return {
         section,
         scope,
         items: page.items,
         nextCursor: page.nextCursor,
         total: page.total,
+        matchingCounts: page.matchingCounts,
         counts,
         facets: page.facets,
         refreshedAt,
@@ -373,7 +375,11 @@ export class AgentsOverviewService {
   private async approvalPage(
     context: OverviewContext,
     query: AgentsOverviewQueryDto,
-  ): Promise<Page<AgentsOverviewApprovalItem>> {
+    scopeCounts: AgentsOverviewApprovalsResponse["matchingCounts"],
+  ): Promise<
+    Page<AgentsOverviewApprovalItem> &
+      Pick<AgentsOverviewApprovalsResponse, "matchingCounts">
+  > {
     const status = parseApprovalStatusFilter(query.status);
     const kind = parseKind(query.kind, APPROVAL_KINDS);
     const base = this.approvalBaseWhere(context, query, kind);
@@ -381,11 +387,39 @@ export class AgentsOverviewService {
       ? await this.approvalSearchWhere(context, context.q)
       : undefined;
     const filter = approvalStatusWhere(status, context.now);
-    const total = await this.prisma.approvalRequest.count({
-      where: {
-        AND: [base, ...(search ? [search] : []), ...(filter ? [filter] : [])],
-      },
-    });
+    const pageBase = { AND: [base, ...(search ? [search] : [])] };
+    let matchingCounts = scopeCounts;
+    if (
+      search ||
+      kind ||
+      query.tokenId ||
+      query.sessionId ||
+      query.from !== undefined ||
+      query.to !== undefined
+    ) {
+      const [pending, total] = await Promise.all([
+        this.prisma.approvalRequest.count({
+          where: {
+            AND: [
+              pageBase,
+              { status: "pending", expiresAt: { gt: context.now } },
+            ],
+          },
+        }),
+        this.prisma.approvalRequest.count({ where: pageBase }),
+      ]);
+      matchingCounts = { pending, decided: total - pending, total };
+    }
+    const total =
+      status === "all"
+        ? matchingCounts.total
+        : status === "pending"
+          ? matchingCounts.pending
+          : status === "decided"
+            ? matchingCounts.decided
+            : await this.prisma.approvalRequest.count({
+                where: { AND: [pageBase, ...(filter ? [filter] : [])] },
+              });
 
     const cursor = query.cursor
       ? decodeOverviewCursor(query.cursor, context.binding)
@@ -400,9 +434,6 @@ export class AgentsOverviewService {
       if (!allowed) throw invalidCursor();
     }
 
-    const pageBase = {
-      AND: [base, ...(search ? [search] : [])],
-    };
     const pendingWhere: Prisma.ApprovalRequestWhereInput = {
       AND: [
         pageBase,
@@ -519,6 +550,7 @@ export class AgentsOverviewService {
       items: await this.mapApprovals(rows, context),
       nextCursor,
       total,
+      matchingCounts,
       facets: await this.approvalFacets(context),
     };
   }

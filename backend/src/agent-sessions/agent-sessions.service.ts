@@ -16,6 +16,7 @@ import { assertAgentCanWriteInTransaction } from "@/auth/agent-pause";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { publishAgentHeartbeat } from "./agent-session-context";
 import type {
   AgentSessionHeartbeatDto,
   CreateAgentSessionDto,
@@ -185,6 +186,13 @@ export class AgentSessionsService {
         sessionId,
       });
     }
+    await publishAgentHeartbeat(
+      this.prisma,
+      this.realtime,
+      session.id,
+      now,
+      session.lastHeartbeatPublishedAt,
+    );
     // The successful update is the linearization point. Build the response
     // from that snapshot instead of re-reading, so a concurrently committed
     // `end` cannot make this 200 look like an open session with `endedAt` set.
@@ -251,7 +259,7 @@ export class AgentSessionsService {
         where: { id: session.id },
       });
       if (changed.count === 0) {
-        return { row, changed: false, releasedClaims: 0 };
+        return { row, changed: false, cancelledApprovals: [] };
       }
       // §9.4: ending a session releases the claims it owns. Legacy claims
       // without a session id keep their lease until it expires.
@@ -270,6 +278,16 @@ export class AgentSessionsService {
           },
         });
       }
+      const cancelledApprovals = await tx.approvalRequest.updateManyAndReturn({
+        where: {
+          boardId,
+          agentSessionId: session.id,
+          status: { in: ["pending", "approved"] },
+          expiresAt: { gt: endedAt },
+        },
+        data: { status: "cancelled", decidedAt: endedAt, decidedBy: userId },
+        select: { id: true, cardId: true },
+      });
       await tx.activity.create({
         data: {
           boardId,
@@ -290,10 +308,19 @@ export class AgentSessionsService {
           },
         },
       });
-      return { row, changed: true, releasedClaims: claimed.length };
+      return { row, changed: true, cancelledApprovals };
     });
 
     if (result.changed) {
+      for (const approval of result.cancelledApprovals) {
+        this.realtime.publish(boardId, {
+          type: "approval",
+          approvalId: approval.id,
+          status: "cancelled",
+          ...(approval.cardId !== null ? { cardId: approval.cardId } : {}),
+          at: endedAt.getTime(),
+        });
+      }
       this.realtime.publish(boardId, {
         type: "agent",
         op: "ended",

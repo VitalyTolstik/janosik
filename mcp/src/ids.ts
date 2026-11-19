@@ -24,7 +24,10 @@ export function newIdempotencyKey(): string {
   return `mcp-${crypto.randomUUID()}`;
 }
 
-/** A stable, bounded idempotency key for one operation on a client id. */
+/**
+ * Derive a bounded command key from a caller's idempotency seed or creation
+ * ID. An existing target's ID is not a key for a new write.
+ */
 export function stableCommandId(entityId: string, operation: string): string {
   if (operation === "create" && entityId.length <= 64) return entityId;
   const digest = createHash("sha256")

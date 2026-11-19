@@ -232,6 +232,8 @@ export interface ApiErrorEnvelope {
   /** Prefixes of the expected/actual hash when a plan did not match. */
   expectedPlanHash?: string;
   actualPlanHash?: string;
+  /** Stored plan returned on an authorized approval hash mismatch. */
+  plan?: ApprovalPlan;
   /** Action name for scope/policy/approval errors (`DELETE_CARD`, …). */
   action?: string;
   /** `board_policy`, `board_scope`, … */
@@ -415,7 +417,12 @@ export interface ActivitySseEvent {
 /** TASK-166: an agent-session control-plane transition. */
 export interface AgentSseEvent {
   type: "agent";
-  op: "started" | "paused" | "resumed" | "ended";
+  /**
+   * `heartbeat` is a throttled liveness refresh, not a lifecycle transition:
+   * it carries both `sessionId` and `scope: "session"` so a board-level
+   * watcher only refetches the session rows it renders.
+   */
+  op: "started" | "paused" | "resumed" | "heartbeat" | "ended";
   sessionId?: string;
   scope?: "board" | "token" | "session";
   at: number;
@@ -1649,6 +1656,8 @@ export interface AgentsOverviewResponseBase {
 export interface AgentsOverviewApprovalsResponse extends AgentsOverviewResponseBase {
   section: "approvals";
   items: AgentsOverviewApprovalItem[];
+  /** Counts after search and scope filters, across all approval statuses. */
+  matchingCounts: AgentsOverviewApprovalCounts;
 }
 
 export interface AgentsOverviewSessionsResponse extends AgentsOverviewResponseBase {

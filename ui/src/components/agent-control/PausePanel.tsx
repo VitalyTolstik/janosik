@@ -412,6 +412,7 @@ export function PausePanel({
   const [sessions, setSessions] = useState<AgentSessionDto[] | null>(null);
   const [sessionsError, setSessionsError] = useState(false);
   const [tokens, setTokens] = useState<UserTokenDto[]>([]);
+  const [tokenRevision, setTokenRevision] = useState(0);
   const [revision, setRevision] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [boardDialog, setBoardDialog] = useState<"pause" | "resume" | null>(
@@ -435,12 +436,31 @@ export function PausePanel({
   );
 
   // Live board pause revisions (SSE) and the session-list refresh signal.
-  useEffect(
-    () => live.agentControl.subscribeAgent(() => setRevision((v) => v + 1)),
-    [live],
-  );
+  useEffect(() => {
+    let timer: number | undefined;
+    const unsubscribe = live.agentControl.subscribeAgent((event) => {
+      if (event.op === "started") setTokenRevision((value) => value + 1);
+      timer ??= window.setTimeout(() => {
+        timer = undefined;
+        setRevision((value) => value + 1);
+      }, 150);
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timer);
+    };
+  }, [live]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // A heartbeat is a liveness refresh, not a lifecycle transition. SSE is
+  // throttled server-side, so a visible panel also re-reads the rows while it
+  // is open; token pause/resume can originate from Account in another tab.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setRevision((value) => value + 1);
+    }, 15_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -465,15 +485,25 @@ export function PausePanel({
       ? null
       : (livePause?.reason ?? board?.agentsPauseReason ?? null);
 
+  useEffect(() => {
+    if (boardId === undefined || !isApiEnabled()) return;
+    let alive = true;
+    void api.listTokens().then(
+      (rows) => {
+        if (alive) setTokens(rows);
+      },
+      () => {
+        if (alive) setTokens([]);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [boardId, tokenRevision]);
+
   const loadSessions = useCallback(() => {
     if (boardId === undefined || !isApiEnabled()) return;
     setSessionsError(false);
-    // The token map only decides whether a settings link is owner-safe; it
-    // must never block the live session list.
-    void api
-      .listTokens()
-      .then(setTokens)
-      .catch(() => setTokens([]));
     void api
       .listAgentSessions(boardId, true)
       .then(setSessions)

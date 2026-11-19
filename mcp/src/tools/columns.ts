@@ -15,6 +15,7 @@ import {
   approvalIdSchema,
   boardIdSchema,
   columnIdSchema,
+  commandIdSchema,
   expectedVersionSchema,
 } from "../schemas.js";
 import { DESTRUCTIVE, WRITE, defineTool } from "./helpers.js";
@@ -329,11 +330,12 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, columnId, expectedVersion, approvalId }) => {
+    async ({ boardId, columnId, expectedVersion, commandId, approvalId }) => {
       await client.command(
         boardId,
         {
@@ -342,6 +344,7 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         },
         {
           ifMatch: expectedVersion,
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );
@@ -362,16 +365,18 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         boardId: boardIdSchema,
         columnId: columnIdSchema,
         expectedVersion: expectedVersionSchema,
+        commandId: commandIdSchema.optional(),
         approvalId: approvalIdSchema,
       },
       annotations: DESTRUCTIVE,
     },
-    async ({ boardId, columnId, expectedVersion, approvalId }) => {
+    async ({ boardId, columnId, expectedVersion, commandId, approvalId }) => {
       await client.command(
         boardId,
         { type: "DELETE_COLUMN", columnId },
         {
           ifMatch: expectedVersion,
+          ...(commandId !== undefined ? { commandId } : {}),
           ...(approvalId !== undefined ? { approvalId } : {}),
         },
       );

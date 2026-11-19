@@ -861,7 +861,11 @@ export class CommandsService {
     }
     // A successful PAT write refreshes the session heartbeat at most once a
     // minute (ADR §6.5), but only after the transaction committed.
-    await touchAgentSessionAfterWrite(this.prisma, attribution.agentSessionId);
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
     return {
       results: applied.responses,
       runId: applied.runId,

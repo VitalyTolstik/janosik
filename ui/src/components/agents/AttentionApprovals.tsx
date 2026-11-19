@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Check,
@@ -10,6 +10,7 @@ import {
   History,
   Link as LinkIcon,
   MoreHorizontal,
+  RefreshCw,
   Shield,
   Terminal,
   X,
@@ -39,6 +40,7 @@ import { useToast } from "@/components/Toast";
 import { useI18n, type MessageKey } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
+import { useBoardLive } from "@/store/board-live";
 import {
   APPROVAL_STATUS_KEYS,
   effectiveApprovalStatus,
@@ -108,9 +110,21 @@ function statusHint(
   expiresAt: number,
   now: number,
   t: Translate,
+  applyWindowExpired: boolean,
 ): { tone: "warn" | "ok" | "bad" | "muted"; icon: ReactNode; text: string } {
   switch (status) {
     case "approved":
+      // An approved decision is intentionally not rewritten to `expired`
+      // when its apply window lapses (the agent's apply gets
+      // `approval_expired`). Explain the wedged state instead of pretending
+      // the plan is still applicable.
+      if (applyWindowExpired) {
+        return {
+          tone: "warn",
+          icon: <Clock className="h-3.5 w-3.5" aria-hidden />,
+          text: t("agents.approvals.banner.approvedWindowExpired"),
+        };
+      }
       return {
         tone: "ok",
         icon: <Check className="h-3.5 w-3.5" aria-hidden />,
@@ -233,6 +247,7 @@ function useNow(intervalMs = 10_000): number {
 
 export function AttentionApprovalList({
   rows,
+  serverCounts,
   filter,
   onFilterChange,
   selectedId,
@@ -240,8 +255,12 @@ export function AttentionApprovalList({
   onReject,
   now,
   loading = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: {
   rows: readonly AttentionApprovalRow[];
+  serverCounts?: { pending: number; decided: number; total: number } | null;
   filter: AttentionApprovalFilter;
   onFilterChange: (filter: AttentionApprovalFilter) => void;
   selectedId: string | null;
@@ -249,9 +268,19 @@ export function AttentionApprovalList({
   onReject: (row: AttentionApprovalRow) => void;
   now: number;
   loading?: boolean;
+  /** A server page remains after the loaded rows (M24). */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }) {
   const { t, tp, lang } = useI18n();
   const counts = useMemo(() => {
+    if (serverCounts)
+      return {
+        needs: serverCounts.pending,
+        decided: serverCounts.decided,
+        all: serverCounts.total,
+      };
     let needs = 0;
     for (const row of rows) {
       if (
@@ -261,7 +290,7 @@ export function AttentionApprovalList({
       }
     }
     return { needs, decided: rows.length - needs, all: rows.length };
-  }, [now, rows]);
+  }, [now, rows, serverCounts]);
   const filtered = useMemo(
     () =>
       rows.filter((row) => {
@@ -310,7 +339,7 @@ export function AttentionApprovalList({
         </div>
       </section>
     );
-  if (rows.length === 0) return null;
+  if (rows.length === 0 && !hasMore && !serverCounts?.total) return null;
 
   const decidedView = filter === "decided";
   const heading = decidedView
@@ -509,24 +538,29 @@ export function AttentionApprovalList({
           })}
         </ul>
       )}
+      {hasMore && onLoadMore !== undefined ? (
+        <div className="mt-2 flex justify-center">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="agents-approvals-load-more"
+            disabled={loadingMore}
+            onClick={onLoadMore}
+            className="min-h-11 rounded-[6px] px-3 text-[11px] font-semibold md:min-h-7"
+          >
+            {loadingMore ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
+            {t("agentControl.runs.loadMore")}
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }
 
-export function AttentionApprovalDetail({
-  boardId,
-  approvalId,
-  boardTitle,
-  fallbackAgentName,
-  fallbackCardTitle,
-  initialMode = null,
-  variant = "global",
-  footerActive = true,
-  onChanged,
-  onBack,
-  onNextPending,
-  onCancelRequest,
-}: {
+interface AttentionApprovalDetailProps {
   boardId: string;
   approvalId: string;
   boardTitle: string;
@@ -538,19 +572,49 @@ export function AttentionApprovalDetail({
   variant?: "global" | "board";
   /** Mobile list-only state hides the board footer until a detail is open. */
   footerActive?: boolean;
+  focusBack?: boolean;
   onChanged: () => void;
   onBack?: () => void;
   onNextPending?: () => void;
   onCancelRequest?: () => Promise<boolean>;
-}) {
+}
+
+export function AttentionApprovalDetail(props: AttentionApprovalDetailProps) {
+  return (
+    <ApprovalDetail key={`${props.boardId}:${props.approvalId}`} {...props} />
+  );
+}
+
+function ApprovalDetail({
+  boardId,
+  approvalId,
+  boardTitle,
+  fallbackAgentName,
+  fallbackCardTitle,
+  initialMode = null,
+  variant = "global",
+  footerActive = true,
+  focusBack = false,
+  onChanged,
+  onBack,
+  onNextPending,
+  onCancelRequest,
+}: AttentionApprovalDetailProps) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const live = useBoardLive();
   const [detail, setDetail] = useState<ApprovalRequestDto | null>(null);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const generation = useRef(0);
+  const backButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focusBack) backButton.current?.focus();
+  }, [focusBack]);
   const [hashCopied, setHashCopied] = useState(false);
   const [board, setBoard] = useState<Board | null>(null);
   const [members, setMembers] = useState<BoardMemberDto[]>([]);
@@ -564,22 +628,52 @@ export function AttentionApprovalDetail({
   const [ownTokensKnown, setOwnTokensKnown] = useState(false);
   const now = useNow();
 
+  // An external approve/reject/consume must re-read the detail. The board
+  // shell's stream is authoritative when it covers this board; the timer is
+  // the cross-board fallback for the global console, never the source of
+  // truth (the server reply still decides the buttons).
+  useEffect(
+    () =>
+      live.agentControl.subscribeApproval((event) => {
+        if (event.approvalId === approvalId) {
+          setRevision((value) => value + 1);
+        }
+      }),
+    [approvalId, live],
+  );
   useEffect(() => {
-    let alive = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the detail while the new request runs
-    setError(false);
-    setDetail(null);
-    setHashCopied(false);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setRevision((value) => value + 1);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [approvalId]);
+
+  useEffect(() => {
+    const request = ++generation.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the mounted detail while reading its new revision
+    setRefreshing(true);
     void api
       .getApproval(boardId, approvalId)
       .then((next) => {
-        if (alive) setDetail(next);
+        if (request !== generation.current) return;
+        setDetail(next);
+        setError(false);
       })
-      .catch(() => {
-        if (alive) setError(true);
+      .catch((error: unknown) => {
+        if (request !== generation.current) return;
+        if (
+          error instanceof ApiError &&
+          (error.status === 403 || error.status === 404)
+        ) {
+          setDetail(null);
+        }
+        setError(true);
+      })
+      .finally(() => {
+        if (request === generation.current) setRefreshing(false);
       });
     return () => {
-      alive = false;
+      generation.current += 1;
     };
   }, [approvalId, boardId, revision]);
 
@@ -614,6 +708,8 @@ export function AttentionApprovalDetail({
     detail === null
       ? undefined
       : effectiveApprovalStatus(detail.status, detail.expiresAt, now);
+  const applyWindowExpired =
+    detail !== null && detail.status === "approved" && detail.expiresAt <= now;
   const canDecide = effectiveStatus === "pending";
   const commandCount = detail === null ? 0 : lengthOfPlan(detail);
 
@@ -660,7 +756,13 @@ export function AttentionApprovalDetail({
       : Math.max(0, Math.round((detail.expiresAt - detail.createdAt) / 60_000));
   const hint =
     detail !== null && effectiveStatus !== undefined
-      ? statusHint(effectiveStatus, detail.expiresAt, now, t)
+      ? statusHint(
+          effectiveStatus,
+          detail.expiresAt,
+          now,
+          t,
+          applyWindowExpired,
+        )
       : null;
 
   const copyHash = async () => {
@@ -695,6 +797,9 @@ export function AttentionApprovalDetail({
       });
       // The decision response does not recompute impact; keep the counts the
       // detail read already proved instead of blanking the paragraph.
+      generation.current += 1;
+      setRefreshing(false);
+      setError(false);
       setDetail({
         ...updated,
         impact: updated.impact ?? detail.impact,
@@ -732,6 +837,9 @@ export function AttentionApprovalDetail({
         if (!ok) return false;
       } else {
         const updated = await api.cancelApproval(boardId, detail.id);
+        generation.current += 1;
+        setRefreshing(false);
+        setError(false);
         setDetail({ ...updated, impact: updated.impact ?? detail.impact });
       }
       onChanged();
@@ -839,6 +947,7 @@ export function AttentionApprovalDetail({
           {onBack ? (
             <button
               type="button"
+              ref={backButton}
               onClick={onBack}
               aria-label={t("agents.approvals.back")}
               className={cn(
@@ -884,6 +993,14 @@ export function AttentionApprovalDetail({
               </div>
             ) : null}
           </div>
+          {refreshing && detail !== null ? (
+            <span aria-label={t("agents.approvals.refreshing")} role="status">
+              <RefreshCw
+                className="h-3.5 w-3.5 animate-spin text-muted-foreground"
+                aria-hidden
+              />
+            </span>
+          ) : null}
           {variant === "board" && effectiveStatus === "pending" ? (
             <button
               type="button"
@@ -902,12 +1019,15 @@ export function AttentionApprovalDetail({
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-4">
         {error ? (
           <ApprovalDetailError onRetry={() => setRevision((v) => v + 1)} />
-        ) : detail === null ? (
-          <div className="space-y-3" aria-hidden="true">
-            <Skeleton width={220} height={18} />
-            <Skeleton width={140} height={12} />
-            <Skeleton width="100%" height={80} />
-          </div>
+        ) : null}
+        {detail === null ? (
+          error ? null : (
+            <div className="space-y-3" aria-hidden="true">
+              <Skeleton width={220} height={18} />
+              <Skeleton width={140} height={12} />
+              <Skeleton width="100%" height={80} />
+            </div>
+          )
         ) : effectiveStatus === undefined || hint === null ? null : (
           <div>
             <div
@@ -915,6 +1035,8 @@ export function AttentionApprovalDetail({
                 "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
                 toneClasses[hint.tone],
               )}
+              role="status"
+              aria-live="polite"
               data-testid="approval-status"
               data-status={effectiveStatus}
             >

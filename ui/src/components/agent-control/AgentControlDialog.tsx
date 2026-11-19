@@ -24,6 +24,7 @@ import { useBoardLive } from "@/store/board-live";
 import { useBoardAccess, useBoardState } from "@/store/BoardContext";
 import { AgentControlFooterContext } from "@/components/agents/agent-control-footer-context";
 import { ApprovalsPanel } from "./ApprovalsPanel";
+import { useBoardApprovalQueue } from "./use-board-approval-queue";
 import { PausePanel } from "./PausePanel";
 import { RunsPanel } from "./RunsPanel";
 import "./agent-control.css";
@@ -53,13 +54,11 @@ export function AgentControlDialog({
   const { board } = useBoardState();
   const live = useBoardLive();
   const boardId = board?.id;
-  // `null` means unknown: loading or failed. A failed count must never render
-  // as a truthful zero ("No pending") or disappear a real queue behind a
-  // misleading badge.
-  const [pending, setPending] = useState<number | null>(null);
+  const approvals = useBoardApprovalQueue(boardId, open && role === "ADMIN");
   const [liveCount, setLiveCount] = useState<number | null>(null);
   const [runsCount, setRunsCount] = useState<number | null>(null);
-  const [countRevision, setCountRevision] = useState(0);
+  const [liveRevision, setLiveRevision] = useState(0);
+  const [runRevision, setRunRevision] = useState(0);
   const [tab, setTab] = useState<AgentControlTab>(
     role !== "ADMIN" && initialTab === "approvals" ? "pause" : initialTab,
   );
@@ -76,64 +75,56 @@ export function AgentControlDialog({
   };
 
   useEffect(() => {
-    const unsubscribers = [
-      live.agentControl.subscribeApproval(() =>
-        setCountRevision((value) => value + 1),
-      ),
-      live.agentControl.subscribeAgent(() =>
-        setCountRevision((value) => value + 1),
-      ),
-      live.agentControl.subscribeRun(() =>
-        setCountRevision((value) => value + 1),
-      ),
-    ];
+    if (!open) return;
+    const unsubscribeAgent = live.agentControl.subscribeAgent((event) => {
+      if (event.op === "started" || event.op === "ended") {
+        setLiveRevision((value) => value + 1);
+      }
+    });
+    const unsubscribeRun = live.agentControl.subscribeRun(() =>
+      setRunRevision((value) => value + 1),
+    );
     return () => {
-      for (const unsubscribe of unsubscribers) unsubscribe();
+      unsubscribeAgent();
+      unsubscribeRun();
     };
-  }, [live]);
+  }, [live, open]);
 
   useEffect(() => {
-    if (boardId === undefined || !isApiEnabled()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset counters when the route leaves a board
-      setPending(null);
-      setLiveCount(null);
-      setRunsCount(null);
-      return;
-    }
+    if (!open || boardId === undefined || !isApiEnabled()) return;
     let alive = true;
-    if (role === "ADMIN") {
-      void api
-        .listApprovals(boardId, { status: "pending", limit: 100 })
-        .then((rows) => {
-          if (alive) setPending(rows.length);
-        })
-        .catch(() => {
-          if (alive) setPending(null);
-        });
-    } else {
-      setPending(null);
-    }
-    void api
-      .listAgentSessions(boardId, true)
-      .then((rows) => {
+    void api.listAgentSessions(boardId, true).then(
+      (rows) => {
         if (alive) setLiveCount(rows.length);
-      })
-      .catch(() => {
+      },
+      () => {
         if (alive) setLiveCount(null);
-      });
-    void api
-      .listRuns(boardId, { limit: 100 })
-      .then((rows) => {
-        if (alive) setRunsCount(rows.length);
-      })
-      .catch(() => {
-        if (alive) setRunsCount(null);
-      });
+      },
+    );
     return () => {
       alive = false;
     };
-  }, [boardId, countRevision, role]);
+  }, [boardId, liveRevision, open]);
 
+  useEffect(() => {
+    if (!open || boardId === undefined || !isApiEnabled()) return;
+    let alive = true;
+    void api.listRuns(boardId, { limit: 100 }).then(
+      (rows) => {
+        if (alive) setRunsCount(rows.length);
+      },
+      () => {
+        if (alive) setRunsCount(null);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [boardId, open, runRevision]);
+
+  const pending = approvals.current?.pendingError
+    ? null
+    : (approvals.current?.pending?.total ?? null);
   const livePause = live.agentControl.getBoardPause(boardId);
   const boardPaused =
     livePause?.paused ??
@@ -248,9 +239,7 @@ export function AgentControlDialog({
                     className="ac-head-chip warn"
                   >
                     <Inbox className="icon" aria-hidden="true" />
-                    {pending > 99
-                      ? "99+"
-                      : t("agentControl.header.waiting", { count: pending })}
+                    {t("agentControl.header.waiting", { count: pending })}
                   </span>
                 ) : (
                   <span className="ac-head-chip muted">
@@ -322,7 +311,7 @@ export function AgentControlDialog({
                         data-testid={`agent-${id}-count`}
                         className={badge ? "count-badge" : "rail-count"}
                       >
-                        {count > 99 ? "99+" : count}
+                        {badge ? count : count > 99 ? "99+" : count}
                       </span>
                     ) : null}
                   </button>
@@ -379,10 +368,7 @@ export function AgentControlDialog({
               className="ac-content"
             >
               {tab === "approvals" && role === "ADMIN" ? (
-                <ApprovalsPanel
-                  role={role}
-                  onChanged={() => setCountRevision((value) => value + 1)}
-                />
+                <ApprovalsPanel queueState={approvals} />
               ) : tab === "pause" ? (
                 <PausePanel role={role} onClose={() => onOpenChange(false)} />
               ) : (

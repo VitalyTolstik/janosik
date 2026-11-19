@@ -28,7 +28,6 @@ import {
   AGENT_STATUS_FILTERS,
   agentLabel,
   isLiveSession,
-  isSessionPaused,
   matchesAgentFilter,
   needsNudge,
   readAgentFilter,
@@ -49,6 +48,8 @@ import {
 } from "./session-ui";
 import { useAgentSessions } from "./use-agent-sessions";
 import { usePendingApprovals } from "./use-pending-approvals";
+import { useAgentSessionEvents } from "./use-agent-events";
+import { useBoardLive } from "@/store/board-live";
 import { useAgentRuns } from "./use-agent-runs";
 import {
   AttentionApprovalDetail,
@@ -102,6 +103,8 @@ export function AgentsPage() {
   const pageRef = useRef<HTMLElement | null>(null);
   const [params, setParams] = useSearchParams();
   const state = useAgentSessions();
+  const { agentControl } = useBoardLive();
+  const mobileApproval = useMediaQuery("(max-width: 1060px)");
   const { boards: loadedBoards } = useBoard();
   const allDetailScope = params.get("scope") === "all";
   const filter = useMemo(
@@ -126,9 +129,6 @@ export function AgentsPage() {
   const [now, setNow] = useState(() => Date.now());
   const [offline, setOffline] = useState(() => !navigator.onLine);
   const [approvalIntent, setApprovalIntent] = useState<"reject" | null>(null);
-  const [runConflicts, setRunConflicts] = useState<Map<string, number>>(
-    () => new Map(),
-  );
   const [autoRunId, setAutoRunId] = useState<string | null>(null);
   const [runVisibleCount, setRunVisibleCount] = useState(7);
 
@@ -442,10 +442,20 @@ export function AgentsPage() {
     boards: state.boards,
     enabled: !state.isAgentToken && needsCrossBoardCounts,
   });
+  const [approvalFilter, setApprovalFilter] =
+    useState<AttentionApprovalFilter>("needs");
+  const approvalStatus =
+    approvalFilter === "needs" ? "pending" : approvalFilter;
+  const sharesApprovalQuery =
+    section === "attention" &&
+    approvalStatus === "pending" &&
+    filter.token === "all" &&
+    filter.query.trim() === "";
   const pending = usePendingApprovals({
     boardId: filter.board === "all" ? null : filter.board,
     boards: state.boards,
     enabled: !state.isAgentToken,
+    status: "pending",
   });
   const pendingCounts = needsCrossBoardCounts
     ? crossBoardPending.counts
@@ -496,13 +506,10 @@ export function AgentsPage() {
   );
   // The list must surface rollback blockers before a run is opened. Previews
   // are read-only; the detail's own preview wins when both have an answer.
-  const precomputedConflicts = useRunConflictPreviews(
+  const displayedConflicts = useRunConflictPreviews(
     section === "runs" ? visibleRunRows : [],
     section === "runs",
-  );
-  const displayedConflicts = useMemo(
-    () => new Map([...precomputedConflicts, ...runConflicts]),
-    [precomputedConflicts, runConflicts],
+    runs.revision,
   );
   // The master-detail opens the newest run until the URL pins one. Remember
   // which run that was so a refresh that prepends the new `revert` audit run
@@ -517,8 +524,40 @@ export function AgentsPage() {
           : (runs.rows[0]?.id ?? null),
     );
   }, [section, runs.rows]);
-  const [approvalFilter, setApprovalFilter] =
-    useState<AttentionApprovalFilter>("needs");
+  const approvalQueue = usePendingApprovals({
+    boardId: filter.board === "all" ? null : filter.board,
+    boards: state.boards,
+    enabled: section === "attention" && !state.isAgentToken,
+    q: filter.query,
+    tokenId: filter.token === "all" ? undefined : filter.token,
+    status: approvalStatus,
+  });
+  const { reload: reloadPending } = pending;
+  const { reload: reloadCrossBoard } = crossBoardPending;
+  const { reload: reloadApprovalQueue } = approvalQueue;
+  const reloadApprovals = useCallback(() => {
+    reloadPending();
+    reloadCrossBoard();
+    if (!sharesApprovalQuery) reloadApprovalQueue();
+  }, [
+    reloadPending,
+    reloadCrossBoard,
+    reloadApprovalQueue,
+    sharesApprovalQuery,
+  ]);
+  useEffect(() => {
+    let timer: number | undefined;
+    const unsubscribe = agentControl.subscribeApproval(() => {
+      timer ??= window.setTimeout(() => {
+        timer = undefined;
+        reloadApprovals();
+      }, 150);
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timer);
+    };
+  }, [agentControl, reloadApprovals]);
   const changeApprovalFilter = useCallback(
     (next: AttentionApprovalFilter) => {
       setApprovalFilter(next);
@@ -567,61 +606,43 @@ export function AgentsPage() {
     [approvalAgentNames, approvalSessionTokenNames],
   );
   const selectedApprovalId = params.get("approval");
-  const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(() => {
-    const query = filter.query.trim().toLowerCase();
-    return pending.rows
-      .filter((row) => {
-        if (filter.board !== "all" && row.boardId !== filter.board)
-          return false;
-        if (filter.token !== "all" && row.requestedByTokenId !== filter.token) {
-          return false;
-        }
-        if (query === "") return true;
-        return [
-          row.summary,
-          row.actionType,
-          row.planHash,
-          row.boardTitle,
-          row.requestedByTokenId,
-          row.cardId,
-          row.agentSessionId,
-        ]
-          .filter((value): value is string => typeof value === "string")
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
-      })
-      .map((row) => ({
+  const scopedApprovalRows = useMemo<AttentionApprovalRow[]>(
+    () =>
+      approvalQueue.rows.map((row) => ({
         ...row,
         agentName: approvalNameFor(row),
-      }));
-  }, [approvalNameFor, filter.board, filter.query, filter.token, pending.rows]);
-  const approvalRowsForFilter = useMemo(
-    () =>
-      scopedApprovalRows.filter((row) => {
-        const pending =
-          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
-        if (approvalFilter === "needs") return pending;
-        if (approvalFilter === "decided") return !pending;
-        return true;
-      }),
-    [approvalFilter, now, scopedApprovalRows],
+      })),
+    [approvalNameFor, approvalQueue.rows],
   );
-  const scopedPendingCount = useMemo(
-    () =>
-      scopedApprovalRows.filter(
-        (row) =>
-          effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
-      ).length,
-    [now, scopedApprovalRows],
-  );
-  const defaultApprovalId =
-    approvalRowsForFilter.find(
-      (row) =>
-        effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
-    )?.id ??
-    approvalRowsForFilter[0]?.id ??
-    null;
+  const firstApproval = scopedApprovalRows.find((row) => {
+    const isPending =
+      effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending";
+    return (
+      approvalFilter === "all" ||
+      (approvalFilter === "needs" ? isPending : !isPending)
+    );
+  });
+  const approvalScope = JSON.stringify([
+    filter.board,
+    filter.query,
+    filter.token,
+    approvalFilter,
+  ]);
+  const [autoApproval, setAutoApproval] = useState<{
+    scope: string;
+    row: AttentionApprovalRow;
+  } | null>(null);
+  useEffect(() => {
+    if (firstApproval === undefined) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- preserve the automatically opened detail across external decisions
+    setAutoApproval((current) =>
+      current?.scope === approvalScope
+        ? current
+        : { scope: approvalScope, row: firstApproval },
+    );
+  }, [approvalScope, firstApproval]);
+  const defaultApproval =
+    autoApproval?.scope === approvalScope ? autoApproval.row : firstApproval;
   const selectedSession = params.get("session");
   // An explicit `?approval=` link is a deliberate deep link; it wins over the
   // current filter and may point at a decided/expired row. Otherwise the
@@ -629,13 +650,23 @@ export function AgentsPage() {
   // explicitly opened a session from the same Attention list, which must win
   // over the default approval selection.
   const visibleApprovalId =
-    selectedApprovalId ?? (selectedSession === null ? defaultApprovalId : null);
+    selectedApprovalId ??
+    (selectedSession === null ? (defaultApproval?.id ?? null) : null);
   const nextPendingApproval = useMemo(() => {
     if (visibleApprovalId === null) return null;
     // Decided is a history filter, not a reason to lose the pending peers:
     // an approved detail opened from Recently decided still offers the next
     // request waiting for a decision.
-    const pendingRows = scopedApprovalRows.filter(
+    const candidates =
+      approvalFilter === "decided" &&
+      filter.query.trim() === "" &&
+      filter.token === "all"
+        ? pending.rows.map((row) => ({
+            ...row,
+            agentName: approvalNameFor(row),
+          }))
+        : scopedApprovalRows;
+    const pendingRows = candidates.filter(
       (row) =>
         effectiveApprovalStatus(row.status, row.expiresAt, now) === "pending",
     );
@@ -646,7 +677,16 @@ export function AgentsPage() {
     if (index === -1) return pendingRows[0] ?? null;
     if (pendingRows.length < 2) return null;
     return pendingRows[(index + 1) % pendingRows.length] ?? null;
-  }, [now, scopedApprovalRows, visibleApprovalId]);
+  }, [
+    approvalFilter,
+    approvalNameFor,
+    filter.query,
+    filter.token,
+    now,
+    pending.rows,
+    scopedApprovalRows,
+    visibleApprovalId,
+  ]);
   const pendingForScope =
     filter.board === "all" ? pendingAll : (pendingCounts[filter.board] ?? null);
   const scopedRows = useMemo(
@@ -670,8 +710,20 @@ export function AgentsPage() {
   const selectedApprovalBase =
     visibleApprovalId === null
       ? undefined
-      : pending.rows.find((row) => row.id === visibleApprovalId);
+      : (approvalQueue.rows.find((row) => row.id === visibleApprovalId) ??
+        pending.rows.find((row) => row.id === visibleApprovalId) ??
+        (defaultApproval?.id === visibleApprovalId
+          ? defaultApproval
+          : undefined));
   const approvalBoardId = scopedBoard ?? selectedApprovalBase?.boardId ?? null;
+  const extraApprovalBoard =
+    section === "attention" &&
+    isAttentionAdmin &&
+    approvalBoardId !== null &&
+    state.boards.findIndex((board) => board.id === approvalBoardId) >= 4
+      ? [approvalBoardId]
+      : [];
+  useAgentSessionEvents(extraApprovalBoard, undefined, !state.isAgentToken);
   const selectedRunRow =
     selectedRunId === null
       ? undefined
@@ -837,13 +889,6 @@ export function AgentsPage() {
     ],
     [runFilter.session, runSessionNames, t],
   );
-  const noteRunConflicts = useCallback((runId: string, count: number) => {
-    setRunConflicts((current) => {
-      const next = new Map(current);
-      next.set(runId, count);
-      return next;
-    });
-  }, []);
   const filteredActive =
     filter.token !== "all" ||
     filter.status !== "all" ||
@@ -853,12 +898,12 @@ export function AgentsPage() {
     isAttentionAdmin &&
     state.rows.length > 0 &&
     pendingForScope !== null &&
-    scopedPendingCount === 0 &&
+    approvalQueue.matchingCounts?.pending === 0 &&
     approvalFilter === "needs" &&
     !filteredActive &&
     !state.error &&
-    !pending.error &&
-    !pending.loading;
+    !approvalQueue.error &&
+    !approvalQueue.loading;
   const unknownBoard =
     !state.loading &&
     (!state.error || state.errorStatus === 403 || state.errorStatus === 404) &&
@@ -1025,7 +1070,7 @@ export function AgentsPage() {
                           : "bg-hover text-muted-foreground",
                     )}
                   >
-                    {count > 99 ? "99+" : count}
+                    {count}
                   </span>
                 ) : null}
               </button>
@@ -1094,7 +1139,7 @@ export function AgentsPage() {
                         pending.stale ? t("agents.pending.stale") : undefined
                       }
                     >
-                      {count > 99 ? "99+" : count}
+                      {count}
                     </span>
                   ) : null}
                 </button>
@@ -1166,7 +1211,7 @@ export function AgentsPage() {
                 size="sm"
                 onClick={() => {
                   state.reload();
-                  pending.reload();
+                  reloadApprovals();
                   runCount.reload();
                   if (section === "runs") runs.reload();
                 }}
@@ -1502,7 +1547,7 @@ export function AgentsPage() {
               </div>
             )}
           {section === "attention" &&
-          pending.error &&
+          (approvalQueue.error || pending.error) &&
           !(state.error && state.rows.length === 0) ? (
             <div
               className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
@@ -1512,7 +1557,7 @@ export function AgentsPage() {
               <span>{t("agentControl.approvals.loadError")}</span>
               <button
                 type="button"
-                onClick={pending.reload}
+                onClick={reloadApprovals}
                 className="min-h-9 rounded-sm border border-current/40 px-2 font-medium max-md:min-h-11"
               >
                 {t("agents.retry")}
@@ -1737,9 +1782,13 @@ export function AgentsPage() {
                           <AllClear
                             onViewSessions={() => setSection("sessions")}
                           />
-                        ) : (
+                        ) : null}
+                        {!showAllClear ||
+                        !!approvalQueue.matchingCounts?.decided ||
+                        approvalQueue.nextCursor !== null ? (
                           <AttentionApprovalList
-                            loading={pending.loading}
+                            loading={approvalQueue.loading}
+                            serverCounts={approvalQueue.matchingCounts}
                             rows={scopedApprovalRows}
                             filter={approvalFilter}
                             onFilterChange={changeApprovalFilter}
@@ -1747,8 +1796,14 @@ export function AgentsPage() {
                             onSelect={openApproval}
                             onReject={(row) => openApproval(row, "reject")}
                             now={now}
+                            hasMore={approvalQueue.nextCursor !== null}
+                            loadingMore={
+                              approvalQueue.loadingMore ||
+                              approvalQueue.refreshing
+                            }
+                            onLoadMore={() => void approvalQueue.loadMore()}
                           />
-                        )}
+                        ) : null}
                       </>
                     )}
                     {state.rows.length === 0 && !filteredActive ? (
@@ -1879,7 +1934,6 @@ export function AgentsPage() {
                 runs.reload();
                 runCount.reload();
               }}
-              onPreview={noteRunConflicts}
               onOpenSession={openRunSession}
             />
           ) : state.rows.length === 0 ? (
@@ -1898,6 +1952,7 @@ export function AgentsPage() {
           )
         ) : section === "attention" &&
           isAttentionAdmin &&
+          !approvalQueue.forbidden &&
           visibleApprovalId !== null &&
           approvalBoardId !== null ? (
           <AttentionApprovalDetail
@@ -1911,7 +1966,10 @@ export function AgentsPage() {
             }
             fallbackCardTitle={selectedApprovalBase?.cardTitle ?? undefined}
             initialMode={approvalIntent}
-            onChanged={pending.reload}
+            onChanged={reloadApprovals}
+            focusBack={
+              mobileApproval && approvalSheetOpen && approvalIntent === null
+            }
             onBack={closeApproval}
             onNextPending={
               nextPendingApproval === null
@@ -2105,7 +2163,7 @@ function AttentionLiveSessions({
   // is expected while paused, and hiding it made the row disappear after a
   // pause. Genuinely stale, unpaused rows stay in "Needs a nudge".
   const live = rows.filter(
-    (row) => isLiveSession(row) && (!row.stale || isSessionPaused(row)),
+    (row) => isLiveSession(row) && (!row.stale || row.paused),
   );
   if (live.length === 0) return null;
   // Counts mirror the prototype: they describe every filtered session, not
@@ -2116,9 +2174,9 @@ function AttentionLiveSessions({
   const waiting = rows.filter(
     (row) => row.status === "waiting_approval" && !row.paused,
   ).length;
-  // The chip is a factual heartbeat count (same as the Sessions group header
-  // and the mockup); `needsNudge` only decides which rows get warning cards.
-  const stale = rows.filter((row) => row.stale).length;
+  // A paused row has no expected heartbeat, so it is not a stale warning
+  // even when the last beat is old; `needsNudge` uses the same rule.
+  const stale = rows.filter((row) => row.stale && !row.paused).length;
   const paused = rows.filter((row) => row.paused).length;
 
   return (

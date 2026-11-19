@@ -46,6 +46,7 @@ export interface AgentRunsState {
   /** Rows currently known for this filter (a loaded count, not a server total). */
   total: number;
   lastLoadedAt: number | null;
+  revision: number;
   reload: () => void;
   loadMore: () => Promise<void>;
 }
@@ -74,6 +75,7 @@ export function useAgentRuns(
   const [snapshot, setSnapshot] = useState<RunsSnapshot | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const generation = useRef(0);
+  const [revision, setRevision] = useState(0);
   const pagesRef = useRef<{ key: string; pages: Map<string, BoardPage> }>({
     key: "",
     pages: new Map<string, BoardPage>(),
@@ -113,6 +115,7 @@ export function useAgentRuns(
     // empty board list is a real empty state and is allowed through.
     if (boardsLoading && scopedBoards.length === 0) return;
     const request = ++generation.current;
+    setRevision(request);
     const previous =
       pagesRef.current.key === filterKey
         ? pagesRef.current.pages
@@ -302,6 +305,7 @@ export function useAgentRuns(
     hasMore: current?.hasMore ?? false,
     total: current?.rows.length ?? 0,
     lastLoadedAt: current?.lastLoadedAt ?? null,
+    revision,
     reload,
     loadMore,
   };

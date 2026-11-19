@@ -106,6 +106,7 @@ export function Header() {
     boardId: needsCrossBoardCounts ? null : headerBoardId,
     boards: pendingBoards,
     enabled: isAgentsRoute,
+    status: "pending",
   });
   const pendingAll = pendingApprovals.totalCount;
   const pendingForScope =

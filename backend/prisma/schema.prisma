@@ -407,25 +407,26 @@ model CommandPreimage {
 // ---------------------------------------------------------------------------
 
 model AgentSession {
-  id              String    @id @default(cuid())
-  userId          String
-  apiTokenId      String
-  boardId         String
-  name            String?   @db.VarChar(100)
-  clientName      String?   @db.VarChar(100)
-  model           String?   @db.VarChar(100)
-  status          String    @default("active")
+  id                       String    @id @default(cuid())
+  userId                   String
+  apiTokenId               String
+  boardId                  String
+  name                     String?   @db.VarChar(100)
+  clientName               String?   @db.VarChar(100)
+  model                    String?   @db.VarChar(100)
+  status                   String    @default("active")
   // active|idle|waiting_approval|completed|failed|cancelled
-  currentCardId   String?
-  currentRunId    String?
-  startedAt       DateTime  @default(now())
-  lastHeartbeatAt DateTime  @default(now())
-  endedAt         DateTime?
-  endReason       String?
-  pausedAt        DateTime?
-  pausedBy        String?
-  pausedReason    String?
-  summary         String?   @db.Text
+  currentCardId            String?
+  currentRunId             String?
+  startedAt                DateTime  @default(now())
+  lastHeartbeatAt          DateTime  @default(now())
+  lastHeartbeatPublishedAt DateTime?
+  endedAt                  DateTime?
+  endReason                String?
+  pausedAt                 DateTime?
+  pausedBy                 String?
+  pausedReason             String?
+  summary                  String?   @db.Text
 
   @@index([apiTokenId, status])
   @@index([boardId, status, lastHeartbeatAt])
@@ -483,6 +484,7 @@ model ApprovalRequest {
   createdAt          DateTime  @default(now())
 
   @@index([boardId, status, createdAt])
+  @@index([boardId, agentSessionId, status])
   @@index([requestedByTokenId, status])
   @@index([expiresAt, status])
   @@index([planHash])

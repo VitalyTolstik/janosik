@@ -111,6 +111,7 @@ export class ApprovalsService {
     const existing = await this.findByIdempotentPlan(
       boardId,
       principal.apiTokenId!,
+      principal.agentSessionId ?? null,
       plan,
     );
     if (existing !== null) {
@@ -410,6 +411,7 @@ export class ApprovalsService {
     const existing = await this.findByIdempotentPlan(
       boardId,
       principal.apiTokenId ?? "",
+      params.agentSessionId,
       plan,
     );
     if (existing !== null) {
@@ -629,6 +631,7 @@ export class ApprovalsService {
       const existing = await this.findByIdempotentPlan(
         boardId,
         principal.apiTokenId ?? "",
+        params.agentSessionId,
         plan,
       );
       if (existing !== null && existing.status === "consumed") {
@@ -807,22 +810,55 @@ export class ApprovalsService {
     const ttl = effectiveTtlMinutes(params.ttlMinutes, params.policy);
     const expiresAt = new Date(Date.now() + ttl * 60_000);
     const planHash = approvalPlanHash(params.plan);
-    const row = await this.prisma.$transaction(async (tx) => {
+    const { row, created } = await this.prisma.$transaction(async (tx) => {
       // Serialize concurrent create/auto-409 requests for the same token and
       // plan. Without this, two `find -> create` races could leave two
       // pending approvals for one plan. Re-check inside the lock.
-      const lockKey = `${params.boardId}:${params.principal.apiTokenId}:${planHash}`;
+      const lockKey =
+        `${params.boardId}:${params.principal.apiTokenId}:` +
+        `${params.agentSessionId ?? "no-session"}:${planHash}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const token = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "ApiToken"
+        WHERE id = ${params.principal.apiTokenId!} AND "revokedAt" IS NULL
+        FOR SHARE
+      `;
+      if (token.length === 0) {
+        throw new ForbiddenException({
+          message: "API token was revoked",
+          code: "token_revoked",
+        });
+      }
+      if (params.agentSessionId !== null) {
+        // Ending or revoking the session updates this same row. Holding its
+        // lock through creation ensures that a concurrent close either
+        // cancels this request or prevents it from being created.
+        const open = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "AgentSession"
+          WHERE id = ${params.agentSessionId} AND "endedAt" IS NULL
+            AND status IN ('active', 'idle', 'waiting_approval')
+          FOR UPDATE
+        `;
+        if (open.length === 0) {
+          throw new ForbiddenException({
+            message: "Agent session is closed",
+            code: "agent_session_closed",
+            sessionId: params.agentSessionId,
+          });
+        }
+      }
       const existing = await tx.approvalRequest.findFirst({
         where: {
           boardId: params.boardId,
           requestedByTokenId: params.principal.apiTokenId!,
+          agentSessionId: params.agentSessionId,
           planHash,
           status: { in: ["pending", "approved"] },
+          expiresAt: { gt: new Date() },
         },
         orderBy: { createdAt: "asc" },
       });
-      if (existing !== null) return existing;
+      if (existing !== null) return { row: existing, created: false };
 
       const created = await tx.approvalRequest.create({
         data: {
@@ -836,7 +872,7 @@ export class ApprovalsService {
           summary: params.summary,
           risk: params.risk,
           plan: params.plan as unknown as Prisma.InputJsonValue,
-          planHash: approvalPlanHash(params.plan),
+          planHash,
           status: "pending",
           expiresAt,
         },
@@ -862,10 +898,12 @@ export class ApprovalsService {
           },
         },
       });
-      return created;
+      return { row: created, created: true };
     });
-    this.publish(row);
-    await this.attention.notifyApprovalRequested(row);
+    if (created) {
+      this.publish(row);
+      await this.attention.notifyApprovalRequested(row);
+    }
     return row;
   }
 
@@ -900,28 +938,32 @@ export class ApprovalsService {
   private async findByIdempotentPlan(
     boardId: string,
     tokenId: string,
+    agentSessionId: string | null,
     plan: ApprovalPlan,
   ): Promise<ApprovalRequest | null> {
     const planHash = approvalPlanHash(plan);
-    const rows = await this.prisma.approvalRequest.findMany({
+    const scope = {
+      boardId,
+      requestedByTokenId: tokenId,
+      agentSessionId,
+      planHash,
+    };
+    const live = await this.prisma.approvalRequest.findFirst({
       where: {
-        boardId,
-        requestedByTokenId: tokenId,
-        planHash,
+        ...scope,
+        status: { in: ["pending", "approved"] },
+        expiresAt: { gt: new Date() },
       },
       orderBy: { createdAt: "desc" },
-      take: 10,
     });
-    // A live request wins even when a newer decision (reject/cancel) exists:
-    // it still authorizes this exact plan. Otherwise the newest row carries
-    // the state an idempotent retry should report.
-    return (
-      rows.find(
-        (row) => row.status === "pending" || row.status === "approved",
-      ) ??
-      rows[0] ??
-      null
-    );
+    if (live !== null) return live;
+
+    // Expired approved rows retain the human decision as history. Consumed
+    // rows still protect exact retries even after their original deadline.
+    return this.prisma.approvalRequest.findFirst({
+      where: { ...scope, status: "consumed" },
+      orderBy: { createdAt: "desc" },
+    });
   }
 
   /** True when a consumed command plan's commands are all already applied. */
@@ -1285,6 +1327,8 @@ export class ApprovalsService {
       approvalId: row.id,
       expectedPlanHash: row.planHash.slice(0, 12),
       actualPlanHash: actualHash.slice(0, 12),
+      planHash: row.planHash,
+      plan: row.plan,
       retryable: false,
     });
   }

@@ -1,15 +1,16 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type {
   AgentsOverviewApprovalItem,
-  AgentsOverviewResponse,
+  AgentsOverviewApprovalCounts,
+  AgentsOverviewQuery,
+  AgentsOverviewApprovalsResponse,
   BoardRole,
 } from "@janosik/shared";
 
-import { api, isApiEnabled } from "@/api/client";
+import { isApiEnabled } from "@/api/client";
+import { fetchApprovalPage, refreshApprovalPages } from "./approval-pages";
 
 const POLL_MS = 30_000;
-/** One exact count plus the first page of rows; the server owns the totals. */
-const ROW_LIMIT = 100;
 
 /** The minimal board summary needed to gate the request client-side. */
 export interface PendingApprovalsBoard {
@@ -27,6 +28,9 @@ export interface PendingApprovalsOptions {
    */
   boards?: readonly PendingApprovalsBoard[];
   enabled?: boolean;
+  q?: string;
+  tokenId?: string;
+  status?: "all" | "pending" | "decided";
   /**
    * Explicit role gate for surfaces that already know the board role and do
    * not keep the full board list (the board header trigger).
@@ -37,6 +41,7 @@ export interface PendingApprovalsOptions {
 export interface PendingApprovalsSnapshot {
   /** Effective-status approval rows for the current scope. */
   rows: readonly AgentsOverviewApprovalItem[];
+  matchingCounts: AgentsOverviewApprovalCounts | null;
   /** Board id → exact pending count, or `null` when the caller is not ADMIN. */
   counts: Readonly<Record<string, number | null>>;
   /** Exact pending count for the current scope; `null` means unknown. */
@@ -45,18 +50,24 @@ export interface PendingApprovalsSnapshot {
   totalCount: number | null;
   loading: boolean;
   refreshing: boolean;
+  /** A page after the first is in flight (load-more button state). */
+  loadingMore: boolean;
   /** A network/server failure. Last-known data stays visible as stale. */
   error: boolean;
   /** Confirmed 403/404: the scope is not readable, so no Retry trap. */
   forbidden: boolean;
   stale: boolean;
   refreshedAt: number | null;
-  /** The server total exceeds the first page of rows. */
+  /** The server has another page beyond `rows`. */
   truncated: boolean;
+  /** Opaque cursor for {@link PendingApprovalsState.loadMore}. */
+  nextCursor: string | null;
 }
 
 export interface PendingApprovalsState extends PendingApprovalsSnapshot {
   reload: () => void;
+  /** Append the next server page; a no-op when `truncated` is false. */
+  loadMore: () => Promise<void>;
 }
 
 const NO_ROWS: readonly AgentsOverviewApprovalItem[] = Object.freeze([]);
@@ -65,15 +76,18 @@ const NO_COUNTS: Readonly<Record<string, number | null>> = Object.freeze({});
 const EMPTY_SNAPSHOT: PendingApprovalsSnapshot = Object.freeze({
   rows: NO_ROWS,
   counts: NO_COUNTS,
+  matchingCounts: null,
   pendingCount: null,
   totalCount: null,
   loading: false,
   refreshing: false,
+  loadingMore: false,
   error: false,
   forbidden: false,
   stale: false,
   refreshedAt: null,
   truncated: false,
+  nextCursor: null,
 });
 
 interface Entry {
@@ -83,6 +97,9 @@ interface Entry {
   onVisible: (() => void) | null;
   generation: number;
   inFlight: boolean;
+  loadingMore: boolean;
+  reloadPending: boolean;
+  page: AgentsOverviewApprovalsResponse | null;
 }
 
 /**
@@ -102,6 +119,9 @@ function getEntry(key: string): Entry {
     onVisible: null,
     generation: 0,
     inFlight: false,
+    loadingMore: false,
+    reloadPending: false,
+    page: null,
   };
   entries.set(key, created);
   return created;
@@ -120,8 +140,9 @@ function statusOf(error: unknown): number {
 }
 
 function snapshotFromResponse(
-  response: AgentsOverviewResponse,
+  response: AgentsOverviewApprovalsResponse,
 ): PendingApprovalsSnapshot {
+  const { nextCursor, items: rows } = response;
   const counts: Record<string, number | null> = {};
   let totalCount = 0;
   let hasAdminBoard = false;
@@ -132,29 +153,51 @@ function snapshotFromResponse(
       totalCount += board.pendingApprovals ?? 0;
     }
   }
-  const approvals = response.section === "approvals" ? response : null;
   return {
-    rows: approvals?.items ?? NO_ROWS,
+    rows,
     counts,
+    matchingCounts: response.matchingCounts,
     pendingCount: response.scope.canViewApprovals
       ? response.counts.approvals.pending
       : null,
     totalCount: hasAdminBoard ? totalCount : null,
     loading: false,
     refreshing: false,
+    loadingMore: false,
     error: false,
     forbidden: false,
     stale: false,
     refreshedAt: response.refreshedAt,
-    truncated: approvals !== null && response.total > approvals.items.length,
+    truncated: nextCursor !== null,
+    nextCursor,
+  };
+}
+
+function queryFor(key: string): AgentsOverviewQuery {
+  const [boardId, q, tokenId, status] = JSON.parse(key) as [
+    string | null,
+    string,
+    string | null,
+    PendingApprovalsOptions["status"],
+  ];
+  return {
+    ...(boardId === null ? {} : { boardId }),
+    ...(q === "" ? {} : { q }),
+    ...(tokenId === null ? {} : { tokenId }),
+    ...(status === "all" ? {} : { status }),
   };
 }
 
 async function load(key: string): Promise<void> {
   const entry = getEntry(key);
-  if (entry.inFlight || entry.snapshot.forbidden) return;
+  if (entry.snapshot.forbidden) return;
+  if (entry.inFlight || entry.loadingMore) {
+    entry.reloadPending = true;
+    return;
+  }
   entry.inFlight = true;
   const generation = ++entry.generation;
+  const previousRows = entry.snapshot.rows;
   entry.snapshot = {
     ...entry.snapshot,
     loading: entry.snapshot.refreshedAt === null,
@@ -162,13 +205,10 @@ async function load(key: string): Promise<void> {
   };
   notify(entry);
   try {
-    const response = await api.agentsOverview({
-      section: "approvals",
-      ...(key === "all" ? {} : { boardId: key }),
-      limit: ROW_LIMIT,
-    });
+    const page = await refreshApprovalPages(queryFor(key), previousRows.length);
     if (generation !== entry.generation) return;
-    entry.snapshot = snapshotFromResponse(response);
+    entry.page = page;
+    entry.snapshot = snapshotFromResponse(page);
   } catch (error) {
     if (generation !== entry.generation) return;
     const status = statusOf(error);
@@ -177,6 +217,7 @@ async function load(key: string): Promise<void> {
       // the rows, stop polling and do not offer Retry: that would be the
       // 403 + Retry trap.
       stopPolling(entry);
+      entry.page = null;
       entry.snapshot = {
         ...EMPTY_SNAPSHOT,
         forbidden: true,
@@ -194,7 +235,57 @@ async function load(key: string): Promise<void> {
   } finally {
     if (generation === entry.generation) entry.inFlight = false;
     notify(entry);
+    flushReload(key, entry);
   }
+}
+
+async function loadMorePage(key: string): Promise<void> {
+  const entry = getEntry(key);
+  const previous = entry.page;
+  if (
+    entry.inFlight ||
+    entry.loadingMore ||
+    entry.snapshot.forbidden ||
+    previous === null ||
+    previous.nextCursor === null
+  ) {
+    return;
+  }
+  entry.loadingMore = true;
+  entry.snapshot = { ...entry.snapshot, loadingMore: true };
+  notify(entry);
+  const generation = entry.generation;
+  try {
+    const page = await fetchApprovalPage(queryFor(key), previous);
+    if (generation !== entry.generation) return;
+    entry.page = page;
+    entry.snapshot = snapshotFromResponse(page);
+  } catch (error) {
+    if (generation !== entry.generation) return;
+    const status = statusOf(error);
+    if (status === 403 || status === 404) {
+      stopPolling(entry);
+      entry.page = null;
+      entry.snapshot = { ...EMPTY_SNAPSHOT, forbidden: true };
+    } else {
+      entry.snapshot = {
+        ...entry.snapshot,
+        loadingMore: false,
+        error: true,
+        stale: entry.snapshot.refreshedAt !== null,
+      };
+    }
+  } finally {
+    entry.loadingMore = false;
+    notify(entry);
+    flushReload(key, entry);
+  }
+}
+
+function flushReload(key: string, entry: Entry) {
+  if (!entry.reloadPending || entry.listeners.size === 0) return;
+  entry.reloadPending = false;
+  void load(key);
 }
 
 function startPolling(key: string, entry: Entry): void {
@@ -259,13 +350,18 @@ function canReadApprovals(options: PendingApprovalsOptions): boolean {
  * it is read-only (no lazy `expireOverdue`), returns exact scope counts and
  * computes the effective approval status in one server time slice. A MEMBER
  * or VIEWER scope never calls it for approvals; an unknown/error count is
- * `null`, never a fabricated zero.
+ * `null`, never a fabricated zero. `loadMore` follows the server cursor.
  */
 export function usePendingApprovals(
   options: PendingApprovalsOptions = {},
 ): PendingApprovalsState {
   const { boardId = null, enabled = true } = options;
-  const key = boardId ?? "all";
+  const key = JSON.stringify([
+    boardId,
+    options.q?.trim() ?? "",
+    options.tokenId ?? null,
+    options.status ?? "all",
+  ]);
   const active = enabled && isApiEnabled() && canReadApprovals(options);
 
   const subscribe = useCallback(
@@ -285,6 +381,13 @@ export function usePendingApprovals(
   const reload = useCallback(() => {
     if (active) void load(key);
   }, [active, key]);
+  const loadMore = useCallback(() => {
+    if (!active) return Promise.resolve();
+    return loadMorePage(key);
+  }, [active, key]);
 
-  return useMemo(() => ({ ...snapshot, reload }), [snapshot, reload]);
+  return useMemo(
+    () => ({ ...snapshot, reload, loadMore }),
+    [snapshot, reload, loadMore],
+  );
 }

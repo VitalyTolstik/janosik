@@ -168,6 +168,55 @@ describe("usePendingApprovals", () => {
     expect(result.current.truncated).toBe(false);
   });
 
+  it("loads the next approvals page and keeps it expanded across a reload", async () => {
+    const firstItems = Array.from({ length: 100 }, (_, index) =>
+      overviewItem({ id: `approval-${index}`, summary: `Request ${index}` }),
+    );
+    const secondItems = Array.from({ length: 50 }, (_, index) =>
+      overviewItem({
+        id: `approval-${100 + index}`,
+        summary: `Request ${100 + index}`,
+      }),
+    );
+    hoisted.agentsOverview.mockImplementation((query: { cursor?: string }) => {
+      const items = query.cursor === undefined ? firstItems : secondItems;
+      return Promise.resolve({
+        ...overviewResponse(items, {
+          boardId: "board-1",
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 150 },
+          pendingTotal: 150,
+          totalApprovals: 150,
+          total: 150,
+        }),
+        nextCursor: query.cursor === undefined ? "cursor-2" : null,
+      });
+    });
+
+    const { result } = renderHook(() =>
+      usePendingApprovals({ boardId: "board-1", boards: BOARDS }),
+    );
+    await waitFor(() => expect(result.current.rows).toHaveLength(100));
+    expect(result.current.pendingCount).toBe(150);
+    expect(result.current.truncated).toBe(true);
+    expect(result.current.nextCursor).toBe("cursor-2");
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(result.current.rows).toHaveLength(150);
+    expect(result.current.truncated).toBe(false);
+    expect(result.current.nextCursor).toBeNull();
+
+    // A poll must not shrink the expanded queue back to the first page.
+    await act(async () => {
+      result.current.reload();
+    });
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    await waitFor(() => expect(result.current.rows).toHaveLength(150));
+    expect(result.current.truncated).toBe(false);
+  });
+
   it("does not request overview while disabled", async () => {
     renderHook(() => usePendingApprovals({ boards: BOARDS, enabled: false }));
     await new Promise((resolve) => setTimeout(resolve, 0));

@@ -277,8 +277,8 @@ function describeApiErrorBody(error: ApiError): string {
   }
   if (code === "approval_expired") {
     return (
-      "Error: the approval expired before it was used. Request a new approval " +
-      "with janosik_request_approval; do not retry with the expired id."
+      "Error: the approval expired before it was used. Request a fresh " +
+      "approval id by submitting the same plan to janosik_request_approval."
     );
   }
   if (code === "approval_rejected" || code === "approval_cancelled") {
@@ -296,7 +296,7 @@ function describeApiErrorBody(error: ApiError): string {
   if (code === "approval_mismatch") {
     return (
       "Error: the approval does not match this plan (planHash mismatch). " +
-      "Re-read the plan and request a new approval; do not reuse this id."
+      "Re-read with janosik_get_approval with response_format=json. Apply its exact commands with janosik_apply_plan, or request a new approval for the changed plan."
     );
   }
   if (code === "run_conflict" || code === "run_expired") {
@@ -403,13 +403,6 @@ function describeApiErrorBody(error: ApiError): string {
         return (
           `Error: approval required${action}. Nothing was applied.${next} ` +
           "Do not retry the destructive call without an approved approvalId."
-        );
-      }
-      if (scoped.code === "approval_expired") {
-        return (
-          "Error: the approval expired before it could be applied. Nothing " +
-          "was applied. Request a fresh approval with " +
-          "janosik_request_approval; do not reuse the old plan."
         );
       }
       if (scoped.code === "approval_mismatch") {

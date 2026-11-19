@@ -19,6 +19,7 @@ function row(overrides: Partial<AgentSession> = {}): AgentSession {
     currentRunId: null,
     startedAt: new Date(1_000),
     lastHeartbeatAt: new Date(2_000),
+    lastHeartbeatPublishedAt: null,
     endedAt: null,
     endReason: null,
     pausedAt: null,
@@ -100,6 +101,120 @@ describe("toAgentSessionDto", () => {
         3_000,
       ).status,
     ).toBe("active");
+  });
+});
+
+describe("heartbeat SSE (TASK-180.4 M27)", () => {
+  function service(session: AgentSession) {
+    const prisma = {
+      agentSession: {
+        findUnique: jest.fn(async () => session),
+        updateMany: jest.fn(
+          async ({ data }: { data: Partial<AgentSession> }) => {
+            Object.assign(session, data);
+            return { count: 1 };
+          },
+        ),
+        updateManyAndReturn: jest.fn(
+          async ({
+            data,
+          }: {
+            data: Pick<AgentSession, "lastHeartbeatPublishedAt">;
+          }) => {
+            session.lastHeartbeatPublishedAt = data.lastHeartbeatPublishedAt;
+            return [{ boardId: session.boardId }];
+          },
+        ),
+      },
+      board: {
+        findUnique: jest.fn(async () => ({ agentsPausedAt: null })),
+      },
+      apiToken: {
+        findUnique: jest.fn(async () => ({
+          name: "CI",
+          individualPausedAt: null,
+          stopAllPausedAt: null,
+        })),
+      },
+      card: { findFirst: jest.fn(async () => ({ id: "card-1" })) },
+    };
+    const realtime = { publish: jest.fn() };
+    const service = new AgentSessionsService(
+      prisma as never,
+      {} as never,
+      realtime as never,
+    );
+    return { service, realtime, prisma };
+  }
+
+  const principal = {
+    via: "pat",
+    apiTokenId: "token-1",
+    apiTokenName: "CI",
+    tokenIdentity: { paused: false },
+  };
+
+  it("publishes one throttled session frame after an overdue heartbeat", async () => {
+    const { service: sessions, realtime } = service(
+      row({ lastHeartbeatAt: new Date(Date.now() - 61_000) }),
+    );
+    await sessions.heartbeat(
+      "board-1",
+      "sess-1",
+      "user-1",
+      principal as never,
+      {},
+    );
+
+    expect(realtime.publish).toHaveBeenCalledWith(
+      "board-1",
+      expect.objectContaining({
+        type: "agent",
+        op: "heartbeat",
+        sessionId: "sess-1",
+        scope: "session",
+      }),
+    );
+  });
+
+  it("publishes at 0 and 61 seconds with a heartbeat at 30 seconds", async () => {
+    jest.useFakeTimers();
+    try {
+      const { service: sessions, realtime } = service(row());
+      const start = Date.now();
+      for (const [elapsed, frames] of [
+        [0, 1],
+        [30_000, 1],
+        [61_000, 2],
+      ]) {
+        jest.setSystemTime(start + elapsed);
+        await sessions.heartbeat(
+          "board-1",
+          "sess-1",
+          "user-1",
+          principal as never,
+          {},
+        );
+        expect(realtime.publish).toHaveBeenCalledTimes(frames);
+      }
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does not publish for a heartbeat inside the throttle window", async () => {
+    const { service: sessions, realtime } = service(
+      row({ lastHeartbeatPublishedAt: new Date(Date.now() - 10_000) }),
+    );
+    await sessions.heartbeat(
+      "board-1",
+      "sess-1",
+      "user-1",
+      principal as never,
+      {},
+    );
+
+    expect(realtime.publish).not.toHaveBeenCalled();
   });
 });
 

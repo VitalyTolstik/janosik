@@ -435,6 +435,53 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-count-attention")).toBeNull();
   });
 
+  it("keeps archived boards out of the session list, counts and scope", async () => {
+    hoisted.listBoards.mockResolvedValue([
+      ...BOARDS,
+      {
+        id: "board-archived",
+        title: "Archived board",
+        archivedAt: Date.now(),
+        counters: { cards: 0, columns: 0 },
+        role: "ADMIN",
+      },
+    ]);
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-archived"
+          ? [
+              session({
+                id: "archived-session",
+                boardId: "board-archived",
+                name: "Archived agent",
+              }),
+            ]
+          : boardId === "board-1"
+            ? [session()]
+            : [],
+      ),
+    );
+    renderPage("/agents?section=sessions");
+
+    expect(
+      await screen.findByTestId("agent-session-row-session-1"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-session-row-archived-session"),
+    ).toBeNull();
+    expect(hoisted.listAgentSessions).not.toHaveBeenCalledWith(
+      "board-archived",
+    );
+    expect(
+      await screen.findByTestId("agents-count-sessions"),
+    ).toHaveTextContent("1");
+
+    await userEvent.click(screen.getByTestId("agents-filter-board"));
+    expect(
+      screen.queryByTestId("agents-filter-board-option-board-archived"),
+    ).toBeNull();
+  });
+
   it("shows the runs count before the Runs tab is opened", async () => {
     hoisted.listRuns.mockImplementation((boardId: string) =>
       Promise.resolve(
@@ -1094,6 +1141,7 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("1");
     expect(hoisted.agentsOverview).toHaveBeenCalledWith({
       section: "approvals",
+      status: "pending",
       boardId: "board-1",
       limit: 100,
     });
@@ -1140,6 +1188,7 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("1");
     expect(hoisted.agentsOverview).toHaveBeenCalledWith({
       section: "approvals",
+      status: "pending",
       limit: 100,
     });
     await userEvent.click(screen.getByTestId("agents-filter-board"));
@@ -1151,7 +1200,7 @@ describe("AgentsPage", () => {
     ).not.toHaveTextContent(/\d/);
   });
 
-  it("renders 99+ for large exact counts", async () => {
+  it("renders large exact counts in the rail, heading and filters", async () => {
     hoisted.agentsOverview.mockResolvedValue(
       overviewResponse([overviewItem()], {
         boards: BOARDS,
@@ -1165,14 +1214,129 @@ describe("AgentsPage", () => {
 
     expect(
       await screen.findByTestId("agents-count-attention"),
-    ).toHaveTextContent("99+");
+    ).toHaveTextContent("150");
+    expect(
+      await screen.findByRole("heading", { name: "150 decisions are waiting" }),
+    ).toBeVisible();
+    expect(
+      screen.getByTestId("agents-approvals-filter-needs"),
+    ).toHaveTextContent("150");
     await userEvent.click(screen.getByTestId("agents-filter-board"));
     expect(
       screen.getByTestId("agents-filter-board-option-all"),
-    ).toHaveTextContent("99+");
+    ).toHaveTextContent("150");
     expect(
       screen.getByTestId("agents-filter-board-option-board-1"),
-    ).toHaveTextContent("99+");
+    ).toHaveTextContent("150");
+  });
+
+  it("loads the next approval page from the server cursor", async () => {
+    const first = overviewItem({
+      id: "approval-1",
+      summary: "First pending request",
+    });
+    const second = overviewItem({
+      id: "approval-2",
+      summary: "Second pending request",
+    });
+    hoisted.agentsOverview.mockImplementation((query: { cursor?: string }) => {
+      const items = query.cursor === undefined ? [first] : [second];
+      return Promise.resolve({
+        ...overviewResponse(items, {
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 150 },
+          pendingTotal: 150,
+          totalApprovals: 150,
+          total: 2,
+        }),
+        nextCursor: query.cursor === undefined ? "cursor-2" : null,
+      });
+    });
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByTestId("agents-approval-approval-1"),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByTestId("agents-approvals-load-more"),
+    );
+
+    expect(
+      await screen.findByTestId("agents-approval-approval-2"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull(),
+    );
+  });
+
+  it("sends search and token filters to the server and finds a match beyond page one", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      overviewItem({
+        id: `page-one-${index}`,
+        summary: `Routine action ${index}`,
+      }),
+    );
+    const match = overviewItem({
+      id: "beyond-page",
+      summary: "Unique audit request",
+    });
+    hoisted.agentsOverview.mockImplementation(
+      async (query: { q?: string; status?: string; tokenId?: string }) => {
+        const matches = query.q === "Unique audit";
+        return {
+          ...overviewResponse(matches ? [match] : firstPage, {
+            boards: BOARDS,
+            pendingTotal: 150,
+            totalApprovals: 150,
+            total: matches ? 1 : 150,
+          }),
+          matchingCounts: matches
+            ? { pending: 1, decided: 0, total: 1 }
+            : { pending: 150, decided: 0, total: 150 },
+          nextCursor: matches ? null : "page-2",
+        };
+      },
+    );
+    renderPage("/agents?section=attention&q=Unique%20audit&token=token-1");
+    expect(
+      await screen.findByTestId("agents-approval-beyond-page"),
+    ).toBeVisible();
+    expect(hoisted.agentsOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "Unique audit",
+        status: "pending",
+        tokenId: "token-1",
+      }),
+    );
+    expect(
+      screen.getByTestId("agents-approvals-filter-needs"),
+    ).toHaveTextContent("1");
+    expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull();
+  });
+
+  it("offers the server cursor even when the loaded approval page is empty", async () => {
+    hoisted.agentsOverview.mockImplementation(
+      async (query: { cursor?: string }) => ({
+        ...overviewResponse(
+          query.cursor ? [overviewItem({ id: "next-match" })] : [],
+          {
+            boards: BOARDS,
+            pendingTotal: 1,
+            totalApprovals: 1,
+            total: 1,
+          },
+        ),
+        nextCursor: query.cursor ? null : "next",
+      }),
+    );
+    renderPage("/agents?section=attention");
+    await userEvent.click(
+      await screen.findByTestId("agents-approvals-load-more"),
+    );
+    expect(
+      await screen.findByTestId("agents-approval-next-match"),
+    ).toBeVisible();
+    expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull();
   });
 
   it("renders an unknown count as unknown and retries a network failure", async () => {
@@ -1401,6 +1565,16 @@ describe("AgentsPage", () => {
               stale: true,
               lastHeartbeatAt: Date.now() - 600_000,
             }),
+            session({
+              id: "token-paused",
+              name: "Token-paused triage",
+              status: "idle",
+              paused: true,
+              pausedAt: null,
+              pauseScope: "token",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 600_000,
+            }),
           ]
         : [],
     );
@@ -1417,13 +1591,17 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("Paused");
     expect(
       within(live).getByTestId("agents-live-count-paused"),
-    ).toHaveTextContent("1 paused");
+    ).toHaveTextContent("2 paused");
     expect(
       within(live).getByTestId("agents-live-count-stale"),
-    ).toHaveTextContent("2 no heartbeat");
-    // The paused session is not a "needs a nudge" card; only the genuinely
-    // stale session is.
+    ).toHaveTextContent("1 no heartbeat");
+    // Effective pauses (session, board and token) have no expected heartbeat,
+    // so none of them is a "needs a nudge" card; only the stale live session
+    // without a pause is.
     expect(screen.queryByTestId("agents-stale-session-paused-1")).toBeNull();
+    expect(
+      screen.queryByTestId("agents-stale-session-token-paused"),
+    ).toBeNull();
     expect(
       screen.getByTestId("agents-stale-session-stale-1"),
     ).toBeInTheDocument();
@@ -1783,6 +1961,48 @@ describe("AgentsPage", () => {
         },
       ),
     );
+  });
+
+  it("focuses the rejection reason when quick reject opens the mobile sheet", async () => {
+    const matchMedia = window.matchMedia;
+    const mobile = vi
+      .spyOn(window, "matchMedia")
+      .mockImplementation((query) => ({
+        ...matchMedia(query),
+        matches: query === "(max-width: 1060px)",
+      }));
+    const row = approval();
+    hoisted.agentsOverview.mockResolvedValue(
+      overviewResponse([overviewItem({ planHash: row.planHash })], {
+        boards: BOARDS,
+        pendingByBoard: { "board-1": 1 },
+        pendingTotal: 1,
+        totalApprovals: 1,
+      }),
+    );
+
+    const focusTargets: EventTarget[] = [];
+    const trackFocus = (event: FocusEvent) => {
+      if (event.target !== null) focusTargets.push(event.target);
+    };
+    document.addEventListener("focusin", trackFocus);
+    try {
+      renderPage("/agents?section=attention");
+      await userEvent.click(
+        await screen.findByTestId("agents-approval-reject-approval-1"),
+      );
+      expect(
+        screen.getByTestId("agents-approval-sheet-scrim"),
+      ).toBeInTheDocument();
+      expect(await screen.findByTestId("approval-comment")).toHaveFocus();
+      const detail = screen.getByTestId("agents-approval-detail");
+      expect(focusTargets).not.toContain(
+        within(detail).getByRole("button", { name: /back/i }),
+      );
+    } finally {
+      document.removeEventListener("focusin", trackFocus);
+      mobile.mockRestore();
+    }
   });
 
   it("shows an expired approval without decision controls", async () => {

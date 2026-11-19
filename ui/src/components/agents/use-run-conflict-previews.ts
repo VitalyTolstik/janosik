@@ -1,63 +1,65 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { RunSummaryDto } from "@janosik/shared";
-
 import { api, isApiEnabled } from "@/api/client";
 
 export type RunConflictCounts = ReadonlyMap<string, number>;
 
 const NO_COUNTS: RunConflictCounts = new Map();
+const PREVIEW_TTL_MS = 30_000;
 
-/**
- * Rollback blockers must be visible in the list, not only after opening a run
- * (TASK-179 pixel parity). The run summary API has no conflict count, so the
- * client dry-runs the read-only preview for the visible, rollback-eligible
- * rows. Each run is attempted once; a failure is retried only when the list
- * changes, never on every render. A selected detail preview still wins through
- * the caller's own map.
- */
+/** Read-only rollback previews, refreshed on a run revision or TTL tick. */
 export function useRunConflictPreviews(
   rows: readonly Pick<RunSummaryDto, "id" | "boardId" | "status" | "kind">[],
   enabled = true,
+  revision: number | string = 0,
 ): RunConflictCounts {
-  const [counts, setCounts] = useState<RunConflictCounts>(() => new Map());
-  const attempted = useRef(new Set<string>());
-  const disposed = useRef(false);
+  const [tick, setTick] = useState(0);
+  const [snapshot, setSnapshot] = useState<{
+    targets: string;
+    counts: RunConflictCounts;
+  }>();
+  const targets = JSON.stringify(
+    rows
+      .filter((row) => row.status === "applied" && row.kind !== "revert")
+      .map(({ boardId, id }) => [boardId, id]),
+  );
 
   useEffect(() => {
-    disposed.current = false;
-    return () => {
-      disposed.current = true;
-    };
-  }, []);
+    if (!enabled) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setTick((value) => value + 1);
+    }, PREVIEW_TTL_MS);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled || !isApiEnabled()) return;
-    for (const row of rows) {
-      if (
-        row.status !== "applied" ||
-        row.kind === "revert" ||
-        attempted.current.has(row.id)
-      ) {
-        continue;
-      }
-      attempted.current.add(row.id);
-      void api
-        .previewRunRevert(row.boardId, row.id)
-        .then((result) => {
-          if (disposed.current) return;
-          setCounts((current) => {
-            const next = new Map(current);
-            next.set(row.id, result.conflicts.length);
-            return next;
-          });
-        })
-        .catch(() => {
-          // Offline/retention/role failures stay unknown; allow a later list
-          // change to try again instead of caching a false zero.
-          attempted.current.delete(row.id);
-        });
+    let alive = true;
+    const updateCount = (id: string, count?: number) => {
+      if (!alive) return;
+      setSnapshot((current) => {
+        const counts = new Map(
+          current?.targets === targets ? current.counts : [],
+        );
+        if (count === undefined) {
+          if (!counts.delete(id)) return current;
+        } else {
+          counts.set(id, count);
+        }
+        return { targets, counts };
+      });
+    };
+    for (const [boardId, id] of JSON.parse(targets) as [string, string][]) {
+      void api.previewRunRevert(boardId, id).then(
+        (result) => updateCount(id, result.conflicts.length),
+        () => updateCount(id),
+      );
     }
-  }, [enabled, rows]);
+    return () => {
+      alive = false;
+    };
+  }, [enabled, revision, targets, tick]);
 
-  return enabled ? counts : NO_COUNTS;
+  // Keep the last count for each target until its refreshed preview settles.
+  return enabled && snapshot?.targets === targets ? snapshot.counts : NO_COUNTS;
 }

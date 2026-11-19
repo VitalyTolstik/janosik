@@ -614,6 +614,73 @@ describe("Approvals (e2e)", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("re-requests a lapsed approved plan and retains the original decision", async () => {
+    const cardId = await createCard(await createColumn("Recovery"), "Recovery");
+    const plan = deletePlan([cardId]);
+    const [entry] = plan.commands as Array<{ commandId: string }>;
+    const approval = (
+      await createApproval({ kind: "destructive", plan }).expect(201)
+    ).body as ApprovalRequestDto;
+    await decide(approval.id, approval.planHash).expect(200);
+    await prisma.approvalRequest.update({
+      where: { id: approval.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await command(
+      "DELETE_CARD",
+      { cardId },
+      {
+        token,
+        commandId: entry!.commandId,
+        approvalId: approval.id,
+      },
+    );
+    expect(expired.status).toBe(409);
+    expect(expired.body.code).toBe("approval_expired");
+
+    // The automatic gate and explicit request converge on the new row.
+    const [automatic, explicit] = await Promise.all([
+      command(
+        "DELETE_CARD",
+        { cardId },
+        { token, commandId: entry!.commandId },
+      ),
+      createApproval({ kind: "destructive", plan }).expect(201),
+    ]);
+    expect(automatic.status).toBe(409);
+    const fresh = explicit.body as ApprovalRequestDto;
+    expect(automatic.body).toMatchObject({
+      code: "approval_required",
+      approvalId: fresh.id,
+    });
+    expect(fresh.id).not.toBe(approval.id);
+    expect(fresh).toMatchObject({
+      status: "pending",
+      planHash: approval.planHash,
+    });
+    await decide(fresh.id, fresh.planHash).expect(200);
+    const applied = await command(
+      "DELETE_CARD",
+      { cardId },
+      {
+        token,
+        commandId: entry!.commandId,
+        approvalId: fresh.id,
+      },
+    );
+    expect(applied.status).toBe(200);
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: approval.id },
+      }),
+    ).toMatchObject({ status: "approved", decidedBy: ownerId });
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: fresh.id },
+      }),
+    ).toMatchObject({ status: "consumed" });
+  });
+
   it("clamps TTL to the policy and the five-minute floor", async () => {
     const cardId = await createCard(await createColumn("TTL"), "TTL");
     const plan = deletePlan([cardId]);
@@ -725,6 +792,121 @@ describe("Approvals (e2e)", () => {
       { token, commandId, approvalId: approval.id, sessionId },
     );
     expect(applied.status).toBe(200);
+  });
+
+  it("keys approval dedup by agent session so a second session gets a usable request", async () => {
+    const columnId = await createColumn("Session dedup");
+    const cardId = await createCard(columnId, "Shared plan");
+    const startSession = (name: string) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions`)
+        .set(auth(token))
+        .send({ name })
+        .expect(201)
+        .then((res) => res.body.id as string);
+    const sessionA = await startSession("session-a");
+    const sessionB = await startSession("session-b");
+    const plan = deletePlan([cardId]);
+
+    const first = (
+      await createApproval(
+        { kind: "destructive", plan },
+        { sessionId: sessionA },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    expect(first.agentSessionId).toBe(sessionA);
+    await decide(first.id, first.planHash).expect(200);
+
+    // The same session repeating the same plan is an idempotent read of its
+    // own approved row, never a second request.
+    const repeated = (
+      await createApproval(
+        { kind: "destructive", plan },
+        { sessionId: sessionA },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    expect(repeated.id).toBe(first.id);
+
+    // A concurrent session on the same token must not be handed A's row:
+    // apply would reject it as approval_owner_mismatch.
+    const replacement = (
+      await createApproval(
+        { kind: "destructive", plan },
+        { sessionId: sessionB },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    expect(replacement.id).not.toBe(first.id);
+    expect(replacement.agentSessionId).toBe(sessionB);
+    expect(replacement.status).toBe("pending");
+
+    await decide(replacement.id, replacement.planHash).expect(200);
+    const commandId = (plan.commands as Array<{ commandId: string }>)[0]!
+      .commandId;
+    const applied = await command(
+      "DELETE_CARD",
+      { cardId },
+      {
+        token,
+        commandId,
+        approvalId: replacement.id,
+        sessionId: sessionB,
+      },
+    );
+    expect(applied.status).toBe(200);
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: replacement.id },
+      }),
+    ).toMatchObject({ status: "consumed" });
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: first.id },
+      }),
+    ).toMatchObject({ status: "approved" });
+  });
+
+  it("cancels actionable approvals when a session ends during request creation", async () => {
+    const cardId = await createCard(await createColumn("End race"), "End race");
+    const sessionId = await server()
+      .post(`/api/v1/boards/${boardId}/agent-sessions`)
+      .set(auth(token))
+      .send({ name: "Ending" })
+      .expect(201)
+      .then((res) => res.body.id as string);
+    const first = (
+      await createApproval(
+        { kind: "destructive", plan: deletePlan([cardId]) },
+        { sessionId },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    await decide(first.id, first.planHash).expect(200);
+    const plan = deletePlan([cardId]);
+    const [requested] = await Promise.all([
+      createApproval({ kind: "destructive", plan }, { sessionId }),
+      server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions/${sessionId}/end`)
+        .set(auth(session))
+        .send({})
+        .expect(200),
+    ]);
+    expect([201, 403]).toContain(requested.status);
+    if (requested.status === 403)
+      expect(requested.body.code).toBe("agent_session_closed");
+    const rows = await prisma.approvalRequest.findMany({
+      where: { agentSessionId: sessionId },
+    });
+    expect(rows).toHaveLength(requested.status === 201 ? 2 : 1);
+    expect(rows.every((row) => row.status === "cancelled")).toBe(true);
+    const queue = await server()
+      .get(`/api/v1/boards/${boardId}/approvals`)
+      .query({ status: "pending" })
+      .set(auth(session))
+      .expect(200);
+    expect(
+      (queue.body as ApprovalRequestDto[]).some(
+        (row) => row.agentSessionId === sessionId,
+      ),
+    ).toBe(false);
   });
 
   it("applies a whole batch under one approval and one run", async () => {

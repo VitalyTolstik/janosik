@@ -329,8 +329,24 @@ describe("pause presentation", () => {
       pausedAt: NOW,
       pauseScope: "session",
     });
+    const boardPaused = row({
+      id: "board-paused",
+      stale: true,
+      paused: true,
+      pausedAt: null,
+      pauseScope: "board",
+    });
+    const tokenPaused = row({
+      id: "token-paused",
+      stale: true,
+      paused: true,
+      pausedAt: null,
+      pauseScope: "token",
+    });
     const stale = row({ id: "stale", stale: true, pauseScope: null });
     expect(needsNudge(paused)).toBe(false);
+    expect(needsNudge(boardPaused)).toBe(false);
+    expect(needsNudge(tokenPaused)).toBe(false);
     expect(needsNudge(stale)).toBe(true);
   });
 });

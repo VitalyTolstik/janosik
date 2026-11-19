@@ -1,9 +1,11 @@
 import { ForbiddenException, Logger } from "@nestjs/common";
+import type { RealtimeService } from "@/realtime/realtime.service";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 
 /** How often a successful write may refresh `AgentSession.lastHeartbeatAt`. */
 export const AGENT_SESSION_WRITE_HEARTBEAT_MS = 60_000;
+const HEARTBEAT_SSE_INTERVAL_MS = 60_000;
 
 /** Cuid-shaped session ids (same alphabet as every other id). */
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -77,6 +79,49 @@ export async function resolveAgentSessionHeader(
   return session;
 }
 
+/** Publish at most once per interval across both heartbeat paths and instances. */
+export async function publishAgentHeartbeat(
+  prisma: PrismaService,
+  realtime: RealtimeService,
+  sessionId: string,
+  now: Date,
+  lastHeartbeatPublishedAt: Date | null = null,
+): Promise<void> {
+  const publishBefore = new Date(now.getTime() - HEARTBEAT_SSE_INTERVAL_MS);
+  if (
+    lastHeartbeatPublishedAt !== null &&
+    lastHeartbeatPublishedAt > publishBefore
+  )
+    return;
+  try {
+    const [session] = await prisma.agentSession.updateManyAndReturn({
+      where: {
+        id: sessionId,
+        endedAt: null,
+        OR: [
+          { lastHeartbeatPublishedAt: null },
+          { lastHeartbeatPublishedAt: { lte: publishBefore } },
+        ],
+      },
+      data: { lastHeartbeatPublishedAt: now },
+      select: { boardId: true },
+    });
+    if (session !== undefined) {
+      realtime.publish(session.boardId, {
+        type: "agent",
+        op: "heartbeat",
+        sessionId,
+        scope: "session",
+        at: now.getTime(),
+      });
+    }
+  } catch (error) {
+    logger.warn(
+      `agent session ${sessionId}: heartbeat publication failed (${String(error)})`,
+    );
+  }
+}
+
 /**
  * Best-effort write heartbeat: a successful board write carrying a session
  * updates `lastHeartbeatAt` at most once a minute (ADR §6.5). Never fails the
@@ -84,18 +129,20 @@ export async function resolveAgentSessionHeader(
  */
 export async function touchAgentSessionAfterWrite(
   prisma: PrismaService,
+  realtime: RealtimeService,
   sessionId: string | null | undefined,
 ): Promise<void> {
   if (!sessionId) return;
-  const cutoff = new Date(Date.now() - AGENT_SESSION_WRITE_HEARTBEAT_MS);
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - AGENT_SESSION_WRITE_HEARTBEAT_MS);
   try {
     await prisma.agentSession.updateMany({
       where: {
         id: sessionId,
         endedAt: null,
-        lastHeartbeatAt: { lt: cutoff },
+        lastHeartbeatAt: { lte: cutoff },
       },
-      data: { lastHeartbeatAt: new Date() },
+      data: { lastHeartbeatAt: now },
     });
   } catch (error) {
     logger.warn(
@@ -104,4 +151,5 @@ export async function touchAgentSessionAfterWrite(
       })`,
     );
   }
+  await publishAgentHeartbeat(prisma, realtime, sessionId, now);
 }

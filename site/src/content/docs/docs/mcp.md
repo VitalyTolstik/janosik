@@ -81,12 +81,17 @@ human.
 already returned), then `janosik_wait_for_decision` for up to 60 seconds per
 call. `janosik_get_approval`/`janosik_list_approvals` show the status, and
 `janosik_cancel_approval` withdraws the agent's own pending request. A human
-board ADMIN decides in the browser; no MCP tool can approve a request. Once
-approved, repeat the same write with its `approvalId` argument, which is sent
-as `X-Approval-Id`. Do not change command ids or fields between request and
-apply — a different plan is `approval_mismatch`. An approval is one-time:
-after success it is `consumed`, and repeating the same applied commands is an
-idempotent replay.
+board ADMIN decides in the browser. After approval, read
+`janosik_get_approval` with `response_format: "json"`. A new destructive tool
+invocation uses a fresh command ID. To apply a single approved command with
+its original tool, pass the approved `approvalId` and the exact `commandId`
+and inputs from the stored plan. The `approvalId` is sent as `X-Approval-Id`.
+For a batch or a command with generated fields, pass the stored
+`plan.commands`, `planHash` and `approvalId` to `janosik_apply_plan`.
+An authorized `approval_mismatch` response includes the stored plan. After
+success the approval is `consumed`, and an exact command replay returns the
+original result. If the apply window ends, submit the exact plan again with
+`janosik_request_approval` to obtain a new request ID.
 
 For multi-step and bulk edits use the plan pair. `janosik_plan_changes` is a
 dry run: it validates every command, replays the reducer in memory and returns

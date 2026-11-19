@@ -15,6 +15,7 @@ import { AgentControlButton } from "@/components/agent-control/AgentControlButto
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { effectiveApprovalStatus } from "@/utils/approval";
 import { overviewItem, overviewResponse } from "@/test/agents-overview";
 import {
   BoardLiveProvider,
@@ -141,6 +142,14 @@ function token(overrides: Partial<UserTokenDto> = {}): UserTokenDto {
   };
 }
 
+const mockInbox =
+  vi.fn<
+    (
+      boardId?: string,
+      query?: { status?: string },
+    ) => Promise<ApprovalRequestDto[]>
+  >();
+
 let live: BoardLive;
 let onOpenChange: (open: boolean) => void;
 
@@ -183,7 +192,27 @@ describe("agent control (TASK-166.14)", () => {
     live = createBoardLive();
     vi.spyOn(api, "listTokens").mockResolvedValue([]);
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
-    vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    mockInbox.mockReset().mockResolvedValue([]);
+    vi.spyOn(api, "agentsOverview").mockImplementation(async (query = {}) => {
+      const rows = (await mockInbox(query.boardId, query)).map((row) =>
+        overviewItem({
+          ...row,
+          status: effectiveApprovalStatus(
+            row.status,
+            row.expiresAt,
+            Date.now(),
+          ),
+        }),
+      );
+      const items = rows.filter((row) =>
+        query.status === "pending"
+          ? row.status === "pending"
+          : query.status === "decided"
+            ? row.status !== "pending"
+            : true,
+      );
+      return overviewResponse(items, { boardId: query.boardId });
+    });
     vi.spyOn(api, "listRuns").mockResolvedValue([]);
   });
 
@@ -198,7 +227,7 @@ describe("agent control (TASK-166.14)", () => {
       requestedByTokenId: longToken,
       agentSessionId: null,
     });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
 
     renderDialog("/board/board-1?agents=inbox");
@@ -218,7 +247,7 @@ describe("agent control (TASK-166.14)", () => {
       decidedAt: Date.now(),
       decisionComment: "Ship it",
     });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval")
       .mockResolvedValueOnce(row)
       .mockResolvedValue(decided);
@@ -254,7 +283,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("groups the queue and names the requesting agent from the token list", async () => {
     const row = approval();
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
     vi.spyOn(api, "listTokens").mockResolvedValue([token()]);
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
@@ -276,7 +305,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("shows the mockup header cancel action and inline footer", async () => {
     const row = approval();
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
     const cancel = vi
       .spyOn(api, "cancelApproval")
@@ -315,7 +344,7 @@ describe("agent control (TASK-166.14)", () => {
       id: "approval-pending",
       summary: "Pending delete claim",
     });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([expired, pending]);
+    mockInbox.mockResolvedValue([expired, pending]);
     vi.spyOn(api, "getApproval").mockImplementation((_boardId, id) =>
       Promise.resolve(id === pending.id ? pending : expired),
     );
@@ -339,7 +368,7 @@ describe("agent control (TASK-166.14)", () => {
       decidedBy: "Auditor",
       decidedAt: Date.now() - 60_000,
     });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([pending, decided]);
+    mockInbox.mockResolvedValue([pending, decided]);
     vi.spyOn(api, "getApproval").mockImplementation((_boardId, id) =>
       Promise.resolve(id === decided.id ? decided : pending),
     );
@@ -374,7 +403,7 @@ describe("agent control (TASK-166.14)", () => {
       id: "approval-pending",
       summary: "Pending delete claim",
     });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([expired, pending]);
+    mockInbox.mockResolvedValue([expired, pending]);
     vi.spyOn(api, "getApproval").mockResolvedValue(expired);
 
     renderDialog("/board/board-1?agents=inbox&approval=approval-expired");
@@ -387,7 +416,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("requires a reason and sends the plan hash when rejecting", async () => {
     const row = approval();
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
     const decide = vi
       .spyOn(api, "decideApproval")
@@ -416,7 +445,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("explains an expired request and hides the decision controls", async () => {
     const row = approval({ expiresAt: Date.now() - 1_000 });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
 
     renderDialog();
@@ -430,6 +459,343 @@ describe("agent control (TASK-166.14)", () => {
     );
     expect(screen.queryByTestId("approval-approve")).toBeNull();
     expect(screen.queryByTestId("approval-reject")).toBeNull();
+  });
+
+  it("explains an approved plan whose apply window has ended", async () => {
+    const row = approval({
+      status: "approved",
+      decidedBy: "user-2",
+      decidedAt: Date.now() - 10 * 60_000,
+      expiresAt: Date.now() - 1_000,
+    });
+    mockInbox.mockImplementation((_boardId, query) =>
+      Promise.resolve(query?.status === "pending" ? [] : [row]),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId("approval-filter-decided"));
+    await screen.findByTestId("approval-queue");
+    await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
+
+    expect(await screen.findByTestId("approval-status")).toHaveAttribute(
+      "data-status",
+      "approved",
+    );
+    expect(
+      screen.getAllByText(/the apply window has ended/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
+    expect(screen.queryByTestId("approval-reject")).toBeNull();
+  });
+
+  it("reaches an old pending request behind 100 newer decided rows", async () => {
+    const pending = approval({
+      id: "approval-old-pending",
+      summary: "Old pending delete claim",
+    });
+    const decided = Array.from({ length: 100 }, (_, index) =>
+      approval({
+        id: `approval-decided-${index}`,
+        status: "rejected",
+        decidedBy: "user-2",
+        decidedAt: Date.now() - index * 1_000,
+        summary: `Rejected request ${index}`,
+      }),
+    );
+    mockInbox.mockImplementation((_boardId, query) =>
+      Promise.resolve(query?.status === "pending" ? [pending] : decided),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(pending);
+
+    renderDialog();
+
+    const queue = await screen.findByTestId("approval-queue");
+    expect(within(queue).getByText("Old pending delete claim")).toBeVisible();
+    expect(
+      await screen.findByTestId("agent-approvals-count"),
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByTestId("agent-control-header-pending"),
+    ).toHaveTextContent("1 waiting");
+  });
+
+  it("loads all 250 pending approvals across two cursors when the recent page fails", async () => {
+    const rows = Array.from({ length: 250 }, (_, index) =>
+      overviewItem({ id: `pending-${index}`, summary: `Pending ${index}` }),
+    );
+    let decidedAvailable = false;
+    const decided = overviewItem({
+      id: "decided-1",
+      status: "rejected",
+      summary: "Decided earlier",
+    });
+    const overview = vi
+      .spyOn(api, "agentsOverview")
+      .mockImplementation(async (query = {}) => {
+        if (query.status === "decided" && !decidedAvailable)
+          throw new Error("Recent page unavailable");
+        const start = Number(query.cursor ?? 0);
+        const items =
+          query.status === "decided"
+            ? [decided]
+            : rows.slice(start, start + 100);
+        return {
+          ...overviewResponse(items, {
+            boardId: "board-1",
+            total: query.status === "decided" ? 1 : rows.length,
+          }),
+          nextCursor:
+            query.status === "pending" && start + 100 < rows.length
+              ? // Repeat the last initial row to exercise cursor-page deduplication.
+                String(start === 0 ? 99 : start + 100)
+              : null,
+        };
+      });
+    vi.spyOn(api, "getApproval").mockImplementation(async (_boardId, id) =>
+      approval({ id }),
+    );
+    renderDialog();
+    expect(
+      await screen.findByTestId("agent-approvals-count"),
+    ).toHaveTextContent("250");
+    expect(
+      screen.getByTestId("agent-control-header-pending"),
+    ).toHaveTextContent("250 waiting");
+    expect(await screen.findByTestId("approval-row-pending-0")).toBeVisible();
+    await userEvent.click(screen.getByTestId("approval-load-more"));
+    expect(await screen.findByTestId("approval-row-pending-100")).toBeVisible();
+    expect(overview).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "pending", cursor: "99" }),
+    );
+    expect(screen.getAllByTestId(/^approval-row-pending-/)).toHaveLength(199);
+    const loadMore = screen.getByTestId("approval-load-more");
+    expect(loadMore).toBeEnabled();
+    await userEvent.click(loadMore);
+    expect(await screen.findByTestId("approval-row-pending-249")).toBeVisible();
+    expect(overview).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "pending", cursor: "199" }),
+    );
+    expect(screen.getAllByTestId(/^approval-row-pending-/)).toHaveLength(250);
+    expect(screen.queryByTestId("approval-load-more")).toBeNull();
+    decidedAvailable = true;
+    await userEvent.click(screen.getByTestId("approval-refresh"));
+    await userEvent.click(screen.getByTestId("approval-filter-all"));
+    expect(await screen.findByTestId("approval-row-decided-1")).toBeVisible();
+    expect(
+      screen.getAllByTestId(/^approval-row-(pending-|decided-1)/).at(-1),
+    ).toHaveAttribute("data-testid", "approval-row-decided-1");
+  });
+
+  it("drops the pending count when a request TTL lapses without SSE", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const now = Date.now();
+      const row = approval({
+        expiresAt: now + 29_000,
+        createdAt: now - 60_000,
+      });
+      mockInbox.mockImplementation((_boardId, query) =>
+        Promise.resolve(query?.status === "pending" ? [row] : [row]),
+      );
+      vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+      renderDialog();
+      await screen.findByTestId("approval-queue");
+      expect(screen.getByTestId("agent-approvals-count")).toHaveTextContent(
+        "1",
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+
+      await waitFor(() =>
+        expect(screen.queryByTestId("agent-approvals-count")).toBeNull(),
+      );
+      expect(screen.queryByTestId("agent-control-header-pending")).toBeNull();
+      expect(screen.queryByTestId("approval-queue")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes Board Live on heartbeat and token-pause SSE frames", async () => {
+    const list = vi
+      .spyOn(api, "listAgentSessions")
+      .mockResolvedValue([session()]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    await screen.findByTestId("agent-session-row-session-1");
+    const beforeHeartbeat = list.mock.calls.length;
+
+    act(() => {
+      live.agentControl.publishAgent("board-1", {
+        type: "agent",
+        op: "heartbeat",
+        sessionId: "session-1",
+        scope: "session",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(list.mock.calls.length).toBeGreaterThan(beforeHeartbeat),
+    );
+
+    const beforePause = list.mock.calls.length;
+    act(() => {
+      live.agentControl.publishAgent("board-1", {
+        type: "agent",
+        op: "paused",
+        scope: "token",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(list.mock.calls.length).toBeGreaterThan(beforePause),
+    );
+  });
+
+  it("repaints the board pause and refreshes rows from a board frame", async () => {
+    const list = vi
+      .spyOn(api, "listAgentSessions")
+      .mockResolvedValue([session()]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    expect(await screen.findByTestId("board-pause-status")).toHaveAttribute(
+      "data-paused",
+      "false",
+    );
+    const before = list.mock.calls.length;
+
+    act(() => {
+      live.agentControl.publishAgent("board-1", {
+        type: "agent",
+        op: "paused",
+        scope: "board",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("board-pause-status")).toHaveAttribute(
+        "data-paused",
+        "true",
+      ),
+    );
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it("refetches approval detail on an external decision SSE frame", async () => {
+    const row = approval();
+    const rejected = approval({
+      status: "rejected",
+      decidedBy: "user-2",
+      decidedAt: Date.now(),
+    });
+    mockInbox.mockResolvedValue([row]);
+    const get = vi
+      .spyOn(api, "getApproval")
+      .mockResolvedValueOnce(row)
+      .mockResolvedValue(rejected);
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    expect(await screen.findByTestId("approval-approve")).toBeVisible();
+
+    act(() => {
+      live.agentControl.publishApproval({
+        type: "approval",
+        approvalId: row.id,
+        status: "rejected",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(1));
+    expect(await screen.findByTestId("approval-status")).toHaveAttribute(
+      "data-status",
+      "rejected",
+    );
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
+  });
+
+  it("opens a mobile deep link whose approval is outside the loaded page", async () => {
+    const target = approval({
+      id: "approval-old",
+      summary: "Old pending delete claim",
+      expiresAt: Date.now() + 10 * 60_000,
+    });
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query.includes("max-width: 760px"),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    mockInbox.mockImplementation((_boardId, query) =>
+      Promise.resolve(query?.status === "pending" ? [] : []),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(target);
+
+    renderDialog("/board/board-1?agents=inbox&approval=approval-old");
+
+    expect(
+      await screen.findByRole("heading", { name: "Old pending delete claim" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("approval-split")).toHaveClass("is-detail-open");
+  });
+
+  it("keeps the focused mobile detail after an external decision", async () => {
+    const row = approval();
+    const approved = approval({
+      status: "approved",
+      decidedBy: "user-2",
+      decidedAt: Date.now(),
+    });
+    let decided = false;
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query.includes("max-width: 760px"),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    mockInbox.mockImplementation(() =>
+      Promise.resolve(decided ? [approved] : [row]),
+    );
+    vi.spyOn(api, "getApproval").mockImplementation(() =>
+      Promise.resolve(decided ? approved : row),
+    );
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    expect(screen.getByTestId("approval-split")).toHaveClass("is-detail-open");
+
+    decided = true;
+    act(() => {
+      live.agentControl.publishApproval({
+        type: "approval",
+        approvalId: row.id,
+        status: "approved",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("approval-status")).toHaveAttribute(
+        "data-status",
+        "approved",
+      ),
+    );
+    expect(screen.getByTestId("approval-split")).toHaveClass("is-detail-open");
+    expect(screen.getByRole("button", { name: "Back" })).toHaveFocus();
   });
 
   it("navigates the control rail with arrow keys", async () => {
@@ -455,7 +821,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("hides approvals from a member and opens Live read-only", async () => {
     mocks.role = "MEMBER";
-    const list = vi.spyOn(api, "listApprovals");
+    const list = vi.spyOn(api, "agentsOverview");
     renderDialog();
     expect(screen.queryByTestId("agent-approvals-tab")).toBeNull();
     expect(screen.getByTestId("agent-pause-tab")).toHaveAttribute(
@@ -471,8 +837,7 @@ describe("agent control (TASK-166.14)", () => {
   });
 
   it("shows empty and error states, and retries the queue", async () => {
-    const list = vi
-      .spyOn(api, "listApprovals")
+    const list = mockInbox
       .mockRejectedValueOnce(new Error("down"))
       .mockRejectedValueOnce(new Error("down"))
       .mockResolvedValue([]);
@@ -490,9 +855,7 @@ describe("agent control (TASK-166.14)", () => {
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
     expect(screen.getByText("Select an approval")).toBeInTheDocument();
-    // One request from the Inbox panel, one from the rail/header counter
-    // (both failed), then the manual retry plus the counter refresh it
-    // triggers.
+    // Pending and decided are independent; the header shares the pending page.
     expect(list).toHaveBeenCalledTimes(4);
   });
 
@@ -502,7 +865,7 @@ describe("agent control (TASK-166.14)", () => {
       summary: "Pending delete claim",
     });
     let fail = true;
-    vi.spyOn(api, "listApprovals").mockImplementation(() =>
+    mockInbox.mockImplementation(() =>
       fail ? Promise.reject(new Error("down")) : Promise.resolve([row]),
     );
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
@@ -526,7 +889,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("refetches the queue on an approval SSE frame without a reload", async () => {
     const row = approval();
-    const list = vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    const list = mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
 
     renderDialog();
@@ -611,7 +974,7 @@ describe("agent control (TASK-166.14)", () => {
   });
 
   it("pauses and resumes a board and a session with a reason", async () => {
-    vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    mockInbox.mockResolvedValue([]);
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
     const pauseBoard = vi.spyOn(api, "pauseBoardAgents").mockResolvedValue({
       scope: "board",
@@ -774,7 +1137,7 @@ describe("agent control (TASK-166.14)", () => {
   });
 
   it("shows Inbox, Live and Runs counts on the rail before leaving Inbox", async () => {
-    vi.spyOn(api, "listApprovals").mockResolvedValue([approval()]);
+    mockInbox.mockResolvedValue([approval()]);
     vi.spyOn(api, "listAgentSessions").mockResolvedValue([
       session(),
       session({ id: "session-2" }),
@@ -795,7 +1158,7 @@ describe("agent control (TASK-166.14)", () => {
   });
 
   it("hides the pending chip and rail count when approvals fail", async () => {
-    vi.spyOn(api, "listApprovals").mockRejectedValue(new Error("down"));
+    mockInbox.mockRejectedValue(new Error("down"));
 
     renderDialog();
     expect(
@@ -895,7 +1258,7 @@ describe("agent control (TASK-166.14)", () => {
   });
 
   it("has no Policy tab and links to Board Settings → Agents & automation", async () => {
-    vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    mockInbox.mockResolvedValue([]);
     const onOpenPolicy = vi.fn();
     render(
       <MemoryRouter>
@@ -923,7 +1286,7 @@ describe("agent control (TASK-166.14)", () => {
   });
 
   it("renders the prototype empty Inbox state with search and refresh", async () => {
-    const list = vi.spyOn(api, "listApprovals").mockResolvedValue([]);
+    const list = mockInbox.mockResolvedValue([]);
     renderDialog();
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
@@ -965,7 +1328,7 @@ describe("agent control (TASK-166.14)", () => {
       summary: "Archive old column",
       planHash: "b".repeat(64),
     });
-    vi.spyOn(api, "listApprovals").mockResolvedValue([first, second]);
+    mockInbox.mockResolvedValue([first, second]);
     vi.spyOn(api, "getApproval").mockResolvedValue(first);
 
     renderDialog();
@@ -986,7 +1349,7 @@ describe("agent control (TASK-166.14)", () => {
 
   it("uses filtered-empty copy and clears the search", async () => {
     const row = approval();
-    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    mockInbox.mockResolvedValue([row]);
     vi.spyOn(api, "getApproval").mockResolvedValue(row);
 
     renderDialog();

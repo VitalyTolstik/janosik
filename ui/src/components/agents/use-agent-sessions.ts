@@ -86,7 +86,14 @@ export function useAgentSessions(): AgentSessionsState {
           api.listTokens().catch(() => [] as UserTokenDto[]),
           api.me().catch(() => null),
         ]);
-        const results = await boundedSessions(nextSummaries);
+        // `/agents` mirrors the overview's scope: an archived board is out of
+        // both the session list and the pending/session counts. Listing its
+        // sessions while the overview answers 404 for `?board=` was the
+        // inconsistency in L17.
+        const visibleBoards = nextSummaries.filter(
+          (board) => board.archivedAt === undefined,
+        );
+        const results = await boundedSessions(visibleBoards);
         if (request !== generation.current) return;
         const merged: AgentSessionDto[] = [];
         let failures = 0;
@@ -100,9 +107,9 @@ export function useAgentSessions(): AgentSessionsState {
             failures += 1;
             const status = statusOf(result.reason);
             if (status === 403 || status === 404) {
-              revoked.add(nextSummaries[index].id);
+              revoked.add(visibleBoards[index].id);
             } else {
-              failed.add(nextSummaries[index].id);
+              failed.add(visibleBoards[index].id);
             }
             if (firstFailureStatus === null) firstFailureStatus = status;
           }
@@ -110,7 +117,7 @@ export function useAgentSessions(): AgentSessionsState {
         const loadedAt = Date.now();
         setBoardLoadedAt((previous) => {
           const next: Record<string, number> = {};
-          nextSummaries.forEach((board, index) => {
+          visibleBoards.forEach((board, index) => {
             if (results[index].status === "fulfilled")
               next[board.id] = loadedAt;
             else if (failed.has(board.id) && previous[board.id] !== undefined)
@@ -121,7 +128,7 @@ export function useAgentSessions(): AgentSessionsState {
         boardListFailed.current = false;
         failedBoards.current = failed;
         setStaleBoardIds([...failed]);
-        const visible = nextSummaries.filter((board) => !revoked.has(board.id));
+        const visible = visibleBoards.filter((board) => !revoked.has(board.id));
         summaryRef.current = visible;
         setSummaries(visible);
         setTokens(nextTokens);
@@ -288,8 +295,9 @@ export function useAgentSessions(): AgentSessionsState {
   );
   useAgentSessionEvents(
     liveBoards,
-    (boardId) => {
-      void refreshBoard(boardId);
+    (boardId, event) => {
+      // The poll covers liveness; lifecycle and pause events still refresh immediately.
+      if (event.op !== "heartbeat") void refreshBoard(boardId);
     },
     serverMode,
     handleAccessLost,
