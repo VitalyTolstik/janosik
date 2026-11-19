@@ -15,8 +15,10 @@ import { StorageService } from "@/attachments/storage.service";
 import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
 import { securityStamp } from "@/auth/security-stamp";
 import {
+  ADMIN_JWT_AUDIENCE,
   ADMIN_QUEUES_JWT_AUDIENCE,
   ADMIN_QUEUES_TOKEN_TYPE,
+  ADMIN_TOKEN_TYPE,
 } from "@/admin/admin.types";
 import {
   ADMIN_REFRESH_COOKIE,
@@ -695,6 +697,18 @@ describe("Admin API (e2e)", () => {
       ownerId: string;
     }) => {
       await prisma.command.deleteMany({ where: { boardId: fixture.boardId } });
+      const labelIds = (
+        await prisma.label.findMany({
+          where: { boardId: fixture.boardId },
+          select: { id: true },
+        })
+      ).map((label) => label.id);
+      if (labelIds.length > 0) {
+        await prisma.cardLabel.deleteMany({
+          where: { labelId: { in: labelIds } },
+        });
+      }
+      await prisma.label.deleteMany({ where: { boardId: fixture.boardId } });
       await prisma.card.deleteMany({ where: { id: fixture.cardId } });
       await prisma.column.deleteMany({ where: { boardId: fixture.boardId } });
       await prisma.boardMember.deleteMany({
@@ -1285,6 +1299,430 @@ describe("Admin API (e2e)", () => {
         }),
       ).toBe(1);
 
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("applies admin card field commands with owner attribution (TASK-176.9)", async () => {
+      const fixture = await commandFixture("fields");
+      const label = await prisma.label.create({
+        data: {
+          id: `label-${randomUUID()}`,
+          boardId: fixture.boardId,
+          name: "Field label",
+          color: "red",
+          position: 0,
+        },
+      });
+      const due = Date.now() + 86_400_000;
+      const sent: Array<{ id: string; type: string }> = [];
+      const post = async (
+        type: string,
+        action: Record<string, unknown>,
+      ): Promise<string> => {
+        const id = randomUUID();
+        sent.push({ id, type });
+        await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({
+            commandId: id,
+            action: { type, ...action, at: Date.now() },
+          })
+          .expect(201);
+        return id;
+      };
+
+      await post("SET_CARD_ASSIGN", {
+        cardId: fixture.cardId,
+        assigneeId: fixture.ownerId,
+      });
+      await post("SET_CARD_DUE_DATE", {
+        cardId: fixture.cardId,
+        dueDate: due,
+      });
+      await post("SET_CARD_PRIORITY", {
+        cardId: fixture.cardId,
+        priority: "high",
+      });
+      await post("SET_CARD_COVER", {
+        cardId: fixture.cardId,
+        cover: { type: "color", value: "red" },
+      });
+      await post("SET_CARD_LABEL", {
+        cardId: fixture.cardId,
+        labelId: label.id,
+        on: true,
+      });
+
+      const updated = await prisma.card.findUniqueOrThrow({
+        where: { id: fixture.cardId },
+        include: { labels: { select: { labelId: true } } },
+      });
+      expect(updated.assigneeId).toBe(fixture.ownerId);
+      expect(updated.dueDate?.getTime()).toBe(due);
+      expect(updated.priority).toBe("high");
+      expect(updated.coverType).toBe("color");
+      expect(updated.coverValue).toBe("red");
+      expect(updated.labels.map((row) => row.labelId)).toContain(label.id);
+
+      await post("SET_CARD_ASSIGN", {
+        cardId: fixture.cardId,
+        assigneeId: null,
+      });
+      await post("SET_CARD_DUE_DATE", { cardId: fixture.cardId });
+      await post("SET_CARD_PRIORITY", {
+        cardId: fixture.cardId,
+        priority: "medium",
+      });
+      await post("SET_CARD_COVER", { cardId: fixture.cardId });
+      await post("SET_CARD_LABEL", {
+        cardId: fixture.cardId,
+        labelId: label.id,
+        on: false,
+      });
+
+      const cleared = await prisma.card.findUniqueOrThrow({
+        where: { id: fixture.cardId },
+        include: { labels: { select: { labelId: true } } },
+      });
+      expect(cleared.assigneeId).toBeNull();
+      expect(cleared.dueDate).toBeNull();
+      expect(cleared.priority).toBeNull();
+      expect(cleared.coverType).toBeNull();
+      expect(cleared.coverValue).toBeNull();
+      expect(cleared.labels).toHaveLength(0);
+
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(sent.length);
+      for (const item of sent) {
+        const audit = await prisma.adminAuditLog.findFirstOrThrow({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: item.id },
+          },
+        });
+        expect(audit.details).toMatchObject({
+          commandId: item.id,
+          masterId: adminId,
+          masterEmail: ADMIN_EMAIL,
+          actorEmail: fixture.ownerEmail,
+          type: item.type,
+        });
+        const command = await prisma.command.findUniqueOrThrow({
+          where: { id: item.id },
+        });
+        // Board-facing attribution stays the owner; the master is in audit.
+        expect(command.actorId).toBe(fixture.ownerId);
+        expect(command.actorType).toBe("admin");
+      }
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("guards admin card field commands — deleted/missing/wrong-board cards, bad assignee/label, label cap (TASK-176.9)", async () => {
+      const fixture = await commandFixture("field-guards");
+      const label = await prisma.label.create({
+        data: {
+          id: `label-${randomUUID()}`,
+          boardId: fixture.boardId,
+          name: "Guard label",
+          color: "green",
+        },
+      });
+      const reject = async (
+        status: number,
+        action: Record<string, unknown>,
+      ): Promise<string> => {
+        const id = randomUUID();
+        await server()
+          .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ commandId: id, action: { ...action, at: Date.now() } })
+          .expect(status);
+        expect(await prisma.command.count({ where: { id } })).toBe(0);
+        return id;
+      };
+
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: new Date() },
+      });
+      for (const action of [
+        {
+          type: "SET_CARD_ASSIGN",
+          cardId: fixture.cardId,
+          assigneeId: fixture.ownerId,
+        },
+        {
+          type: "SET_CARD_DUE_DATE",
+          cardId: fixture.cardId,
+          dueDate: Date.now() + 60_000,
+        },
+        {
+          type: "SET_CARD_PRIORITY",
+          cardId: fixture.cardId,
+          priority: "high",
+        },
+        {
+          type: "SET_CARD_COVER",
+          cardId: fixture.cardId,
+          cover: { type: "color", value: "blue" },
+        },
+        {
+          type: "SET_CARD_LABEL",
+          cardId: fixture.cardId,
+          labelId: label.id,
+          on: true,
+        },
+      ]) {
+        await reject(404, action);
+      }
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: null },
+      });
+
+      await reject(404, {
+        type: "SET_CARD_PRIORITY",
+        cardId: `missing-${randomUUID()}`,
+        priority: "low",
+      });
+
+      // A card from another board is indistinguishable from a missing one.
+      const otherBoard = await prisma.board.create({
+        data: { title: `Other field board ${randomUUID()}` },
+      });
+      await prisma.boardMember.create({
+        data: {
+          boardId: otherBoard.id,
+          userId: fixture.ownerId,
+          role: "ADMIN",
+          acceptedAt: new Date(),
+        },
+      });
+      const wrongBoardId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${otherBoard.id}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          commandId: wrongBoardId,
+          action: {
+            type: "SET_CARD_PRIORITY",
+            cardId: fixture.cardId,
+            priority: "low",
+            at: Date.now(),
+          },
+        })
+        .expect(404);
+      expect(await prisma.command.count({ where: { id: wrongBoardId } })).toBe(
+        0,
+      );
+      const foreignLabel = await prisma.label.create({
+        data: {
+          id: `foreign-label-${randomUUID()}`,
+          boardId: otherBoard.id,
+          name: "Foreign label",
+          color: "red",
+        },
+      });
+      await reject(404, {
+        type: "SET_CARD_LABEL",
+        cardId: fixture.cardId,
+        labelId: foreignLabel.id,
+        on: true,
+      });
+      await prisma.label.delete({ where: { id: foreignLabel.id } });
+      await prisma.boardMember.deleteMany({
+        where: { boardId: otherBoard.id },
+      });
+      await prisma.board.delete({ where: { id: otherBoard.id } });
+
+      await reject(400, {
+        type: "SET_CARD_ASSIGN",
+        cardId: fixture.cardId,
+        assigneeId: `ghost-${randomUUID()}`,
+      });
+
+      await prisma.label.update({
+        where: { id: label.id },
+        data: { deletedAt: new Date() },
+      });
+      await reject(404, {
+        type: "SET_CARD_LABEL",
+        cardId: fixture.cardId,
+        labelId: label.id,
+        on: true,
+      });
+      await reject(404, {
+        type: "SET_CARD_LABEL",
+        cardId: fixture.cardId,
+        labelId: label.id,
+        on: false,
+      });
+
+      const capLabels = Array.from({ length: 20 }, (_, index) => ({
+        id: `cap-${randomUUID()}-${index}`,
+        boardId: fixture.boardId,
+        name: `Cap ${index + 1}`,
+        color: "slate",
+        position: index,
+      }));
+      await prisma.label.createMany({ data: capLabels });
+      await prisma.cardLabel.createMany({
+        data: capLabels.map((entry) => ({
+          cardId: fixture.cardId,
+          labelId: entry.id,
+          position: 0,
+        })),
+      });
+      const overflowLabel = await prisma.label.create({
+        data: {
+          id: `overflow-${randomUUID()}`,
+          boardId: fixture.boardId,
+          name: "Overflow",
+          color: "red",
+          position: 20,
+        },
+      });
+      await reject(409, {
+        type: "SET_CARD_LABEL",
+        cardId: fixture.cardId,
+        labelId: overflowLabel.id,
+        on: true,
+      });
+
+      expect(
+        await prisma.command.count({ where: { boardId: fixture.boardId } }),
+      ).toBe(0);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: { action: "board.command", targetId: fixture.boardId },
+        }),
+      ).toBe(0);
+
+      await cleanupCommandFixture(fixture);
+    });
+
+    it("allows archived field edits, replays field commands idempotently and supports OPERATOR (TASK-176.9)", async () => {
+      const fixture = await commandFixture("field-state");
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { archivedAt: new Date() },
+      });
+      const due = Date.now() + 86_400_000;
+      const dueId = randomUUID();
+      const dueAction = {
+        type: "SET_CARD_DUE_DATE",
+        cardId: fixture.cardId,
+        dueDate: due,
+        at: Date.now(),
+      };
+      const first = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: dueId, action: dueAction })
+        .expect(201);
+      const archivedCard = await prisma.card.findUniqueOrThrow({
+        where: { id: fixture.cardId },
+      });
+      expect(archivedCard.dueDate?.getTime()).toBe(due);
+
+      // A replay skips the fresh-command card guard, so it still returns the
+      // stored result after the card is deleted.
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: new Date() },
+      });
+      const retry = await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ commandId: dueId, action: dueAction })
+        .expect(201);
+      expect(retry.body.seq).toBe(first.body.seq);
+      expect(await prisma.command.count({ where: { id: dueId } })).toBe(1);
+      expect(
+        await prisma.adminAuditLog.count({
+          where: {
+            action: "board.command",
+            targetId: fixture.boardId,
+            details: { path: ["commandId"], equals: dueId },
+          },
+        }),
+      ).toBe(1);
+
+      await prisma.card.update({
+        where: { id: fixture.cardId },
+        data: { deletedAt: null },
+      });
+      // Mint the OPERATOR token directly instead of another password login:
+      // the admin auth throttle is intentionally tight and this test is about
+      // the field-command path, not the login flow (covered elsewhere).
+      const operatorEmail = `operator-1769-${randomUUID()}@example.com`;
+      const operator = await prisma.adminUser.create({
+        data: {
+          email: operatorEmail,
+          displayName: "Operator 176.9",
+          role: "OPERATOR",
+          passwordHash: await argonHash("operator correct horse", {
+            type: argon2id,
+          }),
+        },
+      });
+      const operatorId = operator.id;
+      const operatorToken = await app
+        .get(JwtService)
+        .signAsync(
+          { sub: operatorId, typ: ADMIN_TOKEN_TYPE },
+          { audience: ADMIN_JWT_AUDIENCE },
+        );
+      const operatorCommandId = randomUUID();
+      await server()
+        .post(`/api/v1/admin/boards/${fixture.boardId}/commands`)
+        .set("Authorization", `Bearer ${operatorToken}`)
+        .send({
+          commandId: operatorCommandId,
+          action: {
+            type: "SET_CARD_PRIORITY",
+            cardId: fixture.cardId,
+            priority: "lowest",
+            at: Date.now(),
+          },
+        })
+        .expect(201);
+      const operatorAudit = await prisma.adminAuditLog.findFirstOrThrow({
+        where: {
+          action: "board.command",
+          targetId: fixture.boardId,
+          details: { path: ["commandId"], equals: operatorCommandId },
+        },
+      });
+      expect(operatorAudit.details).toMatchObject({
+        commandId: operatorCommandId,
+        masterId: operatorId,
+        masterEmail: operatorEmail,
+        type: "SET_CARD_PRIORITY",
+      });
+      expect(
+        await prisma.command.count({ where: { id: operatorCommandId } }),
+      ).toBe(1);
+
+      await server()
+        .delete(`/api/v1/admin/admins/${operatorId}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      await prisma.adminAuditLog.deleteMany({
+        where: {
+          OR: [
+            { targetId: operatorId },
+            { adminId: operatorId },
+            { adminEmail: operatorEmail },
+          ],
+        },
+      });
       await cleanupCommandFixture(fixture);
     });
 

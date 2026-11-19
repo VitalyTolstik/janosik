@@ -1060,19 +1060,27 @@ export class AdminService {
       {
         actorType: "admin",
         beforeApplyFresh: async (tx) => {
-          // TASK-176.8: the board aggregate deliberately excludes deleted
-          // cards, so a fresh admin edit of one would be a no-op with a
-          // "saved" toast and a fabricated command/audit row. Reject it only
-          // when the command is fresh: an exact replay already returned from
-          // the idempotency lookup above and must keep its stored result.
-          if (
-            dto.action.type !== "UPDATE_CARD" &&
-            dto.action.type !== "MOVE_CARD"
-          ) {
-            return;
+          // TASK-176.8/176.9: the board aggregate deliberately excludes
+          // deleted cards, so a fresh admin field edit of one would be a
+          // no-op with a "saved" toast and a fabricated command/audit row.
+          // Reject it only when the command is fresh: an exact replay already
+          // returned from the idempotency lookup above and must keep its
+          // stored result.
+          switch (dto.action.type) {
+            case "UPDATE_CARD":
+            case "MOVE_CARD":
+            case "SET_CARD_ASSIGN":
+            case "SET_CARD_DUE_DATE":
+            case "SET_CARD_PRIORITY":
+            case "SET_CARD_COVER":
+            case "SET_CARD_LABEL":
+              break;
+            default:
+              return;
           }
+          const action = dto.action;
           const card = await tx.card.findUnique({
-            where: { id: dto.action.cardId },
+            where: { id: action.cardId },
             select: {
               id: true,
               deletedAt: true,
@@ -1087,8 +1095,25 @@ export class AdminService {
           ) {
             throw new NotFoundException("Card not found");
           }
-          if (dto.action.type === "MOVE_CARD" && card.archivedAt !== null) {
+          // Archived cards may still have their fields edited (the normal
+          // card dialog allows it); only a move is impossible.
+          if (action.type === "MOVE_CARD" && card.archivedAt !== null) {
             throw new ConflictException("Archived cards cannot be moved");
+          }
+          // A label from another board (or a soft-deleted one) is not a
+          // silent no-op: the reducer ignores it, so accepting the command
+          // would fabricate a successful write + audit row (TASK-176.9).
+          if (action.type === "SET_CARD_LABEL") {
+            const label = await tx.label.findFirst({
+              where: { id: action.labelId, boardId, deletedAt: null },
+              select: { id: true },
+            });
+            if (!label) {
+              throw new NotFoundException({
+                message: "Label not found",
+                field: "action.labelId",
+              });
+            }
           }
         },
       },

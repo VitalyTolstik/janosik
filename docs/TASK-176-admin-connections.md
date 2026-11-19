@@ -342,6 +342,27 @@ Not a bugfix. It covers assignee, due date, priority, cover, labels, checklists 
 
 If approved, start with one field at a time behind the 176.8 attribution model. Do not build a full card editor first.
 
+**Delivered — B1 (2026-11-18, TASK-176.9):** `/admin/cards/:id` has a compact
+`Properties` panel for title (`UPDATE_CARD`), assignee (`SET_CARD_ASSIGN`,
+`null` clears), due date (`SET_CARD_DUE_DATE`, omitted field clears), priority
+(`SET_CARD_PRIORITY`, `medium` is default/absent), cover (`SET_CARD_COVER`,
+omitted field clears) and labels (one `SET_CARD_LABEL` per toggled label).
+Every save sends a fresh `commandId` and shows the exact 176.8
+owner-attribution banner; unchanged values send no command. Archived cards keep
+field editing (only moves stay blocked); deleted cards hide the panel.
+Assignee options are accepted, unexpired members (disabled users are hidden
+from new choices as a UX decision; a current disabled assignee stays visible,
+and the backend still permits an active disabled membership); labels are live
+board labels capped at 20 per card. The admin command guard covers all
+of these types: missing/deleted/wrong-board cards and foreign/deleted labels
+answer `404`, the label cap stays `409`, and replays remain idempotent without a
+second audit row. The panel is lazy-loaded into its own chunk. The size gate
+now measures the combined admin card page (`AdminApp` + `CardFieldsPanel`):
+**101.62 kB gzip against an explicit 102 kB budget** (the old shell-only gate
+was 100 kB), leaving 0.38 kB headroom. Checklists and links are deliberately
+**not** part of B1. Implemented on `feat/TASK-176.9-admin-card-fields` (base
+`05d0df30`).
+
 Master-authored comments/uploads are also a separate product decision: decide the author identity, history display and responsibility before adding the controls.
 
 ---

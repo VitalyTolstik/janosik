@@ -289,13 +289,23 @@ export function TranscodeBadge({ status }: { status: string }) {
   );
 }
 
-export function LabelChip({ name, color }: { name: string; color: string }) {
+export function LabelChip({
+  name,
+  color,
+  className,
+}: {
+  name: string;
+  color: string;
+  className?: string;
+}) {
   const chip = LABEL_COLOR_CHIP[color as LabelColor] ?? LABEL_COLOR_CHIP.plain;
   return (
     <span
+      title={name}
       className={cn(
-        "inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium",
+        "inline-flex min-w-0 max-w-full items-center truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium",
         chip,
+        className,
       )}
     >
       {name}
