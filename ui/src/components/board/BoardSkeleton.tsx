@@ -92,9 +92,7 @@ export function BoardListSkeleton({ pending }: { pending: number }) {
 
   return (
     <div
-      role="option"
-      aria-disabled="true"
-      aria-selected={false}
+      role="status"
       aria-busy="true"
       aria-label={t("board.switcher.loading")}
       data-testid="board-switcher-skeleton"

@@ -224,18 +224,18 @@ function GlobalSearchPanel({
 }: Omit<GlobalSearchDialogProps, "open">) {
   const t = useAdminT();
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
+  const [{ query, generation }, setSearch] = useState({
+    query: "",
+    generation: 0,
+  });
   const [response, setResponse] = useState<{
-    query: string;
-    retry: number;
+    generation: number;
     results: AdminGlobalSearchDto | null;
   } | null>(null);
   const [recent] = useState(readRecentPaths);
   const [cursor, setActive] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
   const input = query.trim();
-  const current =
-    response?.query === input && response.retry === retryKey ? response : null;
+  const current = response?.generation === generation ? response : null;
   const results = current?.results;
   const loading = input !== "" && current === null;
   const searchError = current !== null && current.results === null;
@@ -257,12 +257,11 @@ function GlobalSearchPanel({
       void adminApi.globalSearch(input, signal).then(
         (results) => {
           if (signal.aborted) return;
-          setResponse({ query: input, retry: retryKey, results });
+          setResponse({ generation, results });
           setActive(0);
         },
         () => {
-          if (!signal.aborted)
-            setResponse({ query: input, retry: retryKey, results: null });
+          if (!signal.aborted) setResponse({ generation, results: null });
         },
       );
     }, 200);
@@ -270,7 +269,7 @@ function GlobalSearchPanel({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [input, retryKey]);
+  }, [input, generation]);
 
   const go = (href: string) => {
     onOpenChange(false);
@@ -427,7 +426,14 @@ function GlobalSearchPanel({
           }
           aria-autocomplete="list"
           onChange={(event) => {
-            setQuery(event.target.value);
+            const value = event.target.value;
+            setSearch((previous) => ({
+              query: value,
+              generation:
+                value.trim() === previous.query.trim()
+                  ? previous.generation
+                  : previous.generation + 1,
+            }));
             setActive(0);
           }}
           onKeyDown={onKeyDown}
@@ -452,7 +458,12 @@ function GlobalSearchPanel({
             <button
               type="button"
               className="text-[11px] text-primary underline-offset-2 hover:underline"
-              onClick={() => setRetryKey((key) => key + 1)}
+              onClick={() =>
+                setSearch(({ query, generation }) => ({
+                  query,
+                  generation: generation + 1,
+                }))
+              }
             >
               {t("admin.palette.retry")}
             </button>

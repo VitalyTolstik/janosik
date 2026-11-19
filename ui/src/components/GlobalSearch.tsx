@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { shortcutLetterCode } from "@/utils/keyboard";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
@@ -89,7 +90,7 @@ export function GlobalSearch({
         !event.defaultPrevented &&
         !event.isComposing &&
         !event.altKey &&
-        event.code === "KeyK" &&
+        shortcutLetterCode(event) === "KeyK" &&
         (event.metaKey || event.ctrlKey)
       ) {
         event.preventDefault();

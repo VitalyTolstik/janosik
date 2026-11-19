@@ -1,4 +1,4 @@
-import { isEditableTarget } from "@/utils/keyboard";
+import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -337,14 +337,15 @@ export function useUndoHistory({
         isOverlayOpen()
       )
         return;
-      if (event.code === "KeyZ") {
+      const code = shortcutLetterCode(event);
+      if (code === "KeyZ") {
         event.preventDefault();
         if (event.shiftKey) {
           redo();
         } else {
           undo();
         }
-      } else if (event.code === "KeyY") {
+      } else if (code === "KeyY") {
         event.preventDefault();
         redo();
       }

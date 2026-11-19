@@ -1,4 +1,5 @@
 import { test, expect } from "@/fixtures/navigation.js";
+import { createExtraBoard } from "@/helpers/boards.js";
 import { delayNextRoute } from "@/helpers/network.js";
 
 /**
@@ -81,4 +82,39 @@ test("disables the shimmer when reduced motion is requested", async ({
       .first()
       .evaluate((node) => getComputedStyle(node, "::after").display),
   ).toBe("none");
+});
+
+test("announces background hydration outside the board switcher grid", async ({
+  page,
+  board,
+  navigation,
+}) => {
+  const extra = await createExtraBoard(board.api, "Pending board");
+  await board.open(page);
+  let release = () => {};
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**/api/v1/boards/${extra.id}`, async (route) => {
+    await blocked;
+    await route.continue();
+  });
+  try {
+    await page.goto(navigation.boardUrl);
+    await page.getByRole("button", { name: "Switch board" }).click();
+    const switcher = page.getByRole("dialog", { name: "Switch board" });
+    const status = switcher.getByRole("status", { name: "Loading boards…" });
+    const grid = switcher.getByRole("grid", { name: "Switch board" });
+    await expect(status).toHaveAttribute("aria-busy", "true");
+    await expect(status).not.toHaveAttribute("aria-selected");
+    await expect(grid.getByRole("status")).toHaveCount(0);
+    await expect(switcher.getByRole("option")).toHaveCount(0);
+    release();
+    await expect(status).toHaveCount(0);
+    await expect(
+      grid.getByRole("gridcell", { name: extra.title }),
+    ).toBeVisible();
+  } finally {
+    release();
+  }
 });

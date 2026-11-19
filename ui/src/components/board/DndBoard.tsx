@@ -38,7 +38,7 @@ import { blockedMoveMessage, workflowBlockReason } from "@/utils/workflow";
 import { applyCardOver } from "@/utils/dnd";
 import { cn } from "@/lib/utils";
 import { cardLinkIndex, linkSignature } from "@/utils/links";
-import { isEditableTarget } from "@/utils/keyboard";
+import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
@@ -630,7 +630,7 @@ export function DndBoard({
       if (event.defaultPrevented) return;
       if (isEditableTarget(event.target) || isOverlayOpen()) return;
       const { key } = event;
-      const code = event.shiftKey ? "" : event.code;
+      const code = event.shiftKey ? "" : shortcutLetterCode(event);
       if (code === "KeyJ" || code === "KeyK") {
         event.preventDefault();
         setCursor((prev) => {

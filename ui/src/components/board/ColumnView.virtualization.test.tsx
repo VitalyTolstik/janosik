@@ -97,7 +97,7 @@ describe("column card windowing (TASK-139)", () => {
   it("scrolls the last card into view when j/k walks past the window", async () => {
     render(boardTree());
     for (let index = 0; index < 50; index += 1) {
-      fireEvent.keyDown(window, { key: "j" });
+      fireEvent.keyDown(window, { key: "j", code: "KeyJ" });
     }
 
     const title = await screen.findByText("Card 49");

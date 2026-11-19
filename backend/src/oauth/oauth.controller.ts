@@ -29,6 +29,8 @@ import type { AuthUser } from "@/auth/auth.types";
 const OAUTH_LINK_COOKIE = "oauth_link_proof";
 const OAUTH_RETURN_COOKIE = "oauth_return_to";
 const OAUTH_COOKIE_PATH = "/api/v1/auth/oauth";
+// Leave room for the cookie name and attributes within the browser's 4 KiB limit.
+const MAX_ENCODED_RETURN_BYTES = 3800;
 
 /** The provider may only return the browser to a route in the user app. */
 function oauthReturnUrl(path: unknown): URL {
@@ -36,7 +38,7 @@ function oauthReturnUrl(path: unknown): URL {
   const fallback = new URL(prefix, env.PUBLIC_ORIGIN);
   if (
     typeof path !== "string" ||
-    path.length > 2000 ||
+    path.length > MAX_ENCODED_RETURN_BYTES ||
     !path.startsWith(prefix) ||
     path.startsWith("//") ||
     /[\\\r\n\t]/.test(path)
@@ -49,6 +51,8 @@ function oauthReturnUrl(path: unknown): URL {
   if (
     url.origin !== fallback.origin ||
     !url.pathname.startsWith(prefix) ||
+    encodeURIComponent(url.pathname + url.search + url.hash).length >
+      MAX_ENCODED_RETURN_BYTES ||
     !/^(?:|board\/[^/]+\/?|agents(?:\/[^/]+)?\/?)$/.test(route)
   ) {
     return fallback;

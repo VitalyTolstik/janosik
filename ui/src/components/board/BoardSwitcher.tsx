@@ -85,6 +85,7 @@ export function BoardSwitcher({
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        aria-label={t("board.switcher.aria")}
         align="start"
         sideOffset={8}
         onOpenAutoFocus={(e) => e.preventDefault()}

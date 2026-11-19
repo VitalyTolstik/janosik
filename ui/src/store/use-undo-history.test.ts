@@ -196,6 +196,24 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
     expect(apply).toHaveBeenCalledTimes(4);
   });
 
+  it.each([
+    ["key only", { key: "z" }, { key: "y" }],
+    ["code only", { code: "KeyZ" }, { code: "KeyY" }],
+    ["QWERTZ", { key: "z", code: "KeyY" }, { key: "y", code: "KeyZ" }],
+  ])("undoes and redoes with %s", (_, undo, redo) => {
+    const { result, apply, state } = setupHotkeys();
+    act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));
+
+    fireEvent.keyDown(window, { ...undo, ctrlKey: true });
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(result.current.canRedo).toBe(true);
+
+    fireEvent.keyDown(window, { ...redo, ctrlKey: true });
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+  });
+
   it("ignores the shortcuts while typing in an editable field", () => {
     const { result, apply, state } = setupHotkeys();
     act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));

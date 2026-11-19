@@ -308,8 +308,19 @@ function RouteSplash() {
   );
 }
 
-export const createAppRouter = () =>
-  createBrowserRouter(
+export function createAppRouter() {
+  // Hosts can serve the SPA directly from the bare base. Canonicalize it
+  // before the router starts so root links and URL cleanup keep the slash.
+  const { pathname, search, hash } = window.location;
+  if (APP_BASE !== "/" && pathname === APP_BASE.replace(/\/$/, "")) {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      APP_BASE + search + hash,
+    );
+  }
+
+  return createBrowserRouter(
     [
       {
         path: "*",
@@ -353,6 +364,7 @@ export const createAppRouter = () =>
     ],
     { basename: APP_BASE },
   );
+}
 
 export default function App({
   router,

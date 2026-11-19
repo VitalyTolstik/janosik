@@ -41,7 +41,10 @@ function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
   const [dirty, setDirty] = useState(false);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname,
+      dirty &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search ||
+        currentLocation.hash !== nextLocation.hash),
   );
 
   useEffect(() => {

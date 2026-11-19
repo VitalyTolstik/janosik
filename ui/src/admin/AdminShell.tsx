@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { isEditableTarget, isShortcutHelpKey } from "@/utils/keyboard";
+import {
+  isEditableTarget,
+  isShortcutHelpKey,
+  shortcutLetterCode,
+} from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { useTheme } from "@/hooks/use-theme";
 import { useAdminT } from "./admin-i18n";
@@ -138,12 +142,13 @@ export function AdminShell() {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && event.code === "KeyK") {
+      const code = shortcutLetterCode(event);
+      if (mod && code === "KeyK") {
         event.preventDefault();
         setSearchOpen(true);
         return;
       }
-      if (mod && event.code === "KeyB") {
+      if (mod && code === "KeyB") {
         event.preventDefault();
         toggleSidebar();
         return;
@@ -158,12 +163,12 @@ export function AdminShell() {
         return;
       }
       if (event.shiftKey) return;
-      if (event.code === "KeyG") {
+      if (code === "KeyG") {
         pendingG.current = Date.now();
         return;
       }
       if (pendingG.current !== null && Date.now() - pendingG.current < 900) {
-        const hub = HUB_SHORTCUTS[event.code];
+        const hub = HUB_SHORTCUTS[code];
         pendingG.current = null;
         if (hub !== undefined) {
           event.preventDefault();

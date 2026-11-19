@@ -176,8 +176,10 @@ a `Reset filters` button. While any filter is active, dragging is disabled.
 
 Press `?` anywhere outside a text field, or click the keyboard icon in the
 header, to open the cheat sheet. It shows the shortcuts available in
-the current view. Letter shortcuts follow the physical keys on English and
-Russian layouts. Undo and redo pause while a dialog or menu is open.
+the current view. Letter shortcuts follow the typed letter on Latin layouts
+and the physical key position on Russian layouts. Use the key that types
+`?` on your layout to open the cheat sheet. Undo and redo pause while a
+dialog or menu is open.
 
 ![The keyboard shortcut cheat sheet.](/screens/shortcuts.png)
 

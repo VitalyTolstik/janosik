@@ -80,8 +80,8 @@ function seedTwoBoards() {
 
 async function openSwitcher() {
   fireEvent.click(screen.getByRole("button", { name: "Switch board" }));
-  const listbox = await screen.findByRole("grid");
-  return listbox;
+  const dialog = await screen.findByRole("dialog", { name: "Switch board" });
+  return within(dialog).getByRole("grid", { name: "Switch board" });
 }
 
 describe("BoardSwitcher", () => {
@@ -92,9 +92,9 @@ describe("BoardSwitcher", () => {
 
   it("lists all boards with the active one marked", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    expect(listbox).toHaveTextContent("Alpha");
-    expect(listbox).toHaveTextContent("Beta");
+    const grid = await openSwitcher();
+    expect(grid).toHaveTextContent("Alpha");
+    expect(grid).toHaveTextContent("Beta");
     expect(screen.getAllByRole("row", { selected: true })).toHaveLength(1);
   });
 
@@ -211,9 +211,9 @@ describe("BoardSwitcher", () => {
 
   it("archives a non-active board after inline confirm (data kept)", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
+    const grid = await openSwitcher();
     // Beta is not active — hover its row to reveal the archive button.
-    const betaRow = listbox.querySelector<HTMLElement>('[data-index="1"]')!;
+    const betaRow = grid.querySelector<HTMLElement>('[data-index="1"]')!;
     fireEvent.mouseEnter(betaRow);
     fireEvent.click(
       within(betaRow).getByRole("button", { name: "Archive board" }),
@@ -236,8 +236,8 @@ describe("BoardSwitcher", () => {
 
   it("archiving the active board navigates to the remaining one", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     fireEvent.click(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -299,8 +299,8 @@ describe("BoardSwitcher", () => {
 
   it("does not offer restore/delete for active boards (only archive)", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     expect(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -314,8 +314,8 @@ describe("BoardSwitcher", () => {
   it("archiving the only board shows the empty state, not the archived board", async () => {
     localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     fireEvent.click(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -341,8 +341,8 @@ describe("BoardSwitcher", () => {
   it("creates a board from the empty-state CTA and navigates to it", async () => {
     localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     fireEvent.click(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -367,10 +367,10 @@ describe("BoardSwitcher", () => {
       ]),
     );
     renderSwitcher();
-    const listbox = await openSwitcher();
+    const grid = await openSwitcher();
     // The swap slot trades the checkmark for the archive action on touch —
     // the row is the only path to archive a board.
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     expect(
       within(alphaRow).getByRole("button", { name: "Archive board" }).className,
     ).toContain("no-hover:opacity-100");

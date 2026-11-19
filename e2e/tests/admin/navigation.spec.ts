@@ -112,7 +112,28 @@ test("Russian mobile All destinations closes both overlays on a same-hub tab cha
   await expect(page.getByTestId("admin-sidebar-scrim")).toHaveCount(0);
 });
 
-test("choosing a language consumes the handoff query while preserving the tab and hash", async ({
+test("browser Back between tabs on the same hub closes the mobile sidebar", async ({
+  page,
+}) => {
+  await loginAsMaster(page, ownerCredentials());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(adminPath("settings"));
+  await page.getByRole("tab", { name: "Security" }).click();
+  await expect(page).toHaveURL(/\/admin\/settings\?tab=security$/);
+
+  await page.getByTestId("admin-sidebar-toggle").click();
+  const scrim = page.getByTestId("admin-sidebar-scrim");
+  await expect(scrim).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/admin\/settings$/);
+  await expect(page.getByRole("tab", { name: "Operations" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(scrim).toHaveCount(0);
+});
+
+test("choosing a master-panel language persists in the browser and preserves the tab and hash", async ({
   page,
 }) => {
   await loginAsMaster(page, ownerCredentials());
@@ -126,6 +147,9 @@ test("choosing a language consumes the handoff query while preserving the tab an
 
   await expect(page).toHaveURL(/\/admin\/settings\?tab=security#section$/);
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  expect(await page.evaluate(() => localStorage.getItem("janosik-lang"))).toBe(
+    "en",
+  );
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(

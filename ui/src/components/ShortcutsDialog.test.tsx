@@ -127,6 +127,8 @@ describe("keyboard shortcuts", () => {
     renderBoard();
     fireEvent.click(screen.getByRole("button", { name: "Table" }));
     pressKey(",", { code: "Slash", shiftKey: true });
+    expect(screen.queryByTestId("shortcuts-table")).not.toBeInTheDocument();
+    pressKey("?");
     const table = screen.getByTestId("shortcuts-table");
     expect(table).toHaveTextContent("Focus the board filter");
     expect(table).toHaveTextContent("Undo");
@@ -160,23 +162,34 @@ describe("keyboard shortcuts", () => {
     ).toBeInTheDocument();
   });
 
-  it("j/k move the cursor, Enter opens the cursor's card", () => {
-    renderBoard();
-    pressKey("j");
-    expect(
-      document.querySelector('[data-card-cursor="true"]'),
-    ).toHaveTextContent("First card");
-    pressKey("j");
-    expect(
-      document.querySelector('[data-card-cursor="true"]'),
-    ).toHaveTextContent("Second card");
-    pressKey("k");
-    expect(
-      document.querySelector('[data-card-cursor="true"]'),
-    ).toHaveTextContent("First card");
-    pressKey("Enter");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
+  it.each([
+    ["key only", { key: "j" }, { key: "k" }],
+    ["code only", { code: "KeyJ" }, { code: "KeyK" }],
+    [
+      "remapped Latin keys",
+      { key: "j", code: "KeyK" },
+      { key: "k", code: "KeyJ" },
+    ],
+  ])(
+    "j/k move the cursor with %s, then Enter opens its card",
+    (_, next, previous) => {
+      renderBoard();
+      fireEvent.keyDown(window, next);
+      expect(
+        document.querySelector('[data-card-cursor="true"]'),
+      ).toHaveTextContent("First card");
+      fireEvent.keyDown(window, next);
+      expect(
+        document.querySelector('[data-card-cursor="true"]'),
+      ).toHaveTextContent("Second card");
+      fireEvent.keyDown(window, previous);
+      expect(
+        document.querySelector('[data-card-cursor="true"]'),
+      ).toHaveTextContent("First card");
+      pressKey("Enter");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    },
+  );
 
   it("'e' opens the cursor's card, Escape clears the cursor", () => {
     renderBoard();

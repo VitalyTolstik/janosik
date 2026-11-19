@@ -162,6 +162,11 @@ describe("admin command palette", () => {
       expect(screen.queryByText("Stale match")).not.toBeInTheDocument();
       expect(screen.getByText("Current match")).toBeVisible();
 
+      fireEvent.change(input, { target: { value: "first" } });
+      fireEvent.change(input, { target: { value: "second" } });
+      expect(screen.queryByText("Current match")).not.toBeInTheDocument();
+      expect(screen.getByRole("listbox")).toHaveAttribute("aria-busy", "true");
+
       fireEvent.change(input, { target: { value: "closing" } });
       await waitFor(() => expect(requests.has("closing")).toBe(true));
       rerender(renderPalette(false));

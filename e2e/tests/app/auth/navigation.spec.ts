@@ -29,12 +29,12 @@ test("registration, OAuth and recovery controls are reachable on short screens",
   );
   const deepLink = new URL("board/b-1?card=c-1&mode=register#details", appUrl);
   await page.goto(deepLink.href);
-  await expectReachableByScrolling(page.getByTestId("login-toggle"));
+  const googleLogin = page.getByTestId("login-oauth-google");
+  await expect(googleLogin).not.toBeInViewport();
+  await expectReachableByScrolling(googleLogin);
+  await expect(page.getByTestId("login-toggle")).toBeInViewport();
 
-  const oauth = new URL(
-    (await page.getByTestId("login-oauth-google").getAttribute("href"))!,
-    appUrl,
-  );
+  const oauth = new URL((await googleLogin.getAttribute("href"))!, appUrl);
   expect(oauth.searchParams.get("returnTo")).toBe(
     deepLink.pathname + deepLink.search + deepLink.hash,
   );
@@ -90,4 +90,22 @@ test("successful registration consumes the mode before the verification gate and
   await signOut.click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await expect(page.getByTestId("login-display-name")).toHaveCount(0);
+});
+
+test("canonicalizes a bare app entry served directly by the host", async ({
+  page,
+}) => {
+  const entry = new URL("?lng=en#details", appUrl);
+  test.skip(entry.pathname === "/", "Standalone deploys already use /");
+  const bare = new URL(entry.href);
+  bare.pathname = bare.pathname.replace(/\/$/, "");
+  await page.route(bare.href.split("#")[0], async (route) => {
+    // Serve the real app shell without the host's /app → /app/ redirect.
+    const response = await route.fetch({ url: appUrl });
+    await route.fulfill({ response });
+  });
+
+  await page.goto(bare.href);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page).toHaveURL(entry.href);
 });

@@ -119,8 +119,9 @@ screen or to phone touch targets.
 
 ## Command palette
 
-`Ctrl/Cmd+K` opens the command palette. Shortcuts follow the same physical
-keys on English and Russian layouts. The palette contains the following.
+`Ctrl/Cmd+K` opens the command palette. Letter shortcuts follow the typed
+letter on Latin layouts and the physical key position on Russian layouts.
+The palette contains the following.
 
 - **Navigate**: the eight hubs.
 - **Actions**: open settings, toggle density, toggle theme, shortcut help,

@@ -33,6 +33,22 @@ test("viewer sees a read-only calendar and table", async ({
   await partner.open(page);
   await partner.openBoard(page);
 
+  await page.keyboard.press("?");
+  const shortcuts = page.getByTestId("shortcuts-table");
+  await expect(shortcuts).toContainText("Next card");
+  await expect(shortcuts).not.toContainText(/New card|New column|Undo|Redo/);
+  await page.keyboard.press("Escape");
+  await expect(shortcuts).toBeHidden();
+  await page.keyboard.press("j");
+  await expect(page.locator('[data-card-cursor="true"]')).toContainText(
+    "Viewer visible",
+  );
+  await page.keyboard.press("n");
+  await page.keyboard.press("c");
+  await expect(
+    page.locator('[name="card-composer"], [name="column-create"]'),
+  ).toHaveCount(0);
+
   await openCalendar(page);
   await expect(calendarChip(page, "Viewer visible")).toBeVisible();
   await expect(page.getByTestId("day-add")).toHaveCount(0);
