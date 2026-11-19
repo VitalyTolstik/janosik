@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import type { StringValue } from "ms";
 import { env } from "@/config/env";
+import { RealtimeModule } from "@/realtime/realtime.module";
 import { PasswordResetAuditService } from "./password-reset-audit.service";
 import { ApiTokenService } from "./api-token.service";
 import { SessionOnlyGuard } from "./auth-principal";
@@ -12,6 +13,7 @@ import { JwtStrategy } from "./jwt.strategy";
 import { LoginBackoffService } from "./login-backoff.service";
 @Module({
   imports: [
+    RealtimeModule,
     JwtModule.register({
       secret: env.JWT_SECRET,
       // ACCESS_TOKEN_TTL is a vercel/ms duration string by env contract.

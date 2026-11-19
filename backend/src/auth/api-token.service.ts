@@ -25,6 +25,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { AttentionService } from "@/notifications/attention.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
@@ -82,6 +83,7 @@ export class ApiTokenService {
     private readonly prisma: PrismaService,
     private readonly securityAudit: SecurityAuditService,
     private readonly attention: AttentionService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /** Only the sha256 hash is persisted; also reused by the password change. */
@@ -188,6 +190,10 @@ export class ApiTokenService {
           reason: "revoke_all",
         });
       }
+      await this.publishTokenState(
+        candidates.map((token) => token.id),
+        "ended",
+      );
     }
     return result.revokedCount;
   }
@@ -486,6 +492,7 @@ export class ApiTokenService {
         tokenName: token.name,
         reason: "revoked",
       });
+      await this.publishTokenState([tokenId], "ended");
     }
   }
 
@@ -502,10 +509,11 @@ export class ApiTokenService {
     // A revoked token is already terminal; pausing it is an idempotent no-op
     // rather than a misleading success that rewrites an inert row.
     if (token.revokedAt !== null) return toUserTokenDto(token);
+    const pausedAt = new Date();
     const result = await this.prisma.apiToken.updateMany({
       where: { id: tokenId, userId, individualPausedAt: null },
       data: {
-        individualPausedAt: new Date(),
+        individualPausedAt: pausedAt,
         individualPausedBy: userId,
         individualPausedReason: clean(reason),
       },
@@ -524,6 +532,7 @@ export class ApiTokenService {
           reason: clean(reason),
         },
       });
+      await this.publishTokenState([tokenId], "paused", pausedAt.getTime());
     }
     return toUserTokenDto(
       await this.prisma.apiToken.findUniqueOrThrow({ where: { id: tokenId } }),
@@ -561,6 +570,7 @@ export class ApiTokenService {
           reason: clean(reason),
         },
       });
+      await this.publishTokenState([tokenId], "resumed");
     }
     return toUserTokenDto(
       await this.prisma.apiToken.findUniqueOrThrow({ where: { id: tokenId } }),
@@ -594,6 +604,7 @@ export class ApiTokenService {
         targetType: "api_token",
         details: { reason: clean(reason), tokens: result.count },
       });
+      await this.publishAllUserTokenState(userId, "paused", now.getTime());
     }
     return {
       paused: latest !== null,
@@ -620,6 +631,7 @@ export class ApiTokenService {
         targetType: "api_token",
         details: { reason: clean(reason), tokens: result.count },
       });
+      await this.publishAllUserTokenState(userId, "resumed");
     }
     return {
       paused: false,
@@ -627,6 +639,63 @@ export class ApiTokenService {
       pausedBy: null,
       affected: result.count,
     };
+  }
+
+  /**
+   * Board Live is viewed by a human JWT, not by the paused token, so the
+   * token's own keep-alive frame cannot refresh it. Publish one control-plane
+   * frame per board where the token has a live session; the UI refetches the
+   * session row and mirrors the server-computed `paused`/`pauseScope`.
+   */
+  private async publishTokenState(
+    tokenIds: string[],
+    op: "paused" | "resumed" | "ended",
+    at: number = Date.now(),
+  ): Promise<void> {
+    const ids = [...new Set(tokenIds)];
+    if (ids.length === 0) return;
+    const sessions = await this.prisma.agentSession.findMany({
+      where: {
+        apiTokenId: { in: ids },
+        // A revoke ends the sessions before this publish. The boards that
+        // were live at revoke time still need the frame, so include sessions
+        // that just ended; pause/resume only concerns live rows.
+        ...(op === "ended"
+          ? {
+              OR: [
+                { endedAt: null },
+                { endedAt: { gte: new Date(Date.now() - 60_000) } },
+              ],
+            }
+          : { endedAt: null }),
+      },
+      distinct: ["boardId"],
+      select: { boardId: true },
+    });
+    for (const session of sessions) {
+      this.realtime.publish(session.boardId, {
+        type: "agent",
+        op,
+        scope: "token",
+        at,
+      });
+    }
+  }
+
+  private async publishAllUserTokenState(
+    userId: string,
+    op: "paused" | "resumed",
+    at: number = Date.now(),
+  ): Promise<void> {
+    const tokens = await this.prisma.apiToken.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    await this.publishTokenState(
+      tokens.map((token) => token.id),
+      op,
+      at,
+    );
   }
 
   private async requireOwnedToken(

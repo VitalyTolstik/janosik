@@ -24,7 +24,7 @@ const prismaMock = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
-  agentSession: { updateMany: jest.fn() },
+  agentSession: { updateMany: jest.fn(), findMany: jest.fn() },
   card: { updateMany: jest.fn(), findMany: jest.fn() },
   boardMember: {
     findUnique: jest.fn(),
@@ -44,7 +44,7 @@ const prismaMock = {
     | "updateMany",
     jest.Mock
   >;
-  agentSession: Record<"updateMany", jest.Mock>;
+  agentSession: Record<"updateMany" | "findMany", jest.Mock>;
   card: Record<"updateMany" | "findMany", jest.Mock>;
   boardMember: Record<"findUnique", jest.Mock>;
   user: Record<"findUnique", jest.Mock>;
@@ -97,6 +97,7 @@ const makeToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
 describe("ApiTokenService", () => {
   let service: ApiTokenService;
   const attentionMock = { notifyTokenRevoked: jest.fn() };
+  const realtimeMock = { publish: jest.fn() };
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -104,6 +105,8 @@ describe("ApiTokenService", () => {
       async (fn: (tx: unknown) => unknown) => fn(prismaMock),
     );
     prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.agentSession.findMany.mockResolvedValue([]);
+    prismaMock.apiToken.findMany.mockResolvedValue([]);
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.card.findMany.mockResolvedValue([]);
     prismaMock.$executeRaw.mockResolvedValue(1);
@@ -116,6 +119,7 @@ describe("ApiTokenService", () => {
         record: jest.fn(),
       } as never,
       attentionMock as never,
+      realtimeMock as never,
     );
   });
 
@@ -551,6 +555,22 @@ describe("ApiTokenService", () => {
       });
     });
 
+    it("publishes an ended frame to a board whose session was just closed", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(makeToken());
+      prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.agentSession.findMany.mockResolvedValue([
+        { boardId: "board-1" },
+      ]);
+
+      await service.revoke("user-1", "token-1");
+
+      expect(realtimeMock.publish).toHaveBeenCalledWith(
+        "board-1",
+        expect.objectContaining({ type: "agent", op: "ended" }),
+      );
+    });
+
     it("does not notify again when the token was already revoked", async () => {
       prismaMock.apiToken.findFirst.mockResolvedValue(
         makeToken({ revokedAt: new Date("2026-09-03T00:00:00Z") }),
@@ -645,6 +665,63 @@ describe("ApiTokenService", () => {
       const dto = await service.pause("user-1", "token-1", "late");
       expect(dto.revokedAt).toBe(new Date("2026-09-03T00:00:00Z").getTime());
       expect(prismaMock.apiToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("publishes a token-scoped frame to boards with a live session", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(makeToken());
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.apiToken.findUniqueOrThrow.mockResolvedValue(
+        makeToken({
+          individualPausedAt: new Date("2026-09-02T00:00:00Z"),
+          individualPausedBy: "user-1",
+        }),
+      );
+      prismaMock.agentSession.findMany.mockResolvedValue([
+        { boardId: "board-1" },
+        { boardId: "board-2" },
+      ]);
+
+      await service.pause("user-1", "token-1", "maintenance");
+
+      expect(realtimeMock.publish).toHaveBeenCalledWith(
+        "board-1",
+        expect.objectContaining({
+          type: "agent",
+          op: "paused",
+          scope: "token",
+        }),
+      );
+      expect(realtimeMock.publish).toHaveBeenCalledWith(
+        "board-2",
+        expect.objectContaining({
+          type: "agent",
+          op: "paused",
+          scope: "token",
+        }),
+      );
+    });
+
+    it("publishes resume frames only for boards with a live session", async () => {
+      prismaMock.apiToken.findFirst.mockResolvedValue(
+        makeToken({ individualPausedAt: new Date("2026-09-02T00:00:00Z") }),
+      );
+      prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.apiToken.findUniqueOrThrow.mockResolvedValue(makeToken());
+      prismaMock.agentSession.findMany.mockResolvedValue([
+        { boardId: "board-1" },
+      ]);
+
+      await service.resume("user-1", "token-1", undefined);
+
+      expect(realtimeMock.publish).toHaveBeenCalledTimes(1);
+      expect(realtimeMock.publish).toHaveBeenCalledWith(
+        "board-1",
+        expect.objectContaining({
+          type: "agent",
+          op: "resumed",
+          scope: "token",
+        }),
+      );
     });
 
     it("pause-all touches only stopAll; resume-all does not clear an individual pause", async () => {

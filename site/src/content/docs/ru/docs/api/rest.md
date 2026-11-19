@@ -274,7 +274,9 @@ keep-alive PAT-поток получает
 `{ "type": "agent", "op": "paused", "scope": "...", "at": ... }` и закрывается.
 Пауза сессии закрывает только поток с `?session=<sessionId>`; переподключение
 во время активной паузы получает `403 agent_paused`. Человеческие SSE-потоки
-не закрываются.
+не закрываются. Пауза токена или stop-all также публикует кадр
+`scope: "token"` на доски, где у токена есть живая сессия, чтобы Board Live
+обновился без опроса; человеческие потоки при этом остаются открытыми.
 
 `DELETE /users/me/tokens/:id` — необратимый kill. Он отзывает ключ, помечает
 его открытые сессии `cancelled`, освобождает claim'ы с `claimedByTokenId`
@@ -738,7 +740,7 @@ Snapshot замораживает и обсуждение: его коммент
 | `presence`   | `users[]`                                                      | кто подключён; без `seq`                             |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` — это `accepted`, `updated` или `removed`     |
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | активность вне редьюсера, например новый комментарий |
-| `agent`      | `op` (`started`, `paused`, `resumed`, `ended`), `sessionId?`, `scope?`, `at` | переход управления сессией агента |
+| `agent`      | `op` (`started`, `paused`, `resumed`, `heartbeat`, `ended`), `sessionId?`, `scope?`, `at` | переход управления сессией агента; `heartbeat` — троттлинговая проверка живости сессии |
 | `resync`     | нет                                                            | разрыв не воспроизвести; перечитайте доску           |
 
 `commandId` — это ключ идемпотентности, с которым команда была отправлена,

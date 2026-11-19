@@ -415,7 +415,12 @@ export interface ActivitySseEvent {
 /** TASK-166: an agent-session control-plane transition. */
 export interface AgentSseEvent {
   type: "agent";
-  op: "started" | "paused" | "resumed" | "ended";
+  /**
+   * `heartbeat` is a throttled liveness refresh, not a lifecycle transition:
+   * it carries both `sessionId` and `scope: "session"` so a board-level
+   * watcher only refetches the session rows it renders.
+   */
+  op: "started" | "paused" | "resumed" | "heartbeat" | "ended";
   sessionId?: string;
   scope?: "board" | "token" | "session";
   at: number;

@@ -266,7 +266,9 @@ SSE keep-alive a PAT stream receives
 `{ "type": "agent", "op": "paused", "scope": "...", "at": ... }` and closes.
 Session pause closes only a stream opened with `?session=<sessionId>`; a
 reconnect during an active pause gets `403 agent_paused`. Human SSE streams are
-not closed.
+not closed. A token or stop-all pause also publishes a `scope: "token"` frame
+to the boards where that token has a live session, so Board Live refreshes
+without polling; human streams still stay open.
 
 `DELETE /users/me/tokens/:id` is the irreversible kill. It revokes the key, marks
 its open sessions `cancelled`, releases the claims held by `claimedByTokenId`
@@ -743,7 +745,7 @@ The stream carries six event types:
 | `presence`   | `users[]`                                                      | who is connected; no `seq`                     |
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated` or `removed` |
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | non-reducer activity, e.g. a new comment |
-| `agent`      | `op` (`started`, `paused`, `resumed`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition |
+| `agent`      | `op` (`started`, `paused`, `resumed`, `heartbeat`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition; `heartbeat` is a throttled session liveness refresh |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
 `commandId` is the idempotency key sent with the command. A client uses it to

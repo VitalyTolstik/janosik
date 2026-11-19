@@ -727,6 +727,77 @@ describe("Approvals (e2e)", () => {
     expect(applied.status).toBe(200);
   });
 
+  it("keys approval dedup by agent session so a second session gets a usable request", async () => {
+    const columnId = await createColumn("Session dedup");
+    const cardId = await createCard(columnId, "Shared plan");
+    const startSession = (name: string) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/agent-sessions`)
+        .set(auth(token))
+        .send({ name })
+        .expect(201)
+        .then((res) => res.body.id as string);
+    const sessionA = await startSession("session-a");
+    const sessionB = await startSession("session-b");
+    const plan = deletePlan([cardId]);
+
+    const first = (
+      await createApproval(
+        { kind: "destructive", plan },
+        { sessionId: sessionA },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    expect(first.agentSessionId).toBe(sessionA);
+    await decide(first.id, first.planHash).expect(200);
+
+    // The same session repeating the same plan is an idempotent read of its
+    // own approved row, never a second request.
+    const repeated = (
+      await createApproval(
+        { kind: "destructive", plan },
+        { sessionId: sessionA },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    expect(repeated.id).toBe(first.id);
+
+    // A concurrent session on the same token must not be handed A's row:
+    // apply would reject it as approval_owner_mismatch.
+    const replacement = (
+      await createApproval(
+        { kind: "destructive", plan },
+        { sessionId: sessionB },
+      ).expect(201)
+    ).body as ApprovalRequestDto;
+    expect(replacement.id).not.toBe(first.id);
+    expect(replacement.agentSessionId).toBe(sessionB);
+    expect(replacement.status).toBe("pending");
+
+    await decide(replacement.id, replacement.planHash).expect(200);
+    const commandId = (plan.commands as Array<{ commandId: string }>)[0]!
+      .commandId;
+    const applied = await command(
+      "DELETE_CARD",
+      { cardId },
+      {
+        token,
+        commandId,
+        approvalId: replacement.id,
+        sessionId: sessionB,
+      },
+    );
+    expect(applied.status).toBe(200);
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: replacement.id },
+      }),
+    ).toMatchObject({ status: "consumed" });
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: first.id },
+      }),
+    ).toMatchObject({ status: "approved" });
+  });
+
   it("applies a whole batch under one approval and one run", async () => {
     const columnId = await createColumn("Batch");
     const first = await createCard(columnId, "First");

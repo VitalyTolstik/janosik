@@ -41,6 +41,14 @@ const ALL_STATUSES = new Set<AgentSessionStatus>([
   "cancelled",
 ]);
 
+/**
+ * Board Live refetches a session row when a heartbeat arrives, so a heartbeat
+ * must not turn into one refetch per agent every few seconds. One frame per
+ * session per minute is enough to keep the visible `lastHeartbeatAt`/`stale`
+ * state honest while an operator watches the panel.
+ */
+export const HEARTBEAT_SSE_INTERVAL_MS = 60_000;
+
 /** Why a session is paused (overlay; the DB stores each level separately). */
 export interface PauseContext {
   tokenPaused: boolean;
@@ -183,6 +191,21 @@ export class AgentSessionsService {
         message: "Agent session is closed",
         code: "agent_session_closed",
         sessionId,
+      });
+    }
+    // Heartbeats are the only liveness signal a watching Board Live panel
+    // has. Publish a throttled control-plane frame after the committed
+    // update; the row itself stays the source of truth and the UI refetches.
+    if (
+      now.getTime() - session.lastHeartbeatAt.getTime() >=
+      HEARTBEAT_SSE_INTERVAL_MS
+    ) {
+      this.realtime.publish(boardId, {
+        type: "agent",
+        op: "heartbeat",
+        sessionId: session.id,
+        scope: "session",
+        at: now.getTime(),
       });
     }
     // The successful update is the linearization point. Build the response

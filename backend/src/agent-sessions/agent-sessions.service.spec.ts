@@ -103,6 +103,80 @@ describe("toAgentSessionDto", () => {
   });
 });
 
+describe("heartbeat SSE (TASK-180.4 M27)", () => {
+  function service(session: AgentSession) {
+    const prisma = {
+      agentSession: {
+        findUnique: jest.fn(async () => session),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      board: {
+        findUnique: jest.fn(async () => ({ agentsPausedAt: null })),
+      },
+      apiToken: {
+        findUnique: jest.fn(async () => ({
+          name: "CI",
+          individualPausedAt: null,
+          stopAllPausedAt: null,
+        })),
+      },
+      card: { findFirst: jest.fn(async () => ({ id: "card-1" })) },
+    };
+    const realtime = { publish: jest.fn() };
+    const service = new AgentSessionsService(
+      prisma as never,
+      {} as never,
+      realtime as never,
+    );
+    return { service, realtime, prisma };
+  }
+
+  const principal = {
+    via: "pat",
+    apiTokenId: "token-1",
+    apiTokenName: "CI",
+    tokenIdentity: { paused: false },
+  };
+
+  it("publishes one throttled session frame after an overdue heartbeat", async () => {
+    const { service: sessions, realtime } = service(
+      row({ lastHeartbeatAt: new Date(Date.now() - 61_000) }),
+    );
+    await sessions.heartbeat(
+      "board-1",
+      "sess-1",
+      "user-1",
+      principal as never,
+      {},
+    );
+
+    expect(realtime.publish).toHaveBeenCalledWith(
+      "board-1",
+      expect.objectContaining({
+        type: "agent",
+        op: "heartbeat",
+        sessionId: "sess-1",
+        scope: "session",
+      }),
+    );
+  });
+
+  it("does not publish for a heartbeat inside the throttle window", async () => {
+    const { service: sessions, realtime } = service(
+      row({ lastHeartbeatAt: new Date(Date.now() - 10_000) }),
+    );
+    await sessions.heartbeat(
+      "board-1",
+      "sess-1",
+      "user-1",
+      principal as never,
+      {},
+    );
+
+    expect(realtime.publish).not.toHaveBeenCalled();
+  });
+});
+
 describe("board pause SSE (TASK-166.14)", () => {
   const board = {
     agentsPausedAt: null as Date | null,

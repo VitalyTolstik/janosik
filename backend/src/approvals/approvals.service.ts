@@ -111,6 +111,7 @@ export class ApprovalsService {
     const existing = await this.findByIdempotentPlan(
       boardId,
       principal.apiTokenId!,
+      principal.agentSessionId ?? null,
       plan,
     );
     if (existing !== null) {
@@ -410,6 +411,7 @@ export class ApprovalsService {
     const existing = await this.findByIdempotentPlan(
       boardId,
       principal.apiTokenId ?? "",
+      params.agentSessionId,
       plan,
     );
     if (existing !== null) {
@@ -629,6 +631,7 @@ export class ApprovalsService {
       const existing = await this.findByIdempotentPlan(
         boardId,
         principal.apiTokenId ?? "",
+        params.agentSessionId,
         plan,
       );
       if (existing !== null && existing.status === "consumed") {
@@ -811,12 +814,15 @@ export class ApprovalsService {
       // Serialize concurrent create/auto-409 requests for the same token and
       // plan. Without this, two `find -> create` races could leave two
       // pending approvals for one plan. Re-check inside the lock.
-      const lockKey = `${params.boardId}:${params.principal.apiTokenId}:${planHash}`;
+      const lockKey =
+        `${params.boardId}:${params.principal.apiTokenId}:` +
+        `${params.agentSessionId ?? "no-session"}:${planHash}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
       const existing = await tx.approvalRequest.findFirst({
         where: {
           boardId: params.boardId,
           requestedByTokenId: params.principal.apiTokenId!,
+          agentSessionId: params.agentSessionId,
           planHash,
           status: { in: ["pending", "approved"] },
         },
@@ -900,6 +906,7 @@ export class ApprovalsService {
   private async findByIdempotentPlan(
     boardId: string,
     tokenId: string,
+    agentSessionId: string | null,
     plan: ApprovalPlan,
   ): Promise<ApprovalRequest | null> {
     const planHash = approvalPlanHash(plan);
@@ -907,6 +914,10 @@ export class ApprovalsService {
       where: {
         boardId,
         requestedByTokenId: tokenId,
+        // A token can drive several concurrent sessions. An approval is
+        // consumed by the session that requested it, so another session must
+        // not receive a row its own header cannot use (`owner_mismatch`).
+        agentSessionId,
         planHash,
       },
       orderBy: { createdAt: "desc" },
