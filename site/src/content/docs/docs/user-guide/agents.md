@@ -12,16 +12,16 @@ evidence is visible everywhere without a second source of truth.
 
 | Surface | Address | What it is for |
 | --- | --- | --- |
-| Global control room | `/agents` | Anything that needs a human or spans boards: Attention, Sessions, Runs. |
+| Global control room | `/app/agents` | Anything that needs a human or spans boards: Attention, Sessions, Runs. |
 | Board Agent Control | board header Bot button | Operational work on one board: Inbox, Live, Runs. |
 | Board Settings → Agents & automation | board gear → Agents & automation | Configuration: destructive mode, approval triggers, limits, TTL and approver roles. |
 
 On a board, the header has exactly one Bot button. It opens Agent Control. The
 global page is reachable from the modal’s **All agents across boards** link and
-from Account. On `/agents` the header is the global variant: board title,
+from Account. On `/app/agents` the header is the global variant: board title,
 members, share, gear and undo/redo are intentionally absent.
 
-## The global `/agents` control room
+## The global agents control room
 
 The left rail has three sections:
 
@@ -176,7 +176,7 @@ The gear is ADMIN-only. The settings shell now has two top-level sections:
 
 Roles are per board. Being ADMIN on one board and MEMBER on another is a
 supported mix: counts, the Inbox tab, the gear and the read-only notices all
-follow the role of the board in scope. `/agents` is a browser-session page; the
+follow the role of the board in scope. `/app/agents` is a browser-session page; the
 read-only aggregation endpoint rejects a PAT with `pat_forbidden` rather than
 fanning PAT scope across boards.
 
@@ -199,14 +199,14 @@ The global page keeps filters and selection in the URL:
 Examples:
 
 ```text
-/agents?section=sessions&board=b1&token=t1
-/agents?section=attention&board=b1&approval=a1
-/agents?section=runs&board=b1&run=r1
-/agents?section=runs&board=b1&status=reverted&time=24h&agent=t1
+/app/agents?section=sessions&board=b1&token=t1
+/app/agents?section=attention&board=b1&approval=a1
+/app/agents?section=runs&board=b1&run=r1
+/app/agents?section=runs&board=b1&status=reverted&time=24h&agent=t1
 ```
 
 Run copy-link always includes `board`; the copied URL survives reload and
-back/forward. `/agents/:tokenId` remains a canonical token → sessions deep link
+back/forward. `/app/agents/:tokenId` remains a canonical token → sessions deep link
 and is not redirected. Opening `?approval=` or `?run=` without `?board=` shows
 a recovery message instead of guessing.
 

@@ -1,13 +1,13 @@
 import type { APIRoute } from "astro";
 
 import { site as siteConfig } from "../config";
+import { withBase } from "../utils/url";
 
 // `/llms.txt` — a plain-text overview for AI systems (see llmstxt.org). It
 // gives agents a short, parseable map of the site without scraping, which is
 // what the ai-seo skill asks for. Generated so the origin tracks the config.
 export const GET: APIRoute = ({ site }) => {
-  const abs = (path: string) =>
-    new URL(path, site ?? "https://janosik.app").href;
+  const abs = (path: string) => new URL(withBase(path), site).href;
 
   const body = `# ${siteConfig.name}
 

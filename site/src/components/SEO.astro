@@ -1,7 +1,7 @@
 ---
 import { site } from "../config";
 import { languages, type Lang } from "../i18n/ui";
-import { localizePath, stripLocale } from "../i18n/utils";
+import { localizedUrl, localizePath, stripLocale } from "../i18n/utils";
 import { plans } from "../pricing";
 import { withBase } from "../utils/url";
 
@@ -14,7 +14,7 @@ interface Props {
   type?: "website" | "article";
   /** Extra JSON-LD nodes (FAQPage, Product, …) merged into the graph. */
   schema?: Record<string, unknown> | Record<string, unknown>[];
-  /** Breadcrumb trail; rendered as a BreadcrumbList. */
+  /** Breadcrumb trail with base-less, locale-less paths. */
   breadcrumbs?: { name: string; path: string }[];
 }
 
@@ -99,7 +99,7 @@ const breadcrumbSchema = breadcrumbs
         "@type": "ListItem",
         position: index + 1,
         name: crumb.name,
-        item: absolute(crumb.path),
+        item: new URL(localizedUrl(crumb.path, lang), Astro.site).href,
       })),
     }
   : undefined;

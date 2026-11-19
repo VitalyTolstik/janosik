@@ -19,27 +19,27 @@ OWNER/OPERATOR и журнал аудита не изменились.
 
 | Хаб | URL | Вкладки / разделы |
 | --- | --- | --- |
-| Обзор | `/admin` | Дашборд |
-| Пользователи | `/admin/users` | Список пользователей, страница пользователя |
-| Доски | `/admin/boards` | Доски, Карточки, Колонки, Метки, Чек-листы, Связи карточек |
-| Модерация | `/admin/moderation` | Комментарии, Вложения |
-| Аудит и активность | `/admin/audit` | Аудит, Журнал команд, Активность |
-| Коммуникации | `/admin/communications` | Композер объявлений, История объявлений, Публичные ссылки |
-| Доступ и безопасность | `/admin/access` | Сессии, API-токены, Мастера (только владелец) |
-| Настройки | `/admin/settings` | Общие (Эксплуатация), Email, OAuth, Безопасность, Трафик, Наблюдаемость, Демо |
+| Обзор | `/app/admin` | Дашборд |
+| Пользователи | `/app/admin/users` | Список пользователей, страница пользователя |
+| Доски | `/app/admin/boards` | Доски, Карточки, Колонки, Метки, Чек-листы, Связи карточек |
+| Модерация | `/app/admin/moderation` | Комментарии, Вложения |
+| Аудит и активность | `/app/admin/audit` | Аудит, Журнал команд, Активность |
+| Коммуникации | `/app/admin/communications` | Композер объявлений, История объявлений, Публичные ссылки |
+| Доступ и безопасность | `/app/admin/access` | Сессии, API-токены, Мастера (только владелец) |
+| Настройки | `/app/admin/settings` | Общие (Эксплуатация), Email, OAuth, Безопасность, Трафик, Наблюдаемость, Демо |
 
 Эти восемь хабов — вся панель. Раздела агентов в ней осознанно нет:
-`/admin` не управляет запусками, согласованиями и политикой агентов. Эти
-поверхности — глобальная страница `/agents`, управление агентами на доске
+`/app/admin` не управляет запусками, согласованиями и политикой агентов. Эти
+поверхности — глобальная страница `/app/agents`, управление агентами на доске
 (Agent Control) и «Настройки доски → Агенты и автоматизация»; см.
 [Панель администратора](/ru/docs/admin/#управление-агентами-не-входит-в-админ-панель).
 
 Detail-страницы остаются отдельными:
 
-- `/admin/users/:userId`
-- `/admin/boards/:boardId` и `/admin/boards/:boardId/content`
-- `/admin/boards/:boardId/workflow`
-- `/admin/cards/:cardId`
+- `/app/admin/users/:userId`
+- `/app/admin/boards/:boardId` и `/app/admin/boards/:boardId/content`
+- `/app/admin/boards/:boardId/workflow`
+- `/app/admin/cards/:cardId`
 
 ## Старые ссылки и редиректы
 
@@ -48,28 +48,28 @@ query-параметры и добавляет вкладку хаба.
 
 | Старый URL | Новый URL |
 | --- | --- |
-| `/admin/activity` | `/admin/audit?tab=activity` |
-| `/admin/commands`, `/admin/log` | `/admin/audit?tab=commands` |
-| `/admin/cards` | `/admin/boards?tab=cards` |
-| `/admin/columns` | `/admin/boards?tab=columns` |
-| `/admin/labels` | `/admin/boards?tab=labels` |
-| `/admin/checklists` | `/admin/boards?tab=checklists` |
-| `/admin/cardLinks` | `/admin/boards?tab=links` |
-| `/admin/comments` | `/admin/moderation?tab=comments` |
-| `/admin/attachments` | `/admin/moderation?tab=attachments` |
-| `/admin/sessions` | `/admin/access?tab=sessions` |
-| `/admin/tokens` | `/admin/access?tab=tokens` |
-| `/admin/masters` | `/admin/access?tab=masters` |
-| `/admin/comms` | `/admin/communications?tab=announcements` |
-| `/admin/announcements` | `/admin/communications?tab=history` |
-| `/admin/shares` | `/admin/communications?tab=shares` |
-| `/admin/ops` | `/admin/settings?tab=general` |
-| `/admin/email` | `/admin/settings?tab=email` |
-| `/admin/oauth` | `/admin/settings?tab=oauth` |
-| `/admin/security` | `/admin/settings?tab=security` |
-| `/admin/traffic` | `/admin/settings?tab=traffic` |
-| `/admin/observability` | `/admin/settings?tab=observability` |
-| `/admin/demo` | `/admin/settings?tab=demo` |
+| `/app/admin/activity` | `/app/admin/audit?tab=activity` |
+| `/app/admin/commands`, `/app/admin/log` | `/app/admin/audit?tab=commands` |
+| `/app/admin/cards` | `/app/admin/boards?tab=cards` |
+| `/app/admin/columns` | `/app/admin/boards?tab=columns` |
+| `/app/admin/labels` | `/app/admin/boards?tab=labels` |
+| `/app/admin/checklists` | `/app/admin/boards?tab=checklists` |
+| `/app/admin/cardLinks` | `/app/admin/boards?tab=links` |
+| `/app/admin/comments` | `/app/admin/moderation?tab=comments` |
+| `/app/admin/attachments` | `/app/admin/moderation?tab=attachments` |
+| `/app/admin/sessions` | `/app/admin/access?tab=sessions` |
+| `/app/admin/tokens` | `/app/admin/access?tab=tokens` |
+| `/app/admin/masters` | `/app/admin/access?tab=masters` |
+| `/app/admin/comms` | `/app/admin/communications?tab=announcements` |
+| `/app/admin/announcements` | `/app/admin/communications?tab=history` |
+| `/app/admin/shares` | `/app/admin/communications?tab=shares` |
+| `/app/admin/ops` | `/app/admin/settings?tab=general` |
+| `/app/admin/email` | `/app/admin/settings?tab=email` |
+| `/app/admin/oauth` | `/app/admin/settings?tab=oauth` |
+| `/app/admin/security` | `/app/admin/settings?tab=security` |
+| `/app/admin/traffic` | `/app/admin/settings?tab=traffic` |
+| `/app/admin/observability` | `/app/admin/settings?tab=observability` |
+| `/app/admin/demo` | `/app/admin/settings?tab=demo` |
 
 ## Вход
 
@@ -118,7 +118,7 @@ query-параметры и добавляет вкладку хаба.
   шпаргалка горячих клавиш, вернуться к доскам.
 - **Недавние**: последние пять маршрутов панели.
 - **Сущности**: пользователи, доски, карточки, комментарии, файлы и метки из
-  `GET /admin/search?q=`, с прежними test id результатов.
+  `GET /api/v1/admin/search?q=`, с прежними test id результатов.
 
 Поле использует `role="combobox"`, `aria-activedescendant` и список
 `role="listbox"`. `↑`/`↓` двигают активную строку, `Enter` открывает её,

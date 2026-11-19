@@ -1,10 +1,10 @@
 ---
 title: Admin panel
-description: The master panel at /admin, who may use it, how to create a master and sign in, and a map of its pages.
+description: The master panel at /app/admin, who may use it, how to create a master and sign in, and a map of its pages.
 ---
 
 The admin panel is the interface for managing the platform. It is served at
-`/admin` (`/app/admin` in the Docker installation) and loads separately from the
+`/app/admin` in the self-host image and loads separately from the
 board interface. It uses a separate API client and authentication token. It is
 structurally separate from the user app: the admin route tree
 never mounts the user `AuthProvider` or `BoardProvider`, keeping the
@@ -80,13 +80,13 @@ exists with that email, the request answers `409`.
 
 ## How to sign in
 
-Open `/admin`. An unauthenticated visit shows the branded split-screen master
+Open `/app/admin`. An unauthenticated visit shows the branded split-screen master
 sign-in, deliberately different from the user login: a brand rail with the
 build version, a 372 px form, progressive two-factor, show/hide password and
 no registration, password recovery or social sign-in. There is no SSO button
 because the backend has no master OIDC provider; the screen says so instead.
 
-- The form posts to `POST /admin/auth/login` with email and password, plus an
+- The form posts to `POST /api/v1/admin/auth/login` with email and password, plus an
   optional six-digit two-factor code.
 - The session uses a separate access token and a separate refresh cookie named
   `admin_refresh_token`, scoped to path `/api/v1/admin/auth` with
@@ -155,14 +155,14 @@ become labelled cards, so the content keeps the full phone width.
 
 The palette combines navigation, actions, recent pages and cross-entity
 search. It searches users, boards, cards, comments, attachments and labels
-against `GET /admin/search?q=`; results are grouped and keyboard-navigable
+against `GET /api/v1/admin/search?q=`; results are grouped and keyboard-navigable
 with `↑`/`↓` and Enter. If the request fails it offers a retry instead of an
 empty result.
 
 ## Agent control is not part of the admin panel
 
 The panel is a support, moderation and investigation console, not a second
-board client and not an agent control plane. **`/admin` does not list or manage
+board client and not an agent control plane. **`/app/admin` does not list or manage
 agent runs, approvals or board policy, and it has no cross-board agent
 section.** There are no approve/reject, pause/resume, run-revert,
 destructive-mode or TTL controls in the panel. This is a deliberate boundary,
@@ -170,7 +170,7 @@ not a missing page.
 
 Agent control lives in the user app, where board roles are enforced:
 
-- **`/agents`** is the global cross-board inbox with three sections:
+- **`/app/agents`** is the global cross-board inbox with three sections:
   **Attention** (pending approvals on boards where you are an ADMIN, plus
   stale sessions), **Sessions** (board-first session list and detail) and
   **Runs** (filters, run detail and a conditional revert that only a board
@@ -189,7 +189,7 @@ Agent control lives in the user app, where board roles are enforced:
   **Access & security → API tokens**; that is account administration, not an
   approval, run or policy decision.
 
-A master account is not a board account: signing in to `/admin` neither grants
+A master account is not a board account: signing in to `/app/admin` neither grants
 board membership nor these controls. If the same person needs them, they sign
 in to the user app with their normal account and board role. An owner can also
 open a short, audited impersonation session as that user; it opens the user app

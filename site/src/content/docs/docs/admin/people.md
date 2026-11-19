@@ -5,7 +5,7 @@ description: The user list and its actions, the user detail page, and the master
 
 :::note
 Users are the **Users** hub. Masters is now an owner-only tab inside
-**Access & security** (`/admin/access?tab=masters`); `/admin/masters` redirects
+**Access & security** (`/app/admin/access?tab=masters`); `/app/admin/masters` redirects
 there. See [Admin redesign](../redesign/).
 :::
 
@@ -14,7 +14,7 @@ visible to every master; the masters page is owner-only.
 
 ## Users
 
-`/admin/users` lists registered accounts. The subtitle is `{total}
+`/app/admin/users` lists registered accounts. The subtitle is `{total}
 registered`.
 
 | Column | Value |
@@ -115,7 +115,7 @@ delete a user. An operator gets `403` with `Owner rights are required`.
 
 ## User detail
 
-`/admin/users/:id` shows the user’s details and related records needed by support staff. The header
+`/app/admin/users/:id` shows the user’s details and related records needed by support staff. The header
 carries the display name (or email), the email, the id, a status badge, the
 registration time, the disabled time when blocked, and a verified or unverified
 badge. The actions menu repeats the full action set.
@@ -182,7 +182,7 @@ actions call the same audited endpoints as the moderation lists.
 
 ## Masters
 
-`/admin/masters` is owner-only. It lists the panel accounts. The subtitle is
+`/app/admin/masters` is owner-only. It lists the panel accounts. The subtitle is
 `Owner and operator accounts of the panel`.
 
 | Column | Value |

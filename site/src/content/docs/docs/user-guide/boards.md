@@ -185,7 +185,7 @@ conflict asks for an explicit choice. `Reset to defaults` restores approval
 mode, 100 commands, 50 cards and a 60-minute TTL and is disabled when the
 policy is already default.
 
-The global `/agents` page covers the same approvals, sessions and runs across
+The global `/app/agents` page covers the same approvals, sessions and runs across
 boards, with Attention, search, board scope and URL/deep links. See
 [Agents](/docs/user-guide/agents/) for the full contract and permissions.
 

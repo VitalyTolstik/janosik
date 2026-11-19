@@ -20,7 +20,7 @@ This is an **npm workspaces monorepo** with one root lockfile. `ui`, `shared` an
 
 | Workspace | npm name | What it is | How it runs |
 | --- | --- | --- | --- |
-| **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table/watch views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the `/admin` master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`) or is served as static files from `ui/dist` |
+| **`ui/`** | `@janosik/ui` | The **frontend**: the whole single-page app — board/calendar/table/watch views, drag & drop, card dialog, search, settings, i18n, PWA service worker, the login screen and the `/app/admin` master panel. It talks to the backend over `fetch`. | Vite dev server (`npm run dev`) or is served as static files from `ui/dist` |
 | **`shared/`** | `@janosik/shared` | A **TypeScript library with no build step and no runtime of its own**: the domain model (`Board`/`Column`/`Card`/`Label`), the pure `boardReducer` (the single implementation of every board operation), its inverse for undo, command validation, export/import serialization, storage keys — plus the **typed API contracts** (user and admin DTOs). | Nothing to run. `ui` and `backend` import its `.ts` sources directly through aliases, so client and server literally share the same types and the same reducer logic |
 | **`backend/`** | `@janosik/backend` | The **server**: a NestJS API on PostgreSQL — auth (JWT + refresh rotation + argon2id), boards/members, the command log that persists UI actions, comments/activity, and the isolated master-admin contour (`/api/v1/admin/*`). | Node process (`npm run build:backend` + `npm run start -w backend`); dev DB via Docker Compose |
 | **`brand/`** | `@janosik/brand` | Shared brand assets and design tokens. | Imported by the UI and site; has its own tests and lint script. |
@@ -97,7 +97,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Server mode** — sign in to work with boards stored in PostgreSQL. The UI applies edits optimistically and sends each one through the command log (`POST /boards/:id/commands`); rejected edits roll back with a message. Per-entity version checks protect typed text from a stale undo. A request already in flight can finish during a reload. The no-API local-only mode is used by unit tests; development and production builds require the API.
 - **Realtime** — a `GET /boards/:id/events` SSE stream carries every committed command (`{type, seq, action, actorId}`) and the client replays foreign actions through the very same reducer. Edits appear in other browsers with no reload; a dropped stream resumes exactly where it stopped (`?since=`) and window focus remains the fallback. Your own commands are never applied twice, and a stale undo still refuses to clobber someone else's text.
 - **Shared boards** — a **Members (N)** dialog in the header: admins invite by email, switch roles (`ADMIN`/`MEMBER`/`VIEWER`), bound a viewer's access with an expiry date ("access expired" badge) and remove members — the last admin can never be demoted or removed. Invitations are **opt-in**: the invitee gets a badge on the header bell and accepts or declines there; nothing is shared until they accept. Everyone else sees the same member list read-only, and a `VIEWER` gets a genuinely read-only board: no drag, no composers, no menus, no inline editors, a read-only card dialog — while the server independently answers 403 to every mutation.
-- **Master panel** — a separate `/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
+- **Master panel** — a separate `/app/admin` area for the platform operator: metrics, all users and boards, command log, audit trail and moderation (block a user and their sessions die instantly, revoke API tokens, archive/soft-delete a board, create accounts with a one-time password). Master accounts live outside the user table, have their own login, cookie and JWT audience, and are created only by the server CLI (`npm run admin:create -w backend`); `OWNER` can add more masters, `OPERATOR` cannot. Panel tables are **schema-first**: columns are named after Prisma fields (`Board.id`, `BoardMember.userId`, `Card.columnId`, `Comment.authorId`, …), foreign keys are shown as copyable IDs (title/email only as a caption) and search matches those IDs — a row can be traced to its parents even when names are not unique.
 - **AI agents (MCP + skill)** — `@janosik/mcp` gives compatible clients (Claude, Cursor, VS Code, opencode and Codex) access to board tools through a personal API key. The `janosik` skill provides workflow guidance: claim a card under a temporary lease, keep its description, checklist and comments structured, and return blocked work with evidence. Keys can be scoped to one board, made read-only and rate-limited. Commands retain actor attribution, history and undo. See [Drive it from an AI agent](#drive-it-from-an-ai-agent-mcp--skill).
 - **Performance** — the editor and calendar load on demand; vendor libraries use separate cacheable chunks, and board rows and cards are memoized. Performance measurements and their test conditions are recorded in [docs/PERF-BASELINE.md](./docs/PERF-BASELINE.md).
 - **Data safety** — debounced saves, JSON export/import (25 MB import/export envelope, 10 MB command bodies), automatic local backups in the no-API build (20 snapshots, rotated; server mode deliberately does not create backups), self-service export/delete, error boundary + toasts, input/collection limits everywhere.
@@ -161,7 +161,13 @@ npm run start -w backend
 npm run dev
 ```
 
-Register at <http://localhost:5173> (registration is open by default) — the boards then live in PostgreSQL and sync through the command log. To open the master panel at `/admin`, create the first master on the server (see below).
+With the default `backend/.env.example` configuration (no SMTP or bootstrap),
+self-service password registration is unavailable. From the repository root
+run `npm run admin:create -w backend -- --email me@example.com` to create the
+first master. Sign in at `http://localhost:5173/admin` (the Vite dev URL), go to
+**Users → Create user**, and open the user's details to **Verify email** for
+an address you control. Then sign in with the board account at
+`http://localhost:5173/`.
 
 > **Local-only / no-API build.** The app can also render with no backend — that is the in-browser mode the **unit tests** use (`MODE=test`), with the seeded "Product Launch" board in `localStorage`. The `npm run dev` / `npm run build` builds are **not** that mode: they always talk to the API and show the login screen, so "just look at the demo board, no login" is not available from the dev server.
 
@@ -187,15 +193,17 @@ VITE_SITE_URL=http://localhost:4321/ npm run dev
 
 The self-host image sets both by serving the site at `/` and the app at `/app/` on one origin; a **split deployment** (two hosts) sets `PUBLIC_APP_URL` and `VITE_SITE_URL` to the two origins — see [docs/SELF-HOSTING.md](./docs/SELF-HOSTING.md).
 
-### Enabling outgoing email (required for password registration)
+### Enabling outgoing email for self-service signup
 
 **Email delivery is not enabled by default.** The API boots fine with no mail
-setup: with no SMTP transport configured it runs in **log mode**, but password
-registration is disabled because mailbox ownership cannot be verified. Create
-a master with the CLI, then configure email in the master panel or through the
-`SMTP_*` environment variables before registering users.
+setup in **log mode**. For self-service password signup, configure email in the
+master panel or through the `SMTP_*` environment variables. A local install
+with one-time bootstrap enabled can create its first board account without SMTP.
 
-To actually send mail, open **`/admin` → Email service** (owner only), pick a preset and paste the credentials, then flip **Enable delivery** and hit **Send test email**:
+To send mail, open **Settings → Email** in the master panel
+(`/app/admin/settings?tab=email` on the self-host image), pick a preset, enter
+the credentials, enable delivery and send a test email. This requires an owner
+master account.
 
 - **Gmail / Yandex / Mail.ru** — configure the provider's SMTP settings and use an app password where the provider requires one.
 - **Brevo / SendGrid** — transactional email services. SendGrid uses `apikey` as the username and your API key as the password.
@@ -229,7 +237,10 @@ It creates `janosik/.env` with unique secrets, starts the stack bound to
 `JANOSIK_INSTALL_DIR` before running the script to change the local port or
 directory. It pins the Compose file and image to the latest stable GitHub
 release and refuses to overwrite an existing configuration.
-The public image must have been released before this installation can work.
+The installer enables one-time account bootstrap without SMTP. On this fresh
+instance, open `/app/` and choose **Create account**. After setup, turn off
+`ALLOW_BOOTSTRAP_USER` and `ALLOW_REGISTRATION` in `.env` and run
+`docker compose up -d`. Installation requires a published stable release and image.
 For a public deployment use HTTPS and the production instructions below.
 
 The fastest way to run Janosik is the prebuilt image: one container serves the
@@ -250,13 +261,9 @@ curl -o .env https://raw.githubusercontent.com/VitalyTolstik/janosik/main/.env.e
 
 # 3. Bring it up (migrations run automatically on boot)
 docker compose up -d
-
-# 4. Open PUBLIC_ORIGIN (default http://localhost:3000), create the first
-#    account, then set ALLOW_REGISTRATION=false in .env and `docker compose up -d`
 ```
 
-Create a **master (platform admin)** account for the `/admin` panel — the CLI
-is the only door, there is deliberately no HTTP endpoint for it:
+Without SMTP or bootstrap, create a **master (platform admin)** account first:
 
 ```bash
 docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
@@ -264,6 +271,12 @@ docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email m
 docker compose exec app node /app/backend/scripts/admin-cli.cjs list
 # then sign in at PUBLIC_ORIGIN/app/admin
 ```
+
+In the master panel, choose **Users → Create user**. Open the user's details
+and **Verify email** for an address you control. Sign in with that board
+account at `PUBLIC_ORIGIN/app/` (by default `http://localhost:3000/app/`).
+For a private instance, set `ALLOW_REGISTRATION=false` in `.env` and run
+`docker compose up -d`. [First-run guide](./docs/SELF-HOSTING.md#3-first-run-account-registration-master-panel)
 
 Before an upgrade, take a consistent database and uploads backup and test
 restoration. See the [operations runbook](./site/src/content/docs/docs/runbooks.md)
@@ -312,7 +325,7 @@ environment reference and troubleshooting: **[docs/SELF-HOSTING.md](./docs/SELF-
 
 ## Master panel (platform admin)
 
-Regular accounts are **not** admins — the panel at **`/admin`** belongs to the platform operator (the "master"), and there is deliberately no HTTP endpoint that can create a master: registration always creates a regular user, and no request can grant master rights. Masters live in their own table with their own login, cookie and JWT audience, so a user session can never open `/admin` (and a master token never works on user routes).
+Regular accounts are **not** admins — the panel at **`/app/admin`** belongs to the platform operator (the "master"), and there is deliberately no HTTP endpoint that can create a master: registration always creates a regular user, and no request can grant master rights. Masters live in their own table with their own login, cookie and JWT audience, so a user session can never open `/app/admin` (and a master token never works on user routes).
 
 ### Creating a master account (`admin:create`)
 
@@ -356,8 +369,8 @@ Rules worth knowing:
 - **Role**: the **first** master in an empty database becomes `OWNER` automatically; every later CLI master is `OPERATOR` unless `--owner` is passed. Owners can add/block/reset masters right in the panel (**Masters** page); operators have full data access but cannot manage masters, so a stolen operator session cannot escalate.
 - **Email** is required and normalized to lowercase; creating a duplicate fails with a hint to use `admin:passwd`.
 - **Audit**: every create/re-key writes an `AdminAuditLog` row (`via: "cli"`), visible on the panel's **Audit** page.
-- Sign in at `http://localhost:5173/admin` (dev) or `https://your-host/admin` (self-hosted). Sign-out sits in the top-right corner.
-- What you get there: metrics with 14-day sparklines plus a runtime card (version, uptime, DB latency), all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), all cards and comments (search + moderation), active sessions and personal API tokens (scoped to a board, read-only or rate-limited) with per-row revoke, the cross-board command log, and the audit trail of every master action. Tables follow the database schema (see Highlights) and search matches foreign-key IDs. The board content editor (`/admin/boards/:id/content`) creates and renames columns and cards **through the command log on behalf of the board owner**, so the board UI stays consistent.
+- Sign in at `http://localhost:5173/admin` (dev) or `https://your-host/app/admin` (self-hosted). Sign-out sits in the top-right corner.
+- What you get there: metrics with 14-day sparklines plus a runtime card (version, uptime, DB latency), all users (search, filter, create with a one-time password, block → sessions die instantly, revoke API tokens), all boards (create for an owner, archive/restore, soft-delete), all cards and comments (search + moderation), active sessions and personal API tokens (scoped to a board, read-only or rate-limited) with per-row revoke, the cross-board command log, and the audit trail of every master action. Tables follow the database schema (see Highlights) and search matches foreign-key IDs. The board content editor (`/app/admin/boards/:id/content`) creates and renames columns and cards **through the command log on behalf of the board owner**, so the board UI stays consistent.
 - Hardening that ships with it: argon2id hashes, 5-failed-login lockout (15 min) plus rate limiting, per-entity refresh rotation with reuse detection, response shapes that never include password/token hashes, and an audit row for every login attempt and mutation.
 
 ---
@@ -498,7 +511,7 @@ Workspace-specific extras worth knowing:
 ui/
 ├─ public/                  # PWA: manifest, icons
 ├─ src/
-│  ├─ admin/                # master panel (/admin): pages, admin-client, i18n, fake API
+│  ├─ admin/                # master panel: pages, admin-client, i18n, fake API
 │  ├─ api/                  # fetch client (tokens, auth-lost callback, keepalive commands)
 │  ├─ auth/                 # AuthContext (session, login/register/logout)
 │  ├─ components/
@@ -514,7 +527,7 @@ ui/
 │  ├─ store/                # BoardContext, history, server-sync, persistence adapters
 │  ├─ types/                # UI-only types (domain model lives in @janosik/shared)
 │  ├─ utils/                # storage, persistence, backups, serialization, dnd, filter, due dates
-│  ├─ App.tsx               # Provider tree + layout (+ lazy /admin route)
+│  ├─ App.tsx               # Provider tree + layout (+ lazy master panel route)
 │  ├─ main.tsx              # Theme preflight + SW registration + entry point
 │  └─ index.css             # Design tokens (Tailwind v4 @theme)
 ├─ vite/                    # Build plugins (service worker emit + cache version)
@@ -530,7 +543,7 @@ ui/
 
 - **Normalized data model** — a `Board` holds ordered `Column[]`, a `Record<string, Card>` and `Label[]`. Reordering = reordering id arrays. Archived cards stay in the map with `archivedAt` and are dropped from `column.cardIds` until restored.
 - **Pure reducer in `shared`** — `boardReducer` (30+ actions) is a pure function; every action returns a new board, which makes undo/redo, coalescing and testing trivial. The backend executes the identical reducer when a command reaches the command log, so UI and server can never diverge.
-- **One provider, three contexts** — `BoardProvider` owns state, debounced persistence (400 ms), per-board history, hotkeys and auto-backups. It publishes the board data, the actions (assembled once, so write-only components never re-render) and undo availability separately. Components only call typed convenience actions (`addCard`, `moveCard`, …).
+- **One provider, three contexts** — `BoardProvider` owns state, debounced persistence (400 ms), per-board history, hotkeys and auto-backups in local mode. It publishes the board data, the actions (assembled once, so write-only components never re-render) and undo availability separately. Components only call typed convenience actions (`addCard`, `moveCard`, …).
 - **Persistence is swappable — and was swapped** — the `DebouncedPersistence` interface wraps `localStorage` for the local mode; server mode adds a fetch adapter (`ui/src/api/client.ts` + `ui/src/store/server-sync.ts`) that ships the same actions to the command log **without touching the reducer or the UI** (optimistic updates on top of the same actions). In server mode board data is deliberately not mirrored into `localStorage` (accounts on a shared browser must not see each other's boards).
 - **Performance** — the MDXEditor description editor and the calendar are lazy-loaded on first use; vendor libraries are split into stable chunks that the service worker caches; columns, cards, insert zones and table rows are memoized, so typing in one card re-renders only its own column (or table row) — the cost per keystroke no longer grows with the board.
 

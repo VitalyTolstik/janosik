@@ -12,16 +12,16 @@ TASK-179 разделяет работу с агентами на три сло�
 
 | Поверхность | Адрес | Для чего |
 | --- | --- | --- |
-| Глобальная страница | `/agents` | Всё, что требует человека или охватывает несколько досок: Attention, Sessions, Runs. |
+| Глобальная страница | `/app/agents` | Всё, что требует человека или охватывает несколько досок: Attention, Sessions, Runs. |
 | Agent Control на доске | кнопка-бот в шапке доски | Операционная работа по одной доске: Inbox, Live, Runs. |
 | Board Settings → Agents & automation | шестерёнка → Agents & automation | Настройка: destructive mode, триггеры согласования, лимиты, TTL и роли согласующих. |
 
 На доске в шапке ровно одна кнопка-бот. Она открывает Agent Control.
 Глобальная страница доступна из ссылки модалки **All agents across boards** и
-из Account. На `/agents` шапка глобальная: названия доски, участников, share,
+из Account. На `/app/agents` шапка глобальная: названия доски, участников, share,
 шестерёнки и undo/redo там намеренно нет.
 
-## Глобальная страница `/agents`
+## Глобальная страница Agents
 
 В левом рейле три раздела:
 
@@ -180,7 +180,7 @@ heartbeat, метки stale/paused, текущую карточку и запу�
 
 Роли — по доске. Быть ADMIN на одной доске и MEMBER на другой — поддерживаемый
 случай: счётчики, вкладка Inbox, шестерёнка и уведомления только для чтения
-следуют роли доски в области видимости. `/agents` — страница браузерной
+следуют роли доски в области видимости. `/app/agents` — страница браузерной
 сессии; read-only aggregation отклоняет PAT с `pat_forbidden`, а не разносит
 scope PAT по доскам.
 
@@ -203,14 +203,14 @@ scope PAT по доскам.
 Примеры:
 
 ```text
-/agents?section=sessions&board=b1&token=t1
-/agents?section=attention&board=b1&approval=a1
-/agents?section=runs&board=b1&run=r1
-/agents?section=runs&board=b1&status=reverted&time=24h&agent=t1
+/app/agents?section=sessions&board=b1&token=t1
+/app/agents?section=attention&board=b1&approval=a1
+/app/agents?section=runs&board=b1&run=r1
+/app/agents?section=runs&board=b1&status=reverted&time=24h&agent=t1
 ```
 
 Copy-link запуска всегда включает `board`; скопированный URL переживает
-перезагрузку и back/forward. `/agents/:tokenId` остаётся каноническим deep link
+перезагрузку и back/forward. `/app/agents/:tokenId` остаётся каноническим deep link
 токен → сессии и не редиректится. `?approval=` или `?run=` без `?board=`
 показывают сообщение восстановления вместо угадывания доски.
 

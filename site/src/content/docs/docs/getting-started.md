@@ -33,7 +33,8 @@ curl -fsSLO https://raw.githubusercontent.com/VitalyTolstik/janosik/main/install
 
 With Docker, Compose, curl and OpenSSL installed, this starts a local trial at
 `http://localhost:3210/app/`. It requires a published stable release and image.
-Create your account, then close registration. [Self-hosting](/docs/self-hosting/)
+The installer enables one-time signup without SMTP. Create your board account,
+then turn off `ALLOW_BOOTSTRAP_USER` and close registration. [Self-hosting](/docs/self-hosting/)
 covers installation, updates, MCP and HTTPS.
 
 ## From source (development)
@@ -54,10 +55,13 @@ npm run start -w backend                             # API on :3000
 npm run dev                                          # UI on :5173 (proxies /api → :3000)
 ```
 
-Register at `http://localhost:5173` (registration is open by default) and create
-the first master with `npm run admin:create -w backend -- --email me@example.com`
-for the `/admin` panel. Every from-source step, per platform, is in
-[Self-hosting](/docs/self-hosting/).
+With the default `backend/.env.example` configuration (no SMTP or bootstrap),
+self-service password registration is unavailable. From the repository root
+run `npm run admin:create -w backend -- --email me@example.com` to create the
+first master. Sign in at `http://localhost:5173/admin` (the Vite dev URL), go to
+**Users → Create user**, and open the user's details to **Verify email** for
+an address you control. Then sign in with the board account at
+`http://localhost:5173/`. See [Self-hosting](/docs/self-hosting/) for the full setup.
 
 ### Marketing site (Astro) in dev
 

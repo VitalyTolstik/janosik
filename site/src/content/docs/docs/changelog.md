@@ -98,7 +98,7 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   generated in the background.
 - Public read-only board sharing, both a frozen snapshot and a live view, with
   per-token rate limits, OG previews and `?embed=1`.
-- Master admin panel at `/admin`: users, boards, entities, moderation, support
+- Master admin panel at `/app/admin`: users, boards, entities, moderation, support
   actions, feature flags, operations and maintenance, communications and
   announcements, data export and compliance, observability, security (TOTP 2FA
   and IP allowlist), and a Bull Board queue dashboard.

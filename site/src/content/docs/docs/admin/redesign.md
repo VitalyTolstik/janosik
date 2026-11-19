@@ -20,26 +20,26 @@ more than density.
 
 | Hub | URL | Tabs / sections |
 | --- | --- | --- |
-| Overview | `/admin` | Dashboard |
-| Users | `/admin/users` | User list, user detail |
-| Boards | `/admin/boards` | Boards, Cards, Columns, Labels, Checklists, Card links |
-| Moderation | `/admin/moderation` | Comments, Attachments |
-| Audit & activity | `/admin/audit` | Audit trail, Command log, Activity |
-| Communications | `/admin/communications` | Announcements composer, announcement history, Public shares |
-| Access & security | `/admin/access` | Sessions, API tokens, Masters (owner only) |
-| Settings | `/admin/settings` | General (Operations), Email, OAuth, Security, Traffic, Observability, Demo |
+| Overview | `/app/admin` | Dashboard |
+| Users | `/app/admin/users` | User list, user detail |
+| Boards | `/app/admin/boards` | Boards, Cards, Columns, Labels, Checklists, Card links |
+| Moderation | `/app/admin/moderation` | Comments, Attachments |
+| Audit & activity | `/app/admin/audit` | Audit trail, Command log, Activity |
+| Communications | `/app/admin/communications` | Announcements composer, announcement history, Public shares |
+| Access & security | `/app/admin/access` | Sessions, API tokens, Masters (owner only) |
+| Settings | `/app/admin/settings` | General (Operations), Email, OAuth, Security, Traffic, Observability, Demo |
 
 These eight hubs are the whole panel. There is deliberately no Agents hub:
-`/admin` does not manage agent runs, approvals or policy. Those surfaces are
-the global `/agents` page, the board-scoped Agent Control and Board Settings →
+`/app/admin` does not manage agent runs, approvals or policy. Those surfaces are
+the global `/app/agents` page, the board-scoped Agent Control and Board Settings →
 Agents & automation; see [Admin panel](/docs/admin/#agent-control-is-not-part-of-the-admin-panel).
 
 Detail routes keep their own pages:
 
-- `/admin/users/:userId`
-- `/admin/boards/:boardId` and `/admin/boards/:boardId/content`
-- `/admin/boards/:boardId/workflow`
-- `/admin/cards/:cardId`
+- `/app/admin/users/:userId`
+- `/app/admin/boards/:boardId` and `/app/admin/boards/:boardId/content`
+- `/app/admin/boards/:boardId/workflow`
+- `/app/admin/cards/:cardId`
 
 ## Legacy links and redirects
 
@@ -48,28 +48,28 @@ parameters and adds the hub tab.
 
 | Old URL | New URL |
 | --- | --- |
-| `/admin/activity` | `/admin/audit?tab=activity` |
-| `/admin/commands`, `/admin/log` | `/admin/audit?tab=commands` |
-| `/admin/cards` | `/admin/boards?tab=cards` |
-| `/admin/columns` | `/admin/boards?tab=columns` |
-| `/admin/labels` | `/admin/boards?tab=labels` |
-| `/admin/checklists` | `/admin/boards?tab=checklists` |
-| `/admin/cardLinks` | `/admin/boards?tab=links` |
-| `/admin/comments` | `/admin/moderation?tab=comments` |
-| `/admin/attachments` | `/admin/moderation?tab=attachments` |
-| `/admin/sessions` | `/admin/access?tab=sessions` |
-| `/admin/tokens` | `/admin/access?tab=tokens` |
-| `/admin/masters` | `/admin/access?tab=masters` |
-| `/admin/comms` | `/admin/communications?tab=announcements` |
-| `/admin/announcements` | `/admin/communications?tab=history` |
-| `/admin/shares` | `/admin/communications?tab=shares` |
-| `/admin/ops` | `/admin/settings?tab=general` |
-| `/admin/email` | `/admin/settings?tab=email` |
-| `/admin/oauth` | `/admin/settings?tab=oauth` |
-| `/admin/security` | `/admin/settings?tab=security` |
-| `/admin/traffic` | `/admin/settings?tab=traffic` |
-| `/admin/observability` | `/admin/settings?tab=observability` |
-| `/admin/demo` | `/admin/settings?tab=demo` |
+| `/app/admin/activity` | `/app/admin/audit?tab=activity` |
+| `/app/admin/commands`, `/app/admin/log` | `/app/admin/audit?tab=commands` |
+| `/app/admin/cards` | `/app/admin/boards?tab=cards` |
+| `/app/admin/columns` | `/app/admin/boards?tab=columns` |
+| `/app/admin/labels` | `/app/admin/boards?tab=labels` |
+| `/app/admin/checklists` | `/app/admin/boards?tab=checklists` |
+| `/app/admin/cardLinks` | `/app/admin/boards?tab=links` |
+| `/app/admin/comments` | `/app/admin/moderation?tab=comments` |
+| `/app/admin/attachments` | `/app/admin/moderation?tab=attachments` |
+| `/app/admin/sessions` | `/app/admin/access?tab=sessions` |
+| `/app/admin/tokens` | `/app/admin/access?tab=tokens` |
+| `/app/admin/masters` | `/app/admin/access?tab=masters` |
+| `/app/admin/comms` | `/app/admin/communications?tab=announcements` |
+| `/app/admin/announcements` | `/app/admin/communications?tab=history` |
+| `/app/admin/shares` | `/app/admin/communications?tab=shares` |
+| `/app/admin/ops` | `/app/admin/settings?tab=general` |
+| `/app/admin/email` | `/app/admin/settings?tab=email` |
+| `/app/admin/oauth` | `/app/admin/settings?tab=oauth` |
+| `/app/admin/security` | `/app/admin/settings?tab=security` |
+| `/app/admin/traffic` | `/app/admin/settings?tab=traffic` |
+| `/app/admin/observability` | `/app/admin/settings?tab=observability` |
+| `/app/admin/demo` | `/app/admin/settings?tab=demo` |
 
 ## Sign-in
 
@@ -119,7 +119,7 @@ screen or to phone touch targets.
   back to the boards app.
 - **Recent**: the last five panel routes.
 - **Entities**: users, boards, cards, comments, files and labels from
-  `GET /admin/search?q=`, preserving the existing result test ids.
+  `GET /api/v1/admin/search?q=`, preserving the existing result test ids.
 
 The input uses `role="combobox"`, `aria-activedescendant` and a
 `role="listbox"` result list. `↑`/`↓` move the active row, `Enter` opens it,

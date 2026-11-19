@@ -137,7 +137,6 @@ reason, and a direct API call gets the same `409 workflow` answer.
   and wake up if undo restores the column with the same id.
 - A new column is not connected automatically; add its edges in the editor.
 - Board export/import carries the workflow and remaps column ids; a transition
-  whose column disappeared is dropped. Version 1 files (without a workflow)
-  still import; a new export is version 2 and needs a client that understands
-  it.
+  whose column disappeared is dropped. Version 1 and 2 files still import.
+  New exports use `schemaVersion: 3`, which can also carry the board’s agent policy.
 - Public share links show the rules read-only and never accept a move.

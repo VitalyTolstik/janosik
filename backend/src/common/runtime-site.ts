@@ -64,7 +64,9 @@ export function prepareRuntimeSite(
         if (entry.isDirectory()) rewrite(file);
         else if (
           entry.isFile() &&
-          /(?:\.html|\.xml|^robots\.txt)$/i.test(entry.name)
+          /(?:\.html|\.xml|^(?:robots\.txt|llms\.txt|pricing\.md))$/i.test(
+            entry.name,
+          )
         ) {
           const source = fs.readFileSync(file, "utf8");
           if (containsBuildOrigin(source)) {

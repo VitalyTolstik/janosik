@@ -236,9 +236,11 @@ npm run dev                             # UI :5173 (/api проксируетс�
 
 - **Dev UI всегда в server-режиме** (`isApiEnabled()` = true вне `MODE=test`):
   показывает **экран логина**, «демо-доска без входа» недоступна. Local-only
-  (без API) живёт только в unit-тестах. Регистрация открыта по умолчанию
-  (`ALLOW_REGISTRATION=true`) — аккаунт заводится прямо в UI.
-- **Мастер (`/admin`)** — отдельный от пользователя аккаунт, только через CLI
+  (без API) живёт только в unit-тестах. Без SMTP и bootstrap создайте первого
+  пользователя через **Пользователи → Создать пользователя** в панели мастера.
+  Откройте его карточку и подтвердите email для адреса, к которому у вас есть доступ.
+- **Мастер** (`http://localhost:5173/admin` в dev, `/app/admin` в образе) —
+  отдельный от пользователя аккаунт, первый создаётся через CLI
   (первый становится `OWNER`); без TTY пароль берётся из `ADMIN_PASSWORD`:
   `ADMIN_PASSWORD='…' npm run admin:create -w backend -- --email me@example.com`.
 - **Сайт (Astro + Starlight)** — отдельный dev-сервер, порт 4321. В dev
@@ -248,11 +250,11 @@ npm run dev                             # UI :5173 (/api проксируетс�
   приложение → сайт (меню Help → Documentation задаёт `VITE_SITE_URL` в UI):
   `PUBLIC_APP_URL=http://localhost:5173 npm run dev:site` и
   `VITE_SITE_URL=http://localhost:4321/ npm run dev`.
-- **Email выключен по умолчанию** (log-mode: коды пишутся в лог сервера,
-  регистрация само-верифицируется — ничего не отправляется). Песочница Mailpit:
+- **Email выключен по умолчанию.** Для самостоятельной регистрации
+  настройте SMTP. Песочница Mailpit:
   `docker run -d --name janosik-mailpit --restart unless-stopped -p 1025:1025 -p 8025:8025 axllent/mailpit`
   (SMTP `localhost:1025`, веб-ящик <http://localhost:8025>); включается в
-  `/admin` → Email service (пресет «Mailpit (sandbox)»).
+  **Настройки → Почта** (пресет «Mailpit (sandbox)»).
 
 ### WSL: фоновые процессы (важно для агентов)
 
@@ -592,13 +594,13 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   сущность с ролью `AdminRole` (`OWNER` управляет мастерами из панели,
   `OPERATOR` — нет). Вход мастера — `/api/v1/admin/auth/*` со своими
   cookie (`admin_refresh_token`, `Path=/api/v1/admin/auth`) и JWT-audience
-  `janosik-admin`; юзер-токен в `/admin` и мастер-токен в юзер-API
+  `janosik-admin`; юзер-токен в мастер-API и мастер-токен в юзер-API
   отклоняются на уровне стратегий. Пароли argon2id, lockout 5/15 мин,
   каждое действие — в `AdminAuditLog`. Создание мастеров — только CLI:
   `npm run admin:create -w backend -- --email x [--display-name y] [--owner]`
   (пароль — скрытый prompt или `ADMIN_PASSWORD`), `admin:passwd`,
   `admin:list`; публичного HTTP-пути создания мастера нет.
-  Панель `/admin` в UI — ленивый чанк, свой `AdminApiClient`/`AdminAuthProvider`;
+  Панель `/app/admin` в образе — ленивый чанк, свой `AdminApiClient`/`AdminAuthProvider`;
   таблицы отдают контент без `passwordHash`/`tokenHash`/сырых refresh-токенов.
   Модерация: блок юзера (`disabledAt` — вход/refresh 403, access-токены
   умирают сразу), ревок сессий/API-токенов (в т.ч. по одной сессии),
@@ -616,7 +618,7 @@ npm run prisma:deploy -w backend   # накатить миграции на dev-
   Таблицы живут в собственном скролл-вьюпорте (`Table` maxHeight от
   `100vh`) со sticky-шапкой: горизонтальный скроллбар виден в панели,
   а не внизу длинной страницы. **Контент доски**
-  (`/admin/boards/:id/content`) создаётся командами через командный лог
+  (`/app/admin/boards/:id/content`) создаётся командами через командный лог
   от имени владельца (`POST /admin/boards/:id/commands`, actor = первый
   ADMIN, аудит `board.command`) — прямых записей в таблицы контента нет.
   Любая секретная строка (пароль, токен) в ответах и логах не появляется.

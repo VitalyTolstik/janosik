@@ -5,7 +5,7 @@ description: Boards and the board content editor, cards and card detail, and the
 
 :::note
 Boards, cards, columns, labels, checklists and card links are tabs of the
-**Boards** hub (`/admin/boards?tab=…`). Comments and attachments live in
+**Boards** hub (`/app/admin/boards?tab=…`). Comments and attachments live in
 **Moderation**, and sessions, tokens and public shares live in **Access &
 security** and **Communications**. Every old URL redirects. See
 [Admin redesign](../redesign/).
@@ -17,7 +17,7 @@ and public share browsers that sit under security.
 
 ## Boards
 
-`/admin/boards` lists every board. The subtitle is `{total} boards`.
+`/app/admin/boards` lists every board. The subtitle is `{total} boards`.
 
 | Column | Value |
 | --- | --- |
@@ -61,7 +61,7 @@ keep their stored `columnId` on the deleted column; restoring the column brings
 those cards back. Archived cards are different: `DELETE_COLUMN` repoints them
 to the board's internal soft-deleted `orphan:<boardId>` column so the original
 column can purge. Those archived orphan cards remain visible and
-field-editable on `/admin/cards/:id`, but moving them is rejected because
+field-editable on `/app/admin/cards/:id`, but moving them is rejected because
 archived cards cannot be moved.
 
 ### Workflow
@@ -69,8 +69,8 @@ archived cards cannot be moved.
 The board detail page has a `Workflow` panel with the current state (enabled or
 disabled, number of transitions) and an `Open workflow editor` button. The
 editor is the same one board admins use; here it runs at
-`/admin/boards/:id/workflow` and saves through `POST
-/admin/boards/:id/commands` as the board owner. The command log, versions and
+`/app/admin/boards/:id/workflow` and saves through `POST
+/api/v1/admin/boards/:id/commands` as the board owner. The command log, versions and
 live board updates stay intact, and the master's action appears in
 `AdminAuditLog` as a `board.command` entry.
 
@@ -81,7 +81,7 @@ active transition when control is enabled. The page shows the
 
 ## Board detail
 
-`/admin/boards/:id` shows the board meta, live counters, members, columns and
+`/app/admin/boards/:id` shows the board meta, live counters, members, columns and
 labels.
 
 - The header carries the title, the owner email, an `Edit content` button and
@@ -127,21 +127,21 @@ filtered by `labelId`. Both links keep the board detail as their return path.
 
 ## Board content editor
 
-`/admin/boards/:id/content` edits columns and cards without leaving the panel.
+`/app/admin/boards/:id/content` edits columns and cards without leaving the panel.
 
 - The left panel lists columns with a card count. Each column has rename and
   delete controls; a composer at the bottom adds a column.
 - The right panel lists the cards of the selected column. Each card has rename,
   move and archive controls; a composer at the bottom adds a card. The move
   dialog appends the card to another column and omits the current column from
-  the destination list. The card title links to `/admin/cards/:id`, and the
+  the destination list. The card title links to `/app/admin/cards/:id`, and the
   card detail's back control returns to this editor.
 - A manual refresh button is in the header.
 - The page polls the board aggregate every 2 seconds while it is visible and
   focused, so you can monitor a running demo on this page.
 
 Each edit is submitted as a board command through
-`POST /admin/boards/:id/commands` on behalf of the board owner, the board's
+`POST /api/v1/admin/boards/:id/commands` on behalf of the board owner, the board's
 first accepted `ADMIN`. The server re-validates each action with the shared
 strict validator, so a rejected action (for example, due to a WIP or size limit)
 shows a notification and leaves the board unchanged. The move dialog re-checks
@@ -164,12 +164,12 @@ the master who issued the command (`masterId`, `masterEmail`) and the shared
 A column delete is a soft delete: active cards disappear for members and keep
 their `columnId` until the column is restored or purged. Archived cards are
 repointed to the internal soft-deleted `orphan:<boardId>` column. They remain
-visible and field-editable on `/admin/cards/:id`; a move is rejected with the
+visible and field-editable on `/app/admin/cards/:id`; a move is rejected with the
 archived-card `409`. The confirm dialog states the soft-delete behavior.
 
 ## Cards
 
-`/admin/cards` lists every card on the platform. The subtitle is `{total} cards
+`/app/admin/cards` lists every card on the platform. The subtitle is `{total} cards
 across every board`.
 
 | Column | Value |
@@ -191,7 +191,7 @@ Row actions: `Archive` (confirmed), `Restore` (when archived) and `Delete`
 
 ## Card detail
 
-`/admin/cards/:id` shows the card and its related records. The header carries the title, the
+`/app/admin/cards/:id` shows the card and its related records. The header carries the title, the
 subtitle `board · column`, and an actions menu with archive, restore and
 delete. A status badge, a priority badge and a due-date chip are shown.
 
@@ -311,7 +311,7 @@ instead of disappearing.
 
 ## Columns
 
-`/admin/columns` lists every kanban column. The subtitle is `Every kanban
+`/app/admin/columns` lists every kanban column. The subtitle is `Every kanban
 column on the platform`.
 
 | Column | Value |
@@ -328,7 +328,7 @@ The page has a search box, status tabs, pagination and bulk selection.
 
 ## Labels
 
-`/admin/labels` lists the board label palette. The subtitle is `Board label
+`/app/admin/labels` lists the board label palette. The subtitle is `Board label
 palette`.
 
 | Column | Value |
@@ -344,7 +344,7 @@ The page has a search box, status tabs, pagination and bulk selection.
 
 ## Checklists
 
-`/admin/checklists` lists checklists across all cards. The subtitle is
+`/app/admin/checklists` lists checklists across all cards. The subtitle is
 `Checklists across all cards`.
 
 | Column | Value |
@@ -359,7 +359,7 @@ The page has a search box, status tabs, pagination and bulk selection.
 
 ## Card links
 
-`/admin/cardLinks` lists the directional links between cards. The subtitle is
+`/app/admin/cardLinks` lists the directional links between cards. The subtitle is
 `Directional blocks / relates to / duplicates`.
 
 | Column | Value |
@@ -375,7 +375,7 @@ The page has a search box, status tabs, pagination and bulk selection.
 
 ## Comments
 
-`/admin/comments` moderates comments across every board. The subtitle is
+`/app/admin/comments` moderates comments across every board. The subtitle is
 `{total} comments across every board`.
 
 | Column | Value |
@@ -391,7 +391,7 @@ action `Delete` soft-deletes the comment, so it becomes invisible for members.
 
 ## Attachments
 
-`/admin/attachments` lists files uploaded to cards. The subtitle is `Files
+`/app/admin/attachments` lists files uploaded to cards. The subtitle is `Files
 uploaded to cards`.
 
 | Column | Value |
@@ -418,7 +418,7 @@ Row actions:
 
 ## Sessions
 
-`/admin/sessions` lists active refresh sessions across all users. The subtitle
+`/app/admin/sessions` lists active refresh sessions across all users. The subtitle
 is `{total} active sessions`. Only sessions that are not revoked and not
 expired are listed.
 
@@ -436,7 +436,7 @@ The page has a search box, period tabs and pagination. The row action
 
 ## API tokens
 
-`/admin/tokens` lists personal API tokens across all users. The subtitle is
+`/app/admin/tokens` lists personal API tokens across all users. The subtitle is
 `{total} personal tokens`.
 
 | Column | Value |
@@ -454,7 +454,7 @@ token immediately.
 
 ## Public shares
 
-`/admin/shares` lists read-only board links created for any board. The subtitle
+`/app/admin/shares` lists read-only board links created for any board. The subtitle
 is `Read-only board links created for any board,
 inspect and revoke.`
 

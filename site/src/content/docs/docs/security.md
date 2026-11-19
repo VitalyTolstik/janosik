@@ -185,7 +185,7 @@ an audit row, visible on the panel's audit page.
 
 Two-factor authentication exists only on the master-account login: the admin
 login body accepts an optional `totpCode`. The master panel's security page at
-`/admin/security` reports whether TOTP is enabled, the configured IP allowlist,
+`/app/admin/settings?tab=security` reports whether TOTP is enabled, the configured IP allowlist,
 and a list of suspicious-activity alerts. Enabling or disabling TOTP and
 changing the allowlist are recorded in the audit trail. Replacing an active
 factor requires the current code or the account password; the new secret is

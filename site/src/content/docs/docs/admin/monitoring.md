@@ -4,9 +4,9 @@ description: The dashboard, the activity feed, the command log and the audit tra
 ---
 
 :::note
-The dashboard is the **Overview** hub (`/admin`). The activity feed, command
-log and audit trail are tabs of **Audit & activity** (`/admin/audit?tab=…`).
-The old `/admin/activity` and `/admin/commands` URLs redirect. See
+The dashboard is the **Overview** hub (`/app/admin`). The activity feed, command
+log and audit trail are tabs of **Audit & activity** (`/app/admin/audit?tab=…`).
+The old `/app/admin/activity` and `/app/admin/commands` URLs redirect. See
 [Admin redesign](../redesign/) for the full map.
 :::
 
@@ -16,8 +16,8 @@ the dashboard, the activity feed, the command log and the audit trail.
 
 ## Dashboard
 
-The dashboard is the panel home at `/admin`. It sends two requests:
-`GET /admin/metrics` and a small `GET /admin/audit?limit=8`. The page has three
+The dashboard is the panel home at `/app/admin`. It sends two requests:
+`GET /api/v1/admin/metrics` and a small `GET /api/v1/admin/audit?limit=8`. The page has three
 parts.
 
 ### Stat cards
@@ -52,7 +52,7 @@ rows (action, master email, time), with a link to the full audit trail.
 
 ## Activity feed
 
-`/admin/activity` lists membership changes and comment events across boards.
+`/app/admin/activity` lists membership changes and comment events across boards.
 The subtitle is `Membership changes and comment events`.
 
 | Column | Value |
@@ -69,7 +69,7 @@ and pagination. It has no row actions.
 
 ## Command log
 
-`/admin/commands` lists every board action across every board, newest first.
+`/app/admin/commands` lists every board action across every board, newest first.
 The subtitle is `Every board action, newest first`. Rows are ordered by
 creation time and then by sequence number.
 
@@ -84,15 +84,15 @@ creation time and then by sequence number.
 | When | creation time |
 
 The page has a search box, period tabs and pagination. It has no row actions.
-The `Audit` link opens `/admin/audit?tab=audit&commandId=<command id>`, which filters
+The `Audit` link opens `/app/admin/audit?tab=audit&commandId=<command id>`, which filters
 the audit trail to the exact row recorded for that command. Only commands
 issued through the master panel are correlated; normal user commands and
 historical rows keep a dash.
-The legacy path `/admin/log` redirects to `/admin/commands`.
+The legacy path `/app/admin/log` redirects to `/app/admin/commands`.
 
 ## Audit trail
 
-`/admin/audit` lists what masters did in the panel. The subtitle is
+`/app/admin/audit` lists what masters did in the panel. The subtitle is
 `{total} admin actions`.
 
 | Column | Value |
@@ -110,7 +110,7 @@ this exact view. `board.command` details carry `commandId`, `masterId` and
 `masterEmail` alongside the owner-facing `actorEmail`, so the real master is
 never hidden behind the owner attribution. The filter is the command id, not
 the audit row id, and it also requires `action=board.command`. Card field edits
-from `/admin/cards/:id` use the same `board.command` row: `UPDATE_CARD`,
+from `/app/admin/cards/:id` use the same `board.command` row: `UPDATE_CARD`,
 `SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`, `SET_CARD_COVER`
 and `SET_CARD_LABEL` each carry their own `commandId` and master attribution.
 Checklist and link edits are correlated the same way: `ADD_CHECKLIST`,
@@ -168,7 +168,7 @@ its entity supports.
   rather than one keystroke. The URL carries filters only — never a token,
   password or one-time code.
 - A row click carries `returnTo` with the exact filtered list URL, and the
-  detail page's back control returns there. Only internal `/admin` paths are
+  detail page's back control returns there. Only internal master-panel paths are
   accepted, so a crafted query cannot redirect off the panel.
 - A loading spinner, an error state with retry, and an empty state are shown
   per page.
@@ -183,11 +183,11 @@ of a name search:
 | From | Link | Meaning |
 | --- | --- | --- |
 | Board counter Cards / Comments / Files / Commands / Events | `?boardId=<id>` on the matching hub tab | rows of that board only |
-| Column title or card count | `/admin/boards?tab=cards&columnId=<id>` | cards in that column |
-| Label chip or card count | `/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
-| Search label result | `/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
-| Card title in the content editor | `/admin/cards/<id>` | the card detail |
-| Command row `Audit` link | `/admin/audit?tab=audit&commandId=<command id>` | the exact audit row for that master-issued command |
+| Column title or card count | `/app/admin/boards?tab=cards&columnId=<id>` | cards in that column |
+| Label chip or card count | `/app/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
+| Search label result | `/app/admin/boards?tab=cards&labelId=<id>` | cards carrying that label |
+| Card title in the content editor | `/app/admin/cards/<id>` | the card detail |
+| Command row `Audit` link | `/app/admin/audit?tab=audit&commandId=<command id>` | the exact audit row for that master-issued command |
 
 `boardId`, `columnId`, `labelId`, `cardId` and `commandId` are validated ids,
 not text: a malformed value is rejected with `400`, and same-name boards or

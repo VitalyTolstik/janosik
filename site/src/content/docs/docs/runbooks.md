@@ -199,7 +199,7 @@ documents the same shape.
 
 ### Admin observability page
 
-The master panel has an observability page at `/admin/observability`. It loads
+The master panel has an observability page at `/app/admin/settings?tab=observability`. It loads
 a single read-only snapshot:
 
 | Field | Value |

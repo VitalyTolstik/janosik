@@ -4,7 +4,7 @@ description: The email service, OAuth login, security, traffic, the demo swarm, 
 ---
 
 :::note
-These pages are now tabs of the **Settings** hub (`/admin/settings?tab=…`).
+These pages are now tabs of the **Settings** hub (`/app/admin/settings?tab=…`).
 Communications and announcements moved to the **Communications** hub, and
 public shares are its third tab. Old URLs redirect. See
 [Admin redesign](../redesign/).
@@ -16,7 +16,7 @@ sees the state read-only.
 
 ## Email service
 
-`/admin/email` configures the outgoing mail transport. The subtitle is
+`/app/admin/settings?tab=email` configures the outgoing mail transport. The subtitle is
 `Outgoing mail, pick a provider, enter credentials, no code changes needed`.
 Saving Email settings updates the transport in the process handling the
 request. Other API and queue-worker processes apply the saved enabled
@@ -85,7 +85,7 @@ web inbox, which is available only on the same machine.
 
 ## OAuth login
 
-`/admin/oauth` configures sign-in through external providers. The subtitle is
+`/app/admin/settings?tab=oauth` configures sign-in through external providers. The subtitle is
 `Sign-in through external providers (Google, Yandex)`. The client secret never
 leaves the backend; a blank field keeps the stored one.
 
@@ -110,7 +110,7 @@ screen the moment it succeeds: the button appears when the provider is enabled.
 
 ## Security
 
-`/admin/security` manages the signed-in master’s security settings. The scope note
+`/app/admin/settings?tab=security` manages the signed-in master’s security settings. The scope note
 reads: these settings apply only to your own master account, and regular users
 are not affected.
 
@@ -174,7 +174,7 @@ in the audit log with the author and target master.
 
 ## Traffic and rate limit
 
-`/admin/traffic` shows the live API request rate and the global rate limit.
+`/app/admin/settings?tab=traffic` shows the live API request rate and the global rate limit.
 The subtitle is `Live API request rate and the global rate limit`.
 
 Three values are shown and polled once a second while the page is visible:
@@ -198,7 +198,7 @@ Only the owner can edit the limit. Operators have read access.
 
 ## Demo swarm
 
-`/admin/demo` starts a swarm of AI agents on a throwaway board, watches them
+`/app/admin/settings?tab=demo` starts a swarm of AI agents on a throwaway board, watches them
 work, then cleans up. The subtitle is `Seed a demo board of AI agents, watch
 them work, then clean up`.
 
@@ -243,7 +243,7 @@ are display conventions.
 
 ## Operations
 
-`/admin/ops` is the runtime control panel. The subtitle is `Flags,
+`/app/admin/settings?tab=general` is the runtime control panel. The subtitle is `Flags,
 maintenance, rate limits and data retention`. All controls are owner-only.
 The live global traffic limit and SMTP transport are process-local. Their
 settings apply immediately to the process that handled the save. Restart the
@@ -275,7 +275,7 @@ the sign-in stay open, so an owner can switch it off.
 
 The per-user limit is a number stepper from 1 to 100,000 requests per minute.
 An empty value disables it, leaving only the global IP limit. The limit applies
-to every account equally, each with its own counter. The `/admin`, `/auth` and
+to every account equally, each with its own counter. The API routes under `/admin`, `/auth` and
 `/health` paths are exempt.
 
 ### Soft-deleted data and retention
@@ -365,7 +365,7 @@ When the queue dashboard is enabled, an `Open queue dashboard` button opens
 
 ## Communications
 
-`/admin/comms` composes broadcasts and edits the mail templates. The subtitle
+`/app/admin/communications?tab=announcements` composes broadcasts and edits the mail templates. The subtitle
 is `Announcements, mail and templates`. Writes are owner-only.
 
 ### Announcements
@@ -437,7 +437,7 @@ built-in letter is shown, so the editor is never empty.
 
 ### Announcement history
 
-The full announcement history is its own page at `/admin/announcements`. The
+The full announcement history is at `/app/admin/communications?tab=history`. The
 subtitle is `{total} broadcasts, the full announcement history`.
 
 | Column | Value |
@@ -466,7 +466,7 @@ every translation, not just the source text. Row actions:
 
 ## Observability
 
-`/admin/observability` shows runtime, database and job state. The subtitle is
+`/app/admin/settings?tab=observability` shows runtime, database and job state. The subtitle is
 `Runtime, database and jobs`.
 
 - The runtime panel shows Version, Environment, Uptime, Started, Database size

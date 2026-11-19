@@ -215,39 +215,40 @@ database and Redis ports stay internal.
 
 ## First run
 
-Configure SMTP first, or create the master using the CLI in step 3 and set up
-email in its panel before creating a password account.
-
-1. **Create your account.** Open `PUBLIC_ORIGIN/app/` and click
-   **Create account**. The first account is a normal user. There is no
-   auto-admin. On a fresh install without SMTP, the local installer sets
-   `ALLOW_BOOTSTRAP_USER=true`: it allows exactly one account, marks it
-   verified, and is inert once any user exists. Set it back to `false` after
-   the first account, or configure SMTP first and leave it off.
-2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and run
-   `docker compose up -d`. You can also toggle **Feature flags → Open
-   registration** in the master panel later. The sign-in screen then hides the
-   register form. A flag saved in the panel takes precedence over `.env`;
-   check `/api/v1/auth/config` for `allowRegistration: false`.
-3. **Create a master (platform admin).** The panel at `/admin` belongs to a
-   master account, which lives outside the user table and must be created
-   through the CLI for the first administrator. Owners can create additional
-   master accounts from the panel:
+1. **Create a master account.** The CLI creates a separate account for the
+   master panel. The first master becomes `OWNER`.
 
    ```bash
    docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-   # hidden password prompt (typed twice); the first master becomes OWNER
+   # Enter the password twice at the hidden prompt.
    docker compose exec app node /app/backend/scripts/admin-cli.cjs list
    ```
 
-   Sign in to the master panel at `PUBLIC_ORIGIN/app/admin`.
-
-   Reset an existing master’s password (this also revokes its sessions and clears any
-   lockout):
+   Sign in at `PUBLIC_ORIGIN/app/admin`. To reset a master's password and revoke
+   its sessions, run:
 
    ```bash
    docker compose exec app node /app/backend/scripts/admin-cli.cjs passwd --email me@example.com
    ```
+
+2. **Create your board account.** With the default Compose settings and no
+   SMTP, self-service password registration is unavailable. In the master
+   panel, choose **Users → Create user**, then open the user's details and
+   choose **Verify email** for an address you control. Sign in to
+   `PUBLIC_ORIGIN/app/` with the user's password.
+
+   - For self-service signup, configure SMTP under **Settings → Email**
+     (`/app/admin/settings?tab=email`) and keep registration open. Then use
+     **Create account** at `PUBLIC_ORIGIN/app/` and verify your email.
+   - The local installer enables `ALLOW_BOOTSTRAP_USER=true` with open
+     registration. On an empty database, **Create account** creates and
+     verifies one board account without SMTP. Set `ALLOW_BOOTSTRAP_USER=false`
+     in `.env` after that account is created.
+
+3. **Close registration for a private instance.** Set
+   `ALLOW_REGISTRATION=false` in `.env` and run `docker compose up -d`.
+   A value saved under **Settings → General → Feature flags → Open registration**
+   takes precedence. Check `/api/v1/auth/config` for `allowRegistration: false`.
 
 The CLI accepts three commands: `create`, `passwd` and `list`. Passwords are 8
 to 100 characters and are never passed on the command line. Interactive runs
@@ -305,7 +306,7 @@ compose stack fills the ones it needs from `.env`.
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id. `0` disables it. |
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
 | `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. Each process stores up to 64 board aggregates by count and evicts the least recently used at capacity. Memory depends on board size. A changed board `seq` invalidates the entry. `0` disables storage. Up to 64 distinct rebuilds can run concurrently per process. A new rebuild at capacity returns `503`. |
-| `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
+| `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/api/v1/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |
@@ -318,7 +319,7 @@ compose stack fills the ones it needs from `.env`.
 | `SMTP_PASS` | empty | SMTP password. |
 | `SMTP_FROM` | `Janosik <no-reply@janosik.local>` | From header for outgoing mail. |
 | `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue and per-process counters. |
-| `QUEUES_DASHBOARD` | `false` | Mount the Bull Board queue dashboard at `/admin/queues`. Owner only. |
+| `QUEUES_DASHBOARD` | `false` | Mount the Bull Board queue dashboard at `/api/v1/admin/queues`. Owner only. |
 | `SETTINGS_SECRET` | empty | Encrypts credentials saved from the master panel. Derived from `JWT_SECRET` when unset. |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | Public base URL of the UI. Builds OAuth callback URLs. Compose defaults it to `http://localhost:3000`. |
 
@@ -394,10 +395,13 @@ npm run start -w backend
 npm run dev
 ```
 
-The dev UI is **always in server mode**: `npm run dev` shows a **sign-in screen**
-and needs the API above — there is no "no-login demo board" dev run. Register at
-`http://localhost:5173` (registration is open by default), create a master with
-`npm run admin:create -w backend -- --email me@example.com`, and open `/admin`.
+With the default `backend/.env.example` configuration (no SMTP or bootstrap),
+self-service password registration is unavailable. From the repository root
+run `npm run admin:create -w backend -- --email me@example.com` to create the
+first master. Sign in at `http://localhost:5173/admin` (the Vite dev URL), go to
+**Users → Create user**, and open the user's details to **Verify email** for
+an address you control. Then sign in with the board account at
+`http://localhost:5173/`.
 
 The **marketing site** is a separate dev server (`npm run dev:site`, port 4321).
 In dev the app is not served under `/app/` on the site — that path belongs to the

@@ -235,21 +235,16 @@ export function BoardDetailPage() {
           subtitle={board.ownerEmail ?? undefined}
           actions={
             <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  window.open(
-                    withReturnTo(
-                      routes.adminBoardContent(board.id),
-                      listReturnTo,
-                    ),
-                    "_self",
-                  )
-                }
-              >
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                {t("admin.boards.action.content")}
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  to={withReturnTo(
+                    routes.adminBoardContent(board.id),
+                    listReturnTo,
+                  )}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                  {t("admin.boards.action.content")}
+                </Link>
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

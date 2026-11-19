@@ -1,5 +1,6 @@
 import { test, expect } from "@/fixtures/admin.js";
 import type { BoardFixture } from "@/fixtures/board.js";
+import { appLink, boardLink, signInAt } from "@/helpers/navigation.js";
 import { siteUrl } from "@/helpers/urls.js";
 import {
   adminPath,
@@ -119,6 +120,34 @@ test("B6: board detail shows meta, counters, members, columns and labels", async
       .getByTestId("admin-board-detail-members")
       .getByRole("link", { name: board.email, exact: true }),
   ).toBeVisible();
+});
+
+test("admin content and boards navigation keep the app base", async ({
+  page,
+  board,
+}) => {
+  const agents = appLink("agents");
+  await signInAt(page, board.user, agents);
+  await expect(page).toHaveURL(agents);
+  await expect(page.getByTestId("agents-page")).toBeVisible();
+
+  await loginAsMaster(page, ownerCredentials());
+  const detail = adminPath(`boards/${board.id}`);
+  const content = new URL(`${detail}/content`);
+  content.searchParams.set("returnTo", `/admin/boards/${board.id}`);
+  await page.goto(detail);
+  const editContent = page.getByRole("link", { name: "Edit content" });
+  await expect(editContent).toHaveAttribute(
+    "href",
+    content.pathname + content.search,
+  );
+  await editContent.click();
+  await expect(page).toHaveURL(content.href);
+  await expect(page.getByTestId("admin-new-column")).toBeVisible();
+
+  await page.getByTestId("admin-global-search").click();
+  await page.getByTestId("admin-command-action-boards").click();
+  await expect(page).toHaveURL(boardLink(board.id));
 });
 
 test("B7: adding a member with VIEWER role creates the row", async ({

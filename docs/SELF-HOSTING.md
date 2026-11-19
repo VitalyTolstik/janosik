@@ -183,39 +183,40 @@ database/Redis ports stay internal.
 
 ## 3. First run: account, registration, master panel
 
-Configure SMTP first, or create the master using the CLI in step 3 and set up
-email in its panel before creating a password account.
-
-1. **Create your account.** Open `PUBLIC_ORIGIN/app/`, click **Create account**.
-   The first account is a normal user — there is no auto-admin. On a fresh
-   install without SMTP the local installer sets `ALLOW_BOOTSTRAP_USER=true`:
-   it allows exactly one account, marks it verified, and is inert once any
-   user exists. Set it back to `false` after the first account (or configure
-   SMTP first and leave it off).
-2. **Close registration.** Set `ALLOW_REGISTRATION=false` in `.env` and
-   `docker compose up -d`. (Or toggle **Feature flags → Open registration** in
-   the panel later.) The sign-in screen then hides the register form. A flag
-   explicitly saved in the panel takes precedence over the `.env` default;
-   check `/api/v1/auth/config` to confirm `allowRegistration` is false.
-3. **Create a master (platform admin).** The panel at `/admin` belongs to a
-   *master* account, which is stored separately from regular users. Create the
-   first master through the CLI; owners can create additional accounts from the
-   panel:
+1. **Create a master account.** The CLI creates a separate account for the
+   master panel. The first master becomes `OWNER`.
 
    ```bash
    docker compose exec app node /app/backend/scripts/admin-cli.cjs create --email me@example.com
-   # Enter the password twice when prompted; the first master becomes OWNER
+   # Enter the password twice at the hidden prompt.
    docker compose exec app node /app/backend/scripts/admin-cli.cjs list
    ```
 
-   Sign in at `PUBLIC_ORIGIN/app/admin`.
-
-   Reset an existing master's password (this also revokes its sessions and
-   clears login lockouts):
+   Sign in at `PUBLIC_ORIGIN/app/admin`. To reset a master's password and revoke
+   its sessions, run:
 
    ```bash
    docker compose exec app node /app/backend/scripts/admin-cli.cjs passwd --email me@example.com
    ```
+
+2. **Create your board account.** With the default Compose settings and no
+   SMTP, self-service password registration is unavailable. In the master
+   panel, choose **Users → Create user**, then open the user's details and
+   choose **Verify email** for an address you control. Sign in to
+   `PUBLIC_ORIGIN/app/` with the user's password.
+
+   - For self-service signup, configure SMTP under **Settings → Email**
+     (`/app/admin/settings?tab=email`) and keep registration open. Then use
+     **Create account** at `PUBLIC_ORIGIN/app/` and verify your email.
+   - The local installer enables `ALLOW_BOOTSTRAP_USER=true` with open
+     registration. On an empty database, **Create account** creates and
+     verifies one board account without SMTP. Set `ALLOW_BOOTSTRAP_USER=false`
+     in `.env` after that account is created.
+
+3. **Close registration for a private instance.** Set
+   `ALLOW_REGISTRATION=false` in `.env` and run `docker compose up -d`.
+   A value saved under **Settings → General → Feature flags → Open registration**
+   takes precedence. Check `/api/v1/auth/config` for `allowRegistration: false`.
 
 ### Connect an MCP client
 
@@ -271,11 +272,11 @@ that matter most:
 | `SLOW_QUERY_MS` | `200` | Prisma queries at or above this duration are logged with the request id (`X-Request-Id`). `0` disables it. |
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
 | `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. Each process stores up to 64 board aggregates by count and evicts the least recently used at capacity. Memory depends on board size. A changed board `seq` invalidates the entry. `0` disables storage. Up to 64 distinct rebuilds can run concurrently per process. A new rebuild at capacity returns `503`. |
-| `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
+| `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/api/v1/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container; raise on a larger host. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |
-| `QUEUES_DASHBOARD` | `false` | Bull Board queue dashboard at `/admin/queues` (OWNER only). |
+| `QUEUES_DASHBOARD` | `false` | Bull Board queue dashboard at `/api/v1/admin/queues` (OWNER only). |
 | `SETTINGS_SECRET` | derived from `JWT_SECRET` | Encrypts SMTP credentials saved in the panel. |
 
 OAuth (Google / Yandex) is configured in the panel, not in `.env`.
