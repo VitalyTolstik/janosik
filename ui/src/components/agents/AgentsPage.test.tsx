@@ -435,6 +435,53 @@ describe("AgentsPage", () => {
     expect(screen.queryByTestId("agents-count-attention")).toBeNull();
   });
 
+  it("keeps archived boards out of the session list, counts and scope", async () => {
+    hoisted.listBoards.mockResolvedValue([
+      ...BOARDS,
+      {
+        id: "board-archived",
+        title: "Archived board",
+        archivedAt: Date.now(),
+        counters: { cards: 0, columns: 0 },
+        role: "ADMIN",
+      },
+    ]);
+    hoisted.listAgentSessions.mockImplementation((boardId: string) =>
+      Promise.resolve(
+        boardId === "board-archived"
+          ? [
+              session({
+                id: "archived-session",
+                boardId: "board-archived",
+                name: "Archived agent",
+              }),
+            ]
+          : boardId === "board-1"
+            ? [session()]
+            : [],
+      ),
+    );
+    renderPage("/agents?section=sessions");
+
+    expect(
+      await screen.findByTestId("agent-session-row-session-1"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-session-row-archived-session"),
+    ).toBeNull();
+    expect(hoisted.listAgentSessions).not.toHaveBeenCalledWith(
+      "board-archived",
+    );
+    expect(
+      await screen.findByTestId("agents-count-sessions"),
+    ).toHaveTextContent("1");
+
+    await userEvent.click(screen.getByTestId("agents-filter-board"));
+    expect(
+      screen.queryByTestId("agents-filter-board-option-board-archived"),
+    ).toBeNull();
+  });
+
   it("shows the runs count before the Runs tab is opened", async () => {
     hoisted.listRuns.mockImplementation((boardId: string) =>
       Promise.resolve(
@@ -1175,6 +1222,45 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("99+");
   });
 
+  it("loads the next approval page from the server cursor", async () => {
+    const first = overviewItem({
+      id: "approval-1",
+      summary: "First pending request",
+    });
+    const second = overviewItem({
+      id: "approval-2",
+      summary: "Second pending request",
+    });
+    hoisted.agentsOverview.mockImplementation((query: { cursor?: string }) => {
+      const items = query.cursor === undefined ? [first] : [second];
+      return Promise.resolve({
+        ...overviewResponse(items, {
+          boards: BOARDS,
+          pendingByBoard: { "board-1": 150 },
+          pendingTotal: 150,
+          totalApprovals: 150,
+          total: 2,
+        }),
+        nextCursor: query.cursor === undefined ? "cursor-2" : null,
+      });
+    });
+    renderPage("/agents?section=attention");
+
+    expect(
+      await screen.findByTestId("agents-approval-approval-1"),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      await screen.findByTestId("agents-approvals-load-more"),
+    );
+
+    expect(
+      await screen.findByTestId("agents-approval-approval-2"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId("agents-approvals-load-more")).toBeNull(),
+    );
+  });
+
   it("renders an unknown count as unknown and retries a network failure", async () => {
     hoisted.agentsOverview.mockRejectedValueOnce({ status: 0 });
     renderPage("/agents?section=attention");
@@ -1401,6 +1487,16 @@ describe("AgentsPage", () => {
               stale: true,
               lastHeartbeatAt: Date.now() - 600_000,
             }),
+            session({
+              id: "token-paused",
+              name: "Token-paused triage",
+              status: "idle",
+              paused: true,
+              pausedAt: null,
+              pauseScope: "token",
+              stale: true,
+              lastHeartbeatAt: Date.now() - 600_000,
+            }),
           ]
         : [],
     );
@@ -1417,13 +1513,17 @@ describe("AgentsPage", () => {
     ).toHaveTextContent("Paused");
     expect(
       within(live).getByTestId("agents-live-count-paused"),
-    ).toHaveTextContent("1 paused");
+    ).toHaveTextContent("2 paused");
     expect(
       within(live).getByTestId("agents-live-count-stale"),
-    ).toHaveTextContent("2 no heartbeat");
-    // The paused session is not a "needs a nudge" card; only the genuinely
-    // stale session is.
+    ).toHaveTextContent("1 no heartbeat");
+    // Effective pauses (session, board and token) have no expected heartbeat,
+    // so none of them is a "needs a nudge" card; only the stale live session
+    // without a pause is.
     expect(screen.queryByTestId("agents-stale-session-paused-1")).toBeNull();
+    expect(
+      screen.queryByTestId("agents-stale-session-token-paused"),
+    ).toBeNull();
     expect(
       screen.getByTestId("agents-stale-session-stale-1"),
     ).toBeInTheDocument();

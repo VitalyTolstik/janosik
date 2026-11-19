@@ -432,6 +432,273 @@ describe("agent control (TASK-166.14)", () => {
     expect(screen.queryByTestId("approval-reject")).toBeNull();
   });
 
+  it("explains an approved plan whose apply window has ended", async () => {
+    const row = approval({
+      status: "approved",
+      decidedBy: "user-2",
+      decidedAt: Date.now() - 10 * 60_000,
+      expiresAt: Date.now() - 1_000,
+    });
+    vi.spyOn(api, "listApprovals").mockImplementation((_boardId, query) =>
+      Promise.resolve(query?.status === "pending" ? [] : [row]),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId("approval-filter-decided"));
+    await screen.findByTestId("approval-queue");
+    await userEvent.click(screen.getByTestId(`approval-row-${row.id}`));
+
+    expect(await screen.findByTestId("approval-status")).toHaveAttribute(
+      "data-status",
+      "approved",
+    );
+    expect(
+      screen.getAllByText(/the apply window has ended/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
+    expect(screen.queryByTestId("approval-reject")).toBeNull();
+  });
+
+  it("reaches an old pending request behind 100 newer decided rows", async () => {
+    const pending = approval({
+      id: "approval-old-pending",
+      summary: "Old pending delete claim",
+    });
+    const decided = Array.from({ length: 100 }, (_, index) =>
+      approval({
+        id: `approval-decided-${index}`,
+        status: "rejected",
+        decidedBy: "user-2",
+        decidedAt: Date.now() - index * 1_000,
+        summary: `Rejected request ${index}`,
+      }),
+    );
+    vi.spyOn(api, "listApprovals").mockImplementation((_boardId, query) =>
+      Promise.resolve(query?.status === "pending" ? [pending] : decided),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(pending);
+
+    renderDialog();
+
+    const queue = await screen.findByTestId("approval-queue");
+    expect(within(queue).getByText("Old pending delete claim")).toBeVisible();
+    expect(
+      await screen.findByTestId("agent-approvals-count"),
+    ).toHaveTextContent("1");
+    expect(
+      screen.getByTestId("agent-control-header-pending"),
+    ).toHaveTextContent("1 waiting");
+  });
+
+  it("drops the pending count when a request TTL lapses without SSE", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const now = Date.now();
+      const row = approval({
+        expiresAt: now + 29_000,
+        createdAt: now - 60_000,
+      });
+      vi.spyOn(api, "listApprovals").mockImplementation((_boardId, query) =>
+        Promise.resolve(query?.status === "pending" ? [row] : [row]),
+      );
+      vi.spyOn(api, "getApproval").mockResolvedValue(row);
+
+      renderDialog();
+      await screen.findByTestId("approval-queue");
+      expect(screen.getByTestId("agent-approvals-count")).toHaveTextContent(
+        "1",
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+
+      await waitFor(() =>
+        expect(screen.queryByTestId("agent-approvals-count")).toBeNull(),
+      );
+      expect(screen.queryByTestId("agent-control-header-pending")).toBeNull();
+      expect(screen.queryByTestId("approval-queue")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes Board Live on heartbeat and token-pause SSE frames", async () => {
+    const list = vi
+      .spyOn(api, "listAgentSessions")
+      .mockResolvedValue([session()]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    await screen.findByTestId("agent-session-row-session-1");
+    const beforeHeartbeat = list.mock.calls.length;
+
+    act(() => {
+      live.agentControl.publishAgent("board-1", {
+        type: "agent",
+        op: "heartbeat",
+        sessionId: "session-1",
+        scope: "session",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(list.mock.calls.length).toBeGreaterThan(beforeHeartbeat),
+    );
+
+    const beforePause = list.mock.calls.length;
+    act(() => {
+      live.agentControl.publishAgent("board-1", {
+        type: "agent",
+        op: "paused",
+        scope: "token",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(list.mock.calls.length).toBeGreaterThan(beforePause),
+    );
+  });
+
+  it("repaints the board pause and refreshes rows from a board frame", async () => {
+    const list = vi
+      .spyOn(api, "listAgentSessions")
+      .mockResolvedValue([session()]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    expect(await screen.findByTestId("board-pause-status")).toHaveAttribute(
+      "data-paused",
+      "false",
+    );
+    const before = list.mock.calls.length;
+
+    act(() => {
+      live.agentControl.publishAgent("board-1", {
+        type: "agent",
+        op: "paused",
+        scope: "board",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("board-pause-status")).toHaveAttribute(
+        "data-paused",
+        "true",
+      ),
+    );
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it("refetches approval detail on an external decision SSE frame", async () => {
+    const row = approval();
+    const rejected = approval({
+      status: "rejected",
+      decidedBy: "user-2",
+      decidedAt: Date.now(),
+    });
+    vi.spyOn(api, "listApprovals").mockResolvedValue([row]);
+    const get = vi
+      .spyOn(api, "getApproval")
+      .mockResolvedValueOnce(row)
+      .mockResolvedValue(rejected);
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    expect(await screen.findByTestId("approval-approve")).toBeVisible();
+
+    act(() => {
+      live.agentControl.publishApproval({
+        type: "approval",
+        approvalId: row.id,
+        status: "rejected",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(1));
+    expect(await screen.findByTestId("approval-status")).toHaveAttribute(
+      "data-status",
+      "rejected",
+    );
+    expect(screen.queryByTestId("approval-approve")).toBeNull();
+  });
+
+  it("opens a mobile deep link whose approval is outside the loaded page", async () => {
+    const target = approval({
+      id: "approval-old",
+      summary: "Old pending delete claim",
+      expiresAt: Date.now() + 10 * 60_000,
+    });
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query.includes("max-width: 760px"),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    vi.spyOn(api, "listApprovals").mockImplementation((_boardId, query) =>
+      Promise.resolve(query?.status === "pending" ? [] : []),
+    );
+    vi.spyOn(api, "getApproval").mockResolvedValue(target);
+
+    renderDialog("/board/board-1?agents=inbox&approval=approval-old");
+
+    expect(
+      await screen.findByRole("heading", { name: "Old pending delete claim" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("approval-split")).toHaveClass("is-detail-open");
+  });
+
+  it("closes the mobile detail instead of leaving an empty orphan after a decision", async () => {
+    const row = approval();
+    const approved = approval({
+      status: "approved",
+      decidedBy: "user-2",
+      decidedAt: Date.now(),
+    });
+    let decided = false;
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query.includes("max-width: 760px"),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    vi.spyOn(api, "listApprovals").mockImplementation(() =>
+      Promise.resolve(decided ? [approved] : [row]),
+    );
+    vi.spyOn(api, "getApproval").mockImplementation(() =>
+      Promise.resolve(decided ? approved : row),
+    );
+
+    renderDialog();
+    await userEvent.click(await screen.findByTestId(`approval-row-${row.id}`));
+    expect(screen.getByTestId("approval-split")).toHaveClass("is-detail-open");
+
+    decided = true;
+    act(() => {
+      live.agentControl.publishApproval({
+        type: "approval",
+        approvalId: row.id,
+        status: "approved",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("approval-split")).not.toHaveClass(
+        "is-detail-open",
+      ),
+    );
+  });
+
   it("navigates the control rail with arrow keys", async () => {
     renderDialog();
     screen.getByTestId("agent-approvals-tab").focus();
@@ -490,10 +757,10 @@ describe("agent control (TASK-166.14)", () => {
 
     expect(await screen.findByText("No approvals waiting")).toBeInTheDocument();
     expect(screen.getByText("Select an approval")).toBeInTheDocument();
-    // One request from the Inbox panel, one from the rail/header counter
-    // (both failed), then the manual retry plus the counter refresh it
-    // triggers.
-    expect(list).toHaveBeenCalledTimes(4);
+    // The Inbox panel fetches the pending queue and the recent page; the
+    // rail/header counter fetches pending too. Both fail, then the manual
+    // retry repeats those three requests.
+    expect(list).toHaveBeenCalledTimes(6);
   });
 
   it("refreshes the header pending count after an inbox retry", async () => {

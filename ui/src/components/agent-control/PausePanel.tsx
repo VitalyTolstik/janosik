@@ -443,6 +443,15 @@ export function PausePanel({
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+  // A heartbeat is a liveness refresh, not a lifecycle transition. SSE is
+  // throttled server-side, so a visible panel also re-reads the rows while it
+  // is open; token pause/resume can originate from Account in another tab.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setRevision((value) => value + 1);
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const livePause = live.agentControl.getBoardPause(boardId);
   // Subscribe so SSE pause/resume frames repaint the board card without

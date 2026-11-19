@@ -28,7 +28,6 @@ import {
   AGENT_STATUS_FILTERS,
   agentLabel,
   isLiveSession,
-  isSessionPaused,
   matchesAgentFilter,
   needsNudge,
   readAgentFilter,
@@ -499,6 +498,7 @@ export function AgentsPage() {
   const precomputedConflicts = useRunConflictPreviews(
     section === "runs" ? visibleRunRows : [],
     section === "runs",
+    state.lastLoadedAt ?? 0,
   );
   const displayedConflicts = useMemo(
     () => new Map([...precomputedConflicts, ...runConflicts]),
@@ -1747,6 +1747,9 @@ export function AgentsPage() {
                             onSelect={openApproval}
                             onReject={(row) => openApproval(row, "reject")}
                             now={now}
+                            hasMore={pending.truncated}
+                            loadingMore={pending.loadingMore}
+                            onLoadMore={() => void pending.loadMore()}
                           />
                         )}
                       </>
@@ -2105,7 +2108,7 @@ function AttentionLiveSessions({
   // is expected while paused, and hiding it made the row disappear after a
   // pause. Genuinely stale, unpaused rows stay in "Needs a nudge".
   const live = rows.filter(
-    (row) => isLiveSession(row) && (!row.stale || isSessionPaused(row)),
+    (row) => isLiveSession(row) && (!row.stale || row.paused),
   );
   if (live.length === 0) return null;
   // Counts mirror the prototype: they describe every filtered session, not
@@ -2116,9 +2119,9 @@ function AttentionLiveSessions({
   const waiting = rows.filter(
     (row) => row.status === "waiting_approval" && !row.paused,
   ).length;
-  // The chip is a factual heartbeat count (same as the Sessions group header
-  // and the mockup); `needsNudge` only decides which rows get warning cards.
-  const stale = rows.filter((row) => row.stale).length;
+  // A paused row has no expected heartbeat, so it is not a stale warning
+  // even when the last beat is old; `needsNudge` uses the same rule.
+  const stale = rows.filter((row) => row.stale && !row.paused).length;
   const paused = rows.filter((row) => row.paused).length;
 
   return (

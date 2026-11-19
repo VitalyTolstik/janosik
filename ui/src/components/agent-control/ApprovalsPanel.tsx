@@ -94,7 +94,11 @@ export function ApprovalsPanel({
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     params.get("approval"),
   );
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  // A deep link is the whole point of the mobile sheet: opening it must show
+  // the approval detail, not the list with a hidden selection.
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(
+    () => params.get("approval") !== null,
+  );
   const [revision, setRevision] = useState(0);
   const [tokens, setTokens] = useState<UserTokenDto[]>([]);
   const [sessions, setSessions] = useState<AgentSessionDto[]>([]);
@@ -111,11 +115,22 @@ export function ApprovalsPanel({
     let alive = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- start the request with a clean error state
     setListError(false);
-    void api
-      .listApprovals(boardId, { limit: 100 })
-      .then((next) => {
+    // The newest 100 rows of *all* statuses can hide an old pending request
+    // behind 100 newer decided ones. Fetch the pending queue first and merge
+    // it over the recent page; that is the server-owned queue, not a client
+    // filter over a truncated slice.
+    void Promise.all([
+      api.listApprovals(boardId, { status: "pending", limit: 100 }),
+      api.listApprovals(boardId, { limit: 100 }),
+    ])
+      .then(([pending, recent]) => {
         if (!alive) return;
-        setRows(next);
+        const merged = new Map<string, ApprovalRequestDto>();
+        for (const row of pending) merged.set(row.id, row);
+        for (const row of recent) {
+          if (!merged.has(row.id)) merged.set(row.id, row);
+        }
+        setRows([...merged.values()]);
       })
       .catch(() => {
         if (!alive) return;
@@ -213,9 +228,11 @@ export function ApprovalsPanel({
       // selections follow the visible queue when a filter hides them.
       if (
         requestedApprovalId !== null &&
-        requestedApprovalId === initialApprovalRef.current &&
-        rows?.some((row) => row.id === requestedApprovalId)
+        requestedApprovalId === initialApprovalRef.current
       ) {
+        // An explicit deep link wins even when the row is outside the loaded
+        // page; the detail endpoint addresses it directly. Dropping it here
+        // was the silent "nothing happened" failure on old/decided links.
         return requestedApprovalId;
       }
       if (current !== null && filtered.some((row) => row.id === current)) {
@@ -224,6 +241,14 @@ export function ApprovalsPanel({
       return filtered[0]?.id ?? null;
     });
   }, [filtered, requestedApprovalId, rows]);
+  // Once the list has loaded, a null selection means the queue has no
+  // visible row: close the mobile sheet so the user lands on the list/empty
+  // state instead of a detail pane with no Back affordance.
+  useEffect(() => {
+    if (rows === null || !mobile) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- close the sheet once the loaded queue has no selectable row
+    if (selectedId === null) setMobileDetailOpen(false);
+  }, [mobile, rows, selectedId]);
   const loadingList = rows === null && !listError;
   const pendingRows = useMemo(
     () =>
@@ -435,6 +460,7 @@ export function ApprovalsPanel({
       </div>
 
       <div
+        data-testid="approval-split"
         className={cn(
           "ac-split",
           mobileDetailOpen && "is-detail-open",

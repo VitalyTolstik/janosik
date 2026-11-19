@@ -101,7 +101,11 @@ export function RunsPanel({ role }: { role: Role }) {
     () => runs.rows.slice(0, visibleCount),
     [runs.rows, visibleCount],
   );
-  const previewedConflicts = useRunConflictPreviews(visibleRows);
+  const previewedConflicts = useRunConflictPreviews(
+    visibleRows,
+    true,
+    runs.lastLoadedAt ?? 0,
+  );
   const displayedConflicts = useMemo(
     () => new Map([...previewedConflicts, ...conflicts]),
     [conflicts, previewedConflicts],

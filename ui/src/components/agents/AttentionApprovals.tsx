@@ -10,6 +10,7 @@ import {
   History,
   Link as LinkIcon,
   MoreHorizontal,
+  RefreshCw,
   Shield,
   Terminal,
   X,
@@ -39,6 +40,7 @@ import { useToast } from "@/components/Toast";
 import { useI18n, type MessageKey } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
+import { useBoardLive } from "@/store/board-live";
 import {
   APPROVAL_STATUS_KEYS,
   effectiveApprovalStatus,
@@ -108,9 +110,21 @@ function statusHint(
   expiresAt: number,
   now: number,
   t: Translate,
+  applyWindowExpired: boolean,
 ): { tone: "warn" | "ok" | "bad" | "muted"; icon: ReactNode; text: string } {
   switch (status) {
     case "approved":
+      // An approved decision is intentionally not rewritten to `expired`
+      // when its apply window lapses (the agent's apply gets
+      // `approval_expired`). Explain the wedged state instead of pretending
+      // the plan is still applicable.
+      if (applyWindowExpired) {
+        return {
+          tone: "warn",
+          icon: <Clock className="h-3.5 w-3.5" aria-hidden />,
+          text: t("agents.approvals.banner.approvedWindowExpired"),
+        };
+      }
       return {
         tone: "ok",
         icon: <Check className="h-3.5 w-3.5" aria-hidden />,
@@ -240,6 +254,9 @@ export function AttentionApprovalList({
   onReject,
   now,
   loading = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: {
   rows: readonly AttentionApprovalRow[];
   filter: AttentionApprovalFilter;
@@ -249,6 +266,10 @@ export function AttentionApprovalList({
   onReject: (row: AttentionApprovalRow) => void;
   now: number;
   loading?: boolean;
+  /** A server page remains after the loaded rows (M24). */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }) {
   const { t, tp, lang } = useI18n();
   const counts = useMemo(() => {
@@ -509,6 +530,24 @@ export function AttentionApprovalList({
           })}
         </ul>
       )}
+      {hasMore && onLoadMore !== undefined ? (
+        <div className="mt-2 flex justify-center">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="agents-approvals-load-more"
+            disabled={loadingMore}
+            onClick={onLoadMore}
+            className="min-h-11 rounded-[6px] px-3 text-[11px] font-semibold md:min-h-7"
+          >
+            {loadingMore ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : null}
+            {t("agentControl.runs.loadMore")}
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -545,6 +584,7 @@ export function AttentionApprovalDetail({
 }) {
   const { t, lang } = useI18n();
   const toast = useToast();
+  const live = useBoardLive();
   const [detail, setDetail] = useState<ApprovalRequestDto | null>(null);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -563,6 +603,26 @@ export function AttentionApprovalDetail({
   // stays read-only. A failed read is unknown and also fails closed.
   const [ownTokensKnown, setOwnTokensKnown] = useState(false);
   const now = useNow();
+
+  // An external approve/reject/consume must re-read the detail. The board
+  // shell's stream is authoritative when it covers this board; the timer is
+  // the cross-board fallback for the global console, never the source of
+  // truth (the server reply still decides the buttons).
+  useEffect(
+    () =>
+      live.agentControl.subscribeApproval((event) => {
+        if (event.approvalId === approvalId) {
+          setRevision((value) => value + 1);
+        }
+      }),
+    [approvalId, live],
+  );
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setRevision((value) => value + 1);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [approvalId]);
 
   useEffect(() => {
     let alive = true;
@@ -614,6 +674,8 @@ export function AttentionApprovalDetail({
     detail === null
       ? undefined
       : effectiveApprovalStatus(detail.status, detail.expiresAt, now);
+  const applyWindowExpired =
+    detail !== null && detail.status === "approved" && detail.expiresAt <= now;
   const canDecide = effectiveStatus === "pending";
   const commandCount = detail === null ? 0 : lengthOfPlan(detail);
 
@@ -660,7 +722,13 @@ export function AttentionApprovalDetail({
       : Math.max(0, Math.round((detail.expiresAt - detail.createdAt) / 60_000));
   const hint =
     detail !== null && effectiveStatus !== undefined
-      ? statusHint(effectiveStatus, detail.expiresAt, now, t)
+      ? statusHint(
+          effectiveStatus,
+          detail.expiresAt,
+          now,
+          t,
+          applyWindowExpired,
+        )
       : null;
 
   const copyHash = async () => {

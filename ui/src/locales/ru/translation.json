@@ -2019,6 +2019,7 @@
   "agents.approvals.eyebrow.consumed": "Согласование · применено",
   "agents.approvals.banner.pending": "Ожидает администратора доски. Запрос истекает через {{minutes}} мин.",
   "agents.approvals.banner.approved": "Одобрено. Ожидает, пока агент применит этот точный хеш плана.",
+  "agents.approvals.banner.approvedWindowExpired": "Одобрено, но окно применения истекло. Агент больше не может применить этот план (approval_expired); запросите новое согласование для той же работы.",
   "agents.approvals.banner.rejected": "Отклонено. Причина ниже записана в историю доски.",
   "agents.approvals.banner.expired": "Истекло до решения. Попросите агента создать запрос заново.",
   "agents.approvals.banner.cancelled": "Отменено запросившим. План не применялся.",

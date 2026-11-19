@@ -8,6 +8,7 @@ import {
   Settings2,
   X,
 } from "lucide-react";
+import type { ApprovalRequestDto } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import {
@@ -20,6 +21,7 @@ import {
 import { useI18n } from "@/i18n";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
+import { effectiveApprovalStatus } from "@/utils/approval";
 import { useBoardLive } from "@/store/board-live";
 import { useBoardAccess, useBoardState } from "@/store/BoardContext";
 import { AgentControlFooterContext } from "@/components/agents/agent-control-footer-context";
@@ -29,6 +31,21 @@ import { RunsPanel } from "./RunsPanel";
 import "./agent-control.css";
 
 export type AgentControlTab = "approvals" | "pause" | "runs";
+
+/**
+ * The board header count is derived from the rows the server returned, not
+ * from a snapshot number: a pending row whose TTL lapses while the dialog is
+ * open must stop counting even when no SSE frame arrives (there is no expiry
+ * writer to emit one).
+ */
+function useApprovalClock(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
 
 export function AgentControlDialog({
   open,
@@ -55,11 +72,15 @@ export function AgentControlDialog({
   const boardId = board?.id;
   // `null` means unknown: loading or failed. A failed count must never render
   // as a truthful zero ("No pending") or disappear a real queue behind a
-  // misleading badge.
-  const [pending, setPending] = useState<number | null>(null);
+  // misleading badge. Keep the rows, not just the length, so a lapsed TTL is
+  // removed from the count without waiting for a refetch/SSE.
+  const [pendingRows, setPendingRows] = useState<ApprovalRequestDto[] | null>(
+    null,
+  );
   const [liveCount, setLiveCount] = useState<number | null>(null);
   const [runsCount, setRunsCount] = useState<number | null>(null);
   const [countRevision, setCountRevision] = useState(0);
+  const countNow = useApprovalClock();
   const [tab, setTab] = useState<AgentControlTab>(
     role !== "ADMIN" && initialTab === "approvals" ? "pause" : initialTab,
   );
@@ -95,7 +116,7 @@ export function AgentControlDialog({
   useEffect(() => {
     if (boardId === undefined || !isApiEnabled()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reset counters when the route leaves a board
-      setPending(null);
+      setPendingRows(null);
       setLiveCount(null);
       setRunsCount(null);
       return;
@@ -105,13 +126,13 @@ export function AgentControlDialog({
       void api
         .listApprovals(boardId, { status: "pending", limit: 100 })
         .then((rows) => {
-          if (alive) setPending(rows.length);
+          if (alive) setPendingRows(rows);
         })
         .catch(() => {
-          if (alive) setPending(null);
+          if (alive) setPendingRows(null);
         });
     } else {
-      setPending(null);
+      setPendingRows(null);
     }
     void api
       .listAgentSessions(boardId, true)
@@ -134,6 +155,14 @@ export function AgentControlDialog({
     };
   }, [boardId, countRevision, role]);
 
+  const pending =
+    pendingRows === null
+      ? null
+      : pendingRows.filter(
+          (row) =>
+            effectiveApprovalStatus(row.status, row.expiresAt, countNow) ===
+            "pending",
+        ).length;
   const livePause = live.agentControl.getBoardPause(boardId);
   const boardPaused =
     livePause?.paused ??
