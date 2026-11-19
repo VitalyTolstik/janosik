@@ -1,6 +1,5 @@
-import { useEffect, useRef } from "react";
 import { Check, ChevronDown } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import { api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -19,26 +18,39 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n, type Lang } from "@/i18n";
 import { ensureLocale } from "@/i18n/i18n";
+import { APP_BASE } from "@/utils/app-path";
 
 interface LanguageSwitcherProps {
   /** `icon` (header trigger) or `row` (account preferences). */
   variant?: "icon" | "row";
 }
 
+/**
+ * The router's current URL, read from `window` so it also works after this
+ * component unmounts (closing the account dialog, switching Preferences
+ * sections). `navigate` works in router-relative coordinates, so strip the
+ * deploy basename that `createBrowserRouter({ basename })` adds.
+ */
+function currentRouterLocation(): {
+  pathname: string;
+  search: string;
+  hash: string;
+} {
+  const { pathname, search, hash } = window.location;
+  const base = APP_BASE === "/" ? "" : APP_BASE.replace(/\/$/, "");
+  if (base === "") return { pathname, search, hash };
+  if (pathname === base) return { pathname: "/", search, hash };
+  if (pathname.startsWith(`${base}/`)) {
+    return { pathname: pathname.slice(base.length), search, hash };
+  }
+  return { pathname, search, hash };
+}
+
 /** Language picker (English / Russian) — a globe icon with a dropdown. */
 export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   const { lang, setLang, t } = useI18n();
-  const location = useLocation();
   const navigate = useNavigate();
   const { status, user, updateUser, impersonating } = useAuth();
-  // The lazy catalog can take long enough for the user to change boards,
-  // open a card or edit a filter after clicking the language. Keep the newest
-  // router location so the cleanup below edits *that* URL instead of
-  // navigating back to the click-time snapshot.
-  const latestLocation = useRef(location);
-  useEffect(() => {
-    latestLocation.current = location;
-  }, [location]);
 
   // Load the lazy catalog before switching; a failed load (offline, not yet
   // cached) leaves both the UI, the URL and the server profile on the current
@@ -49,14 +61,16 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   // `history.replaceState`: the board filter, card deep links and admin list
   // queries rebuild their URL from `useSearchParams`, which would otherwise
   // keep the stale `lng` and re-pin the old language on reload. The M39
-  // workflow blocker ignores an `lng`-only search change.
+  // workflow blocker ignores an `lng`-only search change. Read the live URL
+  // in the callback: this component may already be unmounted, and a captured
+  // location would pull the user back to the pre-close route.
   const choose = (next: Lang) => {
     void ensureLocale(next).then((ready) => {
       if (!ready) return;
       setLang(next);
-      const current = latestLocation.current;
-      if (new URLSearchParams(current.search).has("lng")) {
-        const params = new URLSearchParams(current.search);
+      const current = currentRouterLocation();
+      const params = new URLSearchParams(current.search);
+      if (params.has("lng")) {
         params.delete("lng");
         void navigate(
           {
@@ -64,7 +78,7 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
             search: params.toString(),
             hash: current.hash,
           },
-          { replace: true, state: current.state },
+          { replace: true },
         );
       }
       if (status !== "authenticated" || user === null || impersonating) return;

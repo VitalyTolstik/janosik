@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
+  BrowserRouter,
   Link,
-  MemoryRouter,
   useLocation,
   useSearchParams,
 } from "react-router-dom";
@@ -76,10 +77,35 @@ function BoardTwoLink() {
   );
 }
 
+/**
+ * The account dialog/Preferences can unmount the switcher while a lazy
+ * catalog loads. Keep the surrounding router and page controls alive so the
+ * test can reproduce navigation after that unmount.
+ */
+function Harness() {
+  const [showSwitcher, setShowSwitcher] = useState(true);
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="hide-switcher"
+        onClick={() => setShowSwitcher(false)}
+      >
+        Close account panel
+      </button>
+      {showSwitcher ? <LanguageSwitcher variant="row" /> : null}
+      <LocationProbe />
+      <QueryWriter />
+      <BoardTwoLink />
+    </>
+  );
+}
+
 function renderSwitcher(
   path = "/board/b-1",
   options: { updateUser?: (next: AuthUserDto) => void } = {},
 ) {
+  window.history.replaceState({}, "", path);
   const updateUser = options.updateUser ?? vi.fn();
   const auth: AuthValue = {
     status: "authenticated",
@@ -93,12 +119,9 @@ function renderSwitcher(
   render(
     <AuthContext.Provider value={auth}>
       <I18nProvider>
-        <MemoryRouter initialEntries={[path]}>
-          <LanguageSwitcher variant="row" />
-          <LocationProbe />
-          <QueryWriter />
-          <BoardTwoLink />
-        </MemoryRouter>
+        <BrowserRouter>
+          <Harness />
+        </BrowserRouter>
       </I18nProvider>
     </AuthContext.Provider>,
   );
@@ -161,7 +184,7 @@ describe("LanguageSwitcher", () => {
     expect(locationText()).not.toContain("lng=");
   });
 
-  it("cleans lng from the latest location after navigation during the load", async () => {
+  it("cleans lng from the live URL after the switcher unmounts during the load", async () => {
     let resolveEnsure!: (ready: boolean) => void;
     vi.spyOn(i18nModule, "ensureLocale").mockReturnValue(
       new Promise<boolean>((resolve) => {
@@ -173,8 +196,12 @@ describe("LanguageSwitcher", () => {
     await chooseLanguage("Русский");
     expect(locationText()).toBe("/board/b-1?lng=ru&keep=1#details");
 
-    // Filter first, then switch boards elsewhere while the catalog is still
-    // loading. Both newer URLs carry the old `lng` for this stress case.
+    // The account panel closes while the lazy catalog is still loading.
+    await userEvent.click(screen.getByTestId("hide-switcher"));
+    expect(screen.queryByTestId("pref-language")).toBeNull();
+
+    // Filter first, then switch boards elsewhere. Both newer URLs carry the
+    // old `lng` for this stress case.
     await userEvent.click(screen.getByTestId("apply-filter"));
     await waitFor(() =>
       expect(locationText()).toBe("/board/b-1?lng=ru&keep=1&q=alpha"),
