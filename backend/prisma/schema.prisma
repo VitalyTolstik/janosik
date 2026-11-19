@@ -236,30 +236,41 @@ model Board {
 // it. The token is stored as-is (it must round-trip into a URL/embed) and its
 // 128-bit entropy + `expiresAt` + `revokedAt` + rate limit are the guard.
 model BoardShare {
-  id                 String    @id @default(cuid())
-  token              String    @unique // 128-bit base64url
+  id                 String                   @id @default(cuid())
+  token              String                   @unique // 128-bit base64url
   // Snapshot shares deliberately outlive their source board (TASK-58,
   // TASK-156): deleting the board detaches the frozen copy instead of
   // cascading it away. Live shares are revoked before the board goes.
-  board              Board?    @relation(fields: [boardId], references: [id], onDelete: SetNull)
+  board              Board?                   @relation(fields: [boardId], references: [id], onDelete: SetNull)
   boardId            String?
-  mode               String    @default("snapshot") // snapshot | live
-  snapshot           Json? // the frozen BoardEnvelope (null for live)
+  mode               String                   @default("snapshot") // snapshot | live
+  snapshot           Json? // frozen board, roster and opted-in content
   snapshotVersion    Int? // board seq at snapshot time ("taken at")
   title              String? // owner-side label for the share list
-  includeComments    Boolean   @default(true)
-  includeAttachments Boolean   @default(false)
+  includeComments    Boolean                  @default(true)
+  includeAttachments Boolean                  @default(false)
   expiresAt          DateTime? // TTL; null = no expiry
   revokedAt          DateTime? // manual revoke
   createdBy          String // userId (board) or admin email (panel/demo)
-  views              Int       @default(0)
+  views              Int                      @default(0)
   lastViewedAt       DateTime?
-  createdAt          DateTime  @default(now())
+  createdAt          DateTime                 @default(now())
+  snapshotBlobs      BoardShareSnapshotBlob[]
 
   @@index([boardId])
   @@index([createdBy])
   @@index([expiresAt]) // TTL sweep (TASK-148)
   @@index([revokedAt]) // revoked-share sweep (TASK-148)
+}
+
+// Keeps snapshot copies in the uploads volume alive until the share is
+// refreshed or removed. No reference to the original attachment or board.
+model BoardShareSnapshotBlob {
+  storedName String     @id
+  share      BoardShare @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  shareId    String
+
+  @@index([shareId])
 }
 
 // Independent of the share and board rows so history survives their removal.
@@ -433,6 +444,7 @@ model AgentSession {
   @@index([boardId, startedAt])
   @@index([userId, startedAt])
   @@index([lastHeartbeatAt])
+  @@index([endedAt])
 }
 
 model AgentRun {
@@ -487,6 +499,8 @@ model ApprovalRequest {
   @@index([boardId, agentSessionId, status])
   @@index([requestedByTokenId, status])
   @@index([expiresAt, status])
+  @@index([status, decidedAt])
+  @@index([status, consumedAt])
   @@index([planHash])
 }
 

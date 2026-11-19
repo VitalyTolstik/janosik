@@ -51,6 +51,8 @@ describe("ShareService live aggregate cache", () => {
       {},
       {},
       { isEnabled: async () => true },
+      {},
+      {},
     ] as unknown as ConstructorParameters<typeof ShareService>;
     const service = new ShareService(...deps);
     // Enable the cache for this spec (the test env sets the window to 0).

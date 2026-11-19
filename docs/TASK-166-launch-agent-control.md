@@ -1015,13 +1015,17 @@ Backfill:
 - `sweepRuns`: `AgentRun` older than cutoff with no commands; original
   `reverted` runs are deleted together with the revert run at the same
   cutoff.
-- `sweepAgentSessions`: completed/expired sessions older than cutoff.
-- `sweepApprovals`: `rejected|expired|cancelled|consumed` older than cutoff;
-  `pending` and `approved` are **not** deleted by age, only by expiry.
+- `sweep-agent-sessions`: sessions whose `endedAt` is past the retention window.
+- `sweep-approvals`: `rejected|cancelled` by `decidedAt`, `expired` by
+  `expiresAt`, and `consumed` by `consumedAt`. The decision/apply flows
+  enforce approval expiry, and the existing lazy expiry path transitions
+  pending requests to `expired`. The age sweep acts on terminal states.
 - `sweepSecurityAudit`: `SecurityAuditLog` older than cutoff.
 - `sweepIdempotency`: `expiresAt < now`.
-- Board/user purge calls the same sweep functions; ordering:
-  preimages → commands → runs → sessions → approvals → board rows.
+- Permanent board purge clears all sessions and requests scoped to the
+  purged board. The ordering is preimages → commands → runs → sessions →
+  approvals → board rows. Account erasure clears sessions and approvals
+  scoped to the deleted user.
 
 ---
 
@@ -1812,8 +1816,10 @@ Applying a cancelled approval → `approval_cancelled`.
 - Default 30 days; presets 30/90/365; custom 1–3650.
 - One `retentionDays` for Command, CommandPreimage, Activity, AgentRun,
   AgentSession, terminal ApprovalRequest, and soft-deleted rows.
-- `pending`/`approved` approvals are not deleted by age, only by `expiresAt`
-  (then swept).
+- Pending and approved approval records stay outside the age sweep. Expired
+  pending requests become eligible once they transition to `expired`.
+  An approved request keeps its recorded decision and its application
+  window still ends at `expiresAt`.
 - `AdminAuditLog` **and** `SecurityAuditLog` keep their own long window
   (`AUDIT_RETENTION_DAYS`, default 365). The 30/90/365 product setting does
   not erase the security trail; a `account.delete_scheduled` marker is kept

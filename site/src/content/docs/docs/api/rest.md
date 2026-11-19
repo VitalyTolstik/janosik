@@ -96,8 +96,10 @@ substring). It reaches comment text, which is not part of the board aggregate.
 A query longer than 200 characters answers `400`.
 
 `DELETE /boards/:id` soft-deletes the board and cascades the flag to its
-children. Memberships are hard-deleted; live shares are revoked; snapshot
-shares survive.
+children and revokes live shares. Memberships stay available for board
+restoration until purge. Snapshot shares keep serving their captured content
+after deletion and purge. Permanent purge also removes the board's agent
+sessions and approvals.
 
 `POST /boards/:id/members` invites a user by email. The address is trimmed
 and lowercased. The answer never reveals whether an account exists for it: a
@@ -754,9 +756,13 @@ is revoked or expired, public sharing is switched off, or the board is gone.
 not expose comments or attachments respectively. A card that is not on the
 shared board answers `404`.
 
-A snapshot share freezes the conversation too: its comments, attachment list
-and attachment content include only what was created up to the moment the
-snapshot was captured (or last refreshed). A later attachment answers `404`.
+A snapshot serves the captured versions of its opted-in comments, attachment
+metadata and attachment files. Later edits, additions, removals, board
+archival and board deletion (including permanent purge) leave those versions
+available. A file or card absent at capture answers `404`. Turning an
+inclusion flag off hides that category immediately. Enabling a category that
+was absent at capture requires a refresh before it is public. Older snapshots
+created without stored comments or files also require a refresh to show them.
 
 `POST /share/:token` and any nested `POST` answer `405` with
 `"Shared boards are read-only"`. The public API states its read-only rule

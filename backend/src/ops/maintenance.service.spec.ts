@@ -45,6 +45,7 @@ function makePrisma(): PrismaService {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     boardShare: { deleteMany: jest.fn().mockResolvedValue({ count: 3 }) },
+    boardShareSnapshotBlob: purgeable(),
     boardMember: { deleteMany: jest.fn().mockResolvedValue({ count: 5 }) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
     dataExport: {
@@ -60,7 +61,9 @@ function makePrisma(): PrismaService {
     reminderSent: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     attentionNotification: sweepable(0),
     notificationMail: sweepable(0),
+    approvalRequest: purgeable(),
     agentSession: {
+      ...purgeable(),
       findUnique: jest
         .fn()
         .mockResolvedValue({ name: "agent", clientName: null }),

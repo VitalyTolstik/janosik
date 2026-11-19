@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
-import { mkdir, readdir, stat, unlink } from "node:fs/promises";
+import { constants, createReadStream, existsSync } from "node:fs";
+import { copyFile, mkdir, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -201,6 +201,17 @@ export class StorageService {
     const ext = path.extname(original ?? "");
     const safe = /^(\.[a-z0-9]{1,10})$/i.test(ext) ? ext.toLowerCase() : "";
     return `${randomUUID()}${safe}`;
+  }
+
+  /** Hold a separate copy so source removal and transcode cannot change a share. */
+  async copyForSnapshot(source: string): Promise<string> {
+    const target = this.storedName(source);
+    await copyFile(
+      this.attachmentPath(source),
+      this.attachmentPath(target),
+      constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE,
+    );
+    return target;
   }
 
   /** Absolute path of an attachment blob; rejects anything path-like. */

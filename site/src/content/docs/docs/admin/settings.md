@@ -220,14 +220,17 @@ start attempt answers `409 public_shares_disabled` before any demo users or
 board rows are created.
 
 `Start demo` creates the demo users and cards, then starts the scenario. `Stop & clean up`
-is enabled while data created by the demo still exists; it is confirmed and deletes
-exactly the recorded rows: the board when the run created it, its cards, its
-demo users and its share.
+is enabled while demo cleanup is pending. Both stopping and cleanup before a
+new start use the recorded run and its authored commands. The demo's
+observation link is removed. Cleanup preserves existing boards, memberships
+and links, including user links to demo cards. A dedicated demo board is
+removed when it contains only the recorded demo footprint.
 
 Behind the scenes the runner creates a dispatcher and the requested agents on
 the reserved `@janosik.demo` domain, the five flow columns (Новые, В работе,
 На ревью, Тестирование, Готово), a label set and one card per agent, then
-drives the cards across the flow. Every id it creates is recorded, so cleanup uses the recorded IDs.
+drives the cards across the flow. Board titles, task names and email suffixes
+are display conventions. Cleanup uses IDs from the run and command log.
 
 ## Operations
 
@@ -271,9 +274,13 @@ to every account equally, each with its own counter. The `/admin`, `/auth` and
 The retention window is the number of days before the purge may remove
 soft-deleted rows (1 to 3650, default 30). The page offers the 30/90/365
 presets and shows how many cards, comments, attachments and columns are
-currently eligible. The same window trims the command log, activity feed and
-terminal agent sessions; `AdminAuditLog` and `SecurityAuditLog` keep the longer
-`AUDIT_RETENTION_DAYS` window (365 by default).
+currently eligible. The same window applies to the command log, activity
+feed, ended agent sessions and terminal approvals. Age runs from the session
+end or the time an approval was rejected, cancelled, expired or consumed.
+Open sessions and pending or approved requests stay until their status
+changes or their board is permanently purged. Expiry still blocks use of a
+lapsed approval. `AdminAuditLog` and `SecurityAuditLog` use
+`AUDIT_RETENTION_DAYS` (365 by default).
 
 The backup line is deliberately honest: `BACKUP_DIR` is only a location you
 configured, not a backup Janosik creates. The API reports
@@ -293,13 +300,15 @@ are:
 
 | Sweep | Removes |
 | --- | --- |
-| `purge-soft-deleted` | soft-deleted rows (and whole boards) past the retention window |
+| `purge-soft-deleted` | soft-deleted rows past the retention window, including whole boards with their agent sessions and approvals |
 | `sweep-codes` | expired or consumed verification and email-change codes |
 | `sweep-tokens` | expired or long-revoked refresh tokens (user and admin) |
 | `sweep-shares` | board shares past their TTL or revoked over a day ago |
 | `sweep-invitations` | lapsed pending invitations |
 | `sweep-exports` | expired background data exports and their files |
 | `sweep-commands` | command-log rows past the retention window |
+| `sweep-agent-sessions` | agent sessions that ended before the retention cutoff |
+| `sweep-approvals` | rejected, cancelled, expired and consumed requests past the retention window |
 | `sweep-reminders` | stale due-reminder dedupe rows |
 | `sweep-activity` | membership/comment feed rows past the retention window |
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |

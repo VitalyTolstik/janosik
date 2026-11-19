@@ -306,6 +306,168 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     expect(audit).not.toBeNull();
   });
 
+  it("cleans recorded demo rows without deleting real rows with demo markers (H9)", async () => {
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: { email: USER_EMAIL },
+    });
+    const realMember = await prisma.user.create({
+      data: { id: "du-real", email: "demo-real@janosik.demo" },
+    });
+    const demoUser = await prisma.user.create({
+      data: { id: "du-recorded", email: "demo-recorded@janosik.demo" },
+    });
+    const board = await prisma.board.create({
+      data: {
+        title: "Демо · рой агентов (real)",
+        members: {
+          create: [
+            { userId: owner.id, role: "ADMIN", acceptedAt: new Date() },
+            { userId: realMember.id, role: "MEMBER", acceptedAt: new Date() },
+            { userId: demoUser.id, role: "MEMBER", acceptedAt: new Date() },
+          ],
+        },
+      },
+    });
+    const boardId = board.id;
+    const realColumn = "col-real";
+    const demoColumn = "col-recorded";
+    const realCard = "card-real";
+    const otherRealCard = "card-real-other";
+    const demoCard = "card-recorded";
+    const keptCard = "card-recorded-with-real-link";
+    await prisma.column.createMany({
+      data: [
+        { id: realColumn, boardId, title: "Новые", position: 0 },
+        { id: demoColumn, boardId, title: "Новые", position: 1 },
+      ],
+    });
+    await prisma.card.createMany({
+      data: [
+        {
+          id: realCard,
+          columnId: realColumn,
+          title: "DEMO-01: Real",
+          position: 0,
+        },
+        { id: otherRealCard, columnId: realColumn, title: "Real", position: 1 },
+        { id: demoCard, columnId: demoColumn, title: "Recorded", position: 0 },
+        {
+          id: keptCard,
+          columnId: demoColumn,
+          title: "Linked by a user",
+          position: 1,
+        },
+      ],
+    });
+    const realLink = {
+      id: "link-real",
+      boardId,
+      fromCardId: realCard,
+      toCardId: otherRealCard,
+      type: "blocks",
+    };
+    const userLinkOnDemoCard = {
+      ...realLink,
+      id: "link-user-on-demo",
+      toCardId: keptCard,
+    };
+    const demoLink = { ...realLink, id: "link-recorded", fromCardId: demoCard };
+    await prisma.cardLink.createMany({
+      data: [realLink, userLinkOnDemoCard, demoLink],
+    });
+    await prisma.command.create({
+      data: {
+        id: "cmd-recorded-link",
+        boardId,
+        actorId: demoUser.id,
+        type: "ADD_CARD_LINK",
+        payload: { type: "ADD_CARD_LINK", linkId: demoLink.id },
+        result: {},
+      },
+    });
+    const realShare = await prisma.boardShare.create({
+      data: {
+        boardId,
+        token: "existing-real-share",
+        createdBy: owner.id,
+        mode: "live",
+      },
+    });
+    await prisma.demoRun.create({
+      data: {
+        boardId,
+        startedBy: OWNER_EMAIL,
+        status: "finished",
+        manifest: {
+          boardId,
+          createdBoard: false,
+          userIds: [demoUser.id],
+          columnIds: [demoColumn],
+          labelIds: [],
+          cardIds: [demoCard, keptCard],
+        },
+      },
+    });
+
+    const expectRealRows = async () => {
+      expect(
+        await prisma.board.findUnique({ where: { id: boardId } }),
+      ).toMatchObject({
+        title: board.title,
+        deletedAt: null,
+      });
+      expect(
+        await prisma.cardLink.findMany({
+          where: { boardId },
+          orderBy: { id: "asc" },
+        }),
+      ).toEqual([
+        expect.objectContaining(realLink),
+        expect.objectContaining(userLinkOnDemoCard),
+      ]);
+      expect(
+        await prisma.boardMember.findMany({
+          where: { boardId, userId: { in: [owner.id, realMember.id] } },
+        }),
+      ).toHaveLength(2);
+      expect(
+        await prisma.card.findMany({
+          where: { id: { in: [realCard, otherRealCard, keptCard] } },
+        }),
+      ).toHaveLength(3);
+      expect(
+        await prisma.boardShare.findUnique({ where: { id: realShare.id } }),
+      ).toEqual(realShare);
+    };
+
+    const started = await server()
+      .post("/api/v1/admin/demo/start")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ boardId, users: 1, cards: 1, run: false })
+      .expect(201);
+    await expectRealRows();
+    expect(
+      await prisma.card.findUnique({ where: { id: demoCard } }),
+    ).toBeNull();
+    expect(
+      await prisma.user.findUnique({ where: { id: demoUser.id } }),
+    ).toBeNull();
+
+    await server()
+      .post("/api/v1/admin/demo/stop")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .expect(201);
+    await expectRealRows();
+    expect(await prisma.card.count({ where: { column: { boardId } } })).toBe(3);
+    expect(await prisma.column.count({ where: { boardId } })).toBe(2);
+    expect(await prisma.boardMember.count({ where: { boardId } })).toBe(2);
+    expect(
+      await prisma.boardShare.findUnique({
+        where: { token: started.body.shareToken },
+      }),
+    ).toBeNull();
+  });
+
   it("mints a live share for the run and the token reads read-only", async () => {
     const started = await server()
       .post("/api/v1/admin/demo/start")

@@ -16,6 +16,7 @@ export interface CachedBoardAggregate {
  * elapses (the roster can change without bumping `seq`, so the TTL bounds how
  * stale the members may be). Concurrent misses share one rebuild
  * (single-flight), so a burst on a cold link runs the expensive read once.
+ * Inserts prune expired entries and evict the least recently used board at capacity.
  *
  * `ttlMs <= 0` disables the cache: every `get` misses, and `load` still
  * single-flights within a tick but never stores.
@@ -27,11 +28,14 @@ export class ShareAggregateCache {
   >();
   private readonly inFlight = new Map<string, Promise<CachedBoardAggregate>>();
 
-  constructor(private readonly ttlMs: number) {}
+  constructor(
+    private readonly ttlMs: number,
+    private readonly maxEntries = 64,
+  ) {}
 
   /** Whether the cache is active (a positive window). */
   get enabled(): boolean {
-    return this.ttlMs > 0;
+    return this.ttlMs > 0 && this.maxEntries > 0;
   }
 
   /**
@@ -39,13 +43,15 @@ export class ShareAggregateCache {
    * matches and the window has not elapsed — else `undefined`.
    */
   get(boardId: string, currentSeq: number): CachedBoardAggregate | undefined {
-    if (this.ttlMs <= 0) return undefined;
+    if (!this.enabled) return undefined;
     const entry = this.entries.get(boardId);
     if (entry === undefined) return undefined;
     if (entry.seq !== currentSeq || Date.now() - entry.at >= this.ttlMs) {
       this.entries.delete(boardId);
       return undefined;
     }
+    this.entries.delete(boardId);
+    this.entries.set(boardId, entry);
     return { seq: entry.seq, board: entry.board, members: entry.members };
   }
 
@@ -58,8 +64,17 @@ export class ShareAggregateCache {
     if (running !== undefined) return running;
     const promise = build()
       .then((value) => {
-        if (this.ttlMs > 0) {
-          this.entries.set(boardId, { ...value, at: Date.now() });
+        if (this.enabled) {
+          const now = Date.now();
+          for (const [id, entry] of this.entries) {
+            if (now - entry.at >= this.ttlMs) this.entries.delete(id);
+          }
+          this.entries.delete(boardId);
+          this.entries.set(boardId, { ...value, at: now });
+          if (this.entries.size > this.maxEntries) {
+            const oldest = this.entries.keys().next();
+            if (!oldest.done) this.entries.delete(oldest.value);
+          }
         }
         return value;
       })

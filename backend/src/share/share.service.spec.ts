@@ -199,6 +199,10 @@ function makeHarness(options: { alive?: boolean } = {}) {
       isEnabled: async () => true,
       assertEnabled: async () => undefined,
     } as never,
+    {
+      run: (_boardId: string, work: (tx: unknown) => unknown) => work(prisma),
+    } as never,
+    {} as never,
   );
   return {
     service,

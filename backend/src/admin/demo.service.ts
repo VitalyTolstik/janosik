@@ -40,7 +40,7 @@ const SUMMARIES = [
 ];
 const MAX_USERS = 100;
 const MAX_CARDS = 1000;
-/** Title prefix of a board this service creates — our own cleanup marker. */
+/** Display title for dedicated demo boards. */
 const DEMO_BOARD_PREFIX = "Демо · рой агентов";
 
 const sleep = (ms: number): Promise<void> =>
@@ -181,12 +181,12 @@ export class DemoService implements OnModuleDestroy {
       throw new ConflictException("A demo is already running");
     }
     // M4: the live observation link is part of the demo product. Refuse before
-    // `cleanAllDemo`/provisioning when public sharing is off, so a start cannot
+    // cleanup/provisioning when public sharing is off, so a start cannot
     // leave a half-built demo board behind a 404 from ShareService.
     await this.assertPublicSharingEnabled();
     // Clean everything a previous demo left behind, then create the new one —
     // so a fresh start never accumulates boards or demo users.
-    await this.cleanAllDemo();
+    await this.purgeAllRecorded();
     this.lastRun = null;
     // The flag is runtime state and cleanup can take a while: re-check after
     // the boundary, before any row of the new run exists.
@@ -216,6 +216,59 @@ export class DemoService implements OnModuleDestroy {
       cardIds: [],
     };
 
+    const { created, columns, specs } = await this.provision(
+      manifest,
+      input.boardId,
+      startedBy,
+      runTag,
+      agents,
+      cards,
+    ).catch(async (error: unknown) => {
+      await this.rollbackPartialStart(manifest);
+      throw error;
+    });
+    const boardId = manifest.boardId;
+
+    const run: ActiveRun = {
+      manifest,
+      columns,
+      startedAt: new Date().toISOString(),
+      done: 0,
+      stop: false,
+      tasks: [],
+    };
+    if (input.run !== false) {
+      // Prefer the Redis-backed job (progress/cancel survive restarts); fall
+      // back to the in-process launcher when there is no Redis.
+      const queued = await this.demoQueue.enqueue(created.id);
+      if (queued) {
+        // TASK-82: in queued mode the worker owns the run and writes progress
+        // to `DemoRun`. Holding it in `this.active` here would pin the status
+        // at "running, 0 done" forever and make every later `start` conflict —
+        // so the in-memory slot stays empty and `status()` reads the row.
+        this.active = null;
+      } else {
+        this.active = run;
+        this.launch(run, specs);
+      }
+    } else {
+      // Provision-only: nothing is driving it, so keep it for display/cleanup.
+      this.active = run;
+    }
+    this.logger.log(
+      `Demo started on board ${boardId}: ${agents} agents, ${manifest.cardIds.length} cards`,
+    );
+    return this.status();
+  }
+
+  private async provision(
+    manifest: DemoManifest,
+    requestedBoardId: string | undefined,
+    startedBy: string,
+    runTag: string,
+    agents: number,
+    cards: number,
+  ) {
     // 1. Dispatcher (opens a dedicated board). Always a throwaway demo account:
     //    observing the swarm no longer needs a second real login — the run's
     //    live share link (TASK-58) is the watching path instead.
@@ -235,9 +288,9 @@ export class DemoService implements OnModuleDestroy {
     }
 
     // 3. Board — a provided one, or a fresh dedicated "Демо" board.
-    if (input.boardId) {
+    if (requestedBoardId) {
       const existing = await this.prisma.board.findFirst({
-        where: { id: input.boardId, deletedAt: null },
+        where: { id: requestedBoardId, deletedAt: null },
         select: { id: true },
       });
       if (existing === null) {
@@ -265,30 +318,18 @@ export class DemoService implements OnModuleDestroy {
     // 3b. Live observation share (TASK-58): the whole point of replacing the
     //     watcher account — open `/s/<token>` with no login and watch the
     //     swarm move. Comments are on (this is "watch how we work").
-    if (!(await this.flags.isEnabled("public_shares"))) {
-      // The flag flipped while the throwaway rows were being provisioned.
-      await this.rollbackPartialStart(manifest);
-      throw this.publicSharingDisabled();
-    }
-    let share: Awaited<ReturnType<ShareService["create"]>>;
-    try {
-      share = await this.shares.create(
-        boardId,
-        startedBy,
-        {
-          mode: "live",
-          title: "Демо-рой · живой просмотр",
-          includeComments: true,
-          includeAttachments: false,
-        },
-        "admin",
-      );
-    } catch (error) {
-      // A flag flip between the boundary check and this call must not leave
-      // the dispatcher/agents/board behind; `purge` removes only manifest ids.
-      await this.rollbackPartialStart(manifest);
-      throw error;
-    }
+    await this.assertPublicSharingEnabled();
+    const share = await this.shares.create(
+      boardId,
+      startedBy,
+      {
+        mode: "live",
+        title: "Демо-рой · живой просмотр",
+        includeComments: true,
+        includeAttachments: false,
+      },
+      "admin",
+    );
     manifest.shareId = share.id;
     manifest.shareToken = share.token;
 
@@ -296,23 +337,23 @@ export class DemoService implements OnModuleDestroy {
     const columns: Record<string, string> = {};
     for (const title of COLS) {
       const id = newId("col");
+      manifest.columnIds.push(id);
       await this.send(boardId, dispatcherId, {
         type: "ADD_COLUMN",
         newColumnId: id,
         title,
       });
       columns[title] = id;
-      manifest.columnIds.push(id);
     }
     const labels = new Map<string, string>();
     for (const label of LABELS) {
       const id = newId("lbl");
+      manifest.labelIds.push(id);
       await this.send(boardId, dispatcherId, {
         type: "ADD_LABEL",
         label: { id, ...label },
       });
       labels.set(label.name, id);
-      manifest.labelIds.push(id);
     }
 
     // 5. One card per agent, in the backlog, assigned to that agent.
@@ -322,6 +363,7 @@ export class DemoService implements OnModuleDestroy {
       const cardId = newId("card");
       const summary = SUMMARIES[i % SUMMARIES.length];
       const worker = workers[i % workers.length];
+      manifest.cardIds.push(cardId);
       await this.send(boardId, dispatcherId, {
         type: "ADD_CARD",
         newCardId: cardId,
@@ -362,7 +404,6 @@ export class DemoService implements OnModuleDestroy {
       await this.comments.create(cardId, worker, {
         text: "Беру задачу в работу.",
       });
-      manifest.cardIds.push(cardId);
       specs.push({ cardId, summary, worker });
     }
 
@@ -383,62 +424,22 @@ export class DemoService implements OnModuleDestroy {
       },
     });
 
-    const run: ActiveRun = {
-      manifest,
-      columns,
-      startedAt: new Date().toISOString(),
-      done: 0,
-      stop: false,
-      tasks: [],
-    };
-    if (input.run !== false) {
-      // Prefer the Redis-backed job (progress/cancel survive restarts); fall
-      // back to the in-process launcher when there is no Redis.
-      const queued = await this.demoQueue.enqueue(created.id);
-      if (queued) {
-        // TASK-82: in queued mode the worker owns the run and writes progress
-        // to `DemoRun`. Holding it in `this.active` here would pin the status
-        // at "running, 0 done" forever and make every later `start` conflict —
-        // so the in-memory slot stays empty and `status()` reads the row.
-        this.active = null;
-      } else {
-        this.active = run;
-        this.launch(run, specs);
-      }
-    } else {
-      // Provision-only: nothing is driving it, so keep it for display/cleanup.
-      this.active = run;
-    }
-    this.logger.log(
-      `Demo started on board ${boardId}: ${agents} agents, ${manifest.cardIds.length} cards`,
-    );
-    return this.status();
+    return { created, columns, specs };
   }
 
   /** Stop the swarm and delete every recorded run's footprint. */
   async stop(stoppedBy: string): Promise<AdminDemoStatusDto> {
-    if (this.active) {
-      this.active.stop = true;
+    const active = this.active;
+    if (active) {
+      active.stop = true;
+      await Promise.all(active.tasks);
       this.active = null;
     }
     this.lastRun = null;
-    const runs = await this.prisma.demoRun.findMany({
+    const pending = await this.prisma.demoRun.count({
       where: { status: { in: ["running", "stopping", "finished"] } },
-      select: { id: true },
     });
-    // TASK-69: a queued run is cancelled by removing its job; the worker also
-    // sees the `stopping` status and stops between acts.
-    for (const run of runs) {
-      await this.demoQueue.cancel(run.id).catch(() => undefined);
-    }
-    const pending = runs.length;
-    if (pending === 0) {
-      throw new ConflictException("No demo to stop");
-    }
-    await this.prisma.demoRun.updateMany({
-      where: { status: { in: ["running", "stopping"] } },
-      data: { status: "stopping" },
-    });
+    if (pending === 0) throw new ConflictException("No demo to stop");
     const { users, cards } = await this.purgeAllRecorded();
     this.logger.log(
       `Demo stopped (by ${stoppedBy}): ${users} users, ${cards} cards removed`,
@@ -450,32 +451,29 @@ export class DemoService implements OnModuleDestroy {
 
   /**
    * Delete every recorded run's footprint, whatever its status — a finished
-   * run, one left by a restart, or an already-stopped row whose board somehow
-   * survived. Idempotent; used by `start` ("clean everything, then create")
-   * and `stop`. Returns the totals removed, for logging.
+   * run or one left by a restart. A failed cleanup stays pending for retry.
    */
   private async purgeAllRecorded(): Promise<{ users: number; cards: number }> {
-    const runs = await this.prisma.demoRun.findMany();
+    const runs = await this.prisma.demoRun.findMany({
+      where: { status: { in: ["running", "stopping", "finished"] } },
+    });
     let users = 0;
     let cards = 0;
     for (const entry of runs) {
       const manifest = entry.manifest as unknown as DemoManifest;
-      try {
-        await this.purge(manifest);
-        users += manifest.userIds.length;
-        cards += manifest.cardIds.length;
-      } catch (error) {
-        this.logger.warn(
-          `Demo cleanup failed for ${manifest.boardId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
+      await this.prisma.demoRun.updateMany({
+        where: { id: entry.id, status: "running" },
+        data: { status: "stopping" },
+      });
+      await this.demoQueue.cancel(entry.id).catch(() => undefined);
+      await this.purge(manifest);
+      await this.prisma.demoRun.update({
+        where: { id: entry.id },
+        data: { status: "stopped", stoppedAt: new Date() },
+      });
+      users += manifest.userIds.length;
+      cards += manifest.cardIds.length;
     }
-    await this.prisma.demoRun.updateMany({
-      where: { status: { in: ["running", "stopping", "finished"] } },
-      data: { status: "stopped", stoppedAt: new Date() },
-    });
     return { users, cards };
   }
 
@@ -607,71 +605,6 @@ export class DemoService implements OnModuleDestroy {
     }
   }
 
-  /**
-   * Clean every demo artifact before a new run: the recorded runs plus any
-   * orphan board a failed/older run left behind (recognised by our own title
-   * marker — never a user board). Then the caller can create a fresh demo.
-   */
-  private async cleanAllDemo(): Promise<void> {
-    await this.purgeAllRecorded();
-    const orphans = await this.prisma.board.findMany({
-      where: { title: { startsWith: DEMO_BOARD_PREFIX } },
-      select: { id: true },
-    });
-    for (const { id } of orphans) {
-      try {
-        await this.purgeWholeBoard(id);
-      } catch (error) {
-        this.logger.warn(
-          `Demo orphan cleanup failed for ${id}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-  }
-
-  /**
-   * Remove a whole board this service created — every child row, its demo
-   * users and the board itself. Safe because the board is ours (title marker);
-   * used to clean orphans that predate a recorded manifest.
-   */
-  private async purgeWholeBoard(boardId: string): Promise<void> {
-    const cards = await this.prisma.card.findMany({
-      where: { column: { boardId } },
-      select: { id: true },
-    });
-    const cardIds = cards.map((card) => card.id);
-    const members = await this.prisma.boardMember.findMany({
-      where: { boardId, user: { email: { endsWith: "@janosik.demo" } } },
-      select: { userId: true },
-    });
-    const userIds = members.map((member) => member.userId);
-    await this.boardWrite.run(boardId, async (tx) => {
-      await tx.cardLabel.deleteMany({ where: { cardId: { in: cardIds } } });
-      await tx.checklistItem.deleteMany({
-        where: { checklist: { cardId: { in: cardIds } } },
-      });
-      await tx.checklist.deleteMany({ where: { cardId: { in: cardIds } } });
-      await tx.cardLink.deleteMany({ where: { boardId } });
-      await tx.attachment.deleteMany({ where: { cardId: { in: cardIds } } });
-      await tx.comment.deleteMany({ where: { cardId: { in: cardIds } } });
-      await tx.activity.deleteMany({ where: { boardId } });
-      await tx.command.deleteMany({ where: { boardId } });
-      await tx.boardShare.deleteMany({ where: { boardId } });
-      await tx.card.deleteMany({ where: { id: { in: cardIds } } });
-      await tx.column.deleteMany({ where: { boardId } });
-      await tx.label.deleteMany({ where: { boardId } });
-      // The whole board is ours (title marker): clear every member, watcher
-      // included, before the FK-bound board delete.
-      await tx.boardMember.deleteMany({ where: { boardId } });
-      await tx.board.deleteMany({ where: { id: boardId } });
-    });
-    if (userIds.length > 0) {
-      await this.prisma.user.deleteMany({ where: { id: { in: userIds } } });
-    }
-  }
-
   private async createUser(
     runTag: string,
     displayName: string,
@@ -756,6 +689,8 @@ export class DemoService implements OnModuleDestroy {
     await this.comments.create(cardId, worker, { text: "Взял в работу." });
     await sleep(jitter(400, 900));
 
+    if (!live()) return;
+
     await this.send(boardId, worker, {
       type: "ADD_CHECKLIST",
       cardId,
@@ -772,6 +707,8 @@ export class DemoService implements OnModuleDestroy {
       });
     }
     await sleep(jitter(300, 700));
+
+    if (!live()) return;
 
     await this.send(boardId, worker, {
       type: "SET_CHECKLIST_ITEM_DONE",
@@ -812,6 +749,8 @@ export class DemoService implements OnModuleDestroy {
     });
     await sleep(jitter(500, 1100));
 
+    if (!live()) return;
+
     await move("Тестирование", "Готово");
     await this.send(boardId, worker, {
       type: "SET_CHECKLIST_ITEM_DONE",
@@ -835,51 +774,106 @@ export class DemoService implements OnModuleDestroy {
     const { boardId, createdBoard, userIds, columnIds, labelIds, cardIds } =
       manifest;
     const cards = { in: cardIds };
-    // Demo users author the commands/activity; cleanup deletes them outright
-    // (no watcher account survives now — the live share is the observation
-    // path, TASK-58).
     const demoUsers = { in: userIds };
     await this.boardWrite.run(boardId, async (tx) => {
-      await tx.cardLabel.deleteMany({ where: { cardId: cards } });
+      const commands = await tx.command.findMany({
+        where: {
+          boardId,
+          actorId: demoUsers,
+          type: {
+            in: ["ADD_CHECKLIST", "ADD_CHECKLIST_ITEM", "ADD_CARD_LINK"],
+          },
+        },
+        select: { type: true, payload: true },
+      });
+      const checklistIds: string[] = [];
+      const itemIds: string[] = [];
+      const linkIds: string[] = [];
+      for (const { type, payload } of commands) {
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+          continue;
+        }
+        if (
+          type === "ADD_CHECKLIST" &&
+          typeof payload.newChecklistId === "string"
+        ) {
+          checklistIds.push(payload.newChecklistId);
+        }
+        if (
+          type === "ADD_CHECKLIST_ITEM" &&
+          typeof payload.newItemId === "string"
+        ) {
+          itemIds.push(payload.newItemId);
+        }
+        if (type === "ADD_CARD_LINK" && typeof payload.linkId === "string") {
+          linkIds.push(payload.linkId);
+        }
+      }
+
+      const demoCards = { id: cards, column: { boardId } };
       await tx.checklistItem.deleteMany({
-        where: { checklist: { cardId: cards } },
+        where: { id: { in: itemIds }, checklist: { card: demoCards } },
       });
-      await tx.checklist.deleteMany({ where: { cardId: cards } });
-      await tx.cardLink.deleteMany({ where: { boardId } });
-      await tx.attachment.deleteMany({ where: { cardId: cards } });
-      await tx.comment.deleteMany({ where: { cardId: cards } });
-      await tx.activity.deleteMany({
-        where: createdBoard
-          ? { boardId }
-          : { boardId, OR: [{ actorId: demoUsers }, { cardId: cards }] },
+      await tx.checklist.deleteMany({
+        where: {
+          id: { in: checklistIds },
+          card: demoCards,
+          items: { none: {} },
+        },
       });
-      await tx.command.deleteMany({
-        where: createdBoard ? { boardId } : { boardId, actorId: demoUsers },
+      await tx.cardLink.deleteMany({
+        where: { id: { in: linkIds }, boardId },
       });
-      await tx.card.deleteMany({ where: { id: cards } });
-      await tx.column.deleteMany({ where: { id: { in: columnIds } } });
-      await tx.label.deleteMany({ where: { id: { in: labelIds } } });
-      // The run's live share dies with the run: the token must stop resolving
-      // the instant `stop` runs (a live share of a deleted board would only
-      // answer 410; deleting the row is cleaner). On a created board every
-      // share is ours; on a provided board only the one we minted.
-      await tx.boardShare.deleteMany({
-        where: createdBoard
-          ? { boardId }
-          : { id: manifest.shareId ?? "__none__" },
+      await tx.cardLabel.deleteMany({
+        where: { card: demoCards, labelId: { in: labelIds } },
       });
-      // A board the run created is entirely ours: drop every membership before
-      // deleting it, or the board FK (BoardMember.boardId) blocks the delete.
-      // A provided board keeps its other members; only ours go.
+      await tx.comment.deleteMany({
+        where: { card: { column: { boardId } }, authorId: demoUsers },
+      });
+      await tx.activity.deleteMany({ where: { boardId, actorId: demoUsers } });
+      await tx.command.deleteMany({ where: { boardId, actorId: demoUsers } });
+      // Keep recorded parents when other users have added dependent rows.
+      await tx.card.deleteMany({
+        where: {
+          ...demoCards,
+          linksFrom: { none: {} },
+          linksTo: { none: {} },
+          checklists: { none: {} },
+          labels: { none: {} },
+          comments: { none: {} },
+          attachments: { none: {} },
+          activity: { none: {} },
+        },
+      });
+      await tx.column.deleteMany({
+        where: { id: { in: columnIds }, boardId, cards: { none: {} } },
+      });
+      await tx.label.deleteMany({
+        where: { id: { in: labelIds }, boardId, cards: { none: {} } },
+      });
+      if (manifest.shareId) {
+        await tx.boardShare.deleteMany({
+          where: { id: manifest.shareId, boardId },
+        });
+      }
       await tx.boardMember.deleteMany({
-        where: createdBoard ? { boardId } : { boardId, userId: demoUsers },
+        where: { boardId, userId: demoUsers },
       });
       if (createdBoard) {
-        await tx.board.deleteMany({ where: { id: boardId } });
+        await tx.board.deleteMany({
+          where: {
+            id: boardId,
+            columns: { none: {} },
+            labels: { none: {} },
+            cardLinks: { none: {} },
+            members: { none: {} },
+            activity: { none: {} },
+            commands: { none: {} },
+            shares: { none: {} },
+          },
+        });
       }
+      await tx.user.deleteMany({ where: { id: demoUsers } });
     });
-    // Demo users have no rows left pointing at them once the board content and
-    // their authored commands/activity are gone.
-    await this.prisma.user.deleteMany({ where: { id: demoUsers } });
   }
 }

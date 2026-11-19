@@ -93,12 +93,12 @@ without an account.
 Choose a mode:
 
 - `Live` follows the board as it changes.
-- `Snapshot` saves the board as it is when the link is created. A board admin can refresh the snapshot. A
-  snapshot's board content and member list survive the board's deletion. Its
-  comments and attachments are frozen too: comments and files added after the
-  capture do not appear until you refresh it. They are stored with the source
-  board, so they also stop being available once the source board is purged
-  (30 days after deletion); refresh or copy anything you need before then.
+- `Snapshot` saves the board and member list as they are when the link is
+  created. Select comments and attachments to save their current versions
+  with the snapshot. Captured content stays available after changes,
+  archival or permanent deletion of the board, until the link is revoked
+  or expires. A board admin can refresh the snapshot to publish current
+  content, including comments or files missing from older snapshots.
 
 Each link can show existing comments and attachments, and can be given an
 expiry: `Never`, 1 hour, 24 hours, one week or about a month. Optionally give

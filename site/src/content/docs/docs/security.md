@@ -228,8 +228,10 @@ it logs a warning at start while `ALLOW_REGISTRATION` is `true` (the default).
   the validator rebuilds each action from an allow-list, keeps inverse-only
   fields only on undo commands, and the server replaces a command clock more
   than five minutes off its own.
-- Snapshot share links serve only the comments and attachments that existed
-  when the snapshot was captured.
+- Snapshot shares keep copies of opted-in comments and attachment files.
+  Those copies stay public after the originals change or are deleted, even
+  if the source board is purged. To end access to the snapshot, revoke the
+  link or set an expiry.
 - Card descriptions and comments use a Markdown renderer with protections
   against unsafe content. Keep dependencies up to date.
 - Access is role-based per board (ADMIN, MEMBER, VIEWER), plus a separate

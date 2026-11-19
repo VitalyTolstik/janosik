@@ -384,8 +384,9 @@ paths:
         Requires board `ADMIN` and the `admin` preset. Destructive: repeat the
         same call with `X-Approval-Id` after a human approved the
         `board.delete` operation. Cascades the delete flag to children,
-        hard-deletes memberships and revokes live shares; snapshot shares
-        survive.
+        retains memberships until purge and revokes live shares. Snapshot
+        shares keep serving captured content after deletion and purge.
+        Permanent board purge also removes its sessions and approvals.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -626,7 +627,8 @@ paths:
         replays the first link for the same intent. When public sharing is
         disabled by the operator (`ALLOW_PUBLIC_SHARES=false` or the
         `public_shares` flag) creation answers `404`, like the rest of the
-        public share contour.
+        public share contour. Snapshot mode captures the board and roster
+        plus the comments and attachment files enabled in this request.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ApprovalId"
@@ -661,7 +663,9 @@ paths:
       description: |
         Board `ADMIN` and `admin` preset. Changing visibility is sensitive and
         requires approval (`share.update`); the applied change is written to
-        the board-share audit log.
+        the board-share audit log. For a snapshot, enabling a category
+        that was absent at capture requires a refresh before it is public.
+        Turning a flag off hides that category immediately.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -715,8 +719,11 @@ paths:
       operationId: refreshBoardShare
       summary: Refresh a snapshot share
       description: |
-        Re-freezes a snapshot share; a live share answers `400`. Replacing
-        the public snapshot is a `share.update` lifecycle action: a PAT on a
+        Captures the current board and roster and the currently enabled
+        comments and attachment files. This also enables opted-in content
+        on snapshots made before nested content was captured. A live share
+        answers `400`. Replacing the snapshot is a `share.update` lifecycle
+        action: a PAT on a
         board whose policy requires approval gets `409 approval_required` and
         must retry with `X-Approval-Id`. Every refresh is written to the
         board-share audit log.
@@ -970,7 +977,10 @@ paths:
       tags: [Agent sessions]
       operationId: listAgentSessions
       summary: List agent sessions
-      description: Board members can read every session; `active=1` drops terminal sessions.
+      description: |
+        Board members can read retained sessions. `active=1` filters to
+        non-terminal sessions. Ended sessions are eligible for cleanup after
+        the configured retention window.
       parameters:
         - name: active
           in: query
@@ -1436,7 +1446,9 @@ paths:
       summary: List approval requests
       description: |
         A board `ADMIN` sees every request; another token sees only its own.
-        Newest first; `plan` is omitted from the list.
+        Newest first. List entries omit `plan`. Rejected, cancelled, expired
+        and consumed requests are eligible for cleanup after the configured
+        retention window following their terminal event.
       responses:
         "200":
           description: Approval requests.

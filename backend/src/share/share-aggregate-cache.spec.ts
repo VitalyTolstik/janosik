@@ -32,6 +32,24 @@ describe("ShareAggregateCache", () => {
     expect(cache.get("b1", 5)).toBeUndefined();
   });
 
+  it("bounds distinct boards and evicts the least recently used aggregate", async () => {
+    const cache = new ShareAggregateCache(2000, 2);
+    await cache.load("b1", build);
+    await cache.load("b2", build);
+    expect(cache.get("b1", 5)).toBeDefined();
+
+    await cache.load("b3", build);
+    expect(cache.size).toBe(2);
+    expect(cache.get("b2", 5)).toBeUndefined();
+    expect(cache.get("b1", 5)).toBeDefined();
+    expect(cache.get("b3", 5)).toBeDefined();
+
+    jest.advanceTimersByTime(2000);
+    await cache.load("b4", build);
+    expect(cache.size).toBe(1);
+    expect(cache.get("b4", 5)).toBeDefined();
+  });
+
   it("single-flights concurrent rebuilds for one board", async () => {
     jest.useRealTimers();
     const cache = new ShareAggregateCache(2000);
