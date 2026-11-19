@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Board } from "@janosik/shared";
-import App from "@/App";
+import App, { createAppRouter } from "@/App";
 import { FakeServer } from "@/test/fake-server";
 
 /**
@@ -58,7 +58,7 @@ describe("App board shell", () => {
       },
     );
 
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     const skeleton = await screen.findByTestId("board-shell-skeleton");
     expect(skeleton).toHaveAttribute("aria-busy", "true");
@@ -92,7 +92,7 @@ describe("App board shell", () => {
       },
     );
 
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(
       await screen.findByTestId("sync-retry", {}, { timeout: 3000 }),

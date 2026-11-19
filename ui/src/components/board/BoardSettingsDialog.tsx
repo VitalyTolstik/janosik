@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { GitBranch, Shield } from "lucide-react";
 import type { BoardSummary, BoardWorkflow } from "@janosik/shared";
 
@@ -45,6 +45,7 @@ export function BoardSettingsDialog({
   const { board } = useBoardState();
   const { setBoardWorkflow } = useBoardActions();
   const { role } = useBoardAccess();
+  const workflowPanel = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [workflowDirty, setWorkflowDirty] = useState(false);
   const [policyDirty, setPolicyDirty] = useState(false);
@@ -112,14 +113,14 @@ export function BoardSettingsDialog({
   ): Promise<boolean> => {
     setSaving(true);
     try {
-      const outcome = await setBoardWorkflow(workflow);
+      const outcome = await setBoardWorkflow(workflow, board.id);
       // The server refused: the command layer already rolled the optimistic
       // change back and showed the reason. Keep the dialog and its draft open
       // so the admin can fix the config instead of losing it. A transport
       // rejection means the same: no success until the server acknowledged.
       if (outcome === false) return false;
       toast.success(t("workflow.savedToast"));
-      if (!policyDirty) {
+      if (!policyDirty && workflowPanel.current !== null) {
         // A successful save bypasses the discard guard: there is nothing left
         // to lose in this section. The policy draft still guards the close.
         onOpenChange(false);
@@ -180,6 +181,7 @@ export function BoardSettingsDialog({
         discardConfirmLabel={t("workflow.discard")}
       >
         <div
+          ref={workflowPanel}
           id="board-settings-panel-workflow"
           role="tabpanel"
           aria-labelledby="board-settings-tab-workflow"
@@ -205,22 +207,22 @@ export function BoardSettingsDialog({
             />
           </div>
         </div>
-        {policyMounted ? (
-          <div
-            id="board-settings-panel-agents"
-            role="tabpanel"
-            aria-labelledby="board-settings-tab-agents"
-            hidden={section !== "agents"}
-            className="h-full min-h-0"
-          >
+        <div
+          id="board-settings-panel-agents"
+          role="tabpanel"
+          aria-labelledby="board-settings-tab-agents"
+          hidden={section !== "agents"}
+          className="h-full min-h-0"
+        >
+          {policyMounted ? (
             <AgentsAutomationSettings
               role={role}
               onDirtyChange={setPolicyDirty}
               onNeverSavedChange={setPolicyNeverSaved}
               onOpenLiveControls={openLiveControls}
             />
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </BoardSettingsShell>
       <ConfirmDialog
         open={liveConfirmOpen}

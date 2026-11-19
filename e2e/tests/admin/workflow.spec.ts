@@ -94,3 +94,29 @@ test("an OPERATOR saves the workflow through the same audited path", async ({
     detailsText: "SET_BOARD_WORKFLOW",
   });
 });
+
+test("Back and sidebar navigation confirm a dirty workflow draft", async ({
+  page,
+  board,
+}) => {
+  await board.column("Backlog");
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`boards/${board.id}/workflow`));
+  const toggle = page.getByTestId("admin-workflow-enabled");
+  await toggle.click();
+
+  await page.getByRole("link", { name: "Back", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: /unsaved|discard/i });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(page).toHaveURL(/\/workflow$/);
+
+  await page
+    .getByTestId("admin-sidebar")
+    .getByRole("link", { name: "Users", exact: true })
+    .click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: /discard/i }).click();
+  await expect(page).toHaveURL(/\/admin\/users$/);
+});

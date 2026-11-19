@@ -10,7 +10,7 @@
 export function isOverlayOpen(): boolean {
   return (
     document.querySelector(
-      '[role="dialog"], [role="menu"], [role="listbox"], [data-slot="context-menu-content"]',
+      '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="context-menu-content"]',
     ) !== null
   );
 }

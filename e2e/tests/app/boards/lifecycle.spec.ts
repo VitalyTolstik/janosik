@@ -22,13 +22,17 @@ test("create, rename, switch, archive, restore and delete boards across reloads"
   ).toBeVisible();
   await page.getByRole("button", { name: "Switch board" }).click();
   const original = page
-    .getByRole("option")
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
     .filter({ hasText: originalTitle })
     .first();
   await original.click();
   await expect(page).toHaveURL(new RegExp(board.id));
   await page.getByRole("button", { name: "Switch board" }).click();
-  const row = page.getByRole("option").filter({ hasText: "Renamed board" });
+  const row = page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: "Renamed board" });
   await row.hover();
   await row.getByRole("button", { name: "Archive board" }).click();
   await row.getByRole("button", { name: "Yes, archive" }).click();
@@ -44,10 +48,14 @@ test("create, rename, switch, archive, restore and delete boards across reloads"
     .last();
   await archived.getByRole("button", { name: "Restore board" }).click();
   await expect(
-    page.getByRole("option").filter({ hasText: "Renamed board" }),
+    page
+      .getByRole("grid", { name: "Switch board" })
+      .getByRole("row")
+      .filter({ hasText: "Renamed board" }),
   ).toBeVisible();
   const restored = page
-    .getByRole("option")
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
     .filter({ hasText: "Renamed board" });
   await restored.hover();
   await restored.getByRole("button", { name: "Archive board" }).click();

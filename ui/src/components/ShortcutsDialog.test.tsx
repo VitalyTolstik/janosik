@@ -59,14 +59,14 @@ const SEED = JSON.stringify([
   },
 ]);
 
-function renderBoard() {
+function renderBoard(path = "/board/b-1") {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter>
+              <MemoryRouter initialEntries={[path]}>
                 <BoardProvider>
                   <Header />
                   <BoardSection />
@@ -81,7 +81,11 @@ function renderBoard() {
 }
 
 const pressKey = (key: string, init: KeyboardEventInit = {}) =>
-  fireEvent.keyDown(window, { key, ...init });
+  fireEvent.keyDown(window, {
+    key,
+    code: /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : undefined,
+    ...init,
+  });
 
 // Radix DropdownMenu opens on pointerdown, not click.
 const openHelp = () =>
@@ -106,6 +110,30 @@ describe("keyboard shortcuts", () => {
     // Radix closes on Escape via its own handler.
   });
 
+  it("matches physical keys on a Russian layout", () => {
+    renderBoard();
+    pressKey("о", { code: "KeyJ" });
+    expect(
+      document.querySelector('[data-card-cursor="true"]'),
+    ).toHaveTextContent("First card");
+    pressKey("л", { code: "KeyK" });
+    pressKey("у", { code: "KeyE" });
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue(
+      "First card",
+    );
+  });
+
+  it("lists the filter in table view and removes unmounted Kanban shortcuts", () => {
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Table" }));
+    pressKey(",", { code: "Slash", shiftKey: true });
+    const table = screen.getByTestId("shortcuts-table");
+    expect(table).toHaveTextContent("Focus the board filter");
+    expect(table).toHaveTextContent("Undo");
+    expect(table).not.toHaveTextContent("Next card");
+    expect(table).not.toHaveTextContent("New column");
+  });
+
   it("opens the cheat sheet from the Help menu", () => {
     renderBoard();
     openHelp();
@@ -125,7 +153,7 @@ describe("keyboard shortcuts", () => {
 
   it("'n' opens a card composer, 'c' opens the column composer", () => {
     renderBoard();
-    pressKey("n");
+    pressKey("т", { code: "KeyN" });
     // The idle "Add a card" trigger was clicked → its textarea is in the DOM.
     expect(
       screen.getByPlaceholderText("Enter a title for this card…"),
@@ -162,9 +190,9 @@ describe("keyboard shortcuts", () => {
 
   it("single-letter keys are ignored while typing", () => {
     renderBoard();
-    pressKey("c");
+    pressKey("с", { code: "KeyC" });
     const input = screen.getByPlaceholderText("Column title…");
-    fireEvent.keyDown(input, { key: "j" });
+    fireEvent.keyDown(input, { key: "о", code: "KeyJ" });
     // No cursor appeared: the key was typed into the input.
     expect(document.querySelector('[data-card-cursor="true"]')).toBeNull();
   });

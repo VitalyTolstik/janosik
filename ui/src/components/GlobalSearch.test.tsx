@@ -187,6 +187,27 @@ describe("GlobalSearch", () => {
     expect(results).toHaveTextContent("Alpha");
   });
 
+  it("links the combobox to its selected option and resets on no matches", async () => {
+    renderSearch();
+    await search("newsletter");
+    const input = screen.getByRole("combobox", {
+      name: "Search cards and boards",
+    });
+    const listbox = screen.getByRole("listbox");
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    const option = screen.getByRole("option", { selected: true });
+    expect(input).toHaveAttribute("aria-activedescendant", option.id);
+    expect(listbox).toContainElement(option);
+    expect(input).toHaveFocus();
+
+    fireEvent.change(input, { target: { value: "a query with no matches" } });
+    await waitFor(() =>
+      expect(input).toHaveAttribute("aria-expanded", "false"),
+    );
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
   it("handles Ctrl+K only in the palette, not the board filter (B-7)", async () => {
     renderSearch();
     const filterInput = screen.getByLabelText("Search cards", {
@@ -194,7 +215,7 @@ describe("GlobalSearch", () => {
     });
     const filterFocus = vi.spyOn(filterInput, "focus");
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "л", code: "KeyK", ctrlKey: true });
 
     // The palette opens…
     expect(

@@ -132,7 +132,9 @@ test("groups card hits before board hits", async ({ page, board }) => {
 
   await searchGlobally(page, "Orion");
 
-  const sections = globalSearchResults(page).getByRole("listbox");
+  const sections = globalSearchResults(page)
+    .getByRole("listbox")
+    .getByRole("group");
   await expect(sections).toHaveCount(2);
   await expect(sections.nth(0)).toHaveAttribute("aria-label", "Cards");
   await expect(sections.nth(1)).toHaveAttribute("aria-label", "Boards");

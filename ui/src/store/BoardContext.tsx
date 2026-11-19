@@ -26,6 +26,7 @@ import {
   type UpdateCardAction,
 } from "@janosik/shared";
 import { api, ApiError, isApiEnabled } from "@/api/client";
+import { BoardViewProvider } from "@/components/board/BoardViewProvider";
 import {
   BoardLiveProvider,
   cardIdsTouchedBy,
@@ -273,7 +274,10 @@ interface BoardActionsValue {
    * mode resolves `false` when the server refused the command (the failure
    * toast is already shown), so the settings dialog can stay open.
    */
-  setBoardWorkflow: (workflow?: BoardWorkflow) => void | Promise<boolean>;
+  setBoardWorkflow: (
+    workflow: BoardWorkflow | undefined,
+    boardId: string,
+  ) => void | boolean | Promise<boolean>;
   /** Sorts a column's cards (createdAt / dueDate / title). */
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
@@ -784,6 +788,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   } = useUndoHistory({
     getBoard: getBoardById,
     getActiveBoardId,
+    hotkeysEnabled: board !== undefined && roles[board.id] !== "VIEWER",
     apply,
     ...(serverMode
       ? {
@@ -2015,7 +2020,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           <BoardAccessContext.Provider value={access}>
             <BoardIdentityContext.Provider value={identity}>
               <BoardStateContext.Provider value={stateValue}>
-                {children}
+                <BoardViewProvider>{children}</BoardViewProvider>
               </BoardStateContext.Provider>
             </BoardIdentityContext.Provider>
           </BoardAccessContext.Provider>
@@ -2408,16 +2413,19 @@ function createBoardActions(
         at: Date.now(),
       });
     },
-    setBoardWorkflow: (workflow?: BoardWorkflow) => {
+    setBoardWorkflow: (workflow, boardId) => {
+      const board = getBoard();
+      if (board?.id !== boardId) return false;
       // Saving an unchanged config is not a step (and must not cost undo).
       if (
         JSON.stringify(workflow ?? null) ===
-        JSON.stringify(getBoard()?.workflow ?? null)
+        JSON.stringify(board.workflow ?? null)
       ) {
         return;
       }
       return dispatch({
         type: "SET_BOARD_WORKFLOW",
+        boardId,
         workflow,
         at: Date.now(),
       });

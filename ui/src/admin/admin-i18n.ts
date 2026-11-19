@@ -46,6 +46,7 @@ const en = {
   "admin.hub.group.govern": "Govern",
   "admin.hub.group.configure": "Configure",
   "admin.hub.allDestinations": "All 26 destinations",
+  "admin.hub.allDestinationsDescription": "Choose a section to open.",
   "admin.hub.tabNav": "Section",
   "admin.hub.navLabel": "Admin navigation",
   "admin.hub.breadcrumb": "Breadcrumb",
@@ -1438,6 +1439,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.hub.group.govern": "Контроль",
   "admin.hub.group.configure": "Настройка",
   "admin.hub.allDestinations": "Все 26 разделов",
+  "admin.hub.allDestinationsDescription":
+    "Выберите раздел, который хотите открыть.",
   "admin.hub.tabNav": "Раздел",
   "admin.hub.navLabel": "Навигация админки",
   "admin.hub.breadcrumb": "Навигационная цепочка",

@@ -105,7 +105,10 @@ test("accepting an invitation opens the shared board", async ({
     .getByRole("button", { name: "Switch board" })
     .click();
   await expect(
-    partnerBrowser.page.getByRole("option").filter({ hasText: board.title }),
+    partnerBrowser.page
+      .getByRole("grid", { name: "Switch board" })
+      .getByRole("row")
+      .filter({ hasText: board.title }),
   ).toBeVisible();
   await partnerBrowser.page.keyboard.press("Escape");
   await expect.poll(() => partner.role()).toBe("MEMBER");

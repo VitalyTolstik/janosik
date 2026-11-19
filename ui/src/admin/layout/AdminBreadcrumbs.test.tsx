@@ -22,6 +22,13 @@ describe("AdminBreadcrumbs", () => {
     expect(nav).toHaveTextContent("Master panel");
     expect(nav).toHaveTextContent("Settings");
     expect(nav).toHaveTextContent("Email service");
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/admin/settings",
+    );
+    const tab = screen.getByRole("link", { name: "Email service" });
+    expect(tab).toHaveAttribute("href", "/admin/settings?tab=email");
+    expect(tab).toHaveAttribute("aria-current", "page");
   });
 
   it("marks the last crumb as the current page", () => {

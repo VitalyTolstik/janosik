@@ -39,6 +39,7 @@ import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
 import { PRIORITY_META, PRIORITY_ORDER } from "@/utils/priority";
 import { userLabel } from "@/utils/avatar";
+import { isEditableTarget } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { pad2 } from "@/utils/time";
 import {
@@ -265,15 +266,14 @@ export function FilterBar({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target !== null &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
-      const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (e.defaultPrevented || e.isComposing) return;
+      const slash =
+        (e.key === "/" || (e.code === "Slash" && !e.shiftKey)) &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey;
 
-      if (slash && !typing && !isOverlayOpen()) {
+      if (slash && !isEditableTarget(e.target) && !isOverlayOpen()) {
         e.preventDefault();
         inputRef.current?.focus();
         return;

@@ -15,7 +15,7 @@ of cards. The board title lives in the header, next to the board switcher.
 Open the board switcher and use the `New board` row. Type a name and press
 Enter. You can also type a name into the switcher's search box first — its
 footer then reads `Create "<name>"` and creates that board. A new board starts
-empty and you are taken straight to it.
+empty and you are taken straight to it. Board names can have up to 100 characters.
 
 ![The board switcher: your boards with card counts, and a New board row.](/screens/board-switcher.png)
 

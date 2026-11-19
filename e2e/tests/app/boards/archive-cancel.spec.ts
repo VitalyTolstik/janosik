@@ -6,7 +6,10 @@ test("cancelling the archive confirmation keeps the board active", async ({
 }) => {
   await board.open(page);
   await page.getByRole("button", { name: "Switch board" }).click();
-  const row = page.getByRole("option").filter({ hasText: board.title });
+  const row = page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: board.title });
   await row.hover();
   await row.getByRole("button", { name: "Archive board" }).click();
   await row.getByRole("button", { name: "Cancel" }).click();
@@ -20,7 +23,10 @@ test("cancelling the archive confirmation keeps the board active", async ({
   await page.reload();
   await page.getByRole("button", { name: "Switch board" }).click();
   await expect(
-    page.getByRole("option").filter({ hasText: board.title }),
+    page
+      .getByRole("grid", { name: "Switch board" })
+      .getByRole("row")
+      .filter({ hasText: board.title }),
   ).toBeVisible();
   await expect(page.getByTestId("archived-section")).toHaveCount(0);
 });

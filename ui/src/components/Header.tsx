@@ -15,6 +15,7 @@ import { BoardTitle } from "@/components/board/BoardTitle";
 import { DataMenu } from "@/components/DataMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { HelpMenu } from "@/components/HelpMenu";
+import { useBoardView } from "@/components/board/BoardViewProvider";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import { Button } from "@/components/ui/button";
@@ -73,7 +74,9 @@ export function Header() {
   const { undo, redo, roleOf } = useBoardActions();
   const { canUndo, canRedo } = useBoardHistory();
   const { role } = useBoardAccess();
-  const { boards } = useBoard();
+  const { board, boards } = useBoard();
+  const { view } = useBoardView();
+  const settingsBoardId = isBoardRoute ? board?.id : undefined;
   const scopeParam = new URLSearchParams(location.search).get("board");
   // Opening a detail from All boards keeps `scope=all` and adds the row's
   // `board` for the deep link. The visible scope stays All boards; the board
@@ -117,10 +120,17 @@ export function Header() {
   // A VIEWER has no mutating affordances, undo included: a stale local stack
   // after a live demotion would only offer commands the server refuses.
   const readOnly = role === "VIEWER";
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"workflow" | "agents">(
-    "workflow",
-  );
+  const [settings, setSettings] = useState<{
+    boardId: string;
+    section: "workflow" | "agents";
+  } | null>(null);
+  if (settings !== null && settings.boardId !== settingsBoardId) {
+    setSettings(null);
+  }
+  const openSettings = (section: "workflow" | "agents") => {
+    if (settingsBoardId !== undefined)
+      setSettings({ boardId: settingsBoardId, section });
+  };
   const [agentControlOpen, setAgentControlOpen] = useState(false);
   const agentTrigger = useRef<HTMLButtonElement | null>(null);
   const agentsLink = useRef<HTMLAnchorElement | null>(null);
@@ -376,10 +386,7 @@ export function Header() {
                       aria-label={t("board.settings.button")}
                       data-testid="board-settings-trigger"
                       className="md:h-8 md:w-8 md:min-w-8"
-                      onClick={() => {
-                        setSettingsSection("workflow");
-                        setSettingsOpen(true);
-                      }}
+                      onClick={() => openSettings("workflow")}
                     >
                       <LazyAnimatedIcon name="settings" size={16} />
                     </Button>
@@ -420,7 +427,11 @@ export function Header() {
           <NotificationsBell />
         ) : isBoardRoute ? (
           <div className="hidden min-[1200px]:block">
-            <HelpMenu />
+            <HelpMenu
+              filter={board !== undefined && view !== "watch"}
+              kanban={board !== undefined && view === "board"}
+              canEdit={board !== undefined && !readOnly}
+            />
           </div>
         ) : (
           <HelpMenu />
@@ -502,11 +513,15 @@ export function Header() {
         <AccountDialog onOpenAgents={openAllAgents} compact={isAgentsRoute} />
       </div>
 
-      {settingsOpen ? (
+      {settings !== null && settings.boardId === settingsBoardId ? (
         <BoardSettingsDialog
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-          initialSection={settingsSection}
+          key={settings.boardId}
+          open
+          onOpenChange={(open) => {
+            if (!open)
+              setSettings((current) => (current === settings ? null : current));
+          }}
+          initialSection={settings.section}
           onOpenLiveControls={() => {
             // Board Settings closes first (with its dirty guard); keep the
             // board route and expose the same durable Live deep link.
@@ -547,8 +562,7 @@ export function Header() {
             onOpenAllAgents={openAllAgents}
             onOpenPolicy={() => {
               closeAgentControl();
-              setSettingsSection("agents");
-              setSettingsOpen(true);
+              openSettings("agents");
             }}
             onCloseAutoFocus={restoreAgentTrigger}
           />

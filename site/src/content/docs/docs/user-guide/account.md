@@ -17,7 +17,10 @@ at the bottom switches between the two modes.
 
 If the operator has enabled external sign-in, buttons such as `Continue with
 <provider>` appear below the form. An operator can also close registration;
-when it is closed, only the sign-in form is shown.
+when it is closed, only the sign-in form is shown. After a successful external
+sign-in from a board, card or agent link, the app returns to that link. If the
+provider sign-in fails, the app keeps the link so you can retry. Signing out
+after registration returns you to the sign-in form.
 
 After five wrong passwords for one address, sign-in pauses for that address:
 first for 30 seconds, then twice as long after each further miss, up to 15
@@ -27,6 +30,11 @@ An existing password account must first link the provider in Account → Securit
 If its email was never confirmed, the server removes the password, signs out
 every device and revokes all API keys before linking the provider. You then sign
 in through that provider.
+
+Sign-in explains when an account is disabled or the service is temporarily
+unavailable. Registration explains when sign-up is closed or unavailable.
+On a short screen, scroll down to reach the controls. Changing the interface
+language clears the language handoff in the URL and saves the new preference.
 
 ## Forgot your password?
 

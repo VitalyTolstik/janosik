@@ -50,12 +50,15 @@ describe("OAuth (e2e)", () => {
       json: async () => body,
     }) as unknown as Response;
 
-  const setStateCookie = (res: request.Response): string => {
-    const raw = res.headers["set-cookie"] as unknown as string[];
-    const row = raw.find((cookie) => cookie.startsWith("oauth_state="));
-    if (!row) throw new Error("no oauth_state cookie set");
+  const oauthCookie = (res: request.Response, name: string): string => {
+    const cookies = res.headers["set-cookie"] as unknown as string[];
+    const row = cookies.find((cookie) => cookie.startsWith(`${name}=`));
+    if (!row) throw new Error(`no ${name} cookie set`);
     return row.split(";")[0];
   };
+
+  const setStateCookie = (res: request.Response): string =>
+    oauthCookie(res, "oauth_state");
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -321,6 +324,64 @@ describe("OAuth (e2e)", () => {
     expect(pat.revokedAt).not.toBeNull();
     // Other specs wipe users without API tokens — leave none behind.
     await prisma.apiToken.deleteMany({ where: { userId: squatter.id } });
+  });
+
+  it("returns to the original board URL after the provider completes or denies sign-in", async () => {
+    const deepLink = "/board/board-123?card=card-456&lng=ru#details";
+    stubProvider({
+      email: "deep-link@gmail.com",
+      email_verified: true,
+      name: "Deep link",
+    });
+
+    for (const code of ["the-code", undefined]) {
+      const start = await server()
+        .get("/api/v1/auth/oauth/google/start")
+        .query({ returnTo: deepLink })
+        .expect(302);
+      const state = new URL(start.headers.location as string).searchParams.get(
+        "state",
+      );
+      const callback = await server()
+        .get("/api/v1/auth/oauth/google/callback")
+        .query(code === undefined ? { state } : { state, code })
+        .set("Cookie", [
+          setStateCookie(start),
+          oauthCookie(start, "oauth_return_to"),
+        ])
+        .expect(302);
+
+      const expected =
+        code === undefined
+          ? "/board/board-123?card=card-456&lng=ru&authError=oauth_failed#details"
+          : deepLink;
+      expect(callback.headers.location).toBe(
+        `http://localhost:5173${expected}`,
+      );
+      expect(oauthCookie(callback, "oauth_return_to")).toBe("oauth_return_to=");
+    }
+  });
+
+  it("uses the app root when the requested return URL leaves the app", async () => {
+    const start = await server()
+      .get("/api/v1/auth/oauth/google/start")
+      .query({ returnTo: "https://another.example/board/b-1" })
+      .expect(302);
+    const state = new URL(start.headers.location as string).searchParams.get(
+      "state",
+    );
+    const callback = await server()
+      .get("/api/v1/auth/oauth/google/callback")
+      .query({ state })
+      .set("Cookie", [
+        setStateCookie(start),
+        oauthCookie(start, "oauth_return_to"),
+      ])
+      .expect(302);
+
+    expect(callback.headers.location).toBe(
+      "http://localhost:5173/?authError=oauth_failed",
+    );
   });
 
   it("bounces a forged callback to the UI error param", async () => {

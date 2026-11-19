@@ -158,15 +158,20 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
     const { result, apply, state } = setupHotkeys();
     act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));
 
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(apply).toHaveBeenCalledTimes(1);
     expect(result.current.canRedo).toBe(true);
 
     // Redo, then unfold again with the macOS Cmd modifier.
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, {
+      key: "z",
+      code: "KeyZ",
+      ctrlKey: true,
+      shiftKey: true,
+    });
     expect(apply).toHaveBeenCalledTimes(2);
 
-    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ", metaKey: true });
     expect(apply).toHaveBeenCalledTimes(3);
   });
 
@@ -177,12 +182,17 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
     act(() => result.current.undo());
     expect(apply).toHaveBeenCalledTimes(1);
 
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, {
+      key: "z",
+      code: "KeyZ",
+      ctrlKey: true,
+      shiftKey: true,
+    });
     expect(apply).toHaveBeenCalledTimes(2);
     expect(result.current.canRedo).toBe(false);
 
     act(() => result.current.undo());
-    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "y", code: "KeyY", ctrlKey: true });
     expect(apply).toHaveBeenCalledTimes(4);
   });
 
@@ -196,25 +206,51 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
 
     const before = apply.mock.calls.length;
     // Native text undo takes over inside an editable field.
-    fireEvent.keyDown(input, { key: "z", ctrlKey: true });
-    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true, shiftKey: true });
-    fireEvent.keyDown(input, { key: "y", ctrlKey: true });
+    fireEvent.keyDown(input, { key: "z", code: "KeyZ", ctrlKey: true });
+    fireEvent.keyDown(textarea, {
+      key: "z",
+      code: "KeyZ",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    fireEvent.keyDown(input, { key: "y", code: "KeyY", ctrlKey: true });
     expect(apply.mock.calls.length).toBe(before);
     // The history is still intact — a later real Ctrl+Z works.
     expect(result.current.canUndo).toBe(true);
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(apply.mock.calls.length).toBe(before + 1);
 
     input.remove();
     textarea.remove();
   });
 
+  it("blocks RU-layout undo and redo while a modal owns focus", () => {
+    const { result, apply, state } = setupHotkeys();
+    act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));
+    const overlay = document.createElement("div");
+    overlay.setAttribute("role", "dialog");
+    document.body.append(overlay);
+
+    fireEvent.keyDown(overlay, { key: "я", code: "KeyZ", ctrlKey: true });
+    expect(apply).not.toHaveBeenCalled();
+    overlay.remove();
+    fireEvent.keyDown(window, { key: "я", code: "KeyZ", ctrlKey: true });
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    document.body.append(overlay);
+    fireEvent.keyDown(overlay, { key: "н", code: "KeyY", ctrlKey: true });
+    expect(apply).toHaveBeenCalledTimes(1);
+    overlay.remove();
+    fireEvent.keyDown(window, { key: "н", code: "KeyY", ctrlKey: true });
+    expect(apply).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores keys pressed without Ctrl or Cmd", () => {
     const { result, apply, state } = setupHotkeys();
     act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));
 
-    fireEvent.keyDown(window, { key: "z" });
-    fireEvent.keyDown(window, { key: "Z", shiftKey: true });
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ" });
+    fireEvent.keyDown(window, { key: "Z", code: "KeyZ", shiftKey: true });
     expect(apply).not.toHaveBeenCalled();
   });
 
@@ -223,7 +259,7 @@ describe("useUndoHistory — keyboard shortcuts (T-1)", () => {
     act(() => result.current.record("b-1", state.current, renameBoard("B", 1)));
 
     unmount();
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(apply).not.toHaveBeenCalled();
   });
 });

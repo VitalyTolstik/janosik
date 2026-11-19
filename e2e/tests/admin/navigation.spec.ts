@@ -91,3 +91,64 @@ test("returns to the boards app from the admin shell", async ({ page }) => {
   await expect(page.getByTestId("admin-sidebar")).toHaveCount(0);
   await expect(page.getByTestId("login-email")).toBeVisible();
 });
+
+test("Russian mobile All destinations closes both overlays on a same-hub tab change", async ({
+  page,
+}) => {
+  await loginAsMaster(page, ownerCredentials());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(adminPath("settings?lng=ru"));
+  await page.getByTestId("admin-sidebar-toggle").click();
+  await page.getByTestId("admin-all-destinations").click();
+  const destinations = page.getByRole("dialog", { name: "Все 26 разделов" });
+  await expect(destinations).toHaveAccessibleDescription(
+    "Выберите раздел, который хотите открыть.",
+  );
+  await destinations
+    .getByRole("link", { name: "Безопасность", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/admin\/settings\?tab=security$/);
+  await expect(destinations).toBeHidden();
+  await expect(page.getByTestId("admin-sidebar-scrim")).toHaveCount(0);
+});
+
+test("choosing a language consumes the handoff query while preserving the tab and hash", async ({
+  page,
+}) => {
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath("settings?tab=security&lng=ru#section"));
+  const language = page.getByRole("button", {
+    name: "Сменить язык",
+    exact: true,
+  });
+  await language.click();
+  await page.getByRole("menuitem", { name: "English" }).click();
+
+  await expect(page).toHaveURL(/\/admin\/settings\?tab=security#section$/);
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(
+    page.getByRole("heading", { name: "Security", exact: true }),
+  ).toBeVisible();
+});
+
+test("the admin palette and hub chord recognize Russian-layout physical keys", async ({
+  page,
+}) => {
+  await loginAsMaster(page, ownerCredentials());
+  const key = (key: string, code: string, ctrlKey = false) =>
+    page
+      .locator("body")
+      .dispatchEvent("keydown", { key, code, ctrlKey, bubbles: true });
+  await key("л", "KeyK", true);
+  await expect(
+    page.getByRole("combobox", { name: "Search everything" }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("admin-command-palette")).toBeHidden();
+
+  await key("п", "KeyG");
+  await key("г", "KeyU");
+  await expect(page).toHaveURL(/\/admin\/users$/);
+});

@@ -41,6 +41,9 @@ Detail routes keep their own pages:
 - `/app/admin/boards/:boardId/workflow`
 - `/app/admin/cards/:cardId`
 
+Breadcrumbs link to the hub and tab. Leaving a workflow editor with unsaved
+changes prompts you to discard them or stay on the page.
+
 ## Legacy links and redirects
 
 Old bookmarks keep working. The redirect preserves unrelated query
@@ -100,6 +103,10 @@ never reveals whether an email exists.
 | 640–959 px | 64 px icon rail | Labels are hidden; every hub stays reachable by its icon and tooltip |
 | 639 px and narrower | 280 px sheet behind a scrim | The top-bar menu opens the sheet; choosing a destination closes it. Tables become labelled cards and the content uses the full width |
 
+Choosing a tab from **All 26 destinations** closes both the dialog and
+the mobile navigation, including when the tab belongs to the current hub.
+The dialog uses the selected interface language.
+
 At 390 px the sidebar no longer steals 208 px from the content. Each table row
 becomes a card and every cell keeps its column name via `data-label`.
 
@@ -112,12 +119,13 @@ screen or to phone touch targets.
 
 ## Command palette
 
-`Ctrl/Cmd+K` opens the command palette. It contains:
+`Ctrl/Cmd+K` opens the command palette. Shortcuts follow the same physical
+keys on English and Russian layouts. The palette contains the following.
 
 - **Navigate**: the eight hubs.
 - **Actions**: open settings, toggle density, toggle theme, shortcut help,
   back to the boards app.
-- **Recent**: the last five panel routes.
+- **Recent** shows the last five panel routes with their section names and icons.
 - **Entities**: users, boards, cards, comments, files and labels from
   `GET /api/v1/admin/search?q=`, preserving the existing result test ids.
 

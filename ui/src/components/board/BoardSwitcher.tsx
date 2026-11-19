@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Archive,
@@ -124,7 +124,9 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [createDraft, setCreateDraft] = useState("");
-  const [highlighted, setHighlighted] = useState(0);
+  const [cursor, setCursor] = useState<number | null>(null);
+  const gridId = useId();
+  const rowId = (id: string) => `${gridId}-board-${id}`;
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   // TASK-166: server mode has no 10-board product limit. `undefined` while
@@ -188,6 +190,12 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
     return { mine, shared, flat: [...mine, ...shared] };
   }, [matches, roleOf]);
   const showGroupHeaders = groups.mine.length > 0 && groups.shared.length > 0;
+  const currentIndex = groups.flat.findIndex((entry) => entry.id === board?.id);
+  const highlighted = Math.min(
+    cursor ?? Math.max(currentIndex, 0),
+    groups.flat.length - 1,
+  );
+  const highlightedBoard = groups.flat[highlighted];
 
   const filteredArchived = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -259,16 +267,16 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
   };
 
   const onSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || highlightedBoard === undefined) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlighted((i) => Math.min(i + 1, groups.flat.length - 1));
+      setCursor(Math.min(highlighted + 1, groups.flat.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setHighlighted((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
+      setCursor(Math.max(highlighted - 1, 0));
+    } else if (e.key === "Enter" && confirmArchiveId !== highlightedBoard.id) {
       e.preventDefault();
-      const target = groups.flat[highlighted];
-      if (target) openBoard(target);
+      openBoard(highlightedBoard);
     }
   };
 
@@ -280,10 +288,12 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
       `[data-index="${highlighted}"]`,
     );
     row?.scrollIntoView({ block: "nearest" });
-  }, [highlighted]);
+  }, [highlighted, highlightedBoard?.id]);
 
   const queryTrimmed = query.trim();
   const showCreateAsNamed = queryTrimmed.length > 0;
+  const titleTooLong = queryTrimmed.length > LIMITS.boardTitle;
+  const titleLimitId = `${gridId}-title-limit`;
 
   return (
     <>
@@ -292,12 +302,20 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
         <Search size={15} className="shrink-0 text-muted-foreground" />
         <input
           name="board-search"
+          role="combobox"
+          aria-expanded={groups.flat.length > 0}
+          aria-haspopup="grid"
+          aria-controls={gridId}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            highlightedBoard ? rowId(highlightedBoard.id) : undefined
+          }
           ref={searchRef}
           value={query}
           maxLength={LIMITS.query}
           onChange={(e) => {
             setQuery(e.target.value);
-            setHighlighted(0);
+            setCursor(0);
           }}
           onKeyDown={onSearchKeyDown}
           placeholder={t("board.switcher.search")}
@@ -315,13 +333,7 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
       </div>
 
       {/* Board list */}
-      <div
-        ref={listRef}
-        role="listbox"
-        aria-label={t("board.switcher.aria")}
-        aria-busy={pendingBoardCount > 0}
-        className="max-h-[300px] overflow-y-auto p-1.5"
-      >
+      <div ref={listRef} className="max-h-[300px] overflow-y-auto p-1.5">
         {groups.flat.length === 0 ? (
           pendingBoardCount > 0 ? (
             <BoardListSkeleton pending={pendingBoardCount} />
@@ -330,8 +342,15 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
               {t("board.switcher.empty")}
             </p>
           )
-        ) : (
-          groups.flat.map((b, index) => {
+        ) : null}
+        <div
+          id={gridId}
+          role="grid"
+          aria-label={t("board.switcher.aria")}
+          aria-busy={pendingBoardCount > 0}
+          hidden={groups.flat.length === 0}
+        >
+          {groups.flat.map((b, index) => {
             const isActive = b.id === board?.id;
             const isHighlighted = index === highlighted;
             const isConfirming = confirmArchiveId === b.id;
@@ -348,6 +367,7 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
               <Fragment key={b.id}>
                 {header !== null ? (
                   <p
+                    aria-hidden
                     data-testid={`board-group-${header}`}
                     className={cn(
                       "px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
@@ -363,10 +383,11 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                 ) : null}
                 <div
                   data-index={index}
-                  role="option"
-                  aria-selected={isActive}
-                  tabIndex={-1}
-                  onMouseEnter={() => setHighlighted(index)}
+                  id={rowId(b.id)}
+                  role="row"
+                  aria-selected={isHighlighted}
+                  aria-current={isActive ? "true" : undefined}
+                  onMouseEnter={() => setCursor(index)}
                   onClick={() => {
                     if (isConfirming) return;
                     openBoard(b);
@@ -377,125 +398,135 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
                     isActive && !isHighlighted && "bg-primary/5",
                   )}
                 >
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
-                      boardColor(b.id),
-                    )}
+                  <div
+                    role="gridcell"
+                    className="flex min-w-0 flex-1 items-center gap-2.5"
                   >
-                    {boardInitial(b.title)}
-                  </span>
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-left text-sm",
-                      isActive
-                        ? "font-medium text-foreground"
-                        : "text-foreground/90",
-                    )}
-                  >
-                    {b.title}
-                  </span>
-                  {isConfirming ? (
-                    <span className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">
-                        {t("board.switcher.archiveConfirm")}
-                      </span>
-                      <button
-                        aria-label={t("board.switcher.archiveConfirmYes")}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleArchive(b);
-                        }}
-                      >
-                        <Check size={14} />
-                      </button>
-                      <button
-                        aria-label={t("common.cancel")}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmArchiveId(null);
-                        }}
-                      >
-                        <X size={14} />
-                      </button>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
+                        boardColor(b.id),
+                      )}
+                    >
+                      {boardInitial(b.title)}
                     </span>
-                  ) : (
-                    <>
-                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {
-                          Object.values(b.cards).filter(
-                            (card) => card.archivedAt === undefined,
-                          ).length
-                        }
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-left text-sm",
+                        isActive
+                          ? "font-medium text-foreground"
+                          : "text-foreground/90",
+                      )}
+                    >
+                      {b.title}
+                    </span>
+                  </div>
+                  <div
+                    role="gridcell"
+                    className="flex shrink-0 items-center gap-2.5"
+                  >
+                    {isConfirming ? (
+                      <span className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">
+                          {t("board.switcher.archiveConfirm")}
+                        </span>
+                        <button
+                          aria-label={t("board.switcher.archiveConfirmYes")}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleArchive(b);
+                          }}
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          aria-label={t("common.cancel")}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmArchiveId(null);
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
                       </span>
-                      {/* Touch has no hover: the checkmark yields its slot to
+                    ) : (
+                      <>
+                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                          {
+                            Object.values(b.cards).filter(
+                              (card) => card.archivedAt === undefined,
+                            ).length
+                          }
+                        </span>
+                        {/* Touch has no hover: the checkmark yields its slot to
                         the row's action (always visible there). A board I do
                         not administer has no archive action — its slot shows
                         the access level instead, so the missing button never
                         reads as a glitch. */}
-                      <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-                        {isActive && (
-                          <Check
-                            size={15}
-                            className="no-hover:hidden absolute text-primary transition-opacity group-hover/row:opacity-0"
-                            aria-hidden
-                          />
-                        )}
-                        {canManage ? (
-                          <button
-                            aria-label={t("board.switcher.archive")}
-                            className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmArchiveId(b.id);
-                            }}
-                          >
-                            <Archive size={14} />
-                          </button>
-                        ) : (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                role="img"
-                                data-testid="board-role"
-                                aria-label={t(
+                        <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                          {isActive && (
+                            <Check
+                              size={15}
+                              className="no-hover:hidden absolute text-primary transition-opacity group-hover/row:opacity-0"
+                              aria-hidden
+                            />
+                          )}
+                          {canManage ? (
+                            <button
+                              aria-label={t("board.switcher.archive")}
+                              className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmArchiveId(b.id);
+                              }}
+                            >
+                              <Archive size={14} />
+                            </button>
+                          ) : (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  role="img"
+                                  data-testid="board-role"
+                                  aria-label={t(
+                                    roleOf(b.id) === "VIEWER"
+                                      ? "board.switcher.role.viewer"
+                                      : "board.switcher.role.member",
+                                  )}
+                                  className={cn(
+                                    "flex h-6 w-6 items-center justify-center text-muted-foreground/70 transition-opacity",
+                                    isActive &&
+                                      "no-hover:opacity-100 opacity-0 group-hover/row:opacity-100",
+                                  )}
+                                >
+                                  {roleOf(b.id) === "VIEWER" ? (
+                                    <Eye size={13} aria-hidden />
+                                  ) : (
+                                    <Users size={13} aria-hidden />
+                                  )}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t(
                                   roleOf(b.id) === "VIEWER"
                                     ? "board.switcher.role.viewer"
                                     : "board.switcher.role.member",
                                 )}
-                                className={cn(
-                                  "flex h-6 w-6 items-center justify-center text-muted-foreground/70 transition-opacity",
-                                  isActive &&
-                                    "no-hover:opacity-100 opacity-0 group-hover/row:opacity-100",
-                                )}
-                              >
-                                {roleOf(b.id) === "VIEWER" ? (
-                                  <Eye size={13} aria-hidden />
-                                ) : (
-                                  <Users size={13} aria-hidden />
-                                )}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t(
-                                roleOf(b.id) === "VIEWER"
-                                  ? "board.switcher.role.viewer"
-                                  : "board.switcher.role.member",
-                              )}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </span>
-                    </>
-                  )}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </Fragment>
             );
-          })
-        )}
+          })}
+        </div>
         {/* Remaining aggregates are still streaming in — two pending rows
             keep the list honest instead of "no boards" or a silent gap. */}
         {pendingBoardCount > 0 && groups.flat.length > 0 ? (
@@ -621,7 +652,9 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
           </div>
         ) : (
           <button
-            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+            disabled={titleTooLong}
+            aria-describedby={titleTooLong ? titleLimitId : undefined}
             onClick={() => {
               if (queryTrimmed) {
                 createBoard(queryTrimmed);
@@ -640,6 +673,15 @@ function BoardSwitcherPanel({ onClose }: BoardSwitcherPanelProps) {
             </span>
           </button>
         )}
+        {titleTooLong && !creating ? (
+          <p
+            id={titleLimitId}
+            role="status"
+            className="px-2 pb-1 text-xs text-muted-foreground"
+          >
+            {t("board.switcher.titleTooLong", { limit: LIMITS.boardTitle })}
+          </p>
+        ) : null}
       </div>
     </>
   );

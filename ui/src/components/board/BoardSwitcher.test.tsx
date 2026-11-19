@@ -80,7 +80,7 @@ function seedTwoBoards() {
 
 async function openSwitcher() {
   fireEvent.click(screen.getByRole("button", { name: "Switch board" }));
-  const listbox = await screen.findByRole("listbox");
+  const listbox = await screen.findByRole("grid");
   return listbox;
 }
 
@@ -95,7 +95,7 @@ describe("BoardSwitcher", () => {
     const listbox = await openSwitcher();
     expect(listbox).toHaveTextContent("Alpha");
     expect(listbox).toHaveTextContent("Beta");
-    expect(screen.getAllByRole("option", { selected: true })).toHaveLength(1);
+    expect(screen.getAllByRole("row", { selected: true })).toHaveLength(1);
   });
 
   it("counts active cards without archived cards", async () => {
@@ -121,7 +121,7 @@ describe("BoardSwitcher", () => {
     localStorage.setItem("janosik-boards", JSON.stringify([board]));
     renderSwitcher();
     await openSwitcher();
-    expect(screen.getByRole("option", { name: /Alpha/ })).toHaveTextContent(
+    expect(screen.getByRole("row", { name: /Alpha/ })).toHaveTextContent(
       "Alpha1",
     );
   });
@@ -131,8 +131,8 @@ describe("BoardSwitcher", () => {
     await openSwitcher();
     const input = screen.getByLabelText("Search boards…");
     await userEvent.type(input, "bet");
-    expect(screen.getByRole("listbox")).toHaveTextContent("Beta");
-    expect(screen.getByRole("listbox")).not.toHaveTextContent("Alpha");
+    expect(screen.getByRole("grid")).toHaveTextContent("Beta");
+    expect(screen.getByRole("grid")).not.toHaveTextContent("Alpha");
   });
 
   it("shows an empty state when nothing matches", async () => {
@@ -140,6 +140,37 @@ describe("BoardSwitcher", () => {
     await openSwitcher();
     await userEvent.type(screen.getByLabelText("Search boards…"), "zzz");
     expect(screen.getByText("No boards match")).toBeInTheDocument();
+  });
+
+  it("exposes the highlighted board and keeps row actions accessible", async () => {
+    renderSwitcher();
+    const grid = await openSwitcher();
+    const input = screen.getByRole("combobox", { name: "Search boards…" });
+    expect(input).toHaveAttribute("aria-controls", grid.id);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const row = within(grid).getByRole("row", { selected: true });
+    expect(row).toHaveTextContent("Beta");
+    expect(input).toHaveAttribute("aria-activedescendant", row.id);
+    expect(
+      within(row).getByRole("button", { name: "Archive board" }),
+    ).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "zzz" } });
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("keeps longer search queries while enforcing the board title limit", async () => {
+    renderSwitcher();
+    await openSwitcher();
+    const input = screen.getByRole("combobox", { name: "Search boards…" });
+    fireEvent.change(input, { target: { value: "x".repeat(101) } });
+    expect(screen.getByRole("button", { name: /^Create /i })).toBeDisabled();
+    expect(
+      screen.getByText("Board names can have up to 100 characters."),
+    ).toBeVisible();
+    fireEvent.change(input, { target: { value: "x".repeat(100) } });
+    expect(screen.getByRole("button", { name: /^Create /i })).toBeEnabled();
   });
 
   it("navigates with ArrowDown + Enter", async () => {
@@ -193,7 +224,7 @@ describe("BoardSwitcher", () => {
     );
     await waitFor(() => {
       // Beta left the active list…
-      const options = screen.getAllByRole("option");
+      const options = screen.getAllByRole("row");
       expect(options).toHaveLength(1);
       expect(options[0]).toHaveTextContent("Alpha");
     });
@@ -230,7 +261,7 @@ describe("BoardSwitcher", () => {
     renderSwitcher();
     await openSwitcher();
     // Beta is archived — only Alpha is navigable.
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getAllByRole("row")).toHaveLength(1);
     expect(screen.getByTestId("archived-section")).toHaveTextContent("Beta");
     const archivedSection = screen.getByTestId("archived-section");
     fireEvent.click(
@@ -240,7 +271,7 @@ describe("BoardSwitcher", () => {
       expect(screen.queryByTestId("archived-section")).toBeNull();
     });
     // Beta is a real option again (and the header shows Alpha still).
-    expect(screen.getAllByRole("option")).toHaveLength(2);
+    expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
   });
 
@@ -263,7 +294,7 @@ describe("BoardSwitcher", () => {
       expect(screen.queryByTestId("archived-section")).toBeNull();
     });
     // Alpha remains active.
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getAllByRole("row")).toHaveLength(1);
   });
 
   it("does not offer restore/delete for active boards (only archive)", async () => {
@@ -407,7 +438,7 @@ describe("BoardSwitcher role sections (server mode)", () => {
       "Shared with me",
     );
 
-    const options = screen.getAllByRole("option");
+    const options = screen.getAllByRole("row");
     expect(options.map((option) => option.textContent)).toEqual([
       expect.stringContaining("Alpha"),
       expect.stringContaining("Beta"),
@@ -460,7 +491,7 @@ describe("BoardSwitcher role sections (server mode)", () => {
     await userEvent.type(screen.getByLabelText("Search boards…"), "shared");
     expect(screen.queryByTestId("board-group-mine")).toBeNull();
     expect(screen.queryByTestId("board-group-shared")).toBeNull();
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getAllByRole("row")).toHaveLength(1);
   });
 
   it("arrows through both sections in screen order", async () => {
@@ -480,7 +511,7 @@ describe("BoardSwitcher role sections (server mode)", () => {
     const input = screen.getByLabelText("Search boards…");
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getAllByRole("option")[2].className).toContain("bg-hover");
+    expect(screen.getAllByRole("row")[2].className).toContain("bg-hover");
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
       expect(

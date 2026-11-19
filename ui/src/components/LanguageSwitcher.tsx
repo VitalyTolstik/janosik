@@ -1,3 +1,4 @@
+import { useLocation, useNavigate } from "react-router-dom";
 import { Check, ChevronDown } from "lucide-react";
 
 import { api } from "@/api/client";
@@ -25,11 +26,25 @@ interface LanguageSwitcherProps {
 /** Language picker (English / Russian) — a globe icon with a dropdown. */
 export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   const { lang, setLang, t } = useI18n();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { status, user, updateUser, impersonating } = useAuth();
 
   // Load the lazy catalog before switching; a failed load (offline, not yet
   // cached) leaves both the UI and the server profile on the current language.
   const choose = (next: Lang) => {
+    const params = new URLSearchParams(location.search);
+    if (params.has("lng")) {
+      params.delete("lng");
+      void navigate(
+        {
+          pathname: location.pathname,
+          search: params.toString(),
+          hash: location.hash,
+        },
+        { replace: true, state: location.state },
+      );
+    }
     void ensureLocale(next).then((ready) => {
       if (!ready) return;
       setLang(next);

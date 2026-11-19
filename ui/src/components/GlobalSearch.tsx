@@ -1,7 +1,14 @@
 import { Fragment } from "react";
 import { Loader2 } from "lucide-react";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -78,7 +85,13 @@ export function GlobalSearch({
   // in-page on macOS browsers, and it keeps the shortcut testable).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+      if (
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        !event.altKey &&
+        event.code === "KeyK" &&
+        (event.metaKey || event.ctrlKey)
+      ) {
         event.preventDefault();
         setOpenBoth(!open);
       }
@@ -150,7 +163,9 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
 
   const [rawQuery, setRawQuery] = useState("");
   const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [cursor, setCursor] = useState(0);
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-option-${index}`;
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -171,7 +186,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     [boards, query],
   );
 
-  useEffect(() => setActiveIndex(0), [query]);
+  const activeIndex = Math.min(cursor, hits.length - 1);
 
   useEffect(() => {
     const row = resultsRef.current?.querySelector<HTMLElement>(
@@ -179,7 +194,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     );
     if (!row || typeof row.scrollIntoView !== "function") return;
     row.scrollIntoView({ block: "nearest" });
-  }, [activeIndex]);
+  }, [activeIndex, hits]);
 
   const openHit = (hit: SearchHit) => {
     if (hit.kind === "board" && hit.boardArchived) {
@@ -203,6 +218,13 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
         <Input
           ref={inputRef}
           name="global-search"
+          role="combobox"
+          aria-expanded={hits.length > 0}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            activeIndex >= 0 ? optionId(activeIndex) : undefined
+          }
           value={rawQuery}
           maxLength={LIMITS.query}
           aria-describedby={
@@ -210,16 +232,21 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
               ? "search-query-limit"
               : undefined
           }
-          onChange={(event) => setRawQuery(event.target.value)}
+          onChange={(event) => {
+            setRawQuery(event.target.value);
+            setCursor(0);
+          }}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && hits[activeIndex]) {
+            if (event.nativeEvent.isComposing || activeIndex < 0) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
               openHit(hits[activeIndex]);
             } else if (event.key === "ArrowDown") {
               event.preventDefault();
-              setActiveIndex((i) => Math.min(i + 1, hits.length - 1));
+              setCursor(Math.min(activeIndex + 1, hits.length - 1));
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
-              setActiveIndex((i) => Math.max(i - 1, 0));
+              setCursor(Math.max(activeIndex - 1, 0));
             }
           }}
           placeholder={t("search.placeholder")}
@@ -260,74 +287,80 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {t("search.empty")}
           </p>
-        ) : (
-          <>
-            {cardHits.length > 0 ? (
-              <SearchSection title={t("search.cards")}>
-                {cardHits.map((hit) => (
-                  <ResultRow
-                    key={`card-${hit.card.id}`}
-                    active={hits.indexOf(hit) === activeIndex}
-                    onClick={() => openHit(hit)}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm text-foreground">
-                        <HighlightedText text={hit.card.title} query={query} />
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="truncate">
-                          {hit.boardTitle}
-                          {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
-                        </span>
-                        {hit.boardArchived || hit.cardArchived ? (
-                          <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
-                        ) : null}
-                      </div>
-                      <LabelChips
-                        labels={hit.boardLabels}
-                        cardLabelIds={hit.card.labelIds}
-                      />
-                      <Snippet
-                        text={
-                          hit.matchIn === "checklist"
-                            ? (hit.matchText ?? "")
-                            : (hit.card.description ?? "")
-                        }
-                        query={query}
-                        show={
-                          hit.matchIn === "description" ||
-                          hit.matchIn === "checklist"
-                        }
-                      />
+        ) : null}
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={t("search.aria")}
+          hidden={hits.length === 0}
+        >
+          {cardHits.length > 0 ? (
+            <SearchSection title={t("search.cards")}>
+              {cardHits.map((hit) => (
+                <ResultRow
+                  key={`card-${hit.card.id}`}
+                  id={optionId(hits.indexOf(hit))}
+                  active={hits.indexOf(hit) === activeIndex}
+                  onClick={() => openHit(hit)}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-foreground">
+                      <HighlightedText text={hit.card.title} query={query} />
                     </div>
-                  </ResultRow>
-                ))}
-              </SearchSection>
-            ) : null}
-            {boardHits.length > 0 ? (
-              <SearchSection title={t("search.boards")}>
-                {boardHits.map((hit) => (
-                  <ResultRow
-                    key={`board-${hit.boardId}`}
-                    active={hits.indexOf(hit) === activeIndex}
-                    onClick={() => openHit(hit)}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-foreground">
-                        <HighlightedText text={hit.boardTitle} query={query} />
-                      </div>
-                      {hit.boardArchived ? (
-                        <div className="mt-0.5">
-                          <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
-                        </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="truncate">
+                        {hit.boardTitle}
+                        {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
+                      </span>
+                      {hit.boardArchived || hit.cardArchived ? (
+                        <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
                       ) : null}
                     </div>
-                  </ResultRow>
-                ))}
-              </SearchSection>
-            ) : null}
-          </>
-        )}
+                    <LabelChips
+                      labels={hit.boardLabels}
+                      cardLabelIds={hit.card.labelIds}
+                    />
+                    <Snippet
+                      text={
+                        hit.matchIn === "checklist"
+                          ? (hit.matchText ?? "")
+                          : (hit.card.description ?? "")
+                      }
+                      query={query}
+                      show={
+                        hit.matchIn === "description" ||
+                        hit.matchIn === "checklist"
+                      }
+                    />
+                  </div>
+                </ResultRow>
+              ))}
+            </SearchSection>
+          ) : null}
+          {boardHits.length > 0 ? (
+            <SearchSection title={t("search.boards")}>
+              {boardHits.map((hit) => (
+                <ResultRow
+                  key={`board-${hit.boardId}`}
+                  id={optionId(hits.indexOf(hit))}
+                  active={hits.indexOf(hit) === activeIndex}
+                  onClick={() => openHit(hit)}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">
+                      <HighlightedText text={hit.boardTitle} query={query} />
+                    </div>
+                    {hit.boardArchived ? (
+                      <div className="mt-0.5">
+                        <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
+                      </div>
+                    ) : null}
+                  </div>
+                </ResultRow>
+              ))}
+            </SearchSection>
+          ) : null}
+        </div>
       </div>
     </>
   );
@@ -345,7 +378,7 @@ function SearchSection({
       <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-foreground">
         {title}
       </div>
-      <div role="listbox" aria-label={title}>
+      <div role="group" aria-label={title}>
         {children}
       </div>
     </div>
@@ -353,10 +386,12 @@ function SearchSection({
 }
 
 function ResultRow({
+  id,
   active,
   onClick,
   children,
 }: {
+  id: string;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
@@ -365,6 +400,9 @@ function ResultRow({
     <button
       type="button"
       role="option"
+      id={id}
+      tabIndex={-1}
+      onMouseDown={(event) => event.preventDefault()}
       aria-selected={active}
       onClick={onClick}
       className={cn(

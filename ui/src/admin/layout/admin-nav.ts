@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  Workflow,
 } from "lucide-react";
 
 import type { AdminMessageKey } from "../admin-i18n";
@@ -307,24 +308,66 @@ export function hubTabHref(hub: AdminHubKey, tab: string): string {
 export function hubForPath(pathname: string): AdminHubKey | null {
   if (pathname === "/admin" || pathname === "/admin/") return "overview";
   const entry = ADMIN_HUBS.find(
-    (hub) => hub.to !== "/admin" && pathname.startsWith(hub.to),
+    (hub) =>
+      hub.key !== "overview" &&
+      (pathname === hub.to || pathname.startsWith(`${hub.to}/`)),
   );
   if (entry !== undefined) return entry.key;
-  // Detail/content routes keep their parent hub highlighted.
-  if (pathname.startsWith("/admin/users/")) return "users";
-  if (pathname.startsWith("/admin/boards/")) return "boards";
-  if (pathname.startsWith("/admin/cards/")) return "boards";
+  if (/^\/admin\/cards\/[^/]+\/?$/.test(pathname)) return "boards";
   return null;
+}
+
+const DETAIL_DESTINATIONS: Array<{
+  path: RegExp;
+  labelKey: AdminMessageKey;
+  icon: AdminHub["icon"];
+}> = [
+  {
+    path: /^\/admin\/users\/[^/]+\/?$/,
+    labelKey: "admin.crumb.userDetail",
+    icon: Users,
+  },
+  {
+    path: /^\/admin\/boards\/[^/]+\/?$/,
+    labelKey: "admin.crumb.boardDetail",
+    icon: KanbanSquare,
+  },
+  {
+    path: /^\/admin\/boards\/[^/]+\/content\/?$/,
+    labelKey: "admin.crumb.boardContent",
+    icon: FileText,
+  },
+  {
+    path: /^\/admin\/boards\/[^/]+\/workflow\/?$/,
+    labelKey: "admin.crumb.boardWorkflow",
+    icon: Workflow,
+  },
+  {
+    path: /^\/admin\/cards\/[^/]+\/?$/,
+    labelKey: "admin.crumb.cardDetail",
+    icon: FileText,
+  },
+];
+
+export function adminDestination(pathname: string, search = "") {
+  const hub = ADMIN_HUBS.find((entry) => entry.key === hubForPath(pathname));
+  if (hub === undefined) return null;
+  const tabKey = new URLSearchParams(search).get("tab");
+  return {
+    hub,
+    tab: HUB_TABS[hub.key].find((tab) => tab.key === tabKey),
+    detail: DETAIL_DESTINATIONS.find((entry) => entry.path.test(pathname)),
+  };
 }
 
 /** Keyboard `g` sequences documented in the panel's shortcut help. */
 export const HUB_SHORTCUTS: Record<string, AdminHubKey> = {
-  d: "overview",
-  u: "users",
-  b: "boards",
-  m: "moderation",
-  a: "audit",
-  c: "communications",
-  s: "access",
-  ",": "settings",
+  KeyD: "overview",
+  KeyU: "users",
+  KeyB: "boards",
+  KeyM: "moderation",
+  KeyA: "audit",
+  KeyC: "communications",
+  KeyS: "access",
+  Comma: "settings",
 };

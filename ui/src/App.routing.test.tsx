@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import App from "@/App";
+import App, { createAppRouter } from "@/App";
 
 /**
  * BrowserRouter smoke (TASK-21.8). Deep links are plain paths now, so a
@@ -12,7 +12,7 @@ import App from "@/App";
  */
 function visit(path: string) {
   window.history.pushState({}, "", path);
-  return render(<App />);
+  return render(<App router={createAppRouter()} />);
 }
 
 function boardJson(id: string, title: string) {

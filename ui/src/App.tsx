@@ -1,9 +1,11 @@
 import { Suspense, lazy, useEffect } from "react";
 import {
-  BrowserRouter,
+  createBrowserRouter,
+  RouterProvider,
   Navigate,
   Route,
   Routes,
+  useLocation,
   useNavigate,
 } from "react-router-dom";
 import { Archive, Loader2, Plus } from "lucide-react";
@@ -229,10 +231,29 @@ function BoardShell() {
  */
 function AppGate() {
   const { status, user } = useAuth();
+  const location = useLocation();
   const { t } = useI18n();
 
   const needsVerification =
     status === "authenticated" && user !== null && user.emailVerifiedAt == null;
+
+  if (status === "authenticated") {
+    const params = new URLSearchParams(location.search);
+    if (params.has("mode")) {
+      params.delete("mode");
+      return (
+        <Navigate
+          to={{
+            pathname: location.pathname,
+            search: params.toString(),
+            hash: location.hash,
+          }}
+          state={location.state}
+          replace
+        />
+      );
+    }
+  }
 
   if (status === "authenticated" && !needsVerification) {
     return (
@@ -245,7 +266,7 @@ function AppGate() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
       {needsVerification ? (
         <>
           {/* No header yet, but the support session still has to be visible. */}
@@ -287,7 +308,57 @@ function RouteSplash() {
   );
 }
 
-export default function App() {
+export const createAppRouter = () =>
+  createBrowserRouter(
+    [
+      {
+        path: "*",
+        element: (
+          <UpdateAvailabilityProvider>
+            <Suspense fallback={<RouteSplash />}>
+              <Routes>
+                <Route
+                  path={routes.adminPattern}
+                  element={
+                    <>
+                      <AdminApp />
+                      {/* No notice stack in the master panel — the
+                                    compact fallback is the only copy. */}
+                      <UpdatePrompt />
+                    </>
+                  }
+                />
+                <Route
+                  path={routes.sharePattern}
+                  element={
+                    <>
+                      <PublicBoardPage />
+                      <UpdatePrompt />
+                    </>
+                  }
+                />
+                <Route
+                  path="*"
+                  element={
+                    <AuthProvider>
+                      <AppGate />
+                    </AuthProvider>
+                  }
+                />
+              </Routes>
+            </Suspense>
+          </UpdateAvailabilityProvider>
+        ),
+      },
+    ],
+    { basename: APP_BASE },
+  );
+
+export default function App({
+  router,
+}: {
+  router: ReturnType<typeof createAppRouter>;
+}) {
   // First paint is done — drop the preflight kill-switch style (which
   // forced transition:none to avoid a theme-flash) and mark the document
   // as ready so the global color transitions in index.css take effect.
@@ -317,42 +388,7 @@ export default function App() {
             <ToastProvider>
               <ErrorBoundary>
                 <TooltipProvider delayDuration={150}>
-                  <BrowserRouter basename={APP_BASE.replace(/\/$/, "") || "/"}>
-                    <UpdateAvailabilityProvider>
-                      <Suspense fallback={<RouteSplash />}>
-                        <Routes>
-                          <Route
-                            path={routes.adminPattern}
-                            element={
-                              <>
-                                <AdminApp />
-                                {/* No notice stack in the master panel — the
-                                    compact fallback is the only copy. */}
-                                <UpdatePrompt />
-                              </>
-                            }
-                          />
-                          <Route
-                            path={routes.sharePattern}
-                            element={
-                              <>
-                                <PublicBoardPage />
-                                <UpdatePrompt />
-                              </>
-                            }
-                          />
-                          <Route
-                            path="*"
-                            element={
-                              <AuthProvider>
-                                <AppGate />
-                              </AuthProvider>
-                            }
-                          />
-                        </Routes>
-                      </Suspense>
-                    </UpdateAvailabilityProvider>
-                  </BrowserRouter>
+                  <RouterProvider router={router} />
                 </TooltipProvider>
               </ErrorBoundary>
             </ToastProvider>

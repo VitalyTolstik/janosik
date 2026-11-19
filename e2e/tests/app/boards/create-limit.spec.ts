@@ -13,7 +13,9 @@ test("does not cap the workspace at ten boards in server mode", async ({
   }
   await board.open(page);
   await page.getByRole("button", { name: "Switch board" }).click();
-  await expect(page.getByRole("option")).toHaveCount(10);
+  await expect(
+    page.getByRole("grid", { name: "Switch board" }).getByRole("row"),
+  ).toHaveCount(10);
 
   await page.getByRole("button", { name: "New board" }).click();
   await page.getByRole("textbox", { name: "Board name" }).fill("Eleventh");
@@ -23,12 +25,19 @@ test("does not cap the workspace at ten boards in server mode", async ({
   // accepts the eleventh board and opens it.
   await expect(page.getByRole("heading", { name: "Eleventh" })).toBeVisible();
   await page.getByRole("button", { name: "Switch board" }).click();
-  await expect(page.getByRole("option")).toHaveCount(11);
+  await expect(
+    page.getByRole("grid", { name: "Switch board" }).getByRole("row"),
+  ).toHaveCount(11);
 
   await page.reload();
   await page.getByRole("button", { name: "Switch board" }).click();
-  await expect(page.getByRole("option")).toHaveCount(11);
   await expect(
-    page.getByRole("option").filter({ hasText: "Eleventh" }),
+    page.getByRole("grid", { name: "Switch board" }).getByRole("row"),
+  ).toHaveCount(11);
+  await expect(
+    page
+      .getByRole("grid", { name: "Switch board" })
+      .getByRole("row")
+      .filter({ hasText: "Eleventh" }),
   ).toHaveCount(1);
 });

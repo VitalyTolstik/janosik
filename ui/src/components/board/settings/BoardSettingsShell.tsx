@@ -138,10 +138,14 @@ export function BoardSettingsShell({
       >
         <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-3 pl-4 pr-3.5 pt-3.5 max-md:flex-wrap max-md:px-2.5 max-md:pb-[9px] max-md:pr-[52px] max-md:pt-2.5">
           <div className="min-w-0 flex-1">
-            <p className="m-0 mb-0.5 text-[11px] font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground">
+            <p
+              aria-hidden
+              className="m-0 mb-0.5 text-[11px] font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground"
+            >
               {t("board.settings.title")}
             </p>
             <DialogTitle className="m-0 font-agent-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
+              <span className="sr-only">{t("board.settings.title")}: </span>
               {title}
             </DialogTitle>
             <DialogDescription className="m-0 mt-0.5 text-[11px] leading-[1.45] text-muted-foreground">
