@@ -95,6 +95,40 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     expect(await screen.findByText("No invitations")).toBeInTheDocument();
   });
 
+  it("announces an invitations fetch error and retries from the open bell", async () => {
+    const server = new FakeServer();
+    let unavailable = true;
+    renderBell(server, async (input, init) => {
+      if (
+        unavailable &&
+        new URL(String(input)).pathname === "/api/v1/invitations"
+      ) {
+        return Response.json({}, { status: 503 });
+      }
+      return server.handle(input, init);
+    });
+
+    await userEvent.click(await screen.findByTestId("notifications-bell"));
+    expect(
+      await screen.findByText("Could not load board invitations."),
+    ).toHaveAttribute("role", "status");
+    expect(
+      screen.queryByTestId("notifications-skeleton"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("invitations-panel")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    unavailable = false;
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retry loading invitations" }),
+    );
+    expect(await screen.findByText("No invitations")).toBeVisible();
+    expect(
+      screen.queryByText("Could not load board invitations."),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens older attention notifications and clears the unread badge through the API", async () => {
     const server = new FakeServer();
     const older = {

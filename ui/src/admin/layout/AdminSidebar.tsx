@@ -216,8 +216,7 @@ export function AdminSidebar({
               {t("admin.hub.allDestinations")}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Every capability keeps a home inside the eight hubs. Old links
-              still redirect here with their query string.
+              {t("admin.hub.allDestinationsDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="grid max-h-[60vh] gap-4 overflow-y-auto sm:grid-cols-2">
@@ -233,7 +232,10 @@ export function AdminSidebar({
                       <NavLink
                         key={tab.key}
                         to={hubTabHref(hub, tab.key)}
-                        onClick={() => setAllOpen(false)}
+                        onClick={() => {
+                          setAllOpen(false);
+                          onNavigate();
+                        }}
                         className={cn(
                           "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
                           activeTab === tab.key && activeHub(hub)

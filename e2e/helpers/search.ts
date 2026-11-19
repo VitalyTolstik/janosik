@@ -98,7 +98,7 @@ export function globalSearchSection(
   page: Page,
   name: "Cards" | "Boards",
 ): Locator {
-  return globalSearchResults(page).getByRole("listbox", {
+  return globalSearchResults(page).getByRole("group", {
     name,
     exact: true,
   });

@@ -44,10 +44,20 @@ test("switches boards from the keyboard in the board switcher", async ({
   await navigation.signInAt(page, appUrl);
   await page.getByRole("button", { name: "Switch board" }).click();
 
-  const search = page.getByRole("textbox", { name: "Search boards…" });
+  const search = page.getByRole("combobox", { name: "Search boards…" });
   await expect(search).toBeFocused();
   await search.fill(board.title);
+  const grid = page.getByRole("grid", { name: "Switch board" });
+  await expect(search).toHaveAttribute(
+    "aria-controls",
+    (await grid.getAttribute("id"))!,
+  );
   await page.keyboard.press("ArrowDown");
+  const highlighted = grid.getByRole("row", { selected: true });
+  await expect(search).toHaveAttribute(
+    "aria-activedescendant",
+    (await highlighted.getAttribute("id"))!,
+  );
   await page.keyboard.press("Enter");
 
   await expect(page).toHaveURL(new RegExp(`/board/${board.id}$`));
@@ -66,7 +76,11 @@ test("moves between boards with browser Back and Forward", async ({
   await navigation.signInAt(page, navigation.boardUrl);
   await expect(page).toHaveURL(new RegExp(`/board/${board.id}$`));
   await page.getByRole("button", { name: "Switch board" }).click();
-  await page.getByRole("option").filter({ hasText: newest.title }).click();
+  await page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: newest.title })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/board/${newest.id}$`));
 
   await page.goBack();
@@ -104,7 +118,7 @@ test("handles switcher search no-match, Escape and ArrowUp", async ({
   const trigger = page.getByRole("button", { name: "Switch board" });
 
   await trigger.click();
-  const search = page.getByRole("textbox", { name: "Search boards…" });
+  const search = page.getByRole("combobox", { name: "Search boards…" });
   await search.fill("no-such-board-name");
   await expect(page.getByText("No boards match")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -112,12 +126,17 @@ test("handles switcher search no-match, Escape and ArrowUp", async ({
   await expect(trigger).toBeFocused();
 
   await trigger.click();
-  const reopened = page.getByRole("textbox", { name: "Search boards…" });
+  const reopened = page.getByRole("combobox", { name: "Search boards…" });
   await expect(reopened).toBeFocused();
-  const current = page.getByRole("option").filter({ hasText: board.title });
-  await expect(current).toHaveAttribute("aria-selected", "true");
+  const current = page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: board.title });
+  await expect(current).toHaveAttribute("aria-current", "true");
   await reopened.fill("board");
-  const options = page.getByRole("option");
+  const options = page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row");
   await expect(options).toHaveCount(2);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowUp");

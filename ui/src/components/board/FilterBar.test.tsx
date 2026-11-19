@@ -58,6 +58,20 @@ function lastApplied(
 }
 
 describe("FilterBar", () => {
+  it("focuses the search only when the key types a slash (M38)", () => {
+    renderBar();
+    const search = screen.getByLabelText("Search cards", { selector: "input" });
+
+    // AZERTY/QWERTZ/RU put `.`, `-` or `:` on the physical Slash key; those
+    // characters must not steal focus from whatever the user is doing.
+    fireEvent.keyDown(window, { key: ".", code: "Slash", shiftKey: false });
+    expect(search).not.toHaveFocus();
+
+    // The character wins even when it sits on a different physical key.
+    fireEvent.keyDown(window, { key: "/", code: "Period" });
+    expect(search).toHaveFocus();
+  });
+
   it("keeps the search input inline and the facets behind the popover", async () => {
     renderBar();
     expect(

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -14,16 +14,25 @@ import {
   Users,
 } from "lucide-react";
 import type { AdminGlobalSearchDto } from "@janosik/shared";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { routes } from "@/routes";
-import { appPath } from "@/utils/app-path";
 import { adminApi } from "./admin-client";
 import { adminCardsHref } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { SearchSkeleton } from "./skeletons";
 import { Badge } from "./ui";
-import { ADMIN_HUBS, ADMIN_NAV_GROUPS } from "./layout/admin-nav";
+import {
+  ADMIN_HUBS,
+  ADMIN_NAV_GROUPS,
+  adminDestination,
+  hubTabHref,
+} from "./layout/admin-nav";
 
 /**
  * Command palette (redesigned omnibox): navigation, recent pages and actions
@@ -37,14 +46,19 @@ const boardHref = (id: string) => `/admin/boards/${id}`;
 const userHref = (id: string) => `/admin/users/${id}`;
 const RECENT_KEY = "janosik.admin.recent";
 
-export function rememberRecentPath(pathname: string): void {
+export function rememberRecentPath(pathname: string, search = ""): void {
+  const destination = adminDestination(pathname, search);
+  if (!destination) return;
+  const path = destination.tab
+    ? pathname + `?tab=${encodeURIComponent(destination.tab.key)}`
+    : pathname;
   try {
     const raw = localStorage.getItem(RECENT_KEY);
     const previous: string[] = raw === null ? [] : JSON.parse(raw);
-    const next = [
-      pathname,
-      ...previous.filter((entry) => entry !== pathname),
-    ].slice(0, 5);
+    const next = [path, ...previous.filter((entry) => entry !== path)].slice(
+      0,
+      5,
+    );
     localStorage.setItem(RECENT_KEY, JSON.stringify(next));
   } catch {
     /* localStorage is optional; recents are a convenience */
@@ -173,29 +187,58 @@ export function buildSearchLines(
   return lines;
 }
 
-export function GlobalSearchDialog({
-  open,
-  onOpenChange,
-  onOpenShortcuts,
-  onToggleTheme,
-  onToggleDensity,
-}: {
+interface GlobalSearchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenShortcuts?: () => void;
   onToggleTheme?: () => void;
   onToggleDensity?: () => void;
-}) {
+}
+
+export function GlobalSearchDialog({
+  open,
+  ...props
+}: GlobalSearchDialogProps) {
+  const t = useAdminT();
+  return (
+    <Dialog open={open} onOpenChange={props.onOpenChange}>
+      <DialogContent
+        className="max-h-[86vh] max-w-[620px] gap-0 overflow-hidden p-0 max-sm:h-screen max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
+        data-testid="admin-command-palette"
+      >
+        <DialogTitle className="sr-only">{t("admin.search.title")}</DialogTitle>
+        <DialogDescription className="sr-only">
+          {t("admin.palette.hint")}
+        </DialogDescription>
+        {open ? <GlobalSearchPanel {...props} /> : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GlobalSearchPanel({
+  onOpenChange,
+  onOpenShortcuts,
+  onToggleTheme,
+  onToggleDensity,
+}: Omit<GlobalSearchDialogProps, "open">) {
   const t = useAdminT();
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AdminGlobalSearchDto | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [searchError, setSearchError] = useState(false);
-  const [recent, setRecent] = useState<string[]>([]);
-  const [active, setActive] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [{ query, generation }, setSearch] = useState({
+    query: "",
+    generation: 0,
+  });
+  const [response, setResponse] = useState<{
+    generation: number;
+    results: AdminGlobalSearchDto | null;
+  } | null>(null);
+  const [recent] = useState(readRecentPaths);
+  const [cursor, setActive] = useState(0);
+  const input = query.trim();
+  const current = response?.generation === generation ? response : null;
+  const results = current?.results;
+  const loading = input !== "" && current === null;
+  const searchError = current !== null && current.results === null;
 
   const groupLabels: Record<string, string> = {
     users: t("admin.search.group.users"),
@@ -207,51 +250,30 @@ export function GlobalSearchDialog({
   };
 
   useEffect(() => {
-    if (!open) return;
-    setRecent(readRecentPaths());
-  }, [open]);
-
-  useEffect(() => {
-    const q = query.trim();
-    if (q === "") {
-      setResults(null);
-      setLoading(false);
-      setSearchError(false);
-      return;
-    }
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setLoading(true);
-      setSearchError(false);
-      adminApi
-        .globalSearch(q)
-        .then((page) => {
-          setResults(page);
+    if (input === "") return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const timer = setTimeout(() => {
+      void adminApi.globalSearch(input, signal).then(
+        (results) => {
+          if (signal.aborted) return;
+          setResponse({ generation, results });
           setActive(0);
-        })
-        .catch(() => {
-          setResults(null);
-          setSearchError(true);
-        })
-        .finally(() => setLoading(false));
+        },
+        () => {
+          if (!signal.aborted) setResponse({ generation, results: null });
+        },
+      );
     }, 200);
     return () => {
-      if (timer.current) clearTimeout(timer.current);
+      clearTimeout(timer);
+      controller.abort();
     };
-  }, [query, retryKey]);
+  }, [input, generation]);
 
   const go = (href: string) => {
     onOpenChange(false);
     navigate(href);
-  };
-
-  const close = () => {
-    setQuery("");
-    setResults(null);
-    setLoading(false);
-    setSearchError(false);
-    setActive(0);
-    onOpenChange(false);
   };
 
   const entityLines = useMemo(
@@ -262,7 +284,7 @@ export function GlobalSearchDialog({
     [results, t],
   );
 
-  const normalized = query.trim().toLowerCase();
+  const normalized = input.toLowerCase();
   const matches = (value: string) =>
     normalized === "" || value.toLowerCase().includes(normalized);
 
@@ -333,25 +355,23 @@ export function GlobalSearchDialog({
       icon: ArrowRight,
       label: t("admin.palette.action.boards"),
       testId: "admin-command-action-boards",
-      run: () => {
-        window.location.assign(appPath(routes.home));
-      },
+      run: () => go(routes.home),
     },
   ].filter((action) => matches(action.label));
 
   const recentLines: CommandLine[] = recent
     .map((pathname): CommandLine | null => {
-      const hub = ADMIN_HUBS.find(
-        (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
-      );
-      if (hub === undefined) return null;
+      const [path, search] = pathname.split("?", 2);
+      const destination = adminDestination(path, search);
+      if (destination === null) return null;
+      const { hub, tab, detail } = destination;
       return {
         key: `recent-${pathname}`,
-        icon: hub.icon,
-        label: t(hub.labelKey),
+        icon: detail?.icon ?? tab?.icon ?? hub.icon,
+        label: t(detail?.labelKey ?? tab?.labelKey ?? hub.labelKey),
         hint: pathname,
         testId: `admin-command-recent-${pathname.replace(/[^a-z0-9]+/gi, "-")}`,
-        run: () => go(pathname),
+        run: () => go(tab && !detail ? hubTabHref(hub.key, tab.key) : pathname),
       };
     })
     .filter((line): line is CommandLine => line !== null)
@@ -360,23 +380,17 @@ export function GlobalSearchDialog({
   const commandLines = [...navigateLines, ...actions];
   const visibleRecent = query.trim() === "" ? recentLines : [];
   const allItems = [...commandLines, ...visibleRecent, ...entityLines];
+  const active = Math.min(cursor, allItems.length - 1);
   const activeItem = allItems[active];
 
-  useEffect(() => {
-    if (active >= allItems.length) setActive(Math.max(0, allItems.length - 1));
-  }, [active, allItems.length]);
-
-  useEffect(() => {
-    if (allItems.length === 0) setActive(0);
-  }, [allItems.length]);
-
   const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.nativeEvent.isComposing || allItems.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((index) => Math.min(index + 1, allItems.length - 1));
+      setActive(Math.min(active + 1, allItems.length - 1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActive((index) => Math.max(0, index - 1));
+      setActive(Math.max(0, active - 1));
     } else if (event.key === "Enter") {
       if (activeItem === undefined) return;
       event.preventDefault();
@@ -389,87 +403,96 @@ export function GlobalSearchDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => (next ? onOpenChange(true) : close())}
-    >
-      <DialogContent
-        className="max-h-[86vh] max-w-[620px] gap-0 overflow-hidden p-0 max-sm:h-screen max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
-        data-testid="admin-command-palette"
-      >
-        <DialogTitle className="sr-only">{t("admin.search.title")}</DialogTitle>
-        <label className="flex h-11 items-center gap-2 border-b border-border px-3">
-          <Search
-            className="h-4 w-4 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-          <input
-            autoFocus
-            value={query}
-            maxLength={200}
-            data-testid="admin-global-search-input"
-            placeholder={t("admin.search.placeholder")}
-            role="combobox"
-            aria-expanded
-            aria-controls="admin-command-list"
-            aria-activedescendant={
-              activeItem === undefined
-                ? undefined
-                : `admin-command-${activeItem.key}`
-            }
-            aria-autocomplete="list"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={onKeyDown}
-            className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          <kbd className="rounded border border-border bg-hover/50 px-1 font-mono text-[10px] text-muted-foreground">
-            esc
-          </kbd>
-        </label>
+    <>
+      <div className="flex h-11 items-center gap-2 border-b border-border px-3">
+        <Search
+          className="h-4 w-4 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+        <input
+          autoFocus
+          value={query}
+          maxLength={200}
+          data-testid="admin-global-search-input"
+          placeholder={t("admin.search.placeholder")}
+          role="combobox"
+          aria-label={t("admin.search.title")}
+          aria-expanded
+          aria-controls="admin-command-list"
+          aria-activedescendant={
+            activeItem === undefined
+              ? undefined
+              : `admin-command-${activeItem.key}`
+          }
+          aria-autocomplete="list"
+          onChange={(event) => {
+            const value = event.target.value;
+            setSearch((previous) => ({
+              query: value,
+              generation:
+                value.trim() === previous.query.trim()
+                  ? previous.generation
+                  : previous.generation + 1,
+            }));
+            setActive(0);
+          }}
+          onKeyDown={onKeyDown}
+          className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+        <kbd className="rounded border border-border bg-hover/50 px-1 font-mono text-[10px] text-muted-foreground">
+          esc
+        </kbd>
+      </div>
+
+      <div className="max-h-[64vh] overflow-y-auto">
+        {loading && entityLines.length === 0 && query.trim() !== "" ? (
+          <SearchSkeleton rows={4} />
+        ) : null}
+
+        {searchError ? (
+          <div
+            className="space-y-2 px-3 py-6 text-center"
+            data-testid="admin-search-error"
+          >
+            <p className="text-xs text-danger">{t("admin.palette.error")}</p>
+            <button
+              type="button"
+              className="text-[11px] text-primary underline-offset-2 hover:underline"
+              onClick={() =>
+                setSearch(({ query, generation }) => ({
+                  query,
+                  generation: generation + 1,
+                }))
+              }
+            >
+              {t("admin.palette.retry")}
+            </button>
+          </div>
+        ) : null}
+
+        {query.trim() !== "" &&
+        !loading &&
+        !searchError &&
+        allItems.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+            {t("admin.search.empty")}
+          </p>
+        ) : null}
+
+        {query.trim() === "" ? (
+          <p className="border-b border-border/60 px-3 py-2 text-[10px] text-muted-foreground">
+            {t("admin.palette.emptyQuery")}
+          </p>
+        ) : null}
 
         <div
           id="admin-command-list"
           role="listbox"
+          aria-label={t("admin.search.title")}
           aria-busy={loading}
-          className="max-h-[64vh] overflow-y-auto"
         >
-          {loading && entityLines.length === 0 && query.trim() !== "" ? (
-            <SearchSkeleton rows={4} />
-          ) : null}
-
-          {searchError ? (
-            <div
-              className="space-y-2 px-3 py-6 text-center"
-              data-testid="admin-search-error"
-            >
-              <p className="text-xs text-danger">{t("admin.palette.error")}</p>
-              <button
-                type="button"
-                className="text-[11px] text-primary underline-offset-2 hover:underline"
-                onClick={() => setRetryKey((key) => key + 1)}
-              >
-                {t("admin.palette.retry")}
-              </button>
-            </div>
-          ) : null}
-
-          {query.trim() !== "" &&
-          !loading &&
-          !searchError &&
-          allItems.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-              {t("admin.search.empty")}
-            </p>
-          ) : null}
-
-          {query.trim() === "" ? (
-            <p className="border-b border-border/60 px-3 py-2 text-[10px] text-muted-foreground">
-              {t("admin.palette.emptyQuery")}
-            </p>
-          ) : null}
-
           {commandLines.length > 0 ? (
-            <section aria-label={t("admin.palette.navigate")}>
+            <div role="group" aria-label={t("admin.palette.navigate")}>
               <p className="px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {normalized === ""
                   ? t("admin.palette.navigate")
@@ -487,11 +510,11 @@ export function GlobalSearchDialog({
                   />
                 );
               })}
-            </section>
+            </div>
           ) : null}
 
           {visibleRecent.length > 0 ? (
-            <section aria-label={t("admin.palette.recent")}>
+            <div role="group" aria-label={t("admin.palette.recent")}>
               <p className="px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.palette.recent")}
               </p>
@@ -507,7 +530,7 @@ export function GlobalSearchDialog({
                   />
                 );
               })}
-            </section>
+            </div>
           ) : null}
 
           {entityLines.map((line) => {
@@ -517,6 +540,8 @@ export function GlobalSearchDialog({
                 key={line.key}
                 type="button"
                 role="option"
+                tabIndex={-1}
+                onMouseDown={(event) => event.preventDefault()}
                 id={`admin-command-${line.key}`}
                 aria-selected={index === active}
                 data-testid={`admin-search-result-${entityLines.indexOf(line)}`}
@@ -557,13 +582,13 @@ export function GlobalSearchDialog({
             );
           })}
         </div>
+      </div>
 
-        <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
-          <span>{t("admin.palette.hint")}</span>
-          <span className="font-mono">⌘K</span>
-        </div>
-      </DialogContent>
-    </Dialog>
+      <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
+        <span>{t("admin.palette.hint")}</span>
+        <span className="font-mono">⌘K</span>
+      </div>
+    </>
   );
 }
 
@@ -583,6 +608,8 @@ function CommandRow({
     <button
       type="button"
       role="option"
+      tabIndex={-1}
+      onMouseDown={(event) => event.preventDefault()}
       id={`admin-command-${line.key}`}
       aria-selected={active ? "true" : "false"}
       data-testid={line.testId}

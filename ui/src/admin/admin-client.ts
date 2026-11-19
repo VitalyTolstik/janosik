@@ -109,6 +109,7 @@ interface RequestInitLike {
   auth?: boolean;
   /** Keep the request alive through a page unload (board commands). */
   keepalive?: boolean;
+  signal?: AbortSignal;
 }
 
 export class AdminApiClient {
@@ -220,10 +221,14 @@ export class AdminApiClient {
   }
 
   /** Cross-entity top matches for the panel omnibox. */
-  globalSearch(query: string): Promise<AdminGlobalSearchDto> {
+  globalSearch(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<AdminGlobalSearchDto> {
     const params = new URLSearchParams({ q: query });
     return this.request<AdminGlobalSearchDto>(
       `/admin/search?${params.toString()}`,
+      { signal },
     );
   }
 
@@ -918,6 +923,7 @@ export class AdminApiClient {
       return await this.attempt<T>(path, init);
     } catch (error) {
       if (
+        !init.signal?.aborted &&
         error instanceof ApiError &&
         error.status === 401 &&
         init.auth !== false
@@ -948,6 +954,7 @@ export class AdminApiClient {
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         credentials: "include",
         keepalive: init.keepalive === true,
+        signal: init.signal,
       });
     } catch {
       throw new ApiError(0, null);

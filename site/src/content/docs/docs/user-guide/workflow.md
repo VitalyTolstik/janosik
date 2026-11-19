@@ -14,9 +14,12 @@ that change goes through the command log and `AdminAuditLog`.
 
 ## Open the editor
 
-A board admin clicks the gear in the header (`Board settings`). The dialog
-opens on the `By column` view with the busiest source column selected in the
-rail. Everyone can read the rules read-only from a card's right-click menu
+A board admin clicks the gear in the header (`Board settings`). Save your
+changes before switching boards. Switching boards closes Board Settings
+immediately and discards the open draft.
+
+The dialog opens on the `By column` view with the busiest source column
+selected in the rail. Everyone can read the rules read-only from a card's right-click menu
 under `Workflow rules`, or from the header's `Data & backups` menu — the latter
 works on a board with no cards too.
 

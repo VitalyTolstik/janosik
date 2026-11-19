@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { PreferencesSection } from "@/components/account/PreferencesSection";
@@ -19,7 +20,9 @@ function renderPreferences() {
     <ThemeProvider>
       <BoardBackgroundProvider>
         <I18nProvider>
-          <PreferencesSection />
+          <MemoryRouter>
+            <PreferencesSection />
+          </MemoryRouter>
         </I18nProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,

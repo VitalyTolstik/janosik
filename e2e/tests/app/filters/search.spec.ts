@@ -155,6 +155,28 @@ test("focuses the search with slash and clears it with Escape", async ({
   await expect(searchInput(page)).not.toBeFocused();
 });
 
+test("uses the slash character rather than the physical Slash key", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.card(todo, "Layout target");
+  await board.open(page);
+  const search = searchInput(page);
+
+  // RU/QWERTZ/AZERTY put another character on the physical Slash key.
+  await page
+    .locator("body")
+    .dispatchEvent("keydown", { key: ".", code: "Slash", bubbles: true });
+  await expect(search).not.toBeFocused();
+
+  // A character slash on another physical key still focuses the filter.
+  await page
+    .locator("body")
+    .dispatchEvent("keydown", { key: "/", code: "Period", bubbles: true });
+  await expect(search).toBeFocused();
+});
+
 test("counts the matching cards", async ({ page, board }) => {
   const todo = await board.column("Todo");
   await board.card(todo, "Buy milk");

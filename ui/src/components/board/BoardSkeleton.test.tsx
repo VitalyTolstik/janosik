@@ -43,10 +43,11 @@ describe("BoardListSkeleton", () => {
         <BoardListSkeleton pending={5} />
       </I18nProvider>,
     );
-    expect(screen.getByTestId("board-switcher-skeleton")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-busy", "true");
+    expect(status).toHaveTextContent("Loading boards");
+    expect(status).not.toHaveAttribute("aria-selected");
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("board-switcher-skeleton-row")).toHaveLength(
       2,
     );

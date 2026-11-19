@@ -1,6 +1,21 @@
-import { describe, expect, it } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
 import type { AdminGlobalSearchDto } from "@janosik/shared";
-import { buildSearchLines } from "./GlobalSearch";
+import { I18nProvider } from "@/i18n";
+import { adminApi } from "./admin-client";
+import {
+  buildSearchLines,
+  GlobalSearchDialog,
+  rememberRecentPath,
+} from "./GlobalSearch";
 
 /**
  * TASK-176.5 — global search must land on the exact object, not just its card:
@@ -94,5 +109,100 @@ describe("global search result targets", () => {
     );
     expect(line?.group).toBe("Labels");
     expect(line?.href).toBe("/admin/boards?tab=cards&labelId=l-1");
+  });
+});
+
+describe("admin command palette", () => {
+  function renderPalette(open = true) {
+    return (
+      <I18nProvider>
+        <MemoryRouter>
+          <GlobalSearchDialog open={open} onOpenChange={() => undefined} />
+        </MemoryRouter>
+      </I18nProvider>
+    );
+  }
+
+  it("ignores out-of-order responses and aborts the request when closed", async () => {
+    const requests = new Map<
+      string,
+      {
+        signal: AbortSignal | undefined;
+        resolve: (value: AdminGlobalSearchDto) => void;
+      }
+    >();
+    const search = vi
+      .spyOn(adminApi, "globalSearch")
+      .mockImplementation(
+        (query, signal) =>
+          new Promise((resolve) => requests.set(query, { signal, resolve })),
+      );
+    try {
+      const { rerender } = render(renderPalette());
+      const input = screen.getByRole("combobox", { name: "Search everything" });
+      fireEvent.change(input, { target: { value: "first" } });
+      await waitFor(() => expect(requests.has("first")).toBe(true));
+      fireEvent.change(input, { target: { value: "second" } });
+      await waitFor(() => expect(requests.has("second")).toBe(true));
+      expect(requests.get("first")?.signal?.aborted).toBe(true);
+
+      const matches = (text: string) => {
+        const page = results();
+        return { ...page, comments: [{ ...page.comments[0], text }] };
+      };
+      await act(() =>
+        requests.get("second")?.resolve(matches("Current match")),
+      );
+      expect(screen.getByText("Current match")).toBeVisible();
+      const active = document.getElementById(
+        input.getAttribute("aria-activedescendant")!,
+      );
+      expect(active).toHaveTextContent("Current match");
+      await act(() => requests.get("first")?.resolve(matches("Stale match")));
+      expect(screen.queryByText("Stale match")).not.toBeInTheDocument();
+      expect(screen.getByText("Current match")).toBeVisible();
+
+      fireEvent.change(input, { target: { value: "first" } });
+      fireEvent.change(input, { target: { value: "second" } });
+      expect(screen.queryByText("Current match")).not.toBeInTheDocument();
+      expect(screen.getByRole("listbox")).toHaveAttribute("aria-busy", "true");
+
+      fireEvent.change(input, { target: { value: "closing" } });
+      await waitFor(() => expect(requests.has("closing")).toBe(true));
+      rerender(renderPalette(false));
+      expect(requests.get("closing")?.signal?.aborted).toBe(true);
+      await act(() =>
+        requests.get("closing")?.resolve(matches("Closed match")),
+      );
+      rerender(renderPalette());
+      expect(screen.getByRole("combobox")).toHaveValue("");
+      expect(screen.queryByText("Closed match")).not.toBeInTheDocument();
+    } finally {
+      search.mockRestore();
+    }
+  });
+
+  it("labels recent tabs and detail pages with their actual destinations", () => {
+    localStorage.removeItem("janosik.admin.recent");
+    rememberRecentPath("/admin");
+    rememberRecentPath("/admin/boards", "?tab=cards");
+    rememberRecentPath("/admin/boards/b-1/workflow");
+    render(renderPalette());
+
+    const recent = screen.getByRole("group", { name: "Recent" });
+    expect(
+      within(recent)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      expect.stringContaining("Workflow"),
+      expect.stringContaining("Cards"),
+      expect.stringContaining("Overview"),
+    ]);
+    const icons = within(recent)
+      .getAllByRole("option")
+      .map((option) => option.querySelector("svg")?.getAttribute("class"));
+    expect(new Set(icons).size).toBe(3);
+    localStorage.removeItem("janosik.admin.recent");
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
 import { api, ApiError } from "@/api/client";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/auth/AuthContext";
 import { useI18n } from "@/i18n";
+import { appPath } from "@/utils/app-path";
 import { siteHomeUrl } from "@/utils/docs-url";
 import type { OAuthProviderDto } from "@janosik/shared";
 
@@ -29,6 +30,7 @@ type Mode = "login" | "register";
 function authErrorMessage(
   error: unknown,
   t: ReturnType<typeof useI18n>["t"],
+  isRegister: boolean,
 ): string {
   if (error instanceof ApiError) {
     if (error.offline) return t("auth.networkError");
@@ -37,6 +39,14 @@ function authErrorMessage(
     }
     if (error.status === 429) return t("auth.rateLimited");
     if (error.status === 401) return t("auth.invalidCredentials");
+    if (error.status === 403) {
+      return t(isRegister ? "auth.registrationClosed" : "auth.accountDisabled");
+    }
+    if (error.status === 503) {
+      return t(
+        isRegister ? "auth.registrationUnavailable" : "auth.loginUnavailable",
+      );
+    }
     if (error.status === 409) return t("auth.emailTaken");
     if (error.status === 400) return t("auth.invalidInput");
   }
@@ -65,12 +75,9 @@ function loginBackoffMessage(
 export function LoginPage() {
   const { lang, t } = useI18n();
   const { login, register } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
-  // `?mode=register` opens the screen on the register form — the marketing
-  // site's "Create account" CTA links here.
-  const [mode, setMode] = useState<Mode>(
-    searchParams.get("mode") === "register" ? "register" : "login",
-  );
+  const location = useLocation();
+  const navigate = useNavigate();
+  const searchParams = new URLSearchParams(location.search);
   const [recovering, setRecovering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -81,18 +88,26 @@ export function LoginPage() {
   const [oauthProviders, setOauthProviders] = useState<OAuthProviderDto[]>([]);
   const [allowRegistration, setAllowRegistration] = useState(true);
 
-  const isRegister = mode === "register";
+  const isRegister =
+    allowRegistration && searchParams.get("mode") === "register";
   const siteUrl = siteHomeUrl(lang);
 
   // An OAuth round trip that failed server-side lands back here with
   // ?authError=oauth_failed — surface it and clean the URL.
   useEffect(() => {
-    if (searchParams.get("authError") !== null) {
-      setError(t("auth.oauthFailed"));
-      setSearchParams({}, { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
-  }, []);
+    const params = new URLSearchParams(location.search);
+    if (!params.has("authError")) return;
+    setError(t("auth.oauthFailed"));
+    params.delete("authError");
+    void navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString(),
+        hash: location.hash,
+      },
+      { replace: true, state: location.state },
+    );
+  }, [location, navigate, t]);
 
   // Enabled providers only — an unconfigured instance renders no buttons
   // and behaves exactly like before TASK-54.
@@ -118,7 +133,6 @@ export function LoginPage() {
       .then((config) => {
         if (cancelled) return;
         setAllowRegistration(config.allowRegistration);
-        if (!config.allowRegistration) setMode("login");
       })
       .catch(() => undefined);
     return () => {
@@ -158,25 +172,31 @@ export function LoginPage() {
       }
       // Success unmounts this screen through the auth gate.
     } catch (caught) {
-      setError(authErrorMessage(caught, t));
+      setError(authErrorMessage(caught, t, isRegister));
       setPending(false);
     }
   };
 
   const toggleMode = () => {
     const next: Mode = isRegister ? "login" : "register";
-    setMode(next);
     setError(null);
     setInvalidField(null);
     // Keep the URL in step so a reload lands on the same form.
     const params = new URLSearchParams(searchParams);
     if (next === "register") params.set("mode", "register");
     else params.delete("mode");
-    setSearchParams(params, { replace: true });
+    void navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString(),
+        hash: location.hash,
+      },
+      { replace: true, state: location.state },
+    );
   };
 
   return (
-    <main className="relative flex flex-1 items-center justify-center overflow-hidden p-6">
+    <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6 pt-16 pb-6">
       <AuthBackground />
       {siteUrl && (
         <a
@@ -318,7 +338,14 @@ export function LoginPage() {
                     asChild
                     data-testid={`login-oauth-${provider.id}`}
                   >
-                    <a href={api.oauthStartUrl(provider.id)}>
+                    <a
+                      href={api.oauthStartUrl(
+                        provider.id,
+                        appPath(location.pathname) +
+                          location.search +
+                          location.hash,
+                      )}
+                    >
                       {t("auth.oauthThrough", { provider: provider.label })}
                     </a>
                   </Button>

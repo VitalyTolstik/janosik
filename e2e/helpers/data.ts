@@ -157,12 +157,12 @@ export async function expectToast(page: Page, text: string): Promise<Locator> {
   return toast;
 }
 
-/** Open the board switcher and return its listbox. */
+/** Open the board switcher and return its grid. */
 export async function openBoardSwitcher(page: Page): Promise<Locator> {
   await page.getByRole("button", { name: "Switch board" }).click();
-  const list = page.getByRole("listbox", { name: "Switch board" });
-  await expect(list).toBeVisible();
-  return list;
+  const grid = page.getByRole("grid", { name: "Switch board" });
+  await expect(grid).toBeVisible();
+  return grid;
 }
 
 /** Open the switcher, assert the board is there, and close it again. */
@@ -170,14 +170,13 @@ export async function expectBoardInSwitcher(
   page: Page,
   title: string,
 ): Promise<void> {
-  await openBoardSwitcher(page);
-  await expect(page.getByRole("option").filter({ hasText: title })).toBeVisible(
-    { timeout: 10_000 },
-  );
+  const grid = await openBoardSwitcher(page);
+  const row = grid.getByRole("row").filter({
+    has: page.getByRole("gridcell", { name: title, exact: true }),
+  });
+  await expect(row).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("listbox", { name: "Switch board" }),
-  ).toBeHidden();
+  await expect(grid).toBeHidden();
 }
 
 /** Open a board from the switcher by its title. */
@@ -185,8 +184,9 @@ export async function openBoardFromSwitcher(
   page: Page,
   title: string,
 ): Promise<void> {
-  await openBoardSwitcher(page);
-  await page.getByRole("option").filter({ hasText: title }).click();
+  const grid = await openBoardSwitcher(page);
+  await grid.getByRole("gridcell", { name: title, exact: true }).click();
+  await expect(grid).toBeHidden();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 }
 

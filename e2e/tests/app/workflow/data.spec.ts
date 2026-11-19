@@ -85,7 +85,11 @@ test("archive and restore keep the workflow", async ({ page, board }) => {
   await board.open(page);
 
   await page.getByRole("button", { name: "Switch board" }).click();
-  const row = page.getByRole("option").filter({ hasText: board.title }).first();
+  const row = page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: board.title })
+    .first();
   await row.hover();
   await row.getByRole("button", { name: "Archive board" }).click();
   await row.getByRole("button", { name: "Yes, archive" }).click();

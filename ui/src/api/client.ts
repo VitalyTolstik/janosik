@@ -466,8 +466,9 @@ export class ApiClient {
   }
 
   /** Full-page navigation target that starts the OAuth round trip. */
-  oauthStartUrl(provider: string): string {
-    return `${apiBaseUrl()}/auth/oauth/${provider}/start`;
+  oauthStartUrl(provider: string, returnTo: string): string {
+    const params = new URLSearchParams({ returnTo });
+    return `${apiBaseUrl()}/auth/oauth/${encodeURIComponent(provider)}/start?${params}`;
   }
 
   startOAuthLink(

@@ -11,7 +11,8 @@ import {
 } from "@/components/board/views-lazy";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ViewSwitcher, type BoardView } from "@/components/board/ViewSwitcher";
+import { useBoardView } from "@/components/board/BoardViewProvider";
+import { ViewSwitcher } from "@/components/board/ViewSwitcher";
 import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
@@ -30,25 +31,6 @@ import {
   writeFilterParams,
   type FilterChange,
 } from "@/utils/filter";
-
-const VIEW_STORAGE_KEY = "janosik-board-view";
-
-function readStoredView(): BoardView {
-  try {
-    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (
-      stored === "calendar" ||
-      stored === "table" ||
-      stored === "board" ||
-      stored === "watch"
-    ) {
-      return stored;
-    }
-  } catch {
-    /* storage unavailable — the default view applies */
-  }
-  return "board";
-}
 
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
@@ -89,19 +71,10 @@ export function BoardSection() {
     },
     [setSearchParams],
   );
-  const [view, setView] = useState<BoardView>(readStoredView);
+  const { view, setView } = useBoardView();
   // Card density (TASK-142): a per-browser display preference, persisted next
   // to the chosen view; it only affects the kanban card face.
   const { density, setDensity } = useBoardDensity();
-
-  // Remember the last chosen view across sessions (next to janosik-lang).
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, view);
-    } catch {
-      /* storage unavailable — the choice only lasts the session */
-    }
-  }, [view]);
 
   const active = isFilterActive(filter);
 
@@ -212,8 +185,10 @@ export function BoardSection() {
 
   return (
     <main
+      data-testid="board-main"
+      tabIndex={-1}
       className={cn(
-        "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 sm:px-6",
+        "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 outline-none sm:px-6",
         boardBackgroundById(background).className,
       )}
     >

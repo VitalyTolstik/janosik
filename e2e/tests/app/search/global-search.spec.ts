@@ -42,6 +42,21 @@ test("toggles with Ctrl+K and leaves the board search untouched", async ({
   await expect(boardSearch).toHaveValue("Board filtered");
 });
 
+test("opens help immediately after Escape closes the palette", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  await openGlobalSearch(page);
+  await expect(globalSearchInput(page)).toBeVisible();
+
+  // Do not wait for the exit animation: the first `?` must already work
+  // while the closed dialog still contains its role-bearing listbox.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("?");
+  await expect(page.getByTestId("shortcuts-table")).toBeVisible();
+});
+
 test("finds a card on another board with a breadcrumb and highlighted title", async ({
   page,
   board,
@@ -132,7 +147,9 @@ test("groups card hits before board hits", async ({ page, board }) => {
 
   await searchGlobally(page, "Orion");
 
-  const sections = globalSearchResults(page).getByRole("listbox");
+  const sections = globalSearchResults(page)
+    .getByRole("listbox")
+    .getByRole("group");
   await expect(sections).toHaveCount(2);
   await expect(sections.nth(0)).toHaveAttribute("aria-label", "Cards");
   await expect(sections.nth(1)).toHaveAttribute("aria-label", "Boards");

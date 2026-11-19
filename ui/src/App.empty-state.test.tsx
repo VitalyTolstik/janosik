@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import App from "@/App";
+import App, { createAppRouter } from "@/App";
 
 /**
  * Empty-state smoke test (T-8): when every board is archived the home route
@@ -30,7 +30,7 @@ describe("App empty state (NoBoardRoute)", () => {
   });
 
   it("offers to create a board from the all-archived state", async () => {
-    render(<App />);
+    render(<App router={createAppRouter()} />);
 
     expect(
       await screen.findByText("All boards are archived."),
@@ -45,7 +45,7 @@ describe("App empty state (NoBoardRoute)", () => {
   });
 
   it("can restore an archived board from the empty state", async () => {
-    render(<App />);
+    render(<App router={createAppRouter()} />);
     await userEvent.click(
       await screen.findByRole("button", { name: "Archived" }),
     );

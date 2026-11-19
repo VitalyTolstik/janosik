@@ -1,3 +1,5 @@
+import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
+import { isOverlayOpen } from "@/utils/overlay";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Board, BoardAction } from "@janosik/shared";
@@ -74,6 +76,7 @@ function undoWouldExceedWip(board: Board, action: BoardAction): boolean {
 }
 
 interface Options {
+  hotkeysEnabled?: boolean;
   /** The board a command targets, as it stands right now. */
   getBoard: (boardId: string) => Board | undefined;
   /** The board undo/redo applies to (the URL's board). */
@@ -93,6 +96,7 @@ interface Options {
 export function useUndoHistory({
   getBoard,
   getActiveBoardId,
+  hotkeysEnabled = true,
   apply,
   send,
   onSendFailed,
@@ -322,33 +326,33 @@ export function useUndoHistory({
   // Hotkeys: Ctrl/⌘+Z undo, Ctrl/⌘+Shift+Z or Ctrl+Y redo. Skip while the
   // user is typing inside an editable field (native text undo takes over).
   useEffect(() => {
+    if (!hotkeysEnabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
       if (
-        target &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA")
-      ) {
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.altKey ||
+        !(event.metaKey || event.ctrlKey) ||
+        isEditableTarget(event.target) ||
+        isOverlayOpen()
+      )
         return;
-      }
-      if (!(event.metaKey || event.ctrlKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === "z") {
+      const code = shortcutLetterCode(event);
+      if (code === "KeyZ") {
         event.preventDefault();
         if (event.shiftKey) {
           redo();
         } else {
           undo();
         }
-      } else if (key === "y") {
+      } else if (code === "KeyY") {
         event.preventDefault();
         redo();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo]);
+  }, [hotkeysEnabled, undo, redo]);
 
   return {
     canUndo,

@@ -80,8 +80,8 @@ function seedTwoBoards() {
 
 async function openSwitcher() {
   fireEvent.click(screen.getByRole("button", { name: "Switch board" }));
-  const listbox = await screen.findByRole("listbox");
-  return listbox;
+  const dialog = await screen.findByRole("dialog", { name: "Switch board" });
+  return within(dialog).getByRole("grid", { name: "Switch board" });
 }
 
 describe("BoardSwitcher", () => {
@@ -92,10 +92,10 @@ describe("BoardSwitcher", () => {
 
   it("lists all boards with the active one marked", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    expect(listbox).toHaveTextContent("Alpha");
-    expect(listbox).toHaveTextContent("Beta");
-    expect(screen.getAllByRole("option", { selected: true })).toHaveLength(1);
+    const grid = await openSwitcher();
+    expect(grid).toHaveTextContent("Alpha");
+    expect(grid).toHaveTextContent("Beta");
+    expect(screen.getAllByRole("row", { selected: true })).toHaveLength(1);
   });
 
   it("counts active cards without archived cards", async () => {
@@ -121,7 +121,7 @@ describe("BoardSwitcher", () => {
     localStorage.setItem("janosik-boards", JSON.stringify([board]));
     renderSwitcher();
     await openSwitcher();
-    expect(screen.getByRole("option", { name: /Alpha/ })).toHaveTextContent(
+    expect(screen.getByRole("row", { name: /Alpha/ })).toHaveTextContent(
       "Alpha1",
     );
   });
@@ -131,8 +131,8 @@ describe("BoardSwitcher", () => {
     await openSwitcher();
     const input = screen.getByLabelText("Search boards…");
     await userEvent.type(input, "bet");
-    expect(screen.getByRole("listbox")).toHaveTextContent("Beta");
-    expect(screen.getByRole("listbox")).not.toHaveTextContent("Alpha");
+    expect(screen.getByRole("grid")).toHaveTextContent("Beta");
+    expect(screen.getByRole("grid")).not.toHaveTextContent("Alpha");
   });
 
   it("shows an empty state when nothing matches", async () => {
@@ -140,6 +140,62 @@ describe("BoardSwitcher", () => {
     await openSwitcher();
     await userEvent.type(screen.getByLabelText("Search boards…"), "zzz");
     expect(screen.getByText("No boards match")).toBeInTheDocument();
+  });
+
+  it("exposes the highlighted board and keeps row actions accessible", async () => {
+    renderSwitcher();
+    const grid = await openSwitcher();
+    const input = screen.getByRole("combobox", { name: "Search boards…" });
+    expect(input).toHaveAttribute("aria-controls", grid.id);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const row = within(grid).getByRole("row", { selected: true });
+    expect(row).toHaveTextContent("Beta");
+    expect(input).toHaveAttribute("aria-activedescendant", row.id);
+    expect(
+      within(row).getByRole("button", { name: "Archive board" }),
+    ).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "zzz" } });
+    // Openness describes the popup, not whether any result matched.
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("reports popover openness, not the result count, in aria-expanded (M41)", async () => {
+    renderSwitcher();
+    const trigger = screen.getByRole("button", { name: "Switch board" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await openSwitcher();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    const input = screen.getByRole("combobox", { name: "Search boards…" });
+    fireEvent.change(input, { target: { value: "zzz" } });
+    expect(screen.getByText("No boards match")).toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    // `aria-expanded=true` must not point at a hidden grid: the empty
+    // result list stays mounted (with no rows) under the message.
+    expect(screen.getByRole("grid", { name: "Switch board" })).toBeVisible();
+    expect(
+      screen.getByRole("grid", { name: "Switch board" }),
+    ).not.toHaveAttribute("hidden");
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute("aria-expanded", "false"),
+    );
+  });
+
+  it("keeps longer search queries while enforcing the board title limit", async () => {
+    renderSwitcher();
+    await openSwitcher();
+    const input = screen.getByRole("combobox", { name: "Search boards…" });
+    fireEvent.change(input, { target: { value: "x".repeat(101) } });
+    expect(screen.getByRole("button", { name: /^Create /i })).toBeDisabled();
+    expect(
+      screen.getByText("Board names can have up to 100 characters."),
+    ).toBeVisible();
+    fireEvent.change(input, { target: { value: "x".repeat(100) } });
+    expect(screen.getByRole("button", { name: /^Create /i })).toBeEnabled();
   });
 
   it("navigates with ArrowDown + Enter", async () => {
@@ -180,9 +236,9 @@ describe("BoardSwitcher", () => {
 
   it("archives a non-active board after inline confirm (data kept)", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
+    const grid = await openSwitcher();
     // Beta is not active — hover its row to reveal the archive button.
-    const betaRow = listbox.querySelector<HTMLElement>('[data-index="1"]')!;
+    const betaRow = grid.querySelector<HTMLElement>('[data-index="1"]')!;
     fireEvent.mouseEnter(betaRow);
     fireEvent.click(
       within(betaRow).getByRole("button", { name: "Archive board" }),
@@ -193,7 +249,7 @@ describe("BoardSwitcher", () => {
     );
     await waitFor(() => {
       // Beta left the active list…
-      const options = screen.getAllByRole("option");
+      const options = screen.getAllByRole("row");
       expect(options).toHaveLength(1);
       expect(options[0]).toHaveTextContent("Alpha");
     });
@@ -205,8 +261,8 @@ describe("BoardSwitcher", () => {
 
   it("archiving the active board navigates to the remaining one", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     fireEvent.click(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -230,7 +286,7 @@ describe("BoardSwitcher", () => {
     renderSwitcher();
     await openSwitcher();
     // Beta is archived — only Alpha is navigable.
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getAllByRole("row")).toHaveLength(1);
     expect(screen.getByTestId("archived-section")).toHaveTextContent("Beta");
     const archivedSection = screen.getByTestId("archived-section");
     fireEvent.click(
@@ -240,7 +296,7 @@ describe("BoardSwitcher", () => {
       expect(screen.queryByTestId("archived-section")).toBeNull();
     });
     // Beta is a real option again (and the header shows Alpha still).
-    expect(screen.getAllByRole("option")).toHaveLength(2);
+    expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
   });
 
@@ -263,13 +319,13 @@ describe("BoardSwitcher", () => {
       expect(screen.queryByTestId("archived-section")).toBeNull();
     });
     // Alpha remains active.
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getAllByRole("row")).toHaveLength(1);
   });
 
   it("does not offer restore/delete for active boards (only archive)", async () => {
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     expect(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -283,8 +339,8 @@ describe("BoardSwitcher", () => {
   it("archiving the only board shows the empty state, not the archived board", async () => {
     localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     fireEvent.click(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -310,8 +366,8 @@ describe("BoardSwitcher", () => {
   it("creates a board from the empty-state CTA and navigates to it", async () => {
     localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
     renderSwitcher();
-    const listbox = await openSwitcher();
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     fireEvent.mouseEnter(alphaRow);
     fireEvent.click(
       within(alphaRow).getByRole("button", { name: "Archive board" }),
@@ -336,10 +392,10 @@ describe("BoardSwitcher", () => {
       ]),
     );
     renderSwitcher();
-    const listbox = await openSwitcher();
+    const grid = await openSwitcher();
     // The swap slot trades the checkmark for the archive action on touch —
     // the row is the only path to archive a board.
-    const alphaRow = listbox.querySelector<HTMLElement>('[data-index="0"]')!;
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
     expect(
       within(alphaRow).getByRole("button", { name: "Archive board" }).className,
     ).toContain("no-hover:opacity-100");
@@ -406,8 +462,16 @@ describe("BoardSwitcher role sections (server mode)", () => {
     expect(screen.getByTestId("board-group-shared")).toHaveTextContent(
       "Shared with me",
     );
+    // The group headings are real grid rows with an accessible name, not
+    // hidden text inside a grid whose rows skip the section.
+    expect(screen.getByRole("row", { name: "My boards" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("row", { name: "Shared with me" }),
+    ).toBeInTheDocument();
 
-    const options = screen.getAllByRole("option");
+    const options = screen
+      .getAllByRole("row")
+      .filter((row) => row.dataset.index !== undefined);
     expect(options.map((option) => option.textContent)).toEqual([
       expect.stringContaining("Alpha"),
       expect.stringContaining("Beta"),
@@ -460,7 +524,7 @@ describe("BoardSwitcher role sections (server mode)", () => {
     await userEvent.type(screen.getByLabelText("Search boards…"), "shared");
     expect(screen.queryByTestId("board-group-mine")).toBeNull();
     expect(screen.queryByTestId("board-group-shared")).toBeNull();
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getAllByRole("row")).toHaveLength(1);
   });
 
   it("arrows through both sections in screen order", async () => {
@@ -476,11 +540,14 @@ describe("BoardSwitcher role sections (server mode)", () => {
     await screen.findByTestId("board-group-mine");
 
     // The cursor walks the flat, on-screen order: Alpha → Beta → Gamma,
-    // across the section boundary.
+    // across the section boundary (the group headings are rows too, but carry
+    // no data-index and never join the roving cursor).
     const input = screen.getByLabelText("Search boards…");
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getAllByRole("option")[2].className).toContain("bg-hover");
+    expect(screen.getByRole("row", { selected: true })).toHaveTextContent(
+      "Gamma",
+    );
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
       expect(

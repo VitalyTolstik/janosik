@@ -1,4 +1,5 @@
 import { Check, ChevronDown } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import { api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -15,24 +16,71 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ensureLocale, useI18n, type Lang } from "@/i18n";
+import { useI18n, type Lang } from "@/i18n";
+import { ensureLocale } from "@/i18n/i18n";
+import { APP_BASE } from "@/utils/app-path";
 
 interface LanguageSwitcherProps {
   /** `icon` (header trigger) or `row` (account preferences). */
   variant?: "icon" | "row";
 }
 
+/**
+ * The router's current URL, read from `window` so it also works after this
+ * component unmounts (closing the account dialog, switching Preferences
+ * sections). `navigate` works in router-relative coordinates, so strip the
+ * deploy basename that `createBrowserRouter({ basename })` adds.
+ */
+function currentRouterLocation(): {
+  pathname: string;
+  search: string;
+  hash: string;
+} {
+  const { pathname, search, hash } = window.location;
+  const base = APP_BASE === "/" ? "" : APP_BASE.replace(/\/$/, "");
+  if (base === "") return { pathname, search, hash };
+  if (pathname === base) return { pathname: "/", search, hash };
+  if (pathname.startsWith(`${base}/`)) {
+    return { pathname: pathname.slice(base.length), search, hash };
+  }
+  return { pathname, search, hash };
+}
+
 /** Language picker (English / Russian) — a globe icon with a dropdown. */
 export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
   const { lang, setLang, t } = useI18n();
+  const navigate = useNavigate();
   const { status, user, updateUser, impersonating } = useAuth();
 
   // Load the lazy catalog before switching; a failed load (offline, not yet
-  // cached) leaves both the UI and the server profile on the current language.
+  // cached) leaves both the UI, the URL and the server profile on the current
+  // language. The `?lng=` handoff is consumed only after the new catalog is
+  // ready, so a reload can retry a failed one.
+  //
+  // The handoff must be removed through the router, not raw
+  // `history.replaceState`: the board filter, card deep links and admin list
+  // queries rebuild their URL from `useSearchParams`, which would otherwise
+  // keep the stale `lng` and re-pin the old language on reload. The M39
+  // workflow blocker ignores an `lng`-only search change. Read the live URL
+  // in the callback: this component may already be unmounted, and a captured
+  // location would pull the user back to the pre-close route.
   const choose = (next: Lang) => {
     void ensureLocale(next).then((ready) => {
       if (!ready) return;
       setLang(next);
+      const current = currentRouterLocation();
+      const params = new URLSearchParams(current.search);
+      if (params.has("lng")) {
+        params.delete("lng");
+        void navigate(
+          {
+            pathname: current.pathname,
+            search: params.toString(),
+            hash: current.hash,
+          },
+          { replace: true },
+        );
+      }
       if (status !== "authenticated" || user === null || impersonating) return;
       void api
         .updateProfile({ locale: next })

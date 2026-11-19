@@ -3,11 +3,11 @@ import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
 import request from "supertest";
 import { AppModule } from "@/app.module";
-import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { wipeAll } from "./support/wipe";
 
+const UI_BASE = process.env.UI_BASE ?? "/";
 const OWNER_EMAIL = "oauth-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
 const OPERATOR_EMAIL = "oauth-operator@example.com";
@@ -50,12 +50,15 @@ describe("OAuth (e2e)", () => {
       json: async () => body,
     }) as unknown as Response;
 
-  const setStateCookie = (res: request.Response): string => {
-    const raw = res.headers["set-cookie"] as unknown as string[];
-    const row = raw.find((cookie) => cookie.startsWith("oauth_state="));
-    if (!row) throw new Error("no oauth_state cookie set");
+  const oauthCookie = (res: request.Response, name: string): string => {
+    const cookies = res.headers["set-cookie"] as unknown as string[];
+    const row = cookies.find((cookie) => cookie.startsWith(`${name}=`));
+    if (!row) throw new Error(`no ${name} cookie set`);
     return row.split(";")[0];
   };
+
+  const setStateCookie = (res: request.Response): string =>
+    oauthCookie(res, "oauth_state");
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -225,7 +228,7 @@ describe("OAuth (e2e)", () => {
       .set("Cookie", setStateCookie(start))
       .redirects(0)
       .expect(302);
-    expect(callback.headers.location).toBe("http://localhost:5173/");
+    expect(callback.headers.location).toBe(`http://localhost:5173${UI_BASE}`);
     const refreshRow = (callback.headers["set-cookie"] as unknown as string[])
       .find((cookie) => cookie.startsWith("refresh_token="))
       ?.split(";")[0];
@@ -323,6 +326,76 @@ describe("OAuth (e2e)", () => {
     await prisma.apiToken.deleteMany({ where: { userId: squatter.id } });
   });
 
+  it("returns to the original board URL after the provider completes or denies sign-in", async () => {
+    const query = `${UI_BASE}board/board-123?card=card-456&lng=ru&q=`;
+    const title = "я".repeat(350);
+    const deepLink = `${query}${title}#details`;
+    const encodedLink = query + encodeURIComponent(title);
+    stubProvider({
+      email: "deep-link@gmail.com",
+      email_verified: true,
+      name: "Deep link",
+    });
+
+    for (const code of ["the-code", undefined]) {
+      const start = await server()
+        .get("/api/v1/auth/oauth/google/start")
+        .query({ returnTo: deepLink })
+        .expect(302);
+      const state = new URL(start.headers.location as string).searchParams.get(
+        "state",
+      );
+      const callback = await server()
+        .get("/api/v1/auth/oauth/google/callback")
+        .query(code === undefined ? { state } : { state, code })
+        .set("Cookie", [
+          setStateCookie(start),
+          oauthCookie(start, "oauth_return_to"),
+        ])
+        .expect(302);
+
+      const error = code === undefined ? "&authError=oauth_failed" : "";
+      const expected = `${encodedLink}${error}#details`;
+      expect(callback.headers.location).toBe(
+        `http://localhost:5173${expected}`,
+      );
+      expect(oauthCookie(callback, "oauth_return_to")).toBe("oauth_return_to=");
+    }
+  });
+
+  it.each([
+    ["an external URL", "https://another.example/board/b-1"],
+    ["a route outside the allowlist", `${UI_BASE}impersonate#token`],
+    [
+      "a path escaping the app base",
+      UI_BASE === "/" ? "/../admin" : `${UI_BASE}../board/b-1`,
+    ],
+    ["an oversized encoded cookie", `${UI_BASE}board/b-1?q=${"я".repeat(500)}`],
+  ])("uses the app root for %s", async (_, returnTo) => {
+    const start = await server()
+      .get("/api/v1/auth/oauth/google/start")
+      .query({ returnTo })
+      .expect(302);
+    const state = new URL(start.headers.location as string).searchParams.get(
+      "state",
+    );
+    const callback = await server()
+      .get("/api/v1/auth/oauth/google/callback")
+      .query({ state })
+      .set("Cookie", [
+        setStateCookie(start),
+        oauthCookie(start, "oauth_return_to"),
+      ])
+      .expect(302);
+
+    expect(oauthCookie(start, "oauth_return_to")).toBe(
+      `oauth_return_to=${encodeURIComponent(UI_BASE)}`,
+    );
+    expect(callback.headers.location).toBe(
+      `http://localhost:5173${UI_BASE}?authError=oauth_failed`,
+    );
+  });
+
   it("bounces a forged callback to the UI error param", async () => {
     const start = await server()
       .get("/api/v1/auth/oauth/google/start")
@@ -345,7 +418,7 @@ describe("OAuth (e2e)", () => {
       .redirects(0)
       .expect(302);
     expect(res.headers.location).toBe(
-      "http://localhost:5173/?authError=oauth_failed",
+      `http://localhost:5173${UI_BASE}?authError=oauth_failed`,
     );
     await expect(
       prisma.user.findUnique({ where: { email: "vera2@gmail.com" } }),
@@ -382,7 +455,7 @@ describe("OAuth (e2e)", () => {
       .set("Cookie", setStateCookie(start))
       .redirects(0)
       .expect(302);
-    expect(callback.headers.location).toBe("http://localhost:5173/");
+    expect(callback.headers.location).toBe(`http://localhost:5173${UI_BASE}`);
     const created = await prisma.user.findUniqueOrThrow({
       where: { email: "vera@yandex.ru" },
     });

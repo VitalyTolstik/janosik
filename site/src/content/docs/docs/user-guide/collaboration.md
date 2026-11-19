@@ -48,7 +48,8 @@ lapsed row never grants access.
 The bell in the header lists your pending board invitations. Each row shows
 the board, who invited you, the role and a viewer's expiry. Use `Accept` to
 join the board — it then appears in your switcher — or `Decline` to refuse.
-Invitations appear only once you have confirmed your email address.
+Invitations appear only once you have confirmed your email address. If they
+fail to load, use **Retry loading invitations** in the bell.
 
 ## Attention inbox
 
@@ -174,20 +175,25 @@ a `Reset filters` button. While any filter is active, dragging is disabled.
 ## Keyboard shortcuts
 
 Press `?` anywhere outside a text field, or click the keyboard icon in the
-header, to open the cheat sheet.
+header, to open the cheat sheet. It shows the shortcuts available in
+the current view. Letter shortcuts follow the typed letter on Latin layouts
+and the physical key position on Russian layouts. Use the key that types
+`?` on your layout to open the cheat sheet. Undo and redo pause while a
+dialog or menu is open.
 
 ![The keyboard shortcut cheat sheet.](/screens/shortcuts.png)
 
 | Action | Keys |
 | --- | --- |
-| Search | Ctrl+K or Cmd+K |
+| Search across boards | Ctrl+K or Cmd+K |
+| Focus the board filter (Board, Calendar and Table) | / |
 | Undo | Ctrl+Z or Cmd+Z |
 | Redo | Ctrl+Shift+Z, Ctrl+Y or the Cmd equivalents |
-| New card | N |
-| New column | C |
-| Next card | J |
-| Previous card | K |
-| Open selected card | E or Enter |
+| New card (Board view, with edit access) | N |
+| New column (Board view, with edit access) | C |
+| Next card (Board view) | J |
+| Previous card (Board view) | K |
+| Open selected card (Board view) | E or Enter |
 | This cheat sheet | ? |
 | Close overlay / cancel | Esc |
 

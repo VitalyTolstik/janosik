@@ -47,13 +47,17 @@ test("groups shared boards and hides admin-only actions", async ({
   await expect(page.getByTestId("board-group-mine")).toBeVisible();
   await expect(page.getByTestId("board-group-shared")).toBeVisible();
 
-  const mine = page.getByRole("option").filter({ hasText: board.title });
+  const mine = page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: board.title });
   await expect(mine.getByRole("button", { name: "Archive board" })).toHaveCount(
     1,
   );
 
   const memberRow = page
-    .getByRole("option")
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
     .filter({ hasText: memberBoard.title });
   await expect(memberRow.getByTestId("board-role")).toHaveAttribute(
     "aria-label",
@@ -64,7 +68,8 @@ test("groups shared boards and hides admin-only actions", async ({
   ).toHaveCount(0);
 
   const viewerRow = page
-    .getByRole("option")
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
     .filter({ hasText: viewerBoard.title });
   await expect(viewerRow.getByTestId("board-role")).toHaveAttribute(
     "aria-label",
@@ -82,7 +87,8 @@ test("groups shared boards and hides admin-only actions", async ({
     await partner.page.getByRole("button", { name: "Switch board" }).click();
     await expect(partner.page.getByTestId("board-group-shared")).toBeVisible();
     const shared = partner.page
-      .getByRole("option")
+      .getByRole("grid", { name: "Switch board" })
+      .getByRole("row")
       .filter({ hasText: board.title });
     await expect(shared.getByTestId("board-role")).toHaveAttribute(
       "aria-label",

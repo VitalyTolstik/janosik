@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import type {
   AttentionNotificationPage,
@@ -54,6 +54,8 @@ export function NotificationsBell() {
   const [invitations, setInvitations] = useState<BoardInvitationDto[] | null>(
     null,
   );
+  const [invitationsError, setInvitationsError] = useState(false);
+  const invitationRequest = useRef(0);
   const [attention, setAttention] = useState<AttentionNotificationPage | null>(
     null,
   );
@@ -62,10 +64,15 @@ export function NotificationsBell() {
   const [inboxSession, setInboxSession] = useState(0);
 
   const load = useCallback(async () => {
+    const request = ++invitationRequest.current;
     try {
-      setInvitations(await api.listInvitations());
+      const next = await api.listInvitations();
+      if (request !== invitationRequest.current) return;
+      setInvitations(next);
+      setInvitationsError(false);
     } catch {
-      // A failed poll must not wipe what was already shown.
+      // A failed poll keeps the last invitations visible.
+      if (request === invitationRequest.current) setInvitationsError(true);
     }
   }, []);
 
@@ -152,7 +159,7 @@ export function NotificationsBell() {
         sideOffset={8}
         collisionPadding={8}
         data-testid="invitations-panel"
-        aria-busy={invitations === null}
+        aria-busy={invitations === null && !invitationsError}
         className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
         <AttentionInbox
@@ -163,6 +170,7 @@ export function NotificationsBell() {
         />
         <NotificationsPanel
           invitations={invitations}
+          unavailable={invitationsError}
           onClose={() => setOpen(false)}
           onReload={() => void load()}
         />
@@ -193,12 +201,14 @@ function NotificationsSkeleton() {
 
 interface NotificationsPanelProps {
   invitations: BoardInvitationDto[] | null;
+  unavailable: boolean;
   onClose: () => void;
   onReload: () => void;
 }
 
 function NotificationsPanel({
   invitations,
+  unavailable,
   onClose,
   onReload,
 }: NotificationsPanelProps) {
@@ -254,14 +264,24 @@ function NotificationsPanel({
         </p>
       </div>
 
+      {unavailable ? (
+        <div className="space-y-2 px-4 py-3 text-center text-sm text-muted-foreground">
+          <p role="status">{t("notifications.invitationsUnavailable")}</p>
+          <Button variant="outline" size="sm" onClick={onReload}>
+            {t("notifications.retryInvitations")}
+          </Button>
+        </div>
+      ) : null}
       {invitations === null ? (
-        <SkeletonRegion
-          label={t("notifications.loading")}
-          testId="notifications-skeleton"
-          delayMs={150}
-        >
-          <NotificationsSkeleton />
-        </SkeletonRegion>
+        unavailable ? null : (
+          <SkeletonRegion
+            label={t("notifications.loading")}
+            testId="notifications-skeleton"
+            delayMs={150}
+          >
+            <NotificationsSkeleton />
+          </SkeletonRegion>
+        )
       ) : invitations.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-muted-foreground">
           {t("notifications.empty")}

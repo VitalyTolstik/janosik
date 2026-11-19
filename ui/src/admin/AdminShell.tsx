@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import {
+  isEditableTarget,
+  isShortcutHelpKey,
+  shortcutLetterCode,
+} from "@/utils/keyboard";
+import { isOverlayOpen } from "@/utils/overlay";
 import { useTheme } from "@/hooks/use-theme";
 import { useAdminT } from "./admin-i18n";
 import { AdminSidebar } from "./layout/AdminSidebar";
@@ -56,21 +62,11 @@ function readDensity(): Density {
   }
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName.toLowerCase();
-  return (
-    tag === "input" ||
-    tag === "textarea" ||
-    tag === "select" ||
-    target.isContentEditable
-  );
-}
-
 export function AdminShell() {
   const t = useAdminT();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const tab = new URLSearchParams(search).get("tab");
   const { theme, setTheme } = useTheme();
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -129,46 +125,53 @@ export function AdminShell() {
 
   useEffect(() => {
     setMobileOpen(false);
-    rememberRecentPath(pathname);
-  }, [pathname]);
+  }, [pathname, tab]);
+
+  useEffect(() => {
+    rememberRecentPath(pathname, search);
+  }, [pathname, search]);
 
   // Move keyboard focus to the content region after a route change; screen
   // readers then announce the new h1 instead of leaving focus on the old link.
   useEffect(() => {
     const main = document.getElementById("admin-main");
     main?.focus({ preventScroll: true });
-  }, [pathname]);
+  }, [pathname, tab]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && event.key.toLowerCase() === "k") {
+      const code = shortcutLetterCode(event);
+      if (mod && code === "KeyK") {
         event.preventDefault();
         setSearchOpen(true);
         return;
       }
-      if (mod && event.key.toLowerCase() === "b") {
+      if (mod && code === "KeyB") {
         event.preventDefault();
         toggleSidebar();
         return;
       }
-      if (isEditableTarget(event.target) || event.metaKey || event.ctrlKey) {
+      if (isEditableTarget(event.target) || mod || isOverlayOpen()) {
+        pendingG.current = null;
         return;
       }
-      if (event.key === "?") {
+      if (isShortcutHelpKey(event)) {
         event.preventDefault();
         setShortcutsOpen(true);
         return;
       }
-      if (event.key.toLowerCase() === "g") {
+      if (event.shiftKey) return;
+      if (code === "KeyG") {
         pendingG.current = Date.now();
         return;
       }
       if (pendingG.current !== null && Date.now() - pendingG.current < 900) {
-        const hub = HUB_SHORTCUTS[event.key.toLowerCase()];
+        const hub = HUB_SHORTCUTS[code];
+        pendingG.current = null;
         if (hub !== undefined) {
           event.preventDefault();
-          pendingG.current = null;
           const entry = ADMIN_HUBS.find((candidate) => candidate.key === hub);
           if (entry !== undefined) navigate(entry.to);
         }

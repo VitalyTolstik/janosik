@@ -39,9 +39,15 @@ function ShortcutRow({ action, keys }: { action: string; keys: string[] }) {
 export function ShortcutsDialog({
   open,
   onOpenChange,
+  filter,
+  kanban,
+  canEdit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  filter?: boolean;
+  kanban?: boolean;
+  canEdit?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -67,16 +73,31 @@ export function ShortcutsDialog({
           className="divide-y divide-border/60"
         >
           <ShortcutRow action={t("shortcuts.search")} keys={[`${mod}K`]} />
-          <ShortcutRow action={t("shortcuts.undo")} keys={[`${mod}Z`]} />
-          <ShortcutRow
-            action={t("shortcuts.redo")}
-            keys={[`${mod}⇧Z`, `${mod}Y`]}
-          />
-          <ShortcutRow action={t("shortcuts.newCard")} keys={["N"]} />
-          <ShortcutRow action={t("shortcuts.newColumn")} keys={["C"]} />
-          <ShortcutRow action={t("shortcuts.moveDown")} keys={["J"]} />
-          <ShortcutRow action={t("shortcuts.moveUp")} keys={["K"]} />
-          <ShortcutRow action={t("shortcuts.openCard")} keys={["E", "↵"]} />
+          {filter ? (
+            <ShortcutRow action={t("shortcuts.filter")} keys={["/"]} />
+          ) : null}
+          {canEdit ? (
+            <>
+              <ShortcutRow action={t("shortcuts.undo")} keys={[`${mod}Z`]} />
+              <ShortcutRow
+                action={t("shortcuts.redo")}
+                keys={[`${mod}⇧Z`, `${mod}Y`]}
+              />
+            </>
+          ) : null}
+          {kanban ? (
+            <>
+              {canEdit ? (
+                <>
+                  <ShortcutRow action={t("shortcuts.newCard")} keys={["N"]} />
+                  <ShortcutRow action={t("shortcuts.newColumn")} keys={["C"]} />
+                </>
+              ) : null}
+              <ShortcutRow action={t("shortcuts.moveDown")} keys={["J"]} />
+              <ShortcutRow action={t("shortcuts.moveUp")} keys={["K"]} />
+              <ShortcutRow action={t("shortcuts.openCard")} keys={["E", "↵"]} />
+            </>
+          ) : null}
           <ShortcutRow action={t("shortcuts.help")} keys={["?"]} />
           <ShortcutRow action={t("shortcuts.close")} keys={["Esc"]} />
         </div>

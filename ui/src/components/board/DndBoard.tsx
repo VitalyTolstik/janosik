@@ -38,6 +38,7 @@ import { blockedMoveMessage, workflowBlockReason } from "@/utils/workflow";
 import { applyCardOver } from "@/utils/dnd";
 import { cn } from "@/lib/utils";
 import { cardLinkIndex, linkSignature } from "@/utils/links";
+import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
@@ -607,19 +608,6 @@ export function DndBoard({
     [onCardClick],
   );
 
-  // Shared guard: single-letter shortcuts are inert while the user types or
-  // while an overlay (dialog/popover/menu) is open.
-  const shortcutsBlocked = (event: KeyboardEvent) => {
-    const target = event.target;
-    if (
-      target instanceof HTMLElement &&
-      (target.isContentEditable ||
-        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
-    )
-      return true;
-    return isOverlayOpen();
-  };
-
   // j/k navigate the visible cards, e/Enter open the cursor's dialog,
   // n opens a composer (cursor's column, else the first), c opens the
   // column composer, Escape clears the cursor. The overlay itself lives in
@@ -637,22 +625,24 @@ export function DndBoard({
     );
     const focusedCardId = cursor !== null ? flatCardIds[cursor] : undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing)
+        return;
       if (event.defaultPrevented) return;
-      if (shortcutsBlocked(event)) return;
-      const key = event.key;
-      if (key === "j" || key === "k") {
+      if (isEditableTarget(event.target) || isOverlayOpen()) return;
+      const { key } = event;
+      const code = event.shiftKey ? "" : shortcutLetterCode(event);
+      if (code === "KeyJ" || code === "KeyK") {
         event.preventDefault();
         setCursor((prev) => {
           const total = flatCardIds.length;
           if (total === 0) return null;
-          if (prev === null) return key === "j" ? 0 : total - 1;
+          if (prev === null) return code === "KeyJ" ? 0 : total - 1;
           return Math.min(
-            Math.max(key === "j" ? prev + 1 : prev - 1, 0),
+            Math.max(code === "KeyJ" ? prev + 1 : prev - 1, 0),
             total - 1,
           );
         });
-      } else if ((key === "e" || key === "Enter") && focusedCardId) {
+      } else if ((code === "KeyE" || key === "Enter") && focusedCardId) {
         // Enter belongs to the focused control (a card's own keyboard
         // handler, a button, a menu item). Only an unhandled Enter falls
         // through to the cursor card.
@@ -667,7 +657,7 @@ export function DndBoard({
         }
         event.preventDefault();
         onCardClick(focusedCardId);
-      } else if (key === "n") {
+      } else if (code === "KeyN" && !readOnly) {
         event.preventDefault();
         const columnId =
           (focusedCardId &&
@@ -682,7 +672,7 @@ export function DndBoard({
         document
           .querySelector<HTMLElement>(`[data-composer-trigger="${columnId}"]`)
           ?.click();
-      } else if (key === "c") {
+      } else if (code === "KeyC" && !readOnly) {
         event.preventDefault();
         document
           .querySelector<HTMLElement>("[data-add-column-trigger]")
@@ -693,7 +683,7 @@ export function DndBoard({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [board, draft, cursor, filteredCardIds, onCardClick]);
+  }, [board, draft, cursor, filteredCardIds, onCardClick, readOnly]);
 
   // Render columns in the live draft order while a column drag is active.
   // Both memoized because `columnOrder` feeds `SortableContext items`:

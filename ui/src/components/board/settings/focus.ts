@@ -1,13 +1,36 @@
 /**
- * Return focus to the gear that opened Board Settings after every close path.
- * Radix restores focus to a DialogTrigger; the gear is a sibling, so the shell
- * and the save path call this explicitly.
+ * Return focus to the board chrome after every Settings close path. Radix
+ * restores focus to a mounted DialogTrigger; the gear is a sibling, and a
+ * board switch unmounts the dialog outright, so both paths resolve the target
+ * here.
+ *
+ * Preference order is gear → title → board main. The gear is hidden below
+ * 721 px, so a bare `.focus()` on it would leave focus on BODY; the first
+ * visible/focusable candidate wins instead. `checkVisibility()` covers modern
+ * browsers; the rect fallback also excludes `display:none` candidates in
+ * engines (or tests) without that API.
  */
+function isFocusable(target: HTMLElement): boolean {
+  if (typeof target.checkVisibility === "function") {
+    return target.checkVisibility();
+  }
+  return target.getClientRects().length > 0;
+}
+
 export function restoreBoardSettingsFocus(): void {
   const focusTrigger = () => {
-    document
-      .querySelector<HTMLElement>('[data-testid="board-settings-trigger"]')
-      ?.focus();
+    const candidates = [
+      '[data-testid="board-settings-trigger"]',
+      '[data-testid="board-title"]',
+      '[data-testid="board-main"]',
+    ];
+    for (const selector of candidates) {
+      const target = document.querySelector<HTMLElement>(selector);
+      if (target !== null && isFocusable(target)) {
+        target.focus();
+        return;
+      }
+    }
   };
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(focusTrigger);

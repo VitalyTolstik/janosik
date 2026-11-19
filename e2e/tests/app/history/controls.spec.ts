@@ -38,7 +38,11 @@ async function switchBoard(page: Page, title: string): Promise<void> {
   const trigger = page.getByRole("button", { name: "Switch board" });
   await expect(trigger).toBeVisible();
   await trigger.click();
-  await page.getByRole("option").filter({ hasText: title }).click();
+  await page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: title })
+    .click();
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
 }
 
@@ -67,6 +71,21 @@ test("Ctrl+Z and Ctrl+Shift+Z undo and redo", async ({ page, board }) => {
   await expect(todoCard(page, "Keyboard task")).toHaveCount(0);
   await pressRedo(page);
   await expect(todoCard(page, "Keyboard task")).toBeVisible();
+});
+
+test("Ctrl+Z works immediately after the app palette closes", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.open(page);
+  await addCard(page, "Palette undo task");
+  await page.keyboard.press("Control+k");
+  await expect(page.getByTestId("global-search-input")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await pressUndo(page);
+  await expect(todoCard(page, "Palette undo task")).toHaveCount(0);
 });
 
 test("Ctrl+Y also redoes", async ({ page, board }) => {
@@ -200,4 +219,38 @@ test("reload saves the redone result and clears history", async ({
   await expect(columnSection(page, "Todo")).toBeVisible();
   await expect(todoCard(page, "Redone task")).toBeVisible();
   await expectHistory(page, { undo: false, redo: false });
+});
+
+test("Russian-layout undo and redo wait until board settings closes", async ({
+  page,
+  board,
+}) => {
+  await board.column("Todo");
+  await board.open(page);
+  await addCard(page, "History with settings open");
+
+  const openSettings = async () => {
+    await page.getByTestId("board-settings-trigger").click();
+    await expect(page.getByTestId("board-settings-dialog")).toBeVisible();
+  };
+  const press = (key: string, code: string) =>
+    page.locator("body").dispatchEvent("keydown", {
+      key,
+      code,
+      ctrlKey: true,
+      bubbles: true,
+    });
+  await openSettings();
+  await press("я", "KeyZ");
+  await page.keyboard.press("Escape");
+  await expect(todoCard(page, "History with settings open")).toBeVisible();
+  await press("я", "KeyZ");
+  await expect(todoCard(page, "History with settings open")).toHaveCount(0);
+
+  await openSettings();
+  await press("н", "KeyY");
+  await page.keyboard.press("Escape");
+  await expect(todoCard(page, "History with settings open")).toHaveCount(0);
+  await press("н", "KeyY");
+  await expect(todoCard(page, "History with settings open")).toBeVisible();
 });

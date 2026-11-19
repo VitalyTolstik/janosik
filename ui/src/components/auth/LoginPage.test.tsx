@@ -149,6 +149,31 @@ describe("LoginPage", () => {
     expect(api.getAccessToken()).toBeNull();
   });
 
+  it.each([
+    ["login", 403, "This account is disabled."],
+    ["login", 503, "Sign-in is temporarily unavailable."],
+    ["register", 403, "Registration is closed."],
+    ["register", 503, "Registration is temporarily unavailable."],
+  ])(
+    "maps a %s %s response to its localized explanation",
+    async (mode, status, message) => {
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+        if (pathOf(input).endsWith("/auth/config"))
+          return json({ allowRegistration: true });
+        if (pathOf(input).endsWith("/auth/oauth/providers"))
+          return json({ providers: [] });
+        if (pathOf(input).endsWith(`/auth/${mode}`)) return json({}, status);
+        return json({}, 401);
+      });
+
+      renderPage([mode === "register" ? "/?mode=register" : "/"]);
+      submit("admin@example.com", "password123");
+      expect(await screen.findByTestId("login-error")).toHaveTextContent(
+        message,
+      );
+    },
+  );
+
   it("reports an unreachable server", async () => {
     vi.stubGlobal("fetch", async () => {
       throw new TypeError("Failed to fetch");
@@ -254,15 +279,18 @@ describe("LoginPage", () => {
       throw new Error(`unexpected fetch: ${String(input)}`);
     });
 
-    renderPage();
+    renderPage(["/board/b-1?card=c-1#details"]);
     const google = await screen.findByTestId("login-oauth-google");
     expect(google.closest("a")).toHaveAttribute(
       "href",
-      "http://api.test/api/v1/auth/oauth/google/start",
+      "http://api.test/api/v1/auth/oauth/google/start?returnTo=%2Fboard%2Fb-1%3Fcard%3Dc-1%23details",
     );
     expect(
       screen.getByTestId("login-oauth-yandex").closest("a"),
-    ).toHaveAttribute("href", "http://api.test/api/v1/auth/oauth/yandex/start");
+    ).toHaveAttribute(
+      "href",
+      "http://api.test/api/v1/auth/oauth/yandex/start?returnTo=%2Fboard%2Fb-1%3Fcard%3Dc-1%23details",
+    );
   });
 
   it("renders no OAuth buttons when no provider is enabled", async () => {

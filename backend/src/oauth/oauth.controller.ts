@@ -27,6 +27,38 @@ import { CurrentUser } from "@/auth/current-user.decorator";
 import type { AuthUser } from "@/auth/auth.types";
 
 const OAUTH_LINK_COOKIE = "oauth_link_proof";
+const OAUTH_RETURN_COOKIE = "oauth_return_to";
+const OAUTH_COOKIE_PATH = "/api/v1/auth/oauth";
+// Leave room for the cookie name and attributes within the browser's 4 KiB limit.
+const MAX_ENCODED_RETURN_BYTES = 3800;
+
+/** The provider may only return the browser to a route in the user app. */
+function oauthReturnUrl(path: unknown): URL {
+  const prefix = appBasePrefix();
+  const fallback = new URL(prefix, env.PUBLIC_ORIGIN);
+  if (
+    typeof path !== "string" ||
+    path.length > MAX_ENCODED_RETURN_BYTES ||
+    !path.startsWith(prefix) ||
+    path.startsWith("//") ||
+    /[\\\r\n\t]/.test(path)
+  ) {
+    return fallback;
+  }
+
+  const url = new URL(path, fallback);
+  const route = url.pathname.slice(prefix.length);
+  if (
+    url.origin !== fallback.origin ||
+    !url.pathname.startsWith(prefix) ||
+    encodeURIComponent(url.pathname + url.search + url.hash).length >
+      MAX_ENCODED_RETURN_BYTES ||
+    !/^(?:|board\/[^/]+\/?|agents(?:\/[^/]+)?\/?)$/.test(route)
+  ) {
+    return fallback;
+  }
+  return url;
+}
 class OAuthLinkDto {
   @IsString()
   @MinLength(1)
@@ -37,7 +69,7 @@ class OAuthLinkDto {
 /**
  * Browser-redirect endpoints of the OAuth login (TASK-54). Both are full
  * page navigations, not XHR: the answer is always a 302 — to the provider,
- * or back to the UI root where the auth gate boots the fresh session from
+ * or back to the UI where the auth gate boots the fresh session from
  * the refresh cookie. Any callback failure lands on `?authError=oauth_failed`
  * and the sign-in screen explains it.
  */
@@ -60,20 +92,28 @@ export class OAuthController {
   @Get(":provider/start")
   async start(
     @Param("provider") provider: string,
+    @Query("returnTo") returnTo: unknown,
     @Res() res: Response,
   ): Promise<void> {
     const { redirectUrl, state, maxAgeMs } =
       await this.oauth.startAuthorize(provider);
-    res.clearCookie(OAUTH_LINK_COOKIE, { path: "/api/v1/auth/oauth" });
-    res.cookie(OAUTH_STATE_COOKIE, state, {
+    res.clearCookie(OAUTH_LINK_COOKIE, { path: OAUTH_COOKIE_PATH });
+    const options = {
       httpOnly: true,
       // The provider's top-level GET redirect must carry the cookie back —
       // `strict` would drop it, `lax` is the correct CSRF posture here.
-      sameSite: "lax",
-      path: "/api/v1/auth/oauth",
+      sameSite: "lax" as const,
+      path: OAUTH_COOKIE_PATH,
       secure: cookieSecure(),
       maxAge: maxAgeMs,
-    });
+    };
+    const target = oauthReturnUrl(returnTo);
+    res.cookie(OAUTH_STATE_COOKIE, state, options);
+    res.cookie(
+      OAUTH_RETURN_COOKIE,
+      target.pathname + target.search + target.hash,
+      options,
+    );
     res.redirect(302, redirectUrl);
   }
 
@@ -96,12 +136,13 @@ export class OAuthController {
     const options = {
       httpOnly: true as const,
       sameSite: "lax" as const,
-      path: "/api/v1/auth/oauth",
+      path: OAUTH_COOKIE_PATH,
       secure: cookieSecure(),
       maxAge: maxAgeMs,
     };
     res.cookie(OAUTH_STATE_COOKIE, state, options);
     res.cookie(OAUTH_LINK_COOKIE, proof, options);
+    res.clearCookie(OAUTH_RETURN_COOKIE, { path: OAUTH_COOKIE_PATH });
     return { redirectUrl };
   }
 
@@ -113,10 +154,19 @@ export class OAuthController {
     @Query("state") state: string | undefined,
     @RequestCookie(OAUTH_STATE_COOKIE) stateCookie: string | undefined,
     @RequestCookie(OAUTH_LINK_COOKIE) linkProof: string | undefined,
+    @RequestCookie(OAUTH_RETURN_COOKIE) returnTo: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    res.clearCookie(OAUTH_STATE_COOKIE, { path: "/api/v1/auth/oauth" });
-    res.clearCookie(OAUTH_LINK_COOKIE, { path: "/api/v1/auth/oauth" });
+    res.clearCookie(OAUTH_STATE_COOKIE, { path: OAUTH_COOKIE_PATH });
+    res.clearCookie(OAUTH_LINK_COOKIE, { path: OAUTH_COOKIE_PATH });
+    res.clearCookie(OAUTH_RETURN_COOKIE, { path: OAUTH_COOKIE_PATH });
+    const target = oauthReturnUrl(
+      state !== undefined &&
+        state === stateCookie &&
+        state.startsWith(`${provider}|`)
+        ? returnTo
+        : undefined,
+    );
     try {
       const result = await this.oauth.handleCallback(
         provider,
@@ -129,18 +179,15 @@ export class OAuthController {
         ...this.refreshCookieOptions(),
         maxAge: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
       });
-      res.redirect(
-        302,
-        `${env.PUBLIC_ORIGIN.replace(/\/+$/, "")}${appBasePrefix()}`,
-      );
+      if (target.searchParams.has("authError"))
+        target.searchParams.delete("authError");
+      res.redirect(302, target.href);
     } catch (cause) {
       this.logger.warn(
         `OAuth callback (${provider}) failed: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
-      res.redirect(
-        302,
-        `${env.PUBLIC_ORIGIN.replace(/\/+$/, "")}${appBasePrefix()}?authError=oauth_failed`,
-      );
+      target.searchParams.set("authError", "oauth_failed");
+      res.redirect(302, target.href);
     }
   }
 

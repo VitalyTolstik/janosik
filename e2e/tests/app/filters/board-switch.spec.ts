@@ -31,7 +31,11 @@ test("does not leak a filter to another board", async ({ page, board }) => {
   await expectCardTitles(page, ["Alpha task"]);
 
   await page.getByRole("button", { name: "Switch board" }).click();
-  await page.getByRole("option").filter({ hasText: other.title }).click();
+  await page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: other.title })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/board/${other.id}$`));
   await expect(page.getByRole("heading", { name: other.title })).toBeVisible();
 
@@ -42,7 +46,11 @@ test("does not leak a filter to another board", async ({ page, board }) => {
   await expect(filterBar(page).getByTestId("filter-chip")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Switch board" }).click();
-  await page.getByRole("option").filter({ hasText: board.title }).click();
+  await page
+    .getByRole("grid", { name: "Switch board" })
+    .getByRole("row")
+    .filter({ hasText: board.title })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/board/${board.id}$`));
   await expect(searchInput(page)).toHaveValue("");
   await expectCardTitles(page, ["Alpha task", "Beta task"]);

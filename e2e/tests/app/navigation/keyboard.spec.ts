@@ -14,7 +14,7 @@ test("opens the keyboard cheat sheet with ? and closes it with Escape", async ({
 }) => {
   await board.open(page);
 
-  await page.keyboard.press("Shift+/");
+  await page.keyboard.press("?");
 
   const sheet = shortcutsDialog(page);
   await expect(sheet).toBeVisible();
@@ -39,10 +39,12 @@ test("opens the keyboard cheat sheet from the Help menu", async ({
 
 test("keeps the ? shortcut out of text fields", async ({ page, board }) => {
   await board.open(page);
-  await searchInput(page).click();
+  const input = searchInput(page);
+  await input.click();
 
-  await page.keyboard.press("Shift+/");
+  await page.keyboard.press("?");
 
+  await expect(input).toHaveValue("?");
   await expect(shortcutsDialog(page)).toBeHidden();
 });
 
@@ -213,7 +215,7 @@ test("ignores the ? shortcut while the card context menu is open", async ({
   await cardTitle(page, "First card").click({ button: "right" });
   await expect(page.getByTestId("card-context-menu")).toBeVisible();
 
-  await page.keyboard.press("Shift+/");
+  await page.keyboard.press("?");
 
   await expect(shortcutsDialog(page)).toBeHidden();
 });

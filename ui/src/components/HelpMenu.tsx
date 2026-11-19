@@ -19,14 +19,7 @@ import { useI18n } from "@/i18n";
 import { docsUrl } from "@/utils/docs-url";
 import { isOverlayOpen } from "@/utils/overlay";
 
-/** Guard: "?" must not fire while the user is typing. */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-  );
-}
+import { isEditableTarget, isShortcutHelpKey } from "@/utils/keyboard";
 
 /**
  * The header's Help menu (TASK-132): one "?" entry point that opens the
@@ -34,20 +27,29 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * pattern. "?" also opens the cheat sheet directly (Jira/Notion/GitHub
  * convention), which is why the listener lives here rather than in the sheet.
  */
-export function HelpMenu() {
+export function HelpMenu({
+  filter,
+  kanban,
+  canEdit,
+}: {
+  filter?: boolean;
+  kanban?: boolean;
+  canEdit?: boolean;
+}) {
   const { t, lang } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return;
-      if (isOverlayOpen()) return;
-      // "?" is Shift+/ on most layouts, but some layouts report the key
-      // differently — accept both the character and Shift+Slash.
-      const isQuestionMark =
-        event.key === "?" || (event.code === "Slash" && event.shiftKey);
-      if (isQuestionMark) {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        isEditableTarget(event.target) ||
+        isOverlayOpen()
+      )
+        return;
+      if (isShortcutHelpKey(event)) {
         event.preventDefault();
         setShortcutsOpen(true);
       }
@@ -102,7 +104,13 @@ export function HelpMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+        filter={filter}
+        kanban={kanban}
+        canEdit={canEdit}
+      />
     </>
   );
 }

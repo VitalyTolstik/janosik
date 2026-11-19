@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useBlocker, useParams } from "react-router-dom";
 import { ArrowLeft, Workflow } from "lucide-react";
 import type { BoardAggregate, BoardWorkflow } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useI18n } from "@/i18n";
 import { WorkflowEditor } from "@/components/board/WorkflowEditor";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
@@ -20,11 +28,53 @@ import { BoardEditorSkeleton } from "./skeletons";
  */
 export function BoardWorkflowPage() {
   const { boardId = "" } = useParams();
+  return <BoardWorkflowEditorPage key={boardId} boardId={boardId} />;
+}
+
+/**
+ * A language handoff may be consumed without a router navigation while a
+ * workflow draft is dirty. Ignore that one parameter when comparing search
+ * strings; every other query or hash change still belongs to the blocker.
+ */
+function searchWithoutLocale(search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete("lng");
+  return params.toString();
+}
+
+function workflowLocationChanged(
+  current: { pathname: string; search: string; hash: string },
+  next: { pathname: string; search: string; hash: string },
+): boolean {
+  return (
+    current.pathname !== next.pathname ||
+    current.hash !== next.hash ||
+    searchWithoutLocale(current.search) !== searchWithoutLocale(next.search)
+  );
+}
+
+function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
+  const { t: appT } = useI18n();
   const t = useAdminT();
   const toast = useToast();
   const [board, setBoard] = useState<BoardAggregate | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && workflowLocationChanged(currentLocation, nextLocation),
+  );
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 
   const load = useCallback(() => {
     setState("loading");
@@ -117,9 +167,35 @@ export function BoardWorkflowPage() {
           saving={saving}
           testIdPrefix="admin-workflow"
           onSave={save}
-          onCancel={() => load()}
+          onCancel={() => {
+            setDirty(false);
+            load();
+          }}
+          onDirtyChange={setDirty}
         />
       </Panel>
+
+      <Dialog
+        open={blocker.state === "blocked"}
+        onOpenChange={(open) => {
+          if (!open && blocker.state === "blocked") blocker.reset();
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogTitle>{appT("workflow.discardTitle")}</DialogTitle>
+          <DialogDescription>
+            {appT("workflow.discardDescription")}
+          </DialogDescription>
+          <DialogFooter>
+            <Button variant="outline" onClick={blocker.reset}>
+              {appT("common.cancel")}
+            </Button>
+            <Button variant="destructive" onClick={blocker.proceed}>
+              {appT("workflow.discard")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
