@@ -1,8 +1,12 @@
 import {
   boardReducer,
+  CARD_PRIORITIES,
   completeness,
+  COVER_COLORS,
+  COVER_GRADIENTS,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
+  LIMITS,
   OAUTH_PROVIDER_IDS,
 } from "@janosik/shared";
 import type {
@@ -79,11 +83,30 @@ export interface FakeAdminState {
   cardLastActors: Record<string, { id: string; email: string | null }>;
   /** Description per card id, updated by admin UPDATE_CARD commands. */
   cardDescriptions: Record<string, string | null>;
+  /** Cover per card id, updated by admin SET_CARD_COVER commands. */
+  cardCovers: Record<string, { type: string; value: string } | null>;
+  /** Attached label ids per card id, updated by SET_CARD_LABEL. */
+  cardLabelIds: Record<string, string[]>;
   /** Aggregate served to the board content editor; grown by commands. */
   contentBoard: BoardAggregate | null;
 }
 
 const now = 1_760_000_000_000;
+
+/** Stable JSON for the fake's idempotency fingerprint check. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
 
 export function emptyAdminState(): FakeAdminState {
   return {
@@ -101,6 +124,8 @@ export function emptyAdminState(): FakeAdminState {
     memberships: [],
     cardLastActors: {},
     cardDescriptions: {},
+    cardCovers: {},
+    cardLabelIds: {},
     contentBoard: null,
   };
 }
@@ -302,6 +327,23 @@ export function boardMember(
   };
 }
 
+export function adminLabel(
+  overrides: Partial<AdminLabelRowDto> = {},
+): AdminLabelRowDto {
+  return {
+    id: "label-1",
+    boardId: "b-1",
+    boardTitle: "Roadmap",
+    name: "Label",
+    color: "red",
+    position: 0,
+    cardCount: 0,
+    deletedAt: null,
+    version: 0,
+    ...overrides,
+  };
+}
+
 export function adminMembership(
   overrides: Partial<AdminUserMembershipDto> = {},
 ): AdminUserMembershipDto {
@@ -331,7 +373,11 @@ export class FakeAdminServer {
   /** Paths whose next call answers 500 once (matched via `includes`). */
   failNext: string[] = [];
   /** Paths whose next call answers with an explicit status once. */
-  failNextStatuses: Array<{ path: string; status: number }> = [];
+  failNextStatuses: Array<{
+    path: string;
+    status: number;
+    body?: Record<string, unknown>;
+  }> = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
   sessionAlive = true;
   /**
@@ -550,7 +596,10 @@ export class FakeAdminServer {
         this.failNextStatuses = this.failNextStatuses.filter(
           (item) => item !== statusFailure,
         );
-        return this.json({ message: "denied" }, statusFailure.status);
+        return this.json(
+          statusFailure.body ?? { message: "denied" },
+          statusFailure.status,
+        );
       }
 
       return this.route(method, path, body, url);
@@ -824,18 +873,165 @@ export class FakeAdminServer {
     if (boardCommand && method === "POST") {
       const action = (jsonBody?.action ?? {}) as BoardAction;
       const actionCardId = (action as { cardId?: string }).cardId;
+      const requestedCommandId =
+        typeof jsonBody?.commandId === "string" && jsonBody.commandId !== ""
+          ? jsonBody.commandId
+          : undefined;
+      // Idempotent replay: the backend returns the stored result before any
+      // fresh-command precondition runs, so a retry after a delete still
+      // succeeds and never creates a second audit row.
+      const replay =
+        requestedCommandId === undefined
+          ? undefined
+          : this.state.commands.find(
+              (command) => command.id === requestedCommandId,
+            );
+      if (replay !== undefined) {
+        if (
+          replay.boardId !== boardCommand[1] ||
+          canonicalJson(replay.payload) !== canonicalJson(jsonBody?.action)
+        ) {
+          return this.json(
+            { message: "commandId already used with a different payload" },
+            409,
+          );
+        }
+        return this.json({ seq: replay.seq, versions: {} });
+      }
+
+      const cardActionTypes = new Set<string>([
+        "UPDATE_CARD",
+        "MOVE_CARD",
+        "SET_CARD_ASSIGN",
+        "SET_CARD_DUE_DATE",
+        "SET_CARD_PRIORITY",
+        "SET_CARD_COVER",
+        "SET_CARD_LABEL",
+      ]);
       if (
-        (action.type === "UPDATE_CARD" || action.type === "MOVE_CARD") &&
+        cardActionTypes.has(action.type) &&
         typeof actionCardId === "string"
       ) {
         const target = this.state.cards.find(
           (card) => card.id === actionCardId,
         );
-        if (target === undefined || target.deletedAt !== null) {
+        if (
+          target === undefined ||
+          target.deletedAt !== null ||
+          target.boardId !== boardCommand[1]
+        ) {
           return this.json({ message: "Card not found" }, 404);
         }
         if (action.type === "MOVE_CARD" && target.archivedAt !== null) {
           return this.json({ message: "Archived cards cannot be moved" }, 409);
+        }
+        if (action.type === "SET_CARD_ASSIGN") {
+          const assigneeId = (action as { assigneeId?: string | null })
+            .assigneeId;
+          if (assigneeId !== null && assigneeId !== undefined) {
+            const member = (this.boardMembers[boardCommand[1]] ?? []).find(
+              (entry) =>
+                entry.userId === assigneeId &&
+                entry.acceptedAt !== null &&
+                (entry.expiresAt === null || entry.expiresAt > now),
+            );
+            if (member === undefined) {
+              return this.json(
+                {
+                  message: "Assignee must be an active board member",
+                  field: "action.assigneeId",
+                },
+                400,
+              );
+            }
+          }
+        }
+        if (action.type === "SET_CARD_LABEL") {
+          const labelId = (action as { labelId?: unknown }).labelId;
+          const on = (action as { on?: unknown }).on;
+          if (typeof labelId !== "string" || labelId.trim() === "") {
+            return this.json({ message: "Label id is required" }, 400);
+          }
+          if (typeof on !== "boolean") {
+            return this.json({ message: "on must be a boolean" }, 400);
+          }
+          const liveLabels = (this.boardLabels[boardCommand[1]] ?? []).filter(
+            (entry) => entry.deletedAt === null,
+          );
+          const label = liveLabels.find((entry) => entry.id === labelId);
+          if (label === undefined) {
+            return this.json({ message: "Label not found" }, 404);
+          }
+          // The cap counts live labels only, like the real board aggregate.
+          const liveIds = new Set(liveLabels.map((entry) => entry.id));
+          const selected = (this.state.cardLabelIds[actionCardId] ?? []).filter(
+            (id) => liveIds.has(id),
+          );
+          if (
+            on &&
+            !selected.includes(labelId) &&
+            selected.length >= LIMITS.labelsPerCard
+          ) {
+            return this.json(
+              {
+                message: "Too many labels on the card",
+                conflict: "wip",
+                currentVersion: 0,
+              },
+              409,
+            );
+          }
+        }
+        if (action.type === "UPDATE_CARD") {
+          const title = (action as { title?: unknown }).title;
+          if (
+            title !== undefined &&
+            title !== null &&
+            (typeof title !== "string" || title.length > LIMITS.cardTitle)
+          ) {
+            return this.json({ message: "Invalid card title" }, 400);
+          }
+        }
+        if (action.type === "SET_CARD_PRIORITY") {
+          const priority = (action as { priority?: unknown }).priority;
+          if (
+            typeof priority !== "string" ||
+            !(CARD_PRIORITIES as readonly string[]).includes(priority)
+          ) {
+            return this.json({ message: "Invalid priority" }, 400);
+          }
+        }
+        if (action.type === "SET_CARD_DUE_DATE") {
+          const dueDate = (action as { dueDate?: unknown }).dueDate;
+          if (
+            dueDate !== undefined &&
+            dueDate !== null &&
+            (typeof dueDate !== "number" ||
+              !Number.isFinite(dueDate) ||
+              Math.abs(dueDate) > 8.64e15)
+          ) {
+            return this.json({ message: "Invalid due date" }, 400);
+          }
+        }
+        if (action.type === "SET_CARD_COVER") {
+          const cover = (action as { cover?: unknown }).cover;
+          if (cover !== undefined && cover !== null) {
+            const record =
+              typeof cover === "object"
+                ? (cover as { type?: unknown; value?: unknown })
+                : null;
+            const valid =
+              record !== null &&
+              ((record.type === "color" &&
+                (COVER_COLORS as readonly unknown[]).includes(record.value)) ||
+                (record.type === "gradient" &&
+                  (COVER_GRADIENTS as readonly unknown[]).includes(
+                    record.value,
+                  )));
+            if (!valid) {
+              return this.json({ message: "Invalid cover" }, 400);
+            }
+          }
         }
       }
       const current = this.state.contentBoard ?? contentBoard();
@@ -893,23 +1089,63 @@ export class FakeAdminServer {
               row.columnTitle = column.title;
             }
           }
-          if (
-            action.type === "UPDATE_CARD" &&
-            "description" in (action as unknown as Record<string, unknown>)
-          ) {
-            this.state.cardDescriptions[cardId] =
-              aggregateCard?.description ??
-              (action as { description?: string }).description ??
-              null;
+          if (action.type === "UPDATE_CARD") {
+            if (typeof (action as { title?: string }).title === "string") {
+              row.title = (action as { title: string }).title;
+            }
+            if (
+              "description" in (action as unknown as Record<string, unknown>)
+            ) {
+              this.state.cardDescriptions[cardId] =
+                aggregateCard?.description ??
+                (action as { description?: string }).description ??
+                null;
+            }
+          }
+          if (action.type === "SET_CARD_ASSIGN") {
+            const assigneeId = (action as { assigneeId?: string | null })
+              .assigneeId;
+            row.assigneeId = assigneeId ?? null;
+            const member = (this.boardMembers[row.boardId] ?? []).find(
+              (entry) => entry.userId === assigneeId,
+            );
+            row.assigneeEmail = member?.userEmail ?? null;
+          }
+          if (action.type === "SET_CARD_DUE_DATE") {
+            const dueDate = (action as { dueDate?: number }).dueDate;
+            row.dueDate = typeof dueDate === "number" ? dueDate : null;
+          }
+          if (action.type === "SET_CARD_PRIORITY") {
+            const priority = (action as { priority?: string }).priority;
+            row.priority =
+              typeof priority === "string" && priority !== "medium"
+                ? priority
+                : null;
+          }
+          if (action.type === "SET_CARD_COVER") {
+            const cover = (
+              action as {
+                cover?: { type: string; value: string };
+              }
+            ).cover;
+            this.state.cardCovers[cardId] = cover ?? null;
+          }
+          if (action.type === "SET_CARD_LABEL") {
+            const labelId = (action as { labelId?: string }).labelId;
+            const on = (action as { on?: boolean }).on === true;
+            if (typeof labelId === "string") {
+              const labels = new Set(this.state.cardLabelIds[cardId] ?? []);
+              if (on) labels.add(labelId);
+              else labels.delete(labelId);
+              this.state.cardLabelIds[cardId] = [...labels];
+            }
           }
         }
       }
 
       // TASK-176.10: a master-issued command adds one correlated audit row.
       const commandId =
-        typeof jsonBody?.commandId === "string" && jsonBody.commandId !== ""
-          ? jsonBody.commandId
-          : `command-${this.state.commands.length + 1}`;
+        requestedCommandId ?? `command-${this.state.commands.length + 1}`;
       const seq =
         this.state.commands.reduce(
           (max, command) => Math.max(max, command.seq),
@@ -1942,22 +2178,37 @@ export class FakeAdminServer {
       anchor: anchorId,
     });
 
+    const cover = this.state.cardCovers[card.id] ?? null;
+    const cardLabelIds = this.state.cardLabelIds[card.id] ?? [];
+    const assignee = (this.boardMembers[card.boardId] ?? []).find(
+      (member) => member.userId === card.assigneeId,
+    );
     return {
       card: {
         ...card,
         description: this.state.cardDescriptions[card.id] ?? null,
-        dueDate: null,
-        priority: null,
-        assigneeDisplayName: null,
-        coverType: null,
-        coverValue: null,
+        dueDate: card.dueDate,
+        priority: card.priority,
+        assigneeDisplayName: assignee?.userDisplayName ?? null,
+        coverType: cover?.type ?? null,
+        coverValue: cover?.value ?? null,
         version: 0,
         attachmentCount: liveAttachments.length,
         lastActorId: this.state.cardLastActors[card.id]?.id ?? null,
         lastActorEmail: this.state.cardLastActors[card.id]?.email ?? null,
         commentIds: liveComments.map((comment) => comment.id),
       },
-      labels: [],
+      labels: (this.boardLabels[card.boardId] ?? [])
+        .filter(
+          (label) =>
+            cardLabelIds.includes(label.id) && label.deletedAt === null,
+        )
+        .map((label) => ({
+          id: label.id,
+          name: label.name,
+          color: label.color,
+          position: label.position,
+        })),
       checklists: [],
       linksOut: [],
       linksIn: [],

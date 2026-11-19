@@ -215,13 +215,125 @@ test("C5: a master edits the description and opens the correlated audit row", as
   await expect(auditRow.locator("pre")).toContainText(commandId);
 });
 
-test("C6: the card timeline and audit link stay inside 1440/1024/390", async ({
+test("C6: a master edits card fields and every change has a command and audit row", async ({
+  page,
+  admin,
+  board,
+}) => {
+  const seeded = await seedRichCard(board);
+  const secondLabelId = await board.label(uniqueToken("field-label"), "green");
+  const nextTitle = uniqueToken("field-title");
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`cards/${seeded.cardId}`), {
+    waitUntil: "domcontentloaded",
+  });
+
+  await expect(page.getByTestId("admin-card-field-owner-notice")).toContainText(
+    "You are acting as the board owner; this change appears as the owner in the board history.",
+  );
+
+  // Title — UPDATE_CARD.
+  await page.getByTestId("admin-card-title-input").fill(nextTitle);
+  await page.getByTestId("admin-card-title-save").click();
+  await expect(
+    page.getByRole("heading", { name: nextTitle, exact: true }),
+  ).toBeVisible();
+
+  // Assignee — SET_CARD_ASSIGN (null clears).
+  const assignee = page.getByTestId("admin-card-field-assignee-select");
+  await expect(assignee).toHaveValue(board.userId);
+  await assignee.selectOption("");
+  await expect(assignee).toHaveValue("");
+
+  // Due date — clear by omitting dueDate.
+  await expect(page.getByTestId("admin-card-due-remove")).toBeVisible();
+  await page.getByTestId("admin-card-due-remove").click();
+  await expect(page.getByTestId("admin-card-due-remove")).toHaveCount(0);
+
+  // Priority — SET_CARD_PRIORITY.
+  await page
+    .getByTestId("admin-card-field-priority-select")
+    .selectOption("blocker");
+  await expect(page.getByTestId("admin-card-priority-badge")).toHaveText(
+    "blocker",
+  );
+
+  // Cover — SET_CARD_COVER through the shared palette CSS.
+  await page.getByTestId("admin-card-cover-trigger").click();
+  await page.getByTestId("admin-card-cover-color-blue").click();
+  await expect(page.getByTestId("admin-card-cover-trigger")).toContainText(
+    "Change cover",
+  );
+
+  // Labels — one SET_CARD_LABEL command for the toggled label.
+  const secondLabel = page.getByTestId(
+    `admin-card-label-toggle-${secondLabelId}`,
+  );
+  await expect(secondLabel).toHaveAttribute("aria-pressed", "false");
+  await secondLabel.click();
+  await expect(secondLabel).toHaveAttribute("aria-pressed", "true");
+
+  const auditResponse = await admin.get(
+    `/api/v1/admin/audit?limit=100&search=${encodeURIComponent(board.id)}`,
+  );
+  expect(auditResponse.ok(), await auditResponse.text()).toBeTruthy();
+  const audit = (await auditResponse.json()) as {
+    items: Array<{
+      action: string;
+      details: Record<string, unknown> | null;
+    }>;
+  };
+  const fieldRows = audit.items.filter(
+    (entry) =>
+      entry.action === "board.command" &&
+      entry.details?.masterEmail === ownerCredentials().email,
+  );
+  const types = fieldRows.map((entry) => entry.details?.type);
+  for (const type of [
+    "UPDATE_CARD",
+    "SET_CARD_ASSIGN",
+    "SET_CARD_DUE_DATE",
+    "SET_CARD_PRIORITY",
+    "SET_CARD_COVER",
+    "SET_CARD_LABEL",
+  ]) {
+    expect(types).toContain(type);
+  }
+  const titleRow = fieldRows.find(
+    (entry) => entry.details?.type === "UPDATE_CARD",
+  );
+  const commandId = String(titleRow?.details?.commandId);
+  expect(commandId).not.toBe("undefined");
+  const commandResponse = await admin.get(
+    `/api/v1/admin/commands?commandId=${encodeURIComponent(commandId)}`,
+  );
+  expect(commandResponse.ok(), await commandResponse.text()).toBeTruthy();
+  const commands = (await commandResponse.json()) as {
+    total: number;
+    items: Array<{ type: string; auditId: string | null }>;
+  };
+  expect(commands.total).toBe(1);
+  expect(commands.items[0]?.type).toBe("UPDATE_CARD");
+  expect(commands.items[0]?.auditId).toEqual(expect.any(String));
+});
+
+test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", async ({
   page,
   admin,
   board,
 }) => {
   const columnId = await board.column(uniqueToken("timeline-column"));
   const cardId = await board.card(columnId, uniqueToken("timeline-card"));
+  const longLabelId = await board.label(
+    `${uniqueToken("lbl")}${"x".repeat(9)}`,
+    "red",
+  );
+  await board.command({
+    type: "SET_CARD_LABEL",
+    cardId,
+    labelId: longLabelId,
+    on: true,
+  });
   const commandId = randomUUID();
   const command = await admin.post(
     `/api/v1/admin/boards/${board.id}/commands`,
@@ -256,7 +368,12 @@ test("C6: the card timeline and audit link stay inside 1440/1024/390", async ({
     const timeline = page
       .getByTestId("admin-card-detail-timeline")
       .locator("ul");
-    for (const box of [scroller, timeline]) {
+    const fields = page.getByTestId("admin-card-fields");
+    await expect(fields).toBeVisible();
+    await expect(
+      page.getByTestId(`admin-card-label-toggle-${longLabelId}`),
+    ).toBeVisible();
+    for (const box of [scroller, timeline, fields]) {
       expect(
         await box.evaluate(
           (element) => element.scrollWidth <= element.clientWidth,

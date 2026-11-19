@@ -112,7 +112,11 @@ description: Дашборд, лента активности, журнал ко�
 точный вид. Детали `board.command` содержат `commandId`, `masterId` и
 `masterEmail` рядом с `actorEmail` для владельца, поэтому настоящий мастер не
 скрыт за атрибуцией владельца. Фильтр использует id команды, а не id строки
-аудита, и дополнительно требует `action=board.command`.
+аудита, и дополнительно требует `action=board.command`. Изменения полей
+карточки на `/admin/cards/:id` дают такую же строку `board.command`:
+`UPDATE_CARD`, `SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`,
+`SET_CARD_COVER` и `SET_CARD_LABEL` получают собственный `commandId` и
+атрибуцию мастера.
 
 ### Действия аудита
 

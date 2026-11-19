@@ -1,11 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from "react";
 import {
   Link,
   useLocation,
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Clock } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Clock,
+  RotateCcw,
+} from "lucide-react";
 import { ADMIN_DETAIL_LIMITS, LIMITS } from "@janosik/shared";
 import type {
   AdminCardDetailDto,
@@ -50,6 +65,64 @@ import {
   SizeCell,
 } from "./cells";
 import { RowActions, type EntityAction } from "./row-actions";
+
+/**
+ * The field editors pull in the date picker and shared palettes. Keeping them
+ * in their own lazy chunk leaves the admin shell inside its size budget
+ * (TASK-176.9 review B3).
+ */
+const CardFieldsPanel = lazy(() =>
+  import("./CardFieldsPanel").then((module) => ({
+    default: module.CardFieldsPanel,
+  })),
+);
+
+/**
+ * A failed lazy import must not replace the whole admin route with the global
+ * crash screen. This local boundary keeps the card page usable and offers the
+ * only reliable recovery for a cached rejected dynamic import: a page reload.
+ */
+export class CardFieldsChunkBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("Card fields chunk failed:", error, info.componentStack);
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+export function CardFieldsFallback() {
+  const t = useAdminT();
+  return (
+    <Panel
+      className="flex flex-wrap items-center justify-between gap-3 p-3"
+      data-testid="admin-card-fields-error"
+    >
+      <p role="alert" className="text-xs text-danger">
+        {t("admin.cards.fields.loadFailed")}
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="admin-card-fields-reload"
+        onClick={() => window.location.reload()}
+      >
+        <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+        {t("admin.cards.fields.reload")}
+      </Button>
+    </Panel>
+  );
+}
 
 const userHref = (id: string) => `/admin/users/${id}`;
 import {
@@ -530,7 +603,9 @@ export function CardDetailPage() {
           </Badge>
         )}
         {card.priority !== null ? (
-          <Badge variant="primary">{card.priority}</Badge>
+          <Badge variant="primary" data-testid="admin-card-priority-badge">
+            {card.priority}
+          </Badge>
         ) : null}
         {card.dueDate !== null ? (
           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -591,6 +666,25 @@ export function CardDetailPage() {
           />
         </MetaItem>
       </Panel>
+
+      {card.deletedAt === null ? (
+        <CardFieldsChunkBoundary fallback={<CardFieldsFallback />}>
+          <Suspense
+            fallback={
+              <div
+                data-testid="admin-card-fields-loading"
+                className="h-48 animate-pulse rounded-xl border border-border bg-card/70"
+              />
+            }
+          >
+            <CardFieldsPanel
+              card={card}
+              cardLabels={detail.labels}
+              onSaved={reload}
+            />
+          </Suspense>
+        </CardFieldsChunkBoundary>
+      ) : null}
 
       {card.description ? (
         <Panel className="p-3" data-testid="admin-card-detail-description">

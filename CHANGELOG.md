@@ -8,6 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-176.9 B1 admin card fields: `/admin/cards/:id` now has a compact
+  `Properties` panel for the card title, assignee, due date, priority, cover
+  and labels. Each change is one fresh owner-attributed board command
+  (`UPDATE_CARD`, `SET_CARD_ASSIGN`, `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`,
+  `SET_CARD_COVER`, or one `SET_CARD_LABEL` per toggled label) with its own
+  `commandId`; unchanged values send nothing. Clearing an assignee sends
+  `assigneeId: null`, clearing a due date or cover omits the field, and
+  `medium` priority stays the default/absent value. Assignee options are
+  accepted, unexpired members (disabled users hidden from new choices for UX);
+  labels are the board's live labels with the 20-per-card cap. Deleted cards hide the panel,
+  archived cards keep editing their fields. The admin command path rejects
+  missing/deleted/wrong-board cards with `404`, deleted or foreign labels with
+  `404`, and keeps the label cap at `409`; `MOVE_CARD` alone rejects archived
+  cards with `409`, and exact replays stay idempotent. Checklists and links are
+  intentionally left for B2. EN/RU admin content and monitoring docs describe
+  the panel and the audit correlation. The field panel is lazy-loaded into its
+  own chunk. The size gate now measures the combined admin card page (shell +
+  field panel): **101.62 kB gzip against an explicit 102 kB budget** (the old
+  shell-only gate was 100 kB); that leaves 0.38 kB headroom and makes the lazy
+  chunk part of the real budget.
+
 - TASK-176.8 + TASK-176.10 admin editing pilot and command ↔ audit
   correlation: `/admin/cards/:id` can edit the card description through an
   `UPDATE_CARD` command, and the board content editor can move a card to
