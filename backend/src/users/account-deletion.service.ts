@@ -339,6 +339,7 @@ export class AccountDeletionService {
     userId: string,
     actor: { actorId?: string; actorType?: ActorType } = {},
     dueCutoff?: Date,
+    unverifiedBefore?: Date,
   ): Promise<AccountDeletionSummary | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
@@ -388,6 +389,20 @@ export class AccountDeletionService {
           !latest ||
           latest.createdAt > dueCutoff ||
           current.disabledAt > latest.createdAt
+        )
+          return false;
+      }
+      // M3 guard: a user who verified the address between the sweep's read
+      // and this lock must survive. The row is re-read under the same lock.
+      if (unverifiedBefore !== undefined) {
+        const current = await tx.user.findUnique({
+          where: { id: userId },
+          select: { emailVerifiedAt: true, createdAt: true },
+        });
+        if (
+          !current ||
+          current.emailVerifiedAt !== null ||
+          current.createdAt >= unverifiedBefore
         )
           return false;
       }

@@ -11,6 +11,7 @@ import type {
   AdminTotpSetupDto,
   AdminUpdateSecurityRequest,
 } from "@janosik/shared";
+import { verify as argonVerify } from "argon2";
 import { createHmac, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "@/mailer/secret-box";
@@ -223,7 +224,43 @@ export class SecurityService {
 
   // ------------------------------------------------------------------- 2FA
 
-  async setup(admin: AdminPrincipal): Promise<AdminTotpSetupDto> {
+  async setup(
+    admin: AdminPrincipal,
+    proof: { totpCode?: string; password?: string } = {},
+  ): Promise<AdminTotpSetupDto> {
+    const current = await this.prisma.adminUser.findUnique({
+      where: { id: admin.id },
+      select: {
+        totpEnabled: true,
+        totpSecretEnc: true,
+        passwordHash: true,
+      },
+    });
+    if (!current) throw new NotFoundException("Master not found");
+    // M12: a session that survives a stolen-cookie window must not silently
+    // replace the second factor and lock the legitimate owner out. Replacing
+    // an active secret requires the current code or the account password.
+    if (current.totpEnabled) {
+      const secret =
+        current.totpSecretEnc !== null
+          ? decryptSecret(current.totpSecretEnc)
+          : null;
+      const codeValid =
+        secret !== null &&
+        proof.totpCode !== undefined &&
+        this.verifyCode(secret, proof.totpCode, admin.id);
+      const passwordValid =
+        proof.password !== undefined &&
+        proof.password.length > 0 &&
+        (await argonVerify(current.passwordHash, proof.password));
+      if (!codeValid && !passwordValid) {
+        throw new UnauthorizedException({
+          message:
+            "A current two-factor code or the account password is required to replace 2FA",
+          code: "totp_proof_required",
+        });
+      }
+    }
     const secret = base32Encode(randomBytes(20));
     await this.prisma.adminUser.update({
       where: { id: admin.id },
@@ -250,6 +287,15 @@ export class SecurityService {
       data: { totpEnabled: true },
     });
     return { totpEnabled: true };
+  }
+
+  /** Whether this master currently has an active second factor. */
+  async isEnabled(adminId: string): Promise<boolean> {
+    const row = await this.prisma.adminUser.findUnique({
+      where: { id: adminId },
+      select: { totpEnabled: true },
+    });
+    return row?.totpEnabled === true;
   }
 
   private async secretFor(adminId: string): Promise<string | null> {

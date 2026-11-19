@@ -317,6 +317,79 @@ describe("Boards API (e2e)", () => {
       );
     });
 
+    it("keeps an expired VIEWER visible and lets an admin re-invite or remove them (M15)", async () => {
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: OUTSIDER_EMAIL, role: "VIEWER" })
+        .expect(201);
+      await acceptInvitation(outsiderToken, boardId);
+
+      const me = await server()
+        .get("/api/v1/auth/me")
+        .set(auth(outsiderToken))
+        .expect(200);
+      const outsiderId = me.body.id as string;
+      await prisma.boardMember.update({
+        where: { boardId_userId: { boardId, userId: outsiderId } },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+
+      // The lapsed row is no longer access, but it is still a membership an
+      // ADMIN must be able to see and revoke.
+      const visible = await server()
+        .get(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        visible.body.some(
+          (member: { email: string; expiresAt: number | null }) =>
+            member.email === OUTSIDER_EMAIL &&
+            member.expiresAt !== null &&
+            member.expiresAt < Date.now(),
+        ),
+      ).toBe(true);
+
+      // Re-inviting turns the lapsed accepted row into a fresh pending
+      // invitation instead of answering 409 forever.
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: OUTSIDER_EMAIL, role: "VIEWER" })
+        .expect(201);
+      const pending = await prisma.boardMember.findUniqueOrThrow({
+        where: { boardId_userId: { boardId, userId: outsiderId } },
+      });
+      expect(pending.acceptedAt).toBeNull();
+
+      // And the pending row is removable like any other invitation.
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/${outsiderId}`)
+        .set(auth(adminToken))
+        .expect(200);
+
+      // Repeat with an accepted-but-expired row: deletion must work directly.
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: OUTSIDER_EMAIL, role: "VIEWER" })
+        .expect(201);
+      await acceptInvitation(outsiderToken, boardId);
+      await prisma.boardMember.update({
+        where: { boardId_userId: { boardId, userId: outsiderId } },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/${outsiderId}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        await prisma.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: outsiderId } },
+        }),
+      ).toBeNull();
+    });
+
     it("protects the last ADMIN from demotion and removal", async () => {
       await server()
         .patch(`/api/v1/boards/${boardId}/members/${adminId}`)

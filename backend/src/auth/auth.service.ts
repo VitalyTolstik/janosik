@@ -114,10 +114,16 @@ export class AuthService {
     allowPublicShares: boolean;
     limits: { boards: number | null; importBytes: number };
   }> {
+    // H1: the sign-in screen must offer the same first-account bootstrap the
+    // register endpoint accepts. Without SMTP a fresh install has no other
+    // way to create its owner, and hiding the form made the API and UI
+    // disagree. The bootstrap is one-shot: once a user exists the normal
+    // mail-transport requirement applies again.
+    const registrationOpen = await this.flags.isEnabled("registration_open");
+    const bootstrapAvailable = await this.bootstrapAvailable();
     return {
       allowRegistration:
-        this.mailer.enabled &&
-        (await this.flags.isEnabled("registration_open")),
+        registrationOpen && (this.mailer.enabled || bootstrapAvailable),
       allowPublicShares: await this.flags.isEnabled("public_shares"),
       // TASK-166: the UI shows a board cap only when the operator set one.
       limits: {
@@ -129,6 +135,17 @@ export class AuthService {
 
   async assertRegistrationOpen(): Promise<void> {
     await this.flags.assertEnabled("registration_open");
+  }
+
+  /**
+   * H1: can the one-time no-SMTP bootstrap still create its first account?
+   * Mirrors `register` exactly, including the env switch rather than the
+   * validated value, so the e2e harness can exercise both sides.
+   */
+  private async bootstrapAvailable(): Promise<boolean> {
+    if (this.mailer.enabled) return false;
+    if (process.env.ALLOW_BOOTSTRAP_USER !== "true") return false;
+    return (await this.prisma.user.count()) === 0;
   }
 
   async issueOAuthLinkProof(
@@ -748,6 +765,7 @@ export class AuthService {
       throw new BadRequestException("Invalid verification code");
     }
     let updated: User;
+    let familyId: string | null = null;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
@@ -763,12 +781,13 @@ export class AuthService {
             revokedAt: null,
             expiresAt: { gt: new Date() },
           },
-          select: { id: true },
+          select: { id: true, familyId: true },
         });
         if (!session)
           throw new UnauthorizedException(
             "Sign in again before changing email",
           );
+        familyId = session.familyId;
         const consumed = await tx.emailChangeCode.updateMany({
           where: {
             id: stored.id,
@@ -814,6 +833,7 @@ export class AuthService {
         sub: updated.id,
         authMethod,
         stamp: securityStamp(updated),
+        ...(familyId !== null ? { sid: familyId } : {}),
         ...(authMethod === "oauth" ? { authTime: 0 } : {}),
       },
       { audience: USER_JWT_AUDIENCE },
@@ -1008,6 +1028,9 @@ export class AuthService {
         sub: user.id,
         authMethod,
         stamp: securityStamp(user),
+        // M6: names the rotation family whose live refresh row proves this
+        // browser session was not logged out while an SSE stream stayed open.
+        sid: familyId,
         ...(authMethod === "oauth" ? { authTime: authTime ?? 0 } : {}),
       },
       { audience: USER_JWT_AUDIENCE },

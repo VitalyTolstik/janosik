@@ -253,6 +253,15 @@ export const env = cleanEnv(process.env, {
     default: 30,
     example: "30",
   }),
+  // M3: an abandoned registration must not keep its unique email address
+  // reserved forever. The maintenance sweep hard-deletes an unverified
+  // account — one that never accepted a membership or wrote content — after
+  // this window, releasing the address for a new registration.
+  UNVERIFIED_ACCOUNT_TTL_DAYS: num({
+    desc: "Release e-mail addresses of abandoned unverified registrations after this many days",
+    default: 14,
+    example: "14",
+  }),
   // TASK-166: server-mode board cap per account. 0 = unlimited (the
   // product default); a positive value is an operator safety cap, not a
   // pricing tier. Local/offline mode keeps its own 10-board localStorage

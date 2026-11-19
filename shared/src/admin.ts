@@ -420,6 +420,7 @@ export const ADMIN_AUDIT_ACTIONS = [
   "data.exported",
   "retention.changed",
   "security.totp_enabled",
+  "security.totp_replaced",
   "security.totp_disabled",
   "security.ip_allowlist_changed",
   "demo.started",
@@ -1767,6 +1768,16 @@ export interface AdminTotpSetupDto {
   secret: string;
   /** `otpauth://` URL (may be rendered as text when QR is unavailable). */
   otpauthUrl: string;
+}
+
+/**
+ * `POST /admin/security/totp` request. Empty for the first enrollment; when
+ * 2FA is already active, replacing the secret requires the current code or
+ * the account password.
+ */
+export interface AdminTotpSetupRequest {
+  totpCode?: string;
+  password?: string;
 }
 
 /** `POST /admin/security/totp/verify` — finish enrollment with a code. */

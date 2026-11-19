@@ -124,6 +124,7 @@ import {
   AdminUpdateEmailTemplateDto,
   AdminUpdateFeatureFlagDto,
   AdminUpdateOpsDto,
+  AdminSetupTotpDto,
   AdminUpdateSecurityDto,
   AdminVerifyTotpDto,
 } from "./dto/admin-v3.dto";
@@ -1009,8 +1010,22 @@ export class AdminController {
   }
 
   @Post("security/totp")
-  setupTotp(@CurrentAdmin() admin: AdminPrincipal): Promise<AdminTotpSetupDto> {
-    return this.security.setup(admin);
+  async setupTotp(
+    @Body() dto: AdminSetupTotpDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<AdminTotpSetupDto> {
+    const replacing = await this.security.isEnabled(admin.id);
+    const result = await this.security.setup(admin, dto);
+    if (replacing) {
+      await this.admin.audit(
+        admin,
+        "security.totp_replaced",
+        "admin",
+        admin.id,
+        {},
+      );
+    }
+    return result;
   }
 
   @Post("security/totp/verify")

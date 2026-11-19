@@ -328,6 +328,24 @@ export class AdminVerifyTotpDto {
   code!: string;
 }
 
+/**
+ * M12: replacing an already-enabled authenticator is a privileged change.
+ * An empty body is valid only for first enrollment; when 2FA is on the caller
+ * must prove possession of the current factor (or re-enter the password).
+ */
+export class AdminSetupTotpDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(6)
+  totpCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  password?: string;
+}
+
 export class AdminUpdateSecurityDto {
   @IsOptional()
   @IsString()

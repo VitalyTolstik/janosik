@@ -62,6 +62,17 @@ export interface AuthPrincipal {
    * change credentials after the fact.
    */
   stamp?: string;
+  /**
+   * M6: access-token expiry (`exp * 1000`). An SSE stream is opened once and
+   * may outlive the JWT, so its keep-alive closes when this instant passes.
+   */
+  accessTokenExpiresAt?: number;
+  /**
+   * M6: refresh-token rotation family (`sid`). A stream opened by a browser
+   * session closes once that family has no live row — logout/revocation must
+   * not leave a read-only stream following the board.
+   */
+  sessionFamilyId?: string;
 }
 
 /** The request bits the auth layer reads/writes. */
