@@ -2,8 +2,8 @@
 
 **Status:** planned
 
-**Revision:** 4 (2026-11-19) — product/technical review blockers and the
-non-blocking notes are addressed; see the resolved decisions in §14.
+**Revision:** 5 (2026-11-19) — chip-width/390 blocker and the non-blocking
+notes are addressed; see the resolved decisions in §14.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -493,7 +493,7 @@ form.
 
 ```
 Cards                                             [Search…] [All][Active][Archived][Deleted]
-[ Filters (2) ]  [Board: Design system · 7f3a ×] [Label: urgent · l1 ×] [Clear search and filters]
+[ Filters (2) ]  [Board: Design system · 7f3a ×] [Label: urgent · l1 · B1 ×] [Clear search and filters]
 13 total · Page 1 of 1
 ```
 
@@ -562,6 +562,10 @@ badge.
   The server never widens the query. Tests cover an existing id with a
   different parent, a hard-deleted id, a matching parent with `total:0`, and
   same-title boards.
+- **No active parent:** if no `boardId`/`columnId` is active, two dependent
+  chips from different parents (e.g. label from Board A + card from Board B)
+  are not classified as a conflict in v1; the exact AND yields a normal empty
+  result. Inter-chip parent warnings are a possible later enhancement, not v1.
 - If lookup fails, keep existing chips and the list; show an inline retry. Do
   not silently remove a filter or show an empty list as if it matched.
 
@@ -670,6 +674,20 @@ inherently an id.
   mobile/no-tooltip.
 - Label color is never the only signal: the name is always present.
 
+**Chip width and truncation policy.** `FilterChip` uses
+`max-width: min(20rem, calc(100dvw - 2rem))`, `min-width: 0`, and the chip row
+is `flex-wrap`. The title span is `min-w-0 truncate` (`overflow:hidden;
+text-overflow:ellipsis; white-space:nowrap`), with the **full title** in the
+`title` attribute and in the chip/remove accessible names. The own and parent
+short ids are `shrink-0` and always visible; they are never the part that is
+ellipsized. At 390 the maximum chip width is the viewport minus the page
+padding, so a near-limit card title truncates rather than widening the row; the
+row wraps and the page keeps `scrollWidth <= innerWidth`. The remove control
+stays a real focusable button with an accessible name containing the full title
+and own/parent ids, so keyboard/screen-reader users can remove a chip without
+hover or a tooltip. Own ids stay always visible in v1 for deterministic
+disambiguation; duplicate-only compaction is deferred to 181.7.
+
 ### 6.5 Clear, empty and error states
 
 - **Clear search and filters** resets search, status, period and advanced
@@ -757,6 +775,13 @@ inherently an id.
   (`scrollWidth <= innerWidth`). The 390 test must also assert every tab, chip
   and sheet control is visible/reachable with a bounding box inside the
   viewport — `scrollWidth` alone is not evidence.
+- **Long-title fixture at 390:** seed a 100-char board title, a 100-char column
+  title and a near-limit 300-char card title, activate several filters
+  together, and assert each chip's bounding box is inside the viewport (width
+  ≤ viewport minus page padding), the title span ellipsizes while `title`/the
+  accessible name keep the full text, own/parent short ids remain visible, the
+  row wraps, and each remove button is reachable/removable by keyboard. Do not
+  use only short duplicate names for this test.
 - Touch targets: at least 32×32 px in the dense desktop panel; at least 44 px
   rows/buttons inside the mobile sheet (TASK-179.9 precedent). The remove `X`
   on a chip must be at least 24×24 px and have a larger hit area.
@@ -777,7 +802,9 @@ inherently an id.
   status announces “Filters applied · N results” using the server total after
   the response. Do not announce a speculative count before it arrives.
 - Chip remove buttons are reachable in DOM order; removing a chip keeps focus
-  on the next chip or the Filters button if none remain.
+  on the next chip or the Filters button if none remain. The remove button has
+  an accessible name with the full title and own/parent short ids; no hover or
+  tooltip is required to remove it by keyboard/screen reader.
 - Table rows/links keep their existing keyboard behavior; filters must not
   steal row clicks (the 176.5 cell-link guard stays).
 - Color contrast: chips/inputs/section headings meet AA in light/dark; the label
@@ -918,10 +945,11 @@ is a validation error rather than first-value-wins.
   remaining values are: users `active/disabled`; boards/cards
   `active/archived/deleted`; columns/labels/checklists/checklistItems/cardLinks/
   comments/attachments `active/deleted`; tokens/boardMembers
-  `active/disabled`; announcements `active/disabled/deleted`. The same strict
-  guard is called by the generic `/admin/entities/:entity` route and every
-  specialized list route (`/admin/cards`, `/admin/comments`, …); e2e covers both
-  families plus default/no-status and explicit `status=all` on every surface.
+  `active/disabled`; announcements `active/disabled` (`deleted` is not a
+  stored status and is not accepted). The same strict guard is called by the
+  generic `/admin/entities/:entity` route and every specialized list route
+  (`/admin/cards`, `/admin/comments`, …); e2e covers both families plus
+  default/no-status and explicit `status=all` on every surface.
 - `unsupported_filter` response shape:
   `{ statusCode: 400, error: "Bad Request", code: "unsupported_filter",
   filter: "<offending key>", message: "Filter <key> is not supported for
@@ -996,7 +1024,9 @@ Behavior:
     empty/consistent result, not a conflict;
   - matching parents + `total:0` → normal empty state.
   Tests cover an existing id with a different parent, a hard-deleted id,
-  matching parents with zero results, and same-title boards.
+  matching parents with zero results, and same-title boards. With no active
+  parent, cross-parent chips are not a conflict in v1; the exact AND returns a
+  normal empty result.
 - `limit` default 20, max 50. No total count; `hasMore` is a boolean.
 - `cardId` narrows checklist `q` searches where provided.
 - `action`, `commandType`, `activityType`, `targetType` return distinct stored
@@ -1046,13 +1076,14 @@ Behavior:
 - **Measured harness:** add `scripts/perf/seed-admin-filters.mjs` (extends the
   `docs/PERF-25K-UX.md` seed) and `scripts/perf/admin-filter-bench.mjs`. Full
   dataset: 25k cards, 100 boards, 500 columns, 200 labels, 50k comments, 10k
-  attachments and 10k commands/activity rows. For each facet run page sizes 50
-  and 100, 5 cold + 20 warm iterations, and record p50/p95 plus
-  `EXPLAIN (ANALYZE, BUFFERS)`. PR gate: cards (board/label/assignee/priority/
-  due) and audit (actor/action) on a 5k-row subset; full 25k matrix is manual/
-  nightly. Target ≤ +20% p95 for a single facet versus the unfiltered list, with
-  no sequential scan over 10k+ rows. Commit the script and raw result table in
-  the PR; “benchmark exists” is not evidence.
+  attachments and 10k commands/activity rows. PR gate: cards (board/label/
+  assignee/priority/due) and audit (actor/action) on a 5k-row subset, 3 cold +
+  10 warm per facet/page size. Full 25k manual/nightly run: representative
+  facets (cards board/label/assignee/priority/due, audit actor/action) at 5 cold
+  + 20 warm; remaining facets at 3 cold + 10 warm. Record p50/p95 plus
+  `EXPLAIN (ANALYZE, BUFFERS)`. Target ≤ +20% p95 for a single facet versus the
+  unfiltered list, with no sequential scan over 10k+ rows. Commit the script
+  and raw result table in the PR; “benchmark exists” is not evidence.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -1183,8 +1214,9 @@ New files under `ui/src/admin/filters/`:
   choice facets in §6.3, with Any removal and aria labels.
 - `LabelMatchControl.tsx` — Any/All segmented radio inside the Labels section
   and the `labelMatch=all` mode chip.
-- `FilterChip.tsx` — icon, label, context, visible board short id, suffix,
-  remove button.
+- `FilterChip.tsx` — icon, truncating full-title span, visible **own + parent
+  short ids**, suffix, remove button; enforces the §6.4 max-width policy and
+  keeps the full title in `title`/accessible names.
 - `use-filter-options.ts` — debounce, abort/generation, in-memory cache,
   resolve-by-id; `auditActor` only for actor chips/pickers.
 - `filter-registry.ts` — `AdminFilterKey`, per-entity definitions, labels,
@@ -1545,6 +1577,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   chip/param and retries; no active chip remains over an unfiltered list.
 - Attachment row badges show the exact `Inline`/`Detached` text; inline-only
   counter reconciliation is covered.
+- `FilterChip` long-title unit: title span ellipsizes, `title`/aria keep full
+  text, own/parent ids remain visible, remove is a focusable button with the
+  full accessible name.
 - Selection reset on filter change; preserved on paging.
 - EN/RU rendering with long labels/emails; no clipping in jsdom snapshot.
 
@@ -1575,7 +1610,10 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Parent-context conflict: an existing dependent id with a different parent is
   returned unscoped and classified as conflict; a hard-deleted id is `missing`
   and renders Unknown, not conflict; a valid same-parent combination with zero
-  rows is a normal empty result. Same-title boards are covered.
+  rows is a normal empty result. Same-title boards are covered. With no active
+  board, a cross-parent label+card pair yields the normal empty state.
+- Picker `q` scoping vs `ids` resolution: board-scoped `q` narrows suggestions;
+  `ids` stays unscoped and returns real parents.
 - `hasAttachments`/counter: plain live file, inline-only, description-referenced
   (`descriptionDetached=false`) and detached/hidden (`true`); admin delete and
   bulk delete recount with both description states.
@@ -1598,7 +1636,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   global-search; real `boardTitle` and `isInline`/`descriptionDetached` on
   attachments in all three producers (no hard-coded `—`); UI assertions cover
   the exact `Inline`/`Detached` badge text and row-DTO mapping.
-- Lookup `ids`/`missing`/`hasMore`, deleted/archived/disabled states, no secrets.
+- Lookup `ids`/`missing`/`hasMore`: soft-deleted rows return `state:"deleted"`
+  (not missing), hard-deleted rows return `missing`, deleted/archived/disabled
+  states carry no secrets.
 
 ### Browser (Playwright admin suite)
 
@@ -1606,16 +1646,19 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   visible board short id, remove, clear all, reload, back/forward, `returnTo`;
   no horizontal overflow. At 390 assert each tab/chip/sheet control has a
   bounding box inside the viewport and is visible/reachable, not only
-  `scrollWidth <= innerWidth`.
+  `scrollWidth <= innerWidth`. The long-title fixture from §6.8 (100-char
+  board/column + near-limit card title + several filters) asserts per-chip
+  width, ellipsis + full `title`/accessible name, visible own/parent ids and
+  keyboard removal.
 - Cards: assignee/priority/due/attachments/label-all; period tab; exact total
   matches seeded count; empty state.
 - Board change clears dependent filters with announcement; conflicting deep link
   shows the conflict banner and Remove actions. Same-title boards render
-  distinguishable dependent chips; duplicate column titles and duplicate label
-  names within one board show distinct **own** short ids (also at 390 with no
-  tooltip); the remove aria-name includes the own short id. A valid parent
-  combination with zero rows shows the normal empty state, not the conflict
-  banner.
+  distinguishable dependent chips; duplicate column titles, duplicate label
+  names, duplicate card titles in one column and duplicate checklist titles on
+  one card show distinct **own** short ids (also at 390 with no tooltip); the
+  remove aria-name includes the own short id. A valid parent combination with
+  zero rows shows the normal empty state, not the conflict banner.
 - Moderation: comment author/kind; attachment uploader/MIME; period tabs; board
   preserved across tabs.
 - Audit: actor/action/target/period; command 176.10 deep link; OPERATOR actor
@@ -1739,6 +1782,10 @@ Unset option in v1.
 - Parent-context conflicts are distinguished from legitimate zero-result lists
   in the UI and tested for same-title boards; hard-deleted/unknown ids render
   `Unknown …` and are not classified as conflicts.
+- `FilterChip` max width/truncation policy holds at 390 with 100-char
+  board/column and near-limit card titles: chips stay inside the viewport, title
+  ellipsizes with full `title`/accessible text, own/parent ids stay visible and
+  keyboard removal works.
 - The supported/offered matrix in §5.8 is enforced in UI and API: every legacy
   176.5/6 pair still works, 400 only outside `supported`, and no old-server
   mixed-version promise remains. Board changes clear dependents with an
