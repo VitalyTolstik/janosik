@@ -213,6 +213,7 @@ try {
   });
   assert.equal(duplicateFile.isError, true);
   assert.match(duplicateFile.content[0].text, /already exists/);
+  assert.equal(duplicateFile.structuredContent.code, "filesystem_error");
 
   const runId = created.runId;
   const batchRun = await http(`/runs/${runId}`, undefined, token);

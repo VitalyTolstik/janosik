@@ -1129,6 +1129,21 @@ describe("janosik MCP server", () => {
     },
   );
 
+  it("marks optional document output as writable when local writes are enabled", async () => {
+    const client = await connect({ allowFs: true, readOnly: false });
+    const { tools } = await client.listTools();
+    for (const name of [
+      "janosik_get_card",
+      "janosik_get_run",
+      "janosik_get_approval",
+    ]) {
+      const tool = tools.find((entry) => entry.name === name);
+      expect(tool?.inputSchema.properties).toHaveProperty("outputPath");
+      expect(tool?.annotations?.readOnlyHint).toBe(false);
+    }
+    await client.close();
+  });
+
   it("reports a command that changed nothing as an error", async () => {
     const client = await connect();
     const result = await client.callTool({

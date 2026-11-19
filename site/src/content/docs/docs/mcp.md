@@ -44,14 +44,16 @@ from source. Add `JANOSIK_APP_BASE` (e.g. `/app`) when the app is not served at
 the site root; it is used to build board links. The self-host image serves the
 app under `/app/`, so set `JANOSIK_APP_BASE=/app` there.
 
-Uploading and downloading attachments and exporting a board to a file access the
-filesystem of the computer running the MCP server. These operations are disabled
-until you set
-`JANOSIK_MCP_ALLOW_FS=1`. Add `JANOSIK_MCP_FS_ROOT=/path` to confine them to
-one directory: symlinks out of it are refused and existing files are never
-overwritten. Confined access requires Linux x64/arm64, `python3`, `/proc` and a
-kernel with `openat2`; on unsupported systems it fails closed. Without
-`JANOSIK_MCP_FS_ROOT`, filesystem access is not confined.
+`janosik_upload_attachment` reads local files, and `janosik_download_attachment`
+writes them. With `outputPath`, `janosik_export_board`, `janosik_get_card`,
+`janosik_get_run` and `janosik_get_approval` also write local files. Enable
+filesystem access with `JANOSIK_MCP_ALLOW_FS=1`. Set
+`JANOSIK_MCP_FS_ROOT=/path` to confine it to a directory and reject symlinks
+that lead outside it. Existing files are never overwritten. File writes are
+atomic, use mode `0600` on POSIX and require hard links on the target
+filesystem. Write failures return `filesystem_error`. Confinement requires
+Linux x64/arm64, `python3`, `/proc` and a kernel with `openat2`. Confined
+writes also require `O_TMPFILE` support on the target filesystem.
 
 ## Tools
 
@@ -135,7 +137,7 @@ the same authorized data as the inline JSON response. The tool returns
 `{ ok: true, outputPath }` with the resolved path. File output requires
 `JANOSIK_MCP_ALLOW_FS=1` and write-enabled MCP mode. Relative paths resolve
 against `JANOSIK_MCP_FS_ROOT` when set, otherwise against the MCP server's
-working directory. Choose a new path each time.
+working directory. Existing files are never overwritten.
 
 A typical run:
 

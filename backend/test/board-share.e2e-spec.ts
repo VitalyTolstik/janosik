@@ -416,6 +416,19 @@ describe("Public board shares (e2e)", () => {
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 7_200_000);
   });
 
+  it("validates a supplied absolute expiry even with expiresInHours", async () => {
+    const { boardId } = await newBoard("Invalid absolute expiry");
+    const { body } = await server()
+      .post(`/api/v1/boards/${boardId}/shares`)
+      .set(auth(adminToken))
+      .send({ mode: "live", expiresAt: "not a date", expiresInHours: 2 })
+      .expect(400);
+    expect(body).toMatchObject({
+      code: "validation_failed",
+      message: expect.stringContaining("expiresAt"),
+    });
+  });
+
   it("comments/attachments are gated by their flags", async () => {
     const { boardId, cardId } = await newBoard("Share flags");
     const closed = await createShare(boardId, {

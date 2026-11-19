@@ -141,6 +141,7 @@
   "account.tokens.editRevoked": "This API key has been revoked and can no longer be edited.",
   "account.tokens.editOffline": "You are offline — the key was not updated",
   "account.tokens.editSessionOnly": "Sign in with a browser session to edit an API key",
+  "account.tokens.editImpersonationReadOnly": "End impersonation before editing an API key. The impersonated session is read-only.",
   "account.tokens.editLimitsHint": "Effective scope, board scope, rate limit and pause state are shown on the key row. Changes are audited.",
   "account.tokens.expired": "Expired",
   "account.tokens.expiresOn": "Expires {{date}}",

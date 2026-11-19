@@ -80,9 +80,10 @@ own agent sessions and request a run-revert preview. These control operations
 do not grant permission to change board content or apply a revert.
 
 Share creation accepts either an absolute `expiresAt` or `expiresInHours`.
-When both are supplied, the relative duration takes precedence. Both expiry
-intent and the other share options are part of the idempotency and approval
-fingerprints; changing them requires a new key or approval.
+When both are supplied, the relative duration takes precedence. A non-null
+`expiresAt` must still be valid ISO-8601. The expiry intent and the other
+share options are part of the idempotency and approval fingerprints.
+Changing them requires a new key or approval.
 
 ### Session-only routes
 

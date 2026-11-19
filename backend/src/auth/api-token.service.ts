@@ -264,8 +264,6 @@ export class ApiTokenService {
           name: dto.name,
           tokenHash: this.hashToken(token),
           expiresAt: this.resolveExpiresAt(dto.expiresAt),
-          // TASK-166: immutable after creation (D11). There is deliberately no
-          // scope-editing endpoint; a different scope means a new token.
           scopePreset: dto.scopePreset ?? "worker",
           trustedCi: dto.trustedCi === true,
           ...scope,

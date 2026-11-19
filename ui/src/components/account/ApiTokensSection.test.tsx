@@ -276,7 +276,9 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     await screen.findByText("No API keys yet");
     await userEvent.click(screen.getByTestId("token-create"));
     await userEvent.type(screen.getByTestId("token-name"), "Release bot");
-    await userEvent.click(screen.getByTestId("token-scope-preset"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Scope preset Worker" }),
+    );
     await userEvent.click(
       await screen.findByRole("menuitemradio", { name: "Reviewer" }),
     );

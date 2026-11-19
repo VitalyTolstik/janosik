@@ -85,8 +85,9 @@ board or expose the account identity are opt-in:
 | `JANOSIK_MCP_TOOLSETS` / `--toolsets`    | Comma-separated groups. Default: `boards,columns,cards,labels,checklists,links,comments,activity,attachments,sessions,approvals,plans,runs`. Opt-in: `members`, `shares`, `account`. `all` enables everything; `default,members` extends the default. The removed `invitations` name is accepted as a no-op with a warning. |
 | `JANOSIK_MCP_READONLY=1` / `--read-only` | Register only tools that never change anything — for an agent that watches and reports.                                                                                                                                                                                                                                     |
 
-In read-only mode, `janosik_export_board` can return an export in the tool
-response. Its `outputPath` option is refused because that writes a local file.
+In read-only mode, `janosik_export_board`, `janosik_get_card`,
+`janosik_get_run` and `janosik_get_approval` still return inline responses.
+Their `outputPath` option is refused because it writes a local file.
 
 Data tools take `response_format: "markdown"` (default) or `"json"`. A JSON
 response that would exceed the size budget is refused with a hint (read one
@@ -100,7 +101,7 @@ the same authorized data as the inline JSON response. The tool returns
 `{ ok: true, outputPath }` with the resolved path. File output requires
 `JANOSIK_MCP_ALLOW_FS=1` and write-enabled MCP mode. Relative paths resolve
 against `JANOSIK_MCP_FS_ROOT` when set, otherwise against the MCP server's
-working directory. Choose a new path each time.
+working directory. Existing files are never overwritten.
 
 Successful command-log mutations return `structuredContent` with `ok: true`,
 `seq` and `runId` (`null` when no run was recorded). A batch returns the
@@ -354,17 +355,21 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
 
 ## Filesystem tools
 
-`janosik_upload_attachment`, `janosik_download_attachment` and
-`janosik_export_board` with `outputPath` read and write files on the machine
-running this server, and board content is untrusted (it can reach the model as
-tool output). They are therefore **off by default**. Enable them with
+`janosik_upload_attachment` reads local files, and `janosik_download_attachment`
+writes them. With `outputPath`, `janosik_export_board`, `janosik_get_card`,
+`janosik_get_run` and `janosik_get_approval` also write local files. File access
+is **off by default**. Enable it with
 `JANOSIK_MCP_ALLOW_FS=1`, and confine them to a directory with
 `JANOSIK_MCP_FS_ROOT=/path/to/sandbox` (relative paths then resolve against
 it). Setting only `JANOSIK_MCP_FS_ROOT` does not enable filesystem access.
 Symlinks that lead out of the root are refused, only regular files up to
 the attachment size limit are read, and existing files are never overwritten.
+New files are published atomically with mode `0600` where POSIX permissions
+apply. File write failures return `filesystem_error`.
 When a root is configured, secure path resolution requires Linux x64 or
 arm64, a kernel with `openat2`, a mounted `/proc`, and `python3` on `PATH`.
+Confined writes additionally require `O_TMPFILE` support on the target
+filesystem. Atomic publication requires hard links on the target filesystem.
 The filesystem tools fail closed if these requirements are unavailable; they
 do not fall back to a racy path check. The configured root and its parent must
 be controlled by the operator and must not be replaceable by other users.

@@ -477,7 +477,7 @@ context, not intent: the server strips them and computes
 with recursively sorted keys, array order preserved and no spaces. The
 preview returns the hash; a client hash is never trusted on its own.
 
-`POST /plans` writes nothing: it does not create a command, an `AgentRun` or
+`POST /boards/:id/plans` writes nothing: it does not create a command, an `AgentRun` or
 an `ApprovalRequest`. It replays the reducer in memory and returns:
 
 - `planHash` and the canonical `plan` (the commands without `at`/`boardId`);
@@ -536,7 +536,7 @@ board. A browser batch and ordinary non-destructive browser edits create no run
 | `GET` | `/boards/:id/runs` | member (`observer`+) | `status`, `kind`, `apiTokenId`, `agentSessionId`, `clientRunId`, `from`, `to`, `limit`, `cursor` | `RunSummaryDto[]` |
 | `GET` | `/boards/:id/runs/:runId` | member; pre-images only board `ADMIN` browser session | none | `RunDetailDto` |
 | `POST` | `/boards/:id/runs/:runId/revert/preview` | member, dry run | none | `RevertPreviewDto` |
-| `POST` | `/boards/:id/runs/:runId/revert` | session-only board `ADMIN` when `dryRun` is false | `RevertRunDto` | `RunDetailDto` |
+| `POST` | `/boards/:id/runs/:runId/revert` | session-only board `ADMIN` when `dryRun` is false or omitted | `RevertRunDto` | `RunDetailDto` |
 | `POST` | `/boards/:id/runs/:runId/revert` | member when `{ "dryRun": true }` | `RevertRunDto` | `RevertPreviewDto` |
 
 `RunSummaryDto` carries `id`, `boardId`, `apiTokenId`, `agentSessionId`,
@@ -685,7 +685,8 @@ A live share reads the board as it is now and follows it over SSE.
 `POST` generates a random token (16 bytes, base64url). `includeComments` defaults
 to `true` for a live share and `false` for a snapshot; `includeAttachments`
 defaults to `false`. Supply a future `expiresAt` or a relative `expiresInHours`.
-When both are supplied, the relative duration takes precedence.
+When both are supplied, the relative duration takes precedence. A supplied
+non-null `expiresAt` is always validated as ISO-8601.
 
 `POST .../refresh` re-freezes a snapshot share; a live share answers `400`
 before any approval is created. It is a `share.update` lifecycle action: a PAT
@@ -888,7 +889,7 @@ Field presence and nullability are specified separately:
 | `title`              | string         | optional           | at most 100 characters                                   |
 | `includeComments`    | boolean        | optional           | default `true` for `live`, `false` for `snapshot`        |
 | `includeAttachments` | boolean        | optional           | default `false`                                          |
-| `expiresAt`          | string or null | optional, nullable | ISO-8601 in the future when used |
+| `expiresAt`          | string or null | optional, nullable | ISO-8601 if non-null. Must be in the future when `expiresInHours` is absent |
 | `expiresInHours` | integer | optional | 1–87,600 hours from creation. Takes precedence over `expiresAt` |
 
 With both fields omitted, or an explicit `expiresAt: null` on its own, the link has no expiry.

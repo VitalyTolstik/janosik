@@ -495,7 +495,7 @@ TTL = `min(ttlMinutes ?? policy.approvalTtlMinutes, policy.approvalTtlMinutes)` 
 с рекурсивной сортировкой ключей, сохранением порядка массива и без пробелов.
 Хеш возвращает сервер; клиентское значение само по себе не принимается.
 
-`POST /plans` ничего не пишет: не создаёт команду, `AgentRun` или
+`POST /boards/:id/plans` ничего не пишет: не создаёт команду, `AgentRun` или
 `ApprovalRequest`. Он проигрывает редьюсер в памяти и возвращает:
 
 - `planHash` и канонический `plan` (команды без `at`/`boardId`);
@@ -538,7 +538,7 @@ PAT, применения плана или человеческого отка�
 | `GET` | `/boards/:id/runs` | участник (`observer`+) | `status`, `kind`, `apiTokenId`, `agentSessionId`, `clientRunId`, `from`, `to`, `limit`, `cursor` | `RunSummaryDto[]` |
 | `GET` | `/boards/:id/runs/:runId` | участник; pre-images — только board `ADMIN` в браузере | — | `RunDetailDto` |
 | `POST` | `/boards/:id/runs/:runId/revert/preview` | участник, dry-run | — | `RevertPreviewDto` |
-| `POST` | `/boards/:id/runs/:runId/revert` | только сессия board `ADMIN`, если `dryRun` = false | `RevertRunDto` | `RunDetailDto` |
+| `POST` | `/boards/:id/runs/:runId/revert` | только сессия `ADMIN` доски, если `dryRun` равен `false` или пропущен | `RevertRunDto` | `RunDetailDto` |
 | `POST` | `/boards/:id/runs/:runId/revert` | участник при `{ "dryRun": true }` | `RevertRunDto` | `RevertPreviewDto` |
 
 `RunSummaryDto` содержит `id`, `boardId`, `apiTokenId`, `agentSessionId`,
@@ -689,6 +689,8 @@ MIME-типов и проверяет сигнатуры файлов для т�
 умолчанию `true` для live-share и `false` для snapshot; `includeAttachments`
 по умолчанию `false`. Можно задать `expiresAt` в будущем или длительность
 `expiresInHours`. Если переданы оба поля, действует относительный срок.
+Значение `expiresAt`, отличное от `null`, всегда проверяется на соответствие
+ISO-8601.
 
 `POST .../refresh` обновляет снимок до текущего состояния доски. Для ссылки
 `live` сервер возвращает `400` до создания согласования. Это lifecycle-действие
@@ -890,7 +892,7 @@ API-токена; в кадрах до появления поля он отсу
 | `title`              | string          | нет           | не более 100 символов                                              |
 | `includeComments`    | boolean         | нет           | по умолчанию `true` для `live`, `false` для `snapshot`             |
 | `includeAttachments` | boolean         | нет           | по умолчанию `false`                                               |
-| `expiresAt`          | string или null | нет, nullable | ISO-8601 в будущем, если используется |
+| `expiresAt`          | string или null | нет, nullable | ISO-8601 для значения, отличного от `null`. Дата должна быть в будущем, если `expiresInHours` пропущен |
 | `expiresInHours` | integer | нет | 1–87 600 часов с момента создания. Имеет приоритет над `expiresAt` |
 
 Если оба поля пропущены или передан только `expiresAt: null`, ссылка бессрочная.

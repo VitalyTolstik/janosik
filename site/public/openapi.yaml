@@ -1519,11 +1519,16 @@ paths:
     post:
       tags: [Runs]
       operationId: revertRun
-      summary: Revert a run (human board ADMIN)
+      security:
+        - browserSession: []
+        - personalApiToken: []
+      summary: Preview or revert a run
       description: |
-        `{dryRun: true}` is the same dry run as `/revert/preview` and writes
-        nothing. A real revert is browser-session board `ADMIN` only (`403
-        pat_forbidden` for any PAT), all-or-nothing, once per run, checks
+        A PAT may call this operation only with `dryRun: true`. This mode
+        is equivalent to `/revert/preview` and writes nothing. When
+        `dryRun` is false or omitted, applying the revert requires a board
+        `ADMIN` browser session and a PAT receives `403 pat_forbidden`.
+        A revert is all-or-nothing and can be applied once per run. It checks
         conflicts under the board lock and creates a `kind: "revert"` run.
         `409 run_conflict` when already reverted or a revert of a revert;
         `409 run_expired` when pre-images were swept.
@@ -3164,7 +3169,8 @@ components:
       type: string
       enum: [observer, worker, reviewer, admin]
       description: |
-        Immutable PAT capability preset. It never raises the board role.
+        PAT capability preset. The owner may change it in a browser session.
+        It never raises the board role.
         `readOnly: true` always yields effective `observer`.
     BoardRole:
       type: string
@@ -3730,7 +3736,10 @@ components:
         expiresAt:
           type: [string, "null"]
           format: date-time
-          description: Must be in the future when expiresInHours is absent.
+          description: |
+            A supplied non-null value must be ISO-8601, including when
+            expiresInHours is present. Must be in the future when
+            expiresInHours is absent.
         expiresInHours:
           type: integer
           minimum: 1

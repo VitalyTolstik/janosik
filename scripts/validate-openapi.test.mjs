@@ -27,12 +27,29 @@ test("publishes the same error codes as the shared contract and describes token 
     "scopePreset",
     "trustedCi",
   ]);
+  assert.match(UpdateUserTokenRequest.description, /`expiresAt` are stripped/);
+  assert.match(
+    UpdateUserTokenRequest.properties.scopePreset.description,
+    /Updates the existing token's capability preset/,
+  );
   const patch = spec.paths["/users/me/tokens/{tokenId}"].patch;
   assert.equal(
     patch.responses[409].content["application/json"].schema.allOf[1].properties
       .code.const,
     "token_revoked",
   );
+});
+
+test("describes ScopePreset as editable by the owner in a browser session", async () => {
+  const { spec } = await validateOpenApi();
+  const { ScopePreset } = spec.components.schemas;
+  assert.doesNotMatch(ScopePreset.description, /\bimmutab\w*\b/i);
+  assert.match(
+    ScopePreset.description,
+    /owner may change it in a browser session/,
+  );
+  assert.match(ScopePreset.description, /never raises the board role/);
+  assert.match(ScopePreset.description, /readOnly: true.*effective `observer`/);
 });
 
 test("describes browser-only, PAT-only, and shared board operations", async () => {
@@ -62,17 +79,37 @@ test("describes browser-only, PAT-only, and shared board operations", async () =
     );
   }
   const revert = paths["/boards/{boardId}/runs/{runId}/revert"].post;
-  assert.deepEqual(revert.security ?? spec.security, [
+  assert.deepEqual(revert.security, [
     { browserSession: [] },
     { personalApiToken: [] },
   ]);
   assert.match(revert.description, /dryRun: true/);
   assert.match(revert.description, /pat_forbidden/);
+  assert.match(
+    revert.description,
+    /PAT may call this operation only with `dryRun: true`/,
+  );
+  assert.match(
+    revert.description,
+    /`dryRun` is false or omitted, applying the revert requires a board\s+`ADMIN` browser session and a PAT receives `403 pat_forbidden`/,
+  );
   assert.equal(
     paths["/boards/{boardId}/plans/apply"].post.operationId,
     "applyPlan",
   );
   assert.equal(paths["/plans/apply"], undefined);
+});
+
+test("states that relative share expiry takes precedence and absolute expiry is still validated", async () => {
+  const { spec } = await validateOpenApi();
+  const { expiresAt, expiresInHours } =
+    spec.components.schemas.CreateShareRequest.properties;
+  assert.equal(expiresAt.format, "date-time");
+  assert.match(
+    expiresAt.description,
+    /must be ISO-8601, including when\s+expiresInHours is present/,
+  );
+  assert.match(expiresInHours.description, /takes precedence over expiresAt/);
 });
 
 test("publishes the public auth config and password recovery contracts", async () => {

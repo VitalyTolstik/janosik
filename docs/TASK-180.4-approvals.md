@@ -23,12 +23,15 @@ through `mcp/test/live-approval.mjs`. The Nest e2e runner uses the configured
 PostgreSQL test database and applies the Prisma migration before running the
 approval, overview, session and security suites.
 
-Backend, shared, MCP and UI type checks passed. Review verification passed
-all 1,813 UI tests, 51 targeted backend unit tests, 68 targeted backend e2e
-tests and 155 MCP tests. One MCP test was skipped by the suite. ESLint
+At commit `afb1907e`, backend, shared, MCP and UI type checks passed. Review
+verification passed all 1,813 UI tests, 51 targeted backend unit tests, 68
+targeted backend e2e tests and 155 MCP tests. One MCP test was skipped. ESLint
 completed with zero errors. Prettier, `git diff --check`, Prisma validation,
 OpenAPI validation and its five validator tests passed. The REST guides were
 updated in English and Russian.
+
+Current counts are recorded in the
+[TASK-180.5 verification results](./TASK-180.5-mcp-api.md#verification).
 
 Cursor pages are live reads. An approval decided between requests can move
 between groups, and the next refresh reconciles the queue.
