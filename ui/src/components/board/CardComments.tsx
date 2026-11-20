@@ -119,7 +119,7 @@ export function CardComments({
   const kind = composer.draft?.kind ?? DEFAULT_COMMENT_KIND;
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
   const pendingAuthor = useBoardMember(boardId, pendingDelete?.authorId);
-  const deletingRef = useRef(false);
+  const deletingIdRef = useRef<string | null>(null);
   const pendingAuthorName = commentAuthorLabel(
     pendingDelete?.authorId ?? "",
     pendingAuthor,
@@ -344,10 +344,12 @@ export function CardComments({
   // the dialog says the deletion cannot be undone.
   const handleDelete = async () => {
     const comment = pendingDelete;
-    // A double click or a repeated Enter reaches the handler twice before
-    // React closes the dialog; only the first activation may send a DELETE.
-    if (comment === null || deletingRef.current) return;
-    deletingRef.current = true;
+    // A double click or a repeated Enter of the same confirmation reaches the
+    // handler twice before React closes the dialog. The guard is per comment,
+    // so deleting a different comment while this request is in flight still
+    // works instead of silently dropping the second confirmation.
+    if (comment === null || deletingIdRef.current === comment.id) return;
+    deletingIdRef.current = comment.id;
     const index = itemsRef.current.findIndex((item) => item.id === comment.id);
     const previousTotal = total;
     setPendingDelete(null);
@@ -359,7 +361,19 @@ export function CardComments({
     try {
       await api.deleteComment(comment.id);
       if (nextCursor !== null || total !== undefined) void refreshNewest();
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        // The server already deleted it elsewhere: keep the optimistic
+        // removal and repair the exact count instead of resurrecting the row.
+        setThread((current) => ({
+          ...current,
+          total:
+            previousTotal !== undefined
+              ? Math.max(0, previousTotal - 1)
+              : current.total,
+        }));
+        return;
+      }
       toast.error(t("comment.deleteError"));
       // Keep the loaded pages intact: reinsert the row where it was instead
       // of resetting to page 1 (which would drop comments loaded from 2+).
@@ -374,7 +388,7 @@ export function CardComments({
         return { ...current, items, total: previousTotal };
       });
     } finally {
-      deletingRef.current = false;
+      if (deletingIdRef.current === comment.id) deletingIdRef.current = null;
     }
   };
 

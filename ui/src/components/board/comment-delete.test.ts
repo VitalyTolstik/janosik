@@ -39,6 +39,14 @@ describe("commentExcerpt", () => {
     ).toBe(false);
   });
 
+  it("keeps a ZWJ grapheme cluster intact at the cut", () => {
+    const prefix = "a".repeat(238);
+    const family = "👨‍👩‍👧‍👦";
+    expect(commentExcerpt(`${prefix}${family}tail`)).toBe(
+      `${prefix}${family}…`,
+    );
+  });
+
   it("keeps markdown and code text as collapsed plain text", () => {
     expect(
       commentExcerpt("**Bold** and `code`\n\n```ts\nconst x = 1;\n```"),
