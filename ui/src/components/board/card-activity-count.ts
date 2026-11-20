@@ -13,22 +13,26 @@ export function mergeNewestActivity<T extends { id: string }>(
   isPending?: (row: T) => boolean,
 ): ActivityPage<T> {
   const known = new Set(current.items.map((row) => row.id));
-  const fresh = newest.items.filter((row) => !known.has(row.id));
   const boundary = newest.items.at(-1);
-  if (newest.nextCursor !== null && (!boundary || !known.has(boundary.id))) {
-    // A burst can leave a gap between these pages. Start from the new cursor.
+  const total = newest.total ?? current.total;
+  const hasPartialPage =
+    current.nextCursor !== null || newest.nextCursor !== null;
+  if (hasPartialPage && (!boundary || !known.has(boundary.id))) {
+    // A burst can leave a gap, and a delete can bring an older row into this page.
     return {
       ...newest,
       items: [
         ...(isPending ? current.items.filter(isPending) : []),
         ...newest.items,
       ],
+      total,
     };
   }
+  const fresh = newest.items.filter((row) => !known.has(row.id));
   return {
     items: fresh.length > 0 ? [...fresh, ...current.items] : current.items,
     nextCursor: newest.nextCursor === null ? null : current.nextCursor,
-    total: newest.total,
+    total,
   };
 }
 

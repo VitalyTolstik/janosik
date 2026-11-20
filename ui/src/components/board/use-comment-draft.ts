@@ -8,22 +8,36 @@ interface CommentDraft {
 
 interface ComposerState {
   draft: CommentDraft | null;
-  sending: boolean;
+  sendToken: symbol | null;
   editorNonce: number;
 }
 
-const empty: ComposerState = { draft: null, sending: false, editorNonce: 0 };
+const MAX_CACHED_DRAFTS = 50;
+const empty: ComposerState = { draft: null, sendToken: null, editorNonce: 0 };
 const drafts = new Map<string, ComposerState>();
 const listeners = new Map<string, Set<() => void>>();
 
 function publish(key: string, state: ComposerState) {
   const subscribers = listeners.get(key);
-  if (subscribers === undefined && state.draft === null && !state.sending) {
-    drafts.delete(key);
-  } else {
+  drafts.delete(key);
+  if (
+    state.draft !== null ||
+    state.sendToken !== null ||
+    (subscribers !== undefined && state.editorNonce !== 0)
+  ) {
     drafts.set(key, state);
+    if (drafts.size > MAX_CACHED_DRAFTS) {
+      const oldest = drafts.keys().next().value!;
+      drafts.delete(oldest);
+      listeners.get(oldest)?.forEach((notify) => notify());
+    }
   }
   subscribers?.forEach((notify) => notify());
+}
+
+export function clearCommentDrafts(): void {
+  drafts.clear();
+  listeners.forEach((subscribers) => subscribers.forEach((notify) => notify()));
 }
 
 export function useCommentDraft(cardId: string, userId?: string) {
@@ -62,14 +76,17 @@ export function useCommentDraft(cardId: string, userId?: string) {
     if (draft.text === previous.text && draft.kind === previous.kind) return;
     publish(key, {
       ...current,
-      draft,
+      draft:
+        draft.text.trim() === "" && draft.kind === DEFAULT_COMMENT_KIND
+          ? null
+          : draft,
     });
   }
 
   function discard() {
     if (key === null) return;
     const current = getSnapshot();
-    if (current.sending) return;
+    if (current.sendToken !== null) return;
     publish(key, {
       ...current,
       draft: null,
@@ -81,29 +98,38 @@ export function useCommentDraft(cardId: string, userId?: string) {
     if (key === null) return null;
     const current = getSnapshot();
     if (
-      current.sending ||
+      current.sendToken !== null ||
       current.draft === null ||
       current.draft !== state.draft
     ) {
       return null;
     }
     const sent = current.draft;
-    publish(key, { ...current, sending: true });
+    const sendToken = Symbol();
+    publish(key, { ...current, sendToken });
 
     return (saved: boolean) => {
       const latest = getSnapshot();
+      if (latest.sendToken !== sendToken) return;
       // Edits made during the request belong to the next draft.
       if (saved && latest.draft === sent) {
         publish(key, {
           draft: null,
-          sending: false,
+          sendToken: null,
           editorNonce: latest.editorNonce + 1,
         });
       } else {
-        publish(key, { ...latest, sending: false });
+        publish(key, { ...latest, sendToken: null });
       }
     };
   }
 
-  return { ...state, update, discard, startSend };
+  return {
+    draft: state.draft,
+    sending: state.sendToken !== null,
+    editorNonce: state.editorNonce,
+    update,
+    discard,
+    startSend,
+  };
 }

@@ -582,6 +582,39 @@ describe("CardComments", () => {
     );
   });
 
+  it("keeps the last comment at the bottom when a delete makes 51 comments fit on one page", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const comments = Array.from({ length: 51 }, (_, index) =>
+      comment({ id: `comment-${index}`, text: `Comment ${index}` }),
+    );
+    const [deleted, ...remaining] = comments;
+    server.seedComments("card-1", comments);
+    renderComments(server);
+    await screen.findByTestId("comments-show-older");
+    expect(screen.getAllByTestId("comment")).toHaveLength(50);
+    await waitStream(server);
+
+    act(() => {
+      server.seedComments("card-1", remaining);
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-delete",
+        boardId: "b-1",
+        cardId: "card-1",
+        actorId: "user-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        detail: deleted.id,
+      });
+    });
+
+    await screen.findByText("Comment 50");
+    expect(
+      screen.getAllByTestId("comment").map((row) => row.dataset.commentId),
+    ).toEqual(remaining.map((row) => row.id));
+    expect(screen.queryByTestId("comments-show-older")).not.toBeInTheDocument();
+  });
+
   it("offers Edit only on the author's own comment and never in read-only", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [

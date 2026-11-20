@@ -637,6 +637,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-177.3 keeps per-card comment drafts when you reopen a card and clears
+  them when the session ends. Activity counts show `50+` when more rows remain
+  and the total is unknown, or `N of M` when the total is known. A 65-comment
+  regression test covers the transition to an exact count after pagination.
+
 - TASK-179 agents live-review feedback: the Attention badge counts pending
   decisions only (stale sessions no longer inflate it), and a paused session
   stays in the Attention live preview with a `Paused` pill even when its
