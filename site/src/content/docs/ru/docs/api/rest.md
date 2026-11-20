@@ -54,6 +54,7 @@ REST. Эти операции не являются действиями ред�
 | `GET` | `/boards/:id/invitations` | `ADMIN` | нет | `BoardPendingInvitationDto[]` |
 | `POST`   | `/boards/:id/members`         | `ADMIN`               | `InviteMemberDto` | `BoardMemberDto`   |
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`               | `UpdateMemberDto` | `BoardMemberDto`   |
+| `DELETE` | `/boards/:id/members/me`      | участник              | нет               | `{ status: "ok" }` |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`               | нет               | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/export`          | участник              | нет               | `BoardEnvelope`    |
 | `GET`    | `/boards/:id/search`          | участник              | query `q`         | `{ cardIds: string[] }` |
@@ -127,6 +128,15 @@ JSON-объект, либо как сырую JSON-строку; сервер в
 `PATCH /boards/:id/members/:userId` меняет роль и/или срок `VIEWER`.
 Последнего `ADMIN` доски нельзя понизить, и последнего `ADMIN` нельзя
 удалить: в обоих случаях сервер возвращает `409`.
+
+`DELETE /boards/:id/members/me` позволяет вызывающему покинуть доску. Любой
+принятый `MEMBER` или `VIEWER` может это сделать; `ADMIN` — только пока на
+доске остаётся другой принятый `ADMIN`. Последнему `ADMIN` сервер отвечает
+`409 { code: "last_admin", action: "leave" }`. Маршрут доступен только
+браузерной сессии (PAT получает `403 pat_forbidden`). Созданные карточки и
+комментарии остаются на доске с прежним `actorId`; уход пишется в Activity как
+`member_left`, а SSE-кадр `membership: removed` закрывает поток покинувшего.
+После этого доски нет в `GET /boards`, а прямой URL доски отвечает `403`.
 
 ### Порядок доступа
 

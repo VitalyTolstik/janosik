@@ -1181,6 +1181,7 @@ endpoint'ом.
 | POST | `/invitations/:id/decline` | отклонить — pending-строка удаляется, доступ не выдаётся |
 | POST | `/boards/:id/members` | invite `{email, role, expiresAt?}` — только ADMIN; создаёт **pending**-приглашение (TASK-35 addendum: доступ появляется только после accept) |
 | PATCH | `/boards/:id/members/:userId` | `{role?, expiresAt?}` — смена роли/срока VIEWER, только ADMIN |
+| DELETE | `/boards/:id/members/me` | покинуть доску — любой принятый MEMBER/VIEWER; ADMIN — пока есть другой ADMIN; `409 {code:"last_admin"}`; Activity `member_left` + SSE |
 | DELETE | `/boards/:id/members/:userId` | исключить — ADMIN; последний ADMIN защитён |
 
 **Чтение (обычный REST, мутации — только через команды):**

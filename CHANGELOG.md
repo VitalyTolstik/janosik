@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.2 self-leave: `DELETE /boards/:id/members/me` lets an accepted
+  `MEMBER` or `VIEWER` leave a board from the Members dialog (`Leave board`,
+  with an inline confirmation). An `ADMIN` may leave only while another
+  accepted `ADMIN` remains; the last admin gets
+  `409 { code: "last_admin", action: "leave" }` and the button explains why it
+  is disabled. The route is session-only. The membership row is removed, the
+  feed records `member_left`, and a `membership: removed` SSE frame closes the
+  leaver's stream. The board disappears from the switcher, direct board URLs
+  answer `403`, and authored cards/comments keep their original attribution.
+  Admin remove-other behaviour (`DELETE /boards/:id/members/:userId`) is
+  unchanged. EN/RU copy and the API docs/openapi cover the route.
 - TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
   read-only verification and master-account commands. The reset uses a
   private backend to verify database identity before schema recreation and

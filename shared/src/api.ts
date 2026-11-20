@@ -618,6 +618,7 @@ export const ACTIVITY_EVENT_TYPES = [
   "member_role_changed",
   "member_expiry_changed",
   "member_removed",
+  "member_left",
   "comment_added",
   "comment_deleted",
   "comment_updated",
