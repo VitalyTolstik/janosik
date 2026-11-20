@@ -8,8 +8,9 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AuthProvider } from "@/auth/AuthContext";
 import { BoardSection } from "@/components/BoardSection";
 import { CardDialog } from "@/components/board/CardDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -20,6 +21,7 @@ import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { ToastProvider } from "@/components/Toast";
 import { api } from "@/api/client";
+import { FakeServer } from "@/test/fake-server";
 
 /**
  * Integration test for the card description editor (MDXEditor): opening a
@@ -67,18 +69,37 @@ vi.mock("@/components/editor/DescriptionEditor", () => {
   }));
 });
 
-function renderBoard() {
+vi.mock("@/components/editor/CommentEditor", () => ({
+  CommentComposerEditor: ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (markdown: string) => void;
+  }) => (
+    <textarea
+      data-testid="comment-input"
+      defaultValue={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+  CommentBody: ({ text }: { text: string }) => <p>{text}</p>,
+}));
+
+function renderBoard(entry = "/") {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter>
+              <MemoryRouter initialEntries={[entry]}>
                 <ToastProvider>
-                  <BoardProvider>
-                    <BoardSection />
-                  </BoardProvider>
+                  <AuthProvider>
+                    <BoardProvider>
+                      <BoardSection />
+                    </BoardProvider>
+                  </AuthProvider>
                 </ToastProvider>
               </MemoryRouter>
             </TooltipProvider>
@@ -88,6 +109,112 @@ function renderBoard() {
     </ThemeProvider>,
   );
 }
+
+describe("CardDialog comment drafts", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+    const server = new FakeServer([
+      {
+        id: "b-1",
+        title: "Board",
+        columns: [
+          {
+            id: "col-1",
+            title: "To do",
+            cardIds: ["draft-a", "draft-b"],
+            createdAt: 1,
+          },
+        ],
+        cards: {
+          "draft-a": {
+            id: "draft-a",
+            title: "Draft card A",
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+            links: [
+              { id: "link-ab", type: "relates_to", targetCardId: "draft-b" },
+            ],
+          },
+          "draft-b": {
+            id: "draft-b",
+            title: "Draft card B",
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  async function enterDraft() {
+    const input = await screen.findByTestId("comment-input");
+    fireEvent.click(screen.getByTestId("comment-kind"));
+    fireEvent.click(await screen.findByTestId("comment-kind-option-question"));
+    await userEvent.type(input, "A question in progress");
+  }
+
+  it.each(["Escape", "Close"])(
+    "restores text and kind after %s and discards both with Cancel",
+    async (close) => {
+      renderBoard("/board/b-1?card=draft-a");
+      await enterDraft();
+
+      if (close === "Escape") {
+        await userEvent.keyboard("{Escape}");
+      } else {
+        await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      }
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByText("Draft card A"));
+      expect(await screen.findByTestId("comment-input")).toHaveValue(
+        "A question in progress",
+      );
+      expect(screen.getByTestId("comment-kind")).toHaveTextContent("Question");
+      expect(screen.getByLabelText("Title")).toHaveFocus();
+
+      await userEvent.click(screen.getByTestId("comment-cancel"));
+      expect(screen.getByTestId("comment-input")).toHaveValue("");
+      expect(screen.getByTestId("comment-kind")).toHaveTextContent("Note");
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      await userEvent.click(screen.getByText("Draft card A"));
+      expect(await screen.findByTestId("comment-input")).toHaveValue("");
+      expect(screen.getByTestId("comment-kind")).toHaveTextContent("Note");
+    },
+  );
+
+  it("restores only the source card's draft when following a link and returning", async () => {
+    renderBoard("/board/b-1?card=draft-a");
+    await enterDraft();
+
+    await userEvent.click(screen.getByTestId("card-link-open"));
+    expect(screen.getByLabelText("Title")).toHaveValue("Draft card B");
+    expect(await screen.findByTestId("comment-input")).toHaveValue("");
+    expect(screen.getByTestId("comment-kind")).toHaveTextContent("Note");
+
+    await userEvent.click(screen.getByTestId("card-link-open"));
+    expect(screen.getByLabelText("Title")).toHaveValue("Draft card A");
+    expect(await screen.findByTestId("comment-input")).toHaveValue(
+      "A question in progress",
+    );
+    expect(screen.getByTestId("comment-kind")).toHaveTextContent("Question");
+    await userEvent.click(screen.getByTestId("comment-cancel"));
+  });
+});
 
 /** CardDialog with a control that swaps the open card without closing it. */
 function CardSwitchHarness() {
