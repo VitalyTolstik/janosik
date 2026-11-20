@@ -75,7 +75,15 @@ export function AdminFilterBar({
     });
   for (const { value, label } of PRIORITY_CHOICES) {
     if (filters.priority?.includes(value))
-      choiceChips.push({ key: "priority", value, text: t(label) });
+      choiceChips.push({
+        key: "priority",
+        value,
+        text: t(label),
+        name: t("admin.filters.remove", {
+          facet: t("admin.filters.priority"),
+          value: t(label),
+        }),
+      });
   }
   const due = DUE_CHOICES.find(({ value }) => value === filters.due);
   if (due) choiceChips.push({ key: "due", text: t(due.label) });

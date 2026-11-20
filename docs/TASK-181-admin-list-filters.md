@@ -811,7 +811,7 @@ compaction is a follow-up backlog item, not part of 181.7.
 - Search fields have labels, not placeholder-only names; result rows announce
   name + context. “Use id …” is a normal option.
 - After Apply, focus returns to the Filters button and an `aria-live="polite"`
-  status announces “Filters applied · N results” using the server total after
+  status announces “Filters applied · Results: N” using the server total after
   the response. Do not announce a speculative count before it arrives.
 - Chip remove buttons are reachable in DOM order; removing a chip keeps focus
   on the next chip or the Filters button if none remain. The remove button has
@@ -1447,6 +1447,14 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Filter changes reset the page and clear bulk selection; offset changes keep
   selection.
 - No regression >20% p95 on the measured dataset; EXPLAIN evidence attached.
+
+**Open follow-ups**
+
+- Run the 25,000-card performance qualification during rollout.
+- Backfill previously inflated `attachmentCount` values.
+- Revisit listbox keyboard navigation for searchable multi-value pickers. The
+  current pickers use a checkbox group.
+- Refine the display of user IDs on assignee chips.
 
 ### 181.4 — Moderation hub (P2)
 

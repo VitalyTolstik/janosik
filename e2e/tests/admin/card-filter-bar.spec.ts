@@ -186,7 +186,9 @@ for (const width of [1440, 1024, 390]) {
     const cardRow = page.getByTestId(`admin-card-row-${cardId}`);
     await expect(cardRow).toBeVisible();
     await expect(page.getByTestId("admin-filter-results")).toHaveText(
-      mobile ? "Фильтры применены · найдено 1" : "Filters applied · 1 results",
+      mobile
+        ? "Фильтры применены · Результатов: 1"
+        : "Filters applied · Results: 1",
     );
     await expect(page).toHaveURL(
       (url) =>
@@ -468,7 +470,7 @@ const cardFacetCopy = {
     attachmentsGroup: "Card attachment filter",
     attachmentChoices: ["Has card attachments", "No card attachments"],
     any: "Any",
-    results: (total: number) => `Filters applied · ${total} results`,
+    results: (total: number) => `Filters applied · Results: ${total}`,
   },
   ru: {
     assignee: "Исполнитель",
@@ -490,7 +492,7 @@ const cardFacetCopy = {
     attachmentsGroup: "Фильтр по файлам карточки",
     attachmentChoices: ["С файлами карточки", "Без файлов карточки"],
     any: "Любой вариант",
-    results: (total: number) => `Фильтры применены · найдено ${total}`,
+    results: (total: number) => `Фильтры применены · Результатов: ${total}`,
   },
 };
 
@@ -696,7 +698,10 @@ for (const locale of ["en", "ru"] as const) {
     );
     for (const name of [facet.medium, facet.high]) {
       await page
-        .getByRole("button", { name: `${copy.remove}: ${name}`, exact: true })
+        .getByRole("button", {
+          name: `${copy.remove}: ${facet.priority} — ${name}`,
+          exact: true,
+        })
         .press("Enter");
     }
     await expect(page).toHaveURL((url) => !url.searchParams.has("priority"));
@@ -778,5 +783,32 @@ for (const locale of ["en", "ru"] as const) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
+
+    if (mobile) {
+      await page.goto(
+        adminPath(
+          `boards?tab=cards&boardId=${board.id}&lng=${locale}&assigneeId=${board.userId}&labelId=${labelA}&labelId=${labelB}&labelMatch=all&priority=medium&due=overdue`,
+        ),
+      );
+      const chips = page.getByTestId("admin-filter-banner");
+      await expect(chips.getByTestId("admin-filter-assigneeId")).toContainText(
+        board.email,
+      );
+      const labels = chips.getByTestId("admin-filter-labelId");
+      await expect(labels).toHaveCount(2);
+      for (const name of ["Facet label alpha", "Facet label beta"]) {
+        await expect(labels.filter({ hasText: name })).toBeVisible();
+      }
+      await expect(chips.getByTestId("admin-filter-priority")).toHaveText(
+        facet.medium,
+      );
+      await expect(chips.getByTestId("admin-filter-due")).toHaveText(
+        facet.dueChoices[0],
+      );
+      await expect(results).toHaveText(facet.results(1));
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(390);
+    }
   });
 }

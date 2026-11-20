@@ -446,7 +446,7 @@ describe("cards filter bar", () => {
     expect(currentQuery().get("returnTo")).toBe("/admin");
     await waitFor(() => {
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 2 results$/,
+        /^Filters applied · Results: 2$/,
       );
     });
     expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
@@ -769,9 +769,69 @@ describe("cards filter bar", () => {
     ]);
     await waitFor(() =>
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 2 results$/,
+        /^Filters applied · Results: 2$/,
       ),
     );
+  });
+
+  it("keeps selected labels checked while resolving them outside the search results", async () => {
+    const server = filterServer();
+    const fetch = server.fetchImpl;
+    const missing = "missing-label";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        if (
+          url.pathname.endsWith("/admin/filter-options") &&
+          url.searchParams.getAll("ids").includes(missing)
+        ) {
+          await gate;
+        }
+        return fetch(input, init);
+      },
+    );
+    renderAdmin(
+      `${cardsUrl}&boardId=${boardA}&labelId=${labelA}&labelId=${missing}`,
+    );
+
+    const picker = await openFacet("Label");
+    expect(
+      await picker.findByRole("checkbox", { name: /urgent.*label-AA/ }),
+    ).toBeChecked();
+    await userEvent.type(
+      picker.getByRole("searchbox", { name: "Search options — Label" }),
+      "no such label",
+    );
+    await waitFor(() =>
+      expect(
+        picker.queryByText("Looking up values…", { exact: true }),
+      ).not.toBeInTheDocument(),
+    );
+    for (const id of ["label-AA", "missing-"]) {
+      expect(
+        picker.getByRole("checkbox", {
+          name: `Looking up values… · ${id}`,
+        }),
+      ).toBeChecked();
+    }
+    expect(picker.queryByText(/Unknown label/)).not.toBeInTheDocument();
+    expect(picker.queryByText("No options found.")).not.toBeInTheDocument();
+
+    release();
+    expect(
+      await picker.findByRole("checkbox", { name: /urgent.*label-AA/ }),
+    ).toBeChecked();
+    expect(
+      picker.getByRole("checkbox", {
+        name: "Unknown label · missing-",
+      }),
+    ).toBeChecked();
+    expect(picker.queryByText("No options found.")).not.toBeInTheDocument();
   });
 
   it("commits label mode once, discards changed drafts and removes All with one remaining label", async () => {
@@ -808,7 +868,7 @@ describe("cards filter bar", () => {
     expect(currentQuery().get("labelMatch")).toBe("all");
     await waitFor(() =>
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 1 results$/,
+        /^Filters applied · Results: 1$/,
       ),
     );
 
@@ -830,7 +890,7 @@ describe("cards filter bar", () => {
     expect(currentQuery().getAll("labelId")).toEqual([labelA, secondLabel]);
     await waitFor(() =>
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 2 results$/,
+        /^Filters applied · Results: 2$/,
       ),
     );
     await user.click(screen.getByTestId("test-back"));
@@ -893,10 +953,10 @@ describe("cards filter bar", () => {
     expect(currentQuery().has("offset")).toBe(false);
     expect(screen.queryByTestId("admin-bulk-delete")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Remove filter: High" }),
+      screen.getByRole("button", { name: "Remove filter: Priority — High" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Remove filter: Medium" }),
+      screen.getByRole("button", { name: "Remove filter: Priority — Medium" }),
     ).toBeVisible();
 
     await user.click(await screen.findByTestId(`admin-select-${cardA}`));
@@ -905,7 +965,7 @@ describe("cards filter bar", () => {
     expect(screen.queryByTestId("admin-bulk-delete")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 1 results$/,
+        /^Filters applied · Results: 1$/,
       ),
     );
     const from = Number(
@@ -930,7 +990,7 @@ describe("cards filter bar", () => {
     expect(screen.queryByTestId("admin-bulk-delete")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 1 results$/,
+        /^Filters applied · Results: 1$/,
       ),
     );
   });

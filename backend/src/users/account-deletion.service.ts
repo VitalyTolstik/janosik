@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { ActorType } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
 
@@ -498,7 +499,7 @@ export class AccountDeletionService {
 
     for (const cardId of affectedCards) {
       const live = await this.prisma.attachment.count({
-        where: { cardId, deletedAt: null, isInline: false },
+        where: { cardId, ...CARD_ATTACHMENT_WHERE },
       });
       await this.prisma.card.updateMany({
         where: { id: cardId },

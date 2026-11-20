@@ -161,10 +161,12 @@ function LookupStatus({
   lookup,
   facet,
   boardId,
+  hasPinnedRows = false,
 }: {
   lookup: ReturnType<typeof useFilterOptions>;
   facet: LookupFacet;
   boardId: string | null;
+  hasPinnedRows?: boolean;
 }) {
   const t = useAdminT();
   if (lookup.error) {
@@ -184,9 +186,9 @@ function LookupStatus({
   }
   const message = lookup.loading
     ? "admin.filters.loading"
-    : !lookup.data?.items.length
+    : !lookup.data?.items.length && !hasPinnedRows
       ? "admin.filters.noOptions"
-      : lookup.data.hasMore
+      : lookup.data?.hasMore
         ? facet.key === "columnId" && boardId === null
           ? "admin.filters.narrowColumn"
           : "admin.filters.refineSearch"
@@ -365,9 +367,12 @@ function MultiLookupPicker({
             options.find((item) => item.id === id) ??
             pinned.data?.items.find((item) => item.id === id);
           const checked = selected.includes(id);
+          const fallbackLabel = pinned.loading
+            ? t("admin.filters.loading")
+            : t(`admin.filters.unknown.${key}`);
           const fallback =
-            checked && id !== exactId
-              ? `${t(`admin.filters.unknown.${key}`)} · ${optionIds(id)}`
+            checked && (pinned.loading || id !== exactId)
+              ? `${fallbackLabel} · ${optionIds(id)}`
               : t("admin.filters.useId", { id });
           return (
             <ChoiceCheckbox
@@ -404,7 +409,15 @@ function MultiLookupPicker({
           {t("admin.filters.maxValues", { count: max })}
         </p>
       ) : null}
-      <LookupStatus lookup={lookup} facet={facet} boardId={draft.boardId} />
+      <LookupStatus
+        lookup={lookup}
+        facet={facet}
+        boardId={draft.boardId}
+        hasPinnedRows={
+          selected.length > 0 ||
+          (key === "assigneeId" && draft.unassigned === true)
+        }
+      />
     </>
   );
 }

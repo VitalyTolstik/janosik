@@ -324,4 +324,42 @@ describe("Admin cards full facets", () => {
       "old",
     ]);
   });
+
+  it("excludes surviving detached description media from the badge after account deletion", async () => {
+    const cardId = "at-now";
+    const uploader = await prisma.user.create({
+      data: { email: "deleted-uploader@example.com", passwordHash: "unused" },
+    });
+    const attachment = await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId: BOARD,
+        uploadedById: uploader.id,
+        fileName: "account-deletion-file.txt",
+        storedName: "account-deletion-file",
+        mimeType: "text/plain",
+        sizeBytes: 12,
+      },
+    });
+    await prisma.card.update({
+      where: { id: cardId },
+      data: { attachmentCount: 1 },
+    });
+    await expectBoth(`cardId=${cardId}&hasAttachments=true`, [cardId]);
+
+    await api()
+      .delete(`/api/v1/admin/users/${uploader.id}`)
+      .set("Authorization", authorization())
+      .expect(200);
+
+    expect(
+      await prisma.attachment.findUnique({ where: { id: attachment.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.attachment.findUnique({ where: { id: "detached-only" } }),
+    ).toMatchObject({ cardId, descriptionDetached: true, deletedAt: null });
+    const card = await prisma.card.findUniqueOrThrow({ where: { id: cardId } });
+    expect(card.attachmentCount).toBe(0);
+    await expectBoth(`cardId=${cardId}&hasAttachments=false`, [cardId]);
+  });
 });

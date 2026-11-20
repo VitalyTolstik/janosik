@@ -1372,7 +1372,7 @@ const en = {
   "admin.filters.unsupported":
     "This list does not support the filter “{facet}”.",
   "admin.filters.removeUnsupported": "Remove filter: {facet}",
-  "admin.filters.results": "Filters applied · {total} results",
+  "admin.filters.results": "Filters applied · Results: {total}",
   "admin.filters.total": "Results: {total}",
   "admin.filters.noMatches": "No cards match these filters.",
   "admin.filters.emptyPage": "There are no cards on this page.",
@@ -2849,7 +2849,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.filters.removeConflict": "Устранить конфликт: {value}",
   "admin.filters.unsupported": "Этот список не поддерживает фильтр «{facet}».",
   "admin.filters.removeUnsupported": "Удалить фильтр: {facet}",
-  "admin.filters.results": "Фильтры применены · найдено {total}",
+  "admin.filters.results": "Фильтры применены · Результатов: {total}",
   "admin.filters.total": "Результатов: {total}",
   "admin.filters.noMatches": "Нет карточек, соответствующих этим фильтрам.",
   "admin.filters.emptyPage": "На этой странице нет карточек.",

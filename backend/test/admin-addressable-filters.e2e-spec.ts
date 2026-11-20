@@ -23,7 +23,7 @@ describe("Admin addressable filters (e2e)", () => {
   let prisma: PrismaService;
   let adminToken: string;
   let operatorToken: string;
-  let userId: string;
+  const userId = "filters-user";
 
   const server = () => request(app.getHttpServer());
   const at = (offset: number) => Date.UTC(2026, 0, 1) + offset * 1000;
@@ -77,10 +77,9 @@ describe("Admin addressable filters (e2e)", () => {
         .expect(200)
     ).body.accessToken;
 
-    const user = await prisma.user.create({
-      data: { email: USER_EMAIL, passwordHash: "unused" },
+    await prisma.user.create({
+      data: { id: userId, email: USER_EMAIL, passwordHash: "unused" },
     });
-    userId = user.id;
 
     for (const side of ["a", "b"] as const) {
       const boardId = `board-${side}`;
@@ -133,6 +132,11 @@ describe("Admin addressable filters (e2e)", () => {
           position: 0,
           archivedAt,
           deletedAt,
+          createdAt: new Date(at(columnId === "col-b" ? 2 : 1)),
+          attachmentCount: id === "card-a-1" || id === "card-b-1" ? 1 : 0,
+          ...(id === "card-a-1"
+            ? { assigneeId: userId, priority: "high", dueDate: new Date(1) }
+            : {}),
         },
       });
     }
@@ -563,6 +567,19 @@ describe("Admin addressable filters (e2e)", () => {
     ["cards", "columnId=col-a", allCardsA],
     ["cards", "labelId=label-a", ["card-a-1"]],
     ["cards", "cardId=card-a-1", ["card-a-1"]],
+    ["cards", `assigneeId=${userId}`, ["card-a-1"]],
+    ["cards", "boardId=board-a&unassigned=true", allCardsA.slice(1)],
+    ["cards", "priority=high", ["card-a-1"]],
+    ["cards", "due=overdue", ["card-a-1"]],
+    ["cards", "hasAttachments=true", ["card-a-1", "card-b-1"]],
+    [
+      "cards",
+      "labelId=label-a&labelId=label-b&labelMatch=any",
+      ["card-a-1", "card-b-1"],
+    ],
+    ["cards", "labelId=label-a&labelId=label-b&labelMatch=all", []],
+    ["cards", `from=${at(2)}`, ["card-b-1"]],
+    ["cards", `to=${at(1)}`, allCardsA],
     ["commands", "boardId=board-a", ["command-a-1"]],
     ["commands", "columnId=col-a", ["command-a-1"]],
     ["commands", "cardId=card-a-1", ["command-a-1"]],
