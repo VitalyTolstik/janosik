@@ -2,8 +2,8 @@
 
 **Status:** planned
 
-**Revision:** 7 (2026-11-19) — announcements UI alias normalization and the
-non-blocking notes are addressed; see the resolved decisions in §14.
+**Revision:** 8 (2026-11-20) — records the TASK-181.4 moderation filters and
+their performance evidence.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -305,7 +305,7 @@ Current structure: **Comments** and **Attachments** tabs.
 | --- | --- | --- | --- |
 | Board | `boardId` (single) | Existing; board counter link | 181.4 |
 | Card | `cardId` (single) | Exact card thread | 181.4 |
-| Author | `authorId` (repeated) | Find one user's comments across cards | 181.4 |
+| Author | `authorId` (single) | Find one user's comments across cards | 181.4 |
 | Kind | `kind` (repeated: note/status/question/blocker/evidence/handoff) | Triage blockers/questions; TASK-177.11 uses the same enum in the board UI | 181.4 |
 | Status | `status=active\|deleted` | Existing | existing |
 | Period | `period` over `createdAt` | Recent moderation window; 181.4 adds `periods: true` (backend `from`/`to` already exists) | 181.4 |
@@ -321,8 +321,8 @@ support value.
 | --- | --- | --- | --- |
 | Board | `boardId` (single) | Existing; board counter link | 181.4 |
 | Card | `cardId` (single) | Exact card files | 181.4 |
-| Uploader | `uploadedById` (repeated) | Find one user's uploads; abuse/investigation | 181.4 |
-| Type | `mime=image\|video\|audio\|pdf\|document\|other` | Support for file classes; type is visible in the row | 181.4 |
+| Uploader | `uploadedById` (single) | Find one user's uploads; abuse/investigation | 181.4 |
+| Type | `mime=image\|video\|pdf\|document\|other` | Support for file classes; type is visible in the row | 181.4 |
 | Status | `status=active\|deleted` | Existing | existing |
 | Period | `period` over `createdAt` | Recent uploads / retention window; 181.4 adds `periods: true` and `where.createdAt = dateRange(query)` | 181.4 |
 | Transcode | `transcode=pending\|failed\|done\|none` | Find stuck/failed video encodes | 181.4 |
@@ -335,6 +335,21 @@ so they can be moderated/downloaded; there is no inline filter in v1. The card
 `descriptionDetached=false`), so an inline-only card can appear here while its
 `No card attachments` chip is active. This is documented and tested, not a
 counter mismatch.
+
+Both moderation lists default to **All**, which includes live and soft-deleted
+rows. **Active** and **Deleted** use the comment or attachment's own
+`deletedAt`. A live row under an archived or soft-deleted board/card still
+appears in Active. A valid filter combination with no rows shows a tab-specific
+empty message and a clear-filters action. Period bounds are inclusive and
+apply to each row's `createdAt`.
+
+MIME matching is case-insensitive against the stored `mimeType`. Images and
+videos match their MIME prefixes, PDF matches `application/pdf`, and Documents
+covers `text/*`, RTF, and legacy and Open XML Office formats. Other covers
+the remaining types, including JSON, audio and archives. Video processing
+matches the stored `transcodeStatus`. **No transcoding** covers non-video
+uploads and videos uploaded with transcoding disabled. Later feature flag
+changes do not change those rows' state.
 
 ### 5.5 Audit & activity hub
 
@@ -452,29 +467,29 @@ Clear search and filters.
 `search`, `limit` and `offset` are accepted by every generic list. `status`
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
-surface. In 181.1 this is the legacy structural and command-correlation
-column below, with existing date ranges tracked separately. **Offered**
-records facets planned for the picker. A picker can expose a facet once its
-owning wave implements it. Legacy deep links keep their existing behavior
-regardless of picker visibility.
+surface. The matrix starts from the 181.1 legacy scopes and includes the
+181.3 card facets and 181.4 moderation additions. **Offered** records facets
+planned for the picker.
+A picker can expose a facet once its owning wave implements it. Legacy deep
+links keep their existing behavior regardless of picker visibility.
 
 The UI parser and request builder use only implemented facets. A hand-edited
 deferred facet is omitted from the list request and a direct API call returns
 400 `unsupported_filter` until its owning wave enables it. The lookup endpoint
 can resolve options for later waves independently of list filtering.
 
-| Entity | Implemented in 181.1 (legacy) | Deferred until owning wave | Planned or existing menu/header |
+| Entity | Implemented | Deferred until owning wave | Planned or existing menu/header |
 | --- | --- | --- | --- |
 | users | — | `verified`, `from`/`to` (period) | status, verified, period |
 | boards | `boardId`, `columnId`, `cardId`, `labelId` | `adminMemberId` | status, adminMemberId |
-| cards | `boardId`, `columnId`, `labelId` (single), `cardId` | repeated `labelId` + `labelMatch`, `assigneeId`, `unassigned`, `priority`, `due`, `hasAttachments`, `from`/`to` | all except `cardId` in the menu; period header; cardId advanced paste/URL |
+| cards | `boardId`, `columnId`, `cardId`, `labelId` (repeatable), `labelMatch`, `assigneeId`, `unassigned`, `priority`, `due`, `hasAttachments`, `from`/`to` | — | board, column, label (any/all), assignee, unassigned, priority, due, has attachments, period header, `cardId` advanced paste/URL |
 | columns | `boardId`, `columnId`, `cardId`, `labelId` | — | board, status |
 | labels | `boardId`, `labelId`, `cardId`, `columnId` | — | board, status |
 | checklists | `boardId`, `columnId`, `cardId`, `labelId` | — | board, card, status |
 | checklistItems | `boardId`, `columnId`, `cardId`, `labelId` | — (no tab v1) | none |
 | cardLinks | `boardId`, `cardId` | `type` (static `CARD_LINK_TYPES`) | board, card, type, status |
-| comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to` | `authorId`, `kind` | board, card, author, kind, period, status |
-| attachments | `boardId`, `cardId`, `columnId`, `labelId` | `uploadedById`, `mime`, `transcode`, `from`/`to` | board, card, uploader, mime, transcode, period, status |
+| comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to`, `authorId`, `kind` | — | board, card, author, kind, period, status |
+| attachments | `boardId`, `cardId`, `columnId`, `labelId`, `uploadedById`, `mime`, `transcode`, `from`/`to` | — | board, card, uploader, mime, transcode, period, status |
 | activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |
 | commands | `boardId`, `columnId`, `cardId`, `commandId` (176.10), `from`/`to` | `actorId`, `type` | board, actor, type, card, column, commandId, period |
 | audit | `commandId` (176.10), `from`/`to` | `adminId`, `action`, `targetType`, `targetId` | audit actor, action, targetType, targetId, commandId, period |
@@ -486,10 +501,9 @@ can resolve options for later waves independently of list filtering.
 | cardLabels | `boardId`, `columnId`, `labelId`, `cardId` | — | none (no tab) |
 | admins | owner-only custom endpoint, no generic filter | — | none |
 
-Every implemented pair has a table-driven e2e case. Cards use legacy
-single-label equality in 181.1 and 181.2. Repeated `labelId` and any
-`labelMatch` return 400 `unsupported_filter` on cards until 181.3. Other
-legacy lists retain a single-value `labelId`.
+Every implemented pair has a table-driven e2e case. Since 181.3, cards accept
+repeated `labelId` values with `labelMatch=any` (the default) or
+`labelMatch=all`. Other legacy lists retain a single-value `labelId`.
 
 ## 6. UX specification
 
@@ -530,8 +544,9 @@ badge.
   kind/type/action/target). Status and period stay in the header; they are never
   duplicated in the popover.
 - Each facet opens a searchable picker:
-  - single-value: board, column, card, checklist, target id, board admin member;
-  - multi-value: labels, assignees, authors, uploaders, actors, types, actions,
+  - single-value: board, column, card, checklist, author, uploader, target id,
+    board admin member;
+  - multi-value: labels, assignees, actors, types, actions,
     target types, priorities, kinds.
 - Single-value pickers apply on selection and close. Multi-value pickers keep a
   local draft; **Apply** commits the whole facet at once, **Clear** empties the
@@ -586,7 +601,7 @@ chip model; they are not free-text pickers.
 | Attachments | radio group: Any / Has card attachments / No card attachments | `hasAttachments=true\|false` | `Has card attachments` / `No card attachments` | `Card attachment filter` / `Remove filter: Has card attachments` |
 | Verified | radio group: Any / Verified / Unverified | `verified=true\|false` | `Verified` / `Unverified` | `Email verification filter` / `Remove filter: Verified` |
 | Due | radio group: Any / Overdue / Due in 24 hours / No due date | `due=overdue\|soon\|none` | `Overdue` / `Due in 24 hours` / `No due date` | `Due date filter` / `Remove filter: Overdue` |
-| MIME type | radio group: Any / Images / Videos / Audio / PDF / Documents / Other | `mime=image\|video\|audio\|pdf\|document\|other` | localized type label | `File type filter` / `Remove filter: Images` |
+| MIME type | radio group: Any / Images / Videos / PDF / Documents / Other | `mime=image\|video\|pdf\|document\|other` | localized type label | `File type filter` / `Remove filter: Images` |
 | Transcode | radio group: Any / Pending / Failed / Done / No transcoding | `transcode=pending\|failed\|done\|none` | localized state label (`No transcoding` for `none`) | `Video processing filter` / `Remove filter: Failed` |
 
 - “Any” is the unset state: selecting it removes the param and the chip. There
@@ -615,7 +630,7 @@ Cancel and Escape for both draft pickers, plus URL/selection-reset behavior.
 Exact RU chip copy (use one noun form per state, no plural engine):
 `Без исполнителя`, `С файлами карточки` / `Без файлов карточки`, `Подтверждён` /
 `Не подтверждён`, `Просрочено` / `Срок в течение 24 часов` / `Без срока`,
-`Изображения` / `Видео` / `Аудио` / `PDF` / `Документы` / `Другое`,
+`Изображения` / `Видео` / `PDF` / `Документы` / `Другое`,
 `Обработка: в очереди` / `Обработка: ошибка` / `Обработка: готово` /
 `Без перекодирования`, and the label-match chip `Совпадение меток: все`. RU tests assert
 the same add/remove/aria behavior, not only the English strings.
@@ -871,10 +886,10 @@ query params.
 | `hasAttachments` | `true\|false` | cards | `attachmentCount > 0` / `= 0`; counter = live, non-inline files with `descriptionDetached=false`. Inline and `descriptionDetached=true` (detached/hidden) files are excluded |
 | `adminMemberId` | single user id | boards | `members.some` with role ADMIN and acceptedAt not null; not the displayed first-admin label |
 | `verified` | `true\|false` | users | `emailVerifiedAt` null/not |
-| `authorId` | repeated user id (max 20) | comments | OR |
+| `authorId` | single user id | comments | Exact author |
 | `kind` | repeated enum (max 6) | comments | note/status/question/blocker/evidence/handoff |
-| `uploadedById` | repeated user id (max 20) | attachments | OR |
-| `mime` | single enum | attachments | image/video/audio/pdf/document/other |
+| `uploadedById` | single user id | attachments | Exact uploader |
+| `mime` | single enum | attachments | image/video/pdf/document/other |
 | `transcode` | single enum | attachments | none/pending/done/failed; `none` also covers videos when transcoding is disabled |
 | `actorId` | repeated user id (max 20) | commands, activity | OR |
 | `type` | repeated exact code (max 20) | commands, activity, card links | OR; command/activity options from server distinct values; card-link values are the static `CARD_LINK_TYPES` |
@@ -884,15 +899,14 @@ query params.
 | `targetId` | single string ≤100 | audit | Exact; may be `singleton` for settings |
 | `commandId` | single id | commands, audit | Existing 176.10 correlation (only after that branch merges) |
 
-`labelId` (cards), `assigneeId`, `authorId`, `uploadedById`, `actorId`,
-`adminId`, `type`, `action`, `targetType` and `kind` are arrays on the wire. A
-single value is accepted and normalized to a one-element array once the
-facet ships. `labelId` stays single-valued on cards through 181.2 and on
-all other legacy lists.
+`labelId` (cards), `assigneeId`, `actorId`, `adminId`, `type`, `action`,
+`targetType` and `kind` are arrays on the wire. A single value is accepted
+and normalized to a one-element array once the facet ships. `labelId` stays
+single-valued on cards through 181.2 and on all other legacy lists.
 
-Structural params (`boardId`, `columnId`, `cardId`, `checklistId`,
-`adminMemberId`, `commandId`, `targetId`) stay single-valued; a repeated value
-is a validation error rather than first-value-wins.
+`boardId`, `columnId`, `cardId`, `checklistId`, `adminMemberId`, `authorId`,
+`uploadedById`, `commandId` and `targetId` accept one value. Repeated values
+return 400.
 
 ### 7.2 Combination semantics
 
@@ -1108,6 +1122,9 @@ Behavior:
   and single-label predicates on cards. Audit actor/action and their index
   decisions belong to 181.6. Each owning wave measures its shipped predicates
   before enabling them. The full 25k qualification remains part of rollout.
+- [TASK-181.4 benchmark evidence](./TASK-181.4-moderation-perf.md) records the
+  moderation predicates on the 5k gate fixture, including period and combined
+  cases and their query plans.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -1297,10 +1314,9 @@ Minimal, additive, but update every producer:
 - `mime`:
   - image: `startsWith("image/")`
   - video: `startsWith("video/")`
-  - audio: `startsWith("audio/")`
   - pdf: `application/pdf`
-  - document: `text/*` plus office/CSV/JSON types
-  - other: none of the above
+  - document: `text/*`, RTF, and legacy and Open XML Office formats
+  - other: the remaining types, including JSON, audio and archives
   Use `OR` branches; test each family and an unknown type.
 - `transcode` exact enum.
 - Audit `action`/`targetType` exact; `targetId` exact; `adminId` `in`.
@@ -1475,7 +1491,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Attachments can be narrowed to one uploader, one MIME family, or failed
   transcodes; image/video/pdf/document/other tests cover each branch.
 - Attachments tab shows `Inline`/`Detached` badges; an inline-only card is
-  visible here while its `No card attachments` card filter remains false, tested
+  visible here while the `No card attachments` card filter matches it, tested
   against the counter.
 - `transcode=none` matches non-video files and videos when the transcode flag is
   disabled; the test covers both `No transcoding` states.
@@ -1485,6 +1501,13 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   author/kind; switching back does not resurrect stale values.
 - Operators can use every filter; no owner-only link is introduced.
 - Empty states per tab; deleted/archived semantics documented.
+
+**Open follow-ups**
+
+- CardLinks has a pre-existing isolation flake. The full UI suite passes.
+- Revisit checkbox groups versus listbox interaction for multi-value pickers.
+- Revisit behavior when a requested page is out of range.
+- Consolidate global card navigation helpers in a later change.
 
 ### 181.5 — Content lists (P2)
 
@@ -1716,16 +1739,18 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 ## 11. Rollout
 
-1. Merge **181.1** first. The implemented set in §5.8 preserves legacy
+1. Merge **181.1** first. The initial implemented set in §5.8 preserves legacy
    deep links. The UI omits deferred inputs from requests and direct API calls
    return 400 `unsupported_filter`. The offered set records the planned UI.
 2. Merge **181.2** (cards picker, lookup client and cache) and **181.3**
    (cards facets, multi-label and label matching). Each wave enables the
    corresponding implemented entries alongside the predicates and tests.
 3. Merge **181.4–181.6** independently after 181.2. Each hub wave promotes
-   its implemented entries only when the corresponding predicates and
-   performance checks are ready.
-4. Merge **181.7** docs/acceptance last.
+   its entries with the corresponding predicates and measured performance
+   evidence. 181.4 owns the comments and attachments entries and their
+   [5k pre-rollout exception](./TASK-181.4-moderation-perf.md#pre-rollout-exception).
+4. Merge **181.7** docs/acceptance last. The full 25k qualification remains
+   part of rollout. The moderation qualification must pass before rollout.
 5. The admin UI and API ship atomically from the same image. Starting with
    the filter bar in 181.2, an unexpected `unsupported_filter` response for an
    active chip shows a blocking error with a Remove action.
@@ -1742,7 +1767,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
      there plus `listAttachments` in `admin-entities.service.ts`; 181.5 owns
      `listUsers`/`listBoards` plus the content lists in `admin-entities`;
      181.6 owns `listCommands`/`listAudit` plus `listActivity`; 181.4 adds the
-     `AdminCommentRowDto.kind` producer change after 181.1; 181.7 owns docs.
+     `AdminCommentRowDto.kind` producer change after 181.1. Each wave updates
+     its own entries and evidence. 181.7 owns the final docs and acceptance.
      Serialize edits to `admin.service.ts`/`admin-entities.service.ts` by wave
      and rebase each subtask; do not edit `EntityPage.tsx`/`HubTabs.tsx` in
      parallel.

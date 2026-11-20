@@ -31,6 +31,97 @@ const AUDIT = {
   order: sql`a."createdAt" DESC`,
 };
 
+const COMMENTS = {
+  from: sql`"Comment" t`,
+  pageAlias: sql`t`,
+  displayJoins: sql`JOIN "Card" c ON c.id = t."cardId" JOIN "User" u ON u.id = t."authorId"`,
+  select: sql`t.id, t."cardId", t."authorId", t.text, t.kind, t."createdAt",
+    t."updatedAt", t."editedAt", t."deletedAt", c.title, u.email`,
+  order: sql`t."createdAt" DESC`,
+};
+
+const ATTACHMENTS = {
+  from: sql`"Attachment" t`,
+  pageAlias: sql`t`,
+  displayJoins: sql`JOIN "Card" c ON c.id = t."cardId"
+    JOIN "Column" co ON co.id = c."columnId" JOIN "Board" b ON b.id = co."boardId"
+    JOIN "User" u ON u.id = t."uploadedById"`,
+  select: sql`t.id, t."cardId", t."boardId", t."uploadedById", t."fileName",
+    t."storedName", t."mimeType", t."sizeBytes", t."transcodeStatus",
+    t."isInline", t."descriptionDetached", t."createdAt", t."deletedAt",
+    c.title AS card_title, b.title AS board_title, u.email`,
+  order: sql`t."createdAt" DESC`,
+};
+
+function moderationCases(preset, referenceTime) {
+  const dayAgo = new Date(referenceTime.getTime() - 86_400_000);
+  const period = sql`t."createdAt" >= ${dayAgo}`;
+  const boundedPeriod = sql`${period} AND t."createdAt" <= ${referenceTime}`;
+  const author = sql`t."authorId" = ${perfId(preset, "user", 0)}`;
+  const kind = sql`t.kind IN ('blocker', 'question')`;
+  // Fixture row 20 is a pending video, uploaded by user 22.
+  const uploader = sql`t."uploadedById" = ${perfId(preset, "user", 22)}`;
+  const image = sql`t."mimeType" ILIKE 'image/%'`;
+  const video = sql`t."mimeType" ILIKE 'video/%'`;
+  const pdf = sql`t."mimeType" ILIKE 'application/pdf'`;
+  const document = sql`(t."mimeType" ILIKE 'text/%'
+    OR LOWER(t."mimeType") IN ('application/rtf', 'application/msword',
+      'application/vnd.ms-excel', 'application/vnd.ms-powerpoint')
+    OR t."mimeType" ILIKE 'application/vnd.openxmlformats-officedocument.%')`;
+  const pending = sql`t."transcodeStatus" = 'pending'`;
+
+  return [
+    [
+      "comments",
+      COMMENTS,
+      [
+        ["author", author],
+        ["kind", sql`t.kind IN ('blocker')`],
+        ["kind-multiple", kind],
+        ["author-period", sql`${author} AND ${period}`],
+        ["kind-period", sql`${kind} AND ${period}`],
+        ["combined", sql`${author} AND ${kind} AND ${boundedPeriod}`],
+      ],
+    ],
+    [
+      "attachments",
+      ATTACHMENTS,
+      [
+        ["uploader", uploader],
+        ["mime", image],
+        ["mime-video", video],
+        ["mime-pdf", pdf],
+        ["mime-document", document],
+        [
+          "mime-other",
+          sql`NOT (${image} OR ${video} OR ${pdf} OR ${document})`,
+        ],
+        ["transcode", pending],
+        ["transcode-failed", sql`t."transcodeStatus" = 'failed'`],
+        ["transcode-done", sql`t."transcodeStatus" = 'done'`],
+        ["transcode-none", sql`t."transcodeStatus" = 'none'`],
+        ["uploader-period", sql`${uploader} AND ${period}`],
+        ["mime-period", sql`${document} AND ${period}`],
+        ["transcode-period", sql`${pending} AND ${period}`],
+        [
+          "combined",
+          sql`${uploader} AND ${video} AND ${pending} AND ${boundedPeriod}`,
+        ],
+      ],
+    ],
+  ].flatMap(([list, model, facets]) =>
+    [["unfiltered", unfiltered], ["period", period], ...facets].map(
+      ([facet, predicate]) => ({
+        list,
+        model,
+        facet,
+        predicate,
+        extended: true,
+      }),
+    ),
+  );
+}
+
 function facetCases(preset, referenceTime) {
   const id = (model, index) => perfId(preset, model, index);
   const cases = [
@@ -127,7 +218,8 @@ function facetCases(preset, referenceTime) {
     extended: true,
   }));
 
-  if (preset !== "full") return [...cases, ...additionalCards];
+  const moderation = moderationCases(preset, referenceTime);
+  if (preset !== "full") return [...cases, ...additionalCards, ...moderation];
   const additional = [
     {
       list: "cards",
@@ -152,35 +244,6 @@ function facetCases(preset, referenceTime) {
         order: sql`t."createdAt" DESC`,
       },
       [["type", sql`t.type IN ('blocks')`]],
-    ],
-    [
-      "comments",
-      {
-        from: sql`"Comment" t`,
-        select: sql`t.*`,
-        order: sql`t."createdAt" DESC`,
-      },
-      [
-        ["author", sql`t."authorId" IN (${id("user", 0)})`],
-        ["kind", sql`t.kind IN ('blocker')`],
-      ],
-    ],
-    [
-      "attachments",
-      {
-        from: sql`"Attachment" t`,
-        select: sql`t.*`,
-        order: sql`t."createdAt" DESC`,
-      },
-      [
-        ["uploader", sql`t."uploadedById" IN (${id("user", 0)})`],
-        ["mime", sql`t."mimeType" LIKE 'image/%'`],
-        ["transcode", sql`t."transcodeStatus" = 'pending'`],
-        [
-          "period",
-          sql`t."createdAt" >= ${referenceTime} - INTERVAL '24 hours'`,
-        ],
-      ],
     ],
     [
       "commands",
@@ -239,15 +302,20 @@ function facetCases(preset, referenceTime) {
       additional.push({ list, facet, model, predicate, extended: true });
     }
   }
-  return [...cases, ...additionalCards, ...additional];
+  return [...cases, ...additionalCards, ...moderation, ...additional];
 }
 
 function statements({ model, predicate }, pageSize) {
-  return [
-    sql`SELECT ${model.select} FROM ${model.from} ${model.displayJoins ?? Prisma.empty}
-      WHERE ${predicate} ORDER BY ${model.order} LIMIT ${pageSize} OFFSET 0`,
-    sql`SELECT COUNT(*) FROM ${model.from} WHERE ${predicate}`,
-  ];
+  const order = sql`ORDER BY ${model.order}`;
+  const window = sql`LIMIT ${pageSize} OFFSET 0`;
+  // Prisma fetches the moderation page before loading its display relations.
+  const page = model.pageAlias
+    ? sql`SELECT ${model.select} FROM (
+        SELECT ${model.pageAlias}.* FROM ${model.from} WHERE ${predicate} ${order} ${window}
+      ) ${model.pageAlias} ${model.displayJoins} ${order}`
+    : sql`SELECT ${model.select} FROM ${model.from} ${model.displayJoins ?? Prisma.empty}
+        WHERE ${predicate} ${order} ${window}`;
+  return [page, sql`SELECT COUNT(*) FROM ${model.from} WHERE ${predicate}`];
 }
 
 async function timed(db, queries) {
@@ -313,6 +381,7 @@ async function measure(db, entry, pageSize, samples) {
     warmP50: percentile(warm, 0.5),
     warmP95: percentile(warm, 0.95),
     largeSeqScans: Object.values(plans).flatMap(largeSeqScans),
+    queries: queries.map(({ text, values }) => ({ text, values })),
     plans,
   };
 }
@@ -323,37 +392,63 @@ async function main() {
       preset: { type: "string", default: "gate" },
       output: { type: "string" },
       cards: { type: "boolean" },
+      moderation: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
   if (values.help) {
     console.log(
-      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards] [--output timings.json]",
+      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards|--moderation] [--output timings.json]",
     );
     return;
   }
-  const { preset, output, cards: cardsOnly } = values;
+  const {
+    preset,
+    output,
+    cards: cardsOnly,
+    moderation: moderationOnly,
+  } = values;
   if (!Object.hasOwn(PRESETS, preset))
     throw new Error("Use --preset small, gate, or full.");
+  if (cardsOnly && moderationOnly)
+    throw new Error("Choose one benchmark scope.");
   const db = perfDatabase();
   const rows = perfDataset(preset);
   try {
-    const [cards, firstCard] = await Promise.all([
+    const [cards, firstCard, [{ version }]] = await Promise.all([
       db.card.count(),
       db.card.findUnique({
         where: { id: perfId(preset, "card", 0) },
         select: { updatedAt: true },
       }),
+      db.$queryRaw`SELECT current_setting('server_version') AS version`,
     ]);
     if (cards !== rows.cards || !firstCard) {
       throw new Error(
         `Expected the ${preset} fixture in a dedicated database. Run seed-admin-filters.mjs with the matching preset.`,
       );
     }
+    if (!cardsOnly) {
+      const [comments, attachments] = await Promise.all([
+        db.comment.count(),
+        db.attachment.count(),
+      ]);
+      if (comments !== rows.comments || attachments !== rows.attachments) {
+        throw new Error(
+          "Expected the matching moderation fixture in a dedicated database.",
+        );
+      }
+    }
     const pageSizes = preset === "small" ? [25] : [25, 50, 100];
     const results = [];
     for (const entry of facetCases(preset, firstCard.updatedAt)) {
       if (cardsOnly && entry.list !== "cards") continue;
+      if (
+        moderationOnly &&
+        entry.list !== "comments" &&
+        entry.list !== "attachments"
+      )
+        continue;
       const samples =
         preset === "small"
           ? { cold: 1, warm: 3 }
@@ -421,7 +516,7 @@ async function main() {
     if (output) {
       await writeFile(
         output,
-        `${JSON.stringify({ preset, rows, results: summary }, null, 2)}\n`,
+        `${JSON.stringify({ preset, version, referenceTime: firstCard.updatedAt, rows, results: summary }, null, 2)}\n`,
       );
       console.log(`Saved samples and EXPLAIN plans to ${output}`);
     } else {

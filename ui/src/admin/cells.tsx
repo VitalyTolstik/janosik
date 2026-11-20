@@ -268,6 +268,7 @@ export function SizeCell({ bytes }: { bytes: number }) {
 
 /** TASK-50 video encode state — the "ужиматор" lifecycle chip. */
 export function TranscodeBadge({ status }: { status: string }) {
+  const t = useAdminT();
   if (status === "none")
     return <span className="text-muted-foreground">—</span>;
   const tone =
@@ -284,7 +285,9 @@ export function TranscodeBadge({ status }: { status: string }) {
         tone,
       )}
     >
-      {status}
+      {status === "pending" || status === "done" || status === "failed"
+        ? t(`admin.filters.transcode.${status}`)
+        : status}
     </span>
   );
 }

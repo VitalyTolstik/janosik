@@ -67,7 +67,7 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "comments",
-      scoped,
+      `${scoped} authorId kind`,
       "boardId cardId authorId kind",
       "active deleted",
       true,
@@ -75,11 +75,11 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "attachments",
-      scoped,
+      `${scoped} uploadedById mime transcode`,
       "boardId cardId uploadedById mime transcode",
       "active deleted",
-      false,
-      false,
+      true,
+      true,
     ],
     ["activity", scoped, "boardId cardId actorId type", "", true, true],
     [
@@ -157,12 +157,12 @@ describe("admin filter values", () => {
 
   it("counts unique values towards the total and encoded length limits", () => {
     const assigneeId = Array.from({ length: 20 }, (_, i) => `user-${i}`);
-    const authorId = Array.from({ length: 12 }, (_, i) => `user-${i}`);
+    const actorId = Array.from({ length: 12 }, (_, i) => `user-${i}`);
     expect(
       adminFilterLimitError(
         adminFilterEntries({
           assigneeId: [...assigneeId, ...assigneeId],
-          authorId,
+          actorId,
         }),
       ),
     ).toBeUndefined();
@@ -170,7 +170,7 @@ describe("admin filter values", () => {
       adminFilterLimitError(
         adminFilterEntries({
           assigneeId,
-          authorId: [...authorId, "user-extra"],
+          actorId: [...actorId, "user-extra"],
         }),
       ),
     ).toContain("32");
@@ -182,7 +182,7 @@ describe("admin filter values", () => {
       adminFilterLimitError(
         adminFilterEntries({
           assigneeId: longIds,
-          authorId: longIds.slice(0, 12),
+          actorId: longIds.slice(0, 12),
         }),
       ),
     ).toContain("too long");

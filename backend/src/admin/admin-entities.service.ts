@@ -790,7 +790,16 @@ export class AdminEntitiesService {
   async listAttachments(
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminAttachmentRowDto>> {
-    const where: Prisma.AttachmentWhereInput = {};
+    const where: Prisma.AttachmentWhereInput = {
+      uploadedById: query.uploadedById,
+      transcodeStatus: query.transcode,
+      createdAt: this.admin.dateRange(query),
+    };
+    if (query.mime === "other") {
+      where.NOT = { OR: Object.values(ATTACHMENT_MIME_FAMILIES).flat() };
+    } else if (query.mime) {
+      where.AND = { OR: ATTACHMENT_MIME_FAMILIES[query.mime] };
+    }
     if (query.boardId) where.boardId = query.boardId;
     if (query.cardId) where.cardId = query.cardId;
     if (query.columnId || query.singleLabelId) {
@@ -823,42 +832,13 @@ export class AdminEntitiesService {
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
-        select: {
-          id: true,
-          fileName: true,
-          storedName: true,
-          mimeType: true,
-          sizeBytes: true,
-          transcodeStatus: true,
-          deletedAt: true,
-          createdAt: true,
-          cardId: true,
-          boardId: true,
-          uploadedById: true,
-          card: { select: { title: true } },
-          uploadedBy: { select: { email: true } },
-        },
+        select: ATTACHMENT_SELECT,
       }),
       this.prisma.attachment.count({ where }),
     ]);
 
     return {
-      items: items.map((file) => ({
-        id: file.id,
-        cardId: file.cardId,
-        cardTitle: file.card.title,
-        boardId: file.boardId,
-        boardTitle: "—",
-        fileName: file.fileName,
-        storedName: file.storedName,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
-        uploadedById: file.uploadedById,
-        uploadedByEmail: file.uploadedBy.email,
-        transcodeStatus: file.transcodeStatus,
-        deletedAt: MS(file.deletedAt),
-        createdAt: file.createdAt.getTime(),
-      })),
+      items: items.map(toAttachmentRow),
       total,
       limit,
       offset,
@@ -1071,18 +1051,7 @@ export class AdminEntitiesService {
           },
           orderBy: { createdAt: "desc" },
           take: 5,
-          select: {
-            id: true,
-            text: true,
-            createdAt: true,
-            updatedAt: true,
-            editedAt: true,
-            deletedAt: true,
-            cardId: true,
-            authorId: true,
-            card: { select: { title: true } },
-            author: { select: { email: true } },
-          },
+          select: COMMENT_SELECT,
         }),
         this.prisma.attachment.findMany({
           where: {
@@ -1094,21 +1063,7 @@ export class AdminEntitiesService {
           },
           orderBy: { createdAt: "desc" },
           take: 4,
-          select: {
-            id: true,
-            fileName: true,
-            storedName: true,
-            mimeType: true,
-            sizeBytes: true,
-            transcodeStatus: true,
-            deletedAt: true,
-            createdAt: true,
-            cardId: true,
-            boardId: true,
-            uploadedById: true,
-            card: { select: { title: true } },
-            uploadedBy: { select: { email: true } },
-          },
+          select: ATTACHMENT_SELECT,
         }),
         this.prisma.label.findMany({
           where: {
@@ -1156,34 +1111,8 @@ export class AdminEntitiesService {
         deletedAt: MS(board.deletedAt),
       })),
       cards: cards.map(toCardRow),
-      comments: comments.map((comment) => ({
-        id: comment.id,
-        cardId: comment.cardId,
-        cardTitle: comment.card.title,
-        authorId: comment.authorId,
-        authorEmail: comment.author.email,
-        text: comment.text,
-        createdAt: comment.createdAt.getTime(),
-        updatedAt: comment.updatedAt.getTime(),
-        editedAt: MS(comment.editedAt),
-        deletedAt: MS(comment.deletedAt),
-      })),
-      attachments: attachments.map((file) => ({
-        id: file.id,
-        cardId: file.cardId,
-        cardTitle: file.card.title,
-        boardId: file.boardId,
-        boardTitle: "—",
-        fileName: file.fileName,
-        storedName: file.storedName,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
-        uploadedById: file.uploadedById,
-        uploadedByEmail: file.uploadedBy.email,
-        transcodeStatus: file.transcodeStatus,
-        deletedAt: MS(file.deletedAt),
-        createdAt: file.createdAt.getTime(),
-      })),
+      comments: comments.map(toCommentRow),
+      attachments: attachments.map(toAttachmentRow),
       labels: labels.map((label) => ({
         id: label.id,
         boardId: label.boardId,
@@ -2159,6 +2088,7 @@ export class AdminEntitiesService {
 type CommentJoin = {
   id: string;
   text: string;
+  kind: string;
   createdAt: Date;
   updatedAt: Date;
   editedAt: Date | null;
@@ -2177,6 +2107,7 @@ function toCommentRow(comment: CommentJoin): AdminCommentRowDto {
     authorId: comment.authorId,
     authorEmail: comment.author.email,
     text: comment.text,
+    kind: comment.kind as AdminCommentRowDto["kind"],
     createdAt: comment.createdAt.getTime(),
     updatedAt: comment.updatedAt.getTime(),
     editedAt: MS(comment.editedAt),
@@ -2187,6 +2118,7 @@ function toCommentRow(comment: CommentJoin): AdminCommentRowDto {
 const COMMENT_SELECT = {
   id: true,
   text: true,
+  kind: true,
   createdAt: true,
   updatedAt: true,
   editedAt: true,
@@ -2197,6 +2129,35 @@ const COMMENT_SELECT = {
   author: { select: { email: true } },
 } satisfies Prisma.CommentSelect;
 
+const ATTACHMENT_MIME_FAMILIES = {
+  image: [{ mimeType: { startsWith: "image/", mode: "insensitive" } }],
+  video: [{ mimeType: { startsWith: "video/", mode: "insensitive" } }],
+  pdf: [{ mimeType: { equals: "application/pdf", mode: "insensitive" } }],
+  document: [
+    { mimeType: { startsWith: "text/", mode: "insensitive" } },
+    {
+      mimeType: {
+        in: [
+          "application/rtf",
+          "application/msword",
+          "application/vnd.ms-excel",
+          "application/vnd.ms-powerpoint",
+        ],
+        mode: "insensitive",
+      },
+    },
+    {
+      mimeType: {
+        startsWith: "application/vnd.openxmlformats-officedocument.",
+        mode: "insensitive",
+      },
+    },
+  ],
+} satisfies Record<
+  Exclude<NonNullable<AdminListQueryDto["mime"]>, "other">,
+  Prisma.AttachmentWhereInput[]
+>;
+
 type AttachmentJoin = {
   id: string;
   fileName: string;
@@ -2204,12 +2165,14 @@ type AttachmentJoin = {
   mimeType: string;
   sizeBytes: number;
   transcodeStatus: string;
+  isInline: boolean;
+  descriptionDetached: boolean;
   deletedAt: Date | null;
   createdAt: Date;
   cardId: string;
   boardId: string;
   uploadedById: string;
-  card: { title: string };
+  card: { title: string; column: { board: { title: string } } };
   uploadedBy: { email: string };
 };
 
@@ -2219,7 +2182,7 @@ function toAttachmentRow(file: AttachmentJoin): AdminAttachmentRowDto {
     cardId: file.cardId,
     cardTitle: file.card.title,
     boardId: file.boardId,
-    boardTitle: "—",
+    boardTitle: file.card.column.board.title,
     fileName: file.fileName,
     storedName: file.storedName,
     mimeType: file.mimeType,
@@ -2227,6 +2190,8 @@ function toAttachmentRow(file: AttachmentJoin): AdminAttachmentRowDto {
     uploadedById: file.uploadedById,
     uploadedByEmail: file.uploadedBy.email,
     transcodeStatus: file.transcodeStatus,
+    isInline: file.isInline,
+    descriptionDetached: file.descriptionDetached,
     deletedAt: MS(file.deletedAt),
     createdAt: file.createdAt.getTime(),
   };
@@ -2239,12 +2204,19 @@ const ATTACHMENT_SELECT = {
   mimeType: true,
   sizeBytes: true,
   transcodeStatus: true,
+  isInline: true,
+  descriptionDetached: true,
   deletedAt: true,
   createdAt: true,
   cardId: true,
   boardId: true,
   uploadedById: true,
-  card: { select: { title: true } },
+  card: {
+    select: {
+      title: true,
+      column: { select: { board: { select: { title: true } } } },
+    },
+  },
   uploadedBy: { select: { email: true } },
 } satisfies Prisma.AttachmentSelect;
 

@@ -10,12 +10,14 @@ import {
 } from "@janosik/shared";
 import { Button } from "@/components/ui/button";
 import type { AdminListFilters } from "../admin-list-query";
-import { useAdminT, type AdminT } from "../admin-i18n";
+import { useAdminT, type AdminMessageKey, type AdminT } from "../admin-i18n";
 import { FilterColorDot } from "./FilterChip";
 import {
   optionIds,
   optionState,
   PRIORITY_CHOICES,
+  KIND_CHOICES,
+  type FilterChoice,
   selectedFilterValues,
   type DraftFacet,
   type LookupFacet,
@@ -99,7 +101,7 @@ function usePickerLookup(facet: LookupFacet, boardId: string | null) {
     q: query,
     limit: ADMIN_FILTER_OPTION_LIMITS.default,
     boardId:
-      facet.key === "boardId" || facet.key === "assigneeId"
+      facet.type === "board" || facet.type === "user"
         ? undefined
         : (boardId ?? undefined),
   });
@@ -240,44 +242,72 @@ export function DraftFacetPicker({
   draft: AdminListFilters;
   onChange: (patch: Partial<AdminListFilters>) => void;
 }) {
-  const t = useAdminT();
-  const [query, setQuery] = useState("");
-  if (facet.key !== "priority") {
+  if ("type" in facet) {
     return (
       <MultiLookupPicker facet={facet} draft={draft} onChange={onChange} />
     );
   }
-  const priorities = draft.priority ?? [];
-  const search = query.trim().toLocaleLowerCase();
-  const chosen = PRIORITY_CHOICES.filter(({ value }) =>
-    priorities.includes(value),
+  return facet.key === "priority" ? (
+    <EnumPicker
+      label={facet.label}
+      choices={PRIORITY_CHOICES}
+      selected={draft.priority ?? []}
+      help="admin.filters.priority.help"
+      onChange={(priority) => onChange({ priority })}
+    />
+  ) : (
+    <EnumPicker
+      label={facet.label}
+      choices={KIND_CHOICES}
+      selected={draft.kind ?? []}
+      onChange={(kind) => onChange({ kind })}
+    />
   );
-  const available = PRIORITY_CHOICES.filter(
+}
+
+function EnumPicker<Value extends string>({
+  label: facetLabel,
+  choices,
+  selected,
+  help,
+  onChange,
+}: {
+  label: AdminMessageKey;
+  choices: readonly FilterChoice<Value>[];
+  selected: Value[];
+  help?: AdminMessageKey;
+  onChange: (values: Value[]) => void;
+}) {
+  const t = useAdminT();
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLocaleLowerCase();
+  const chosen = choices.filter(({ value }) => selected.includes(value));
+  const available = choices.filter(
     ({ value, label }) =>
-      !priorities.includes(value) &&
+      !selected.includes(value) &&
       (value.includes(search) || t(label).toLocaleLowerCase().includes(search)),
   );
   return (
     <>
-      <PickerSearch facet={t(facet.label)} query={query} onChange={setQuery} />
-      <p className="px-2 pb-1 text-xs text-muted-foreground">
-        {t("admin.filters.priority.help")}
-      </p>
+      <PickerSearch facet={t(facetLabel)} query={query} onChange={setQuery} />
+      {help ? (
+        <p className="px-2 pb-1 text-xs text-muted-foreground">{t(help)}</p>
+      ) : null}
       <p className="px-2 py-1 text-xs text-muted-foreground">
-        {t("admin.filters.selected", { count: priorities.length })}
+        {t("admin.filters.selected", { count: selected.length })}
       </p>
-      <div role="group" aria-label={t(facet.label)}>
+      <div role="group" aria-label={t(facetLabel)}>
         {[...chosen, ...available].map(({ value, label }) => (
           <ChoiceCheckbox
             key={value}
             name={t(label)}
-            checked={priorities.includes(value)}
+            checked={selected.includes(value)}
             onChange={() =>
-              onChange({
-                priority: priorities.includes(value)
-                  ? priorities.filter((entry) => entry !== value)
-                  : [...priorities, value],
-              })
+              onChange(
+                selected.includes(value)
+                  ? selected.filter((entry) => entry !== value)
+                  : [...selected, value],
+              )
             }
           >
             {t(label)}

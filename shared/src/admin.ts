@@ -1,4 +1,5 @@
 import type { OAuthProviderId } from "./api";
+import type { CommentKind } from "./types/kanban";
 import type { BoardAction } from "./store/board-reducer";
 import type {
   AnnouncementFallbackPolicy,
@@ -243,6 +244,7 @@ export interface AdminCommentRowDto {
   /** Label for `authorId`. */
   authorEmail: string;
   text: string;
+  kind: CommentKind;
   /** Unix ms. */
   createdAt: number;
   /** Unix ms; `null` while visible. */
@@ -961,6 +963,8 @@ export interface AdminAttachmentRowDto {
   uploadedByEmail: string;
   /** TASK-50 video transcode state (none|pending|done|failed). */
   transcodeStatus: string;
+  isInline: boolean;
+  descriptionDetached: boolean;
   deletedAt: number | null;
   createdAt: number;
 }

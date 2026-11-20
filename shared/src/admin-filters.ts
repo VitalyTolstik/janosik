@@ -20,15 +20,19 @@ export const ADMIN_FILTER_MAX_QUERY_LENGTH = 2048;
 export const ADMIN_FILTER_QUERY_MAX_LENGTH = 200;
 
 const DUE_VALUES = ["overdue", "soon", "none"] as const;
-const MIME_VALUES = [
+export const ADMIN_MIME_FAMILIES = [
   "image",
   "video",
-  "audio",
   "pdf",
   "document",
   "other",
 ] as const;
-const TRANSCODE_VALUES = ["none", "pending", "done", "failed"] as const;
+export const ADMIN_TRANSCODE_STATUSES = [
+  "none",
+  "pending",
+  "done",
+  "failed",
+] as const;
 
 export interface AdminFilterValues {
   action: string[];
@@ -36,7 +40,7 @@ export interface AdminFilterValues {
   adminId: string[];
   adminMemberId: string;
   assigneeId: string[];
-  authorId: string[];
+  authorId: string;
   boardId: string;
   cardId: string;
   columnId: string;
@@ -46,14 +50,14 @@ export interface AdminFilterValues {
   kind: CommentKind[];
   labelId: string | string[];
   labelMatch: "any" | "all";
-  mime: (typeof MIME_VALUES)[number];
+  mime: (typeof ADMIN_MIME_FAMILIES)[number];
   priority: CardPriority[];
   targetId: string;
   targetType: string[];
-  transcode: (typeof TRANSCODE_VALUES)[number];
+  transcode: (typeof ADMIN_TRANSCODE_STATUSES)[number];
   type: string[];
   unassigned: boolean;
-  uploadedById: string[];
+  uploadedById: string;
   verified: boolean;
 }
 
@@ -77,11 +81,11 @@ const FILTER_FIELDS: Record<AdminFilterKey, FilterField> = {
   kind: COMMENT_KINDS,
   labelId: ADMIN_ID_PATTERN,
   labelMatch: ["any", "all"],
-  mime: MIME_VALUES,
+  mime: ADMIN_MIME_FAMILIES,
   priority: CARD_PRIORITIES,
   targetId: ADMIN_FILTER_TARGET_ID_PATTERN,
   targetType: ADMIN_FILTER_CODE_PATTERN,
-  transcode: TRANSCODE_VALUES,
+  transcode: ADMIN_TRANSCODE_STATUSES,
   type: ADMIN_FILTER_CODE_PATTERN,
   unassigned: "boolean",
   uploadedById: ADMIN_ID_PATTERN,
@@ -102,12 +106,10 @@ function createMultiValueLimits(): Partial<Record<AdminFilterKey, number>> {
     actorId: ADMIN_FILTER_MAX_VALUES,
     adminId: ADMIN_FILTER_MAX_VALUES,
     assigneeId: ADMIN_FILTER_MAX_VALUES,
-    authorId: ADMIN_FILTER_MAX_VALUES,
     kind: COMMENT_KINDS.length,
     priority: CARD_PRIORITIES.length,
     targetType: ADMIN_FILTER_MAX_VALUES,
     type: ADMIN_FILTER_MAX_VALUES,
-    uploadedById: ADMIN_FILTER_MAX_VALUES,
   };
 }
 
@@ -177,14 +179,14 @@ function createEntityFilters(): Record<
       STATUS_TABS,
     ),
     comments: filterSurface(
-      ADMIN_CARD_SCOPE,
+      [...ADMIN_CARD_SCOPE, "authorId", "kind"],
       [...BOARD_CARD_SCOPE, "authorId", "kind"],
       statusAndPeriodTabs,
     ),
     attachments: filterSurface(
-      ADMIN_CARD_SCOPE,
+      [...ADMIN_CARD_SCOPE, "uploadedById", "mime", "transcode"],
       [...BOARD_CARD_SCOPE, "uploadedById", "mime", "transcode"],
-      STATUS_TABS,
+      statusAndPeriodTabs,
     ),
     activity: filterSurface(
       ADMIN_CARD_SCOPE,

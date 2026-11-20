@@ -45,7 +45,7 @@ describe("admin navigation", () => {
         labelMatch: "all",
         hasAttachments: false,
         unassigned: false,
-        authorId: ["u-1"],
+        authorId: "u-1",
       }),
     ).toBe(
       "/admin/boards?tab=cards&hasAttachments=false&labelId=l-1&labelId=l-2&labelMatch=all",

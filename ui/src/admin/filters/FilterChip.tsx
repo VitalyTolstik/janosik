@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { LABEL_COLOR_DOT, type LabelColor } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { useAdminT } from "../admin-i18n";
-import { optionIds, optionState, type CardFilterKey } from "./filter-registry";
-import type { ResolvedCardFilter } from "./use-card-filter-options";
+import { optionIds, optionState, type FilterKey } from "./filter-registry";
+import type { ResolvedFilter } from "./use-list-filter-options";
 
 export function FilterColorDot({ color }: { color?: string }) {
   if (!color) return null;
@@ -23,7 +23,7 @@ export function FilterOptionChip({
   filter,
   onRemove,
 }: {
-  filter: ResolvedCardFilter;
+  filter: ResolvedFilter;
   onRemove: () => void;
 }) {
   const t = useAdminT();
@@ -37,7 +37,7 @@ export function FilterOptionChip({
         ? t(`admin.filters.unknown.${key}`)
         : facet);
   const state = optionState(t, option?.state);
-  const email = key === "assigneeId" ? option?.sublabel : null;
+  const email = filter.type === "user" ? option?.sublabel : null;
   const ids = loading ? undefined : optionIds(id, option);
   const title = `${name} · ${optionIds(id, option, false)}`;
   const value = [loading ? t("admin.filters.loading") : name, email, state, ids]
@@ -108,7 +108,7 @@ export function FilterChip({
   onRemove,
   children,
 }: {
-  filterKey: CardFilterKey;
+  filterKey: FilterKey;
   value?: string;
   title?: string;
   removeLabel: string;
