@@ -96,6 +96,11 @@ node design/task-179-visual-acceptance/pixel-parity/tools/capture-parity.mjs
 
 `capture-parity.mjs` reads `/tmp/pixel-seed.json`; redirect the seed output
 there or the extra-state run ids point at the previous seed.
+The standalone seed requires a disposable `*_pixel` database. Leave both
+`DEMO_DATABASE_URL` and `DEMO_API_URL` unset. The JSON contains stable IDs.
+Set `SEED_SECRETS_FILE` to a new path if you need the disposable login and PATs
+in a 0600 file. For the TASK-176 fixture, use the
+[demo fixture reset and verify commands](../../../docs/DEMO-FIXTURES.md).
 
 ## Known non-blocking notes
 

@@ -1,6 +1,7 @@
 # TASK-183 — Demo fixture hygiene and card label timestamp integrity
 
-**Status:** planned (docs-only roadmap ticket; no production code in this task)  
+**Status:** TASK-183.1 implemented on its feature branch. Label timestamp work is planned.
+
 **Priority:** P2 for demo fixture hygiene; P3 for the label timestamp bug  
 **Base:** `main` = `002a31ec`  
 **Branch:** `docs/TASK-183-demo-label-integrity`  
@@ -14,12 +15,12 @@
 
 This ticket covers two independent findings from the TASK-176 demo investigation:
 
-1. **The demo database drifted from its committed fixture.** The database
-   `janosik_task176_demo` contains manual edits that are not produced by the
+1. **The demo database drifted from its committed fixture.** The investigation
+   found manual edits in `janosik_task176_demo` that were absent from the
    committed seed: a card titled `Card claim visibility 123`, a description
    ending in `фывфыв`, and an extra checklist `123` with item `1`. It also
-   contains a `TASK-176 demo` label, a `TASK-176 acceptance` checklist and two
-   named TASK-176 links that are not in any committed seed, plus 60
+   found an untracked `TASK-176 demo` label, a `TASK-176 acceptance` checklist
+   and two named links, plus 60
    `t176-comment-*` rows (9 soft-deleted, 51 live). The app-user set has four
    rows: the two seed users plus junk `1@t.com` and `2@t.com`; runtime/admin/
    security rows observed at probe time included 3 `SecurityAuditLog`, 1
@@ -27,10 +28,8 @@ This ticket covers two independent findings from the TASK-176 demo investigation
    `AdminRefreshToken` and 67 `AdminAuditLog` (not manifest pins). The board
    aggregate still loads and the API accepts it, so
    this is **not corruption**; it is an unreproducible demo fixture. The
-   repository has no TASK-176 seed, reset or verification command, and the
-   existing pixel seed does not create the TASK-176-specific fixture rows. A
-   clean demo cannot currently be recreated from source, and manual edits
-   silently pollute the canonical fixture.
+   repository then lacked a TASK-176 seed, reset and verifier. TASK-183.1
+   commits the canonical rows and provides guarded reset and verify commands.
 
 2. **`SET_CARD_LABEL` does not update `Card.updatedAt`.** The shared reducer
    changes `labelIds` but leaves `updatedAt` unchanged
@@ -49,15 +48,20 @@ the board command contract or the admin demo runner.
 
 ## 2. Finding A — demo fixture hygiene
 
+TASK-183.1 implements the workflow in [Demo fixtures](DEMO-FIXTURES.md).
+The fixture retains the named label, checklist and links. The fixture card
+keeps the seed Backlog position and default assignee, cover and priority.
+The TASK-176.9 comments remain separate manual scaffolding.
+
 ### 2.1 Observed state
 
 Read-only probe of `http://127.0.0.1:5311` on 2026-11-19, app account
 `pixel-admin@example.com`, board `Agent Ops Demo`
 (`px-board-agent-ops`):
 
-| Item | Observed in `janosik_task176_demo` | Committed seed output |
+| Item | Observed in `janosik_task176_demo` | Pixel seed output at the time |
 | --- | --- | --- |
-| Card `px-card-card-claim` title | `Card claim visibility 123` | `Card claim visibility` (`scripts/seed-agent-pixel-demo.mjs:346`) |
+| Card `px-card-card-claim` title | `Card claim visibility 123` | `Card claim visibility` |
 | Card description | `API reference sweep — exact MCP transport contract. фывфыв` | `API reference sweep — exact MCP transport contract.` (seed run 126) |
 | Checklists | `TASK-176 acceptance` (3 items) **and** `123` (item `1`) | No card checklist is created by the seed |
 | Labels | `TASK-176 demo` (`px-label-task176-demo`, pink) attached to the card | No label is created by the seed |
@@ -65,12 +69,9 @@ Read-only probe of `http://127.0.0.1:5311` on 2026-11-19, app account
 | Board aggregate | 200, six live cards on this board, four columns, one label | Twelve live cards total across two boards, four columns per board; no label unless the TASK-176 overlay adds one |
 
 The `TASK-176 acceptance` checklist, the `TASK-176 demo` label and the two
-named `px-link-task176-*` links are not junk by definition: they look like the
-intended TASK-176 manual fixture. But none of them is in a committed seed, so
-the fixture that the team is testing against cannot be rebuilt from the
-repository. The `123` checklist, the `123` title suffix, `фывфыв` and the
-random-UUID link are manual typing artifacts. The reset/verify work must
-classify the whole set, not only the three visible junk strings.
+named `px-link-task176-*` links were untracked. TASK-183.1 records them in the
+fixture manifest. The `123` checklist, the `123` title suffix, `фывфыв` and the
+random-UUID link are manual typing artifacts that the verifier flags as drift.
 
 This is not a data-integrity incident:
 
@@ -79,8 +80,8 @@ This is not a data-integrity incident:
 - the API accepted the edits and continues to read them;
 - no row is orphaned or unreadable.
 
-The defect is reproducibility: the canonical fixture and the hand-edited
-database are different things, and nothing detects the difference.
+The investigation identified a reproducibility gap. The verifier detects
+differences between the committed fixture and the hand-edited database.
 
 ### 2.2 Complete observed mutation inventory
 
@@ -151,74 +152,23 @@ must not assert `RefreshToken`, `AdminRefreshToken`, `AdminAuditLog`,
 
 ### 2.3 Root-cause research
 
-**The only committed seed is the pixel demo seed.**
+The original pixel seed could reach `Card.deleteMany()` while restrictive
+checklist or card-link foreign keys still referenced the cards. Earlier table
+deletes had already committed, so a failed seed could leave partial data.
+The generic pixel scene also lacked the TASK-176 checklist, label and named
+links observed in the demo database.
 
-`scripts/seed-agent-pixel-demo.mjs`:
+The standalone `scripts/seed-agent-pixel-demo.mjs` now requires `SEED_ALLOW=1`
+and a disposable `*_pixel` target. Its cleanup deletes checklist items,
+checklists and card links before cards. Its scene creates two boards, eight
+columns and 13 card rows, including the one soft-deleted in run 124. Run 126
+sets the `px-card-card-claim` description through the board command transport.
+The standalone seed keeps the shared scene and prints a redacted summary.
 
-- refuses to run without `SEED_ALLOW=1` (`:39-42`);
-- deletes demo tables before recreating rows, but the order is incomplete:
-  `ChecklistItem`, `Checklist` and `CardLink` are never deleted;
-- creates fixed IDs for two boards, eight columns and **13 card rows**: 12 via
-  `card.createMany` plus `px-card-expired-retention` through `ADD_CARD` in the
-  retention run. Twelve remain live;
-- one card is soft-deleted by the seed's `DELETE_CARD` (run 124). That run is
-  marked `reverted`, but no restore command exists, so the deletion remains
-  applied — the fixture contains a misleading run status;
-- creates board `px-board-agent-ops` and card `px-card-card-claim` with
-  `title: "Card claim visibility"` (`:341-346`);
-- creates the canonical description through the real command transport in
-  `seed-run-126` (`UPDATE_CARD` on `ids.cardClaim`);
-- creates no card checklists, labels, card links or comments;
-- writes runs, approvals, sessions and a JSON summary to stdout.
-
-**Why the current cleanup does not work.** Prisma relations default to
-`RESTRICT` (the schema header says app-level cascades are deliberate). The
-seed deletes `cardLabel`, then `card`, then `label`, `column`, `board`, but
-never deletes:
-
-- `ChecklistItem` and `Checklist` — both reference `Card`;
-- `CardLink` — references `Board` and both cards;
-- `BoardShare` / `BoardShareAuditLog` — the share FK is `SetNull`, so the
-  board delete can succeed while stale shares and audit rows survive; the
-  audit log has no FK at all;
-- other non-board children such as `DemoRun` / `DataExport` remain by design
-  or by accident depending on the table.
-
-On the observed database, `Card.deleteMany()` will fail once a checklist or
-card link exists, because the earlier deletes have already committed and the
-FK is restrictive. The current “wrapper” cannot be trusted; the reset must
-either (a) drop and recreate the demo schema/database and apply migrations, or
-(b) run an explicitly ordered, transactional delete covering every dependent
-table and add a regression that resets twice after adding a checklist and a
-link. Recommendation: (a) for a disposable demo database.
-
-The seed is designed for a **disposable** database and warns “never the live dev
-DB” in its header, but the only hard guard is `SEED_ALLOW=1`. It does not:
-
-- validate that `DATABASE_URL` points at a demo database;
-- create or migrate the database;
-- verify the fixture after seeding;
-- distinguish a base pixel fixture from a TASK-176 acceptance fixture;
-- provide a package script, reset command or cleanup path.
-
-**No TASK-176-specific fixture is committed.**
-
-- `grep` across the current tree finds no `janosik_task176_demo`,
-  `TASK-176 acceptance`, `px-checklist-task176-demo` or
-  `px-checkitem-task176` references.
-- `package.json` exposes `demo:swarm` and `demo:100`; those drive load
-  against an existing board, not a deterministic fixture. It has no seed/reset/
-  verify script for the pixel/TASK-176 fixture.
-- The pixel parity documentation (`design/task-179-visual-acceptance/pixel-parity/README.md`)
-  documents a manual environment invocation, not a repeatable developer
-  command.
-
-Therefore the `TASK-176 acceptance` checklist, label and named links were
-added by hand or by an untracked script. Even if the seed's cleanup succeeded,
-it would delete the intended TASK-176 label/checklist/links along with the junk;
-in practice it can fail on the missing checklist/link deletes. The current
-reset path is therefore both unsafe (loses intended fixture) and unreliable
-(FK `RESTRICT`).
+The TASK-176 reset recreates the guarded demo schema or runs ordered fixture
+and account cleanup in a transaction. It seeds the shared scene, adds the
+manifest's TASK-176 label, checklist and links, and runs the read-only verifier.
+`scripts/fixtures/task176-demo.mjs` pins the canonical card title and description.
 
 **The admin demo runner is a different system.**
 
@@ -279,11 +229,12 @@ never rely on manual SQL.**
      `production` while reset mode is requested, fail closed and refuse.
      Do **not** use a `.env.local` fallback: a crash could leave it behind and
      silently redirect normal dev boot to the demo DB. Sweep stale reset
-     env/temp/lock files at reset start. Add a tampered-`.env` test with
-     conflicting `JANOSIK_*`/`NODE_ENV=development` values; the CLI/snapshot must
-     win;
+     env/temp files at reset start and keep the lock file in place. Add a
+     tampered-`.env` test with conflicting `JANOSIK_*`/`NODE_ENV=development`
+     values; the CLI/snapshot must win;
    - require `SEED_ALLOW=1` or `DEMO_RESET_ALLOW=1`;
-   - verify the backend really reads the demo DB **before deleting**. `/health`
+   - on a complete schema, prove that the backend reads the demo DB before
+     the fixture reset. `/health`
      reports only `db: up`, not identity. Create the marker **directly through
      the reset-owned Prisma connection against the validated demo DB**: a
      marker `User`, a marker `Board`, and an accepted `BoardMember` with role
@@ -295,9 +246,10 @@ never rely on manual SQL.**
      that reads dev `env.JWT_SECRET`. Use the API only for
      `GET /boards/:marker`; any non-200 aborts. Delete marker rows before the
      drop and in `finally`, and sweep stale `task176-marker-*`/`t176-marker-*`
-     rows at reset start. After `migrate reset`, use a fresh connection/state
-     for marker cleanup. Do not create markers through `DEMO_API_URL`; that
-     would be self-fulfilling and prove nothing;
+     rows after schema inspection and before booting the probe backend, ahead
+     of any destructive reset work. After `migrate reset`, use a fresh
+     connection/state for marker cleanup. Do not create markers through
+     `DEMO_API_URL`; that would be self-fulfilling and prove nothing;
    - **own the backend lifecycle under crashes.** Run the backend in its own
      process group, persist PID/port/lock files per demo DB, and take a reset
      lock so two resets cannot run concurrently. On reset start detect and kill
@@ -312,13 +264,17 @@ never rely on manual SQL.**
      and stop it in `finally` — wait for process exit, kill the group if needed,
      and include the lifecycle in the reset-twice and SIGKILL-crash regressions.
      The post-seed backend must not be left running;
+   - under the same target and locking guards, inspect migration completion and
+     required tables and columns. If the schema is incomplete, the primary
+     reset repairs it before booting the API. It still probes identity and
+     consumes a seed nonce before seeding;
    - reset by dropping/recreating the demo schema and applying existing
-     migrations (`prisma migrate reset --force --skip-seed` against the guarded
-     database), then run the seed and fixture verifier. Primary resets the
+     migrations (`prisma migrate reset --force --skip-generate --skip-seed`
+     against the guarded database), then run the seed and verifier. Primary resets the
      **whole demo database**, including admin/security and global settings; the
-     master account is recreated separately. If product rejects schema reset,
-     the fallback is a **fixture + admin/security account reset**, not a full
-     demo-DB reset: global settings and announcements are retained. Use one
+     master account is recreated separately. On a complete schema, the
+     fallback is a **fixture + admin/security account reset** that retains
+     global settings and announcements. Use one
      explicit ordered transaction for
      `ChecklistItem → Checklist → CardLink → CardLabel → Comment → Attachment →
      Activity → CommandPreimage → Command → AgentRun → ApprovalRequest →
@@ -369,11 +325,9 @@ never rely on manual SQL.**
    the operator recreates the master account separately or an explicit admin
    fixture is defined.
 
-   The seed/reset output must be captured and redacted: no raw PATs,
-   passwords or connection strings on stdout/CI logs. The base seed currently
-   prints `tokens` and `login.password`; default output should contain only
-   stable IDs, board/run IDs and counts, with raw secrets available only via an
-   explicit 0600 file if parity tooling truly needs them.
+   Redact PATs, passwords and connection strings from stdout and CI logs.
+   Default output contains stable IDs, board/run IDs and counts. Parity
+   tooling can request raw secrets in an explicit 0600 file.
 
 4. **Add a verify command.** Example:
    `npm run demo:task176:verify`. It must be read-only and assert the manifest
@@ -476,15 +430,19 @@ verifier is the only maintainable path.
    reset-allocated), and an occupied port is refused. The path/nonce come from
    CLI/pre-dotenv env, not a `.env` file. A test starts with `backend/.env`
    pointing at dev and `DEMO_DATABASE_URL` at the demo DB.
-5. Before any delete, the reset proves the API reads the demo DB with a real
-   identity probe: marker user, board and accepted ADMIN `BoardMember` created
+5. With a complete schema, reset proves the API reads the demo DB before the
+   fixture reset. It uses a marker user, board and accepted ADMIN `BoardMember` created
    directly via the reset Prisma connection; JWT
    `{ sub, aud: "janosik-user", stamp, exp }` minted with the reset-env
    `JWT_SECRET`, where `stamp` is the parameterized `securityStamp(user, secret)`
    (not the env-bound dev helper); only `GET /boards/:marker` goes through the
    API. Correct DB → 200; any non-200 (401/403/404) aborts. `/health` `db: up`
-   alone is not accepted. Markers are cleaned before the drop, in `finally`, and
-   swept at start; post-reset cleanup uses a fresh connection/state.
+   alone is not accepted. Stale markers are swept after schema inspection and
+   before booting the probe backend, ahead of any destructive reset work.
+   Probe markers are cleaned before the drop and in `finally`. Post-reset
+   cleanup uses a fresh connection/state. A primary reset with a missing or
+   partial schema repairs it under the validated target and locks, then runs
+   the identity probe before seeding.
 6. The TASK-176 seed/overlay uses `DEMO_DATABASE_URL`/`DEMO_API_URL`
    exclusively, validates the DB name before constructing `PrismaClient`, and
    refuses ambient `DATABASE_URL`/`API_URL` mismatches. It runs only under the
@@ -537,15 +495,18 @@ second opinion; no login is involved.
 
 **Recovery after a crash/SIGKILL:**
 
-Rerun `npm run demo:task176:reset`. At start it sweeps stale reset env/temp/lock
-and marker rows, proves process ownership from PID/start time/command
-line/port/nonce, kills only that reset-owned group and terminates remaining
-demo-DB connections before the drop. If ownership cannot be proven, it clears
-stale bookkeeping and fails closed with the stale PID/lock path printed; do not
-kill a process by hand and do not patch rows. A partial schema is recovered by
-rerunning the same reset. Linux/WSL is the supported environment for the
-`/proc` ownership check; on other platforms the reset either uses a fail-closed
-`ps` fallback or refuses with a clear prerequisite message.
+Rerun `npm run demo:task176:reset`. It takes the per-database lock, verifies
+process ownership from PID/start time/command line/port/nonce before signaling
+the reset-owned group, and sweeps stale reset env/temp files. If schema
+inspection confirms a complete schema, it sweeps stale marker rows before
+booting the probe backend and before any destructive reset work. It terminates
+remaining demo-DB connections before the drop. If ownership cannot be proven,
+it clears stale bookkeeping and fails closed with the stale state path and any
+known PID. Do not kill a process by hand and do not patch rows. A partial
+schema is recovered by rerunning the same reset. Linux/WSL is the supported
+environment for the `/proc` ownership check; on other platforms the reset
+either uses a fail-closed `ps` fallback or refuses with a clear prerequisite
+message.
 
 Manual test edits remain reset-only: run the reset before/after a session; do
 not hand-edit the canonical demo rows.
@@ -735,7 +696,7 @@ forward command without its inverse.
 
 | ID | Title | Priority | Scope |
 | --- | --- | --- | --- |
-| 183.1 | Demo fixture manifest, reset and verify | P2 | Commit the TASK-176 fixture, complete mutation manifest, drop/recreate or narrowed fallback, env-precedence/API-binding/identity guards, crash-safe lifecycle, redaction, read-only verify, docs. No admin demo-runner changes. |
+| 183.1 | Demo fixture manifest, reset and verify | P2 | Pin the TASK-176 fixture, add guarded schema reset and repair, keep an ordered fallback, prove API identity before seeding, recover the owned backend after crashes, redact secrets, and verify the live rows with a read-only fingerprint. |
 | 183.2 | Label timestamp consistency | P3 | Fix `SET_CARD_LABEL` reducer + inverse + `CARD_STAMPED_TYPES`, split reducer/persisted-row tests, audit same-class label writers. |
 
 Both subtasks are independent and can ship in separate PRs. 183.1 does not
@@ -782,15 +743,17 @@ depend on 183.2.
   `NODE_ENV=development` cannot disable/redirect reset; CLI args + pre-dotenv
   `NODE_ENV` win. With pre-dotenv `NODE_ENV=production` and reset flags, reset
   is refused; normal boot does not adopt the demo DB. Missing/non-matching
-  nonce aborts; stale reset env/lock/temp files are swept at reset start.
+  nonce aborts. Reset sweeps stale env and state files at startup and reuses
+  the per-database lock inode.
 - Identity test: create marker user/board/accepted ADMIN `BoardMember` through
   the reset Prisma connection against the validated demo DB; mint the JWT with
   `aud: "janosik-user"` and a stamp computed from the reset-env `JWT_SECRET`.
-  Correct DB `GET /boards/:marker` returns 200; **any non-200** (401/403/404)
-  aborts before any delete. Markers are cleaned before the drop and in
-  `finally`; `finally` must tolerate a missing table/recreated schema and fall
-  back to the stale-marker sweep. After `migrate reset` use a fresh
-  connection/state.
+  Correct DB `GET /boards/:marker` returns 200. A non-200 aborts before fixture
+  reset on a complete schema or before seeding after repair. Marker cleanup
+  runs before the drop and in `finally`. It tolerates a missing relation and
+  relies on the stale-marker sweep in that case. After `migrate reset`, the
+  wrapper uses a fresh connection. Recovery tests cover a dropped schema and
+  a schema left after the first two migrations.
 - `securityStamp` test: the one-argument form keeps using `env.JWT_SECRET` for
   auth callers; the two-argument `securityStamp(user, secret)` uses the provided
   reset secret and matches the expected HMAC. Both paths are tested; the reset
@@ -807,7 +770,8 @@ depend on 183.2.
 - Crash test: SIGKILL the **reset wrapper/process group** (not only the
   backend) mid-seed; PID/port/lock/env/marker state remains. The next reset
   proves ownership, kills only that group, terminates demo-DB connections,
-  clears the lock/env/markers and succeeds.
+  clears stale env files and markers, and succeeds. It releases the lock on
+  exit and leaves the lock file and its inode in place for reuse.
 - Port test: `DEMO_API_URL` must be loopback and an owned/free port, or the
   reset allocates and prints it; a port already in use is refused before any
   delete.
@@ -817,9 +781,9 @@ depend on 183.2.
 - Manual drift test: mutate the card title, description, checklist, label,
   links, column/position, priority, assignee and cover; verify fails; reset;
   verify passes.
-- Guard test: a non-demo database name is refused before any delete; a
-  `DEMO_API_URL` that is not bound to the resolved demo database is refused
-  before the first delete; conflicting `DATABASE_URL`/`API_URL` values are
+- Guard test: a non-demo database name is refused before any delete. The
+  identity probe must confirm `DEMO_API_URL` uses the resolved demo database
+  before seeding. Conflicting `DATABASE_URL`/`API_URL` values are
   refused; a direct `SEED_ALLOW=1` invocation without the demo env pair is
   refused. Base pixel seed accepts only `janosik_pixel` / `*_pixel`; a direct
   base-seed run with `DATABASE_URL=.../janosik_task176_demo` is refused before
@@ -988,7 +952,8 @@ with an explicit compatibility rationale.
    same HMAC (not the env-bound dev helper); call only `GET /boards/:marker`.
    Correct DB → 200; any non-200 aborts before delete. Clean markers before the
    drop and in `finally`, use a fresh connection after reset, and sweep stale
-   markers at start.
+   markers after schema inspection and before booting the probe backend,
+   ahead of any destructive reset work.
 10. **How should the reset force `DATABASE_URL` past `dotenv override: true`?**
     Required: snapshot `process.env` before dotenv, pass reset mode/path/nonce
     **only as CLI args** (`--demo-reset`, `--demo-reset-env-file`,
@@ -997,9 +962,9 @@ with an explicit compatibility rationale.
     missing/mismatched file aborts; normal boot ignores the hook. `.env` values
     cannot disable/redirect it.
 11. **Should the reset apply migrations?** Yes, as part of drop/recreate
-    (`prisma migrate reset --force --skip-seed` on the guarded demo DB). Existing
-    migrations only; no new migration is introduced by this ticket. The manual
-    seed path still documents `prisma migrate deploy`.
+    (`prisma migrate reset --force --skip-generate --skip-seed` on the guarded
+    demo DB). Reset uses existing migrations. The standalone pixel seed path
+    still documents `prisma migrate deploy`.
 12. **Are `1@t.com`/`2@t.com` junk and are admin/security rows out-of-fixture?**
     Recommended: yes — expect exactly the two seed users; extra users fail
     verify. Runtime/admin/security rows are out-of-fixture; after either reset
@@ -1033,9 +998,11 @@ with an explicit compatibility rationale.
   (user + board + accepted ADMIN `BoardMember`), the JWT is minted with
   `aud: "janosik-user"` and a stamp from the **parameterized** `securityStamp`
   using the reset secret, and only `GET /boards/:marker` goes through the API.
-  Correct DB → 200; any non-200 (401/403/404) aborts before any delete. Markers
-  are cleaned before the drop and in `finally`, with a fresh connection/state
-  after reset and a stale sweep at start.
+  Correct DB → 200. A non-200 aborts before fixture reset on a complete
+  schema or before seeding after repair. On a complete schema, the stale marker
+  sweep follows schema inspection and precedes the probe backend and any
+  destructive reset work. Marker cleanup also runs in `finally` and with a
+  fresh connection after migration.
 - The reset owns the backend process group on a fresh private port with
   PID/start-time/port/lock/nonce, verifies ownership before killing a stale
   process, terminates demo-DB connections before the drop, restarts for seed
