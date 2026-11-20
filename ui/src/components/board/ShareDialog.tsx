@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -146,10 +146,24 @@ function SharePanel({ boardId }: { boardId: string }) {
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [mode, setMode] = useState<BoardShareMode>("live");
   const [now, setNow] = useState(() => Date.now());
+  const editButtons = useRef(new Map<string, HTMLButtonElement>());
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  const registerEditButton = useCallback(
+    (shareId: string, node: HTMLButtonElement | null) => {
+      if (node) editButtons.current.set(shareId, node);
+      else editButtons.current.delete(shareId);
+    },
+    [],
+  );
+
+  /** Return focus after the edit form unmounts, not while it still owns it. */
+  const focusEditButton = useCallback((shareId: string) => {
+    window.setTimeout(() => editButtons.current.get(shareId)?.focus(), 0);
   }, []);
 
   const load = useCallback(async () => {
@@ -178,8 +192,10 @@ function SharePanel({ boardId }: { boardId: string }) {
         error={editing ? updateError : null}
         onModeChange={setMode}
         onCancel={() => {
+          const shareId = editing?.id;
           setEditing(null);
           setUpdateError(null);
+          if (shareId) focusEditButton(shareId);
         }}
         onCreate={async (request) => {
           setCreating(true);
@@ -209,13 +225,15 @@ function SharePanel({ boardId }: { boardId: string }) {
         }}
         onUpdate={async (request) => {
           if (!editing) return;
+          const shareId = editing.id;
           setUpdating(true);
           setUpdateError(null);
           try {
-            await api.updateShare(boardId, editing.id, request);
+            await api.updateShare(boardId, shareId, request);
             toast.success(t("share.editSaved"));
             setEditing(null);
             await load();
+            focusEditButton(shareId);
           } catch (error) {
             // The form stays open with the user's values, so the error is
             // shown inline as well as in the toast (TASK-177.1).
@@ -258,6 +276,7 @@ function SharePanel({ boardId }: { boardId: string }) {
                   boardId={boardId}
                   now={now}
                   onChanged={load}
+                  registerEditButton={registerEditButton}
                   onEdit={(target) => {
                     setUpdateError(null);
                     setEditing(target);
@@ -299,12 +318,14 @@ function ShareRow({
   boardId,
   onChanged,
   onEdit,
+  registerEditButton,
   now,
 }: {
   share: BoardShareDto;
   boardId: string;
   onChanged: () => Promise<void>;
   onEdit: (share: BoardShareDto) => void;
+  registerEditButton: (shareId: string, node: HTMLButtonElement | null) => void;
   now: number;
 }) {
   const { t } = useI18n();
@@ -397,6 +418,12 @@ function ShareRow({
             variant="ghost"
             size="sm"
             className="h-7 gap-1 px-2 text-xs"
+            ref={(node) => registerEditButton(share.id, node)}
+            aria-label={t("share.editAria", {
+              label: share.title
+                ? `${share.title} (${share.token})`
+                : share.token,
+            })}
             onClick={() => onEdit(share)}
           >
             <Pencil className="h-3.5 w-3.5" aria-hidden />
@@ -659,9 +686,14 @@ function ShareForm({
   onUpdate: (request: UpdateShareRequest) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const titleInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing?.title ?? "");
   const [includeComments, setIncludeComments] = useState<boolean>(
-    editing ? editing.includeComments : SHARE_LIMITS.defaultIncludeCommentsLive,
+    editing
+      ? editing.includeComments
+      : mode === "snapshot"
+        ? SHARE_LIMITS.defaultIncludeCommentsSnapshot
+        : SHARE_LIMITS.defaultIncludeCommentsLive,
   );
   const [includeAttachments, setIncludeAttachments] = useState(
     editing ? editing.includeAttachments : false,
@@ -677,6 +709,11 @@ function ShareForm({
   const [pendingUpdate, setPendingUpdate] = useState<UpdateShareRequest | null>(
     null,
   );
+
+  useEffect(() => {
+    if (editing) titleInput.current?.focus();
+  }, [editing]);
+
   const active = (shares ?? []).filter(
     (share) =>
       !share.revokedAt && (share.expiresAt === null || share.expiresAt > now),
@@ -706,7 +743,9 @@ function ShareForm({
         includeComments,
         includeAttachments,
       };
-      if (ttlTouched) request.expiresAt = expiryFromTtl(ttlHours);
+      if (ttlTouched && ttlHours !== KEEP_EXPIRY) {
+        request.expiresAt = expiryFromTtl(ttlHours);
+      }
       const flagsChanged =
         includeComments !== editing.includeComments ||
         includeAttachments !== editing.includeAttachments;
@@ -786,6 +825,7 @@ function ShareForm({
       )}
 
       <Input
+        ref={titleInput}
         value={title}
         maxLength={SHARE_LIMITS.titleMax}
         aria-label={t("share.titlePlaceholder")}

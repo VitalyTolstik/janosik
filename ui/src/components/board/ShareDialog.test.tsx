@@ -418,7 +418,7 @@ describe("ShareDialog", () => {
     shares = [share({ title: "Old label", expiresAt: Date.now() + 3_600_000 })];
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
 
     expect(screen.getByText("Edit link")).toBeInTheDocument();
     expect(
@@ -426,13 +426,12 @@ describe("ShareDialog", () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId("share-mode-live")).toBeNull();
     expect(screen.queryByTestId("share-mode-snapshot")).toBeNull();
+    const titleInput = screen.getByRole("textbox", {
+      name: "Label (optional, for your list)",
+    });
+    expect(titleInput).toHaveFocus();
 
-    fireEvent.change(
-      screen.getByRole("textbox", {
-        name: "Label (optional, for your list)",
-      }),
-      { target: { value: "Renamed" } },
-    );
+    fireEvent.change(titleInput, { target: { value: "Renamed" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Show comments" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show attachments" }));
     fireEvent.click(screen.getByTestId("share-save"));
@@ -466,24 +465,37 @@ describe("ShareDialog", () => {
       expect(screen.getByTestId("share-row")).toHaveTextContent("Renamed"),
     );
     expect(screen.getByTestId("share-mode-live")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit link Renamed (tok1)" }),
+      ).toHaveFocus(),
+    );
   });
 
-  it("cancels editing without a request", async () => {
+  it("cancels editing without a request and returns focus", async () => {
     shares = [share({ title: "Old label" })];
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    fireEvent.change(
+    const editButton = await screen.findByRole("button", {
+      name: /^Edit link/,
+    });
+    fireEvent.click(editButton);
+    const input = screen.getByRole("textbox", {
+      name: "Label (optional, for your list)",
+    });
+    expect(input).toHaveFocus();
+    fireEvent.change(input, { target: { value: "Discarded" } });
+    expect(input).toHaveValue("Discarded");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(editButton).toHaveFocus());
+    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
+    expect(screen.queryByText("Edit link")).toBeNull();
+    expect(
       screen.getByRole("textbox", {
         name: "Label (optional, for your list)",
       }),
-      { target: { value: "Discarded" } },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
-    expect(screen.queryByText("Edit link")).toBeNull();
-    expect(screen.queryByText("Discarded")).toBeNull();
+    ).toHaveValue("");
     expect(screen.getByText("Old label")).toBeInTheDocument();
   });
 
@@ -491,7 +503,7 @@ describe("ShareDialog", () => {
     shares = [share({ includeComments: true, includeAttachments: false })];
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show comments" }));
     fireEvent.click(screen.getByTestId("share-save"));
 
@@ -526,7 +538,7 @@ describe("ShareDialog", () => {
     shares = [share({ title: "Expiring", expiresAt: Date.now() + 3_600_000 })];
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
 
     const ttl = screen.getByTestId("share-ttl");
     expect(ttl).toHaveTextContent("Keep current expiry");
@@ -560,7 +572,7 @@ describe("ShareDialog", () => {
     shares = [share({ title: "Old label" })];
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
     fireEvent.change(
       screen.getByRole("textbox", {
         name: "Label (optional, for your list)",
@@ -587,7 +599,7 @@ describe("ShareDialog", () => {
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
     fireEvent.click(await screen.findByTestId("share-mode-snapshot"));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show comments" }));
     fireEvent.click(screen.getByTestId("share-save"));
 
@@ -603,5 +615,105 @@ describe("ShareDialog", () => {
     ).not.toBeInTheDocument();
     const patch = requests.find((r) => r.method === "PATCH");
     expect(patch?.body).toMatchObject({ includeComments: true });
+  });
+
+  it("omits expiresAt when the picker returns to Keep current expiry", async () => {
+    shares = [share({ expiresAt: Date.now() + 3_600_000 })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
+
+    fireEvent.click(screen.getByTestId("share-ttl"));
+    fireEvent.click(await screen.findByRole("radio", { name: "1 h" }));
+    expect(screen.getByTestId("share-ttl")).toHaveTextContent("1 h");
+    fireEvent.click(screen.getByTestId("share-ttl"));
+    fireEvent.click(
+      await screen.findByRole("radio", { name: "Keep current expiry" }),
+    );
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+        ),
+      ).toBe(true),
+    );
+    const patch = requests.find(
+      (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+    );
+    expect(patch?.body).not.toHaveProperty("expiresAt");
+  });
+
+  it("starts the snapshot create form with comments off after edit and cancel", async () => {
+    shares = [
+      share({ mode: "snapshot", includeComments: false, expiresAt: null }),
+    ];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByTestId("share-mode-snapshot"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByTestId("share-mode-snapshot")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Show comments" }),
+    ).not.toBeChecked();
+  });
+
+  it("gives every row's Edit button a distinct accessible name", async () => {
+    shares = [
+      share({ id: "sh1", token: "tok1", title: "Alpha" }),
+      share({ id: "sh2", token: "tok2", title: "Beta" }),
+      share({ id: "sh3", token: "tok3", title: null }),
+    ];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+
+    expect(
+      await screen.findByRole("button", { name: "Edit link Alpha (tok1)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit link Beta (tok2)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit link tok3" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears a snapshot link's expiry", async () => {
+    shares = [
+      share({
+        mode: "snapshot",
+        title: "Snapshot",
+        includeComments: false,
+        expiresAt: Date.now() + 3_600_000,
+      }),
+    ];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByTestId("share-mode-snapshot"));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit link/ }));
+    fireEvent.click(screen.getByTestId("share-ttl"));
+    fireEvent.click(await screen.findByRole("radio", { name: "Never" }));
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+        ),
+      ).toBe(true),
+    );
+    const patch = requests.find(
+      (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+    );
+    expect(patch?.body).toMatchObject({ expiresAt: null });
+    await waitFor(() =>
+      expect(screen.getByTestId("share-row")).toHaveTextContent("No expiry"),
+    );
   });
 });

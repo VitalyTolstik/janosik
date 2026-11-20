@@ -1307,6 +1307,7 @@
   "share.deleteConfirm": "Confirm deletion",
   "share.description": "Create a read-only link anyone can open without an account. A live link follows the board in real time; a snapshot is a frozen copy that survives the board's deletion.",
   "share.edit": "Edit",
+  "share.editAria": "Edit link {{label}}",
   "share.editError": "Could not save the link — your changes are still here",
   "share.editImmutable": "Mode and token can't be changed",
   "share.editPrivacyConfirm": "Change visibility",
