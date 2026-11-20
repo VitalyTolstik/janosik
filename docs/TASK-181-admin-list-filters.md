@@ -468,7 +468,8 @@ Clear search and filters.
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
 surface. The matrix starts from the 181.1 legacy scopes and includes the
-181.4 moderation additions. **Offered** records facets planned for the picker.
+181.3 card facets and 181.4 moderation additions. **Offered** records facets
+planned for the picker.
 A picker can expose a facet once its owning wave implements it. Legacy deep
 links keep their existing behavior regardless of picker visibility.
 
@@ -481,7 +482,7 @@ can resolve options for later waves independently of list filtering.
 | --- | --- | --- | --- |
 | users | — | `verified`, `from`/`to` (period) | status, verified, period |
 | boards | `boardId`, `columnId`, `cardId`, `labelId` | `adminMemberId` | status, adminMemberId |
-| cards | `boardId`, `columnId`, `labelId` (single), `cardId` | repeated `labelId` + `labelMatch`, `assigneeId`, `unassigned`, `priority`, `due`, `hasAttachments`, `from`/`to` | all except `cardId` in the menu; period header; cardId advanced paste/URL |
+| cards | `boardId`, `columnId`, `cardId`, `labelId` (repeatable), `labelMatch`, `assigneeId`, `unassigned`, `priority`, `due`, `hasAttachments`, `from`/`to` | — | board, column, label (any/all), assignee, unassigned, priority, due, has attachments, period header, `cardId` advanced paste/URL |
 | columns | `boardId`, `columnId`, `cardId`, `labelId` | — | board, status |
 | labels | `boardId`, `labelId`, `cardId`, `columnId` | — | board, status |
 | checklists | `boardId`, `columnId`, `cardId`, `labelId` | — | board, card, status |
@@ -500,10 +501,9 @@ can resolve options for later waves independently of list filtering.
 | cardLabels | `boardId`, `columnId`, `labelId`, `cardId` | — | none (no tab) |
 | admins | owner-only custom endpoint, no generic filter | — | none |
 
-Every implemented pair has a table-driven e2e case. Cards use legacy
-single-label equality in 181.1 and 181.2. Repeated `labelId` and any
-`labelMatch` return 400 `unsupported_filter` on cards until 181.3. Other
-legacy lists retain a single-value `labelId`.
+Every implemented pair has a table-driven e2e case. Since 181.3, cards accept
+repeated `labelId` values with `labelMatch=any` (the default) or
+`labelMatch=all`. Other legacy lists retain a single-value `labelId`.
 
 ## 6. UX specification
 
@@ -1748,9 +1748,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 3. Merge **181.4–181.6** independently after 181.2. Each hub wave promotes
    its entries with the corresponding predicates and measured performance
    evidence. 181.4 owns the comments and attachments entries and their
-   [5k gate measurements](./TASK-181.4-moderation-perf.md). The full 25k
-   qualification remains part of rollout.
-4. Merge **181.7** docs/acceptance last.
+   [5k pre-rollout exception](./TASK-181.4-moderation-perf.md#pre-rollout-exception).
+4. Merge **181.7** docs/acceptance last. The full 25k qualification remains
+   part of rollout. The moderation qualification must pass before rollout.
 5. The admin UI and API ship atomically from the same image. Starting with
    the filter bar in 181.2, an unexpected `unsupported_filter` response for an
    active chip shows a blocking error with a Remove action.

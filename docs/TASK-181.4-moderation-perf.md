@@ -1,22 +1,25 @@
 # TASK-181.4 moderation filter benchmark
 
-The 5k gate did **not** pass on PostgreSQL 16.15. Of 66 filtered cases, 38 met
-both thresholds. All 21 comment cases scanned 10,000 rows. Eight cases exceeded
-the +20% warm p95 budget, including one of those comment cases. The highest
-filtered warm p95 was 6.558 ms for comments and 7.721 ms for attachments.
+The 5k gate failed on PostgreSQL 16.15. Of the filtered cases, **28/66 failed
+(38 met both thresholds)**. All 21 filtered comment cases hit the scan cutoff
+in the page plan. Eight cases exceeded the +20% warm p95 budget, including one
+of those comment cases. The highest filtered warm p95 was 6.558 ms for
+comments and 7.721 ms for attachments.
 
 [Raw samples, SQL and EXPLAIN (ANALYZE, BUFFERS) plans](../scripts/perf/results/task-181.4-moderation-gate.json.gz)
 
 ## Method
 
 The migrated gate fixture has 5,000 cards, 10,000 comments and 2,000
-attachments. The harness measures the SQL page and exact count in one
-transaction at offset 0 and sizes 25, 50 and 100. The page joins display
-relations after the limit, mirroring the application's page-first relation
-loading. The timings cover SQL and the local database round trip. Each case
-has three fresh-connection samples with shared PostgreSQL buffers and ten warm
-samples. The artifact includes all samples, cold and warm p50/p95, the exact
-totals and both plans for all 72 cases, including six baselines.
+attachments. The harness approximates the application's page-first relation
+loading. It measures one SQL page query that joins display relations after
+the limit, plus an exact count in the same transaction, at offset 0 and sizes
+25, 50 and 100. In the application, Prisma fetches the page and loads its
+relations in separate queries. The timings cover SQL and the local database
+round trip. Each case has three fresh-connection samples with shared
+PostgreSQL buffers and ten warm samples. The artifact includes all samples,
+cold and warm p50/p95, the exact totals and both plans for all 72 cases,
+including six baselines.
 
 The 24-hour predicate includes its lower bound. Combined cases also include
 the upper bound and match three comments or four attachments. Comment kinds
@@ -65,23 +68,42 @@ npm run perf:admin-filters -- --preset gate --moderation --output timings.json
 | Pending + period | 32 | 3.001 (−19.8%) | 2.512 (−25.0%) | 2.419 (−48.6%) |
 | Uploader + video + pending + bounded period | 4 | 2.813 (−24.8%) | 2.225 (−33.6%) | 2.095 (−55.5%) |
 
+## Warm p95 misses
+
+These eight cases exceeded +20% against the unfiltered baseline at the same
+page size.
+
+- Comments period at 50 (+30.5%).
+- Attachment images at 50 (+37.4%).
+- Attachment documents at 25 (+50.6%) and 50 (+57.1%).
+- Attachment Other at 25 (+104.8%), 50 (+130.5%), and 100 (+60.9%).
+- Attachment documents + period at 50 (+24.4%).
+
 ## Index decision
 
-The gate fixture puts the comment relation exactly at the scan cutoff. Both
-plans for every filtered case scanned all 10,000 comments. At page size 50,
-the period plan took 1.466 ms for the page and 0.466 ms for the exact count.
-Author and kind met the latency budget at every size. Author equality is
-selective (1% of rows), whereas two kinds match a third of the relation and
-period-only has no equality prefix. Keep the existing schema for this wave
-given the measured SQL costs. The 25k rollout qualification should compare
-`Comment(authorId, createdAt)` for author, `Comment(kind, createdAt)` for kind,
-and a date-leading index for period-only against the page and exact count.
+The gate fixture puts the comment relation exactly at the scan cutoff. All 21
+filtered page plans sequentially scanned 10,000 comments. The same scan
+appeared in 18 of 21 count plans. The three period-only count plans used an
+index-only scan with 961 actual rows each. At page size 50, the period-only
+page plan took 1.466 ms and the exact count plan took 0.466 ms. Author and kind
+met the latency budget at every size. Author equality matches 1% of rows, two
+kinds match a third of the relation, and period-only has no equality prefix.
+The 25k rollout qualification should compare `Comment(authorId, createdAt)`
+for author, `Comment(kind, createdAt)` for kind, and a date-leading index for
+period-only against the page and exact count.
 
 The attachment misses are in the MIME predicates. The plans examine 2,000
 attachments, with up to 1.655 ms for the count among the misses. Documents
 combines several case-insensitive branches and Other negates the union of the
 named families. A plain index on the stored MIME value or a board-leading
 index would leave the measured unscoped complement without a usable range.
-The small scan and sub-8 ms warm p95 leave a MIME expression or classification
-index for evaluation at rollout scale. Uploader, transcode and their period
-combinations met the gate, so this wave adds no index migration.
+Uploader, transcode and their period combinations met the gate.
+
+## Pre-rollout exception
+
+**Acceptance recorded 2026-11-20 (TASK-181.4 owner).** The literal 5k
+moderation gate failed. TASK-181.4 may proceed before rollout without an index
+migration based on the measured 5k plans and absolute filtered warm p95 below
+8 ms. Choosing an index for the MIME complement, such as an expression or
+classification index, is a 25k design decision. Passing the 25k moderation
+qualification under TASK-181.7 is a hard rollout gate.
