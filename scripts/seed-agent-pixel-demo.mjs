@@ -22,26 +22,24 @@
  *   API_URL=http://127.0.0.1:5302 \
  *   node scripts/seed-agent-pixel-demo.mjs
  *
- * The script refuses to run unless SEED_ALLOW=1, so a stray invocation cannot
- * wipe a developer database by accident.
+ * Direct invocation is for pixel parity. Set SEED_ALLOW=1 and use a
+ * disposable *_pixel database with both DEMO_* URLs unset.
  */
 import { createHash } from "node:crypto";
+import { openSync, closeSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import argon2 from "argon2";
+import { ids as sceneIds, manifest } from "./fixtures/task176-demo.mjs";
+import {
+  apiTarget,
+  assertEqualTargets,
+  databaseTarget,
+  DemoError,
+  reportError,
+} from "./task176/target.mjs";
 
-const API_URL = (process.env.API_URL ?? "http://127.0.0.1:5302").replace(
-  /\/$/,
-  "",
-);
 const PASSWORD = "pixel-demo-password";
-const prisma = new PrismaClient();
-
-if (process.env.SEED_ALLOW !== "1") {
-  console.error(
-    "Refusing to seed: set SEED_ALLOW=1 and point DATABASE_URL at a disposable database.",
-  );
-  process.exit(1);
-}
 
 const now = Date.now();
 const minutes = (value) => value * 60_000;
@@ -50,30 +48,7 @@ const hours = (value) => value * 3_600_000;
 const at = (offsetMs) => new Date(now + offsetMs);
 
 const ids = {
-  userAdmin: "px-user-admin",
-  userMember: "px-user-member",
-  boardOps: "px-board-agent-ops",
-  boardSite: "px-board-website",
-  columnOpsBacklog: "px-col-ops-backlog",
-  columnOpsProgress: "px-col-ops-progress",
-  columnOpsReview: "px-col-ops-review",
-  columnOpsDone: "px-col-ops-done",
-  columnSiteBacklog: "px-col-site-backlog",
-  columnSiteProgress: "px-col-site-progress",
-  columnSiteReview: "px-col-site-review",
-  columnSiteDone: "px-col-site-done",
-  cardClaim: "px-card-card-claim",
-  cardOnboarding: "px-card-old-onboarding",
-  cardApprovalInbox: "px-card-approval-inbox",
-  cardMcp: "px-card-mcp-write",
-  cardHeartbeat: "px-card-heartbeat-copy",
-  cardLanding: "px-card-landing-rewrite",
-  cardMcpCallouts: "px-card-mcp-callouts",
-  cardPricingCopy: "px-card-pricing-copy",
-  cardPricingRefs: "px-card-pricing-refs",
-  cardReleaseNotes: "px-card-release-notes",
-  cardApiReference: "px-card-api-reference",
-  cardDocsIndex: "px-card-docs-index",
+  ...sceneIds,
   tokenClaude: "px-token-claude",
   tokenDocs: "px-token-docs",
   tokenRelease: "px-token-release",
@@ -103,8 +78,14 @@ const rawTokens = {
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
-async function api(path, { token, body, sessionId, method = "POST" } = {}) {
-  const response = await fetch(`${API_URL}/api/v1${path}`, {
+async function api(
+  apiUrl,
+  path,
+  { token, body, sessionId, method = "POST" } = {},
+) {
+  const response = await fetch(`${apiUrl}/api/v1${path}`, {
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
     method,
     headers: {
       "content-type": "application/json",
@@ -113,17 +94,17 @@ async function api(path, { token, body, sessionId, method = "POST" } = {}) {
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  if (!response.ok) {
+    throw new DemoError(
+      `Pixel seed request ${method} ${path} returned HTTP ${response.status}.`,
+    );
+  }
   const text = await response.text();
   let parsed = null;
   try {
     parsed = text === "" ? null : JSON.parse(text);
   } catch {
     parsed = text;
-  }
-  if (!response.ok) {
-    throw new Error(
-      `${method} ${path} → ${response.status} ${JSON.stringify(parsed)}`,
-    );
   }
   return { body: parsed, headers: response.headers };
 }
@@ -145,17 +126,21 @@ function command(boardOrAction, maybeAction) {
   };
 }
 
-async function applyRun({
-  boardId = ids.boardOps,
-  token,
-  sessionId,
-  clientRunId,
-  commands,
-  atMs,
-  kind,
-}) {
+async function applyRun(
+  prisma,
+  apiUrl,
+  {
+    boardId = ids.boardOps,
+    token,
+    sessionId,
+    clientRunId,
+    commands,
+    atMs,
+    kind,
+  },
+) {
   // A real PAT batch creates the AgentRun and every pre-image.
-  const result = await api(`/boards/${boardId}/commands/batch`, {
+  const result = await api(apiUrl, `/boards/${boardId}/commands/batch`, {
     token,
     // Sessions are inserted later in this fixture; link them by direct DB
     // update below instead of presenting a not-yet-existing session header.
@@ -163,7 +148,7 @@ async function applyRun({
     body: { clientRunId, commands },
   });
   let runId = result.body.runId ?? result.headers.get("x-run-id");
-  if (!runId) throw new Error(`No run id for ${clientRunId}`);
+  if (!runId) throw new DemoError(`No run id for ${clientRunId}`);
   // Readable ids preserve the mockup's `Run #128` language while the real
   // command transport still creates the run. No foreign keys reference the
   // id, so the scalar rows are updated explicitly.
@@ -205,7 +190,7 @@ async function applyRun({
   return runId;
 }
 
-async function main() {
+async function clearPixelScene(prisma) {
   // --- clean the disposable database -------------------------------------
   await prisma.commandPreimage.deleteMany();
   await prisma.command.deleteMany();
@@ -217,6 +202,9 @@ async function main() {
   await prisma.activity.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.attachment.deleteMany();
+  await prisma.checklistItem.deleteMany();
+  await prisma.checklist.deleteMany();
+  await prisma.cardLink.deleteMany();
   await prisma.cardLabel.deleteMany();
   await prisma.card.deleteMany();
   await prisma.label.deleteMany();
@@ -225,230 +213,76 @@ async function main() {
   await prisma.board.deleteMany();
   await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
+}
 
+const cards = Object.fromEntries(
+  manifest.rows.card.map((card) => [card.id, card]),
+);
+function cardTitle(id) {
+  return cards[id].title;
+}
+function cardDescription(id) {
+  return cards[id].description;
+}
+
+export async function seedPixelScene(prisma, apiUrl, beforeRequest = () => {}) {
+  commandCounter = 0;
+  const run = (spec) => {
+    beforeRequest();
+    return applyRun(prisma, apiUrl, spec);
+  };
   const passwordHash = await argon2.hash(PASSWORD);
-
-  const admin = await prisma.user.create({
-    data: {
-      id: ids.userAdmin,
-      email: "pixel-admin@example.com",
+  const [admin, member] = manifest.rows.user;
+  await prisma.user.createMany({
+    data: manifest.rows.user.map((user, index) => ({
+      ...user,
       passwordHash,
-      displayName: "Audit Admin",
-      emailVerifiedAt: new Date(now - hours(24 * 30)),
-      locale: "en",
-    },
+      emailVerifiedAt: at(-hours(24 * (30 - 2 * index))),
+    })),
   });
-  const member = await prisma.user.create({
-    data: {
-      id: ids.userMember,
-      email: "pixel-member@example.com",
-      passwordHash,
-      displayName: "Riley Member",
-      emailVerifiedAt: new Date(now - hours(24 * 28)),
-      locale: "en",
-    },
-  });
-
   await prisma.board.createMany({
-    data: [
-      { id: ids.boardOps, title: "Agent Ops Demo", version: 4 },
-      { id: ids.boardSite, title: "Website Relaunch", version: 7 },
-    ],
+    data: manifest.rows.board.map((board, index) => ({
+      ...board,
+      version: index === 0 ? 4 : 7,
+    })),
   });
-
   await prisma.boardMember.createMany({
-    data: [
-      {
-        boardId: ids.boardOps,
-        userId: admin.id,
-        role: "ADMIN",
-        acceptedAt: new Date(now - hours(24 * 20)),
-      },
-      {
-        boardId: ids.boardSite,
-        userId: admin.id,
-        role: "MEMBER",
-        acceptedAt: new Date(now - hours(24 * 19)),
-      },
-      {
-        boardId: ids.boardOps,
-        userId: member.id,
-        role: "MEMBER",
-        acceptedAt: new Date(now - hours(24 * 18)),
-      },
-      {
-        boardId: ids.boardSite,
-        userId: member.id,
-        role: "ADMIN",
-        acceptedAt: new Date(now - hours(24 * 17)),
-      },
-    ],
+    data: manifest.rows.boardMember.map((member, index) => ({
+      ...member,
+      acceptedAt: at(-hours(24 * (20 - index))),
+    })),
   });
+  await prisma.column.createMany({ data: manifest.rows.column });
 
-  await prisma.column.createMany({
-    data: [
-      {
-        id: ids.columnOpsBacklog,
-        boardId: ids.boardOps,
-        title: "Backlog",
-        position: 0,
-      },
-      {
-        id: ids.columnOpsProgress,
-        boardId: ids.boardOps,
-        title: "In progress",
-        position: 1,
-      },
-      {
-        id: ids.columnOpsReview,
-        boardId: ids.boardOps,
-        title: "Review",
-        position: 2,
-      },
-      {
-        id: ids.columnOpsDone,
-        boardId: ids.boardOps,
-        title: "Done",
-        position: 3,
-      },
-      {
-        id: ids.columnSiteBacklog,
-        boardId: ids.boardSite,
-        title: "Backlog",
-        position: 0,
-      },
-      {
-        id: ids.columnSiteProgress,
-        boardId: ids.boardSite,
-        title: "In progress",
-        position: 1,
-      },
-      {
-        id: ids.columnSiteReview,
-        boardId: ids.boardSite,
-        title: "Review",
-        position: 2,
-      },
-      {
-        id: ids.columnSiteDone,
-        boardId: ids.boardSite,
-        title: "Done",
-        position: 3,
-      },
-    ],
-  });
-
+  // The command batches below transform these starting positions into the
+  // final manifest. Keeping the actions preserves the rollback/preimage demo.
+  const initial = {
+    [ids.cardApprovalInbox]: { columnId: ids.columnOpsProgress, position: 0 },
+    [ids.cardMcp]: { position: 1 },
+    [ids.cardLanding]: { title: "Landing page rewrite" },
+    [ids.cardPricingCopy]: { position: 0 },
+    [ids.cardPricingRefs]: { columnId: ids.columnSiteReview, position: 0 },
+    [ids.cardReleaseNotes]: { columnId: ids.columnSiteProgress, position: 0 },
+    [ids.cardApiReference]: { columnId: ids.columnSiteProgress, position: 1 },
+  };
+  const versions = {
+    [ids.cardClaim]: 2,
+    [ids.cardMcp]: 3,
+    [ids.cardMcpCallouts]: 2,
+    [ids.cardPricingCopy]: 4,
+    [ids.cardPricingRefs]: 2,
+    [ids.cardApiReference]: 2,
+  };
   await prisma.card.createMany({
-    data: [
-      {
-        id: ids.cardClaim,
-        columnId: ids.columnOpsBacklog,
-        title: "Card claim visibility",
-        position: 0,
-        version: 2,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardOnboarding,
-        columnId: ids.columnOpsBacklog,
-        title: "Old onboarding draft",
-        position: 1,
-        version: 1,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardApprovalInbox,
-        columnId: ids.columnOpsProgress,
-        title: "Approval inbox polish",
-        position: 0,
-        version: 1,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardMcp,
-        columnId: ids.columnOpsProgress,
-        title: "MCP write contract",
-        position: 1,
-        version: 3,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardHeartbeat,
-        columnId: ids.columnOpsReview,
-        title: "Session heartbeat copy",
-        position: 0,
-        version: 1,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardLanding,
-        columnId: ids.columnOpsReview,
-        title: "Landing page rewrite",
-        position: 1,
-        version: 1,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardMcpCallouts,
-        columnId: ids.columnOpsDone,
-        title: "MCP callouts",
-        position: 0,
-        version: 2,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardPricingCopy,
-        columnId: ids.columnSiteDone,
-        title: "Pricing page copy",
-        position: 0,
-        version: 4,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardPricingRefs,
-        columnId: ids.columnSiteReview,
-        title: "Pricing copy references",
-        position: 0,
-        version: 2,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardReleaseNotes,
-        columnId: ids.columnSiteProgress,
-        title: "Release notes",
-        position: 0,
-        version: 1,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardApiReference,
-        columnId: ids.columnSiteProgress,
-        title: "API reference",
-        position: 1,
-        version: 2,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-      {
-        id: ids.cardDocsIndex,
-        columnId: ids.columnSiteBacklog,
-        title: "Docs index",
-        position: 0,
-        version: 1,
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-      },
-    ],
+    data: manifest.rows.card
+      .filter(({ id }) => id !== ids.cardRetention)
+      .map((card) => ({
+        ...card,
+        ...initial[card.id],
+        description: null,
+        deletedAt: null,
+        version: versions[card.id] ?? 1,
+      })),
   });
 
   await prisma.apiToken.createMany({
@@ -500,7 +334,7 @@ async function main() {
   });
 
   // --- runs through the real command transport ---------------------------
-  const run128 = await applyRun({
+  const run128 = await run({
     token: rawTokens[ids.tokenCi],
     sessionId: ids.sessionCi,
     clientRunId: "seed-run-128",
@@ -520,7 +354,7 @@ async function main() {
     ],
   });
 
-  const run126 = await applyRun({
+  const run126 = await run({
     token: rawTokens[ids.tokenDocs],
     sessionId: ids.sessionApi,
     clientRunId: "seed-run-126",
@@ -530,12 +364,12 @@ async function main() {
       command({
         type: "UPDATE_CARD",
         cardId: ids.cardClaim,
-        description: "API reference sweep — exact MCP transport contract.",
+        description: cardDescription(ids.cardClaim),
       }),
     ],
   });
 
-  const run124 = await applyRun({
+  const run124 = await run({
     token: rawTokens[ids.tokenRelease],
     sessionId: null,
     clientRunId: "seed-run-124",
@@ -553,7 +387,7 @@ async function main() {
     data: { status: "reverted", revertedAt: new Date(now - hours(6)) },
   });
 
-  const run121 = await applyRun({
+  const run121 = await run({
     token: rawTokens[ids.tokenRelease],
     sessionId: null,
     clientRunId: "seed-run-121",
@@ -569,7 +403,7 @@ async function main() {
       command({
         type: "UPDATE_CARD",
         cardId: ids.cardLanding,
-        description: "Final landing page copy with the annual toggle.",
+        description: cardDescription(ids.cardLanding),
       }),
     ],
   });
@@ -580,12 +414,12 @@ async function main() {
     where: { id: ids.cardLanding },
     data: {
       version: { increment: 1 },
-      title: "Landing page rewrite — final",
+      title: cardTitle(ids.cardLanding),
       updatedAt: new Date(now - hours(2)),
     },
   });
 
-  const run118 = await applyRun({
+  const run118 = await run({
     token: rawTokens[ids.tokenDocs],
     sessionId: null,
     clientRunId: "seed-run-118",
@@ -600,14 +434,14 @@ async function main() {
       command({
         type: "UPDATE_CARD",
         cardId: ids.cardMcpCallouts,
-        title: "MCP callouts",
-        description: "MCP callouts — failed mid-sync.",
+        title: cardTitle(ids.cardMcpCallouts),
+        description: cardDescription(ids.cardMcpCallouts),
       }),
     ],
   });
   // Sixth Agent Ops run: the board list still starts at five rows, so the
   // reviewer can exercise Load more and the next server cursor.
-  const run108 = await applyRun({
+  const run108 = await run({
     token: rawTokens[ids.tokenClaude],
     sessionId: ids.sessionRefactor,
     clientRunId: "seed-run-108",
@@ -620,7 +454,7 @@ async function main() {
       command({
         type: "UPDATE_CARD",
         cardId: ids.cardMcp,
-        description: "Approval inbox copy reviewed after the docs build.",
+        description: cardDescription(ids.cardMcp),
       }),
     ],
   });
@@ -630,7 +464,7 @@ async function main() {
     { cardId: ids.cardReleaseNotes, from: ids.columnSiteProgress, index: 0 },
     { cardId: ids.cardApiReference, from: ids.columnSiteProgress, index: 1 },
   ];
-  const run115 = await applyRun({
+  const run115 = await run({
     boardId: ids.boardSite,
     token: rawTokens[ids.tokenCi],
     sessionId: ids.sessionDeploy,
@@ -649,7 +483,7 @@ async function main() {
     ),
   });
 
-  const run112 = await applyRun({
+  const run112 = await run({
     boardId: ids.boardSite,
     token: rawTokens[ids.tokenDocs],
     sessionId: ids.sessionPricing,
@@ -660,14 +494,14 @@ async function main() {
       command(ids.boardSite, {
         type: "UPDATE_CARD",
         cardId: ids.cardDocsIndex,
-        description: "API notes from the MCP transport review.",
+        description: cardDescription(ids.cardDocsIndex),
       }),
     ],
   });
 
   // Retention case: the run row and commands survive, the pre-images do not.
   // The detail still renders; preview must say `run_expired` honestly.
-  const runExpired = await applyRun({
+  const runExpired = await run({
     boardId: ids.boardSite,
     token: rawTokens[ids.tokenCi],
     sessionId: null,
@@ -677,9 +511,9 @@ async function main() {
     commands: [
       command(ids.boardSite, {
         type: "ADD_CARD",
-        newCardId: "px-card-expired-retention",
+        newCardId: ids.cardRetention,
         columnId: ids.columnSiteBacklog,
-        title: "Retention sample",
+        title: cardTitle(ids.cardRetention),
       }),
     ],
   });
@@ -1109,68 +943,107 @@ async function main() {
   // heartbeat reports its age separately; `sessionIdle` stays fresh so it
   // demonstrates Idle for the whole review.
 
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        api: API_URL,
-        login: {
-          admin: "pixel-admin@example.com",
-          member: "pixel-member@example.com",
-          password: PASSWORD,
-        },
-        boards: { agentOps: ids.boardOps, website: ids.boardSite },
-        runs: {
-          plusTwo: run128,
-          apiReference: run126,
-          reverted: run124,
-          conflict: run121,
-          batch: run118,
-          sixth: run108,
-          movedThree: run115,
-          notes: run112,
-          expired: runExpired,
-        },
-        tokens: rawTokens,
-      },
-      null,
-      2,
-    ),
-  );
+  return {
+    ok: true,
+    boards: { agentOps: ids.boardOps, website: ids.boardSite },
+    runs: {
+      plusTwo: run128,
+      apiReference: run126,
+      reverted: run124,
+      conflict: run121,
+      batch: run118,
+      sixth: run108,
+      movedThree: run115,
+      notes: run112,
+      expired: runExpired,
+    },
+  };
+}
 
+async function keepHeartbeats(prisma) {
   // Optional disposable-demo heartbeat: keep the intentionally fresh rows
   // alive without future timestamps. Stop the process to let them age out.
-  if (process.env.SEED_KEEP_HEARTBEATS === "1") {
-    const freshIds = [
-      ids.sessionRefactor,
-      ids.sessionLanding,
-      ids.sessionApi,
-      ids.sessionDeploy,
-      ids.sessionPricing,
-      ids.sessionIdle,
-    ];
-    const beat = async () => {
-      await prisma.agentSession.updateMany({
-        where: { id: { in: freshIds }, endedAt: null },
-        data: { lastHeartbeatAt: new Date() },
-      });
-    };
-    await beat();
-    await new Promise(() => {
-      setInterval(() => {
-        void beat().catch((error) =>
-          console.error("demo heartbeat failed", error),
-        );
-      }, 60_000);
+  const freshIds = [
+    ids.sessionRefactor,
+    ids.sessionLanding,
+    ids.sessionApi,
+    ids.sessionDeploy,
+    ids.sessionPricing,
+    ids.sessionIdle,
+  ];
+  const beat = async () => {
+    await prisma.agentSession.updateMany({
+      where: { id: { in: freshIds }, endedAt: null },
+      data: { lastHeartbeatAt: new Date() },
     });
+  };
+  await beat();
+  await new Promise(() => {
+    setInterval(() => {
+      void beat().catch(() => console.error("Demo heartbeat failed."));
+    }, 60_000);
+  });
+}
+
+export function writeSeedSecrets(file) {
+  // Exclusive creation also refuses existing files and symlinks.
+  const fd = openSync(file, "wx", 0o600);
+  try {
+    writeFileSync(
+      fd,
+      JSON.stringify(
+        {
+          login: {
+            admin: manifest.rows.user[0].email,
+            member: manifest.rows.user[1].email,
+            password: PASSWORD,
+          },
+          tokens: rawTokens,
+        },
+        null,
+        2,
+      ),
+    );
+  } finally {
+    closeSync(fd);
   }
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
+async function pixelMain() {
+  const env = process.env;
+  if (env.SEED_ALLOW !== "1" || env.NODE_ENV === "production") {
+    throw new DemoError(
+      "Refusing to seed outside a disposable pixel environment with SEED_ALLOW=1.",
+    );
+  }
+  const requestedApi = env.API_URL ?? "http://127.0.0.1:5302";
+  assertEqualTargets({ ...env, API_URL: requestedApi });
+  const target = databaseTarget(
+    env.DATABASE_URL,
+    (name) => name.endsWith("_pixel"),
+    "DATABASE_URL",
+  );
+  const { apiUrl } = apiTarget(requestedApi, "API_URL");
+  const prisma = new PrismaClient({ datasourceUrl: target.databaseUrl });
+  try {
+    const [identity] =
+      await prisma.$queryRaw`SELECT current_database() AS db, current_schema() AS schema`;
+    if (identity.db !== target.database || identity.schema !== "public") {
+      throw new DemoError("The pixel database identity did not match.");
+    }
+    await clearPixelScene(prisma);
+    const summary = await seedPixelScene(prisma, apiUrl);
+    if (env.SEED_SECRETS_FILE) writeSeedSecrets(env.SEED_SECRETS_FILE);
+    console.log(JSON.stringify(summary, null, 2));
+    if (env.SEED_KEEP_HEARTBEATS === "1") await keepHeartbeats(prisma);
+  } finally {
     await prisma.$disconnect();
-  });
+  }
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await pixelMain().catch((error) => reportError(error, "Pixel seed"));
+}
