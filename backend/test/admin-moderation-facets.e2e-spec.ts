@@ -171,6 +171,10 @@ describe("Admin moderation facets (e2e)", () => {
         },
         { id: "plain", mimeType: "text/plain" },
         { id: "legacy-office", mimeType: "application/vnd.ms-excel" },
+        { id: "rtf", mimeType: "APPLICATION/RTF" },
+        { id: "msword", mimeType: "application/msword" },
+        { id: "powerpoint", mimeType: "application/vnd.ms-powerpoint" },
+        { id: "json", mimeType: "application/json" },
         { id: "archive", mimeType: "application/zip" },
         { id: "audio", mimeType: "audio/mpeg" },
         { id: "queued", mimeType: "video/mp4", transcodeStatus: "pending" },
@@ -289,8 +293,11 @@ describe("Admin moderation facets (e2e)", () => {
     ["image", ["inline", "detached", "deleted"]],
     ["video", ["queued", "done", "failed"]],
     ["pdf", ["pdf", "pdf-after", "pdf-before"]],
-    ["document", ["word", "plain", "legacy-office"]],
-    ["other", ["archive", "audio"]],
+    [
+      "document",
+      ["word", "plain", "legacy-office", "rtf", "msword", "powerpoint"],
+    ],
+    ["other", ["archive", "audio", "json"]],
   ])("selects the %s MIME family", async (family, ids) => {
     expectRows(await attachments(`boardId=${BOARD}&mime=${family}`), ids);
   });
@@ -315,7 +322,7 @@ describe("Admin moderation facets (e2e)", () => {
       "pdf-after",
       "pdf-before",
     ]);
-    expect((await attachments("transcode=none")).total).toBe(12);
+    expect((await attachments("transcode=none")).total).toBe(16);
   });
 
   it("combines attachment facets and paginates across the inclusive period boundary with an exact total", async () => {
@@ -350,7 +357,25 @@ describe("Admin moderation facets (e2e)", () => {
       "failed",
     ]);
     expect((await comments(`boardId=${BOARD}&status=all`)).total).toBe(8);
-    expect((await attachments(`boardId=${BOARD}&status=all`)).total).toBe(14);
+    expect((await attachments(`boardId=${BOARD}&status=all`)).total).toBe(18);
+  });
+
+  it("treats empty and whitespace-only author and uploader ids as absent", async () => {
+    const scope = `boardId=${BOARD}`;
+    for (const value of ["", "%20%20"]) {
+      for (const specialized of [false, true]) {
+        const baseline = await comments(scope, specialized);
+        expectRows(
+          await comments(`${scope}&authorId=${value}`, specialized),
+          baseline.items.map(({ id }) => id),
+        );
+      }
+      const baseline = await attachments(scope);
+      expectRows(
+        await attachments(`${scope}&uploadedById=${value}`),
+        baseline.items.map(({ id }) => id),
+      );
+    }
   });
 
   it("includes inline and detached rows while the card counter excludes them", async () => {

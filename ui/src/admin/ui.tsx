@@ -209,7 +209,7 @@ export function FilterTabs<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "h-7 rounded-md px-2.5 text-xs font-medium transition-colors",
+            "h-7 rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             value === option.value
               ? "bg-primary/15 text-foreground"
               : "text-muted-foreground hover:bg-hover hover:text-foreground",

@@ -177,13 +177,13 @@ export class AdminListQueryDto implements AdminFilters {
   @FilterField("verified")
   verified?: boolean;
 
-  @FilterField("authorId")
+  @FilterField("authorId", { optionalEmpty: true })
   authorId?: string;
 
   @FilterField("kind")
   kind?: AdminFilterValues["kind"];
 
-  @FilterField("uploadedById")
+  @FilterField("uploadedById", { optionalEmpty: true })
   uploadedById?: string;
 
   @FilterField("mime")

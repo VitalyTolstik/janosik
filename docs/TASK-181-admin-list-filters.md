@@ -2,8 +2,8 @@
 
 **Status:** planned
 
-**Revision:** 7 (2026-11-19) — announcements UI alias normalization and the
-non-blocking notes are addressed; see the resolved decisions in §14.
+**Revision:** 8 (2026-11-20) — records the TASK-181.4 moderation filters and
+their performance evidence.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -346,10 +346,10 @@ apply to each row's `createdAt`.
 MIME matching is case-insensitive against the stored `mimeType`. Images and
 videos match their MIME prefixes, PDF matches `application/pdf`, and Documents
 covers `text/*`, RTF, and legacy and Open XML Office formats. Other covers
-the remaining types, including audio and archives. Video processing matches
-the stored `transcodeStatus`. **No transcoding** covers non-video uploads and
-videos uploaded with transcoding disabled. Later feature flag changes do not
-change those rows' state.
+the remaining types, including JSON, audio and archives. Video processing
+matches the stored `transcodeStatus`. **No transcoding** covers non-video
+uploads and videos uploaded with transcoding disabled. Later feature flag
+changes do not change those rows' state.
 
 ### 5.5 Audit & activity hub
 
@@ -467,18 +467,17 @@ Clear search and filters.
 `search`, `limit` and `offset` are accepted by every generic list. `status`
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
-surface. In 181.1 this is the legacy structural and command-correlation
-column below, with existing date ranges tracked separately. **Offered**
-records facets planned for the picker. A picker can expose a facet once its
-owning wave implements it. Legacy deep links keep their existing behavior
-regardless of picker visibility.
+surface. The matrix starts from the 181.1 legacy scopes and includes the
+181.4 moderation additions. **Offered** records facets planned for the picker.
+A picker can expose a facet once its owning wave implements it. Legacy deep
+links keep their existing behavior regardless of picker visibility.
 
 The UI parser and request builder use only implemented facets. A hand-edited
 deferred facet is omitted from the list request and a direct API call returns
 400 `unsupported_filter` until its owning wave enables it. The lookup endpoint
 can resolve options for later waves independently of list filtering.
 
-| Entity | Implemented in 181.1 (legacy) | Deferred until owning wave | Planned or existing menu/header |
+| Entity | Implemented | Deferred until owning wave | Planned or existing menu/header |
 | --- | --- | --- | --- |
 | users | — | `verified`, `from`/`to` (period) | status, verified, period |
 | boards | `boardId`, `columnId`, `cardId`, `labelId` | `adminMemberId` | status, adminMemberId |
@@ -488,8 +487,8 @@ can resolve options for later waves independently of list filtering.
 | checklists | `boardId`, `columnId`, `cardId`, `labelId` | — | board, card, status |
 | checklistItems | `boardId`, `columnId`, `cardId`, `labelId` | — (no tab v1) | none |
 | cardLinks | `boardId`, `cardId` | `type` (static `CARD_LINK_TYPES`) | board, card, type, status |
-| comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to` | `authorId`, `kind` | board, card, author, kind, period, status |
-| attachments | `boardId`, `cardId`, `columnId`, `labelId` | `uploadedById`, `mime`, `transcode`, `from`/`to` | board, card, uploader, mime, transcode, period, status |
+| comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to`, `authorId`, `kind` | — | board, card, author, kind, period, status |
+| attachments | `boardId`, `cardId`, `columnId`, `labelId`, `uploadedById`, `mime`, `transcode`, `from`/`to` | — | board, card, uploader, mime, transcode, period, status |
 | activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |
 | commands | `boardId`, `columnId`, `cardId`, `commandId` (176.10), `from`/`to` | `actorId`, `type` | board, actor, type, card, column, commandId, period |
 | audit | `commandId` (176.10), `from`/`to` | `adminId`, `action`, `targetType`, `targetId` | audit actor, action, targetType, targetId, commandId, period |
@@ -545,8 +544,9 @@ badge.
   kind/type/action/target). Status and period stay in the header; they are never
   duplicated in the popover.
 - Each facet opens a searchable picker:
-  - single-value: board, column, card, checklist, target id, board admin member;
-  - multi-value: labels, assignees, authors, uploaders, actors, types, actions,
+  - single-value: board, column, card, checklist, author, uploader, target id,
+    board admin member;
+  - multi-value: labels, assignees, actors, types, actions,
     target types, priorities, kinds.
 - Single-value pickers apply on selection and close. Multi-value pickers keep a
   local draft; **Apply** commits the whole facet at once, **Clear** empties the
@@ -1122,6 +1122,9 @@ Behavior:
   and single-label predicates on cards. Audit actor/action and their index
   decisions belong to 181.6. Each owning wave measures its shipped predicates
   before enabling them. The full 25k qualification remains part of rollout.
+- [TASK-181.4 benchmark evidence](./TASK-181.4-moderation-perf.md) records the
+  moderation predicates on the 5k gate fixture, including period and combined
+  cases and their query plans.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -1311,10 +1314,9 @@ Minimal, additive, but update every producer:
 - `mime`:
   - image: `startsWith("image/")`
   - video: `startsWith("video/")`
-  - audio: `startsWith("audio/")`
   - pdf: `application/pdf`
-  - document: `text/*` plus office/CSV/JSON types
-  - other: none of the above
+  - document: `text/*`, RTF, and legacy and Open XML Office formats
+  - other: the remaining types, including JSON, audio and archives
   Use `OR` branches; test each family and an unknown type.
 - `transcode` exact enum.
 - Audit `action`/`targetType` exact; `targetId` exact; `adminId` `in`.
@@ -1499,6 +1501,13 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   author/kind; switching back does not resurrect stale values.
 - Operators can use every filter; no owner-only link is introduced.
 - Empty states per tab; deleted/archived semantics documented.
+
+**Open follow-ups**
+
+- CardLinks has a pre-existing isolation flake. The full UI suite passes.
+- Revisit checkbox groups versus listbox interaction for multi-value pickers.
+- Revisit behavior when a requested page is out of range.
+- Consolidate global card navigation helpers in a later change.
 
 ### 181.5 — Content lists (P2)
 
@@ -1730,15 +1739,17 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 ## 11. Rollout
 
-1. Merge **181.1** first. The implemented set in §5.8 preserves legacy
+1. Merge **181.1** first. The initial implemented set in §5.8 preserves legacy
    deep links. The UI omits deferred inputs from requests and direct API calls
    return 400 `unsupported_filter`. The offered set records the planned UI.
 2. Merge **181.2** (cards picker, lookup client and cache) and **181.3**
    (cards facets, multi-label and label matching). Each wave enables the
    corresponding implemented entries alongside the predicates and tests.
 3. Merge **181.4–181.6** independently after 181.2. Each hub wave promotes
-   its implemented entries only when the corresponding predicates and
-   performance checks are ready.
+   its entries with the corresponding predicates and measured performance
+   evidence. 181.4 owns the comments and attachments entries and their
+   [5k gate measurements](./TASK-181.4-moderation-perf.md). The full 25k
+   qualification remains part of rollout.
 4. Merge **181.7** docs/acceptance last.
 5. The admin UI and API ship atomically from the same image. Starting with
    the filter bar in 181.2, an unexpected `unsupported_filter` response for an
@@ -1756,7 +1767,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
      there plus `listAttachments` in `admin-entities.service.ts`; 181.5 owns
      `listUsers`/`listBoards` plus the content lists in `admin-entities`;
      181.6 owns `listCommands`/`listAudit` plus `listActivity`; 181.4 adds the
-     `AdminCommentRowDto.kind` producer change after 181.1; 181.7 owns docs.
+     `AdminCommentRowDto.kind` producer change after 181.1. Each wave updates
+     its own entries and evidence. 181.7 owns the final docs and acceptance.
      Serialize edits to `admin.service.ts`/`admin-entities.service.ts` by wave
      and rebase each subtask; do not edit `EntityPage.tsx`/`HubTabs.tsx` in
      parallel.

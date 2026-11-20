@@ -969,13 +969,17 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.attachments.column.file"),
             render: (file) => (
-              <span className="inline-flex items-center gap-2">
+              <span className="inline-flex min-w-0 max-w-72 flex-wrap items-center gap-2">
                 <AttachmentThumb
                   attachmentId={file.id}
                   mimeType={file.mimeType}
                   fileName={file.fileName}
                 />
-                <TextCell value={file.fileName} maxWidth="18rem" />
+                <TextCell
+                  value={file.fileName}
+                  className="min-w-0"
+                  maxWidth="18rem"
+                />
                 {file.isInline ? (
                   <Badge>{t("admin.attachments.inline")}</Badge>
                 ) : null}

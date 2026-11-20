@@ -12,7 +12,9 @@ const english = {
   kind: "Comment kind",
   blocker: "Blocker",
   question: "Question",
+  evidence: "Evidence",
   apply: "Apply",
+  cancel: "Cancel",
   uploader: "Uploader",
   mime: "File type",
   mimeGroup: "File type filter",
@@ -20,13 +22,15 @@ const english = {
   transcode: "Video processing",
   transcodeGroup: "Video processing filter",
   none: "No transcoding",
+  transcodeStates: ["Pending", "Failed", "Done"],
   any: "Any",
   inline: "Inline",
   detached: "Detached",
   periods: ["Any time", "24 hours", "7 days", "30 days"],
   statuses: ["All", "Active", "Deleted"],
   total: "Filters applied · Results: 2",
-  noMatches: "No attachments match these filters.",
+  noComments: "No comments match these filters.",
+  noAttachments: "No attachments match these filters.",
 };
 
 const russian: typeof english = {
@@ -39,7 +43,9 @@ const russian: typeof english = {
   kind: "Тип комментария",
   blocker: "Блокер",
   question: "Вопрос",
+  evidence: "Подтверждение",
   apply: "Применить",
+  cancel: "Отмена",
   uploader: "Кто загрузил",
   mime: "Тип файла",
   mimeGroup: "Фильтр по типу файла",
@@ -47,13 +53,19 @@ const russian: typeof english = {
   transcode: "Обработка видео",
   transcodeGroup: "Фильтр по обработке видео",
   none: "Без перекодирования",
+  transcodeStates: [
+    "Обработка: в очереди",
+    "Обработка: ошибка",
+    "Обработка: готово",
+  ],
   any: "Любой вариант",
   inline: "Встроено",
   detached: "Отсоединено",
   periods: ["За всё время", "24 часа", "7 дней", "30 дней"],
   statuses: ["Все", "Активен", "Удалён"],
   total: "Фильтры применены · Результатов: 2",
-  noMatches: "Нет вложений, соответствующих этим фильтрам.",
+  noComments: "Нет комментариев, соответствующих этим фильтрам.",
+  noAttachments: "Нет вложений, соответствующих этим фильтрам.",
 };
 
 async function expectInside(
@@ -111,16 +123,25 @@ for (const width of [1440, 1024, 390]) {
       );
       expect(response.status()).toBe(201);
     }
-    for (const [query, fileName] of [
-      ["inline=1", "inline-moderation.txt"],
-      ["description=1", "detached-moderation.txt"],
-    ]) {
+    const files = [
+      {
+        query: "inline=1",
+        name: `inline-moderation-${"filename".repeat(14)}.txt`,
+        badge: copy.inline,
+      },
+      {
+        query: "description=1",
+        name: `detached-moderation-${"filename".repeat(14)}.txt`,
+        badge: copy.detached,
+      },
+    ];
+    for (const { query, name } of files) {
       const response = await board.api.post(
         `/api/v1/cards/${cardId}/attachments?${query}`,
         {
           multipart: {
             file: {
-              name: fileName,
+              name,
               mimeType: "text/plain",
               buffer: Buffer.from("moderation fixture"),
             },
@@ -224,6 +245,69 @@ for (const width of [1440, 1024, 390]) {
       await expect(cardChip).toHaveCount(0);
     }
 
+    const filteredComments = page.url();
+    const kindDraft = await openFacet(copy.commentsDialog, copy.kind);
+    await kindDraft.getByRole("checkbox", { name: copy.blocker }).uncheck();
+    await kindDraft.getByRole("checkbox", { name: copy.evidence }).check();
+    await kindDraft
+      .getByRole("button", { name: copy.cancel, exact: true })
+      .click();
+    await expect(kindDraft).toBeHidden();
+    await expect(page).toHaveURL(filteredComments);
+    await expect(page.getByTestId("admin-filter-results")).toHaveText(
+      copy.total,
+    );
+
+    const noMatchesDraft = await openFacet(copy.commentsDialog, copy.kind);
+    const blockerChoice = noMatchesDraft.getByRole("checkbox", {
+      name: copy.blocker,
+    });
+    const evidenceChoice = noMatchesDraft.getByRole("checkbox", {
+      name: copy.evidence,
+    });
+    await expect(blockerChoice).toBeChecked();
+    await expect(evidenceChoice).not.toBeChecked();
+    await blockerChoice.uncheck();
+    await noMatchesDraft
+      .getByRole("checkbox", { name: copy.question })
+      .uncheck();
+    await evidenceChoice.check();
+    await noMatchesDraft
+      .getByRole("button", { name: copy.apply, exact: true })
+      .click();
+    await expect(page.getByText(copy.noComments)).toBeVisible();
+    expect(new URL(page.url()).searchParams.getAll("kind")).toEqual([
+      "evidence",
+    ]);
+    await page.goBack();
+    await expect(page).toHaveURL(filteredComments);
+    await expect(page.getByTestId("admin-filter-results")).toHaveText(
+      copy.total,
+    );
+
+    await page
+      .getByTestId("admin-filter-clear-kind")
+      .and(page.locator('[data-filter-value="blocker"]'))
+      .click();
+    expect(new URL(page.url()).searchParams.getAll("kind")).toEqual([
+      "question",
+    ]);
+    await expect(page.getByText("Who can look?")).toBeVisible();
+    await expect(page.getByText("Blocked on review")).toHaveCount(0);
+    await page.getByTestId("admin-filter-clear-authorId").click();
+    await expect(page.getByTestId("admin-filter-authorId")).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has("authorId")).toBe(false);
+    expect(new URL(page.url()).searchParams.getAll("kind")).toEqual([
+      "question",
+    ]);
+    await page.goBack();
+    await page.goBack();
+    await expect(page).toHaveURL(filteredComments);
+    await expect(page.getByTestId("admin-filter-authorId")).toContainText(
+      board.email,
+    );
+    await expect(page.getByTestId("admin-filter-kind")).toHaveCount(2);
+
     await attachments.click();
     await expect(
       page.getByRole("heading", { name: copy.attachments, exact: true }),
@@ -233,12 +317,15 @@ for (const width of [1440, 1024, 390]) {
       boardId: board.id,
       returnTo: "/admin",
     });
-    await expect(
-      page.getByRole("row").filter({ hasText: "inline-moderation.txt" }),
-    ).toContainText(copy.inline);
-    await expect(
-      page.getByRole("row").filter({ hasText: "detached-moderation.txt" }),
-    ).toContainText(copy.detached);
+    for (const { name, badge } of files) {
+      const fileCell = page.getByRole("cell").filter({ hasText: name });
+      await expect(fileCell).toContainText(badge);
+      await expect(
+        fileCell.getByRole("button", { name, exact: true }),
+      ).toBeVisible();
+      if (mobile)
+        expect((await fileCell.boundingBox())?.width).toBeLessThanOrEqual(320);
+    }
     await expect(page.getByTestId("admin-filter-boardId")).toContainText(
       boardTitle,
     );
@@ -266,8 +353,17 @@ for (const width of [1440, 1024, 390]) {
     const statuses = transcode.getByRole("radiogroup", {
       name: copy.transcodeGroup,
     });
+    await expect(statuses.getByRole("radio")).toHaveText([
+      copy.any,
+      ...copy.transcodeStates,
+      copy.none,
+    ]);
     await expect(statuses.getByRole("radio", { name: copy.any })).toBeFocused();
     await page.keyboard.press("ArrowDown");
+    await expect(
+      statuses.getByRole("radio", { name: copy.transcodeStates[0] }),
+    ).toBeFocused();
+    await page.keyboard.press("End");
     await page.keyboard.press("Space");
     await expect(trigger).toBeFocused();
     await expect(page.getByTestId("admin-filter-transcode")).toHaveText(
@@ -278,7 +374,7 @@ for (const width of [1440, 1024, 390]) {
     );
     const media = await openFacet(copy.attachmentsDialog, copy.mime);
     await media.getByRole("radio", { name: "PDF" }).click();
-    await expect(page.getByText(copy.noMatches)).toBeVisible();
+    await expect(page.getByText(copy.noAttachments)).toBeVisible();
 
     const recent = page.getByRole("button", {
       name: copy.periods[1],
@@ -287,9 +383,19 @@ for (const width of [1440, 1024, 390]) {
     await recent.click();
     await page.reload();
     await expect(recent).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText(copy.noMatches)).toBeVisible();
+    await expect(page.getByText(copy.noAttachments)).toBeVisible();
     await expect(page.getByTestId("admin-filter-transcode")).toHaveText(
       copy.none,
+    );
+    const filteredAttachments = page.url();
+    await page.getByTestId("admin-filter-clear-uploadedById").click();
+    await expect(page.getByTestId("admin-filter-uploadedById")).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has("uploadedById")).toBe(false);
+    expect(new URL(page.url()).searchParams.get("mime")).toBe("pdf");
+    await page.goBack();
+    await expect(page).toHaveURL(filteredAttachments);
+    await expect(page.getByTestId("admin-filter-uploadedById")).toContainText(
+      board.email,
     );
     await comments.click();
     await expect(page.getByText("Ordinary note")).toBeVisible();
@@ -298,6 +404,19 @@ for (const width of [1440, 1024, 390]) {
       boardId: board.id,
       returnTo: "/admin",
     });
+    const unfilteredComments = page.url();
+    await page.goBack();
+    await expect(page).toHaveURL(filteredAttachments);
+    await expect(attachments).toHaveAttribute("aria-selected", "true");
+    await expect(recent).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("admin-filter-uploadedById")).toContainText(
+      board.email,
+    );
+    await expect(page.getByText(copy.noAttachments)).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(unfilteredComments);
+    await expect(comments).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByText("Ordinary note")).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);

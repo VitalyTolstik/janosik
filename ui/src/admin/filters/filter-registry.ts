@@ -1,6 +1,5 @@
 import {
   ADMIN_MIME_FAMILIES,
-  ADMIN_TRANSCODE_STATUSES,
   CARD_PRIORITIES,
   COMMENT_KINDS,
   ENTITY_FILTERS,
@@ -125,7 +124,7 @@ export const RADIO_FILTERS = {
   },
   transcode: {
     label: "admin.filters.transcode.control",
-    choices: ADMIN_TRANSCODE_STATUSES.map((value) => ({
+    choices: (["pending", "failed", "done", "none"] as const).map((value) => ({
       value,
       label: `admin.filters.transcode.${value}` as const,
     })),

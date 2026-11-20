@@ -91,7 +91,15 @@ async function seed(db, preset) {
     "video/mp4",
     "audio/ogg",
     "text/csv",
-    "application/zip",
+    "application/json",
+  ];
+  const documentTypes = [
+    "text/csv",
+    "application/rtf",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ];
   const auditActions = [
     "board.command",
@@ -205,12 +213,17 @@ async function seed(db, preset) {
     fileName: `attachment-${i}`,
     storedName: id("file", i),
     sizeBytes: 20_000 + i,
-    mimeType: mimeTypes[i % mimeTypes.length],
+    mimeType:
+      i % mimeTypes.length === 4
+        ? documentTypes[Math.floor(i / mimeTypes.length) % documentTypes.length]
+        : mimeTypes[i % mimeTypes.length],
     uploadedById: user(i + 2),
     isInline: i % 4 === 2,
     descriptionDetached: i % 4 === 3,
     transcodeStatus:
-      i % mimeTypes.length === 2 ? (i % 5 ? "done" : "pending") : "none",
+      i % mimeTypes.length === 2
+        ? ["pending", "failed", "done", "done", "none"][i % 5]
+        : "none",
     createdAt: recent(i),
   }));
   await insert(db.command, size.commands, (i) => ({
