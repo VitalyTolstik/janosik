@@ -1,3 +1,4 @@
+import { CARD_ATTACHMENT_WHERE } from "./card-attachments";
 import { randomUUID } from "node:crypto";
 import { rename, rm } from "node:fs/promises";
 
@@ -365,8 +366,7 @@ export class AttachmentsService {
     const rows = await this.prisma.attachment.findMany({
       where: {
         cardId,
-        deletedAt: null,
-        isInline: false,
+        ...CARD_ATTACHMENT_WHERE,
         descriptionDetached: detached,
         ...(createdBefore ? { createdAt: { lte: createdBefore } } : {}),
       },

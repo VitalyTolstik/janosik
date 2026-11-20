@@ -39,6 +39,17 @@ describe("admin navigation", () => {
     expect(adminAuditEntryHref("cmd-1")).toBe(
       "/admin/audit?tab=audit&commandId=cmd-1",
     );
+    expect(
+      adminCardsHref({
+        labelId: ["l-2", "l-1"],
+        labelMatch: "all",
+        hasAttachments: false,
+        unassigned: false,
+        authorId: ["u-1"],
+      }),
+    ).toBe(
+      "/admin/boards?tab=cards&hasAttachments=false&labelId=l-1&labelId=l-2&labelMatch=all",
+    );
   });
 
   it("round-trips returnTo without dropping an existing query", () => {

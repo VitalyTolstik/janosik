@@ -40,9 +40,12 @@ function optionalNumberValue({ value }: { value: unknown }): unknown {
 /** Normalize repeated values before validating their distinct count. */
 function FilterField(
   key: AdminFilterKey,
-  { optionalEmpty = false } = {},
+  {
+    optionalEmpty = false,
+    limit = adminFilterValueLimit(key),
+    allowScalar = limit === 1,
+  }: { optionalEmpty?: boolean; limit?: number; allowScalar?: boolean } = {},
 ): PropertyDecorator {
-  const limit = adminFilterValueLimit(key);
   return (target, property) => {
     IsOptional()(target, property);
     Transform(({ value }: { value: unknown }) => {
@@ -51,7 +54,7 @@ function FilterField(
       }
       const parse = (entry: unknown) =>
         parseAdminFilterValue(key, entry) ?? entry;
-      if (limit > 1) {
+      if (limit > 1 && (!allowScalar || Array.isArray(value))) {
         return [
           ...new Set((Array.isArray(value) ? value : [value]).map(parse)),
         ];
@@ -64,7 +67,7 @@ function FilterField(
         validate(value: unknown) {
           if (!Array.isArray(value)) {
             return (
-              limit === 1 && parseAdminFilterValue(key, value) !== undefined
+              allowScalar && parseAdminFilterValue(key, value) !== undefined
             );
           }
           return (
@@ -132,12 +135,16 @@ export class AdminListQueryDto implements AdminFilters {
   @FilterField("columnId", { optionalEmpty: true })
   columnId?: string;
 
-  @FilterField("labelId", { optionalEmpty: true })
-  labelId?: string;
+  @FilterField("labelId", {
+    optionalEmpty: true,
+    limit: adminFilterValueLimit("labelId", "cards"),
+    allowScalar: true,
+  })
+  labelId?: AdminFilterValues["labelId"];
 
   /** Used by lists that retain TASK-176.6's single-label contract. */
   get singleLabelId(): string | undefined {
-    return this.labelId;
+    return typeof this.labelId === "string" ? this.labelId : undefined;
   }
 
   @FilterField("cardId", { optionalEmpty: true })

@@ -184,7 +184,7 @@ describe("admin list query state", () => {
 });
 
 describe("surface-aware admin queries", () => {
-  it("round-trips legacy card filters and drops deferred facets", () => {
+  it("round-trips cards filters and drops defaults and deferred facets", () => {
     const options = { surface: "cards" } as const;
     const source = new URLSearchParams(
       "tab=cards&returnTo=%2Fadmin&status=archived&labelId=l-1&labelMatch=all&verified=true" +
@@ -196,10 +196,12 @@ describe("surface-aware admin queries", () => {
       ...EMPTY_ADMIN_LIST_FILTERS,
       boardId: "b-1",
       labelId: "l-1",
+      priority: ["high"],
+      hasAttachments: false,
     });
     const canonical = writeAdminListQuery(source, state, options);
     expect(canonical.toString()).toBe(
-      "tab=cards&returnTo=%2Fadmin&status=archived&boardId=b-1&labelId=l-1",
+      "tab=cards&returnTo=%2Fadmin&status=archived&boardId=b-1&hasAttachments=false&labelId=l-1&priority=high",
     );
     expect(readAdminListQuery(canonical, options)).toEqual(state);
   });
@@ -217,11 +219,15 @@ describe("surface-aware admin queries", () => {
     },
   );
 
-  it("ignores deferred values before checking limits and rejects repeated legacy singletons", () => {
+  it("deduplicates card labels and assignees and rejects repeated legacy singletons", () => {
     const params = new URLSearchParams("labelId=l-1&labelId=l-1");
     for (let i = 0; i < 21; i++) params.append("assigneeId", "u-1");
     const cards = readAdminListQuery(params, { surface: "cards" });
-    expect(cards.filters).toEqual(EMPTY_ADMIN_LIST_FILTERS);
+    expect(cards.filters).toEqual({
+      ...EMPTY_ADMIN_LIST_FILTERS,
+      labelId: "l-1",
+      assigneeId: ["u-1"],
+    });
     expect(cards.filterError).toBeUndefined();
     expect(
       readAdminListQuery(params, { surface: "comments" }).filterError,
@@ -250,8 +256,30 @@ describe("surface-aware admin queries", () => {
     expect(adminListRequestFilters(filters)).toEqual({});
     expect(adminListRequestFilters(filters, "cards")).toEqual({
       boardId: "b-1",
+      assigneeId: ["u-1"],
     });
     expect(adminListRequestFilters(filters, "users")).toEqual({});
+  });
+
+  it("round-trips cards multi-values, mode and period in canonical order", () => {
+    const options = { surface: "cards" } as const;
+    const params = new URLSearchParams(
+      "tab=cards&period=7d&labelId=l-2&labelId=l-1&labelMatch=all&assigneeId=u-2&assigneeId=u-1&unassigned=true&due=soon",
+    );
+    const state = readAdminListQuery(params, options);
+    expect(state.period).toBe("7d");
+    expect(adminListRequestFilters(state.filters, "cards")).toEqual({
+      assigneeId: ["u-1", "u-2"],
+      due: "soon",
+      labelId: ["l-1", "l-2"],
+      labelMatch: "all",
+      unassigned: true,
+    });
+    const canonical = writeAdminListQuery(params, state, options);
+    expect(canonical.toString()).toBe(
+      "tab=cards&period=7d&assigneeId=u-1&assigneeId=u-2&due=soon&labelId=l-1&labelId=l-2&labelMatch=all&unassigned=true",
+    );
+    expect(readAdminListQuery(canonical, options)).toEqual(state);
   });
 
   it("normalizes announcement status while reading and writing", () => {

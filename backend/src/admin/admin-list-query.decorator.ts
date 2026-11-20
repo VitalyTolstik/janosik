@@ -47,8 +47,8 @@ export function assertSupportedFilters(
   ) {
     unsupportedFilter(surface, "status");
   }
-  if (surface === "cards" && Array.isArray(raw.labelId)) {
-    unsupportedFilter(surface, "labelId");
+  if (surface !== "cards" && Array.isArray(raw.labelId)) {
+    throw new BadRequestException(["labelId must be a single valid value"]);
   }
 }
 
@@ -76,6 +76,13 @@ async function parseListQuery(
     throw new BadRequestException(
       "type must contain valid values for this list",
     );
+  }
+  if (
+    query.labelMatch === "any" ||
+    !Array.isArray(query.labelId) ||
+    query.labelId.length < 2
+  ) {
+    delete query.labelMatch;
   }
   const error = adminFilterLimitError(adminFilterEntries(query, surface));
   if (error) throw new BadRequestException(error);

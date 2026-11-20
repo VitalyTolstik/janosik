@@ -67,7 +67,7 @@ function facetCases(preset, referenceTime) {
       facet: "due",
       model: CARDS,
       predicate: sql`c."dueDate" >= ${referenceTime}
-      AND c."dueDate" < ${referenceTime} + INTERVAL '24 hours'`,
+      AND c."dueDate" <= ${referenceTime} + INTERVAL '24 hours'`,
     },
     { list: "audit", facet: "unfiltered", model: AUDIT, predicate: unfiltered },
     {
@@ -84,41 +84,56 @@ function facetCases(preset, referenceTime) {
     },
   ];
 
-  if (preset !== "full") return cases;
+  const secondLabel = id("label", perfDataset(preset).boards);
+  const dayAgo = new Date(referenceTime.getTime() - 86_400_000);
+  const additionalCards = [
+    [
+      "labels-any",
+      sql`EXISTS (
+      SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" IN (${id("label", 0)}, ${secondLabel})
+    )`,
+    ],
+    [
+      "labels-all",
+      sql`EXISTS (
+      SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" = ${id("label", 0)}
+    ) AND EXISTS (
+      SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" = ${secondLabel}
+    )`,
+    ],
+    [
+      "assignee-or-unassigned",
+      sql`(c."assigneeId" IN (${id("user", 0)}, ${id("user", 1)}) OR c."assigneeId" IS NULL)`,
+    ],
+    ["unassigned", sql`c."assigneeId" IS NULL`],
+    ["overdue", sql`c."dueDate" < ${referenceTime}`],
+    ["no-due-date", sql`c."dueDate" IS NULL`],
+    ["period", sql`c."createdAt" >= ${dayAgo}`],
+    ["attachments", sql`c."attachmentCount" > 0`],
+    ["no-attachments", sql`c."attachmentCount" = 0`],
+    [
+      "combined",
+      sql`(c.priority IN ('medium', 'high') OR c.priority IS NULL)
+      AND (c."assigneeId" IN (${id("user", 0)}, ${id("user", 1)}) OR c."assigneeId" IS NULL)
+      AND c."dueDate" < ${referenceTime}
+      AND c."createdAt" >= ${new Date(referenceTime.getTime() - 7 * 86_400_000)}
+      AND c."attachmentCount" = 0`,
+    ],
+  ].map(([facet, predicate]) => ({
+    list: "cards",
+    facet,
+    model: CARDS,
+    predicate,
+    extended: true,
+  }));
+
+  if (preset !== "full") return [...cases, ...additionalCards];
   const additional = [
-    {
-      list: "cards",
-      facet: "labels-all",
-      model: CARDS,
-      predicate: sql`EXISTS (
-        SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" = ${id("label", 0)}
-      ) AND EXISTS (
-        SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" = ${id("label", perfDataset(preset).boards)}
-      )`,
-    },
-    {
-      list: "cards",
-      facet: "unassigned",
-      model: CARDS,
-      predicate: sql`c."assigneeId" IS NULL`,
-    },
-    {
-      list: "cards",
-      facet: "period",
-      model: CARDS,
-      predicate: sql`c."createdAt" >= ${referenceTime} - INTERVAL '24 hours'`,
-    },
     {
       list: "cards",
       facet: "column",
       model: CARDS,
       predicate: sql`c."columnId" = ${id("column", 0)}`,
-    },
-    {
-      list: "cards",
-      facet: "attachments",
-      model: CARDS,
-      predicate: sql`c."attachmentCount" > 0`,
     },
     {
       list: "audit",
@@ -224,7 +239,7 @@ function facetCases(preset, referenceTime) {
       additional.push({ list, facet, model, predicate, extended: true });
     }
   }
-  return [...cases, ...additional];
+  return [...cases, ...additionalCards, ...additional];
 }
 
 function statements({ model, predicate }, pageSize) {
@@ -307,16 +322,17 @@ async function main() {
     options: {
       preset: { type: "string", default: "gate" },
       output: { type: "string" },
+      cards: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
   if (values.help) {
     console.log(
-      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--output timings.json]",
+      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards] [--output timings.json]",
     );
     return;
   }
-  const { preset, output } = values;
+  const { preset, output, cards: cardsOnly } = values;
   if (!Object.hasOwn(PRESETS, preset))
     throw new Error("Use --preset small, gate, or full.");
   const db = perfDatabase();
@@ -337,6 +353,7 @@ async function main() {
     const pageSizes = preset === "small" ? [25] : [25, 50, 100];
     const results = [];
     for (const entry of facetCases(preset, firstCard.updatedAt)) {
+      if (cardsOnly && entry.list !== "cards") continue;
       const samples =
         preset === "small"
           ? { cold: 1, warm: 3 }

@@ -11,6 +11,8 @@ const english = {
   search: "Search options",
   remove: "Remove filter",
   close: "Close",
+  apply: "Apply",
+  periods: ["Any time", "24 hours", "7 days", "30 days"],
   clear: "Clear search and filters",
   back: "Back",
   archived: "(archived)",
@@ -26,6 +28,8 @@ const russian: typeof english = {
   search: "Найти значение",
   remove: "Удалить фильтр",
   close: "Закрыть",
+  apply: "Применить",
+  periods: ["За всё время", "24 часа", "7 дней", "30 дней"],
   clear: "Сбросить поиск и фильтры",
   back: "Назад",
   archived: "(в архиве)",
@@ -128,32 +132,49 @@ for (const width of [1440, 1024, 390]) {
     ) {
       await trigger.click();
       await dialog.getByRole("button", { name: facet, exact: true }).click();
-      const input = dialog.getByRole("combobox", {
+      const isLabel = facet === copy.label;
+      const input = dialog.getByRole(isLabel ? "searchbox" : "combobox", {
         name: `${copy.search} — ${facet}`,
       });
+      const optionRole = isLabel ? "checkbox" : "option";
       await expect(input).toBeFocused();
       await input.fill(query);
       const shortId = (value: string) =>
         facet === copy.board ? value.slice(-8) : value.slice(0, 8);
-      const option = dialog.getByRole("option", {
+      const option = dialog.getByRole(optionRole, {
         name: new RegExp(shortId(id)),
       });
       await expect(
-        dialog.getByRole("option", {
+        dialog.getByRole(optionRole, {
           name: new RegExp(shortId(duplicateId)),
         }),
       ).toBeVisible();
       if (mobile) {
         await expectInside(input, width, height, 44);
-        await expectInside(option, width, height, 44);
+        await expectInside(
+          isLabel ? option.locator("..") : option,
+          width,
+          height,
+          44,
+        );
       }
-      if (mobile && facet === copy.label) {
+      if (mobile && isLabel) {
         await input.fill(id);
-        await expect(dialog.getByRole("option")).toHaveCount(1);
-        await page.keyboard.press("ArrowDown");
-        await page.keyboard.press("Enter");
+        await expect(dialog.getByRole("checkbox")).toHaveCount(1);
+        await option.focus();
+        await page.keyboard.press("Space");
       } else {
         await option.click();
+      }
+      if (isLabel) {
+        await expect(option).toBeChecked();
+        await expect(page).toHaveURL((url) => !url.searchParams.has("labelId"));
+        const apply = dialog.getByRole("button", {
+          name: copy.apply,
+          exact: true,
+        });
+        if (mobile) await expectInside(apply, width, height, 44);
+        await apply.press("Enter");
       }
       await expect(dialog).toBeHidden();
       await expect(trigger).toBeFocused();
@@ -242,7 +263,7 @@ for (const width of [1440, 1024, 390]) {
       copy.archived,
     );
     if (mobile) {
-      for (const status of copy.statuses) {
+      for (const status of [...copy.statuses, ...copy.periods]) {
         await expectInside(
           page.getByRole("button", { name: status, exact: true }),
           width,
@@ -425,3 +446,337 @@ test("Escape closes an open facet picker and returns focus to Filters", async ({
   await expect(trigger).toBeFocused();
   await expect(page).toHaveURL((url) => !url.searchParams.has("columnId"));
 });
+
+const cardFacetCopy = {
+  en: {
+    assignee: "Assignee",
+    unassignedControl: "Unassigned assignee",
+    unassigned: "Unassigned",
+    cancel: "Cancel",
+    anyLabel: "Any label",
+    allLabels: "All labels",
+    labelMode: "Label match mode",
+    labelChip: "Label match: All",
+    removeMode: "Remove filter: Label match — All",
+    priority: "Priority",
+    medium: "Medium",
+    high: "High",
+    due: "Due date",
+    dueGroup: "Due date filter",
+    dueChoices: ["Overdue", "Due in 24 hours", "No due date"],
+    attachments: "Card attachments",
+    attachmentsGroup: "Card attachment filter",
+    attachmentChoices: ["Has card attachments", "No card attachments"],
+    any: "Any",
+    results: (total: number) => `Filters applied · ${total} results`,
+  },
+  ru: {
+    assignee: "Исполнитель",
+    unassignedControl: "Карточки без исполнителя",
+    unassigned: "Без исполнителя",
+    cancel: "Отмена",
+    anyLabel: "Любая метка",
+    allLabels: "Все метки",
+    labelMode: "Режим совпадения меток",
+    labelChip: "Совпадение меток: все",
+    removeMode: "Удалить фильтр: Совпадение меток — Все",
+    priority: "Приоритет",
+    medium: "Средний",
+    high: "Высокий",
+    due: "Срок",
+    dueGroup: "Фильтр по сроку",
+    dueChoices: ["Просрочено", "Срок в течение 24 часов", "Без срока"],
+    attachments: "Файлы карточки",
+    attachmentsGroup: "Фильтр по файлам карточки",
+    attachmentChoices: ["С файлами карточки", "Без файлов карточки"],
+    any: "Любой вариант",
+    results: (total: number) => `Фильтры применены · найдено ${total}`,
+  },
+};
+
+for (const locale of ["en", "ru"] as const) {
+  test(`full cards facets with ${locale} controls and exact totals`, async ({
+    page,
+    board,
+  }) => {
+    const mobile = locale === "ru";
+    const copy = mobile ? russian : english;
+    const facet = cardFacetCopy[locale];
+    const width = mobile ? 390 : 1024;
+    const height = 900;
+    const column = await board.column("Facet checks");
+    const assigned = await board.card(column, "Assigned and overdue");
+    const soon = await board.card(column, "Due soon");
+    await board.card(column, "Without a due date");
+    const labelA = await board.label("Facet label alpha");
+    const labelB = await board.label("Facet label beta");
+    for (const [cardId, labelId] of [
+      [assigned, labelA],
+      [assigned, labelB],
+      [soon, labelA],
+    ]) {
+      await board.command({
+        type: "SET_CARD_LABEL",
+        cardId,
+        labelId,
+        on: true,
+      });
+    }
+    await board.command({
+      type: "SET_CARD_ASSIGN",
+      cardId: assigned,
+      assigneeId: board.userId,
+    });
+    await board.command({
+      type: "SET_CARD_PRIORITY",
+      cardId: soon,
+      priority: "high",
+    });
+    const now = Date.now();
+    await board.command({
+      type: "SET_CARD_DUE_DATE",
+      cardId: assigned,
+      dueDate: now - 3_600_000,
+    });
+    await board.command({
+      type: "SET_CARD_DUE_DATE",
+      cardId: soon,
+      dueDate: now + 3_600_000,
+    });
+    const uploaded = await board.api.post(
+      `/api/v1/cards/${assigned}/attachments`,
+      {
+        multipart: {
+          file: {
+            name: "card-face.txt",
+            mimeType: "text/plain",
+            buffer: Buffer.from("Card face attachment"),
+          },
+        },
+      },
+    );
+    expect(uploaded.status(), await uploaded.text()).toBe(201);
+
+    await loginAsMaster(page, ownerCredentials());
+    await page.setViewportSize({ width, height });
+    await page.goto(
+      adminPath(`boards?tab=cards&boardId=${board.id}&lng=${locale}`),
+    );
+    const trigger = page.getByRole("button", {
+      name: new RegExp(`^${copy.filters}(?: \\d+)?$`),
+    });
+    const dialog = page.getByRole("dialog", { name: copy.dialog });
+    const results = page.getByTestId("admin-filter-results");
+
+    async function openFacet(name: string) {
+      await trigger.press("Enter");
+      const item = dialog.getByRole("button", { name, exact: true });
+      await item.scrollIntoViewIfNeeded();
+      if (mobile) await expectInside(item, width, height, 44);
+      await item.press("Enter");
+    }
+
+    async function apply() {
+      const button = dialog.getByRole("button", {
+        name: copy.apply,
+        exact: true,
+      });
+      if (mobile) await expectInside(button, width, height, 44);
+      await button.press("Enter");
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+    }
+
+    await expect(results).toHaveText(facet.results(3));
+    for (const dismiss of [facet.cancel, "Escape"]) {
+      await openFacet(facet.assignee);
+      const unassigned = dialog.getByRole("checkbox", {
+        name: facet.unassignedControl,
+      });
+      await expect(unassigned).not.toBeChecked();
+      await unassigned.press("Space");
+      await expect(unassigned).toBeChecked();
+      await expect(page).toHaveURL(
+        (url) => !url.searchParams.has("unassigned"),
+      );
+      if (dismiss === "Escape") await page.keyboard.press("Escape");
+      else
+        await dialog
+          .getByRole("button", { name: dismiss, exact: true })
+          .press("Enter");
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+    }
+    await openFacet(facet.assignee);
+    const assigneeSearch = dialog.getByRole("searchbox", {
+      name: `${copy.search} — ${facet.assignee}`,
+    });
+    await assigneeSearch.fill(board.email);
+    const assignee = dialog.getByRole("checkbox", {
+      name: new RegExp(board.email.replaceAll(".", "\\.")),
+    });
+    await expect(assignee).toBeVisible();
+    await assignee.press("Space");
+    const unassigned = dialog.getByRole("checkbox", {
+      name: facet.unassignedControl,
+    });
+    if (mobile) await expectInside(unassigned.locator(".."), width, height, 44);
+    await unassigned.press("Space");
+    await apply();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.searchParams.get("unassigned") === "true" &&
+        url.searchParams.get("assigneeId") === board.userId,
+    );
+    const unassignedChip = page.getByTestId("admin-filter-unassigned");
+    await expect(unassignedChip).toHaveText(facet.unassigned);
+    const removeUnassigned = unassignedChip.getByRole("button", {
+      name: `${copy.remove}: ${facet.unassigned}`,
+      exact: true,
+    });
+    if (mobile) await expectInside(removeUnassigned, width, height, 44);
+    await removeUnassigned.press("Enter");
+    await expect(results).toHaveText(facet.results(1));
+    await page.getByTestId("admin-filter-clear-assigneeId").press("Enter");
+
+    await openFacet(copy.label);
+    await dialog
+      .getByRole("checkbox", { name: /Facet label alpha/ })
+      .press("Space");
+    await dialog
+      .getByRole("checkbox", { name: /Facet label beta/ })
+      .press("Space");
+    const mode = dialog.getByRole("radiogroup", { name: facet.labelMode });
+    const anyLabel = mode.getByRole("radio", { name: facet.anyLabel });
+    const allLabels = mode.getByRole("radio", { name: facet.allLabels });
+    await anyLabel.press("End");
+    await expect(allLabels).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(allLabels).toHaveAttribute("aria-checked", "true");
+    await expect(page).toHaveURL((url) => !url.searchParams.has("labelMatch"));
+    await apply();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.searchParams.get("labelMatch") === "all" &&
+        url.searchParams.getAll("labelId").length === 2,
+    );
+    await expect(results).toHaveText(facet.results(1));
+    const modeChip = page.getByTestId("admin-filter-labelMatch");
+    await expect(modeChip).toHaveText(facet.labelChip);
+    const removeMode = modeChip.getByRole("button", {
+      name: facet.removeMode,
+      exact: true,
+    });
+    if (mobile) await expectInside(removeMode, width, height, 44);
+    await removeMode.press("Enter");
+    await expect(results).toHaveText(facet.results(2));
+    await expect(page).toHaveURL((url) => !url.searchParams.has("labelMatch"));
+    for (const name of [/Facet label alpha/, /Facet label beta/]) {
+      await page
+        .getByTestId("admin-filter-labelId")
+        .getByRole("button", { name })
+        .press("Enter");
+    }
+
+    await expect(page).toHaveURL((url) => !url.searchParams.has("labelId"));
+    await expect(results).toHaveText(facet.results(3));
+
+    await openFacet(facet.priority);
+    const prioritySearch = dialog.getByRole("searchbox", {
+      name: `${copy.search} — ${facet.priority}`,
+    });
+    if (mobile) await expectInside(prioritySearch, width, height, 44);
+    await expect(prioritySearch).toBeFocused();
+    for (const name of [facet.medium, facet.high]) {
+      await dialog.getByRole("checkbox", { name, exact: true }).press("Space");
+    }
+    await apply();
+    await expect(page).toHaveURL(
+      (url) => url.searchParams.getAll("priority").join() === "high,medium",
+    );
+    for (const name of [facet.medium, facet.high]) {
+      await page
+        .getByRole("button", { name: `${copy.remove}: ${name}`, exact: true })
+        .press("Enter");
+    }
+    await expect(page).toHaveURL((url) => !url.searchParams.has("priority"));
+
+    for (const choice of [
+      {
+        key: "due",
+        name: facet.due,
+        group: facet.dueGroup,
+        choices: facet.dueChoices,
+        values: ["overdue", "soon", "none"],
+        totals: [1, 1, 1],
+      },
+      {
+        key: "hasAttachments",
+        name: facet.attachments,
+        group: facet.attachmentsGroup,
+        choices: facet.attachmentChoices,
+        values: ["true", "false"],
+        totals: [1, 2],
+      },
+    ]) {
+      await openFacet(choice.name);
+      const radios = dialog.getByRole("radiogroup", { name: choice.group });
+      const any = radios.getByRole("radio", { name: facet.any, exact: true });
+      await expect(any).toBeFocused();
+      await page.keyboard.press("End");
+      await expect(radios.getByRole("radio").last()).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL((url) => !url.searchParams.has(choice.key));
+
+      for (const [index, label] of choice.choices.entries()) {
+        await openFacet(choice.name);
+        const option = radios.getByRole("radio", { name: label, exact: true });
+        if (mobile) await expectInside(option, width, height, 44);
+        await option.press("Space");
+        await expect(dialog).toBeHidden();
+        await expect(trigger).toBeFocused();
+        await expect(page).toHaveURL(
+          (url) => url.searchParams.get(choice.key) === choice.values[index],
+        );
+        await expect(results).toHaveText(facet.results(choice.totals[index]));
+        const chip = page.getByTestId(`admin-filter-${choice.key}`);
+        await expect(chip).toHaveText(label);
+        const remove = chip.getByRole("button", {
+          name: `${copy.remove}: ${label}`,
+          exact: true,
+        });
+        if (mobile) await expectInside(remove, width, height, 44);
+        if (index === 0) {
+          await openFacet(choice.name);
+          await page.keyboard.press("Home");
+          await expect(any).toBeFocused();
+          await page.keyboard.press("Enter");
+          await expect(dialog).toBeHidden();
+        } else {
+          await remove.press("Enter");
+        }
+        await expect(chip).toHaveCount(0);
+        await expect(page).toHaveURL(
+          (url) => !url.searchParams.has(choice.key),
+        );
+        await expect(results).toHaveText(facet.results(3));
+      }
+    }
+    const recent = page.getByRole("button", {
+      name: copy.periods[1],
+      exact: true,
+    });
+    if (mobile) await expectInside(recent, width, height, 44);
+    await recent.press("Enter");
+    await expect(page).toHaveURL(
+      (url) => url.searchParams.get("period") === "24h",
+    );
+    await page.reload();
+    await expect(recent).toHaveAttribute("aria-pressed", "true");
+    await expect(results).toHaveText(facet.results(3));
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  });
+}
