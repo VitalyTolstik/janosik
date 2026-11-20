@@ -39,7 +39,7 @@ vi.mock("@/components/editor/CommentEditor", () => ({
   }) => (
     <textarea
       data-testid="comment-input"
-      value={value ?? ""}
+      defaultValue={value}
       placeholder={placeholder}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={(event) => {
@@ -99,9 +99,10 @@ function renderComments(
   server: FakeServer,
   readOnly = false,
   handler: FetchHandler = server.handle,
+  cardId = "card-1",
 ) {
   vi.stubGlobal("fetch", handler);
-  return render(
+  const tree = (open: boolean) => (
     <I18nProvider>
       <ToastProvider>
         <AuthProvider>
@@ -109,19 +110,23 @@ function renderComments(
             <TooltipProvider>
               <BoardProvider>
                 <UserProfileProvider boardId="b-1">
-                  <CardComments
-                    cardId="card-1"
-                    boardId="b-1"
-                    readOnly={readOnly}
-                  />
+                  {open && (
+                    <CardComments
+                      cardId={cardId}
+                      boardId="b-1"
+                      readOnly={readOnly}
+                    />
+                  )}
                 </UserProfileProvider>
               </BoardProvider>
             </TooltipProvider>
           </MemoryRouter>
         </AuthProvider>
       </ToastProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
+  const result = render(tree(true));
+  return { ...result, setOpen: (open: boolean) => result.rerender(tree(open)) };
 }
 
 /**
@@ -215,6 +220,110 @@ describe("CardComments", () => {
       commandId: expect.any(String),
     });
   });
+
+  it.each(["success", "failure", "newer draft"] as const)(
+    "settles an in-flight send after reopening (%s)",
+    async (outcome) => {
+      const server = new FakeServer([seedBoard()]);
+      const cardId = `pending-${outcome}`;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const handler: FetchHandler = async (input, init) => {
+        if (init?.method === "POST" && String(input).endsWith("/comments")) {
+          await gate;
+          if (outcome === "failure") {
+            return Response.json({ message: "Send failed" }, { status: 500 });
+          }
+        }
+        return server.handle(input, init);
+      };
+      const text = "  Keep the exact draft  ";
+      const thread = renderComments(server, false, handler, cardId);
+      fireEvent.change(await screen.findByTestId("comment-input"), {
+        target: { value: text },
+      });
+      fireEvent.click(screen.getByTestId("comment-kind"));
+      fireEvent.click(
+        await screen.findByTestId("comment-kind-option-question"),
+      );
+      fireEvent.click(screen.getByTestId("comment-send"));
+
+      expect(screen.getByTestId("comment-input")).toHaveValue(text);
+      expect(screen.getByTestId("comment-send")).toBeDisabled();
+      thread.setOpen(false);
+
+      thread.setOpen(true);
+      expect(await screen.findByTestId("comment-input")).toHaveValue(text);
+      expect(screen.getByTestId("comment-kind")).toHaveTextContent("Question");
+      expect(screen.getByTestId("comment-send")).toBeDisabled();
+      if (outcome === "newer draft") {
+        fireEvent.change(screen.getByTestId("comment-input"), {
+          target: { value: "The next comment" },
+        });
+      }
+
+      await act(async () => release());
+      const expected =
+        outcome === "success"
+          ? ""
+          : outcome === "failure"
+            ? text
+            : "The next comment";
+      const expectedKind = outcome === "success" ? "Note" : "Question";
+      expect(screen.getByTestId("comment-input")).toHaveValue(expected);
+      expect(screen.getByTestId("comment-kind")).toHaveTextContent(
+        expectedKind,
+      );
+      if (outcome === "failure") {
+        expect(screen.getByTestId("comment-send")).toBeEnabled();
+        expect(
+          await screen.findByText("Could not send the comment"),
+        ).toBeVisible();
+      }
+
+      thread.setOpen(false);
+      thread.setOpen(true);
+      expect(await screen.findByTestId("comment-input")).toHaveValue(expected);
+      expect(screen.getByTestId("comment-kind")).toHaveTextContent(
+        expectedKind,
+      );
+    },
+  );
+
+  it.each([403, 404])(
+    "keeps a draft hidden when reopening a card that returns %s",
+    async (status) => {
+      const server = new FakeServer([seedBoard()]);
+      const cardId = `unavailable-${status}`;
+      let unavailable = false;
+      let answer!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      const handler: FetchHandler = async (input, init) => {
+        if (unavailable && String(input).includes(`/${cardId}/comments`)) {
+          await gate;
+          return Response.json({ message: "Card unavailable" }, { status });
+        }
+        return server.handle(input, init);
+      };
+      const thread = renderComments(server, false, handler, cardId);
+      fireEvent.change(await screen.findByTestId("comment-input"), {
+        target: { value: "Draft for this card" },
+      });
+      thread.setOpen(false);
+      unavailable = true;
+      thread.setOpen(true);
+      await screen.findByTestId("card-comments-skeleton");
+      expect(screen.queryByTestId("comment-input")).not.toBeInTheDocument();
+
+      await act(async () => answer());
+      expect(await screen.findByText("Could not load comments")).toBeVisible();
+      expect(screen.queryByTestId("comment-input")).not.toBeInTheDocument();
+    },
+  );
 
   it("labels an agent comment with its token and session (TASK-166.13)", async () => {
     const server = new FakeServer();
@@ -455,6 +564,7 @@ describe("CardComments", () => {
     await waitStream(server);
 
     act(() => {
+      server.seedComments("card-1", []);
       server.publishActivity("b-1", {
         type: "activity",
         id: "activity-2",
@@ -470,6 +580,39 @@ describe("CardComments", () => {
     await waitFor(() =>
       expect(screen.queryByText("Doomed")).not.toBeInTheDocument(),
     );
+  });
+
+  it("keeps the last comment at the bottom when a delete makes 51 comments fit on one page", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const comments = Array.from({ length: 51 }, (_, index) =>
+      comment({ id: `comment-${index}`, text: `Comment ${index}` }),
+    );
+    const [deleted, ...remaining] = comments;
+    server.seedComments("card-1", comments);
+    renderComments(server);
+    await screen.findByTestId("comments-show-older");
+    expect(screen.getAllByTestId("comment")).toHaveLength(50);
+    await waitStream(server);
+
+    act(() => {
+      server.seedComments("card-1", remaining);
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-delete",
+        boardId: "b-1",
+        cardId: "card-1",
+        actorId: "user-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        detail: deleted.id,
+      });
+    });
+
+    await screen.findByText("Comment 50");
+    expect(
+      screen.getAllByTestId("comment").map((row) => row.dataset.commentId),
+    ).toEqual(remaining.map((row) => row.id));
+    expect(screen.queryByTestId("comments-show-older")).not.toBeInTheDocument();
   });
 
   it("offers Edit only on the author's own comment and never in read-only", async () => {

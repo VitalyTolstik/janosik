@@ -11,6 +11,7 @@ import {
 
 import type { AuthResponseDto, AuthUserDto } from "@janosik/shared";
 import { api, hasPendingLogout, isApiEnabled } from "@/api/client";
+import { clearCommentDrafts } from "@/components/board/use-comment-draft";
 import { useToast } from "@/components/Toast";
 import { clearAvatarCache } from "@/hooks/use-avatar-object-url";
 import { ensureLocale, defaultI18n, type Lang } from "@/i18n/i18n";
@@ -82,6 +83,11 @@ const AuthContext = createContext<AuthValue | null>(null);
 /** Exposed for tests that need a signed-in user without a network session. */
 export { AuthContext };
 
+function clearSessionCaches(): void {
+  clearAvatarCache();
+  clearCommentDrafts();
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const serverMode = isApiEnabled();
@@ -101,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let confirming = false;
     const onLost = (): void => {
       if (cancelled || confirming) return;
+      clearSessionCaches();
       if (api.isImpersonating()) {
         clearImpersonation();
         window.location.reload();
@@ -243,9 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       toast.error(defaultI18n.t("auth.logoutPending"));
     }
-    // TASK-106: drop cached avatar object URLs so a shared browser never
-    // keeps the previous account's images.
-    clearAvatarCache();
+    clearSessionCaches();
     setUser(null);
     setStatus("anonymous");
   }, [toast]);
