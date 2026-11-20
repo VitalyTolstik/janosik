@@ -15,7 +15,7 @@ test("edits a live link's title and privacy flags, keeping its token", async ({
 
   const row = page.getByTestId("share-row").filter({ hasText: live.token });
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "Edit", exact: true }).click();
+  await row.getByRole("button", { name: /^Edit link/ }).click();
 
   await expect(page.getByText("Mode and token can't be changed")).toBeVisible();
   await expect(page.getByTestId("share-mode-live")).toHaveCount(0);
@@ -53,4 +53,45 @@ test("edits a live link's title and privacy flags, keeping its token", async ({
   };
   expect(body.includeComments).toBe(false);
   expect(body.includeAttachments).toBe(true);
+
+  // Turning comments off closes the public comment route, not just the UI.
+  const comments = await sharing.api.get(
+    `/api/v1/share/${live.token}/cards/${sharing.cardId}/comments`,
+  );
+  expect(comments.status()).toBe(404);
+});
+
+test("expired rows stay editable and revoked rows do not", async ({
+  page,
+  sharing,
+}) => {
+  const expired = await sharing.createShare("live", {
+    expiresAt: new Date(Date.now() + 3_000).toISOString(),
+  });
+  const revoked = await sharing.createShare("snapshot", { title: "Gone" });
+  const revokedResponse = await sharing.api.delete(
+    `/api/v1/boards/${sharing.boardId}/shares/${revoked.id}`,
+  );
+  expect(revokedResponse.ok()).toBeTruthy();
+
+  await sharing.openOwner(page);
+
+  const expiredRow = page
+    .getByTestId("share-row")
+    .filter({ hasText: expired.token });
+  await expect(expiredRow.getByText("Expired")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(
+    expiredRow.getByRole("button", { name: /^Edit link/ }),
+  ).toBeVisible();
+
+  await page.getByTestId("share-mode-snapshot").click();
+  const revokedRow = page
+    .getByTestId("share-row")
+    .filter({ hasText: revoked.token });
+  await expect(revokedRow).toContainText("Revoked");
+  await expect(
+    revokedRow.getByRole("button", { name: /^Edit link/ }),
+  ).toHaveCount(0);
 });
