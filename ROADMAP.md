@@ -1711,7 +1711,7 @@ TASK-36 и TASK-37.)*
 | 112 | TASK-181 `admin-list-filters` | `docs/TASK-181-admin-list-filters.md` → отдельные `feat/TASK-181.x-*` | §7.30: сделать фильтры админских списков обнаруживаемыми и честными — supported/offered matrix вместо молчаливых no-op, панель «Фильтры»/чипы с человеческими названиями и visible short-id, карточки (board/column/label any-all/assignee/priority/due/attachments/period), moderation (author/kind/uploader/MIME/period/inline badge), audit/commands/activity (audit-visible actor/action/type/target), users/boards (accepted ADMIN)/content lists; parent-conflict vs unknown vs valid zero; `status=all` universal; URL/deep links, exact totals, bulk-selection contract, EN/RU, 1440/1024/390 | **Запланировано:** 7 подзадач; wave 1 — 181.1 контракт + lookup, 181.2 панель/чипы на карточках, 181.3 полный набор карточек; wave 2 — 181.4 moderation, 181.5 content lists, 181.6 audit hub; 181.7 docs/visual/perf. Зависит от 176.5/176.6 (уже в main); 176.10 — для `commandId`; shares — TASK-177.5; 180.9 — до 181.2. См. §7.30 |
 | 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: help-поповер у заголовка Labels + один обновляемый keyed success-toast (без label command concurrency/dedup) и card-local fallback для падения lazy-календаря due-date: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear только после accepted команды, fresh append, timer/map cleanup; `SET_CARD_LABEL`/cap/`onSaved: () => void` не меняются, а `send`/`toggleLabel` получают optional key, keyed clear/success и post-await card/mounted guard для toast/onSaved/errors/busy; inline-ошибки остаются; same-label double-click и reload ordering — residual out of scope. Фаза 2 — `calendarFallback: ComponentType<...>` заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
 | 114 | TASK-183 `demo-label-integrity` | `docs/TASK-183-demo-label-integrity.md` → отдельные `feat/TASK-183.x-*` | §7.32: две независимые находки TASK-176 demo investigation — (1) воспроизводимый demo-fixture: полный mutation inventory, drop/recreate reset, manifest/verify, DB/API binding guard и удаление ручных артефактов `Card claim visibility 123`, `фывфыв`, checklist `123`, random link, 60 comments, extra users/admin/security rows; (2) `SET_CARD_LABEL` обновляет `Card.updatedAt` вместе с версией, inverse `cardUpdatedAt` проходит `CARD_STAMPED_TYPES`, аудит `DELETE_LABEL`/`RESTORE_LABEL` и тесты | **Запланировано:** docs-only spec; 183.1 demo hygiene, 183.2 label timestamp; reset дважды после checklist+link; без изменений admin demo runner и TASK-176.9. См. §7.32 |
-| 115 | TASK-185 `comment-history` | `docs/TASK-185-comment-history.md` → отдельные `feat/TASK-185.x-*` | §7.33 — `CommentRevision` хранит тексты до/после всех изменений, `historyIncomplete` отмечает пробелы, `Activity.commentId` связывает события с комментариями для фильтрации до пагинации. Activity хранит пару снимков, SSE передаёт ID, `GET /comments/:commentId/revisions` читает историю, админка показывает счётчики | **Запланировано** — 6 подзадач, 10–15 инженерных дней. TASK-176.2 в базе. Координация контракта с TASK-177.11, TASK-174.1 отложена. См. §7.33 |
+| 115 | TASK-185 `comment-history` | [Спецификация](docs/TASK-185-comment-history.md) → отдельные `feat/TASK-185.x-*` | [§7.33](#733-comment-edit-history-and-diff-task-185) — ревизии текста, cutover fence и сверка; оба API возвращают `historyIncompleteReason` (`legacy_cutover`, `revision_limit`, `gdpr_erase`, `writer_gap`). Activity скрывает правки удалённых комментариев и сохраняет tombstones добавления/удаления. Public SSE использует allowlist. Admin DTO получает аддитивные поля истории с сохранением `text` и `kind` | **Запланировано** — 6 подзадач, 10–15 инженерных дней. TASK-176.2 в базе. Контракт `kind` согласуется с TASK-177.11; политика удалённых admin-строк, модерация и share defaults остаются в отложенной TASK-174.1 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5493,75 +5493,93 @@ TASK-21.7d (inverse timestamps, `invert.ts` + `validate.ts`), TASK-180.7 — т�
 
 **Объём.**
 
-- `Comment.text` хранит текущий текст. Любое фактическое изменение,
-  включая `PATCH /comments/:commentId` и очистку ссылки при удалении
-  вложения, атомарно пишет `CommentRevision` и `comment_updated`.
-  Ревизия хранит `beforeText`, `afterText`, номер, время, редактора,
-  атрибуцию и причину. Уникальная пара `(commentId, revisionNumber)`
-  задаёт порядок, счётчик комментария исключает повторное использование
-  номеров. Ревизия № 1 создаётся при первой новой правке. Cutover требует
-  остановки и замены старых writer'ов. Миграция и новый writer отмечают
-  дорелизные пробелы флагом `Comment.historyIncomplete`, который
-  сохраняется после последующих правок.
+- `Comment.text` хранит текущий текст. Фактическая правка через PATCH или
+  очистку ссылки при удалении вложения атомарно пишет `CommentRevision`
+  и `comment_updated`. Ревизия хранит снимки до/после, монотонный номер,
+  время, редактора, атрибуцию и причину. При cutover остановить и
+  дождаться завершения всех старых HTTP- и фоновых writer'ов, установить
+  `Comment.historyCutoverAt` и выполнить сверочный sweep до возобновления
+  записи. Writer сверяет `editedAt`, fence и фактическую последнюю ревизию
+  с контрольной парой. Разрыв, включая старую запись после ревизии № 1,
+  отмечается `writer_gap`. До сверки правка отклоняется, а API истории
+  возвращают причину и пустой список. После сверки номера продолжаются.
 - Activity правки хранит `beforeText`, `afterText`, `revisionId`, `cause`
-  и совместимое `details.text = afterText`. Нормализованный индексированный
+  и совместимое `details.text = afterText`. Индексированный
   `Activity.commentId` заполняется из legacy details и при новых записях.
-  Board feed, admin card timeline, raw Activity и user detail исключают
-  события удалённых комментариев на уровне запроса до пагинации и totals.
-  Отдельный admin audit хранит метаданные. Legacy Watch показывает
-  доступный текстовый снимок или только описание события.
-- SSE `comment_updated` содержит `commentId` и `revisionId` в payload
-  правки. SSE `comment_deleted` содержит `commentId` и публикуется и при
-  удалении из админки. Клиенты перечитывают данные по HTTP. History и
-  просмотр ревизий используют символьный diff `diffSides` с сохранением
-  переносов.
+  Board feed, admin card timeline, raw Activity и user detail применяют
+  предикат живого комментария только к `comment_updated` до пагинации
+  и totals. Для удалённого комментария добавление и удаление учитываются
+  как tombstones с метаданными, без текста даже в raw details. Audit
+  сохраняет метаданные. Restore возвращает сохранённые правки в ленту,
+  а `comment_deleted` остаётся tombstone. Legacy Watch показывает
+  доступный дорелизный снимок или описание события.
+- SSE `comment_updated` содержит `commentId` и, для правки текста,
+  `revisionId`. Минимум один релиз сохраняется `detail = commentId`
+  для открытых старых вкладок. SSE `comment_deleted` передаёт
+  `commentId`, а master-кадр опускает `actorId` и атрибуцию.
+  Кадры комментариев не несут текста. Public live-share SSE строится по
+  [allowlist](docs/TASK-185-comment-history.md#32-activity-sse-и-history)
+  без `revisionId`, `actorId`, master ID,
+  атрибуции токена, сессии и агента и других приватных полей. HTTP DTO
+  и snapshot публичных share исключают поля ревизий и cutover.
 - `GET /comments/:commentId/revisions` под `CardAccessGuard` доступен
   действующим участникам, включая `VIEWER`.
   `GET /admin/comments/:commentId/revisions` доступен мастерам под
   `AdminJwtAuthGuard`. Оба маршрута читают живые комментарии с cursor,
-  limit и `historyIncomplete` для баннера с локализованной строкой релиза.
-  `AdminCommentRowDto.revisionCount` доступен в card detail, user detail
-  и entity tables. Soft delete скрывает ревизии, счётчики и текст
-  комментариев в этих чтениях. Public share DTO и snapshot исключают
-  поля ревизий и их метаданные.
+  limit, `historyIncomplete` и `historyIncompleteReason`. Причины
+  `legacy_cutover`, `revision_limit`, `gdpr_erase` и `writer_gap`
+  применяются по приоритету из спецификации. Баннер упоминает релиз только для
+  `legacy_cutover`, в остальных случаях сообщает, что часть истории
+  недоступна. History и диалоги используют `diffSides` с сохранением
+  переносов.
+- В admin card detail, user detail и entity tables `AdminCommentRowDto`
+  получает аддитивные поля `revisionCount` и `historyIncomplete`.
+  Контракт `text: string`, поддержка `kind` (TASK-181), пагинация и totals
+  (TASK-176.3) сохраняются. Для удалённых комментариев и родителей поля
+  истории равны `null` и диалог недоступен. Диалог читает отдельный
+  `CommentRevisionDto`. Политика текста удалённых строк остаётся в TASK-174.1.
 - Хранить до 50 ревизий на комментарий. Обрезка удаляет связанные копии
-  Activity и сохраняет флаг неполной истории. Бюджет текстовых полей —
-  до 10 МБ на комментарий при обычном лимите текста, с метриками
-  хранения и учётом legacy-превышений. Hard purge и GDPR erase явно
-  удаляют ревизии и их текстовые копии. Синхронная и фоновая выгрузки
-  GDPR исключают ревизии.
+  Activity и отмечает `revision_limit`. Бюджет текстовых полей —
+  до 10 МБ на комментарий при обычном лимите с метриками хранения
+  и учётом legacy-превышений. Hard purge и GDPR erase явно очищают
+  ревизии и их текстовые копии. Для оставшегося комментария с очищенной
+  историей erase отмечает `gdpr_erase`. Синхронная и фоновая GDPR-выгрузки
+  исключают ревизии.
 
 **Подзадачи.**
 
 | ID | Результат |
 | --- | --- |
-| 185.1 | Схема, миграция и cutover, writer для PATCH и удаления вложений, лимит и явный purge/erase. |
-| 185.2 | `Activity.commentId`, фильтр до пагинации, HTTP diff, legacy Watch и SSE с ID правки и удаления. |
-| 185.3 | Revisions API, права включая `VIEWER`, cursor, limit, флаг неполной истории и граница public share. |
+| 185.1 | Схема, миграция, fence и сверка cutover, writer для PATCH и удаления вложений, лимит и явный purge/erase. |
+| 185.2 | `Activity.commentId`, фильтр правок до пагинации, tombstones, HTTP diff, legacy Watch, совместимый SSE и публичный allowlist. |
+| 185.3 | Revisions API, права включая `VIEWER`, cursor, limit, причины неполной истории и граница public share. |
 | 185.4 | Кнопка «Изменён» с историей, символьный diff в History и обновление по SSE. |
-| 185.5 | Счётчик и диалог в admin card detail, user detail и entity tables, fake admin server. |
+| 185.5 | Аддитивные поля и диалог в admin card detail, user detail и entity tables, fake admin server и fixtures. |
 | 185.6 | Сквозные проверки, GDPR export, метрики, документация, EN/RU и CHANGELOG. |
 
-**Порядок.** Схема и writer (185.1) → Activity/SSE и фильтрация (185.2) →
-API (185.3) → карточка (185.4) → админка (185.5) → сквозные проверки и
-docs (185.6). Cutover и выдача исторических текстов требуют фильтрации
-soft delete и очистки снимков при purge/erase.
+**Порядок.** Схема и writer (185.1) → Activity/SSE (185.2) → API (185.3) →
+карточка (185.4) → админка (185.5) → сквозные проверки и docs (185.6).
+Для включения нужны сверка cutover, фильтрация правок, tombstones,
+публичный SSE allowlist и очистка снимков при purge/erase.
 
-**DoD.** Проверить миграцию на пустой и существующей БД. Новые правки
-сохраняют legacy-флаг. Конкурентные изменения текста и обе
-последовательности с удалением вложения сохраняют цепочку ревизий и
-атрибуцию. Проверены роли, включая `VIEWER`, scoped PAT, master-доступ,
-отказ неучастнику и изоляция public share. Legacy Activity удалённых
-комментариев исключаются из страниц и totals. Тесты покрывают админские
-счётчики, обрезку, purge, erase и обе формы GDPR export. Browser e2e
-проверяет обновление по SSE во второй вкладке, удаление автором и
-админом, клавиатуру, EN/RU и ширину 390 px.
+**DoD.** Проверить миграцию, `legacy_cutover`, 51-ю правку с
+`revision_limit`, GDPR erase с `gdpr_erase` и старую запись после
+ревизии № 1 с `writer_gap`, отказом в записи и восстановлением работы
+после sweep. Проверить причины в обоих API, конкуренцию и удаление
+вложений, роли и PAT, hard purge и обе GDPR-выгрузки. Delete → feed и
+restore → feed проверяют tombstones, скрытие и возврат правок, raw
+details, страницы и totals. Закрепить совместимость admin DTO и fixtures.
+Public SSE e2e с `includeComments=true` проверяет allowlist и отсутствие
+приватных данных. Browser e2e покрывает `detail` для старой вкладки,
+удаление автором и мастером, клавиатуру, баннеры EN/RU и ширину 390 px.
 
-**Зависимости.** TASK-176.2 уже в базе. До изменений общего PATCH
-согласовать обновление контракта TASK-177.11. Изменение только `kind`
-сохраняется, оставляет `editedAt` текста прежним и публикует событие без
-текстовой ревизии. Общий writer интегрируется последовательно.
-TASK-174.1 отложена и не блокирует TASK-185.
+**Зависимости.** TASK-176.2 уже в базе. До изменения общего PATCH
+согласовать контракт TASK-177.11. Kind-only PATCH сохраняет `kind`
+и публикует событие без текстовой ревизии, сохраняя `editedAt` текста.
+Реализация `kind`, attention dedup и фильтры комментариев остаются
+в TASK-177.11. TASK-174.1 отложена и не блокирует TASK-185. Политика
+текста удалённых admin-строк, расширение прав модерации и настройки
+share по умолчанию остаются в TASK-174.1.
 
 **Не входит.** Редактирование чужих комментариев, admin override, откат к
 ревизии, совместное редактирование, аудит каждого нажатия клавиши,
