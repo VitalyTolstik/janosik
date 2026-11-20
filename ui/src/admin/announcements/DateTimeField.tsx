@@ -1,8 +1,20 @@
-import { useEffect, useState } from "react";
+import {
+  Component,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { CalendarClock, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar-lazy";
+import {
+  Calendar,
+  createCalendar,
+  type CalendarComponent,
+  type CalendarProps,
+} from "@/components/ui/calendar-lazy";
 import {
   Popover,
   PopoverContent,
@@ -38,6 +50,31 @@ interface DateTimeFieldProps {
   placeholder: string;
   clearLabel: string;
   timeLabel: string;
+  calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>;
+  calendarFallback?: ComponentType<CalendarFallbackState>;
+}
+
+export interface CalendarFallbackState {
+  value: string;
+  onChange: (value: string) => void;
+  time: string;
+  calendarProps: CalendarProps;
+  retry: () => void;
+}
+
+class DateTimeCalendarBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
 }
 
 /**
@@ -56,10 +93,21 @@ export function DateTimeField({
   placeholder,
   clearLabel,
   timeLabel,
+  calendarLoader,
+  calendarFallback: CalendarFallback,
 }: DateTimeFieldProps) {
   const { lang } = useI18n();
   const hour12 = useHour12();
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [{ CalendarForAttempt, attempt }, setCalendarAttempt] = useState(
+    () => ({
+      CalendarForAttempt: calendarLoader
+        ? createCalendar(calendarLoader)
+        : Calendar,
+      attempt: 0,
+    }),
+  );
   const parsed = parseValue(value);
   const [time, setTime] = useState(() =>
     parsed ? formatTimeOfDay(parsed) : "12:00",
@@ -83,10 +131,38 @@ export function DateTimeField({
     }
   };
 
+  const calendarProps = {
+    mode: "single",
+    localeTag: lang,
+    selected: parsed ?? undefined,
+    onSelect: applyDate,
+  } satisfies CalendarProps;
+  const pickerRow = (
+    <div className="flex flex-col gap-3 sm:flex-row">
+      <CalendarForAttempt {...calendarProps} />
+      <div className="flex flex-col gap-2 border-t border-border pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+        <p className="text-[11px] font-medium text-muted-foreground">
+          {timeLabel}
+        </p>
+        <TimePickerPanel value={time} onChange={applyTime} />
+      </div>
+    </div>
+  );
+
+  const retry = () => {
+    trigger.current?.focus({ preventScroll: true });
+    // A rejected React.lazy instance keeps its result even after remounting.
+    setCalendarAttempt({
+      CalendarForAttempt: createCalendar(calendarLoader),
+      attempt: attempt + 1,
+    });
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={trigger}
           type="button"
           disabled={disabled}
           data-testid={testId}
@@ -113,21 +189,33 @@ export function DateTimeField({
       <PopoverContent
         align="start"
         className="w-auto max-w-[calc(100vw-1rem)] p-3"
+        onFocusOutside={
+          CalendarFallback
+            ? (event) => {
+                // Preserve Radix's focus restoration when Retry focuses the trigger.
+                if (event.target === trigger.current) event.preventDefault();
+              }
+            : undefined
+        }
       >
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Calendar
-            mode="single"
-            localeTag={lang}
-            selected={parsed ?? undefined}
-            onSelect={applyDate}
-          />
-          <div className="flex flex-col gap-2 border-t border-border pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
-            <p className="text-[11px] font-medium text-muted-foreground">
-              {timeLabel}
-            </p>
-            <TimePickerPanel value={time} onChange={applyTime} />
-          </div>
-        </div>
+        {CalendarFallback ? (
+          <DateTimeCalendarBoundary
+            key={attempt}
+            fallback={
+              <CalendarFallback
+                value={value}
+                onChange={onChange}
+                time={time}
+                calendarProps={calendarProps}
+                retry={retry}
+              />
+            }
+          >
+            {pickerRow}
+          </DateTimeCalendarBoundary>
+        ) : (
+          pickerRow
+        )}
         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/60 pt-2">
           <span className="text-xs text-muted-foreground">
             {parsed

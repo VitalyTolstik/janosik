@@ -637,6 +637,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-182 phase 2: a calendar load or render failure in admin card Properties
+  leaves the other fields editable. The due-date popover offers calendar Retry
+  and a native date-and-time input that uses the existing Save and Remove controls.
+
 - TASK-179 agents live-review feedback: the Attention badge counts pending
   decisions only (stale sessions no longer inflate it), and a paused session
   stays in the Attention live preview with a `Paused` pill even when its
