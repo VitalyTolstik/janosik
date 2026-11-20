@@ -1280,6 +1280,8 @@
   "search.hint": "Type to search titles, descriptions, labels and checklists across all boards.",
   "search.label": "Global search",
   "search.placeholder": "Search across all boards…",
+  "search.resultCount": "{{shown}} of {{total}}",
+  "search.showAll": "Show all results",
   "search.tooltip": "Search ({{shortcut}})",
   "share.actionError": "Something went wrong — try again",
   "share.active": "Active links",

@@ -1296,6 +1296,8 @@
   "search.hint": "Введите запрос — поиск по названиям, описаниям, меткам и чек-листам во всех досках.",
   "search.label": "Глобальный поиск",
   "search.placeholder": "Поиск по всем доскам…",
+  "search.resultCount": "{{shown}} из {{total}}",
+  "search.showAll": "Показать все результаты",
   "search.tooltip": "Поиск ({{shortcut}})",
   "share.actionError": "Что-то пошло не так — попробуйте ещё раз",
   "share.active": "Активные ссылки",
