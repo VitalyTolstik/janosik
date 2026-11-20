@@ -494,20 +494,98 @@ describe("CardComments", () => {
       expect(screen.queryByText("Mine")).not.toBeInTheDocument(),
     );
     expect(
-      server.requests.some(
+      server.requests.filter(
         (request) =>
           request.method === "DELETE" &&
           request.path === "/api/v1/comments/comment-1",
       ),
-    ).toBe(true);
+    ).toHaveLength(1);
   });
 
-  it("shows the comment author and excerpt in the delete confirmation", async () => {
+  it("sends exactly one DELETE when the confirmation is activated twice", async () => {
     const server = new FakeServer([seedBoard()]);
-    server.membersByBoard.set("b-1", [member()]);
+    server.seedComments("card-1", [comment({ text: "Once" })]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    const confirm = await screen.findByRole("button", { name: "Delete" });
+    act(() => {
+      confirm.click();
+      confirm.click();
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Once")).not.toBeInTheDocument(),
+    );
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "DELETE" &&
+          request.path === "/api/v1/comments/comment-1",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("restores a failed delete at its old index without resetting loaded pages", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments(
+      "card-1",
+      Array.from({ length: 51 }, (_, index) =>
+        comment({
+          id: `comment-${index}`,
+          text: `Comment ${index}`,
+          createdAt: 1_700_000_000_000 + index,
+        }),
+      ),
+    );
+    let deleteCalls = 0;
+    renderComments(server, false, async (input, init) => {
+      if (init?.method === "DELETE") {
+        deleteCalls += 1;
+        return new Response(JSON.stringify({ message: "delete failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("Comment 0");
+
+    fireEvent.click(await screen.findByTestId("comments-show-older"));
+    expect(await screen.findByText("Comment 50")).toBeInTheDocument();
+    const doomed = screen
+      .getAllByTestId("comment")
+      .find((row) => row.dataset.commentId === "comment-50");
+    expect(doomed).toBeDefined();
+    fireEvent.click(
+      within(doomed as HTMLElement).getByTestId("comment-delete"),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    expect(
+      await screen.findByText("Could not delete the comment"),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("comment")).toHaveLength(51),
+    );
+    expect(screen.getAllByTestId("comment").at(-1)).toHaveAttribute(
+      "data-comment-id",
+      "comment-50",
+    );
+    // The page-2 row and its position survive the error; a page-1 reset would
+    // bring the "Show older comments" control back.
+    expect(screen.queryByTestId("comments-show-older")).not.toBeInTheDocument();
+    expect(deleteCalls).toBe(1);
+  });
+
+  it("shows the member author and exact excerpt in the delete confirmation", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.membersByBoard.set("b-1", [
+      member({ displayName: "Vera", email: "vera@example.com" }),
+    ]);
     server.seedComments("card-1", [
       comment({
-        text: "  Rename the\nmigration table before the release  ",
+        text: "  **Rename** the\n`migration` table\tbefore the release  ",
       }),
     ]);
     renderComments(server);
@@ -517,14 +595,30 @@ describe("CardComments", () => {
 
     expect(
       await within(dialog).findByTestId("comment-delete-author"),
-    ).toHaveTextContent(/Author:\s*Admin/);
-    expect(
-      within(dialog).getByTestId("comment-delete-excerpt"),
-    ).toHaveTextContent("Rename the migration table before the release");
+    ).toHaveTextContent(/Author:\s*Vera/);
+    const excerpt = within(dialog).getByTestId("comment-delete-excerpt");
+    // Exact textContent, not the whitespace-normalizing matcher.
+    expect(excerpt.textContent).toBe(
+      "**Rename** the `migration` table before the release",
+    );
+    expect(excerpt).toHaveAttribute("dir", "auto");
     expect(within(dialog).getByText(/cannot be undone/i)).toBeVisible();
     expect(
-      within(dialog).getByRole("heading", { name: /Delete Admin/ }),
+      within(dialog).getByRole("heading", { name: /Delete Vera/ }),
     ).toBeVisible();
+  });
+
+  it("falls back to the author email when the member directory is missing", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.account.displayName = null;
+    server.seedComments("card-1", [comment({ text: "Email fallback" })]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    const dialog = await screen.findByRole("dialog");
+    const author = await within(dialog).findByTestId("comment-delete-author");
+
+    expect(author.textContent).toBe("Author: admin@example.com");
   });
 
   it("keeps the comment when the delete confirmation is cancelled", async () => {
@@ -540,12 +634,12 @@ describe("CardComments", () => {
     );
     expect(screen.getByText("Keep me")).toBeInTheDocument();
     expect(
-      server.requests.some(
+      server.requests.filter(
         (request) =>
           request.method === "DELETE" &&
           request.path === "/api/v1/comments/comment-1",
       ),
-    ).toBe(false);
+    ).toHaveLength(0);
   });
 
   it("gives the delete trigger and the confirm action 44 px touch targets", async () => {
@@ -608,8 +702,8 @@ describe("CardComments", () => {
         await within(dialog).findByTestId("comment-delete-author"),
       ).toHaveTextContent(/Автор:\s*Admin/);
       expect(
-        within(dialog).getByTestId("comment-delete-excerpt"),
-      ).toHaveTextContent("Удалить меня");
+        within(dialog).getByTestId("comment-delete-excerpt").textContent,
+      ).toBe("Удалить меня");
       expect(
         within(dialog).getByRole("heading", {
           name: "Удалить комментарий Admin?",

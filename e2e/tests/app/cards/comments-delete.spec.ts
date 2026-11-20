@@ -56,3 +56,46 @@ test("deletes an own comment after confirmation and it stays deleted", async ({
   const body = (await remaining.json()) as { items: unknown[] };
   expect(body.items).toHaveLength(0);
 });
+
+test.describe("mobile touch targets", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("delete and confirmation controls are at least 44 px", async ({
+    page,
+    board,
+  }) => {
+    const column = await board.column("Touch");
+    const cardId = await board.card(column, "Touch targets");
+    const created = await board.api.post(`/api/v1/cards/${cardId}/comments`, {
+      data: { text: "Touch me" },
+    });
+    expect(created.status()).toBe(201);
+    await board.open(page);
+    await openCard(page, "Touch targets");
+    const dialog = cardDialog(page);
+    const comment = dialog
+      .getByTestId("comment")
+      .filter({ hasText: "Touch me" });
+    await expect(comment).toBeVisible();
+
+    // 177.8 still owns making the hover-revealed action visible on touch; this
+    // check covers only the enlarged target size.
+    const trigger = comment.getByTestId("comment-delete");
+    const triggerBox = await trigger.boundingBox();
+    expect(triggerBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(triggerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await trigger.click({ force: true });
+    const confirm = page.getByRole("dialog", {
+      name: /^Delete .+’s comment\?$/,
+    });
+    await expect(confirm).toBeVisible();
+    for (const name of ["Delete", "Cancel"]) {
+      const box = await confirm
+        .getByRole("button", { name, exact: true })
+        .boundingBox();
+      expect(box?.width ?? 0, `${name} width`).toBeGreaterThanOrEqual(44);
+      expect(box?.height ?? 0, `${name} height`).toBeGreaterThanOrEqual(44);
+    }
+  });
+});

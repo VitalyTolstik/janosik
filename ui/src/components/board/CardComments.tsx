@@ -25,6 +25,10 @@ import {
   type ActivityPage,
 } from "@/components/board/card-activity-count";
 import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
+import {
+  commentAuthorLabel,
+  commentExcerpt,
+} from "@/components/board/comment-delete";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useCommentDraft } from "@/components/board/use-comment-draft";
@@ -62,20 +66,6 @@ const PAGE_SIZE = CARD_ACTIVITY_PAGE_SIZE;
 
 function isPendingComment(comment: CommentDto) {
   return comment.id.startsWith("pending-");
-}
-
-/** Longest plain-text preview shown before deleting a comment (TASK-177.17). */
-const DELETE_EXCERPT_LENGTH = 240;
-
-/**
- * The comment body as a one-paragraph excerpt: markdown/line breaks collapse
- * to spaces so the confirmation stays scannable, and a long body is cut with
- * an ellipsis instead of turning the dialog into a wall of text.
- */
-function commentExcerpt(text: string): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= DELETE_EXCERPT_LENGTH) return compact;
-  return `${compact.slice(0, DELETE_EXCERPT_LENGTH - 1).trimEnd()}…`;
 }
 
 interface CardCommentsProps {
@@ -129,15 +119,13 @@ export function CardComments({
   const kind = composer.draft?.kind ?? DEFAULT_COMMENT_KIND;
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
   const pendingAuthor = useBoardMember(boardId, pendingDelete?.authorId);
-  // Only the author's own comment can be deleted, so the current user is a
-  // safe fallback while the board directory is still loading (TASK-177.17).
-  const pendingAuthorName =
-    userLabel(
-      pendingAuthor?.displayName ??
-        (pendingDelete?.authorId === user?.id ? user?.displayName : null),
-      pendingAuthor?.email ??
-        (pendingDelete?.authorId === user?.id ? (user?.email ?? "") : ""),
-    ) || t("comment.unknownAuthor");
+  const deletingRef = useRef(false);
+  const pendingAuthorName = commentAuthorLabel(
+    pendingDelete?.authorId ?? "",
+    pendingAuthor,
+    user,
+    t("comment.unknownAuthor"),
+  );
 
   const markUnavailable = useCallback((error: unknown) => {
     if (
@@ -356,7 +344,12 @@ export function CardComments({
   // the dialog says the deletion cannot be undone.
   const handleDelete = async () => {
     const comment = pendingDelete;
-    if (comment === null) return;
+    // A double click or a repeated Enter reaches the handler twice before
+    // React closes the dialog; only the first activation may send a DELETE.
+    if (comment === null || deletingRef.current) return;
+    deletingRef.current = true;
+    const index = itemsRef.current.findIndex((item) => item.id === comment.id);
+    const previousTotal = total;
     setPendingDelete(null);
     setThread((current) => ({
       ...current,
@@ -368,7 +361,20 @@ export function CardComments({
       if (nextCursor !== null || total !== undefined) void refreshNewest();
     } catch {
       toast.error(t("comment.deleteError"));
-      void loadFirst();
+      // Keep the loaded pages intact: reinsert the row where it was instead
+      // of resetting to page 1 (which would drop comments loaded from 2+).
+      setThread((current) => {
+        if (current.items.some((item) => item.id === comment.id)) {
+          return { ...current, total: previousTotal };
+        }
+        const items = [...current.items];
+        const insertAt =
+          index >= 0 ? Math.min(index, items.length) : items.length;
+        items.splice(insertAt, 0, comment);
+        return { ...current, items, total: previousTotal };
+      });
+    } finally {
+      deletingRef.current = false;
     }
   };
 
@@ -482,6 +488,7 @@ export function CardComments({
               {t("comment.deleteAuthor", { name: pendingAuthorName })}
             </figcaption>
             <blockquote
+              dir="auto"
               className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90"
               data-testid="comment-delete-excerpt"
             >
