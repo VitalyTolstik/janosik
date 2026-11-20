@@ -1,13 +1,15 @@
 # TASK-180 — Bug-research remediation
 
-**Status:** planned  
+**Status:** shipped (2026-11-20). TASK-180.1 through TASK-180.9 merged into `main`
+as `eaf0f0ca`, `242bc789`, `94aae494`, `e0d2e3bb`, `68ee42ee`, `244d0cec`,
+`bed2f350`, `d8f26007` and `c70b93e7`.
+
 **Priority:** P0/P1 for the critical/high and authorization clusters, P1/P2 for the rest  
 **Source:** 10 read-only audit streams, 2026-11-17 — full findings in
 [`TASK-180-bug-research-report.md`](TASK-180-bug-research-report.md)  
 **Baseline:** `/home/vital/dev/janosik` @ `4549342a`; pixel findings were
 re-checked against `main` after PR #276 (`c21a2b8e`).  
-**Branches:** one `feat/TASK-180.x-*` branch and PR per subtask; do not combine
-the whole backlog in one PR.
+**Delivery:** nine implementation PRs, listed in the [closeout](#closeout).
 
 ## Why
 
@@ -326,14 +328,75 @@ PR #276. Re-check them on current `main`; H11's `approved`-after-apply-window
 behavior is now intentional and its e2e expectation was updated. Do not treat
 the old `expired` expectation as the target.
 
-## Definition of Done
+## Closeout
 
-- All 99 IDs are closed, explicitly deferred with owner/date, or reclassified
-  with evidence; no silent omissions.
-- Each subtask has regression tests for the boundary named in the report.
-- Critical/high paths have live or fault-injected evidence where the report
-  lacked it; code-only claims are not closed on code reading alone.
-- No weakening of existing tests; EN/RU docs and OpenAPI updated where the
-  contract changes.
-- `npm test -w ui`, backend unit/e2e (including security-contract), `tsc -b`,
-  build, OpenAPI validation and the browser matrix are green.
+**99/99 findings accounted for.** TASK-180.1 through TASK-180.8 carried 81 IDs
+into `main` before TASK-180.9. PR #295 carried the remaining 18. The finding
+assignments are in the [subtask map](#subtasks).
+
+| Subtask | PR | Merge/landing commit | Evidence doc | Outcome |
+| --- | --- | --- | --- | --- |
+| 180.1 | [#284](https://github.com/VitalyTolstik/janosik/pull/284) | [`eaf0f0ca`](https://github.com/VitalyTolstik/janosik/commit/eaf0f0ca) | [Rollback correctness](TASK-180.1-rollback-correctness.md) | 10 IDs. Rollback and replay guards shipped. L37 closed by retiring the unused `failed` status. M22 retains apply-time workflow and claim checks. |
+| 180.2 | [#288](https://github.com/VitalyTolstik/janosik/pull/288) | [`242bc789`](https://github.com/VitalyTolstik/janosik/commit/242bc789) | [Write integrity](TASK-180.2-write-integrity.md) | 13 IDs. Parentage, duplication, claim, restore and retry guards shipped, with M17, L18 and L19 limits below. |
+| 180.3 | [#289](https://github.com/VitalyTolstik/janosik/pull/289) | [`94aae494`](https://github.com/VitalyTolstik/janosik/commit/94aae494) | [Authorization](TASK-180.3-authz.md) | 14 IDs. Bootstrap, role, PAT, SSE, sharing and TOTP boundaries shipped. |
+| 180.4 | [#290](https://github.com/VitalyTolstik/janosik/pull/290) | [`e0d2e3bb`](https://github.com/VitalyTolstik/janosik/commit/e0d2e3bb) | [Approvals and Agent Control](TASK-180.4-approvals.md) | 12 IDs. Queue, session and MCP fixes shipped. H11 preserves the decision, explains the lapsed window and allows a replacement request. |
+| 180.5 | [#291](https://github.com/VitalyTolstik/janosik/pull/291) | [`68ee42ee`](https://github.com/VitalyTolstik/janosik/commit/68ee42ee) | [MCP and public API](TASK-180.5-mcp-api.md) | 10 IDs. MCP output and mutation results, REST and OpenAPI shipped, with M32 and M34 limits below. |
+| 180.6 | [#292](https://github.com/VitalyTolstik/janosik/pull/292) | [`244d0cec`](https://github.com/VitalyTolstik/janosik/commit/244d0cec) | [Notifications and realtime](TASK-180.6-notifications.md) | 10 IDs. Durable delivery, reconciliation and schedule recovery shipped. L23 documents process-local configuration. H13 retains a duplicate-delivery window. |
+| 180.7 | [#293](https://github.com/VitalyTolstik/janosik/pull/293) | [`bed2f350`](https://github.com/VitalyTolstik/janosik/commit/bed2f350) | [Demo, retention and snapshots](TASK-180.7-demo-retention.md) | 4 IDs. Ownership-scoped cleanup, frozen captures, cache bounds and retention shipped, with H9, M18 and M23 limits below. |
+| 180.8 | [#294](https://github.com/VitalyTolstik/janosik/pull/294) | [`d8f26007`](https://github.com/VitalyTolstik/janosik/commit/d8f26007) | [Docs, deployment and onboarding](TASK-180.8-docs-deploy.md) | 8 IDs. Docs, first-run and deployment paths shipped. L5 keeps a static fallback, and the published-image M37 check is deferred. |
+| 180.9 | [#295](https://github.com/VitalyTolstik/janosik/pull/295) | [`c70b93e7`](https://github.com/VitalyTolstik/janosik/commit/c70b93e7) | [Navigation, i18n and accessibility](TASK-180.9-nav-i18n-a11y.md) | 18 IDs. Navigation, locale, shortcut and ARIA fixes shipped, with the H15 limit and M1/M41 manual gaps below. |
+
+### Accepted residuals
+
+This table lists only closeout-critical residuals in the central register.
+Additional per-subtask limits remain documented in the evidence for
+[180.1 — Known residuals](TASK-180.1-rollback-correctness.md#known-residuals),
+[180.2 — Known residuals](TASK-180.2-write-integrity.md#known-residuals),
+[180.3 — Residuals](TASK-180.3-authz.md#residuals),
+[180.4 — Queue and live state](TASK-180.4-approvals.md#queue-and-live-state),
+[180.5 — Residuals](TASK-180.5-mcp-api.md#residuals),
+[180.6 — Residual risks](TASK-180.6-notifications.md#residual-risks),
+[180.7 — Compatibility and limits](TASK-180.7-demo-retention.md#compatibility-and-limits),
+[180.8 — Residual risks](TASK-180.8-docs-deploy.md#residual-risks), and
+[180.9 — Residual coverage](TASK-180.9-nav-i18n-a11y.md#residual-coverage).
+
+| ID/area | Residual | Owner | Date |
+| --- | --- | --- | --- |
+| L18 · Restore replay | **Accepted.** Once a non-member assignee has been stripped from the stored payload, replay cannot distinguish a different non-member assignee from the original. | Vitaly | 2026-11-20 |
+| L19 · Attachment references | **Accepted.** Attachment deletion scrubs editor-generated forms. Legacy HTML `<img>` references may still point to the deleted resource. | Vitaly | 2026-11-20 |
+| M17 · MCP retries | **Accepted.** The transport retry reuses its key. A new invocation after a lost response must supply the original `idempotencyKey` to avoid a duplicate write. | Vitaly | 2026-11-20 |
+| L5 · Site 404 | **Accepted.** With JavaScript disabled, the static 404 is English, including on Russian paths. | Vitaly | 2026-11-20 |
+| M37 · Clean install | **Deferred.** Fresh-database onboarding and Docker smoke checks ran against locally built artifacts. A clean install from the published image remains a manual verification gap. | Vitaly | 2026-11-20 |
+| M41 · Assistive technology | **Deferred.** Automated tests cover ARIA and focus. Real screen-reader announcements in NVDA, JAWS, VoiceOver and TalkBack remain unverified. | Vitaly | 2026-11-20 |
+| M32 · MCP output files | **Accepted.** Atomic publication requires hard links. Confined writes also require `O_TMPFILE` support on the target filesystem. | Vitaly | 2026-11-20 |
+| M34 · Revert authentication | **Accepted.** The shared route has body-dependent authorization. OpenAPI documents PAT access for `dryRun: true` and the board ADMIN browser session required to apply. | Vitaly | 2026-11-20 |
+| H9 · Demo lifecycle | **Accepted.** Start and stop serialize per backend process. | Vitaly | 2026-11-20 |
+| M18 · Legacy snapshots | **Accepted.** Legacy snapshots can read qualifying source rows while the source board remains available. Independent captures freeze their own content. | Vitaly | 2026-11-20 |
+| M23 · Orphan approvals | **Accepted.** Approval rows orphaned by board purges before TASK-180.7 are outside the new board-purge cleanup path. | Vitaly | 2026-11-20 |
+| H13 · SMTP delivery | **Accepted.** If SMTP accepts a message and the worker loses the database commit, a retry can send it again with the same Message-ID. | Vitaly | 2026-11-20 |
+| H15 · Board Settings draft | **Accepted.** A forced switch silently discards the previous board's draft and restores focus on the destination board. | Vitaly | 2026-11-20 |
+| M1 · OAuth provider | **Deferred.** HTTP e2e covers the callback with provider stubs and Chrome covers app navigation. A live-provider round trip remains a manual verification gap. | Vitaly | 2026-11-20 |
+
+### Definition of Done
+
+- [x] All 99 IDs are accounted for by shipped fixes, documented contract
+  decisions or explicitly deferred checks with owners and dates. H11's original
+  `expired` expectation was reclassified after #276, and replacement approval
+  and the lapsed-window UI have regression coverage.
+- [x] All nine subtasks have linked evidence. The evidence records regression
+  boundaries, live or fault-injected checks for critical/high paths, and EN/RU
+  and OpenAPI updates where the contracts changed.
+- [x] CI passed on PR #295 head `1bebcd8c` and on the post-merge `main` push
+  at `c70b93e7`. Both commits have Git tree
+  `adcfae80f093bfbae68c681440e1b822fc837c29`. The PR's `verify` job passed UI
+  and backend unit/e2e tests, type checks including `tsc -b`, builds, and
+  OpenAPI validation and validator tests.
+  [PR-head CI run `44630080321`](https://github.com/VitalyTolstik/janosik/actions/runs/44630080321),
+  [post-merge CI run `44634141494`](https://github.com/VitalyTolstik/janosik/actions/runs/44634141494),
+  [verify job](https://github.com/VitalyTolstik/janosik/actions/runs/44630080321/job/135934236136)
+- [x] The PR gate passed the app browser lane with and without email, the
+  admin browser lane, security-contract (backend and browser), and Docker
+  smoke checks on amd64 and arm64. CodeQL passed on the PR head and on the
+  post-merge `main` push.
+  [PR-head CodeQL run `44630080400`](https://github.com/VitalyTolstik/janosik/actions/runs/44630080400),
+  [post-merge CodeQL run `44634140593`](https://github.com/VitalyTolstik/janosik/actions/runs/44634140593)

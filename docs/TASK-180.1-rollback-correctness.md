@@ -1,7 +1,8 @@
 # TASK-180.1 — Rollback and run correctness
 
-Implements the 180.1 slice of `TASK-180-bug-research-remediation.md` on top of
-TASK-176.8 branch A (`05d0df30`). No PR/merge is part of this stream.
+Implements the 180.1 slice of `TASK-180-bug-research-remediation.md`. It
+merged in [PR #284](https://github.com/VitalyTolstik/janosik/pull/284) as
+[`eaf0f0ca`](https://github.com/VitalyTolstik/janosik/commit/eaf0f0ca).
 
 ## What changed
 
@@ -72,11 +73,13 @@ TASK-176.8 branch A (`05d0df30`). No PR/merge is part of this stream.
   preflight replay reconciliation and wrong-run key refusal.
 - `backend/src/common/membership.guard.spec.ts`: generic revert route is a
   read-only control operation.
-- `ui/.../RunsPanel.test.tsx`: same-key lost-response retry, stale error
-  cleared when the refetch reports `reverted`, specific limit/validation/
-  payload copy, `run.created` list refresh.
+- UI tests cover same-key retry after a lost response, clearing a stale error
+  when the refetch reports `reverted`, specific limit, validation and payload
+  error messages, and the `run.created` list refresh.
+  [`ui/src/components/agent-control/RunsPanel.test.tsx`](../ui/src/components/agent-control/RunsPanel.test.tsx)
 - Shared/UI docs tests updated for the two-status run contract.
 
 ## Verification
 
-See the stream report for exact commands and results.
+PR #284 passed `verify`, `security-contract`, app and admin browser suites,
+and amd64 and arm64 Docker checks. [CI run](https://github.com/VitalyTolstik/janosik/actions/runs/44432765951)
