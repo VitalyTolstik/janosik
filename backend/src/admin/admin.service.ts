@@ -1625,16 +1625,8 @@ export class AdminService {
     if (query.cardId) where.id = query.cardId;
     if (query.columnId) where.columnId = query.columnId;
     if (query.boardId) where.column = { boardId: query.boardId };
-    const labelIds =
-      typeof query.labelId === "string" ? [query.labelId] : query.labelId;
-    if (labelIds?.length) {
-      if (query.labelMatch === "all") {
-        where.AND = labelIds.map((labelId) => ({
-          labels: { some: { labelId } },
-        }));
-      } else {
-        where.labels = { some: { labelId: { in: labelIds } } };
-      }
+    if (query.singleLabelId) {
+      where.labels = { some: { labelId: query.singleLabelId } };
     }
     if (query.search) {
       where.OR = [

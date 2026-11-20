@@ -47,7 +47,7 @@ function facetCases(preset, referenceTime) {
       facet: "label",
       model: CARDS,
       predicate: sql`EXISTS (
-      SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" IN (${id("label", 0)})
+      SELECT 1 FROM "CardLabel" cl WHERE cl."cardId" = c.id AND cl."labelId" = ${id("label", 0)}
     )`,
     },
     {
@@ -378,6 +378,7 @@ async function main() {
           warmP95,
           warmP95Delta,
           largeSeqScans,
+          withinBudget,
         }) => ({
           list,
           facet,
@@ -389,9 +390,17 @@ async function main() {
           warmP95: warmP95.toFixed(2),
           "p95 delta": `${warmP95Delta.toFixed(1)}%`,
           "large seq scans": largeSeqScans.length,
+          budget: withinBudget ? "pass" : "fail",
         }),
       ),
     );
+    const failures = summary.filter((row) => !row.withinBudget);
+    if (failures.length > 0) {
+      console.error(
+        `${failures.length} benchmark case(s) exceeded the budget.`,
+      );
+      process.exitCode = 1;
+    }
     if (output) {
       await writeFile(
         output,

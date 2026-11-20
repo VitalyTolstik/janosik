@@ -808,7 +808,9 @@ export type AdminFilterOptionType = (typeof ADMIN_FILTER_OPTION_TYPES)[number];
 export interface AdminFilterOptionsQuery {
   type: AdminFilterOptionType;
   q?: string;
+  /** Resolve up to 20 distinct IDs, regardless of picker scope. */
   ids?: string[];
+  /** Caps picker search results. Exact ID resolution uses the IDs cap. */
   limit?: number;
   boardId?: string;
   columnId?: string;
@@ -911,7 +913,6 @@ const MULTI_VALUE_LIMITS: Partial<Record<AdminFilterKey, number>> = {
   assigneeId: ADMIN_FILTER_MAX_VALUES,
   authorId: ADMIN_FILTER_MAX_VALUES,
   kind: COMMENT_KINDS.length,
-  labelId: ADMIN_FILTER_MAX_VALUES,
   priority: CARD_PRIORITIES.length,
   targetType: ADMIN_FILTER_MAX_VALUES,
   type: ADMIN_FILTER_MAX_VALUES,
@@ -919,10 +920,11 @@ const MULTI_VALUE_LIMITS: Partial<Record<AdminFilterKey, number>> = {
 };
 
 export interface AdminFilterSurfaceConfig {
-  /** Advanced facets, including legacy deep links and later rollout waves. */
-  supported: readonly AdminFilterKey[];
+  /** Facets accepted by the API in the current rollout. */
+  implemented: readonly AdminFilterKey[];
+  /** Facets planned for the filter picker, including later rollout waves. */
   offered: readonly AdminFilterKey[];
-  /** API support for from/to and the corresponding planned header control. */
+  /** API support for from/to in the current rollout. */
   dateRange: boolean;
   period: boolean;
   statusTabs: boolean;
@@ -943,7 +945,7 @@ const CARD_FACETS = [
 ] as const;
 
 function filterSurface(
-  supported: readonly AdminFilterKey[],
+  implemented: readonly AdminFilterKey[],
   offered: readonly AdminFilterKey[] = [],
   {
     statusTabs = false,
@@ -953,7 +955,7 @@ function filterSurface(
     Pick<AdminFilterSurfaceConfig, "statusTabs" | "period" | "dateRange">
   > = {},
 ): AdminFilterSurfaceConfig {
-  return { supported, offered, dateRange, period, statusTabs };
+  return { implemented, offered, dateRange, period, statusTabs };
 }
 
 const STATUS_TABS = { statusTabs: true };
@@ -964,48 +966,40 @@ export const ENTITY_FILTERS: Record<
   AdminListSurface,
   AdminFilterSurfaceConfig
 > = {
-  users: filterSurface(["verified"], ["verified"], STATUS_AND_PERIOD_TABS),
-  boards: filterSurface(
-    [...CARD_SCOPE, "adminMemberId"],
-    ["adminMemberId"],
-    STATUS_TABS,
-  ),
-  cards: filterSurface(
-    [...CARD_FACETS, "cardId"],
-    CARD_FACETS,
-    STATUS_AND_PERIOD_TABS,
-  ),
+  users: filterSurface([], ["verified"], STATUS_TABS),
+  boards: filterSurface(CARD_SCOPE, ["adminMemberId"], STATUS_TABS),
+  cards: filterSurface(CARD_SCOPE, CARD_FACETS, STATUS_TABS),
   columns: filterSurface(CARD_SCOPE, ["boardId"], STATUS_TABS),
   labels: filterSurface(CARD_SCOPE, ["boardId"], STATUS_TABS),
   checklists: filterSurface(CARD_SCOPE, BOARD_CARD_SCOPE, STATUS_TABS),
   checklistItems: filterSurface(CARD_SCOPE),
   cardLinks: filterSurface(
-    [...BOARD_CARD_SCOPE, "type"],
+    BOARD_CARD_SCOPE,
     [...BOARD_CARD_SCOPE, "type"],
     STATUS_TABS,
   ),
   comments: filterSurface(
-    [...CARD_SCOPE, "authorId", "kind"],
+    CARD_SCOPE,
     [...BOARD_CARD_SCOPE, "authorId", "kind"],
     STATUS_AND_PERIOD_TABS,
   ),
   attachments: filterSurface(
-    [...CARD_SCOPE, "uploadedById", "mime", "transcode"],
+    CARD_SCOPE,
     [...BOARD_CARD_SCOPE, "uploadedById", "mime", "transcode"],
-    STATUS_AND_PERIOD_TABS,
+    STATUS_TABS,
   ),
   activity: filterSurface(
-    [...CARD_SCOPE, "actorId", "type"],
+    CARD_SCOPE,
     [...BOARD_CARD_SCOPE, "actorId", "type"],
     PERIOD_TABS,
   ),
   commands: filterSurface(
-    ["boardId", "columnId", "cardId", "commandId", "actorId", "type"],
+    ["boardId", "columnId", "cardId", "commandId"],
     ["boardId", "actorId", "type", "cardId", "columnId", "commandId"],
     PERIOD_TABS,
   ),
   audit: filterSurface(
-    ["commandId", "adminId", "action", "targetType", "targetId"],
+    ["commandId"],
     ["adminId", "action", "targetType", "targetId", "commandId"],
     PERIOD_TABS,
   ),
@@ -1055,11 +1049,7 @@ export function normalizeAdminStatus(
     : status;
 }
 
-export function adminFilterValueLimit(
-  key: AdminFilterKey,
-  surface?: AdminListSurface,
-): number {
-  if (key === "labelId" && surface !== "cards") return 1;
+export function adminFilterValueLimit(key: AdminFilterKey): number {
   return MULTI_VALUE_LIMITS[key] ?? 1;
 }
 
@@ -1099,10 +1089,10 @@ export function adminFilterEntries(
   >,
   surface?: AdminListSurface,
 ): [AdminFilterKey, string][] {
-  const supported =
+  const implemented =
     surface === undefined
       ? ADMIN_FILTER_KEYS
-      : ENTITY_FILTERS[surface].supported;
+      : ENTITY_FILTERS[surface].implemented;
   const labels = filters.labelId;
   const multipleLabels =
     Array.isArray(labels) &&
@@ -1112,7 +1102,7 @@ export function adminFilterEntries(
       ),
     ).length > 1;
   return ADMIN_FILTER_KEYS.flatMap((key): [AdminFilterKey, string][] => {
-    if (!supported.includes(key)) return [];
+    if (!implemented.includes(key)) return [];
     const value = filters[key];
     if (
       value == null ||
@@ -1121,6 +1111,12 @@ export function adminFilterEntries(
     )
       return [];
     if (key === "labelMatch" && (value !== "all" || !multipleLabels)) return [];
+    if (
+      surface !== undefined &&
+      Array.isArray(value) &&
+      adminFilterValueLimit(key) === 1
+    )
+      return [];
     const rawValues = typeof value === "object" ? value : [value];
     const values = rawValues.flatMap((entry) => {
       const parsed = parseAdminFilterValue(key, entry, surface);

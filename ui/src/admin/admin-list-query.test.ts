@@ -3,6 +3,7 @@ import {
   EMPTY_ADMIN_LIST_FILTERS,
   adminFiltersKey,
   adminListQueryKey,
+  adminListRequestFilters,
   hasAdminFilters,
   readAdminListQuery,
   writeAdminListQuery,
@@ -17,18 +18,19 @@ import {
 describe("admin list query state", () => {
   it("restores search, status, period, page and structural filters", () => {
     const params = new URLSearchParams(
-      "tab=cards&search=needle&status=archived&period=7d&limit=25&offset=50" +
+      "tab=comments&search=needle&status=deleted&period=7d&limit=25&offset=50" +
         "&boardId=b-1&columnId=col-1&labelId=l-1&cardId=c-1" +
-        "&commandId=cmd-1&returnTo=%2Fadmin",
+        "&returnTo=%2Fadmin",
     );
     const state = readAdminListQuery(params, {
-      statuses: ["active", "archived", "deleted"],
+      surface: "comments",
+      statuses: ["active", "deleted"],
       periods: true,
       defaultLimit: 50,
     });
     expect(state).toEqual({
       search: "needle",
-      status: "archived",
+      status: "deleted",
       period: "7d",
       limit: 25,
       offset: 50,
@@ -37,7 +39,7 @@ describe("admin list query state", () => {
         columnId: "col-1",
         labelId: "l-1",
         cardId: "c-1",
-        commandId: "cmd-1",
+        commandId: null,
       },
     });
   });
@@ -50,7 +52,12 @@ describe("admin list query state", () => {
           "a".repeat(80) +
           "&commandId=bad%24id",
       ),
-      { statuses: ["active"], periods: true, defaultLimit: 50 },
+      {
+        surface: "comments",
+        statuses: ["active"],
+        periods: true,
+        defaultLimit: 50,
+      },
     );
     expect(state.status).toBe("all");
     expect(state.period).toBe("any");
@@ -83,7 +90,7 @@ describe("admin list query state", () => {
         offset: 25,
         filters: { ...EMPTY_ADMIN_LIST_FILTERS, boardId: "b-1" },
       },
-      { defaultLimit: 50 },
+      { surface: "comments", defaultLimit: 50 },
     );
     expect(next.get("tab")).toBe("comments");
     expect(next.get("returnTo")).toBe("/admin/boards/b-1");
@@ -109,6 +116,7 @@ describe("admin list query state", () => {
         offset: 0,
         filters: EMPTY_ADMIN_LIST_FILTERS,
       },
+      { surface: "cards" },
     );
     expect(next.toString()).toBe("tab=cards");
   });
@@ -135,116 +143,115 @@ describe("admin list query state", () => {
   });
 
   it("writes and clears the commandId audit deep-link filter", () => {
-    const next = writeAdminListQuery(new URLSearchParams("tab=audit"), {
-      search: "",
-      status: "all",
-      period: "any",
-      limit: 50,
-      offset: 0,
-      filters: { ...EMPTY_ADMIN_LIST_FILTERS, commandId: "cmd-1" },
-    });
+    const next = writeAdminListQuery(
+      new URLSearchParams("tab=audit"),
+      {
+        search: "",
+        status: "all",
+        period: "any",
+        limit: 50,
+        offset: 0,
+        filters: { ...EMPTY_ADMIN_LIST_FILTERS, commandId: "cmd-1" },
+      },
+      { surface: "audit" },
+    );
     expect(next.get("tab")).toBe("audit");
     expect(next.get("commandId")).toBe("cmd-1");
+    expect(
+      readAdminListQuery(next, { surface: "audit" }).filters.commandId,
+    ).toBe("cmd-1");
 
-    const cleared = writeAdminListQuery(next, {
-      search: "",
-      status: "all",
-      period: "any",
-      limit: 50,
-      offset: 0,
-      filters: EMPTY_ADMIN_LIST_FILTERS,
-    });
+    expect(
+      readAdminListQuery(new URLSearchParams("commandId=bad%24id"), {
+        surface: "audit",
+      }).filters.commandId,
+    ).toBeNull();
+    const cleared = writeAdminListQuery(
+      next,
+      {
+        search: "",
+        status: "all",
+        period: "any",
+        limit: 50,
+        offset: 0,
+        filters: EMPTY_ADMIN_LIST_FILTERS,
+      },
+      { surface: "audit" },
+    );
     expect(cleared.get("commandId")).toBeNull();
     expect(cleared.get("tab")).toBe("audit");
   });
 });
 
 describe("surface-aware admin queries", () => {
-  it("round-trips only the card facets with canonical order and defaults", () => {
+  it("round-trips legacy card filters and drops deferred facets", () => {
     const options = { surface: "cards" } as const;
     const source = new URLSearchParams(
-      "tab=cards&returnTo=%2Fadmin&labelId=l-2&labelId=l-1&labelId=l-2" +
-        "&labelMatch=all&verified=true&priority=high&priority=medium" +
-        "&priority=invalid&unassigned=false&hasAttachments=false&boardId=+b-1+",
+      "tab=cards&returnTo=%2Fadmin&status=archived&labelId=l-1&labelMatch=all&verified=true" +
+        "&priority=high&unassigned=false&hasAttachments=false&boardId=+b-1+",
     );
     const state = readAdminListQuery(source, options);
+    expect(state.status).toBe("archived");
     expect(state.filters).toEqual({
       ...EMPTY_ADMIN_LIST_FILTERS,
       boardId: "b-1",
-      labelId: ["l-1", "l-2"],
-      labelMatch: "all",
-      priority: ["high", "medium"],
-      hasAttachments: false,
+      labelId: "l-1",
     });
     const canonical = writeAdminListQuery(source, state, options);
     expect(canonical.toString()).toBe(
-      "tab=cards&returnTo=%2Fadmin&boardId=b-1&hasAttachments=false&labelId=l-1" +
-        "&labelId=l-2&labelMatch=all&priority=high&priority=medium",
+      "tab=cards&returnTo=%2Fadmin&status=archived&boardId=b-1&labelId=l-1",
     );
     expect(readAdminListQuery(canonical, options)).toEqual(state);
-    expect(
-      adminFiltersKey({ ...state.filters, labelId: ["l-2", "l-1", "l-2"] }),
-    ).toBe(adminFiltersKey(state.filters));
-    expect(
-      adminFiltersKey({ ...state.filters, hasAttachments: true }),
-    ).not.toBe(adminFiltersKey(state.filters));
-    expect(adminFiltersKey({ ...state.filters, labelMatch: "any" })).not.toBe(
-      adminFiltersKey(state.filters),
-    );
   });
 
-  it("drops unsupported user facets but keeps supported legacy comment scopes", () => {
-    const params = new URLSearchParams(
-      "boardId=b-1&columnId=c-1&labelId=l-1&assigneeId=u-1&verified=false",
-    );
-    const users = readAdminListQuery(params, { surface: "users" });
-    expect(users.filters).toEqual({
-      ...EMPTY_ADMIN_LIST_FILTERS,
-      verified: false,
-    });
+  it.each(["commands", "cards"] as const)(
+    "preserves explicit bounds when rewriting the %s URL",
+    (surface) => {
+      const source = new URLSearchParams("from=0&to=123&search=initial");
+      const state = readAdminListQuery(source, { surface });
+      const changed = { ...state, search: "edited" };
+      const canonical = writeAdminListQuery(source, changed, { surface });
+      expect(canonical.get("from")).toBe("0");
+      expect(canonical.get("to")).toBe("123");
+      expect(readAdminListQuery(canonical, { surface })).toEqual(changed);
+    },
+  );
+
+  it("ignores deferred values before checking limits and rejects repeated legacy singletons", () => {
+    const params = new URLSearchParams("labelId=l-1&labelId=l-1");
+    for (let i = 0; i < 21; i++) params.append("assigneeId", "u-1");
+    const cards = readAdminListQuery(params, { surface: "cards" });
+    expect(cards.filters).toEqual(EMPTY_ADMIN_LIST_FILTERS);
+    expect(cards.filterError).toBeUndefined();
     expect(
-      writeAdminListQuery(params, users, { surface: "users" }).toString(),
-    ).toBe("verified=false");
-    const comments = readAdminListQuery(params, { surface: "comments" });
-    expect(comments.filters).toEqual({
+      readAdminListQuery(params, { surface: "comments" }).filterError,
+    ).toContain("one value");
+  });
+
+  it("deduplicates repeated values in filter keys before counting unique values", () => {
+    const assigneeId = Array.from({ length: 20 }, (_, i) => `user-${i}`);
+    expect(
+      adminFiltersKey({
+        ...EMPTY_ADMIN_LIST_FILTERS,
+        assigneeId: [...assigneeId, ...assigneeId],
+      }),
+    ).toBe(adminFiltersKey({ ...EMPTY_ADMIN_LIST_FILTERS, assigneeId }));
+  });
+
+  it("requires a list surface to parse or send structural filters", () => {
+    const filters = {
       ...EMPTY_ADMIN_LIST_FILTERS,
       boardId: "b-1",
-      columnId: "c-1",
-      labelId: "l-1",
-    });
-  });
-
-  it("reports oversized and repeated single-value filters before a request", () => {
-    const cards = { surface: "cards" } as const;
-    const oversized = new URLSearchParams(
-      Array.from({ length: 21 }, () => ["labelId", "l-1"]),
-    );
-    const state = readAdminListQuery(oversized, cards);
-    expect(state.filterError).toContain("20");
-    expect(() => writeAdminListQuery(oversized, state, cards)).toThrow("20");
-    const repeated = new URLSearchParams("labelId=l-1&labelId=l-1");
+      assigneeId: ["u-1"],
+    };
     expect(
-      readAdminListQuery(repeated, { surface: "comments" }).filterError,
-    ).toContain("one value");
-    expect(readAdminListQuery(repeated, cards).filters.labelId).toEqual([
-      "l-1",
-    ]);
-    const combined = new URLSearchParams([
-      ...Array.from({ length: 17 }, (_, i) => ["labelId", `l-${i}`]),
-      ...Array.from({ length: 16 }, (_, i) => ["assigneeId", `u-${i}`]),
-    ]);
-    expect(readAdminListQuery(combined, cards).filterError).toContain("32");
-    const long = new URLSearchParams([
-      ...Array.from({ length: 16 }, (_, i) => [
-        "labelId",
-        `${"l".repeat(62)}${i}`,
-      ]),
-      ...Array.from({ length: 16 }, (_, i) => [
-        "assigneeId",
-        `${"u".repeat(62)}${i}`,
-      ]),
-    ]);
-    expect(readAdminListQuery(long, cards).filterError).toContain("too long");
+      readAdminListQuery(new URLSearchParams("boardId=b-1")).filters,
+    ).toEqual(EMPTY_ADMIN_LIST_FILTERS);
+    expect(adminListRequestFilters(filters)).toEqual({});
+    expect(adminListRequestFilters(filters, "cards")).toEqual({
+      boardId: "b-1",
+    });
+    expect(adminListRequestFilters(filters, "users")).toEqual({});
   });
 
   it("normalizes announcement status while reading and writing", () => {

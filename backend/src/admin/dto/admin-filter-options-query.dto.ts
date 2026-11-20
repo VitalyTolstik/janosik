@@ -38,9 +38,9 @@ export class AdminFilterOptionsQueryDto implements AdminFilterOptionsQuery {
   q?: string;
 
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    (Array.isArray(value) ? value : [value]).map(trim),
-  )
+  @Transform(({ value }: { value: unknown }) => [
+    ...new Set((Array.isArray(value) ? value : [value]).map(trim)),
+  ])
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(ADMIN_FILTER_MAX_VALUES)

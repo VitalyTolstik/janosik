@@ -1,4 +1,9 @@
-import { adminFilterEntries, type AdminFilters } from "@janosik/shared";
+import {
+  adminFilterEntries,
+  ENTITY_FILTERS,
+  type AdminFilters,
+  type AdminListSurface,
+} from "@janosik/shared";
 import type {
   AdminAuditRowDto,
   AdminAuthResponseDto,
@@ -210,7 +215,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminEntityRowMap[E]>> {
     return this.request<AdminPage<AdminEntityRowMap[E]>>(
-      `/admin/entities/${entity}${this.query(params)}`,
+      `/admin/entities/${entity}${this.query(params, entity)}`,
     );
   }
 
@@ -308,7 +313,7 @@ export class AdminApiClient {
 
   listUsers(params: AdminListParams = {}): Promise<AdminPage<AdminUserRowDto>> {
     return this.request<AdminPage<AdminUserRowDto>>(
-      `/admin/users${this.query(params)}`,
+      `/admin/users${this.query(params, "users")}`,
     );
   }
 
@@ -347,7 +352,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminBoardRowDto>> {
     return this.request<AdminPage<AdminBoardRowDto>>(
-      `/admin/boards${this.query(params)}`,
+      `/admin/boards${this.query(params, "boards")}`,
     );
   }
 
@@ -396,7 +401,7 @@ export class AdminApiClient {
 
   listCards(params: AdminListParams = {}): Promise<AdminPage<AdminCardRowDto>> {
     return this.request<AdminPage<AdminCardRowDto>>(
-      `/admin/cards${this.query(params)}`,
+      `/admin/cards${this.query(params, "cards")}`,
     );
   }
 
@@ -422,7 +427,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminSessionRowDto>> {
     return this.request<AdminPage<AdminSessionRowDto>>(
-      `/admin/sessions${this.query(params)}`,
+      `/admin/sessions${this.query(params, "sessions")}`,
     );
   }
 
@@ -437,7 +442,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminTokenRowDto>> {
     return this.request<AdminPage<AdminTokenRowDto>>(
-      `/admin/tokens${this.query(params)}`,
+      `/admin/tokens${this.query(params, "tokens")}`,
     );
   }
 
@@ -454,7 +459,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminCommentRowDto>> {
     return this.request<AdminPage<AdminCommentRowDto>>(
-      `/admin/comments${this.query(params)}`,
+      `/admin/comments${this.query(params, "comments")}`,
     );
   }
 
@@ -468,7 +473,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminCommandRowDto>> {
     return this.request<AdminPage<AdminCommandRowDto>>(
-      `/admin/commands${this.query(params)}`,
+      `/admin/commands${this.query(params, "commands")}`,
     );
   }
 
@@ -476,7 +481,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminAuditRowDto>> {
     return this.request<AdminPage<AdminAuditRowDto>>(
-      `/admin/audit${this.query(params)}`,
+      `/admin/audit${this.query(params, "audit")}`,
     );
   }
 
@@ -565,7 +570,7 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminShareRowDto>> {
     return this.request<AdminPage<AdminShareRowDto>>(
-      `/admin/shares${this.query(params)}`,
+      `/admin/shares${this.query(params, "shares")}`,
     );
   }
 
@@ -889,7 +894,7 @@ export class AdminApiClient {
     return value === "" ? "" : `?${value}`;
   }
 
-  private query(params: AdminListParams): string {
+  private query(params: AdminListParams, surface: AdminListSurface): string {
     const search = new URLSearchParams();
     if (params.search) search.set("search", params.search);
     if (params.status && params.status !== "all") {
@@ -898,9 +903,11 @@ export class AdminApiClient {
     if (params.limit !== undefined) search.set("limit", String(params.limit));
     if (params.offset !== undefined)
       search.set("offset", String(params.offset));
-    if (params.from !== undefined) search.set("from", String(params.from));
-    if (params.to !== undefined) search.set("to", String(params.to));
-    for (const [key, value] of adminFilterEntries(params))
+    if (ENTITY_FILTERS[surface].dateRange) {
+      if (params.from !== undefined) search.set("from", String(params.from));
+      if (params.to !== undefined) search.set("to", String(params.to));
+    }
+    for (const [key, value] of adminFilterEntries(params, surface))
       search.append(key, value);
     const value = search.toString();
     return value === "" ? "" : `?${value}`;

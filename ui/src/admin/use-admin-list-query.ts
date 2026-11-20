@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import type { AdminListSurface, AdminPage } from "@janosik/shared";
-import { useToast } from "@/components/Toast";
 import type { AdminListParams } from "./admin-client";
 import {
   adminFiltersKey,
@@ -87,7 +86,6 @@ export function useAdminListQuery<T>(
 ): AdminListState<T> {
   const [params, setParams] = useSearchParams();
   const { pathname } = useLocation();
-  const toast = useToast();
   const surface = options.surface ?? listSurface(pathname, params.get("tab"));
   const statusKey = options.statuses?.join(",");
   const periods = options.periods;
@@ -125,9 +123,6 @@ export function useAdminListQuery<T>(
   }, [urlKey]);
 
   const { filterError } = list;
-  useEffect(() => {
-    if (filterError !== undefined) toast.error(filterError);
-  }, [filterError, toast]);
 
   // Hook → URL. Compare with the URL state captured before the user change to
   // decide whether this is a search keystroke (replace) or a new view (push).

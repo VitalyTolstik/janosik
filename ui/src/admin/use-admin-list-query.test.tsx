@@ -26,16 +26,57 @@ function setup(url: string, preceding?: string) {
 }
 
 describe("URL-backed admin lists", () => {
-  it("drops unsupported filters before requesting users", async () => {
+  it.each([
+    [
+      "/admin/users?verified=true&assigneeId=u-1&returnTo=%2Fadmin",
+      "?returnTo=%2Fadmin",
+    ],
+    [
+      "/admin/boards?tab=cards&assigneeId=u-1&labelMatch=all&labelId=l-1&labelId=l-2",
+      "?tab=cards",
+    ],
+    ["/admin/audit?tab=audit&adminId=a-1&targetId=c-1", "?tab=audit"],
+    ["/admin/boards?adminMemberId=u-1", ""],
+    ["/admin/moderation?tab=attachments&mime=image", "?tab=attachments"],
+  ])(
+    "loads %s without sending deferred filters or entering an error state",
+    async (url, canonical) => {
+      const { result, fetcher } = setup(url);
+      await waitFor(() =>
+        expect(result.current.location.search).toBe(canonical),
+      );
+      await waitFor(() => expect(result.current.list.loading).toBe(false));
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher).toHaveBeenCalledWith({
+        search: "",
+        status: "all",
+        from: undefined,
+        limit: 50,
+        offset: 0,
+      });
+      expect(result.current.list.error).toBe(false);
+      expect(result.current.list.filterError).toBeUndefined();
+    },
+  );
+
+  it("preserves explicit URL bounds while paging", async () => {
     const { result, fetcher } = setup(
-      "/admin/users?assigneeId=u-1&returnTo=%2Fadmin",
+      "/admin/audit?tab=commands&from=0&to=123",
     );
+    await waitFor(() => expect(result.current.list.loading).toBe(false));
+    act(() => result.current.list.setOffset(50));
     await waitFor(() =>
-      expect(result.current.location.search).toBe("?returnTo=%2Fadmin"),
+      expect(
+        new URLSearchParams(result.current.location.search).get("offset"),
+      ).toBe("50"),
     );
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher.mock.calls[0][0]).not.toHaveProperty("assigneeId");
-    expect(result.current.list.filters).not.toHaveProperty("assigneeId");
+    const params = new URLSearchParams(result.current.location.search);
+    expect(params.get("from")).toBe("0");
+    expect(params.get("to")).toBe("123");
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 50, from: undefined }),
+    );
+    expect(fetcher.mock.lastCall?.[0]).not.toHaveProperty("to");
   });
 
   it("sends the announcement alias as disabled and replaces the URL", async () => {
@@ -54,17 +95,13 @@ describe("URL-backed admin lists", () => {
     expect(result.current.list.status).toBe("disabled");
   });
 
-  it("keeps repeated filters and restores them through back and forward", async () => {
-    const { result, fetcher } = setup(
-      "/admin/boards?tab=cards&labelId=l-2&labelId=l-1&labelId=l-2",
-    );
+  it("keeps a legacy single-label filter through back and forward", async () => {
+    const { result, fetcher } = setup("/admin/boards?tab=cards&labelId=l-1");
     await waitFor(() =>
-      expect(result.current.location.search).toBe(
-        "?tab=cards&labelId=l-1&labelId=l-2",
-      ),
+      expect(result.current.location.search).toBe("?tab=cards&labelId=l-1"),
     );
     expect(fetcher).toHaveBeenLastCalledWith(
-      expect.objectContaining({ labelId: ["l-1", "l-2"] }),
+      expect.objectContaining({ labelId: "l-1" }),
     );
     act(() => result.current.list.setFilter("labelId", null));
     await waitFor(() =>
@@ -72,10 +109,10 @@ describe("URL-backed admin lists", () => {
     );
     act(() => result.current.navigate(-1));
     await waitFor(() =>
-      expect(result.current.list.filters.labelId).toEqual(["l-1", "l-2"]),
+      expect(result.current.list.filters.labelId).toBe("l-1"),
     );
     expect(fetcher).toHaveBeenLastCalledWith(
-      expect.objectContaining({ labelId: ["l-1", "l-2"] }),
+      expect.objectContaining({ labelId: "l-1" }),
     );
     act(() => result.current.navigate(1));
     await waitFor(() => expect(result.current.list.filters.labelId).toBeNull());
@@ -100,13 +137,12 @@ describe("URL-backed admin lists", () => {
     );
   });
 
-  it("blocks requests for an oversized URL and allows clearing it", async () => {
-    const query = new URLSearchParams(
-      Array.from({ length: 21 }, () => ["labelId", "l-1"]),
+  it("blocks a repeated legacy columnId until the filters are cleared", async () => {
+    const { result, fetcher } = setup(
+      "/admin/boards?tab=cards&columnId=c-1&columnId=c-1",
     );
-    const { result, fetcher } = setup(`/admin/boards?tab=cards&${query}`);
     expect(result.current.list.error).toBe(true);
-    expect(result.current.list.filterError).toContain("20");
+    expect(result.current.list.filterError).toContain("one value");
     expect(fetcher).not.toHaveBeenCalled();
     act(() => result.current.list.clearFilters());
     await waitFor(() =>

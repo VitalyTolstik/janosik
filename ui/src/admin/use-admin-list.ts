@@ -105,9 +105,12 @@ export function useAdminList<T>(
   const [period, setPeriodRaw] = useState(initial?.period ?? "any");
   const [offset, setOffset] = useState(initial?.offset ?? 0);
   const [filters, setFilters] = useState<AdminListFilters>(
-    initial?.filters ?? EMPTY_ADMIN_LIST_FILTERS,
+    (surface === undefined ? undefined : initial?.filters) ??
+      EMPTY_ADMIN_LIST_FILTERS,
   );
-  const [urlFilterError, setUrlFilterError] = useState(initial?.filterError);
+  const [urlFilterError, setUrlFilterError] = useState(
+    surface === undefined ? undefined : initial?.filterError,
+  );
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState<ListResult<T> | null>(null);
 
@@ -145,7 +148,8 @@ export function useAdminList<T>(
       : undefined;
     const from =
       window !== undefined &&
-      (surface === undefined || ENTITY_FILTERS[surface].dateRange)
+      surface !== undefined &&
+      ENTITY_FILTERS[surface].dateRange
         ? Date.now() - window
         : undefined;
     void fetcherRef
@@ -240,8 +244,8 @@ export function useAdminList<T>(
       value: AdminFilterValues[Key] | null,
     ) => {
       if (
-        surface !== undefined &&
-        !ENTITY_FILTERS[surface].supported.includes(key)
+        surface === undefined ||
+        !ENTITY_FILTERS[surface].implemented.includes(key)
       )
         return;
       setFilters((current) => {
@@ -268,18 +272,23 @@ export function useAdminList<T>(
     setOffset(0);
   }, []);
 
-  const applyState = useCallback((next: AdminListQueryState) => {
-    // Commit both values at once: the debounce effect then sees
-    // `rawSearch === search` and does not schedule another reset.
-    setRawSearch(next.search);
-    setSearch(next.search);
-    setStatusRaw(next.status);
-    setPeriodRaw(next.period);
-    setLimitState(next.limit);
-    setOffset(next.offset);
-    setFilters(next.filters);
-    setUrlFilterError(next.filterError);
-  }, []);
+  const applyState = useCallback(
+    (next: AdminListQueryState) => {
+      // Commit both values at once: the debounce effect then sees
+      // `rawSearch === search` and does not schedule another reset.
+      setRawSearch(next.search);
+      setSearch(next.search);
+      setStatusRaw(next.status);
+      setPeriodRaw(next.period);
+      setLimitState(next.limit);
+      setOffset(next.offset);
+      setFilters(
+        surface === undefined ? EMPTY_ADMIN_LIST_FILTERS : next.filters,
+      );
+      setUrlFilterError(surface === undefined ? undefined : next.filterError);
+    },
+    [surface],
+  );
 
   const reload = useCallback(() => {
     setReloadKey((key) => key + 1);

@@ -86,9 +86,7 @@ function readInt(
 function supportedKeys(
   surface: AdminListSurface | undefined,
 ): readonly AdminFilterKey[] {
-  return surface === undefined
-    ? ADMIN_LIST_FILTER_KEYS
-    : ENTITY_FILTERS[surface].supported;
+  return surface === undefined ? [] : ENTITY_FILTERS[surface].implemented;
 }
 
 function allowsStatus(
@@ -115,29 +113,34 @@ function readFilters(
   params: URLSearchParams,
   surface: AdminListSurface | undefined,
 ) {
-  const filters = { ...EMPTY_ADMIN_LIST_FILTERS };
+  const filters: AdminListFilters = { ...EMPTY_ADMIN_LIST_FILTERS };
   let filterError: string | undefined;
 
   for (const key of supportedKeys(surface)) {
     const values = params.getAll(key);
     if (values.length === 0) continue;
-    const max = adminFilterValueLimit(key, surface);
-    if (values.length > max) {
-      filterError ??=
-        max === 1
-          ? `${key} accepts one value. Remove the repeated filter.`
-          : `${key} accepts up to ${max} values. Remove some values to continue.`;
-      continue;
-    }
+    const max = adminFilterValueLimit(key);
     if (max === 1) {
+      if (values.length > 1) {
+        // Repeated card labels belong to a later rollout wave.
+        if (surface !== "cards" || key !== "labelId") {
+          filterError ??= `${key} accepts one value. Remove the repeated filter.`;
+        }
+        continue;
+      }
       const value = parseAdminFilterValue(key, values[0], surface);
       if (value !== undefined) Object.assign(filters, { [key]: value });
     } else {
-      const valid = values.filter(
-        (value) => parseAdminFilterValue(key, value, surface) !== undefined,
+      const valid = canonicalAdminFilterValues(
+        values.filter(
+          (value) => parseAdminFilterValue(key, value, surface) !== undefined,
+        ),
       );
-      if (valid.length > 0)
-        Object.assign(filters, { [key]: canonicalAdminFilterValues(valid) });
+      if (valid.length > max) {
+        filterError ??= `${key} accepts up to ${max} values. Remove some values to continue.`;
+      } else if (valid.length > 0) {
+        Object.assign(filters, { [key]: valid });
+      }
     }
   }
 
@@ -209,6 +212,7 @@ export function adminListRequestFilters(
   filters: AdminListFilters,
   surface?: AdminListSurface,
 ): AdminFilters {
+  if (surface === undefined) return {};
   const params = new URLSearchParams(adminFilterEntries(filters, surface));
   const request: AdminFilters = {};
   for (const key of new Set(
@@ -216,7 +220,7 @@ export function adminListRequestFilters(
   )) {
     const values = params.getAll(key);
     const value =
-      Array.isArray(filters[key]) || adminFilterValueLimit(key, surface) > 1
+      adminFilterValueLimit(key) > 1
         ? values
         : parseAdminFilterValue(key, values[0], surface);
     Object.assign(request, { [key]: value });
@@ -228,10 +232,15 @@ export function listFilterError(
   filters: AdminListFilters,
   surface?: AdminListSurface,
 ): string | undefined {
+  if (surface === undefined) return undefined;
   for (const key of supportedKeys(surface)) {
     const value = filters[key];
-    const max = adminFilterValueLimit(key, surface);
-    if (Array.isArray(value) && value.length > max) {
+    const max = adminFilterValueLimit(key);
+    if (
+      Array.isArray(value) &&
+      max > 1 &&
+      canonicalAdminFilterValues(value).length > max
+    ) {
       return `${key} accepts up to ${max} values. Remove some values to continue.`;
     }
   }
@@ -256,8 +265,6 @@ export function writeAdminListQuery(
     "period",
     "limit",
     "offset",
-    "from",
-    "to",
     ...ADMIN_FILTER_KEYS,
   ]) {
     next.delete(key);
@@ -276,8 +283,10 @@ export function writeAdminListQuery(
   if (state.limit !== defaultLimit(options))
     next.set("limit", String(state.limit));
   if (state.offset > 0) next.set("offset", String(state.offset));
-  for (const [key, value] of adminFilterEntries(state.filters, surface)) {
-    if (supportedKeys(surface).includes(key)) next.append(key, value);
+  if (surface !== undefined) {
+    for (const [key, value] of adminFilterEntries(state.filters, surface)) {
+      next.append(key, value);
+    }
   }
   return next;
 }

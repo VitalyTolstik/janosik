@@ -204,9 +204,9 @@ describe("AdminApiClient", () => {
       hasAttachments: false,
     });
     const multiple = new URL(calls[3].url).searchParams;
-    expect(multiple.getAll("labelId")).toEqual(["l-1", "l-2"]);
-    expect(multiple.get("labelMatch")).toBe("all");
-    expect(multiple.get("hasAttachments")).toBe("false");
+    expect(multiple.getAll("labelId")).toEqual([]);
+    expect(multiple.has("labelMatch")).toBe(false);
+    expect(multiple.has("hasAttachments")).toBe(false);
   });
 
   it("builds paged detail queries for the windowed tabs (TASK-176.3)", async () => {

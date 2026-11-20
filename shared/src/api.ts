@@ -128,6 +128,7 @@ export interface ConflictError {
  * an unknown code from a newer server and fall back to the HTTP status.
  */
 export const API_ERROR_CODES = [
+  "unsupported_filter",
   "scope_denied",
   "destructive_denied",
   "agent_paused",
@@ -223,6 +224,10 @@ export interface ApiErrorEnvelope {
   requestId: string;
   currentVersion: number | null;
   statusCode?: number;
+  /** HTTP error description supplied for unsupported filters. */
+  error?: string;
+  /** Offending query key for `unsupported_filter`. */
+  filter?: string;
   /** The request field a validation or idempotency error points at. */
   field?: string;
   /** Optional machine-readable context (`messages`, `versionOf`, …). */

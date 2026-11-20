@@ -1,5 +1,6 @@
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
+import { ADMIN_FILTER_MAX_VALUES } from "@janosik/shared";
 import { AdminBoardCommandDto } from "./admin-board-command.dto";
 import { AdminListQueryDto } from "./admin-list-query.dto";
 
@@ -92,5 +93,28 @@ describe("AdminBoardCommandDto commandId", () => {
       const errors = await validate(dto);
       expect(errors.map((error) => error.property)).toContain("commandId");
     }
+  });
+});
+
+describe("AdminListQueryDto multi-value fields", () => {
+  const uniqueIds = Array.from(
+    { length: ADMIN_FILTER_MAX_VALUES },
+    (_, index) => `user-${index}`,
+  );
+
+  it("validates the distinct count after trimming and deduplicating multi-values", async () => {
+    const query = plainToInstance(AdminListQueryDto, {
+      assigneeId: [...uniqueIds, ...uniqueIds.map((id) => ` ${id} `)],
+    });
+    expect(await validate(query)).toEqual([]);
+    expect(query.assigneeId).toEqual(uniqueIds);
+  });
+
+  it.each([
+    ["too many distinct ids", [...uniqueIds, "user-extra"]],
+    ["malformed ids", ["bad/id", "bad/id"]],
+  ])("rejects %s", async (_case, assigneeId) => {
+    const errors = await check({ assigneeId });
+    expect(errors.map((error) => error.property)).toEqual(["assigneeId"]);
   });
 });

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_AUDIT_ACTIONS,
+  ADMIN_FILTER_MAX_VALUES,
+  adminFilterEntries,
+  adminFilterLimitError,
+  adminFilterValueLimit,
   ADMIN_PAGE_LIMITS,
   ENTITY_FILTERS,
   ENTITY_STATUS_VALUES,
@@ -32,10 +36,10 @@ describe("admin contract", () => {
 const scoped = "boardId columnId labelId cardId";
 const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
   [
-    ["users", "verified", "verified", "active disabled", true, true],
+    ["users", "", "verified", "active disabled", false, false],
     [
       "boards",
-      `${scoped} adminMemberId`,
+      scoped,
       "adminMemberId",
       "active archived deleted",
       false,
@@ -43,11 +47,11 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "cards",
-      `${scoped} labelMatch assigneeId unassigned priority due hasAttachments`,
+      scoped,
       "boardId columnId labelId labelMatch assigneeId unassigned priority due hasAttachments",
       "active archived deleted",
-      true,
-      true,
+      false,
+      false,
     ],
     ["columns", scoped, "boardId", "active deleted", false, false],
     ["labels", scoped, "boardId", "active deleted", false, false],
@@ -55,7 +59,7 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ["checklistItems", scoped, "", "active deleted", false, false],
     [
       "cardLinks",
-      "boardId cardId type",
+      "boardId cardId",
       "boardId cardId type",
       "active deleted",
       false,
@@ -63,7 +67,7 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "comments",
-      `${scoped} authorId kind`,
+      scoped,
       "boardId cardId authorId kind",
       "active deleted",
       true,
@@ -71,23 +75,16 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "attachments",
-      `${scoped} uploadedById mime transcode`,
+      scoped,
       "boardId cardId uploadedById mime transcode",
       "active deleted",
-      true,
-      true,
+      false,
+      false,
     ],
-    [
-      "activity",
-      `${scoped} actorId type`,
-      "boardId cardId actorId type",
-      "",
-      true,
-      true,
-    ],
+    ["activity", scoped, "boardId cardId actorId type", "", true, true],
     [
       "commands",
-      "boardId columnId cardId commandId actorId type",
+      "boardId columnId cardId commandId",
       "boardId actorId type cardId columnId commandId",
       "",
       true,
@@ -95,7 +92,7 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "audit",
-      "commandId adminId action targetType targetId",
+      "commandId",
       "adminId action targetType targetId commandId",
       "",
       true,
@@ -119,10 +116,10 @@ describe("admin filter surface matrix", () => {
 
   it.each(surfaces)(
     "%s has the declared facets and status values",
-    (entity, supported, offered, statuses, dateRange, period) => {
+    (entity, implemented, offered, statuses, dateRange, period) => {
       const keys = (value: string) => value.split(" ").filter(Boolean).sort();
       const config = ENTITY_FILTERS[entity];
-      expect([...config.supported].sort()).toEqual(keys(supported));
+      expect([...config.implemented].sort()).toEqual(keys(implemented));
       expect([...config.offered].sort()).toEqual(keys(offered));
       const statusTabs =
         statuses !== "" &&
@@ -133,4 +130,44 @@ describe("admin filter surface matrix", () => {
       );
     },
   );
+});
+
+describe("admin filter values", () => {
+  it("keeps label and structural ids single-valued", () => {
+    expect(adminFilterValueLimit("labelId")).toBe(1);
+    expect(adminFilterEntries({ labelId: ["label-a"] }, "cards")).toEqual([]);
+  });
+
+  it("counts unique values towards the total and encoded length limits", () => {
+    const assigneeId = Array.from({ length: 20 }, (_, i) => `user-${i}`);
+    const authorId = Array.from({ length: 12 }, (_, i) => `user-${i}`);
+    expect(
+      adminFilterLimitError(
+        adminFilterEntries({
+          assigneeId: [...assigneeId, ...assigneeId],
+          authorId,
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
+      adminFilterLimitError(
+        adminFilterEntries({
+          assigneeId,
+          authorId: [...authorId, "user-extra"],
+        }),
+      ),
+    ).toContain("32");
+    const longIds = Array.from(
+      { length: ADMIN_FILTER_MAX_VALUES },
+      (_, i) => `${"u".repeat(62)}${i}`,
+    );
+    expect(
+      adminFilterLimitError(
+        adminFilterEntries({
+          assigneeId: longIds,
+          authorId: longIds.slice(0, 12),
+        }),
+      ),
+    ).toContain("too long");
+  });
 });

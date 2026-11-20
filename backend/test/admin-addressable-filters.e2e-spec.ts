@@ -253,6 +253,9 @@ describe("Admin addressable filters (e2e)", () => {
         },
       ],
     });
+    await prisma.user.create({
+      data: { id: "filter-email-only", email: "email-only@example.com" },
+    });
     const disabledUser = await prisma.user.create({
       data: {
         id: "filter-disabled",
@@ -666,96 +669,67 @@ describe("Admin addressable filters (e2e)", () => {
   it.each([
     ["cards", "boardId=board-a&boardId=board-a"],
     ["cards", "cardId=card-a-1&cardId=card-b-1"],
+    ["cards", "columnId=col-a&columnId=col-a"],
     ["comments", "labelId=label-a&labelId=label-a"],
     ["cards", "limit=1&limit=2"],
     ["cards", "offset=0&offset=0"],
     ["cards", "status=all&status=all"],
     ["cards", "search=a&search=b"],
-    ["cards", "labelMatch=any&labelMatch=all"],
     ["commands", `from=${at(30)}&from=${at(31)}`],
     ["commands", "commandId=command-a-1&commandId=command-b-1"],
-    ["users", "verified=1"],
-    ["cards", "priority=normal"],
     ["cards", "labelId=label-a,label-b"],
   ])("rejects invalid values on both %s routes (%s)", async (entity, query) => {
     await getRoute(`entities/${entity}?${query}`).expect(400);
     await getRoute(`${entity}?${query}`).expect(400);
   });
 
-  it("applies multi-label OR and AND with deduplication and exact totals", async () => {
-    await prisma.label.create({
-      data: {
-        id: "label-extra",
-        boardId: "board-a",
-        name: "Extra",
-        color: "red",
-      },
-    });
-    await prisma.cardLabel.createMany({
-      data: [
-        { cardId: "card-a-1", labelId: "label-extra", position: 1 },
-        { cardId: "card-a-1", labelId: "label-deleted", position: 2 },
-        { cardId: "card-a-2", labelId: "label-extra", position: 0 },
-      ],
-    });
-    try {
-      for (const path of ["entities/cards", "cards"]) {
-        const or = await getRoute(
-          `${path}?labelId=label-extra&labelId=label-a&labelId=label-extra`,
-        ).expect(200);
-        expect(rowIds(or.body.items)).toEqual(["card-a-1", "card-a-2"]);
-        expect(or.body.total).toBe(2);
-        const all = await getRoute(
-          `${path}?labelId=label-a&labelMatch=all&labelId=label-extra`,
-        ).expect(200);
-        expect(rowIds(all.body.items)).toEqual(["card-a-1"]);
-        expect(all.body.total).toBe(1);
-        const single = await getRoute(
-          `${path}?labelId=label-a&labelMatch=all&labelId=label-a`,
-        ).expect(200);
-        expect(single.body).toEqual(all.body);
-        const oversized = new URLSearchParams(
-          Array.from({ length: 21 }, (): [string, string] => [
-            "labelId",
-            "label-a",
-          ]),
-        );
-        const invalid = await getRoute(`${path}?${oversized}`).expect(400);
-        expect(invalid.body.message).toContain("20");
+  const deferredCases = [
+    ["users", "verified=true", "verified"],
+    ["users", "from=0", "from"],
+    ["boards", "adminMemberId=someone", "adminMemberId"],
+    ["boards", "adminMemberId=someone&adminMemberId=someone", "adminMemberId"],
+    ["cards", "assigneeId=someone", "assigneeId"],
+    ["cards", "to=0", "to"],
+    ["cards", "labelId=label-a&labelId=label-a", "labelId"],
+    ["cards", "labelId=label-a&labelId=label-b", "labelId"],
+    ["cards", "labelId=label-a&labelMatch=any", "labelMatch"],
+    ["cardLinks", "type=blocks", "type"],
+    ["comments", "authorId=someone", "authorId"],
+    ["attachments", "mime=image", "mime"],
+    ["activity", "actorId=someone", "actorId"],
+    ["commands", "type=ADD_CARD", "type"],
+    ["audit", "adminId=someone", "adminId"],
+    ["audit", "action=board.command", "action"],
+    ["audit", "targetId=card-a-1&targetId=card-b-1", "targetId"],
+  ];
+  it.each(deferredCases)(
+    "returns unsupported_filter for %s?%s",
+    async (entity, query, filter) => {
+      const paths = [
+        `entities/${entity}`,
+        ...(specialized.includes(entity) ? [entity] : []),
+      ];
+      for (const path of paths) {
+        const { body } = await getRoute(`${path}?${query}`).expect(400);
+        expect(body).toMatchObject({
+          statusCode: 400,
+          code: "unsupported_filter",
+          error: "Bad Request",
+          filter,
+          retryable: false,
+        });
       }
-    } finally {
-      await prisma.cardLabel.deleteMany({
-        where: { labelId: { in: ["label-extra", "label-deleted"] } },
-      });
-      await prisma.label.delete({ where: { id: "label-extra" } });
-    }
-  });
+    },
+  );
 
-  it("rejects combined filter state over the value or length cap", async () => {
-    const values = new URLSearchParams();
-    for (let i = 0; i < 17; i++) values.append("labelId", `label-${i}`);
-    for (let i = 0; i < 16; i++) values.append("assigneeId", `user-${i}`);
-    const overValues = await getRoute(`cards?${values}`).expect(400);
-    expect(overValues.body.message).toContain("32");
-
-    const bytes = new URLSearchParams();
-    for (let i = 0; i < 16; i++) {
-      bytes.append("labelId", `${"l".repeat(62)}${i}`);
-      bytes.append("assigneeId", `${"u".repeat(62)}${i}`);
-    }
-    const overBytes = await getRoute(`cards?${bytes}`).expect(400);
-    expect(overBytes.body.message).toContain("too long");
-  });
-
-  it("fails explicitly when a declared facet awaits its rollout predicate", async () => {
-    const { body } = await getRoute("entities/cards?assigneeId=someone").expect(
-      422,
-    );
-    expect(body).toMatchObject({
-      code: "filter_unavailable",
-      details: { filter: "assigneeId" },
-    });
-  });
+  it.each(["entities/commands", "commands"])(
+    "treats blank offset and date bounds as omitted on %s",
+    async (path) => {
+      const initial = await getRoute(path).expect(200);
+      const blanks = await getRoute(`${path}?offset=&from=&to=%20`).expect(200);
+      expect(blanks.body).toEqual(initial.body);
+    },
+  );
 
   const lookup = (query: string, token: string) =>
     getRoute(`filter-options?${query}`, token);
@@ -820,7 +794,7 @@ describe("Admin addressable filters (e2e)", () => {
     },
   );
 
-  it("limits q searches, resolves IDs unscoped and preserves deleted versus missing", async () => {
+  it("limits q searches and returns all unscoped IDs even with limit=1", async () => {
     const ranked = await lookup(
       "type=board&q=board-b&limit=1",
       adminToken,
@@ -879,6 +853,47 @@ describe("Admin addressable filters (e2e)", () => {
     });
   });
 
+  it("resolves a checklist by id across board, column and card scopes", async () => {
+    const { body } = await lookup(
+      "type=checklist&boardId=board-a&columnId=col-a&cardId=card-a-1&ids=checklist-b",
+      adminToken,
+    ).expect(200);
+    expect(body).toMatchObject({
+      items: [{ id: "checklist-b", boardId: "board-b" }],
+      missing: [],
+      hasMore: false,
+    });
+  });
+
+  it("uses the user's name as the label and falls back to email", async () => {
+    const named = await lookup(
+      "type=user&q=disabled%40example.com",
+      adminToken,
+    ).expect(200);
+    expect(named.body.items).toContainEqual({
+      id: "filter-disabled",
+      label: "Disabled Lookup User",
+      sublabel: "disabled@example.com",
+      boardId: null,
+      columnId: null,
+      state: "disabled",
+    });
+    const emailOnly = await lookup(
+      "type=user&ids=filter-email-only",
+      adminToken,
+    ).expect(200);
+    expect(emailOnly.body.items).toEqual([
+      {
+        id: "filter-email-only",
+        label: "email-only@example.com",
+        sublabel: null,
+        boardId: null,
+        columnId: null,
+        state: "active",
+      },
+    ]);
+  });
+
   it.each(["owner", "operator"])(
     "enforces lookup bounds and hides unaudited actors for %s",
     async (role) => {
@@ -910,6 +925,12 @@ describe("Admin addressable filters (e2e)", () => {
         `type=user&${new URLSearchParams(Array.from({ length: 20 }, (_, i): [string, string] => ["ids", `missing-${i}`]))}`,
         token,
       ).expect(200);
+      const duplicates = await lookup(
+        `type=user${"&ids=filter-disabled&ids=+filter-disabled+".repeat(21)}`,
+        token,
+      ).expect(200);
+      expect(rowIds(duplicates.body.items)).toEqual(["filter-disabled"]);
+      expect(duplicates.body.missing).toEqual([]);
       for (const query of [
         "type=admin",
         "type=bad",
@@ -924,7 +945,7 @@ describe("Admin addressable filters (e2e)", () => {
         "type=card&columnId=invalid/id",
         "type=user&ids=",
         `type=user&q=${"a".repeat(201)}`,
-        `type=user${"&ids=missing".repeat(21)}`,
+        `type=user&${new URLSearchParams(Array.from({ length: 21 }, (_, i): [string, string] => ["ids", `missing-${i}`]))}`,
       ])
         await lookup(query, token).expect(400);
       await getRoute("admins", token).expect(role === "owner" ? 200 : 403);

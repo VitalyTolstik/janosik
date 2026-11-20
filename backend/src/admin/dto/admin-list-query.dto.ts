@@ -31,12 +31,18 @@ function numberValue({ value }: { value: unknown }): unknown {
     : value;
 }
 
-/** Validate raw cardinality and every member before deduplicating. */
+function optionalNumberValue({ value }: { value: unknown }): unknown {
+  return typeof value === "string" && value.trim() === ""
+    ? undefined
+    : numberValue({ value });
+}
+
+/** Normalize repeated values before validating their distinct count. */
 function FilterField(
   key: AdminFilterKey,
-  { optionalEmpty = false, flexibleLabel = false } = {},
+  { optionalEmpty = false } = {},
 ): PropertyDecorator {
-  const limit = adminFilterValueLimit(key, "cards");
+  const limit = adminFilterValueLimit(key);
   return (target, property) => {
     IsOptional()(target, property);
     Transform(({ value }: { value: unknown }) => {
@@ -45,8 +51,10 @@ function FilterField(
       }
       const parse = (entry: unknown) =>
         parseAdminFilterValue(key, entry) ?? entry;
-      if (limit > 1 && (!flexibleLabel || Array.isArray(value))) {
-        return (Array.isArray(value) ? value : [value]).map(parse);
+      if (limit > 1) {
+        return [
+          ...new Set((Array.isArray(value) ? value : [value]).map(parse)),
+        ];
       }
       return parse(value);
     })(target, property);
@@ -56,8 +64,7 @@ function FilterField(
         validate(value: unknown) {
           if (!Array.isArray(value)) {
             return (
-              (limit === 1 || flexibleLabel) &&
-              parseAdminFilterValue(key, value) !== undefined
+              limit === 1 && parseAdminFilterValue(key, value) !== undefined
             );
           }
           return (
@@ -94,7 +101,7 @@ export class AdminListQueryDto implements AdminFilters {
   limit?: number;
 
   @IsOptional()
-  @Transform(numberValue)
+  @Transform(optionalNumberValue)
   @IsInt()
   @Min(0)
   @Max(ADMIN_PAGE_LIMITS.maxOffset)
@@ -106,14 +113,14 @@ export class AdminListQueryDto implements AdminFilters {
 
   /** Inclusive bounds on createdAt, in unix milliseconds. */
   @IsOptional()
-  @Transform(numberValue)
+  @Transform(optionalNumberValue)
   @IsInt()
   @Min(0)
   @Max(8.64e15)
   from?: number;
 
   @IsOptional()
-  @Transform(numberValue)
+  @Transform(optionalNumberValue)
   @IsInt()
   @Min(0)
   @Max(8.64e15)
@@ -125,12 +132,12 @@ export class AdminListQueryDto implements AdminFilters {
   @FilterField("columnId", { optionalEmpty: true })
   columnId?: string;
 
-  @FilterField("labelId", { optionalEmpty: true, flexibleLabel: true })
-  labelId?: AdminFilterValues["labelId"];
+  @FilterField("labelId", { optionalEmpty: true })
+  labelId?: string;
 
   /** Used by lists that retain TASK-176.6's single-label contract. */
   get singleLabelId(): string | undefined {
-    return typeof this.labelId === "string" ? this.labelId : undefined;
+    return this.labelId;
   }
 
   @FilterField("cardId", { optionalEmpty: true })

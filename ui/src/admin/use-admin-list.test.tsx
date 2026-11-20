@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminPage } from "@janosik/shared";
 
+import { EMPTY_ADMIN_LIST_FILTERS } from "./admin-list-query";
 import { useAdminList } from "./use-admin-list";
 
 /**
@@ -65,6 +66,36 @@ describe("useAdminList", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(result.current.offset).toBe(25);
+  });
+
+  it("drops initial, applied and programmatic filters without a surface", async () => {
+    const fetcher = vi.fn().mockResolvedValue(page([]));
+    const initialState = {
+      search: "",
+      status: "all",
+      period: "any",
+      limit: 50,
+      offset: 0,
+      filters: { ...EMPTY_ADMIN_LIST_FILTERS, boardId: "b-1", verified: true },
+    };
+    const { result } = renderHook(() =>
+      useAdminList<Row>(fetcher, { initialState }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => {
+      result.current.applyState(initialState);
+      result.current.setFilter("boardId", "b-2");
+      result.current.setFilter("verified", true);
+    });
+    expect(result.current.filters).toEqual(EMPTY_ADMIN_LIST_FILTERS);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledWith({
+      search: "",
+      status: "all",
+      from: undefined,
+      limit: 50,
+      offset: 0,
+    });
   });
 
   it("reports errors only after the refresh settles", async () => {

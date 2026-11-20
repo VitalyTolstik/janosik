@@ -447,19 +447,23 @@ Clear search and filters.
 - details pages, board members, dashboard;
 - saved filter views, filter-option counts, filter presets by role.
 
-### 5.8 Supported vs offered matrix
+### 5.8 Implemented vs offered matrix
 
 `search`, `limit` and `offset` are accepted by every generic list. `status`
-follows the existing per-entity tabs; `all` is universal and accepted
-everywhere. `from`/`to` is listed in the table where supported. **Supported**
-means the server applies the predicate and the old 176.5/176.6 URL must keep
-working; **offered** means the Add filter menu (or a header tab for period)
-exposes it. A supported-but-not-offered filter from an old URL still renders a
-chip; it is simply not advertised. Anything outside `supported` is
-`unsupported_filter` (400) for direct API calls and is dropped before the
-request by the UI parser.
+follows the existing per-entity allowlist, with `all` accepted everywhere.
+The registry's **implemented** set contains predicates shipped on the
+surface. In 181.1 this is the legacy structural and command-correlation
+column below, with existing date ranges tracked separately. **Offered**
+records facets planned for the picker. A picker can expose a facet once its
+owning wave implements it. Legacy deep links keep their existing behavior
+regardless of picker visibility.
 
-| Entity | Legacy structural supported (176.5/6) | New supported in 181 | Exposed in 181 (menu/header) |
+The UI parser and request builder use only implemented facets. A hand-edited
+deferred facet is omitted from the list request and a direct API call returns
+400 `unsupported_filter` until its owning wave enables it. The lookup endpoint
+can resolve options for later waves independently of list filtering.
+
+| Entity | Implemented in 181.1 (legacy) | Deferred until owning wave | Planned or existing menu/header |
 | --- | --- | --- | --- |
 | users | — | `verified`, `from`/`to` (period) | status, verified, period |
 | boards | `boardId`, `columnId`, `cardId`, `labelId` | `adminMemberId` | status, adminMemberId |
@@ -482,10 +486,10 @@ request by the UI parser.
 | cardLabels | `boardId`, `columnId`, `labelId`, `cardId` | — | none (no tab) |
 | admins | owner-only custom endpoint, no generic filter | — | none |
 
-Every legacy pair in this table gets a table-driven e2e case; 400 is allowed
-only for keys outside `supported`. `labelId` may be repeated on cards where the
-filter is offered; comments and legacy-only lists retain the single-value 176.6
-form.
+Every implemented pair has a table-driven e2e case. Cards use legacy
+single-label equality in 181.1 and 181.2. Repeated `labelId` and any
+`labelMatch` return 400 `unsupported_filter` on cards until 181.3. Other
+legacy lists retain a single-value `labelId`.
 
 ## 6. UX specification
 
@@ -844,9 +848,9 @@ compaction is a follow-up backlog item, not part of 181.7.
 
 ### 7.1 Query parameters
 
-All params are optional and combine with the surface allowlist. Repeated params
-are canonical for multi-value facets; comma-separated values are not part of the
-new contract.
+This table describes the completed rollout. The current surface allowlist
+follows §5.8. All params are optional. Shipped multi-value facets use repeated
+query params.
 
 | Param | Shape | Surfaces | Semantics |
 | --- | --- | --- | --- |
@@ -882,8 +886,9 @@ new contract.
 
 `labelId` (cards), `assigneeId`, `authorId`, `uploadedById`, `actorId`,
 `adminId`, `type`, `action`, `targetType` and `kind` are arrays on the wire. A
-single value is accepted and normalized to a one-element array. Legacy
-`labelId` on non-card lists stays single-valued.
+single value is accepted and normalized to a one-element array once the
+facet ships. `labelId` stays single-valued on cards through 181.2 and on
+all other legacy lists.
 
 Structural params (`boardId`, `columnId`, `cardId`, `checklistId`,
 `adminMemberId`, `commandId`, `targetId`) stay single-valued; a repeated value
@@ -924,29 +929,28 @@ is a validation error rather than first-value-wins.
 - Ids: existing `ADMIN_ID_PATTERN` (`[A-Za-z0-9_-]{1,64}`), trimmed; empty
   single filters are treated as absent (existing behavior), except `commandId`
   and `targetId` which reject an empty value.
-- Arrays: `ArrayMaxSize(20)`; enum facets use their own size (priority and
-  kind are 6). Each element matches the id pattern or the enum; dedupe in a
-  transform. Reject the whole request with 400 if exceeded; do not truncate
-  silently.
+- Arrays: validate each element and apply the cap of 20 to distinct values
+  after normalization. Enum facets use their own size (priority and kind are
+  6). Reject the whole request with 400 if exceeded.
+- Blank `offset` and blank `from`/`to` on surfaces with a date-range predicate
+  are treated as omitted. URL canonicalization preserves explicit bounds
+  in the address bar. Period tabs continue to derive the UI request bound.
 - Enums: exact lowercase values; unknown value → 400. The URL parser is more
   forgiving (unknown values are dropped) so a hand-edited link cannot break the
   page; the API remains strict.
 - Booleans: only `true` and `false`; `1`/`0`/`yes` → 400.
-- `labelMatch`: only `any`/`all`; normalize to `any` and omit when fewer than
-  two `labelId` values remain. `labelMatch=all` is only valid for cards.
+- From 181.3, cards accept `labelMatch=any` or `labelMatch=all` and omit the
+  mode when fewer than two distinct labels remain.
 - `adminMemberId` is a single user id; a repeated value is 400, like the other
   structural ids.
 - `targetId`: string 1–100 chars, letters/digits/`_:-`; no free-text SQL or
   path fragments.
 - `action`/`type`/`targetType`: exact code strings ≤100 chars, safe alphabet;
   never `contains` for these filters (use `search` for text).
-- Unsupported filter (outside `supported` in §5.8): the UI parser drops it and
-  sends no request; the backend returns 400 `unsupported_filter` for direct API
-  calls. A supported-but-not-offered filter from an old URL is still applied
-  and shown as a chip, but does not appear in the Add filter menu. If a paired
-  server ever rejects one (should not happen with atomic deployment), the UI
-  shows the explicit unsupported state with Remove; it never leaves a chip over
-  an unfiltered list.
+- A key outside `implemented` in §5.8 returns 400 `unsupported_filter` on
+  direct API calls. This includes offered facets whose wave has yet to ship
+  and repeated card `labelId` in 181.1 and 181.2. The UI omits those values
+  and loads the list with the remaining valid parameters.
 - **Per-entity status allowlists:** `all` is included in
   `ENTITY_STATUS_VALUES` for **every** entity and is always accepted, matching
   `useAdminList`'s default; it is a no-op on surfaces with no status tabs. The
@@ -964,8 +968,9 @@ is a validation error rather than first-value-wins.
 - `unsupported_filter` response shape:
   `{ statusCode: 400, error: "Bad Request", code: "unsupported_filter",
   filter: "<offending key>", message: "Filter <key> is not supported for
-  <entity>" }`. The UI test asserts the Remove action clears the chip/param
-  and retries the list.
+  <entity>" }`. 181.1 tests that deferred URL values never reach the list
+  API and the list still loads. The filter bar wave owns the Remove action
+  for an unexpected API rejection of an active filter.
 - Combined query length: cap at 32 values or 2 KB of filter state; the UI shows
   a readable “too many filters” message before navigation.
 
@@ -981,9 +986,11 @@ GET /api/v1/admin/filter-options?type=user&ids=u1&ids=u2
 Types: `board`, `column`, `label`, `user`, `card`, `checklist`, `auditActor`,
 `action`, `commandType`, `activityType`, `targetType`.
 
-Bounds: `q` is trimmed and capped at 200 characters; `ids` is repeated with
-`ArrayMaxSize(20)`; `limit` is 1–50 (default 20); a `type` outside the list is a
-400. `type=admin` is deliberately **not** a lookup type.
+Bounds: `q` is trimmed and capped at 200 characters. Repeat `ids` for up to
+20 distinct values after trimming and deduplication. `limit` accepts integers
+1–50 (default 20) and caps picker searches. Exact-id resolution returns all
+requested matches within the 20-ID cap, including when `limit` is smaller,
+and always returns `hasMore: false`. A `type` outside the list returns 400.
 
 Response:
 
@@ -1038,7 +1045,7 @@ Behavior:
   matching parents with zero results, and same-title boards. With no active
   parent, cross-parent chips are not a conflict in v1; the exact AND returns a
   normal empty result.
-- `limit` default 20, max 50. No total count; `hasMore` is a boolean.
+- Search returns `hasMore` to indicate additional matches.
 - `cardId` narrows checklist `q` searches where provided.
 - `action`, `commandType`, `activityType`, `targetType` return distinct stored
   values (limit 50) from the corresponding table; no invented enum list that
@@ -1049,12 +1056,13 @@ Behavior:
   filtered by `q`/`ids`). `sublabel` and `state` are null; it does not return
   `role`, `disabledAt`, `displayName`, TOTP or allowlist data. A master who has
   never authored an audit row is not offered; an exact `adminId` in the URL is
-  still applied and resolves from a visible audit row or the “Unknown actor”
-  fallback.
+  applied from 181.6 and resolves from a visible audit row or the “Unknown
+  actor” fallback.
 - Both OWNER and OPERATOR may call `auditActor`; neither gets a general master
   roster. `GET /admin/admins` stays owner-only and is not reused by the picker.
-- `user` returns `id`, `email`, `displayName`, `disabledAt`; never password
-  hashes, TOTP secrets or allowlists.
+- `user` uses the display name as `label` and email as `sublabel`. When the
+  name is absent, email is the label and the sublabel is null. The account
+  state is `active` or `disabled`.
 - The endpoint is read-only; it must not expose data a list row would not show.
 - e2e must prove: OPERATOR gets 403 from `GET /admin/admins`; `filter-options`
   with `type=admin` is 400/absent; `type=auditActor` returns only audit-visible
@@ -1095,6 +1103,11 @@ Behavior:
   `EXPLAIN (ANALYZE, BUFFERS)`. Target ≤ +20% p95 for a single facet versus the
   unfiltered list, with no sequential scan over 10k+ rows. Commit the script
   and raw result table in the PR; “benchmark exists” is not evidence.
+- [TASK-181.1 benchmark evidence](./TASK-181.1-filter-perf.md) records the
+  small smoke run and 5k measurements. TASK-181.1 measures the existing board
+  and single-label predicates on cards. Audit actor/action and their index
+  decisions belong to 181.6. Each owning wave measures its shipped predicates
+  before enabling them. The full 25k qualification remains part of rollout.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -1123,7 +1136,7 @@ Behavior:
   no new index is required for the accepted-ADMIN membership lookup.
 - Add indexes in a separate migration only after the plan is recorded; note the
   lock window for self-hosters in the PR. No data backfill.
-- Lookup requests are parallel, debounced and cached in memory per admin
+- From 181.2, lookup requests are parallel, debounced and cached in memory per admin
   session with a short TTL (30–60 s). Do not refetch on every keystroke or
   pagination. Abort stale requests by generation id (TASK-180.9 M40 pattern).
 - Avoid N+1: resolve labels for the page rows with the existing joins; the
@@ -1144,49 +1157,28 @@ Behavior:
 
 ### 8.1 Per-surface filter registry
 
-Replace the global accepted-everything parser with a registry, for example:
+The shared per-surface registry supplies the allowlist for list URLs and API
+requests. For example, in 181.1:
 
 ```ts
-const ENTITY_FILTERS: Record<
-  AdminEntity,
-  { offered: readonly AdminFilterKey[]; supported: readonly AdminFilterKey[] }
-> = {
-  cards: {
-    offered: [
-      "boardId", "columnId", "labelId", "labelMatch", "assigneeId",
-      "unassigned", "priority", "due", "hasAttachments",
-    ],
-    supported: [
-      "boardId", "columnId", "labelId", "labelMatch", "assigneeId",
-      "unassigned", "priority", "due", "hasAttachments", "cardId",
-    ],
-  },
-  comments: {
-    // The picker offers the useful queue facets; 176.6's column/label scopes
-    // remain supported for old links but are not advertised.
-    offered: ["boardId", "cardId", "authorId", "kind"],
-    supported: ["boardId", "columnId", "labelId", "cardId", "authorId", "kind"],
-  },
-  // ...
-};
+cards: {
+  implemented: ["boardId", "columnId", "labelId", "cardId"],
+  offered: [
+    "boardId", "columnId", "labelId", "labelMatch", "assigneeId",
+    "unassigned", "priority", "due", "hasAttachments",
+  ],
+}
 ```
 
-- `readAdminListQuery` receives `supported` and parses only those;
-  `EntityPage` renders a chip for every active supported filter, even if it is
-  not in `offered`.
-- `writeAdminListQuery` removes only the keys it owns and never writes a key
-  that is not supported.
-- The filter picker receives `offered`; it cannot add a legacy-only facet.
-- `useAdminList` builds the request from the parsed object, so unsupported
-  facets cannot reach the server.
-- The backend mirrors the matrix in §5.8 and returns an explicit
-  `unsupported_filter` 400 only outside `supported`; every legacy structural
-  pair has a table-driven e2e case. A shared `assertSupportedFilters(entity,
-  query)` + `ENTITY_STATUS_VALUES` guard (`all` included for every entity) is
-  called by the generic `listEntity` route and every specialized list method;
-  e2e checks both.
-- Add one shared `ADMIN_FILTER_MAX_VALUES = 20` and canonicalization helpers
-  (trim, dedupe, sort, boolean/enum parsing) so client and server agree.
+- `readAdminListQuery`, `useAdminList` and the admin API client send facets
+  only for a surface that implements them. With no surface, the URL helpers
+  and list hook use an empty facet allowlist.
+- The filter picker wave uses `offered` with `implemented` to determine
+  what can be added. Implemented legacy facets still apply from deep links.
+- The shared backend guard returns 400 `unsupported_filter` on generic and
+  specialized routes for keys outside the implementation for that surface.
+  It also checks the per-surface status allowlist.
+- Shared helpers normalize values and enforce the unique-value budgets.
 
 ### 8.2 URL state
 
@@ -1204,7 +1196,7 @@ const ENTITY_FILTERS: Record<
 - Period remains a separate header-tab value, not a key in `AdminListFilters`;
   keep its existing serialization and don't include it in the Filters badge.
 - Extend `admin-navigation.ts`:
-  - `adminCardsHref` accepts arrays and all card filters;
+  - `adminCardsHref` serializes the currently implemented card filters;
   - `adminCommentsHref`/`adminAttachmentsHref` accept author/uploader/kind/type
     where relevant;
   - `adminCommandsHref`/`adminActivityHref` accept actor/type;
@@ -1327,7 +1319,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 | ID | Scope | Priority | Effort | Wave | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 181.1 | Filter contract: supported/offered registry, URL parser/writer, DTO arrays/booleans/enums, `filter-options` endpoint, shared client | P1 | M | 1 | TASK-176.5/6 in main |
+| 181.1 | Filter contract: implemented/offered registry, URL parser/writer, DTO arrays/booleans/enums, `filter-options` endpoint | P1 | M | 1 | TASK-176.5/6 in main |
 | 181.2 | Filter bar/popover/chips/resolution on cards: board, column, label; mobile/keyboard/EN-RU | P1 | L | 1 | 181.1 |
 | 181.3 | Cards full facets: assignee/unassigned, priority, due, hasAttachments, labelMatch, period | P1 | M | 1 | 181.2 |
 | 181.4 | Moderation hub: comments (author/kind) and attachments (uploader/MIME/transcode); preserve board context across tabs | P2 | M | 2 | 181.2 |
@@ -1339,31 +1331,35 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 **Deliverables**
 
-- Shared types/constants: `AdminFilterKey`, supported/offered registry (matrix
-  §5.8), max values, lookup DTOs, canonicalization helpers.
+- Shared types/constants: `AdminFilterKey`, implemented/offered registry
+  (§5.8), max values, lookup DTOs, canonicalization helpers and the typed
+  `unsupported_filter` envelope.
 - Perf harness: add `scripts/perf/seed-admin-filters.mjs`,
   `scripts/perf/admin-filter-bench.mjs` and root `npm run perf:admin-filters`
   in this PR; the scripts are committed, not merely referenced by §7.6.
-- `admin-list-query.ts`: arrays, booleans, enums, per-surface supported parsing,
-  sorted serialization, stable key; announcements `status=deleted` →
-  `disabled` normalization in both read and write.
-- `use-admin-list.ts`/`use-admin-list-query.ts`: send only supported filters;
-  no behavior change to search/back/forward.
-- `AdminListQueryDto`: new optional fields with strict validation; repeated
-  single params rejected; 400 only outside the supported matrix.
+- `admin-list-query.ts`: parse and serialize implemented facets per surface,
+  preserve explicit date bounds, normalize announcements `status=deleted`
+  to `disabled` in both directions and generate a stable request key.
+- The list hooks send implemented facets only and preserve search and browser
+  history behavior.
+- DTOs validate values, reject repeated singletons and cap distinct entries
+  for multi-value inputs. Deferred facets return 400 `unsupported_filter`
+  before DTO validation. The owning wave enables each predicate.
 - `GET /admin/filter-options` with both roles, `auditActor` only for actors,
-  `q`≤200 / `ids`≤20 / `limit`≤50, minimal fields, `missing`/`hasMore`.
+  `q`≤200 / `ids`≤20 distinct / search `limit`≤50, minimal fields,
+  `missing`/`hasMore`. The client and cache arrive with the picker in 181.2.
 - Table-driven backend e2e for every legacy supported pair; unit tests for
   round-trip and allowlist.
 
 **Acceptance**
 
-- A URL with `?assigneeId=…` on `/admin/users` renders no chip and sends no
-  filter; direct `GET /admin/entities/users?assigneeId=…` returns 400.
-- A multi-label URL round-trips exactly; order is canonical; duplicates are
-  removed; >20 values is a readable 400/UI error.
-- Every legacy pair in §5.8 still returns exactly the old rows; a key outside
-  the matrix is 400, not silently ignored.
+- Deep links such as `/admin/users?verified=true`, the cards list with
+  `assigneeId`, and audit with `adminId` load without those facets in the
+  request. The equivalent direct API calls return 400 `unsupported_filter`.
+- Card labels keep their single-value results. Repeated `labelId` and
+  `labelMatch` return 400 until 181.3, which owns the OR/AND predicates and
+  multi-label round-trip tests.
+- Every legacy pair in §5.8 still returns exactly the old rows.
 - `/admin/communications?tab=history&status=deleted` selects the Disabled tab,
   rewrites the URL to `status=disabled`, and requests inactive rows; direct
   `GET /admin/entities/announcements?status=deleted` still returns 200.
@@ -1377,7 +1373,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 **Deliverables**
 
-- `AdminFilterBar` + popover + chips + resolution cache on cards.
+- `AdminFilterBar` + popover + chips + filter-options client and resolution
+  cache on cards.
 - Board/column/label pickers (label stays single-value in this slice; multi-label
   and `labelMatch` arrive in 181.3), add/remove/clear, human labels, unknown
   fallback.
@@ -1517,8 +1514,11 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Activity: actor, type; keep board/card/period.
 - Read-only `auditActor` resolution for both roles; `type=admin` is not a
   lookup; owner-only Masters page/links remain owner-only.
-- Distinct action/type options from the server; chips show codes with readable
+- Distinct action/type options from the server. Chips show codes with readable
   context.
+- Recheck the audit actor/action performance budget with the shipped queries
+  and add measured indexes where needed. The 181.1 evidence records the
+  earlier over-budget samples.
 
 **Acceptance**
 
@@ -1562,7 +1562,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - URL parser/writer: arrays, booleans, enums, defaults, canonical ordering,
   duplicates, cap, unsupported keys, crafted values, `returnTo` preservation;
   announcements `status=deleted` normalizes to `disabled` in read and write.
-- Supported/offered matrix: every entity's supported set and offered set match
+- Implemented/offered matrix: every entity's implemented set and offered set match
   §5.8; backend and UI lists agree (table-driven test).
 - Semantics: priority null=medium, label any/all (including one `labels.some`
   per id), unassigned OR, due overdue/soon/none, MIME family mapping,
@@ -1618,7 +1618,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - `GET /admin/entities/announcements?status=deleted` returns the inactive rows
   with 200 (legacy alias), same as `status=disabled`; it is not a 400.
 - Table-driven legacy matrix: every entity/pair in §5.8 returns exactly the old
-  rows and never 400; only keys outside `supported` are 400. Sessions/tokens
+  rows and never 400; only keys outside `implemented` are 400. Sessions/tokens
   keep their existing period tabs and `from`/`to` behavior.
 - Each new facet returns only matching rows; combinations are AND; arrays are
   OR; totals exact; pagination exact.
@@ -1649,7 +1649,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Multi-admin board seed: both accepted ADMINs match; MEMBER and pending ADMIN
   do not.
 - Status semantics and deleted/archived inclusion documented and tested.
-- Invalid/oversized/unknown values → 400; unsupported filter outside `supported`
+- Invalid/oversized/unknown values → 400; unsupported filter outside `implemented`
   → 400; status value outside the per-entity allowlist → 400; empty single
   filter behavior unchanged. Test both `/admin/entities/:entity` and the
   specialized list routes.
@@ -1708,19 +1708,19 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 ## 11. Rollout
 
-1. Merge **181.1** first. It adds no visible control, but changes URL parsing
-   and backend validation: supported old URLs (matrix §5.8) keep working; an
-   unsupported key becomes a 400 instead of being silently ignored. A rollback
-   of 181.1 restores the old lenient behavior (unknown keys ignored).
-2. Merge **181.2** (cards pilot) and **181.3** (cards facets); this is the
-   highest-value slice and validates the lookup/performance assumptions.
-3. Merge **181.4–181.6** independently after 181.2; each is one PR with its own
-   tests. Do not combine hubs in one PR.
+1. Merge **181.1** first. The implemented set in §5.8 preserves legacy
+   deep links. The UI omits deferred inputs from requests and direct API calls
+   return 400 `unsupported_filter`. The offered set records the planned UI.
+2. Merge **181.2** (cards picker, lookup client and cache) and **181.3**
+   (cards facets, multi-label and label matching). Each wave enables the
+   corresponding implemented entries alongside the predicates and tests.
+3. Merge **181.4–181.6** independently after 181.2. Each hub wave promotes
+   its implemented entries only when the corresponding predicates and
+   performance checks are ready.
 4. Merge **181.7** docs/acceptance last.
-5. **Atomic deployment:** the admin UI and API ship from the same image/version.
-   There is no supported “new UI against old API” mode. If the API rejects a
-   filter with `unsupported_filter`, show the explicit blocking error with a
-   Remove action; never leave an active chip over an unfiltered list.
+5. The admin UI and API ship atomically from the same image. Starting with
+   the filter bar in 181.2, an unexpected `unsupported_filter` response for an
+   active chip shows a blocking error with a Remove action.
 6. **Merge order / file ownership:**
    - TASK-180.9 (admin mobile/nav/breadcrumbs/i18n) lands **before 181.2** when
      possible; otherwise 181.2 rebases after it and re-runs the 390 tests.
@@ -1748,7 +1748,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 
 | Risk | Mitigation |
 | --- | --- |
-| Silent no-op filters (the current bug) | Supported/offered matrix in UI + 400 outside `supported`; atomic deployment; explicit `unsupported_filter` state; table-driven parity test |
+| Silent no-op filters (the current bug) | Implemented/offered matrix in UI + 400 outside `implemented`; atomic deployment; explicit `unsupported_filter` state; table-driven parity test |
 | Raw ids reappear on new surfaces | One `FilterChip` + server resolver; tests assert human labels for every entity filter |
 | Lookup latency/N+1 | Parallel resolve, 30–60 s cache, 250 ms debounce, abort stale requests, limit 20 |
 | Extra indexes lock a large table | Measure first; separate migration; document lock window; add only proven composites |
@@ -1819,8 +1819,8 @@ includes unset cards, with no separate Unset option in v1.
   board/column and near-limit card titles: chips stay inside the viewport, title
   ellipsizes with full `title`/accessible text, own/parent ids stay visible and
   keyboard removal works.
-- The supported/offered matrix in §5.8 is enforced in UI and API: every legacy
-  176.5/6 pair still works, 400 only outside `supported`, and no old-server
+- The implemented/offered matrix in §5.8 is enforced in UI and API: every legacy
+  176.5/6 pair still works, 400 only outside `implemented`, and no old-server
   mixed-version promise remains. Announcements `status=deleted` remains an API
   alias and normalizes to Disabled in the UI URL/request. Board changes clear
   dependents with an announcement; conflicting deep links show a Remove

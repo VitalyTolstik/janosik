@@ -66,7 +66,8 @@ function optionSource(query: AdminFilterOptionsQuery): Prisma.Sql {
           ${scope.cardId ? Prisma.sql`AND entity."cardId" = ${scope.cardId}` : Prisma.empty}`;
     case "user":
       return Prisma.sql`
-        SELECT id, email AS label, "displayName" AS sublabel,
+        SELECT id, COALESCE(NULLIF(btrim("displayName"), ''), email) AS label,
+          CASE WHEN NULLIF(btrim("displayName"), '') IS NOT NULL THEN email END AS sublabel,
           NULL::text AS "boardId", NULL::text AS "columnId", NULL::text AS color,
           CASE WHEN "disabledAt" IS NOT NULL THEN 'disabled' ELSE 'active' END AS state
         FROM "User"`;
