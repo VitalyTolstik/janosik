@@ -2,6 +2,10 @@ import { useState } from "react";
 import { History, MessageSquare } from "lucide-react";
 import type { CardActivityEvent } from "@janosik/shared";
 
+import {
+  CARD_ACTIVITY_PAGE_SIZE,
+  type ActivityCount,
+} from "@/components/board/card-activity-count";
 import { ActivityCountSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardComments } from "@/components/board/CardComments";
 import { CardHistory } from "@/components/board/CardHistory";
@@ -45,8 +49,8 @@ interface CardActivityProps {
 /**
  * The card's Activity section (TASK-37): a segmented control — the same
  * pattern as the board's view switcher — over the comment thread and the
- * History timeline with from → to diffs. The comment count rides in the
- * header badge, visible while collapsed.
+ * History timeline with from → to diffs. Each tab reports its count once
+ * its feed loads.
  *
  * It is deliberately the last section of the dialog: a busy comment thread
  * is what people scroll for, so it gets the tail of the page instead of
@@ -59,12 +63,30 @@ export function CardActivity({
   localActivity,
   readOnly = false,
 }: CardActivityProps) {
-  const { t } = useI18n();
+  const { t, tp } = useI18n();
   const [view, setView] = useState<ActivityView>("comments");
-  const [commentCount, setCommentCount] = useState(0);
-  const [historyCount, setHistoryCount] = useState(0);
-  const [commentsLoaded, setCommentsLoaded] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [commentCount, setCommentCount] = useState<ActivityCount | null>();
+  const [historyCount, setHistoryCount] = useState<ActivityCount | null>();
+
+  function badge(view: ActivityView, count: ActivityCount) {
+    const { total } = count;
+    const hasTotal =
+      total !== undefined &&
+      Number.isSafeInteger(total) &&
+      total >= count.loaded &&
+      (!count.truncated || total > count.loaded);
+    const progress = hasTotal
+      ? t("activity.countOf", { shown: count.loaded, total })
+      : count.truncated
+        ? t("activity.countMore", { shown: CARD_ACTIVITY_PAGE_SIZE })
+        : null;
+    if (view === "comments") return progress ?? count.visible;
+
+    const rows = tp("activity.historyRows", count.visible);
+    return progress === null
+      ? rows
+      : t("activity.historyProgress", { rows, events: progress });
+  }
 
   return (
     <CollapsibleSection
@@ -76,11 +98,10 @@ export function CardActivity({
       <div
         role="group"
         aria-label={t("activity.title")}
-        className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm"
+        className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm"
       >
         {VIEWS.map(({ id, icon: Icon, labelKey, testId }) => {
           const count = id === "comments" ? commentCount : historyCount;
-          const loaded = id === "comments" ? commentsLoaded : historyLoaded;
           return (
             <button
               key={id}
@@ -97,14 +118,17 @@ export function CardActivity({
             >
               <Icon className="h-3.5 w-3.5" aria-hidden />
               {t(labelKey)}
-              {count > 0 ? (
+              {count &&
+              (count.visible > 0 ||
+                count.truncated ||
+                count.total !== undefined) ? (
                 <span
                   data-testid={`${testId}-count`}
                   className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground"
                 >
-                  {count}
+                  {badge(id, count)}
                 </span>
-              ) : !loaded ? (
+              ) : count === undefined ? (
                 <ActivityCountSkeleton />
               ) : null}
             </button>
@@ -123,7 +147,6 @@ export function CardActivity({
           boardId={boardId}
           readOnly={readOnly}
           onCountChange={setCommentCount}
-          onLoadedChange={setCommentsLoaded}
         />
       </div>
       <div className={cn(view !== "history" && "hidden")}>
@@ -134,7 +157,6 @@ export function CardActivity({
           updatedAt={updatedAt}
           localActivity={localActivity}
           onCountChange={setHistoryCount}
-          onLoadedChange={setHistoryLoaded}
         />
       </div>
     </CollapsibleSection>

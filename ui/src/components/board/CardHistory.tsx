@@ -11,6 +11,13 @@ import { CARD_PRIORITIES } from "@janosik/shared";
 import { priorityLabel } from "@/utils/priority";
 
 import { api, isApiEnabled } from "@/api/client";
+import {
+  appendOlderActivity,
+  CARD_ACTIVITY_PAGE_SIZE,
+  mergeNewestActivity,
+  type ActivityCount,
+  type ActivityPage,
+} from "@/components/board/card-activity-count";
 import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegion } from "@/components/ui/skeleton";
@@ -26,8 +33,7 @@ import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSegment } from "@/utils/diff-words";
 import { foldHistory } from "@/utils/history-fold";
 
-/** Newest-first page size of the history feed. */
-const PAGE_SIZE = 50;
+const PAGE_SIZE = CARD_ACTIVITY_PAGE_SIZE;
 
 interface CardHistoryProps {
   cardId: string;
@@ -35,10 +41,8 @@ interface CardHistoryProps {
   updatedAt: number;
   /** Local-mode timeline (`card.activity`) when no server is reachable. */
   localActivity?: CardActivityEvent[];
-  /** Rendered (folded) entry count for the section badge. */
-  onCountChange?: (count: number) => void;
-  /** Lets the Activity tab distinguish "0 entries" from "not loaded yet". */
-  onLoadedChange?: (loaded: boolean) => void;
+  /** Undefined while loading, null when unavailable. */
+  onCountChange?: (count: ActivityCount | null | undefined) => void;
 }
 
 /**
@@ -56,15 +60,16 @@ export function CardHistory({
   updatedAt,
   localActivity,
   onCountChange,
-  onLoadedChange,
 }: CardHistoryProps) {
   const { t } = useI18n();
   const toast = useToast();
   const serverMode = isApiEnabled();
   const { activity, commits } = useBoardLive();
 
-  const [entries, setEntries] = useState<ActivityFeedEntry[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [feed, setFeed] = useState<ActivityPage<ActivityFeedEntry> | null>(
+    null,
+  );
+  const nextCursor = feed?.nextCursor ?? null;
   // Distinguishes a real empty history from the first page still in flight.
   const [loaded, setLoaded] = useState(!serverMode);
   const aliveRef = useRef(true);
@@ -75,8 +80,7 @@ export function CardHistory({
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setEntries(page.items);
-      setNextCursor(page.nextCursor);
+      setFeed(page);
     } catch {
       if (!aliveRef.current) return;
       toast.error(t("history.loadError"));
@@ -99,11 +103,10 @@ export function CardHistory({
     if (!serverMode) return;
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
-      setEntries((prev) => {
-        const known = new Set(prev.map((entry) => entry.id));
-        const fresh = page.items.filter((entry) => !known.has(entry.id));
-        return fresh.length > 0 ? [...fresh, ...prev] : prev;
-      });
+      if (!aliveRef.current) return;
+      setFeed((current) =>
+        current ? mergeNewestActivity(current, page) : page,
+      );
     } catch {
       /* best effort */
     }
@@ -146,8 +149,9 @@ export function CardHistory({
     setLoadingOlder(true);
     try {
       const page = await api.cardActivity(cardId, nextCursor, PAGE_SIZE);
-      setEntries((prev) => [...prev, ...page.items]);
-      setNextCursor(page.nextCursor);
+      setFeed((current) =>
+        current ? appendOlderActivity(current, page, nextCursor) : current,
+      );
     } catch {
       toast.error(t("history.loadError"));
     } finally {
@@ -156,16 +160,31 @@ export function CardHistory({
   };
 
   const visible: ActivityFeedEntry[] = serverMode
-    ? foldHistory(entries)
+    ? foldHistory(feed?.items ?? [])
     : localEntries(localActivity ?? [], updatedAt);
 
+  const loadedEvents = feed?.items.length ?? 0;
+  const total = feed?.total;
+  const hasCount = feed !== null || !serverMode;
   useEffect(() => {
-    onCountChange?.(visible.length);
-  }, [visible.length, onCountChange]);
-
-  useEffect(() => {
-    onLoadedChange?.(loaded);
-  }, [loaded, onLoadedChange]);
+    const count = hasCount
+      ? {
+          visible: visible.length,
+          loaded: loadedEvents,
+          truncated: nextCursor !== null,
+          total,
+        }
+      : null;
+    onCountChange?.(loaded ? count : undefined);
+  }, [
+    visible.length,
+    loadedEvents,
+    hasCount,
+    loaded,
+    nextCursor,
+    total,
+    onCountChange,
+  ]);
 
   return (
     <div className="space-y-2" aria-busy={!loaded}>
@@ -176,36 +195,34 @@ export function CardHistory({
         >
           <CardSectionSkeleton kind="history" rows={4} />
         </SkeletonRegion>
-      ) : visible.length === 0 ? (
+      ) : visible.length === 0 && nextCursor === null ? (
         <p className="py-1 text-sm text-muted-foreground/70">
           {t("history.empty")}
         </p>
-      ) : (
-        <>
-          <ol className="space-y-3" data-testid="history-list">
-            {visible.map((entry) => (
-              <HistoryRow boardId={boardId} entry={entry} key={entry.id} />
-            ))}
-          </ol>
-          {nextCursor !== null ? (
-            <div className="pl-[36px]">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                disabled={loadingOlder}
-                data-testid="history-show-older"
-                onClick={() => void handleShowOlder()}
-              >
-                {loadingOlder ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : null}
-                {t("history.showOlder")}
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
+      ) : visible.length > 0 ? (
+        <ol className="space-y-3" data-testid="history-list">
+          {visible.map((entry) => (
+            <HistoryRow boardId={boardId} entry={entry} key={entry.id} />
+          ))}
+        </ol>
+      ) : null}
+      {nextCursor !== null ? (
+        <div className="pl-[36px]">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={loadingOlder}
+            data-testid="history-show-older"
+            onClick={() => void handleShowOlder()}
+          >
+            {loadingOlder ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            {t("history.showOlder")}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

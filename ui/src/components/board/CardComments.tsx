@@ -15,11 +15,19 @@ import type {
 } from "@janosik/shared";
 import { COMMENT_KINDS, DEFAULT_COMMENT_KIND, LIMITS } from "@janosik/shared";
 
-import { api, isApiEnabled } from "@/api/client";
+import { api, ApiError, isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import {
+  appendOlderActivity,
+  CARD_ACTIVITY_PAGE_SIZE,
+  mergeNewestActivity,
+  type ActivityCount,
+  type ActivityPage,
+} from "@/components/board/card-activity-count";
 import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
+import { useCommentDraft } from "@/components/board/use-comment-draft";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,18 +58,19 @@ const CommentBody = lazy(() =>
   })),
 );
 
-/** Newest-first page size of the comment list. */
-const PAGE_SIZE = 50;
+const PAGE_SIZE = CARD_ACTIVITY_PAGE_SIZE;
+
+function isPendingComment(comment: CommentDto) {
+  return comment.id.startsWith("pending-");
+}
 
 interface CardCommentsProps {
   cardId: string;
   boardId: string;
   /** VIEWER mode: read the thread, no composer and no delete (TASK-35). */
   readOnly?: boolean;
-  /** Loaded comment count for the section badge (newest page + older pages). */
-  onCountChange?: (count: number) => void;
-  /** Lets the Activity tab distinguish "0 comments" from "not loaded yet". */
-  onLoadedChange?: (loaded: boolean) => void;
+  /** Undefined while loading, null when unavailable. */
+  onCountChange?: (count: ActivityCount | null | undefined) => void;
 }
 
 /**
@@ -78,7 +87,6 @@ export function CardComments({
   boardId,
   readOnly = false,
   onCountChange,
-  onLoadedChange,
 }: CardCommentsProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -86,40 +94,56 @@ export function CardComments({
   const serverMode = isApiEnabled();
   const { activity } = useBoardLive();
 
-  const [items, setItems] = useState<CommentDto[]>([]);
+  const [thread, setThread] = useState<ActivityPage<CommentDto>>({
+    items: [],
+    nextCursor: null,
+  });
+  const { items, nextCursor } = thread;
   const itemsRef = useRef<CommentDto[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
-  const [loaded, setLoaded] = useState(!serverMode);
+  const [status, setStatus] = useState<
+    "loading" | "ready" | "error" | "unavailable"
+  >(serverMode ? "loading" : "ready");
+  const loaded = status !== "loading";
   const aliveRef = useRef(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [draft, setDraft] = useState("");
-  // Structured comment kind (TASK-157, D10) — a swarm vocabulary the reader
-  // can filter on. The human composer defaults to a plain note.
-  const [kind, setKind] = useState<CommentKind>(DEFAULT_COMMENT_KIND);
-  const [sending, setSending] = useState(false);
+  const canCompose =
+    loaded && serverMode && !readOnly && status !== "unavailable";
+  const composer = useCommentDraft(cardId, canCompose ? user?.id : undefined);
+  const draft = composer.draft?.text ?? "";
+  const kind = composer.draft?.kind ?? DEFAULT_COMMENT_KIND;
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
-  // The editor owns its state between mounts (like the description), so a
-  // cleared draft is applied by remounting it with a fresh key.
-  const [editorNonce, setEditorNonce] = useState(0);
+
+  const markUnavailable = useCallback((error: unknown) => {
+    if (
+      error instanceof ApiError &&
+      (error.status === 403 || error.status === 404)
+    ) {
+      setStatus("unavailable");
+      setThread({ items: [], nextCursor: null });
+    }
+  }, []);
 
   const loadFirst = useCallback(async () => {
     if (!serverMode) return;
     try {
       const page = await api.listComments(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setItems(page.items);
-      setNextCursor(page.nextCursor);
-    } catch {
+      setThread(page);
+      setStatus("ready");
+    } catch (error) {
       if (!aliveRef.current) return;
+      markUnavailable(error);
       toast.error(t("comment.loadError"));
     } finally {
       // A failed request still ends the wait: the skeleton must not spin
       // forever over an error toast.
-      if (aliveRef.current) setLoaded(true);
+      if (aliveRef.current) {
+        setStatus((current) => (current === "loading" ? "error" : current));
+      }
     }
-  }, [cardId, serverMode, t, toast]);
+  }, [cardId, markUnavailable, serverMode, t, toast]);
 
   // A different card means a different thread: the parent remounts this
   // component with `key={cardId}`, so the initial state is the reset.
@@ -136,13 +160,28 @@ export function CardComments({
     itemsRef.current = items;
   }, [items]);
 
+  const commentCount = items.filter((item) => !isPendingComment(item)).length;
+  const { total } = thread;
   useEffect(() => {
-    onCountChange?.(items.length);
-  }, [items.length, onCountChange]);
-
-  useEffect(() => {
-    onLoadedChange?.(loaded);
-  }, [loaded, onLoadedChange]);
+    const count =
+      serverMode && status === "ready"
+        ? {
+            visible: commentCount,
+            loaded: commentCount,
+            truncated: nextCursor !== null,
+            total,
+          }
+        : null;
+    onCountChange?.(loaded ? count : undefined);
+  }, [
+    commentCount,
+    loaded,
+    nextCursor,
+    onCountChange,
+    serverMode,
+    status,
+    total,
+  ]);
 
   // Live arrival: a foreign comment is not in the frame body (the frame
   // carries its id), so the newest page is re-read and merged — paginated
@@ -152,15 +191,15 @@ export function CardComments({
     if (!serverMode) return;
     try {
       const page = await api.listComments(cardId, undefined, PAGE_SIZE);
-      setItems((prev) => {
-        const known = new Set(prev.map((comment) => comment.id));
-        const fresh = page.items.filter((comment) => !known.has(comment.id));
-        return fresh.length > 0 ? [...fresh, ...prev] : prev;
-      });
-    } catch {
-      /* best effort: the next open or frame retries */
+      if (!aliveRef.current) return;
+      setThread((current) =>
+        mergeNewestActivity(current, page, isPendingComment),
+      );
+      setStatus("ready");
+    } catch (error) {
+      if (aliveRef.current) markUnavailable(error);
     }
-  }, [cardId, serverMode]);
+  }, [cardId, markUnavailable, serverMode]);
 
   // An edit is not in the frame body either: re-read the loaded pages until
   // the edited row is found and replace matching rows in place, keeping the
@@ -194,14 +233,18 @@ export function CardComments({
           if (page.nextCursor === null) break;
           cursor = page.nextCursor;
         }
-        setItems((prev) =>
-          prev.map((comment) => byId.get(comment.id) ?? comment),
-        );
-      } catch {
-        /* best effort: the next open or frame retries */
+        if (!aliveRef.current) return;
+        setThread((current) => ({
+          ...current,
+          items: current.items.map(
+            (comment) => byId.get(comment.id) ?? comment,
+          ),
+        }));
+      } catch (error) {
+        if (aliveRef.current) markUnavailable(error);
       }
     },
-    [cardId, serverMode],
+    [cardId, markUnavailable, serverMode],
   );
 
   useEffect(() => {
@@ -218,22 +261,28 @@ export function CardComments({
       }
       if (event.kind === "comment_deleted" && event.detail) {
         const deletedId = event.detail;
-        setItems((prev) => prev.filter((comment) => comment.id !== deletedId));
+        setThread((current) => ({
+          ...current,
+          items: current.items.filter((comment) => comment.id !== deletedId),
+          total: undefined,
+        }));
+        void refreshNewest();
       }
     });
   }, [activity, boardId, cardId, serverMode, refreshNewest, refreshEdited]);
 
   const trimmed = draft.trim();
   const canSend =
-    serverMode &&
-    !readOnly &&
+    canCompose &&
     user !== null &&
-    !sending &&
+    !composer.sending &&
     trimmed.length > 0 &&
     trimmed.length <= LIMITS.comment;
 
   const handleSend = async () => {
     if (!canSend || user === null) return;
+    const finishSend = composer.startSend();
+    if (finishSend === null) return;
     const text = trimmed;
     const tempId = `pending-${createId()}`;
     const sentKind = kind;
@@ -249,43 +298,46 @@ export function CardComments({
       agentName: null,
       createdAt: Date.now(),
     };
-    setItems((prev) => [optimistic, ...prev]);
-    setDraft("");
-    setKind(DEFAULT_COMMENT_KIND);
-    setEditorNonce((nonce) => nonce + 1);
-    setSending(true);
+    setThread((current) => ({
+      ...current,
+      items: [optimistic, ...current.items],
+    }));
     try {
       const saved = await api.createComment(cardId, text, undefined, sentKind);
-      setItems((prev) => [
-        saved,
-        ...prev.filter(
-          (comment) => comment.id !== tempId && comment.id !== saved.id,
-        ),
-      ]);
+      finishSend(true);
+      setThread((current) => ({
+        ...current,
+        items: [
+          saved,
+          ...current.items.filter(
+            (comment) => comment.id !== tempId && comment.id !== saved.id,
+          ),
+        ],
+        total: undefined,
+      }));
+      if (total !== undefined) void refreshNewest();
     } catch {
-      setItems((prev) => prev.filter((comment) => comment.id !== tempId));
-      setDraft(text);
-      setKind(sentKind);
-      setEditorNonce((nonce) => nonce + 1);
+      finishSend(false);
+      setThread((current) => ({
+        ...current,
+        items: current.items.filter((comment) => comment.id !== tempId),
+      }));
       toast.error(t("comment.sendError"));
-    } finally {
-      setSending(false);
     }
-  };
-
-  const handleCancel = () => {
-    setDraft("");
-    setKind(DEFAULT_COMMENT_KIND);
-    setEditorNonce((nonce) => nonce + 1);
   };
 
   const handleDelete = async () => {
     const comment = pendingDelete;
     if (comment === null) return;
     setPendingDelete(null);
-    setItems((prev) => prev.filter((item) => item.id !== comment.id));
+    setThread((current) => ({
+      ...current,
+      items: current.items.filter((item) => item.id !== comment.id),
+      total: undefined,
+    }));
     try {
       await api.deleteComment(comment.id);
+      if (nextCursor !== null || total !== undefined) void refreshNewest();
     } catch {
       toast.error(t("comment.deleteError"));
       void loadFirst();
@@ -297,9 +349,9 @@ export function CardComments({
     setLoadingOlder(true);
     try {
       const page = await api.listComments(cardId, nextCursor, PAGE_SIZE);
-      setItems((prev) => [...prev, ...page.items]);
-      setNextCursor(page.nextCursor);
-    } catch {
+      setThread((current) => appendOlderActivity(current, page, nextCursor));
+    } catch (error) {
+      markUnavailable(error);
       toast.error(t("comment.loadError"));
     } finally {
       setLoadingOlder(false);
@@ -308,19 +360,20 @@ export function CardComments({
 
   return (
     <div className="space-y-2" aria-busy={!loaded}>
-      {!readOnly && serverMode && user !== null ? (
+      {canCompose && user !== null ? (
         <CommentComposer
+          key={user.id}
           user={user}
           cardId={cardId}
           draft={draft}
-          sending={sending}
+          sending={composer.sending}
           canSend={canSend}
-          editorNonce={editorNonce}
+          editorNonce={composer.editorNonce}
           kind={kind}
-          onKindChange={setKind}
-          onDraftChange={setDraft}
+          onKindChange={(kind) => composer.update({ kind })}
+          onDraftChange={(text) => composer.update({ text })}
           onSubmit={() => void handleSend()}
-          onCancel={handleCancel}
+          onCancel={composer.discard}
         />
       ) : null}
 
@@ -348,9 +401,12 @@ export function CardComments({
               readOnly={readOnly}
               onDelete={() => setPendingDelete(comment)}
               onUpdated={(saved) =>
-                setItems((prev) =>
-                  prev.map((item) => (item.id === saved.id ? saved : item)),
-                )
+                setThread((current) => ({
+                  ...current,
+                  items: current.items.map((item) =>
+                    item.id === saved.id ? saved : item,
+                  ),
+                }))
               }
             />
           ))}
@@ -396,7 +452,7 @@ interface CommentComposerProps {
   draft: string;
   sending: boolean;
   canSend: boolean;
-  /** Bumped by the parent to reset the editor (send/cancel/error paths). */
+  /** Bumped to clear the editor after a successful send or discard. */
   editorNonce: number;
   /** Structured comment kind (TASK-157, D10). */
   kind: CommentKind;
@@ -502,9 +558,7 @@ function CommentComposer({
   onCancel,
 }: CommentComposerProps) {
   const { t } = useI18n();
-  // With nothing typed there is nothing to cancel — keeping Cancel enabled
-  // would only trigger the remount-reset flash for no reason.
-  const dirty = draft.trim().length > 0;
+  const dirty = draft.length > 0 || kind !== DEFAULT_COMMENT_KIND;
 
   return (
     <div className="flex items-start gap-2.5">
