@@ -8,9 +8,11 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
 import { LIMITS } from "@janosik/shared";
 
 import { I18nProvider } from "@/i18n";
+import { defaultI18n, ensureLocale } from "@/i18n/i18n";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { CalendarComponent } from "@/components/ui/calendar-lazy";
@@ -834,12 +836,13 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
 
   async function renderFieldsWithCalendar(
     calendarLoader: () => Promise<{ Calendar: CalendarComponent }>,
+    i18n = defaultI18n,
   ) {
     const { server, state } = setupFields();
     const { card, labels } = await adminApi.cardDetail("card-1");
     render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider i18n={i18n}>
           <ToastProvider>
             <TooltipProvider>
               <CardFieldsChunkBoundary fallback={<CardFieldsFallback />}>
@@ -1064,8 +1067,15 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
   it("contains a rejected import, saves a sibling field, then retries and saves the due date", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
+      const user = userEvent.setup();
+      let finishRetry!: (module: { Calendar: CalendarComponent }) => void;
+      const retryLoad = new Promise<{ Calendar: CalendarComponent }>(
+        (resolve) => {
+          finishRetry = resolve;
+        },
+      );
       const loader = vi
-        .fn(() => import("@/components/ui/calendar"))
+        .fn(() => retryLoad)
         .mockRejectedValueOnce(new Error("Calendar chunk unavailable"));
       const { server, state } = await renderFieldsWithCalendar(loader);
       const mountedFields = [
@@ -1084,7 +1094,7 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
       const popover = within(dialog);
 
       expect(await popover.findByRole("alert")).toHaveTextContent(
-        "The calendar could not load. Other fields are still editable.",
+        "The date and time picker could not load. Other fields are still editable.",
       );
       expect(popover.getByLabelText("Due date and time")).toBeInTheDocument();
       expect(popover.queryByText("Time")).not.toBeInTheDocument();
@@ -1099,21 +1109,28 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
       expect(popover.getByRole("alert")).toBeInTheDocument();
       expect(loader).toHaveBeenCalledTimes(1);
 
-      const retry = popover.getByRole("button", { name: "Retry calendar" });
+      const retry = popover.getByRole("button", {
+        name: "Retry date and time picker",
+      });
       expect(retry).toHaveFocus();
-      fireEvent.click(retry);
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(loader).toHaveBeenCalledTimes(2));
+      expect(retry).toHaveFocus();
+      finishRetry(await import("@/components/ui/calendar"));
       const grid = await popover.findByRole("grid");
       expect(screen.getByRole("dialog")).toBe(dialog);
       expect(trigger).toHaveAttribute("aria-expanded", "true");
-      expect(trigger).toHaveFocus();
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+      await user.tab();
+      expect(
+        popover.getByRole("button", { name: /previous month/i }),
+      ).toHaveFocus();
       expect(popover.getByText("Time")).toBeInTheDocument();
       expect(popover.getAllByRole("listbox")).toHaveLength(2);
       expect(popover.queryByRole("alert")).not.toBeInTheDocument();
       expect(
         popover.queryByLabelText("Due date and time"),
       ).not.toBeInTheDocument();
-      expect(loader).toHaveBeenCalledTimes(2);
-
       const dueDate = selectCalendarDay(grid);
       await waitFor(() => expect(state.cards[0]?.dueDate).toBe(dueDate));
       expectDueCommand(server, dueDate);
@@ -1122,7 +1139,7 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     }
   });
 
-  it("keeps an editable native date and time after retry fails and can save or remove it", async () => {
+  it("offers native date and time on the first failure and keeps the draft after Retry fails", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const loader = vi
@@ -1135,13 +1152,16 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
       const firstInput = await popover.findByLabelText("Due date and time");
       fireEvent.change(firstInput, { target: { value: "2027-04-05T17:42" } });
 
-      fireEvent.click(popover.getByRole("button", { name: "Retry calendar" }));
+      fireEvent.click(
+        popover.getByRole("button", { name: "Retry date and time picker" }),
+      );
+      await waitFor(() => expect(firstInput).not.toBeInTheDocument());
       const input = await popover.findByLabelText("Due date and time");
       expect(input).toHaveAttribute("type", "datetime-local");
       expect(input).toHaveValue("2027-04-05T17:42");
       expect(popover.getByRole("alert")).toBeInTheDocument();
       expect(
-        popover.getByRole("button", { name: "Retry calendar" }),
+        popover.getByRole("button", { name: "Retry date and time picker" }),
       ).toHaveFocus();
       expect(popover.queryByText("Time")).not.toBeInTheDocument();
       expect(popover.queryByRole("listbox")).not.toBeInTheDocument();
@@ -1166,7 +1186,7 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
       });
 
       fireEvent.keyDown(
-        popover.getByRole("button", { name: "Retry calendar" }),
+        popover.getByRole("button", { name: "Retry date and time picker" }),
         {
           key: "Escape",
         },
@@ -1178,18 +1198,52 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     }
   });
 
+  it("localizes the picker failure, Retry and native input in Russian", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await ensureLocale("ru");
+      const i18n = defaultI18n.cloneInstance({ lng: "ru" });
+      await renderFieldsWithCalendar(
+        () => Promise.reject(new Error("Calendar chunk unavailable")),
+        i18n,
+      );
+      fireEvent.click(screen.getByTestId("admin-card-due-input"));
+      const popover = within(screen.getByRole("dialog"));
+      expect(await popover.findByRole("alert")).toHaveTextContent(
+        "Панель выбора даты и времени не загрузилась. Остальные поля доступны.",
+      );
+      expect(
+        popover.getByRole("button", {
+          name: "Повторить загрузку",
+        }),
+      ).toHaveFocus();
+      expect(popover.getByLabelText("Срок и время")).toHaveAttribute(
+        "type",
+        "datetime-local",
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("contains a calendar render error inside the due-date popover", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cause = new Error("Calendar render failed");
     try {
       await renderFieldsWithCalendar(async () => ({
         Calendar: function BrokenCalendar() {
-          throw new Error("Calendar render failed");
+          throw cause;
         },
       }));
       fireEvent.click(screen.getByRole("button", { name: "Due date" }));
       const popover = within(screen.getByRole("dialog"));
       expect(await popover.findByRole("alert")).toHaveTextContent(
-        "The calendar could not load.",
+        "The date and time picker could not load.",
+      );
+      expect(error).toHaveBeenCalledWith(
+        "Date and time picker failed:",
+        cause,
+        expect.stringContaining("BrokenCalendar"),
       );
       expect(
         screen.queryByTestId("admin-card-fields-error"),

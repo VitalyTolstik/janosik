@@ -1,9 +1,13 @@
 import {
   Component,
+  startTransition,
+  Suspense,
+  useCallback,
   useEffect,
   useRef,
   useState,
   type ComponentType,
+  type ErrorInfo,
   type ReactNode,
 } from "react";
 import { CalendarClock, X } from "lucide-react";
@@ -57,12 +61,10 @@ interface DateTimeFieldProps {
 export interface CalendarFallbackState {
   value: string;
   onChange: (value: string) => void;
-  time: string;
-  calendarProps: CalendarProps;
   retry: () => void;
 }
 
-class DateTimeCalendarBoundary extends Component<
+class DateTimePickerBoundary extends Component<
   { fallback: ReactNode; children: ReactNode },
   { failed: boolean }
 > {
@@ -70,6 +72,10 @@ class DateTimeCalendarBoundary extends Component<
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("Date and time picker failed:", error, info.componentStack);
   }
 
   render() {
@@ -99,7 +105,13 @@ export function DateTimeField({
   const { lang } = useI18n();
   const hour12 = useHour12();
   const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
+  const focusAfterRetry = useRef(false);
+  const focusRestoredPicker = useCallback((row: HTMLDivElement | null) => {
+    if (row && focusAfterRetry.current) {
+      focusAfterRetry.current = false;
+      row.focus({ preventScroll: true });
+    }
+  }, []);
   const [{ CalendarForAttempt, attempt }, setCalendarAttempt] = useState(
     () => ({
       CalendarForAttempt: calendarLoader
@@ -112,6 +124,11 @@ export function DateTimeField({
   const [time, setTime] = useState(() =>
     parsed ? formatTimeOfDay(parsed) : "12:00",
   );
+
+  const changeOpen = (nextOpen: boolean) => {
+    if (!nextOpen) focusAfterRetry.current = false;
+    setOpen(nextOpen);
+  };
 
   // Opening or receiving a new value (edit/reset) syncs the time wheel.
   useEffect(() => {
@@ -138,7 +155,11 @@ export function DateTimeField({
     onSelect: applyDate,
   } satisfies CalendarProps;
   const pickerRow = (
-    <div className="flex flex-col gap-3 sm:flex-row">
+    <div
+      ref={CalendarFallback ? focusRestoredPicker : undefined}
+      tabIndex={CalendarFallback ? -1 : undefined}
+      className="flex flex-col gap-3 sm:flex-row"
+    >
       <CalendarForAttempt {...calendarProps} />
       <div className="flex flex-col gap-2 border-t border-border pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
         <p className="text-[11px] font-medium text-muted-foreground">
@@ -150,19 +171,22 @@ export function DateTimeField({
   );
 
   const retry = () => {
-    trigger.current?.focus({ preventScroll: true });
-    // A rejected React.lazy instance keeps its result even after remounting.
-    setCalendarAttempt({
-      CalendarForAttempt: createCalendar(calendarLoader),
-      attempt: attempt + 1,
+    focusAfterRetry.current = true;
+    // A fresh lazy instance retries the load. Let the outer Suspense keep
+    // the current fallback and its focus until this attempt can commit.
+    const nextCalendar = createCalendar(calendarLoader, false);
+    startTransition(() => {
+      setCalendarAttempt({
+        CalendarForAttempt: nextCalendar,
+        attempt: attempt + 1,
+      });
     });
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
-          ref={trigger}
           type="button"
           disabled={disabled}
           data-testid={testId}
@@ -189,30 +213,22 @@ export function DateTimeField({
       <PopoverContent
         align="start"
         className="w-auto max-w-[calc(100vw-1rem)] p-3"
-        onFocusOutside={
-          CalendarFallback
-            ? (event) => {
-                // Preserve Radix's focus restoration when Retry focuses the trigger.
-                if (event.target === trigger.current) event.preventDefault();
-              }
-            : undefined
-        }
       >
         {CalendarFallback ? (
-          <DateTimeCalendarBoundary
-            key={attempt}
-            fallback={
-              <CalendarFallback
-                value={value}
-                onChange={onChange}
-                time={time}
-                calendarProps={calendarProps}
-                retry={retry}
-              />
-            }
-          >
-            {pickerRow}
-          </DateTimeCalendarBoundary>
+          <Suspense fallback={null}>
+            <DateTimePickerBoundary
+              key={attempt}
+              fallback={
+                <CalendarFallback
+                  value={value}
+                  onChange={onChange}
+                  retry={retry}
+                />
+              }
+            >
+              {pickerRow}
+            </DateTimePickerBoundary>
+          </Suspense>
         ) : (
           pickerRow
         )}
@@ -234,7 +250,7 @@ export function DateTimeField({
               data-testid={`${testId}-clear`}
               onClick={() => {
                 onChange("");
-                setOpen(false);
+                changeOpen(false);
               }}
             >
               <X className="h-3.5 w-3.5" aria-hidden />
