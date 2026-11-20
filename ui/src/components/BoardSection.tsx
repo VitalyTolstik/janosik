@@ -31,6 +31,7 @@ import {
   writeFilterParams,
   type FilterChange,
 } from "@/utils/filter";
+import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
@@ -128,7 +129,7 @@ export function BoardSection() {
         missingCardRef.current = cardParam;
         toast.error(t("card.notFound"));
       }
-      const next = new URLSearchParams(searchParams);
+      const next = copySearchParamsWithoutLanguageHandoff(searchParams);
       next.delete("card");
       setSearchParams(next, { replace: true });
       return;
@@ -163,7 +164,7 @@ export function BoardSection() {
       // functional update keeps this callback stable across URL changes, so
       // opening a card does not hand every table row a fresh `onOpen` prop.
       setSearchParams((current) => {
-        const next = new URLSearchParams(current);
+        const next = copySearchParamsWithoutLanguageHandoff(current);
         next.set("card", cardId);
         return next;
       });
@@ -262,7 +263,7 @@ export function BoardSection() {
           closedCardRef.current = openCardId;
           setOpenCardId(null);
           if (searchParams.get("card")) {
-            const next = new URLSearchParams(searchParams);
+            const next = copySearchParamsWithoutLanguageHandoff(searchParams);
             next.delete("card");
             setSearchParams(next, { replace: true });
           }
@@ -278,10 +279,11 @@ export function BoardSection() {
               // state update and the param cleanup cannot reopen the dialog.
               closedCardRef.current = openCardId;
               setOpenCardId(null);
-              // Drop only the deep-link param so a refresh doesn't reopen the card —
-              // other view/query params (filter, view) must survive (TASK-152).
+              // Clear the deep link so a refresh doesn't reopen the card,
+              // while keeping filter and view state (TASK-152).
               if (searchParams.get("card")) {
-                const next = new URLSearchParams(searchParams);
+                const next =
+                  copySearchParamsWithoutLanguageHandoff(searchParams);
                 next.delete("card");
                 setSearchParams(next, { replace: true });
               }

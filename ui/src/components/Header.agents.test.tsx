@@ -184,7 +184,10 @@ describe("agent entry points in the header", () => {
   });
 
   it("keeps ?agents= durable and syncs tab changes back to the URL", async () => {
-    renderHeader("/board/board-1?agents=live", new FakeServer([board]));
+    renderHeader(
+      "/board/board-1?agents=live&lng=ru&card=c-1&f.q=release&keep=1",
+      new FakeServer([board]),
+    );
     const dialog = await screen.findByTestId("agent-control-dialog");
     expect(dialog).toBeVisible();
     expect(screen.getByTestId("agent-pause-tab")).toHaveAttribute(
@@ -195,7 +198,9 @@ describe("agent entry points in the header", () => {
 
     await userEvent.click(screen.getByTestId("agent-runs-tab"));
     await waitFor(() =>
-      expect(screen.getByTestId("location")).toHaveTextContent("agents=runs"),
+      expect(screen.getByTestId("location").textContent).toBe(
+        "/board/board-1?agents=runs&card=c-1&f.q=release&keep=1",
+      ),
     );
   });
 
@@ -367,7 +372,7 @@ describe("agent entry points in the header", () => {
     const server = new FakeServer([board, boardTwo]);
     server.pendingApprovals.set("board-1", 0);
     server.pendingApprovals.set("board-2", 2);
-    renderHeader("/agents?board=board-1", server);
+    renderHeader("/agents?board=board-1&lng=ru&keep=1", server);
 
     await screen.findByTestId("agents-trigger");
     await waitFor(() =>
@@ -385,6 +390,9 @@ describe("agent entry points in the header", () => {
     );
     await waitFor(() =>
       expect(screen.getByTestId("agents-pending-count")).toHaveTextContent("2"),
+    );
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/agents?board=board-2&keep=1",
     );
   });
 

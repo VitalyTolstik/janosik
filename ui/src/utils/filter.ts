@@ -7,6 +7,7 @@ import {
 import { dueStatus } from "@/utils/due-date";
 import { DAY_MS } from "@/utils/duration";
 import { cardLinkIndex } from "@/utils/links";
+import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 
 /**
  * Board filtering model, following the Trello/Linear conventions:
@@ -183,14 +184,13 @@ export function readFilterParams(params: URLSearchParams): CardFilter {
 
 /**
  * Write a filter into URL parameters, preserving unrelated params (`card`,
- * future view state). Inactive facets are removed rather than serialized as
- * defaults, so the URL stays short and readable.
+ * future view state). Omit the transient language handoff and inactive facets.
  */
 export function writeFilterParams(
   filter: CardFilter,
   base: URLSearchParams = new URLSearchParams(),
 ): URLSearchParams {
-  const params = new URLSearchParams(base);
+  const params = copySearchParamsWithoutLanguageHandoff(base);
   for (const key of FILTER_PARAM_KEYS) params.delete(paramKey(key));
   const query = filter.query.trim() === "" ? "" : filter.query;
   if (query !== "") params.set(paramKey("q"), query);
