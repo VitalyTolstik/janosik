@@ -25,6 +25,8 @@ test("rolls back an offline card edit and keeps the server title", async ({
   await expect(cardTitle(page, "Original title")).toBeVisible();
   await openCard(page, "Original title");
   const dialog = cardDialog(page);
+  // Let the lazy comment editor finish loading while the network is available.
+  await expect(dialog.getByTestId("comment-input")).toBeVisible();
 
   await goOffline(context, page);
   try {
