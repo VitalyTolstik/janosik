@@ -1,45 +1,49 @@
-import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
+import {
+  ADMIN_FILTER_KEYS,
+  ADMIN_FILTER_QUERY_MAX_LENGTH,
+  ADMIN_PAGE_LIMITS,
+  ENTITY_FILTERS,
+  ENTITY_STATUS_VALUES,
+  adminFilterEntries,
+  adminFilterLimitError,
+  adminFilterValueLimit,
+  canonicalAdminFilterValues,
+  normalizeAdminStatus,
+  parseAdminFilterValue,
+  type AdminFilterKey,
+  type AdminFilters,
+  type AdminFilterValues,
+  type AdminListSurface,
+} from "@janosik/shared";
 
-/**
- * Typed URL state for the admin listings (TASK-176.5).
- *
- * One parser/serializer for every page that wants a shareable list:
- * `search`, `status`, `period`, `limit`, `offset` and the structural
- * `boardId`/`columnId`/`labelId`/`cardId` filters (TASK-176.6). Query keys
- * that belong to a hub (`tab`), a detail anchor (`comment`, `attachment`) or a
- * return path (`returnTo`) are left untouched.
- *
- * Nothing here is secret: the list URL only carries filters and a page
- * window, never a token, password or one-time code.
- */
+/** The TASK-176.6 chips still use this subset until the new filter bar lands. */
+export const ADMIN_LIST_FILTER_KEYS = [
+  "boardId",
+  "columnId",
+  "labelId",
+  "cardId",
+  "commandId",
+] as const;
+export type AdminListFilterKey = (typeof ADMIN_LIST_FILTER_KEYS)[number];
 
-export type AdminListFilterKey =
-  "boardId" | "columnId" | "labelId" | "cardId" | "commandId";
-
-export interface AdminListFilters {
-  boardId: string | null;
-  columnId: string | null;
-  labelId: string | null;
-  cardId: string | null;
-  commandId: string | null;
-}
+export type AdminListFilters = {
+  [Key in AdminListFilterKey]: AdminFilterValues[Key] | null;
+} & Partial<Omit<AdminFilterValues, AdminListFilterKey>>;
 
 export interface AdminListQueryState {
   search: string;
   status: string;
-  /** Preset age window (`any`, `24h`, `7d`, `30d`). */
   period: string;
   limit: number;
   offset: number;
   filters: AdminListFilters;
+  filterError?: string;
 }
 
 export interface AdminListQueryOptions {
-  /** Status values the entity actually supports; `all` is always allowed. */
+  surface?: AdminListSurface;
   statuses?: readonly string[];
-  /** Whether the entity has the period tabs. */
   periods?: boolean;
-  /** Page size when the URL does not name one. */
   defaultLimit?: number;
 }
 
@@ -51,25 +55,19 @@ export const EMPTY_ADMIN_LIST_FILTERS: AdminListFilters = {
   commandId: null,
 };
 
-export const ADMIN_LIST_FILTER_KEYS: readonly AdminListFilterKey[] = [
-  "boardId",
-  "columnId",
-  "labelId",
-  "cardId",
-  "commandId",
-];
-
-/** Period tabs and their windows; the parser and the fetcher share this set. */
 export const PERIOD_WINDOWS_MS: Record<string, number> = {
   "24h": 24 * 3_600_000,
   "7d": 7 * 24 * 3_600_000,
   "30d": 30 * 24 * 3_600_000,
 };
 
-const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
-
 function defaultLimit(options: AdminListQueryOptions): number {
   return options.defaultLimit ?? ADMIN_PAGE_LIMITS.default;
+}
+
+function singleValue(params: URLSearchParams, key: string): string | null {
+  const values = params.getAll(key);
+  return values.length === 1 ? values[0] : null;
 }
 
 function readInt(
@@ -80,58 +78,186 @@ function readInt(
 ): number {
   if (value === null || value === "") return fallback;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    return fallback;
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max
+    ? parsed
+    : fallback;
+}
+
+function supportedKeys(
+  surface: AdminListSurface | undefined,
+): readonly AdminFilterKey[] {
+  return surface === undefined ? [] : ENTITY_FILTERS[surface].implemented;
+}
+
+function allowsStatus(
+  status: string,
+  { surface, statuses }: AdminListQueryOptions,
+): boolean {
+  return (
+    (surface === undefined || ENTITY_STATUS_VALUES[surface].includes(status)) &&
+    (statuses === undefined || statuses.includes(status))
+  );
+}
+
+function allowsPeriod(
+  { surface, periods }: AdminListQueryOptions,
+  fallback: boolean,
+): boolean {
+  return (
+    (periods ?? (surface === undefined ? fallback : true)) &&
+    (surface === undefined || ENTITY_FILTERS[surface].period)
+  );
+}
+
+function readFilters(
+  params: URLSearchParams,
+  surface: AdminListSurface | undefined,
+) {
+  const filters: AdminListFilters = { ...EMPTY_ADMIN_LIST_FILTERS };
+  let filterError: string | undefined;
+
+  for (const key of supportedKeys(surface)) {
+    const values = params.getAll(key);
+    if (values.length === 0) continue;
+    const max = adminFilterValueLimit(key);
+    if (max === 1) {
+      if (values.length > 1) {
+        // Repeated card labels belong to a later rollout wave.
+        if (surface !== "cards" || key !== "labelId") {
+          filterError ??= `${key} accepts one value. Remove the repeated filter.`;
+        }
+        continue;
+      }
+      const value = parseAdminFilterValue(key, values[0], surface);
+      if (value !== undefined) Object.assign(filters, { [key]: value });
+    } else {
+      const valid = canonicalAdminFilterValues(
+        values.filter(
+          (value) => parseAdminFilterValue(key, value, surface) !== undefined,
+        ),
+      );
+      if (valid.length > max) {
+        filterError ??= `${key} accepts up to ${max} values. Remove some values to continue.`;
+      } else if (valid.length > 0) {
+        Object.assign(filters, { [key]: valid });
+      }
+    }
   }
-  return parsed;
+
+  if (
+    filters.labelMatch === "any" ||
+    !Array.isArray(filters.labelId) ||
+    filters.labelId.length < 2
+  ) {
+    delete filters.labelMatch;
+  }
+  if (filters.unassigned === false) delete filters.unassigned;
+  filterError ??= adminFilterLimitError(adminFilterEntries(filters, surface));
+  return { filters, filterError };
 }
 
-function readId(value: string | null): string | null {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return ID_PATTERN.test(trimmed) ? trimmed : null;
-}
-
-/** Parse only the list keys; unknown and unrelated keys stay untouched. */
+/** Parse list keys and leave hub and detail parameters to their owners. */
 export function readAdminListQuery(
   params: URLSearchParams,
   options: AdminListQueryOptions = {},
 ): AdminListQueryState {
-  const statuses = new Set<string>(["all", ...(options.statuses ?? [])]);
-  const status = params.get("status") ?? "all";
-  const period = params.get("period") ?? "any";
+  const { surface } = options;
+  const status = normalizeAdminStatus(
+    surface,
+    singleValue(params, "status") ?? "all",
+  );
+  const period = singleValue(params, "period") ?? "any";
+  const { filters, filterError } = readFilters(params, surface);
+  const repeated = ["search", "status", "period", "limit", "offset"].find(
+    (key) => params.getAll(key).length > 1,
+  );
+  const error =
+    filterError ??
+    (repeated === undefined
+      ? undefined
+      : `${repeated} accepts one value. Remove the repeated parameter.`);
 
   return {
-    search: (params.get("search") ?? "").slice(0, 200),
-    status: statuses.has(status) ? status : "all",
+    search: (singleValue(params, "search") ?? "").slice(
+      0,
+      ADMIN_FILTER_QUERY_MAX_LENGTH,
+    ),
+    status:
+      (surface !== undefined || options.statuses !== undefined) &&
+      allowsStatus(status, options)
+        ? status
+        : "all",
     period:
-      options.periods === true && period in PERIOD_WINDOWS_MS ? period : "any",
+      allowsPeriod(options, false) && Object.hasOwn(PERIOD_WINDOWS_MS, period)
+        ? period
+        : "any",
     limit: readInt(
-      params.get("limit"),
+      singleValue(params, "limit"),
       defaultLimit(options),
       ADMIN_PAGE_LIMITS.min,
       ADMIN_PAGE_LIMITS.max,
     ),
-    offset: readInt(params.get("offset"), 0, 0, ADMIN_PAGE_LIMITS.maxOffset),
-    filters: {
-      boardId: readId(params.get("boardId")),
-      columnId: readId(params.get("columnId")),
-      labelId: readId(params.get("labelId")),
-      cardId: readId(params.get("cardId")),
-      commandId: readId(params.get("commandId")),
-    },
+    offset: readInt(
+      singleValue(params, "offset"),
+      0,
+      0,
+      ADMIN_PAGE_LIMITS.maxOffset,
+    ),
+    filters,
+    ...(error === undefined ? {} : { filterError: error }),
   };
 }
 
-/**
- * Serialize a list state back into the query. Defaults are removed so a clean
- * list has a clean URL; keys owned by the hub/detail are preserved.
- */
+export function adminListRequestFilters(
+  filters: AdminListFilters,
+  surface?: AdminListSurface,
+): AdminFilters {
+  if (surface === undefined) return {};
+  const params = new URLSearchParams(adminFilterEntries(filters, surface));
+  const request: AdminFilters = {};
+  for (const key of new Set(
+    params.keys() as IterableIterator<AdminFilterKey>,
+  )) {
+    const values = params.getAll(key);
+    const value =
+      adminFilterValueLimit(key) > 1
+        ? values
+        : parseAdminFilterValue(key, values[0], surface);
+    Object.assign(request, { [key]: value });
+  }
+  return request;
+}
+
+export function listFilterError(
+  filters: AdminListFilters,
+  surface?: AdminListSurface,
+): string | undefined {
+  if (surface === undefined) return undefined;
+  for (const key of supportedKeys(surface)) {
+    const value = filters[key];
+    const max = adminFilterValueLimit(key);
+    if (
+      Array.isArray(value) &&
+      max > 1 &&
+      canonicalAdminFilterValues(value).length > max
+    ) {
+      return `${key} accepts up to ${max} values. Remove some values to continue.`;
+    }
+  }
+  return adminFilterLimitError(adminFilterEntries(filters, surface));
+}
+
+/** Write only the list-owned parameters and preserve unrelated context. */
 export function writeAdminListQuery(
   current: URLSearchParams,
   state: AdminListQueryState,
   options: AdminListQueryOptions = {},
 ): URLSearchParams {
+  const { surface } = options;
+  const filterError =
+    state.filterError ?? listFilterError(state.filters, surface);
+  if (filterError !== undefined) throw new Error(filterError);
+
   const next = new URLSearchParams(current);
   for (const key of [
     "search",
@@ -139,35 +265,48 @@ export function writeAdminListQuery(
     "period",
     "limit",
     "offset",
-    ...ADMIN_LIST_FILTER_KEYS,
+    ...ADMIN_FILTER_KEYS,
   ]) {
     next.delete(key);
   }
 
   if (state.search !== "") next.set("search", state.search);
-  if (state.status !== "all") next.set("status", state.status);
-  if (state.period !== "any" && state.period in PERIOD_WINDOWS_MS) {
+  const status = normalizeAdminStatus(surface, state.status);
+  if (status !== "all" && allowsStatus(status, options))
+    next.set("status", status);
+  if (
+    allowsPeriod(options, true) &&
+    Object.hasOwn(PERIOD_WINDOWS_MS, state.period)
+  ) {
     next.set("period", state.period);
   }
-  const limit = defaultLimit(options);
-  if (state.limit !== limit) next.set("limit", String(state.limit));
+  if (state.limit !== defaultLimit(options))
+    next.set("limit", String(state.limit));
   if (state.offset > 0) next.set("offset", String(state.offset));
-  for (const key of ADMIN_LIST_FILTER_KEYS) {
-    const value = state.filters[key];
-    if (value !== null) next.set(key, value);
+  if (surface !== undefined) {
+    for (const [key, value] of adminFilterEntries(state.filters, surface)) {
+      next.append(key, value);
+    }
   }
   return next;
 }
 
-/** Stable comparison key for effects and change detection. */
 export function adminListQueryKey(state: AdminListQueryState): string {
-  return JSON.stringify(state);
+  return JSON.stringify([
+    state.search,
+    state.status,
+    state.period,
+    state.limit,
+    state.offset,
+    adminFiltersKey(state.filters),
+    state.filterError,
+  ]);
 }
 
 export function adminFiltersKey(filters: AdminListFilters): string {
-  return ADMIN_LIST_FILTER_KEYS.map((key) => filters[key] ?? "").join("|");
+  return new URLSearchParams(adminFilterEntries(filters)).toString() || "||||";
 }
 
 export function hasAdminFilters(filters: AdminListFilters): boolean {
-  return ADMIN_LIST_FILTER_KEYS.some((key) => filters[key] !== null);
+  return adminFilterEntries(filters).length > 0;
 }

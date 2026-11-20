@@ -6,6 +6,9 @@ import type {
   AnnouncementTranslationOrigin,
 } from "./announcements";
 
+export * from "./admin-filter-scope";
+export * from "./admin-filters";
+
 /**
  * Admin (master account) wire contract — §7.4, TASK-36.
  *
@@ -770,6 +773,53 @@ export const ADMIN_ENTITIES = [
 ] as const;
 
 export type AdminEntity = (typeof ADMIN_ENTITIES)[number];
+
+export type AdminListSurface = AdminEntity | "shares";
+
+export const ADMIN_FILTER_OPTION_LIMITS = { min: 1, default: 20, max: 50 };
+export const ADMIN_FILTER_OPTION_TYPES = [
+  "board",
+  "column",
+  "label",
+  "user",
+  "card",
+  "checklist",
+  "auditActor",
+  "action",
+  "commandType",
+  "activityType",
+  "targetType",
+] as const;
+
+export type AdminFilterOptionType = (typeof ADMIN_FILTER_OPTION_TYPES)[number];
+
+export interface AdminFilterOptionsQuery {
+  type: AdminFilterOptionType;
+  q?: string;
+  /** Resolve up to 20 distinct IDs, regardless of picker scope. */
+  ids?: string[];
+  /** Caps picker search results. Exact ID resolution uses the IDs cap. */
+  limit?: number;
+  boardId?: string;
+  columnId?: string;
+  cardId?: string;
+}
+
+export interface AdminFilterOptionDto {
+  id: string;
+  label: string;
+  sublabel: string | null;
+  state: "active" | "archived" | "deleted" | "disabled" | "revoked" | null;
+  color?: string;
+  boardId: string | null;
+  columnId: string | null;
+}
+
+export interface AdminFilterOptionsDto {
+  items: AdminFilterOptionDto[];
+  missing: string[];
+  hasMore: boolean;
+}
 
 /** A row of `GET /admin/entities/columns` — a kanban column. */
 export interface AdminColumnRowDto {

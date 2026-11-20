@@ -26,7 +26,9 @@ import type {
   AdminUpdateOAuthProviderRequest,
   AdminEntity,
   AdminEntityRowMap,
+  AdminFilters,
   AdminGlobalSearchDto,
+  AdminListSurface,
   AdminMasterRowDto,
   AdminMasterAllowlistDto,
   AdminSessionRowDto,
@@ -85,20 +87,13 @@ import { ApiError, apiBaseUrl } from "@/api/client";
  * provider turns into the master login screen.
  */
 
-export interface AdminListParams {
+export interface AdminListParams extends AdminFilters {
   search?: string;
   status?: string;
   /** Inclusive `createdAt` lower bound, unix ms (period tabs). */
   from?: number;
   /** Inclusive `createdAt` upper bound, unix ms. */
   to?: number;
-  /** Structural filters (TASK-176.6): exact ids, never name matching. */
-  boardId?: string;
-  columnId?: string;
-  labelId?: string;
-  cardId?: string;
-  /** Exact command ↔ audit correlation (TASK-176.10). */
-  commandId?: string;
   limit?: number;
   offset?: number;
 }
@@ -215,9 +210,7 @@ export class AdminApiClient {
     entity: E,
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminEntityRowMap[E]>> {
-    return this.request<AdminPage<AdminEntityRowMap[E]>>(
-      `/admin/entities/${entity}${this.query(params)}`,
-    );
+    return this.list(`/admin/entities/${entity}`, entity, params);
   }
 
   /** Cross-entity top matches for the panel omnibox. */
@@ -313,9 +306,7 @@ export class AdminApiClient {
   }
 
   listUsers(params: AdminListParams = {}): Promise<AdminPage<AdminUserRowDto>> {
-    return this.request<AdminPage<AdminUserRowDto>>(
-      `/admin/users${this.query(params)}`,
-    );
+    return this.list("/admin/users", "users", params);
   }
 
   createUser(body: AdminCreateUserRequest): Promise<AdminCreateUserResponse> {
@@ -352,9 +343,7 @@ export class AdminApiClient {
   listBoards(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminBoardRowDto>> {
-    return this.request<AdminPage<AdminBoardRowDto>>(
-      `/admin/boards${this.query(params)}`,
-    );
+    return this.list("/admin/boards", "boards", params);
   }
 
   createBoard(body: AdminCreateBoardRequest): Promise<AdminBoardRowDto> {
@@ -401,9 +390,7 @@ export class AdminApiClient {
   }
 
   listCards(params: AdminListParams = {}): Promise<AdminPage<AdminCardRowDto>> {
-    return this.request<AdminPage<AdminCardRowDto>>(
-      `/admin/cards${this.query(params)}`,
-    );
+    return this.list("/admin/cards", "cards", params);
   }
 
   archiveCard(cardId: string): Promise<{ status: "ok" }> {
@@ -427,9 +414,7 @@ export class AdminApiClient {
   listSessions(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminSessionRowDto>> {
-    return this.request<AdminPage<AdminSessionRowDto>>(
-      `/admin/sessions${this.query(params)}`,
-    );
+    return this.list("/admin/sessions", "sessions", params);
   }
 
   revokeSession(sessionId: string): Promise<{ revoked: number }> {
@@ -442,9 +427,7 @@ export class AdminApiClient {
   listTokens(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminTokenRowDto>> {
-    return this.request<AdminPage<AdminTokenRowDto>>(
-      `/admin/tokens${this.query(params)}`,
-    );
+    return this.list("/admin/tokens", "tokens", params);
   }
 
   revokeToken(tokenId: string): Promise<{ revoked: number }> {
@@ -459,9 +442,7 @@ export class AdminApiClient {
   listComments(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminCommentRowDto>> {
-    return this.request<AdminPage<AdminCommentRowDto>>(
-      `/admin/comments${this.query(params)}`,
-    );
+    return this.list("/admin/comments", "comments", params);
   }
 
   deleteComment(commentId: string): Promise<{ status: "ok" }> {
@@ -473,17 +454,13 @@ export class AdminApiClient {
   listCommands(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminCommandRowDto>> {
-    return this.request<AdminPage<AdminCommandRowDto>>(
-      `/admin/commands${this.query(params)}`,
-    );
+    return this.list("/admin/commands", "commands", params);
   }
 
   listAudit(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminAuditRowDto>> {
-    return this.request<AdminPage<AdminAuditRowDto>>(
-      `/admin/audit${this.query(params)}`,
-    );
+    return this.list("/admin/audit", "audit", params);
   }
 
   // ------------------------------------------- email settings (TASK-52)
@@ -570,9 +547,7 @@ export class AdminApiClient {
   listShares(
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminShareRowDto>> {
-    return this.request<AdminPage<AdminShareRowDto>>(
-      `/admin/shares${this.query(params)}`,
-    );
+    return this.list("/admin/shares", "shares", params);
   }
 
   revokeShare(id: string): Promise<AdminShareRowDto> {
@@ -895,24 +870,16 @@ export class AdminApiClient {
     return value === "" ? "" : `?${value}`;
   }
 
-  private query(params: AdminListParams): string {
-    const search = new URLSearchParams();
-    if (params.search) search.set("search", params.search);
-    if (params.status && params.status !== "all") {
-      search.set("status", params.status);
-    }
-    if (params.limit !== undefined) search.set("limit", String(params.limit));
-    if (params.offset !== undefined)
-      search.set("offset", String(params.offset));
-    if (params.from !== undefined) search.set("from", String(params.from));
-    if (params.to !== undefined) search.set("to", String(params.to));
-    if (params.boardId) search.set("boardId", params.boardId);
-    if (params.columnId) search.set("columnId", params.columnId);
-    if (params.labelId) search.set("labelId", params.labelId);
-    if (params.cardId) search.set("cardId", params.cardId);
-    if (params.commandId) search.set("commandId", params.commandId);
-    const value = search.toString();
-    return value === "" ? "" : `?${value}`;
+  private async list<T>(
+    path: string,
+    surface: AdminListSurface,
+    params: AdminListParams,
+  ): Promise<AdminPage<T>> {
+    // Keep list serialization off auth and detail routes that share this client.
+    const { adminListRequestQuery } = await import("./admin-list-request");
+    return this.request<AdminPage<T>>(
+      `${path}${adminListRequestQuery(params, surface)}`,
+    );
   }
 
   private async request<T>(

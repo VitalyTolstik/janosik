@@ -54,7 +54,8 @@
     "demo:100": "node scripts/demo-board-100.mjs",
     "openapi:check": "node scripts/validate-openapi.mjs",
     "openapi:test": "node --test scripts/validate-openapi.test.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "perf:admin-filters": "node scripts/perf/admin-filter-bench.mjs"
   },
   "devDependencies": {
     "@seriousme/openapi-schema-validator": "^2.11.0",

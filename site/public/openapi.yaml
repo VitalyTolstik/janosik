@@ -3182,6 +3182,9 @@ components:
         statusCode:
           type: integer
           description: Compatibility mirror of the HTTP status.
+        filter:
+          type: string
+          description: Offending query key for `unsupported_filter`.
         field:
           type: string
           description: Rejected input field, when known.
@@ -3267,6 +3270,7 @@ components:
         Published error-code catalog. It is not a closed union: a newer server
         may add a code, so clients fall back to the HTTP status.
       enum:
+        - unsupported_filter
         - scope_denied
         - destructive_denied
         - agent_paused

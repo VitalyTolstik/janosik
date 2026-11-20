@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
-import type { AdminPage } from "@janosik/shared";
+import { useLocation, useSearchParams } from "react-router-dom";
+import type { AdminListSurface, AdminPage } from "@janosik/shared";
 import type { AdminListParams } from "./admin-client";
 import {
   adminFiltersKey,
@@ -33,7 +33,51 @@ export function listStateOf<T>(list: AdminListState<T>): AdminListQueryState {
     limit: list.limit,
     offset: list.offset,
     filters: list.filters,
+    filterError: list.filterError,
   };
+}
+
+const HUB_LISTS: Readonly<
+  Record<
+    string,
+    {
+      fallback: AdminListSurface;
+      tabs: Readonly<Record<string, AdminListSurface>>;
+    }
+  >
+> = {
+  boards: {
+    fallback: "boards",
+    tabs: {
+      cards: "cards",
+      columns: "columns",
+      labels: "labels",
+      checklists: "checklists",
+      links: "cardLinks",
+    },
+  },
+  moderation: { fallback: "comments", tabs: { attachments: "attachments" } },
+  audit: {
+    fallback: "audit",
+    tabs: { commands: "commands", activity: "activity" },
+  },
+  access: { fallback: "sessions", tabs: { tokens: "tokens" } },
+  communications: { fallback: "announcements", tabs: { shares: "shares" } },
+};
+
+// Existing EntityPage callers describe the surface through their hub route.
+function listSurface(
+  pathname: string,
+  tab: string | null,
+): AdminListSurface | undefined {
+  const [, section] = pathname.split("/").filter(Boolean);
+  const name = section?.toLowerCase() ?? "";
+  if (name === "users") return "users";
+  if (!Object.hasOwn(HUB_LISTS, name)) return undefined;
+  const hub = HUB_LISTS[name];
+  return tab !== null && Object.hasOwn(hub.tabs, tab)
+    ? hub.tabs[tab]
+    : hub.fallback;
 }
 
 export function useAdminListQuery<T>(
@@ -41,24 +85,26 @@ export function useAdminListQuery<T>(
   options: AdminListQueryOptions = {},
 ): AdminListState<T> {
   const [params, setParams] = useSearchParams();
-  const statusKey = (options.statuses ?? []).join(",");
-  const periods = options.periods === true;
+  const { pathname } = useLocation();
+  const surface = options.surface ?? listSurface(pathname, params.get("tab"));
+  const statusKey = options.statuses?.join(",");
+  const periods = options.periods;
   const defaultLimit = options.defaultLimit;
-
-  const parsed = useMemo(
-    () =>
-      readAdminListQuery(params, {
-        statuses: options.statuses,
-        periods,
-        defaultLimit,
-      }),
-    // `statusKey` stands in for the array identity: callers build the list
-    // from translations on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [params, statusKey, periods, defaultLimit],
+  const queryOptions = useMemo<AdminListQueryOptions>(
+    () => ({
+      surface,
+      statuses: statusKey?.split(","),
+      periods,
+      defaultLimit,
+    }),
+    [surface, statusKey, periods, defaultLimit],
   );
 
-  const list = useAdminList(fetcher, { initialState: parsed });
+  const parsed = useMemo(
+    () => readAdminListQuery(params, queryOptions),
+    [params, queryOptions],
+  );
+  const list = useAdminList(fetcher, { initialState: parsed, surface });
   const state = listStateOf(list);
   const listKey = adminListQueryKey(state);
   const urlKey = adminListQueryKey(parsed);
@@ -76,6 +122,8 @@ export function useAdminListQuery<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlKey]);
 
+  const { filterError } = list;
+
   // Hook → URL. Compare with the URL state captured before the user change to
   // decide whether this is a search keystroke (replace) or a new view (push).
   useEffect(() => {
@@ -83,10 +131,20 @@ export function useAdminListQuery<T>(
       // `applyState` schedules a render; hold the URL write until the list
       // matches the URL again. This is what stops a back-navigation from
       // being immediately overwritten by the previous list state.
-      if (listKey === lastUrlKey.current) applyingFromUrl.current = false;
+      if (listKey !== lastUrlKey.current) return;
+      applyingFromUrl.current = false;
+    }
+    if (filterError !== undefined) return;
+    if (listKey === lastUrlKey.current) {
+      // Canonicalize deep links (including status aliases) in place.
+      if (listKey === urlKey) {
+        const canonical = writeAdminListQuery(params, state, queryOptions);
+        if (canonical.toString() !== params.toString()) {
+          setParams(canonical, { replace: true });
+        }
+      }
       return;
     }
-    if (listKey === lastUrlKey.current) return;
     const onlySearch =
       state.status === parsed.status &&
       state.period === parsed.period &&
@@ -96,13 +154,12 @@ export function useAdminListQuery<T>(
       state.search !== parsed.search;
 
     lastUrlKey.current = listKey;
-    setParams(
-      (current) => writeAdminListQuery(current, state, { defaultLimit }),
-      { replace: onlySearch },
-    );
+    setParams((current) => writeAdminListQuery(current, state, queryOptions), {
+      replace: onlySearch,
+    });
     // The URL write must run once per list-state change, not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey]);
+  }, [listKey, urlKey, params, queryOptions, filterError]);
 
   return list;
 }

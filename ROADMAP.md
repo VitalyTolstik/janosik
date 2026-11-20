@@ -5161,8 +5161,8 @@ follow-up backlog без нового номера, не часть 181.7.
 
 | ID | Что делаем | Приоритет | Волна |
 | --- | --- | --- | --- |
-| 181.1 | Контракт: supported/offered matrix, URL arrays/booleans/enums, строгая DTO-валидация, `GET /admin/filter-options` (auditActor, q≤200/ids≤20), общий client-кэш | P1 | 1 |
-| 181.2 | Панель Filters + popover/bottom sheet + чипы с lookup; пилот на cards: board/column/label; смена board чистит зависимые; keyboard/a11y/390/EN-RU | P1 | 1 |
+| 181.1 | Контракт: implemented/offered matrix, URL и строгая DTO-валидация, `GET /admin/filter-options` (auditActor, q≤200/ids≤20) | P1 | 1 |
+| 181.2 | Панель Filters + popover/bottom sheet + чипы с lookup-клиентом и кэшем; пилот на cards: board/column/label; смена board чистит зависимые; keyboard/a11y/390/EN-RU | P1 | 1 |
 | 181.3 | Cards полностью: assignee/unassigned, priority (null=medium), due, has-attachments, label any/all + mode chip, period (`dateRange`); query plan/индексы | P1 | 1 |
 | 181.4 | Moderation: comments author/kind, attachments uploader/MIME/transcode, period; сохранять boardId между вкладками | P2 | 2 |
 | 181.5 | Content lists: users verified/period, boards accepted ADMIN member, columns/labels/checklists/links; без нового checklist-items tab | P2 | 2 |

@@ -17,6 +17,7 @@ import { AdminAuthService } from "./admin-auth.service";
 import { AdminController } from "./admin.controller";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminJwtStrategy } from "./admin-jwt.strategy";
+import { AdminFilterOptionsService } from "./admin-filter-options.service";
 import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
 import { AnnouncementsController } from "./announcements.controller";
@@ -63,6 +64,7 @@ import { ThrottleSettingsService } from "./throttle-settings.service";
   controllers: [AdminAuthController, AdminController, AnnouncementsController],
   providers: [
     AdminEntitiesService,
+    AdminFilterOptionsService,
     AdminAuthService,
     AdminJwtStrategy,
     AdminJwtAuthGuard,

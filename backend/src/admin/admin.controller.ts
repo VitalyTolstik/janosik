@@ -42,6 +42,7 @@ import type {
   AdminEntity,
   AdminEntityRowMap,
   AdminGlobalSearchDto,
+  AdminFilterOptionsDto,
   AdminThrottleSettingsDto,
   AdminTrafficDto,
   AdminUserDetailDto,
@@ -80,6 +81,8 @@ import type {
   CommandResponse,
 } from "@janosik/shared";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
+import { AdminFilterOptionsService } from "./admin-filter-options.service";
+import { AdminFilterOptionsQueryDto } from "./dto/admin-filter-options-query.dto";
 import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
 import { CommsService } from "./comms.service";
@@ -102,7 +105,8 @@ import { AdminUpdateMasterDto } from "./dto/admin-update-master.dto";
 import { AdminCreateUserDto } from "./dto/admin-create-user.dto";
 import { AdminDemoStartDto } from "./dto/admin-demo-start.dto";
 import { AdminEmailTestDto } from "./dto/admin-email-test.dto";
-import { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import { AdminListQuery } from "./admin-list-query.decorator";
 import {
   AdminCardDetailQueryDto,
   AdminUserDetailQueryDto,
@@ -141,6 +145,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly entities: AdminEntitiesService,
+    private readonly filterOptions: AdminFilterOptionsService,
     private readonly attachments: AttachmentsService,
     private readonly storage: StorageService,
     private readonly comms: CommsService,
@@ -184,9 +189,16 @@ export class AdminController {
   @Get("entities/:entity")
   listEntity(
     @Param("entity") entity: AdminEntity,
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery() query: AdminListQueryDto,
   ): Promise<AdminPage<AdminEntityRowMap[AdminEntity]>> {
     return this.entities.listEntity(entity, query);
+  }
+
+  @Get("filter-options")
+  listFilterOptions(
+    @Query() query: AdminFilterOptionsQueryDto,
+  ): Promise<AdminFilterOptionsDto> {
+    return this.filterOptions.list(query);
   }
 
   /** Cross-entity top matches for the panel omnibox. */
@@ -220,7 +232,7 @@ export class AdminController {
 
   @Get("cards")
   listCards(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("cards") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCardRowDto>> {
     return this.admin.listCards(query);
   }
@@ -251,7 +263,7 @@ export class AdminController {
 
   @Get("sessions")
   listSessions(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("sessions") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminSessionRowDto>> {
     return this.admin.listSessions(query);
   }
@@ -266,7 +278,7 @@ export class AdminController {
 
   @Get("tokens")
   listTokens(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("tokens") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminTokenRowDto>> {
     return this.admin.listTokens(query);
   }
@@ -281,7 +293,7 @@ export class AdminController {
 
   @Get("comments")
   listComments(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("comments") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCommentRowDto>> {
     return this.admin.listComments(query);
   }
@@ -371,7 +383,7 @@ export class AdminController {
 
   @Get("users")
   listUsers(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("users") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminUserRowDto>> {
     return this.admin.listUsers(query);
   }
@@ -411,7 +423,7 @@ export class AdminController {
 
   @Get("boards")
   listBoards(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("boards") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminBoardRowDto>> {
     return this.admin.listBoards(query);
   }
@@ -465,14 +477,14 @@ export class AdminController {
 
   @Get("commands")
   listCommands(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("commands") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCommandRowDto>> {
     return this.admin.listCommands(query);
   }
 
   @Get("audit")
   listAudit(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("audit") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminAuditRowDto>> {
     return this.admin.listAudit(query);
   }
@@ -569,7 +581,7 @@ export class AdminController {
   /** Every public share link, for support/inspection. */
   @Get("shares")
   listShares(
-    @Query() query: AdminListQueryDto,
+    @AdminListQuery("shares") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminShareRowDto>> {
     return this.admin.listShares(query);
   }
@@ -801,8 +813,18 @@ export class AdminController {
   // ------------------------------------------------------ comms (TASK-62)
 
   @Get("announcements")
-  listAnnouncements(): Promise<AdminAnnouncementDto[]> {
-    return this.comms.listAnnouncements();
+  async listAnnouncements(
+    @AdminListQuery("announcements") query: AdminListQueryDto,
+  ): Promise<AdminAnnouncementDto[]> {
+    if (
+      !query.search &&
+      (!query.status || query.status === "all") &&
+      query.limit === undefined &&
+      query.offset === undefined
+    ) {
+      return this.comms.listAnnouncements();
+    }
+    return (await this.entities.listAnnouncements(query)).items;
   }
 
   @Post("announcements")
