@@ -282,6 +282,20 @@ describe("validateBoardAction — accepted shapes", () => {
     expect(validateBoardAction(input)).toEqual({ ok: true, action: input });
   });
 
+  it("preserves the saved card stamp on an inverse SET_CARD_LABEL", () => {
+    const input = action({
+      type: "SET_CARD_LABEL",
+      cardId: "card-1",
+      labelId: "label-1",
+      on: true,
+      index: 0,
+      inverse: true,
+      cardUpdatedAt: 1_699_000_000_000,
+      cardActivity: [],
+    });
+    expect(validateBoardAction(input)).toEqual({ ok: true, action: input });
+  });
+
   it("reads a JSON null optional as absent (cover cleared)", () => {
     const input = action({
       type: "SET_CARD_COVER",
@@ -823,6 +837,18 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
       ok: true,
       action: action({ type: "UPDATE_CARD", cardId: "card-1", title: "x" }),
     });
+  });
+
+  it("drops a forged card stamp on a fresh SET_CARD_LABEL", () => {
+    const input = action({
+      type: "SET_CARD_LABEL",
+      cardId: "card-1",
+      labelId: "label-1",
+      on: true,
+    });
+    expect(
+      validateBoardAction({ ...input, cardUpdatedAt: 1_699_000_000_000 }),
+    ).toEqual({ ok: true, action: input });
   });
 
   it("drops a feed rewind on a type invert() never puts one on", () => {

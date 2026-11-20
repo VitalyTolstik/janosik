@@ -1364,7 +1364,7 @@ function setCardLabel(
   // even after the label is renamed or deleted.
   const labelName = board.labels.find((l) => l.id === action.labelId)?.name;
   const nextCard = appendActivity(
-    { ...target, labelIds },
+    { ...target, labelIds, updatedAt: cardStamp(action) },
     action.on ? "label-added" : "label-removed",
     action,
     0,

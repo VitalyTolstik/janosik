@@ -70,6 +70,7 @@ const CARD_STAMPED_TYPES: ReadonlySet<string> = new Set([
   "SET_CARD_DUE_DATE",
   "SET_CARD_PRIORITY",
   "SET_CARD_ASSIGN",
+  "SET_CARD_LABEL",
   "CLAIM_CARD",
   "SET_CARD_TASK_SPEC",
   "ADD_CARD_LINK",
@@ -86,7 +87,6 @@ const CARD_STAMPED_TYPES: ReadonlySet<string> = new Set([
 const CARD_ACTIVITY_REWIND_TYPES: ReadonlySet<string> = new Set([
   ...[...CARD_STAMPED_TYPES].filter((type) => type !== "TOUCH_CARD"),
   "MOVE_CARD",
-  "SET_CARD_LABEL",
 ]);
 
 /** Result of validating one `BoardAction`. */

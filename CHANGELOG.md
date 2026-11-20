@@ -637,6 +637,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-183.2: attaching or detaching a card label updates the card's timestamp.
+  Undo restores the previous timestamp, and focus refetch can detect the
+  change from the timestamp alone. The label comparison still covers older
+  snapshots and board-wide label deletion and restoration (tracked in
+  TASK-183.3).
+
 - TASK-179 agents live-review feedback: the Attention badge counts pending
   decisions only (stale sessions no longer inflate it), and a paused session
   stays in the Attention live preview with a `Paused` pill even when its

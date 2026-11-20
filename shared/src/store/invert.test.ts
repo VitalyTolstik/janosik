@@ -641,6 +641,29 @@ describe("invert — every action is reversible", () => {
       });
     });
   }
+
+  it("restores the exact card timestamp on label undo and reapplies the stamp on redo", () => {
+    const before = fixture();
+    const action = {
+      type: "SET_CARD_LABEL",
+      cardId: "c-1",
+      labelId: "l-1",
+      on: false,
+      at: AT,
+    } as const;
+    const after = reduce(before, action);
+    expect(after.cards["c-1"].updatedAt).toBe(action.at);
+
+    const inverse = invert(before, action);
+    expect(inverse).toMatchObject({
+      type: "SET_CARD_LABEL",
+      inverse: true,
+      cardUpdatedAt: before.cards["c-1"].updatedAt,
+    });
+    const undone = reduce(after, inverse!);
+    expect(undone).toEqual(before);
+    expect(reduce(undone, action)).toEqual(after);
+  });
 });
 
 /**
