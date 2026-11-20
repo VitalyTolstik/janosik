@@ -5,6 +5,7 @@ import {
   ADMIN_FILTER_OPTION_LIMITS,
   ADMIN_FILTER_QUERY_MAX_LENGTH,
   parseAdminFilterId,
+  parseAdminFilterValue,
   adminFilterValueLimit,
   type AdminFilterOptionDto,
 } from "@janosik/shared";
@@ -15,10 +16,12 @@ import { FilterColorDot } from "./FilterChip";
 import {
   optionIds,
   optionState,
+  isCodeLookup,
   PRIORITY_CHOICES,
   KIND_CHOICES,
   LINK_TYPE_CHOICES,
   type FilterChoice,
+  type FilterFacet,
   selectedFilterValues,
   type DraftFacet,
   type LookupFacet,
@@ -26,14 +29,54 @@ import {
 import { FilterRadioGroup } from "./FilterRadioGroup";
 import { useFilterOptions } from "./use-filter-options";
 
+export function FilterIdPicker({
+  facet,
+  value,
+  onSelect,
+}: {
+  facet: Extract<FilterFacet, { kind: "id" }>;
+  value: string;
+  onSelect: (id: string) => void;
+}) {
+  const t = useAdminT();
+  const [input, setInput] = useState(value);
+  const id = parseAdminFilterValue(facet.key, input);
+  return (
+    <form
+      noValidate
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (typeof id === "string") onSelect(id);
+      }}
+    >
+      <label className="block text-xs text-muted-foreground">
+        {t(facet.label)}
+        <input
+          autoFocus
+          className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
+          value={input}
+          maxLength={facet.key === "targetId" ? 100 : 64}
+          onChange={(event) => setInput(event.target.value)}
+        />
+      </label>
+      <Button type="submit" size="sm" className="h-11 sm:h-8" disabled={!id}>
+        {t("admin.filters.apply")}
+      </Button>
+    </form>
+  );
+}
+
 export function FilterFacetPicker({
   facet,
   boardId,
+  columnHint,
   value,
   onSelect,
 }: {
   facet: Extract<LookupFacet, { kind: "lookup" }>;
   boardId: string | null;
+  columnHint?: AdminMessageKey;
   value: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -90,7 +133,12 @@ export function FilterFacetPicker({
           </Combobox.Item>
         ) : null}
       </Combobox.List>
-      <LookupStatus lookup={lookup} facet={facet} boardId={boardId} />
+      <LookupStatus
+        lookup={lookup}
+        facet={facet}
+        boardId={boardId}
+        columnHint={columnHint}
+      />
     </Combobox.Root>
   );
 }
@@ -102,12 +150,15 @@ function usePickerLookup(facet: LookupFacet, boardId: string | null) {
     q: query,
     limit: ADMIN_FILTER_OPTION_LIMITS.default,
     boardId:
-      facet.type === "board" || facet.type === "user"
-        ? undefined
-        : (boardId ?? undefined),
+      facet.type === "column" || facet.type === "card" || facet.type === "label"
+        ? (boardId ?? undefined)
+        : undefined,
   });
   const options = lookup.data?.items ?? [];
-  const exactId = parseAdminFilterId(query);
+  const exactId =
+    facet.type === "auditActor" || isCodeLookup(facet)
+      ? undefined
+      : parseAdminFilterId(query);
   const offerId =
     !lookup.loading &&
     exactId !== undefined &&
@@ -164,11 +215,13 @@ function LookupStatus({
   lookup,
   facet,
   boardId,
+  columnHint = "admin.filters.narrowColumn",
   hasPinnedRows = false,
 }: {
   lookup: ReturnType<typeof useFilterOptions>;
   facet: LookupFacet;
   boardId: string | null;
+  columnHint?: AdminMessageKey;
   hasPinnedRows?: boolean;
 }) {
   const t = useAdminT();
@@ -193,7 +246,7 @@ function LookupStatus({
       ? "admin.filters.noOptions"
       : lookup.data?.hasMore
         ? facet.key === "columnId" && boardId === null
-          ? "admin.filters.narrowColumn"
+          ? columnHint
           : "admin.filters.refineSearch"
         : undefined;
   return (
@@ -345,6 +398,7 @@ function MultiLookupPicker({
 }) {
   const t = useAdminT();
   const { key, type } = facet;
+  const code = isCodeLookup(facet);
   const { query, setQuery, lookup, options, exactId, offeredId } =
     usePickerLookup(facet, draft.boardId);
   const selected = selectedFilterValues(draft, key);
@@ -352,7 +406,7 @@ function MultiLookupPicker({
     (id) => !options.some((option) => option.id === id),
   );
   const pinned = useFilterOptions(
-    missing.length > 0 ? { type, ids: [...missing] } : null,
+    !code && missing.length > 0 ? { type, ids: [...missing] } : null,
   );
   const labelMode = key === "labelId" && selected.length > 1;
   const max = adminFilterValueLimit(key, "cards");
@@ -369,8 +423,8 @@ function MultiLookupPicker({
       ? selected.filter((value) => value !== id)
       : [...selected, id];
     onChange(
-      key === "assigneeId"
-        ? { assigneeId: ids }
+      key !== "labelId"
+        ? { [key]: ids }
         : {
             labelId: ids,
             labelMatch: ids.length > 1 ? draft.labelMatch : undefined,
@@ -410,20 +464,23 @@ function MultiLookupPicker({
           const checked = selected.includes(id);
           const fallbackLabel = pinned.loading
             ? t("admin.filters.loading")
-            : t(`admin.filters.unknown.${key}`);
-          const fallback =
-            checked && (pinned.loading || id !== exactId)
+            : key === "type" || key === "action" || key === "targetType"
+              ? id
+              : t(`admin.filters.unknown.${key}`);
+          const fallback = code
+            ? id
+            : checked && (pinned.loading || id !== exactId)
               ? `${fallbackLabel} · ${optionIds(id)}`
               : t("admin.filters.useId", { id });
           return (
             <ChoiceCheckbox
               key={id}
-              name={option ? optionName(option, t) : fallback}
+              name={option && !code ? optionName(option, t) : fallback}
               checked={checked}
               disabled={selected.length >= max && !checked}
               onChange={() => toggle(id)}
             >
-              {option ? (
+              {option && !code ? (
                 <OptionContent option={option} />
               ) : (
                 <span className="break-all" title={id}>

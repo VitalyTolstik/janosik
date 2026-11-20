@@ -1560,6 +1560,16 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         title: t("admin.audit.title"),
         subtitle: t("admin.audit.subtitle"),
         periods: true,
+        filterTargetHref: ({ targetId, targetType }, rows) => {
+          if (!targetId || targetType?.length !== 1) return null;
+          const entry = rows.find(
+            (row) =>
+              row.targetId === targetId &&
+              row.targetType === targetType[0] &&
+              row.targetExists === true,
+          );
+          return entry ? targetHref(entry) : null;
+        },
         columns: [
           {
             label: t("admin.audit.column.action"),

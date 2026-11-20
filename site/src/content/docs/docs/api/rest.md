@@ -51,6 +51,7 @@ design (they are not reducer actions). Content lives in the command log.
 | `GET` | `/boards/:id/invitations` | `ADMIN` | none | `BoardPendingInvitationDto[]` |
 | `POST`   | `/boards/:id/members`         | `ADMIN`     | `InviteMemberDto` | `BoardMemberDto`   |
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`     | `UpdateMemberDto` | `BoardMemberDto`   |
+| `DELETE` | `/boards/:id/members/me`      | member      | none              | `{ status: "ok" }` |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
 | `GET`    | `/boards/:id/search`          | member      | query `q`         | `{ cardIds: string[] }` |
@@ -121,6 +122,15 @@ invitation, and cannot accept it, until the address is confirmed (see
 `PATCH /boards/:id/members/:userId` changes the role and/or the `VIEWER`
 expiry. The last `ADMIN` of a board cannot be demoted, and the last `ADMIN`
 cannot be removed: both answer `409`.
+
+`DELETE /boards/:id/members/me` leaves the board as the caller. Any accepted
+`MEMBER` or `VIEWER` may call it; an `ADMIN` may leave only while another
+accepted `ADMIN` remains. The last `ADMIN` answers `409 { code: "last_admin",
+action: "leave" }`. The route is session-only (a PAT gets `403 pat_forbidden`).
+Authored cards and comments stay on the board with their original `actorId`;
+the departure is recorded as `member_left` and a `membership: removed` SSE frame
+closes the leaver's stream. Afterwards the board is absent from `GET /boards`
+and direct board URLs answer `403`.
 
 ### Access order
 

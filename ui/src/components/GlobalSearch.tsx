@@ -36,14 +36,14 @@ import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
 import {
   descriptionSnippet,
+  groupSearchHits,
   searchBoards,
-  type CardSearchHit,
   type SearchHit,
 } from "@/utils/filter";
 import { isMacPlatform } from "@/utils/platform";
 
 const SEARCH_DEBOUNCE_MS = 200;
-/** Dropdown cap (Jira-style) — enough context without an endless list. */
+/** Per-group dropdown cap (Jira-style) — enough context without an endless list. */
 const MAX_RESULTS = 20;
 
 const isMac = isMacPlatform();
@@ -164,6 +164,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
 
   const [rawQuery, setRawQuery] = useState("");
   const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [cursor, setCursor] = useState(0);
   const listId = useId();
   const optionId = (index: number) => `${listId}-option-${index}`;
@@ -182,10 +183,15 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
-  const hits = useMemo(
-    () => searchBoards(boards, query).slice(0, MAX_RESULTS),
-    [boards, query],
+  // Cap each section separately (TASK-177.10): a board hit stays visible even
+  // when the card list alone exceeds the palette cap.
+  const groups = useMemo(
+    () => groupSearchHits(searchBoards(boards, query), MAX_RESULTS, showAll),
+    [boards, query, showAll],
   );
+  const { cards: cardHits, boards: boardHits } = groups;
+  const boardOffset = cardHits.length;
+  const hits = useMemo(() => [...groups.cards, ...groups.boards], [groups]);
 
   const activeIndex = Math.min(cursor, hits.length - 1);
 
@@ -210,9 +216,6 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     );
   };
 
-  const cardHits = hits.filter((h): h is CardSearchHit => h.kind === "card");
-  const boardHits = hits.filter((h) => h.kind === "board");
-
   return (
     <>
       <div className="relative border-b border-border p-3">
@@ -235,6 +238,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           }
           onChange={(event) => {
             setRawQuery(event.target.value);
+            setShowAll(false);
             setCursor(0);
           }}
           onKeyDown={(event) => {
@@ -296,12 +300,22 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           hidden={hits.length === 0}
         >
           {cardHits.length > 0 ? (
-            <SearchSection title={t("search.cards")}>
-              {cardHits.map((hit) => (
+            <SearchSection
+              title={t("search.cards")}
+              count={
+                groups.totalCards > cardHits.length
+                  ? t("search.resultCount", {
+                      shown: cardHits.length,
+                      total: groups.totalCards,
+                    })
+                  : undefined
+              }
+            >
+              {cardHits.map((hit, index) => (
                 <ResultRow
                   key={`card-${hit.card.id}`}
-                  id={optionId(hits.indexOf(hit))}
-                  active={hits.indexOf(hit) === activeIndex}
+                  id={optionId(index)}
+                  active={index === activeIndex}
                   onClick={() => openHit(hit)}
                 >
                   <div className="min-w-0">
@@ -339,12 +353,22 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             </SearchSection>
           ) : null}
           {boardHits.length > 0 ? (
-            <SearchSection title={t("search.boards")}>
-              {boardHits.map((hit) => (
+            <SearchSection
+              title={t("search.boards")}
+              count={
+                groups.totalBoards > boardHits.length
+                  ? t("search.resultCount", {
+                      shown: boardHits.length,
+                      total: groups.totalBoards,
+                    })
+                  : undefined
+              }
+            >
+              {boardHits.map((hit, index) => (
                 <ResultRow
                   key={`board-${hit.boardId}`}
-                  id={optionId(hits.indexOf(hit))}
-                  active={hits.indexOf(hit) === activeIndex}
+                  id={optionId(boardOffset + index)}
+                  active={boardOffset + index === activeIndex}
                   onClick={() => openHit(hit)}
                 >
                   <div className="min-w-0">
@@ -363,21 +387,46 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           ) : null}
         </div>
       </div>
+      {groups.capped && !showAll ? (
+        <div className="flex justify-end border-t border-border p-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setShowAll(true);
+              inputRef.current?.focus();
+            }}
+            data-testid="search-show-all"
+          >
+            {t("search.showAll")}
+          </Button>
+        </div>
+      ) : null}
     </>
   );
 }
 
 function SearchSection({
   title,
+  count,
   children,
 }: {
   title: string;
+  count?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="mb-1 last:mb-0">
-      <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-foreground">
-        {title}
+      <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-foreground">
+          {title}
+        </span>
+        {count ? (
+          <span className="text-[11px] font-medium text-muted-foreground">
+            {count}
+          </span>
+        ) : null}
       </div>
       <div role="group" aria-label={title}>
         {children}

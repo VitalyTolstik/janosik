@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { Board, BoardEnvelope } from "@janosik/shared";
@@ -86,6 +87,40 @@ describe("Boards API (e2e)", () => {
       .post(`/api/v1/invitations/${invitation.id}/accept`)
       .set(auth(token))
       .expect(200);
+  }
+
+  async function createBoard(
+    title: string,
+    token = adminToken,
+  ): Promise<string> {
+    const res = await server()
+      .post("/api/v1/boards")
+      .set(auth(token))
+      .send({ title })
+      .expect(201);
+    return res.body.id as string;
+  }
+
+  async function userIdOf(token: string): Promise<string> {
+    const me = await server()
+      .get("/api/v1/auth/me")
+      .set(auth(token))
+      .expect(200);
+    return me.body.id as string;
+  }
+
+  function applyCommand(
+    boardId: string,
+    action: Record<string, unknown>,
+    token = adminToken,
+  ) {
+    return server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(token))
+      .send({
+        commandId: randomUUID(),
+        action: { boardId, at: Date.now() - 60_000, ...action },
+      });
   }
 
   describe("CRUD + aggregate", () => {
@@ -415,6 +450,176 @@ describe("Boards API (e2e)", () => {
         .delete(`/api/v1/boards/${boardId}/members/${adminId}`)
         .set(auth(adminToken))
         .expect(409);
+    });
+  });
+
+  /**
+   * TASK-177.2 (G-02): self-leave is a first-class member action. It must
+   * remove access without touching authored content, and it must never leave
+   * a board without an ADMIN.
+   */
+  describe("self-leave", () => {
+    it("lets a MEMBER leave and keeps their authored card and attribution", async () => {
+      const boardId = await createBoard("Member leaves");
+      const memberId = await userIdOf(memberToken);
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: MEMBER_EMAIL, role: "MEMBER" })
+        .expect(201);
+      await acceptInvitation(memberToken, boardId);
+
+      // Authored content before leaving: one column and one card.
+      await applyCommand(
+        boardId,
+        { type: "ADD_COLUMN", newColumnId: "col-leave", title: "Todo" },
+        memberToken,
+      ).expect(200);
+      await applyCommand(
+        boardId,
+        {
+          type: "ADD_CARD",
+          newCardId: "card-leave",
+          columnId: "col-leave",
+          title: "Written by a leaver",
+        },
+        memberToken,
+      ).expect(200);
+
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(memberToken))
+        .expect(200);
+
+      const listed = await server()
+        .get("/api/v1/boards")
+        .set(auth(memberToken))
+        .expect(200);
+      expect(listed.body.map((board: Board) => board.id)).not.toContain(
+        boardId,
+      );
+
+      // Direct board URL is denied after leaving (no stale access).
+      await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(memberToken))
+        .expect(403);
+
+      expect(
+        await prisma.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: memberId } },
+        }),
+      ).toBeNull();
+
+      // The card stays on the board and still names its author.
+      const aggregate = await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(aggregate.body.cards["card-leave"]).toMatchObject({
+        title: "Written by a leaver",
+        lastActorId: memberId,
+      });
+
+      // Own departure is recorded as `member_left`, not `member_removed`.
+      const activity = await prisma.activity.findFirst({
+        where: { boardId, type: "member_left" },
+      });
+      expect(activity).toMatchObject({
+        actorId: memberId,
+        details: expect.objectContaining({ userId: memberId, role: "MEMBER" }),
+      });
+    });
+
+    it("lets a VIEWER leave", async () => {
+      const boardId = await createBoard("Viewer leaves");
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: VIEWER_EMAIL, role: "VIEWER" })
+        .expect(201);
+      await acceptInvitation(viewerToken, boardId);
+
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(viewerToken))
+        .expect(200);
+      await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(viewerToken))
+        .expect(403);
+    });
+
+    it("refuses the last ADMIN with a clear last_admin code, then allows it once another admin exists", async () => {
+      const boardId = await createBoard("Admin leaves");
+
+      const refused = await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(adminToken))
+        .expect(409);
+      expect(refused.body).toMatchObject({
+        code: "last_admin",
+        action: "leave",
+      });
+      // The board is still there and the caller is still its ADMIN.
+      await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(adminToken))
+        .expect(200);
+
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: OUTSIDER_EMAIL, role: "ADMIN" })
+        .expect(201);
+      await acceptInvitation(outsiderToken, boardId);
+
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(adminToken))
+        .expect(200);
+      await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(adminToken))
+        .expect(403);
+      // The remaining ADMIN still owns the board.
+      await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(outsiderToken))
+        .expect(200);
+    });
+
+    it("keeps admin remove-other behaviour on the sibling route", async () => {
+      const boardId = await createBoard("Admin removes");
+      const memberId = await userIdOf(memberToken);
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: MEMBER_EMAIL, role: "MEMBER" })
+        .expect(201);
+      await acceptInvitation(memberToken, boardId);
+
+      // A MEMBER cannot remove the admin (or anyone else) through the old
+      // route — the self route must not have widened the admin route.
+      await server()
+        .delete(
+          `/api/v1/boards/${boardId}/members/${await userIdOf(adminToken)}`,
+        )
+        .set(auth(memberToken))
+        .expect(403);
+
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/${memberId}`)
+        .set(auth(adminToken))
+        .expect(200);
+      await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(memberToken))
+        .expect(403);
+      const activity = await prisma.activity.findFirst({
+        where: { boardId, type: "member_removed" },
+      });
+      expect(activity?.details).toMatchObject({ userId: memberId });
     });
   });
 

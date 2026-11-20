@@ -2,8 +2,8 @@
 
 **Status:** planned
 
-**Revision:** 9 (2026-11-20) — records the TASK-181.5 content facets and
-their performance evidence.
+**Revision:** 10 (2026-11-21) — records the TASK-181.6 Audit, Commands, and
+Activity facets and their [benchmark evidence](./TASK-181.6-audit-perf.md).
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -371,6 +371,8 @@ Omitted: board/column/label direct filters (target type + id covers the reliable
 fields), status. Audit details are free JSON; do not invent filters over
 unvalidated detail keys. The owner-only Masters page remains unchanged and is
 not reused as the actor picker: actor options come only from audit-visible rows.
+For failed sign-ins without an admin id, clear the Master chip and search for
+the attempted email. The Action filter can still narrow to `admin.login_failed`.
 
 #### Commands (`/admin/audit?tab=commands`)
 
@@ -387,6 +389,9 @@ not reused as the actor picker: actor options come only from audit-visible rows.
 Omitted: status, priority, due, label. A command is an event; its type/actor/
 target are the honest facets. `labelId` would require parsing payloads and is not
 reliable.
+Card and Column match historical `touches` entries. A card's current board or
+column does not restrict the commands that can appear in its history. Changing
+or clearing the board preserves the Card and Column filters.
 
 #### Activity (`/admin/audit?tab=activity`)
 
@@ -469,7 +474,8 @@ Clear search and filters.
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
 surface. The matrix starts from the 181.1 legacy scopes and includes the
-181.3 card facets, 181.4 moderation facets, and 181.5 content facets.
+181.3 card facets, 181.4 moderation facets, 181.5 content facets, and 181.6
+audit hub facets.
 **Offered** records facets planned for the picker.
 A picker can expose a facet once its owning wave implements it. Legacy deep
 links keep their existing behavior regardless of picker visibility.
@@ -491,9 +497,9 @@ can resolve options for later waves independently of list filtering.
 | cardLinks | `boardId`, `cardId`, `type` (static `CARD_LINK_TYPES`) | — | board, card, type, status |
 | comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to`, `authorId`, `kind` | — | board, card, author, kind, period, status |
 | attachments | `boardId`, `cardId`, `columnId`, `labelId`, `uploadedById`, `mime`, `transcode`, `from`/`to` | — | board, card, uploader, mime, transcode, period, status |
-| activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |
-| commands | `boardId`, `columnId`, `cardId`, `commandId` (176.10), `from`/`to` | `actorId`, `type` | board, actor, type, card, column, commandId, period |
-| audit | `commandId` (176.10), `from`/`to` | `adminId`, `action`, `targetType`, `targetId` | audit actor, action, targetType, targetId, commandId, period |
+| activity | `boardId`, `cardId`, `columnId`, `labelId`, `actorId`, `type`, `from`/`to` | — | board, card, actor, type, period |
+| commands | `boardId`, `columnId`, `cardId`, `actorId`, `type`, `commandId` (176.10), `from`/`to` | — | board, actor, type, card, column, commandId, period |
+| audit | `adminId`, `action`, `targetType`, `targetId`, `commandId` (176.10), `from`/`to` | — | audit actor, action, targetType, targetId, commandId, period |
 | sessions | `from`/`to` | — | period only (existing) |
 | tokens | `status`, `from`/`to` | — | period only (existing) |
 | shares | `boardId`, `from`/`to` | — | none (TASK-177.5) |
@@ -563,12 +569,16 @@ badge.
   - column/label/checklist/card pickers may be narrowed by the selected board;
     when no board is selected they search globally and show board context;
   - “Column” should suggest choosing a board first when the result set is
-    large, but must not block an exact id;
+    large and board scoping is supported. On Commands, suggest refining the
+    search. Exact ids remain usable on either surface;
   - card pickers for comments/attachments/checklists show card + board/column.
 - **Board change contract.** Changing (or clearing) `boardId` clears the
   dependent structural filters `columnId`, `labelId`, `labelMatch`, `cardId`
   and `checklistId` in one committed change, and announces how many were
-  cleared.
+  cleared. Commands intentionally preserves `cardId` and `columnId` on a
+  board change or clear because these filters match historical `touches`
+  independently of current parents. The URL-state regression test covers
+  this exception, including the different behavior on Cards and Activity.
 - **Conflict detection on deep links.** Resolve `ids` **unscoped** so every
   existing object is returned with its real parent `boardId`/`columnId`; use
   `boardId`/`columnId` scoping only for picker `q` searches. Then:
@@ -672,7 +682,12 @@ inherently an id.
 | Command id | `Command 7f3a…` | full id in tooltip; copy action |
 | Label match | `Label match: All` (only for `labelMatch=all`) | resets to Any; `aria-label="Remove filter: Label match — All"` |
 | Enum (`kind`, `type`, `action`, `targetType`, `priority`, `due`) | localized label where the catalog owns it; otherwise the canonical code | no id |
-| Target id | target type + short id | full id in tooltip; link to detail only when it exists and the operator may open it |
+| Target id | selected target type + short id | full id in tooltip |
+
+Audit target types are heterogeneous. With a single selected type, the chip
+links to a user, board, or card detail when a returned audit row confirms the
+target exists and the operator can open that detail. Other target chips are
+text-only.
 
 - Resolution uses
   `GET /admin/filter-options?type=…&ids=…` (or repeated `ids`) in parallel for
@@ -740,9 +755,12 @@ compaction is a follow-up backlog item, not part of 181.7.
   cleared on limit, preserved on offset).
 - **Board-dependent URL changes:** an interactive `boardId` change/clear removes
   `columnId`, `labelId`, `labelMatch`, `cardId` and `checklistId` in the same
-  committed URL update and announces the clear. A deep link with a conflicting
-  board+column/label/card keeps the params (server returns zero) and shows the
-  conflict banner/Remove actions from §6.2; it never auto-widens on load.
+  committed URL update and announces the clear. On Commands the URL retains
+  `cardId` and `columnId` when `boardId` changes or clears. The URL-state
+  test covers this intentional behavior for historical `touches`. On structural
+  surfaces, a deep link with a conflicting board+column/label/card keeps the
+  params (server returns zero) and shows the conflict banner/Remove actions
+  from §6.2. It never auto-widens on load.
 - Period stays a header tab: `period` values are serialized exactly like today;
   it is not part of the advanced filter keys or chip row.
 - Hub tab switches:
@@ -1131,6 +1149,8 @@ Behavior:
 - [TASK-181.5 benchmark evidence](./TASK-181.5-content-perf.md) records the
   six content lists on the 5k gate fixture, including combined cases and their
   query plans.
+- [TASK-181.6 benchmark evidence](./TASK-181.6-audit-perf.md) records the Audit
+  hub's 5k before/after runs, index decisions and 25k rollout gate.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -1214,7 +1234,8 @@ cards: {
 - Preserve `tab`, `comment`, `attachment`, `returnTo` exactly (existing).
 - On an interactive `boardId` change/clear, delete dependent `columnId`,
   `labelId`, `labelMatch`, `cardId`, `checklistId` in the same URL update and
-  emit the clear announcement. A deep link preserves conflicts and lets the
+  emit the clear announcement. Commands retains `cardId` and `columnId` as
+  historical `touches` (§6.2). A deep link preserves conflicts and lets the
   conflict banner remove them (§6.2).
 - Period remains a separate header-tab value, not a key in `AdminListFilters`;
   keep its existing serialization and don't include it in the Filters badge.
@@ -1621,8 +1642,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   fields in serialized responses.
 - `adminFiltersKey`/selection scope includes arrays, booleans and label-match
   mode.
-- Board-change helper clears dependents; conflicting deep link keeps them and
-  exposes removals.
+- Board changes clear dependents on structural surfaces and keep the
+  historical `cardId`/`columnId` on Commands. Conflicting deep links keep
+  dependents and expose removals where current parents apply.
 
 ### Component
 
@@ -1726,11 +1748,12 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   ≥24×24 px.
 - Cards: assignee/priority/due/attachments/label-all; period tab; exact total
   matches seeded count; empty state.
-- Board change clears dependent filters with announcement; conflicting deep link
-  shows the conflict banner and Remove actions. Same-title boards render
-  distinguishable dependent chips; duplicate column titles, duplicate label
-  names, duplicate card titles in one column and duplicate checklist titles on
-  one card show distinct **own** short ids (also at 390 with no tooltip); the
+- On Cards, a board change clears dependent filters with an announcement. A
+  conflicting deep link shows the conflict banner and Remove actions.
+  Same-title boards render distinguishable dependent chips. Duplicate column
+  titles, duplicate label names, duplicate card titles in one column and
+  duplicate checklist titles on one card show distinct **own** short ids
+  (also at 390 with no tooltip); the
   remove aria-name includes the own short id. A valid parent combination with
   zero rows shows the normal empty state, not the conflict banner.
 - Moderation: comment author/kind; attachment uploader/MIME; period tabs; board
@@ -1809,7 +1832,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 | Deleted/archived semantics confuse counts | Document per entity; test `All` vs `Active`; show suffix in chips |
 | Mobile overflow/regression | Bottom sheet, wrapping chips, 390 overflow assertion, status tab scroll fix |
 | Operator privacy/403 regression | `auditActor` returns audit-visible id/email only; no master roster/roles/disabled; owner-only links stay text; e2e |
-| Stale board-dependent filters | Interactive board change clears column/label/card/checklist with announcement; conflicting deep link shows Remove banner |
+| Stale board-dependent filters | Interactive board change clears column/label/card/checklist with announcement on structural surfaces and preserves historical Card/Column touches on Commands; conflicting structural deep link shows Remove banner |
 | History spam from multi-select | Draft + Apply for multi facets; one push per facet |
 | Scope creep into shares/details/sessions | Explicit out-of-scope table; follow-up triggers recorded |
 | Existing tests weakened | Extend 176.5/6 tests; no assertion deletions; code review checklist |
@@ -1840,8 +1863,9 @@ attachments stay visible with an `Inline` badge (and do not affect
 `hasAttachments`); OPERATOR actor resolution uses only audit-visible actors,
 never a general master directory; the board facet is “accepted ADMIN member”,
 not the first-admin owner label; the no-op/old-server promise is replaced by
-atomic deployment plus an explicit `unsupported_filter` state; board changes
-clear dependents interactively and show conflicts on deep links; hub context
+atomic deployment plus an explicit `unsupported_filter` state; structural board
+changes clear dependents interactively and show conflicts on deep links, with
+historical Card/Column touches preserved on Commands; hub context
 preserves only `boardId`; existing out-of-scope parents are conflicts, hard-
 deleted ids are Unknown (not conflicts); deleted entities keep the name +
 suffix; the Clear copy is “Clear search and filters”; v1 shows no filter-option
@@ -1875,9 +1899,9 @@ includes unset cards, with no separate Unset option in v1.
 - The implemented/offered matrix in §5.8 is enforced in UI and API: every legacy
   176.5/6 pair still works, 400 only outside `implemented`, and no old-server
   mixed-version promise remains. Announcements `status=deleted` remains an API
-  alias and normalizes to Disabled in the UI URL/request. Board changes clear
-  dependents with an announcement; conflicting deep links show a Remove
-  conflict.
+  alias and normalizes to Disabled in the UI URL/request. Structural board
+  changes clear dependents with an announcement, and conflicting deep links
+  show a Remove conflict. Commands preserves historical Card/Column touches.
 - Period is a header tab on cards/users/comments/attachments (with `from`/`to`
   predicates where missing), never a chip; choice facets and label-match mode
   have exact controls, chips, aria-labels and tests. Sessions/tokens keep their

@@ -78,13 +78,20 @@ export function TextCell({
 }
 
 /** One-click copy of a searchable value (email, name) next to its link. */
-export function CopyButton({ value }: { value: string }) {
+export function CopyButton({
+  value,
+  ariaLabel,
+}: {
+  value: string;
+  ariaLabel?: string;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
       data-testid={`admin-copy-${value}`}
       title={value}
+      aria-label={ariaLabel}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();

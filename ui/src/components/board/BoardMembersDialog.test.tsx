@@ -51,14 +51,24 @@ const MEMBER: BoardMemberDto = {
   avatarPath: null,
 };
 
-function renderPanel(canManage: boolean, children?: ReactNode) {
+function renderPanel(
+  canManage: boolean,
+  children?: ReactNode,
+  currentUserId?: string,
+  onLeave?: (boardId: string) => Promise<boolean>,
+) {
   return render(
     <I18nProvider>
       <TooltipProvider>
         <ToastProvider>
           <Dialog open>
             <DialogContent>
-              <BoardMembersPanel boardId="board-1" canManage={canManage} />
+              <BoardMembersPanel
+                boardId="board-1"
+                canManage={canManage}
+                currentUserId={currentUserId}
+                onLeave={onLeave}
+              />
               {children}
             </DialogContent>
           </Dialog>
@@ -301,6 +311,64 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(
       screen.getByRole("button", { name: "Remove — Boris" }),
     ).toBeDisabled();
+  });
+
+  it("offers Leave board in the caller's own row and confirms first (TASK-177.2)", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN, MEMBER]);
+    const leave = vi.fn().mockResolvedValue(true);
+
+    renderPanel(false, undefined, MEMBER.userId, leave);
+    const row = (await screen.findAllByTestId("board-member-row")).find(
+      (item) => item.getAttribute("data-user-id") === MEMBER.userId,
+    );
+    expect(row).toBeDefined();
+
+    fireEvent.click(within(row!).getByTestId("board-member-leave"));
+    expect(
+      within(row!).getByTestId("member-leave-confirm"),
+    ).toBeInTheDocument();
+    expect(leave).not.toHaveBeenCalled();
+
+    fireEvent.click(within(row!).getByRole("button", { name: "Cancel" }));
+    expect(
+      within(row!).queryByTestId("member-leave-confirm"),
+    ).not.toBeInTheDocument();
+    expect(leave).not.toHaveBeenCalled();
+
+    fireEvent.click(within(row!).getByTestId("board-member-leave"));
+    fireEvent.click(within(row!).getByRole("button", { name: "Yes, leave" }));
+    await waitFor(() => expect(leave).toHaveBeenCalledWith("board-1"));
+  });
+
+  it("locks Leave board for the last ADMIN and keeps admin removal for others", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN, MEMBER]);
+    const leave = vi.fn().mockResolvedValue(false);
+
+    renderPanel(true, undefined, ADMIN.userId, leave);
+    const own = (await screen.findAllByTestId("board-member-row")).find(
+      (item) => item.getAttribute("data-user-id") === ADMIN.userId,
+    );
+    const other = screen
+      .getAllByTestId("board-member-row")
+      .find((item) => item.getAttribute("data-user-id") === MEMBER.userId);
+    expect(own).toBeDefined();
+    expect(other).toBeDefined();
+
+    const button = within(own!).getByTestId("board-member-leave");
+    expect(button).toBeDisabled();
+    expect(button.closest("span")).toHaveAttribute(
+      "title",
+      "The last admin cannot leave — promote another admin first",
+    );
+    // The own row uses Leave instead of the admin's remove-other control.
+    expect(
+      within(own!).queryByRole("button", { name: "Remove — Boris" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(other!).getByRole("button", {
+        name: "Remove — quiet@example.com",
+      }),
+    ).toBeEnabled();
   });
 
   it("removes a member after the inline confirmation", async () => {

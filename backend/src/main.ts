@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
-import { env } from "@/config/env";
+import { demoResetBoot, env } from "@/config/env";
 import { assertBootSecurity } from "@/config/security";
 import { AppModule } from "@/app.module";
 import { setupApp } from "@/common/app-setup";
@@ -24,7 +24,8 @@ async function bootstrap(): Promise<void> {
     siteDir,
   });
   app.enableShutdownHooks();
-  await app.listen(env.PORT);
+  if (demoResetBoot) await app.listen(env.PORT, "127.0.0.1");
+  else await app.listen(env.PORT);
   console.log(`janosik API listening on http://localhost:${env.PORT}`);
 }
 
