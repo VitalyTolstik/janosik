@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -37,13 +39,20 @@ const dbUrl = process.env.TASK176_TEST_DATABASE_URL;
 const cli = "scripts/task176-demo.mjs";
 const secret = () => randomBytes(32).toString("hex");
 const pidPattern = /TASK-176 backend PID (\d+) listening/g;
-const stampPattern = /SHA-256 ([a-f0-9]{64})/;
+const stampPattern =
+  /live rows SHA-256 ([a-f0-9]{64}), manifest SHA-256 ([a-f0-9]{64})/;
 const dbName = (url) => new URL(url).pathname.slice(1);
 
-function start(args, cwd, env) {
-  const proc = spawn(process.execPath, args, {
+function start(
+  args,
+  cwd,
+  env,
+  { detached = false, node = process.execPath } = {},
+) {
+  const proc = spawn(node, args, {
     cwd,
     env,
+    detached,
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
@@ -81,13 +90,30 @@ function isLive(pid) {
   }
 }
 
-async function listen() {
+async function listen(port = 0) {
   const server = createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
   return {
     port: server.address().port,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+async function resetPort() {
+  // Keep application listeners out of the default Linux ephemeral port range.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      const reservation = await listen(randomInt(10_000, 30_000));
+      await reservation.close();
+      return reservation.port;
+    } catch (error) {
+      if (error.code !== "EADDRINUSE") throw error;
+    }
+  }
+  throw new Error("Could not find an available TASK-176 API port.");
 }
 
 function createSandbox() {
@@ -169,6 +195,12 @@ async function addDrift(prisma) {
     await tx.user.createMany({
       data: [{ email: "1@t.com" }, { email: "2@t.com" }],
     });
+  });
+  await addOutOfFixtureRows(prisma);
+}
+
+async function addOutOfFixtureRows(prisma) {
+  await prisma.$transaction(async (tx) => {
     const admin = await tx.adminUser.create({
       data: {
         email: "disposable@example.invalid",
@@ -272,9 +304,7 @@ test(
     const settings = secret();
     const pass = secret();
     const smtp = secret();
-    const portReservation = await listen();
-    const port = portReservation.port;
-    await portReservation.close();
+    const port = await resetPort();
     const api = `http://127.0.0.1:${port}`;
     // Require the regular exact-name guard. Deploy/reset only on a test cluster
     // explicitly provided by the caller.
@@ -290,6 +320,14 @@ test(
     const devUrl = otherUrl("dev");
     const pixelUrl = otherUrl("pixel");
     const dir = createSandbox();
+    const runtime = join(dir, "runtime");
+    mkdirSync(runtime, { mode: 0o700 });
+    const runtimeBefore = process.env.XDG_RUNTIME_DIR;
+    process.env.XDG_RUNTIME_DIR = runtime;
+    t.after(() => {
+      if (runtimeBefore === undefined) delete process.env.XDG_RUNTIME_DIR;
+      else process.env.XDG_RUNTIME_DIR = runtimeBefore;
+    });
     const prisma = new PrismaClient({ datasourceUrl: dbUrl });
     const dev = new PrismaClient({ datasourceUrl: devUrl });
     const env = {
@@ -301,6 +339,7 @@ test(
       JWT_SECRET: jwt,
       SETTINGS_SECRET: settings,
       ADMIN_PASSWORD: pass,
+      XDG_RUNTIME_DIR: runtime,
     };
     const sensitive = [
       dbUrl,
@@ -333,13 +372,13 @@ test(
       assert.equal(code, 0, output);
       return output;
     }
-    function deploy(url) {
+    function deploy(url, schema = join(dir, "backend/prisma/schema.prisma")) {
       const prismaCli = requireBackend.resolve("prisma/build/index.js");
       const result = spawnSync(
         process.execPath,
-        [prismaCli, "migrate", "deploy"],
+        [prismaCli, "migrate", "deploy", "--schema", schema],
         {
-          cwd: join(dir, "backend"),
+          cwd: dir,
           env: { ...childEnv(target), DATABASE_URL: url },
           encoding: "utf8",
         },
@@ -446,14 +485,14 @@ test(
     }
     const verify = async () =>
       (await success(["verify"])).match(stampPattern)?.[1];
-    async function assertReset(result, fingerprint) {
+    async function assertReset(result, fingerprint, backendCount = 2) {
       assert.equal(result.match(stampPattern)?.[1], fingerprint);
       assert.equal(await verify(), fingerprint);
       const pids = [...result.matchAll(pidPattern)].map((match) =>
         Number(match[1]),
       );
-      assert.equal(pids.length, 2);
-      assert.equal(new Set(pids).size, 2);
+      assert.equal(pids.length, backendCount);
+      assert.equal(new Set(pids).size, backendCount);
       assert.ok(pids.every((pid) => !isLive(pid)));
       await assertFreePort(port);
       for (const model of cleared)
@@ -462,12 +501,154 @@ test(
       assert.equal(await dev.adminUser.count(), 0);
     }
 
+    async function killDuringSeed(interrupted, pidToKill) {
+      const seedPid = await until(() => {
+        const pids = [...interrupted.output().matchAll(pidPattern)];
+        return pids.length === 2 && Number(pids[1][1]);
+      }, "seed-only backend");
+      // Hold a seed write in flight, after the fixture users have been created.
+      await prisma.$disconnect();
+      await prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`LOCK TABLE "ApiToken" IN SHARE MODE`;
+          await until(
+            async () =>
+              (await prisma.user.count({ where: { id: ids.userAdmin } })) === 1,
+            "seed user write",
+          );
+          process.kill(pidToKill, "SIGKILL");
+          assert.equal((await interrupted.closed).signal, "SIGKILL");
+        },
+        { timeout: 20_000 },
+      );
+      assert.ok(isLive(seedPid));
+      return seedPid;
+    }
+
+    async function stopWrapper(child) {
+      if (child.proc.exitCode === null && child.proc.signalCode === null)
+        child.proc.kill("SIGTERM");
+      await child.closed;
+    }
+
     try {
-      for (const url of [dbUrl, devUrl, pixelUrl]) deploy(url);
+      for (const url of [devUrl, pixelUrl]) deploy(url);
       writeFileSync(dotenvFile, dotenvFor(devUrl, 5312), { mode: 0o600 });
-      const initial = await success(["reset"]);
-      const fingerprint = initial.match(stampPattern)?.[1];
+      let fingerprint;
+      await t.test(
+        "reset repairs a dropped public schema before starting the backend",
+        async () => {
+          await prisma.$executeRaw`DROP SCHEMA IF EXISTS public CASCADE`;
+          for (const file of [
+            "config/demo-reset-env.js",
+            "auth/security-stamp-hmac.js",
+          ]) {
+            const artifact = join(dir, "backend/dist", file);
+            renameSync(artifact, `${artifact}.bak`);
+            try {
+              const staleBuild = await command(["reset"]);
+              assert.equal(staleBuild.code, 1);
+              assert.match(staleBuild.output, /Build the backend/);
+              assert.doesNotMatch(
+                staleBuild.output,
+                /Repairing incomplete|Terminated PostgreSQL|backend PID/,
+              );
+            } finally {
+              renameSync(`${artifact}.bak`, artifact);
+            }
+          }
+          const unauthorized = await command(["reset"], {
+            DEMO_RESET_ALLOW: undefined,
+          });
+          assert.equal(unauthorized.code, 1);
+          assert.match(unauthorized.output, /DEMO_RESET_ALLOW=1/);
+          assert.doesNotMatch(
+            unauthorized.output,
+            /Repairing incomplete|Terminated PostgreSQL|backend PID/,
+          );
+          const fallback = await command(["reset", "--fallback"]);
+          assert.equal(fallback.code, 1, fallback.output);
+          assert.match(
+            fallback.output,
+            /schema is incomplete.*without --fallback/,
+          );
+          assert.doesNotMatch(
+            fallback.output,
+            /Terminated PostgreSQL|backend PID/,
+          );
+          const initial = await success(["reset"]);
+          const [, liveHash, manifestHash] = initial.match(stampPattern) ?? [];
+          fingerprint = liveHash;
+          assert.ok(fingerprint);
+          assert.notEqual(fingerprint, manifestHash);
+          assert.match(
+            initial,
+            /Repairing incomplete TASK-176 schema on .*\/janosik_task176_demo\.[\s\S]*backend PID/,
+          );
+          await assertReset(initial, fingerprint, 1);
+        },
+      );
       assert.ok(fingerprint);
+
+      await t.test(
+        "reset repairs a schema left after the first two real migrations",
+        async () => {
+          const early = join(dir, "early-prisma");
+          mkdirSync(join(early, "migrations"), { recursive: true });
+          cpSync(
+            join(backend, "prisma/schema.prisma"),
+            join(early, "schema.prisma"),
+          );
+          for (const name of [
+            "migration_lock.toml",
+            "20260916000000_init",
+            "20260916000001_add_refresh_token",
+          ]) {
+            cpSync(
+              join(backend, "prisma/migrations", name),
+              join(early, "migrations", name),
+              { recursive: true },
+            );
+          }
+          await prisma.$executeRaw`DROP SCHEMA public CASCADE`;
+          await prisma.$executeRaw`CREATE SCHEMA public`;
+          await prisma.$disconnect();
+          deploy(dbUrl, join(early, "schema.prisma"));
+          const [state] = await prisma.$queryRaw`
+          SELECT to_regclass('public."User"') IS NOT NULL AS "hasUser",
+            to_regclass('public."Board"') IS NOT NULL AS "hasBoard"
+        `;
+          assert.deepEqual(state, { hasUser: true, hasBoard: false });
+          const repaired = await success(["reset"]);
+          assert.match(repaired, /Repairing incomplete TASK-176 schema/);
+          await assertReset(repaired, fingerprint, 1);
+        },
+      );
+
+      await t.test(
+        "out-of-fixture runtime and account rows leave verification and its hash unchanged",
+        async () => {
+          await addOutOfFixtureRows(prisma);
+          const counts = async () =>
+            Promise.all(
+              [
+                "securityAuditLog",
+                "idempotencyRecord",
+                "reminderSent",
+                "adminAuditLog",
+                "adminRefreshToken",
+                "adminUser",
+                "notificationMail",
+              ].map((model) => prisma[model].count()),
+            );
+          const before = await counts();
+          assert.ok(before.every((count) => count > 0));
+          assert.equal(await verify(), fingerprint);
+          assert.deepEqual(await counts(), before);
+          await assertReset(await success(["reset"]), fingerprint);
+        },
+      );
+
       const cipher = secretBox("encrypt");
       const globals = retainGlobals(cipher);
       async function populateGlobals() {
@@ -555,7 +736,12 @@ test(
           const admin = start(
             [cli, "admin", "--email", "owner@example.invalid"],
             dir,
-            env,
+            {
+              ...env,
+              DATABASE_URL: devUrl,
+              API_URL: "http://127.0.0.1:1",
+              DEMO_API_URL: undefined,
+            },
           );
           const argv = await until(() => {
             try {
@@ -585,6 +771,67 @@ test(
           );
           assert.equal(await dev.adminUser.count(), 0);
           assert.equal(await verify(), fingerprint);
+        },
+      );
+
+      await t.test(
+        "admin rejects database URL argv without echoing it or creating a master",
+        async () => {
+          const fakeUrl =
+            "postgresql://argv-only-user:argv-only-pass@127.0.0.1/argv-only-db";
+          const before = await prisma.adminUser.count();
+          for (const args of [
+            [
+              cli,
+              "admin",
+              "--email",
+              "argv@example.invalid",
+              "--database-url",
+              fakeUrl,
+            ],
+            [
+              "backend/scripts/admin-cli.cjs",
+              "create",
+              "--demo-task176",
+              "--email",
+              "argv@example.invalid",
+              `--database-url=${fakeUrl}`,
+            ],
+          ]) {
+            const result = await start(args, dir, env).closed;
+            assert.equal(result.code, 1);
+            redacted(result.output);
+            assert.doesNotMatch(result.output, /postgresql:|argv-only-/);
+          }
+          assert.equal(await prisma.adminUser.count(), before);
+        },
+      );
+
+      await t.test(
+        "reset rejects DB and API target conflicts and verify uses only the demo DB",
+        async () => {
+          const wrongApi = "http://127.0.0.1:1";
+          for (const [key, value] of [
+            ["DATABASE_URL", devUrl],
+            ["API_URL", wrongApi],
+          ]) {
+            const result = await command(["reset"], { [key]: value });
+            assert.equal(result.code, 1);
+            assert.match(
+              result.output,
+              new RegExp(`Conflicting ${key} and DEMO_${key}`),
+            );
+            assert.doesNotMatch(
+              result.output,
+              /Terminated PostgreSQL|backend PID/,
+            );
+          }
+          const verified = await success(["verify"], {
+            DATABASE_URL: devUrl,
+            API_URL: wrongApi,
+            DEMO_API_URL: undefined,
+          });
+          assert.equal(verified.match(stampPattern)?.[1], fingerprint);
         },
       );
 
@@ -806,30 +1053,7 @@ test(
               (await command(["reset", "--fallback"])).output,
               /holds the lock/,
             );
-            await until(() => {
-              const pids = [...interrupted.output().matchAll(pidPattern)];
-              seedPid = pids.length === 2 ? Number(pids[1][1]) : undefined;
-              return seedPid;
-            }, "seed-only backend");
-            // Block the seed after its users and cards are present so killing
-            // the wrapper lands during a real seed write, with the backend alive.
-            await prisma.$disconnect();
-            await prisma.$transaction(
-              async (tx) => {
-                await tx.$executeRaw`LOCK TABLE "ApiToken" IN SHARE MODE`;
-                await until(
-                  async () =>
-                    (await prisma.user.count({
-                      where: { id: ids.userAdmin },
-                    })) === 1,
-                  "seed user write",
-                );
-                interrupted.proc.kill("SIGKILL");
-                assert.equal((await interrupted.closed).signal, "SIGKILL");
-              },
-              { timeout: 20_000 },
-            );
-            assert.ok(isLive(seedPid));
+            seedPid = await killDuringSeed(interrupted, interrupted.proc.pid);
             const id = "t176-marker-stale-test";
             await prisma.user.create({
               data: { id, email: "stale@example.invalid" },
@@ -843,13 +1067,15 @@ test(
                 acceptedAt: new Date(),
               },
             });
+            await prisma.refreshToken.create({
+              data: {
+                userId: id,
+                tokenHash: secret(),
+                expiresAt: new Date(Date.now() + 60_000),
+              },
+            });
           } finally {
-            if (
-              interrupted.proc.exitCode === null &&
-              interrupted.proc.signalCode === null
-            )
-              interrupted.proc.kill("SIGTERM");
-            await interrupted.closed;
+            await stopWrapper(interrupted);
           }
           const state = lockDemo(target);
           try {
@@ -875,6 +1101,51 @@ test(
           } finally {
             lock.close();
           }
+        },
+      );
+
+      await t.test(
+        "SIGKILL of the entire wrapper process group is recoverable with a symlinked Node",
+        async () => {
+          const node = join(dir, "node-link");
+          symlinkSync(process.execPath, node);
+          const interrupted = start([cli, "reset", "--fallback"], dir, env, {
+            detached: true,
+            node,
+          });
+          let seedPid;
+          try {
+            seedPid = await killDuringSeed(interrupted, -interrupted.proc.pid);
+          } finally {
+            await stopWrapper(interrupted);
+          }
+          await assertReset(await success(["reset"]), fingerprint);
+          assert.ok(!isLive(seedPid));
+        },
+      );
+
+      await t.test(
+        "stale marker cleanup names a restrictive child and can be retried",
+        async () => {
+          const id = "task176-marker-restricted-test";
+          await prisma.board.create({ data: { id, title: "Stale marker" } });
+          await prisma.column.create({
+            data: { id, boardId: id, title: "Blocking column", position: 0 },
+          });
+          const stateDir = join(runtime, "janosik", target.database);
+          const inode = statSync(join(stateDir, "lock")).ino;
+          chmodSync(stateDir, 0o755);
+          const blocked = await command(["reset"]);
+          assert.equal(blocked.code, 1);
+          assert.match(blocked.output, /marker cleanup is blocked by Column/);
+          assert.doesNotMatch(
+            blocked.output,
+            /Terminated PostgreSQL|backend PID/,
+          );
+          assert.equal(statSync(stateDir).mode & 0o777, 0o700);
+          assert.equal(statSync(join(stateDir, "lock")).ino, inode);
+          await prisma.column.delete({ where: { id } });
+          await assertReset(await success(["reset"]), fingerprint);
         },
       );
 

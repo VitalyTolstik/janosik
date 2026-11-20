@@ -22,6 +22,7 @@ const dotenv = require("dotenv");
 const { PrismaClient } = require("@prisma/client");
 const argon2 = require("argon2");
 let prisma;
+class AdminCliError extends Error {}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN = 8;
@@ -52,7 +53,7 @@ function promptHidden(question) {
   return new Promise((resolve, reject) => {
     if (!process.stdin.isTTY) {
       reject(
-        new Error(
+        new AdminCliError(
           "No TTY for a hidden prompt — set ADMIN_PASSWORD for non-interactive use",
         ),
       );
@@ -79,13 +80,13 @@ async function readPassword() {
   if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD;
   const first = await promptHidden("Password: ");
   const second = await promptHidden("Repeat password: ");
-  if (first !== second) throw new Error("Passwords do not match");
+  if (first !== second) throw new AdminCliError("Passwords do not match");
   return first;
 }
 
 function assertPassword(password) {
   if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
-    throw new Error(
+    throw new AdminCliError(
       `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`,
     );
   }
@@ -95,7 +96,7 @@ function normalizeEmail(value) {
   const email = String(value ?? "")
     .trim()
     .toLowerCase();
-  if (!EMAIL_RE.test(email)) throw new Error(`Invalid email: ${value}`);
+  if (!EMAIL_RE.test(email)) throw new AdminCliError("Invalid email.");
   return email;
 }
 
@@ -118,7 +119,7 @@ async function createAdmin(args) {
     typeof args["display-name"] === "string" ? args["display-name"] : null;
   const existing = await prisma.adminUser.findUnique({ where: { email } });
   if (existing) {
-    throw new Error(
+    throw new AdminCliError(
       `${email} already exists — use \`admin:passwd\` to change the password`,
     );
   }
@@ -145,7 +146,7 @@ async function createAdmin(args) {
 async function changePassword(args) {
   const email = normalizeEmail(args.email ?? args._[0]);
   const admin = await prisma.adminUser.findUnique({ where: { email } });
-  if (!admin) throw new Error(`No master account for ${email}`);
+  if (!admin) throw new AdminCliError(`No master account for ${email}`);
   const password = await readPassword();
   assertPassword(password);
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
@@ -253,7 +254,7 @@ async function main() {
     if (
       [command, ...rest].some((arg) => /^--database-url(?:=|$)/.test(arg ?? ""))
     ) {
-      throw new Error(
+      throw new AdminCliError(
         "Database URLs in argv are refused. Use the TASK-176 wrapper with DEMO_DATABASE_URL for the demo.",
       );
     }
@@ -291,20 +292,27 @@ async function main() {
       printUsage();
       if (command === undefined) process.exitCode = 1;
     } else {
-      console.error(`Unknown command: ${command}\n`);
+      console.error("Unknown admin command.\n");
       printUsage();
       process.exitCode = 1;
     }
   } catch (error) {
-    console.error(
-      demo
-        ? "TASK-176 admin CLI could not create the master. Check the email, password and demo database."
-        : `Error: ${error.message}`,
-    );
+    if (demo && error instanceof AdminCliError)
+      console.error(
+        "TASK-176 admin CLI could not create the master. Check the email, password and demo database.",
+      );
+    else if (error instanceof AdminCliError)
+      console.error(`Error: ${error.message}`);
+    else throw error;
     process.exitCode = 1;
   } finally {
     await prisma?.$disconnect();
   }
 }
 
-void main();
+void main().catch(() => {
+  console.error(
+    "Admin CLI failed. Check the database connection and try again.",
+  );
+  process.exitCode = 1;
+});

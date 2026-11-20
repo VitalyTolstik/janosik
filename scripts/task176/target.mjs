@@ -82,7 +82,7 @@ export function demoTarget(env, { api = false, reset = false } = {}) {
       "Set DEMO_RESET_ALLOW=1 to authorize the disposable fixture reset.",
     );
   }
-  assertEqualTargets(env);
+  if (api || reset) assertEqualTargets(env);
   const target = databaseTarget(
     env.DEMO_DATABASE_URL,
     (name) =>

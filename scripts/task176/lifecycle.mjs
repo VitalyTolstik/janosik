@@ -1,6 +1,7 @@
 import { fork, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   constants,
   openSync,
@@ -10,11 +11,13 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -51,13 +54,17 @@ function privateDirectory(dir) {
     if (error.code !== "EEXIST") throw error;
   }
   const stat = lstatSync(dir);
-  if (
-    !stat.isDirectory() ||
-    stat.uid !== process.getuid() ||
-    (stat.mode & 0o777) !== 0o700
-  ) {
+  if (!stat.isDirectory() || stat.uid !== process.getuid()) {
     throw new DemoError(
-      "TASK-176 state directory must be private and owned by this user.",
+      `TASK-176 state directory ${dir} must be a directory owned by this user.`,
+    );
+  }
+  if ((stat.mode & 0o777) === 0o700) return;
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    throw new DemoError(
+      `Cannot secure TASK-176 state directory ${dir}. Set its permissions to 0700 and retry.`,
     );
   }
 }
@@ -68,7 +75,22 @@ export function lockDemo(target) {
       "TASK-176 lifecycle requires Linux/WSL with readable /proc.",
     );
   }
-  const dir = `/tmp/janosik-task176-${process.getuid()}`;
+  const runtime = process.env.XDG_RUNTIME_DIR;
+  const stateHome = runtime || join(homedir(), ".local/state");
+  if (!runtime) mkdirSync(stateHome, { recursive: true, mode: 0o700 });
+  const stateHomeStat = isAbsolute(stateHome)
+    ? lstatSync(stateHome, { throwIfNoEntry: false })
+    : null;
+  if (
+    !stateHomeStat?.isDirectory() ||
+    stateHomeStat.uid !== process.getuid() ||
+    (stateHomeStat.mode & 0o022) !== 0
+  ) {
+    throw new DemoError(
+      "Use an absolute XDG_RUNTIME_DIR or ~/.local/state directory owned by this user and writable only by its owner.",
+    );
+  }
+  const dir = join(stateHome, "janosik");
   privateDirectory(dir);
   const stateDir = join(dir, target.database);
   privateDirectory(stateDir);
@@ -144,9 +166,9 @@ function assertOwnership(record, dir) {
       .split("\0")
       .slice(0, -1);
     if (
-      args[0] !== record.node ||
+      realpathSync(args[0]) !== record.node ||
       args.slice(1).join("\0") !== bootArgs(record, dir).join("\0") ||
-      readlinkSync(`/proc/${record.pid}/exe`) !== record.node
+      realpathSync(`/proc/${record.pid}/exe`) !== record.node
     )
       throw new Error();
     return true;
@@ -266,7 +288,7 @@ export function createBackendLifecycle(lock, target, settings) {
   async function start() {
     await assertFreePort(target.port);
     const record = {
-      node: process.execPath,
+      node: realpathSync(process.execPath),
       entry,
       main,
       port: target.port,
@@ -295,6 +317,7 @@ export function createBackendLifecycle(lock, target, settings) {
       cwd: backend,
       env,
       detached: true,
+      execPath: record.node,
       execArgv: [],
       stdio: ["ignore", "ignore", "ignore", "ipc"],
     });

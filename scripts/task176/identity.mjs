@@ -8,13 +8,23 @@ const require = createRequire(join(backend, "package.json"));
 const verifiedSeeds = new WeakMap();
 
 async function cleanupMarkers(prisma, userWhere, boardWhere) {
-  await prisma.$transaction([
-    prisma.boardMember.deleteMany({
-      where: { OR: [{ user: userWhere }, { board: boardWhere }] },
-    }),
-    prisma.board.deleteMany({ where: boardWhere }),
-    prisma.user.deleteMany({ where: userWhere }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.boardMember.deleteMany({
+        where: { OR: [{ user: userWhere }, { board: boardWhere }] },
+      }),
+      prisma.refreshToken.deleteMany({ where: { user: userWhere } }),
+      prisma.board.deleteMany({ where: boardWhere }),
+      prisma.user.deleteMany({ where: userWhere }),
+    ]);
+  } catch (error) {
+    if (
+      ["P2021", "P2022", "42P01", "42703"].includes(error.code) ||
+      ["42P01", "42703"].includes(error.meta?.code)
+    )
+      return;
+    throw error;
+  }
 }
 
 export async function sweepMarkers(prisma) {
@@ -23,7 +33,28 @@ export async function sweepMarkers(prisma) {
       id: { startsWith: prefix },
     })),
   };
-  await cleanupMarkers(prisma, where, where);
+  try {
+    await cleanupMarkers(prisma, where, where);
+  } catch (error) {
+    if (error.code !== "P2003") throw error;
+    const constraint = error.meta?.constraint ?? error.meta?.field_name;
+    if (typeof constraint !== "string") throw error;
+    const tables = await prisma.$queryRaw`
+      SELECT child.relname::text AS name
+      FROM pg_catalog.pg_constraint fk
+      JOIN pg_catalog.pg_class child ON child.oid = fk.conrelid
+      WHERE fk.conname = ${constraint.replace(/ \(index\)$/, "")}
+        AND fk.confrelid IN ('public."Board"'::regclass, 'public."User"'::regclass)
+      ORDER BY name
+    `;
+    const names = tables
+      .map(({ name }) => name)
+      .filter((name) => /^\w+$/.test(name));
+    if (!names.length) throw error;
+    throw new DemoError(
+      `TASK-176 marker cleanup is blocked by ${names.join(", ")}. Remove the rows in that table referencing stale marker IDs, then rerun reset.`,
+    );
+  }
 }
 
 export async function probeIdentity(
@@ -76,8 +107,7 @@ export async function probeIdentity(
     lifecycle.assertListening();
     console.log("TASK-176 API identity verified.");
   } finally {
-    // This runs before any drop. A wrapper SIGKILL leaves the marker for the
-    // next successful probe and stale-marker sweep.
+    // A wrapper SIGKILL or a missing relation defers cleanup to a later sweep.
     await cleanupMarkers(prisma, { id }, { id });
   }
   if (!authorizeSeed) return;

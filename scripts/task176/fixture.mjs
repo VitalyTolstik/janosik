@@ -7,6 +7,9 @@ const compoundKeys = {
   cardLabel: ["cardId", "labelId"],
 };
 
+const hashRows = (rows) =>
+  createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+
 export async function seedRelations(prisma) {
   await prisma.$transaction(async (tx) => {
     for (const [model, data] of Object.entries(relations)) {
@@ -15,7 +18,7 @@ export async function seedRelations(prisma) {
   });
 }
 
-/** Include deleted rows and report only expected identifiers and field names. */
+/** Verify and return the selected live database values in manifest row order. */
 export function assertFixtureRows(model, actual) {
   const expected = manifest.rows[model];
   if (actual.length !== expected.length) {
@@ -26,35 +29,44 @@ export function assertFixtureRows(model, actual) {
   const keys = compoundKeys[model] ?? ["id"];
   const key = (row) => keys.map((field) => row[field]).join("/");
   const byKey = new Map(actual.map((row) => [key(row), row]));
-  for (const row of expected) {
+  return expected.map((row) => {
     const id = key(row);
     const found = byKey.get(id);
     if (!found) throw new DemoError(`Missing fixture ${model} ${id}.`);
-    for (const [field, value] of Object.entries(row)) {
-      const actualValue = found[field];
-      const matches =
-        value === true && field.endsWith("At")
-          ? actualValue instanceof Date
-          : isDeepStrictEqual(actualValue, value);
-      if (!matches)
-        throw new DemoError(`Fixture ${model} ${id} differs at ${field}.`);
-    }
-  }
+    const fields = Object.keys(row)
+      .sort()
+      .map((field) => {
+        const value = row[field];
+        const actualValue = found[field];
+        // A true timestamp pin checks presence. Wall-clock values vary on reset.
+        const canonical =
+          value === true && field.endsWith("At")
+            ? actualValue instanceof Date
+            : actualValue;
+        if (!isDeepStrictEqual(canonical, value))
+          throw new DemoError(`Fixture ${model} ${id} differs at ${field}.`);
+        return [field, canonical];
+      });
+    return Object.fromEntries(fields);
+  });
 }
 
 export async function verifyFixture(prisma) {
-  await prisma.$transaction(async (tx) => {
+  const rows = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
-    for (const [model, expected] of Object.entries(manifest.rows)) {
+    const verified = {};
+    for (const model of Object.keys(manifest.rows).sort()) {
+      const expected = manifest.rows[model];
       const fields = Object.keys(expected[0] ?? { id: true });
       const select = Object.fromEntries(fields.map((field) => [field, true]));
-      assertFixtureRows(model, await tx[model].findMany({ select }));
+      verified[model] = assertFixtureRows(
+        model,
+        await tx[model].findMany({ select }),
+      );
     }
+    return verified;
   });
-  const fingerprint = createHash("sha256")
-    .update(JSON.stringify(manifest.rows))
-    .digest("hex");
   console.log(
-    `Verified TASK-176 fixture v${manifest.version} (${manifest.liveCards} live cards, SHA-256 ${fingerprint}).`,
+    `Verified TASK-176 fixture v${manifest.version} (${manifest.liveCards} live cards, live rows SHA-256 ${hashRows(rows)}, manifest SHA-256 ${hashRows(manifest.rows)}).`,
   );
 }

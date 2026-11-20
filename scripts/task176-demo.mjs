@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { seedPixelScene, writeSeedSecrets } from "./seed-agent-pixel-demo.mjs";
 import {
+  hasCompleteSchema,
   migrateReset,
   resetFixtureAndAccounts,
   terminateOtherConnections,
@@ -36,7 +37,17 @@ async function reset(target, { fallback, dryRun }) {
     );
     return;
   }
-  if (!existsSync(join(backend, "dist/main.js")))
+  const buildFiles = [
+    "dist/main.js",
+    "dist/config/demo-reset-env.js",
+    "dist/auth/security-stamp-hmac.js",
+  ];
+  if (
+    buildFiles.some(
+      (file) =>
+        !statSync(join(backend, file), { throwIfNoEntry: false })?.isFile(),
+    )
+  )
     throw new DemoError("Build the backend before running the TASK-176 reset.");
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret || jwtSecret.length < 32)
@@ -78,33 +89,55 @@ async function reset(target, { fallback, dryRun }) {
       publicOrigin: publicOrigin.origin,
     });
     await withResetLease(target, async (leasePid) => {
-      phase = "pre-reset identity";
-      await withDatabase(target, async (prisma) => {
-        checkpoint();
-        await lifecycle.start();
-        await probeIdentity(prisma, target, lifecycle, jwtSecret);
-        await lifecycle.stop();
-        checkpoint();
-        await sweepMarkers(prisma);
-        await terminateOtherConnections(prisma, target.database, leasePid);
+      phase = "schema inspection";
+      const repair = await withDatabase(
+        target,
+        async (prisma) => {
+          checkpoint();
+          const repair = !(await hasCompleteSchema(prisma));
+          if (repair) {
+            if (fallback)
+              throw new DemoError(
+                "The demo schema is incomplete. Rerun without --fallback to recreate the schema and clear global settings.",
+              );
+            console.log(
+              `Repairing incomplete TASK-176 schema on ${target.host}/${target.database}.`,
+            );
+          } else {
+            phase = "pre-reset identity";
+            await sweepMarkers(prisma);
+            checkpoint();
+            await lifecycle.start();
+            await probeIdentity(prisma, target, lifecycle, jwtSecret);
+            await lifecycle.stop();
+          }
+          checkpoint();
+          await terminateOtherConnections(prisma, target.database, leasePid);
+          checkpoint();
+          if (fallback) {
+            phase = "fixture and account reset";
+            destructive = true;
+            await resetFixtureAndAccounts(prisma);
+          }
+          return repair;
+        },
+        { allowMissingSchema: true },
+      );
+      if (!fallback) {
+        phase = repair ? "schema repair" : "schema reset";
         checkpoint();
         destructive = true;
-        if (fallback) {
-          phase = "fixture and account reset";
-          await resetFixtureAndAccounts(prisma);
-        }
-      });
-      if (!fallback) {
-        phase = "schema reset";
         await migrateReset(target, lock);
       }
 
       phase = "seed";
       checkpoint();
-      await lifecycle.start();
       // Reconnect after migration and re-prove ownership before the seed can
       // send any commands. The in-process nonce is consumed exactly once.
       await withDatabase(target, async (prisma) => {
+        await sweepMarkers(prisma);
+        checkpoint();
+        await lifecycle.start();
         const grant = await probeIdentity(
           prisma,
           target,
@@ -114,7 +147,6 @@ async function reset(target, { fallback, dryRun }) {
             authorizeSeed: true,
           },
         );
-        await sweepMarkers(prisma);
         const checkSeedApi = () => {
           checkpoint();
           lifecycle.assertListening();

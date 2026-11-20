@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { ids, manifest, relations } from "../fixtures/task176-demo.mjs";
 import { assertFixtureRows, seedRelations, verifyFixture } from "./fixture.mjs";
-import { consumeSeedNonce } from "./identity.mjs";
+import { consumeSeedNonce, sweepMarkers } from "./identity.mjs";
 import { demoTarget } from "./target.mjs";
 import { root } from "./lifecycle.mjs";
 
@@ -70,6 +70,52 @@ test("manifest pins the TASK-176 inventory and the overlay writes its relations 
     ["label", "cardLabel", "checklist", "checklistItem", "cardLink"],
   );
   assert.ok(relations.checklistItem.every((item) => item.done));
+});
+
+test("manifest pins the card claim copy, pink label, checklist and link endpoints", () => {
+  const { card, label, checklist, cardLink } = manifest.rows;
+  const claim = card.find(({ id }) => id === "px-card-card-claim");
+  assert.equal(claim.title, "Card claim visibility");
+  assert.equal(
+    claim.description,
+    "API reference sweep — exact MCP transport contract.",
+  );
+  assert.deepEqual(
+    label.map(({ id, name, color }) => [id, name, color]),
+    [["px-label-task176-demo", "TASK-176 demo", "pink"]],
+  );
+  assert.deepEqual(
+    checklist.map(({ id, title, cardId }) => [id, title, cardId]),
+    [
+      [
+        "px-checklist-task176-demo",
+        "TASK-176 acceptance",
+        "px-card-card-claim",
+      ],
+    ],
+  );
+  assert.deepEqual(
+    cardLink.map(({ id, type, fromCardId, toCardId }) => [
+      id,
+      type,
+      fromCardId,
+      toCardId,
+    ]),
+    [
+      [
+        "px-link-task176-demo",
+        "relates_to",
+        "px-card-card-claim",
+        "px-card-mcp-write",
+      ],
+      [
+        "px-link-task176-blocks",
+        "blocks",
+        "px-card-card-claim",
+        "px-card-approval-inbox",
+      ],
+    ],
+  );
 });
 
 test("verification detects observed drift across the entire fixture", () => {
@@ -162,7 +208,26 @@ test("verify reads a consistent read-only snapshot without touching session or r
   };
   await verifyFixture({ $transaction: (work) => work(tx) });
   assert.match(operations[0], /REPEATABLE READ READ ONLY/);
-  assert.deepEqual(operations.slice(1), Object.keys(actual));
+  assert.deepEqual(operations.slice(1), Object.keys(actual).sort());
+});
+
+test("marker cleanup tolerates missing tables and columns from Prisma and PostgreSQL", async () => {
+  const model = { deleteMany: () => undefined };
+  for (const error of [
+    { code: "P2021" },
+    { code: "P2022" },
+    { code: "42P01" },
+    { code: "P2010", meta: { code: "42P01" } },
+    { code: "P2010", meta: { code: "42703" } },
+  ]) {
+    await sweepMarkers({
+      boardMember: model,
+      refreshToken: model,
+      board: model,
+      user: model,
+      $transaction: () => Promise.reject(error),
+    });
+  }
 });
 
 test("target guards fail closed, including unsafe URL options and direct overlay invocation", () => {
