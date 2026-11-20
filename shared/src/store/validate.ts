@@ -1046,6 +1046,24 @@ function parseAction(action: Json): BoardAction {
     case "DELETE_LABEL":
       result = out();
       result.labelId = id("labelId");
+      // TASK-183.3: only an inverse may restore the per-card stamps it took
+      // before a RESTORE_LABEL. A fresh delete stamps every affected card
+      // with its own clock; like the other inverse-only overrides, a forged
+      // field is dropped rather than accepted.
+      if (action.inverse === true && action.cardStamps !== undefined) {
+        result.cardStamps = readArray(
+          action,
+          "cardStamps",
+          "action.cardStamps",
+        ).map((entry, position) => {
+          const field = `action.cardStamps[${position}]`;
+          const stamp = asRecord(entry, field);
+          return {
+            cardId: readId(stamp, "cardId", `${field}.cardId`),
+            updatedAt: readTimestamp(stamp, "updatedAt", `${field}.updatedAt`),
+          };
+        });
+      }
       break;
     case "RESTORE_LABEL":
       result = out();
@@ -1059,10 +1077,22 @@ function parseAction(action: Json): BoardAction {
         ).map((entry, position) => {
           const field = `action.assignments[${position}]`;
           const assignment = asRecord(entry, field);
-          return {
+          const parsed: Json = {
             cardId: readId(assignment, "cardId", `${field}.cardId`),
             index: readInteger(assignment, "index", `${field}.index`),
           };
+          // Optional since TASK-183.3: an inverse recorded before it has no
+          // per-card stamp, and the reducer falls back to the command stamp.
+          put(
+            parsed,
+            "updatedAt",
+            readOptionalTimestamp(
+              assignment,
+              "updatedAt",
+              `${field}.updatedAt`,
+            ),
+          );
+          return parsed;
         });
       }
       break;

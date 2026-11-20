@@ -631,9 +631,9 @@ implementation must turn it into tests or a documented decision.
 | `SET_CARD_DUE_DATE`, `SET_CARD_PRIORITY`, `SET_CARD_ASSIGN`, `CLAIM_CARD`, `SET_CARD_TASK_SPEC` | yes (`cardStamp`) | direct write | OK. |
 | `SET_CARD_COVER` | yes (`cardStamp`) | direct write | OK. |
 | `MOVE_CARD`, `ARCHIVE_CARD`, `UNARCHIVE_CARD`, `DELETE_CARD`, `RESTORE_CARD`, `DUPLICATE_CARD` | yes / explicit timestamps | direct write | Verify in the regression matrix; no same-shape omission found. |
-| `DELETE_LABEL` | **no** on every card that loses the label | **no `bumpCard`** | **Same class — decide and test.** |
-| `RESTORE_LABEL` | **no** on every card that regains the label | **no `bumpCard`** | **Same class — decide and test.** |
-| `RENAME_LABEL` / `SET_LABEL_COLOR` | label metadata only; card content unchanged | no card bump | Intentional; document why. |
+| `DELETE_LABEL` | **was no** on every card that loses the label | **was no `bumpCard`** | **Fixed in TASK-183.3 — stamps every affected card; inverse carries per-card stamps.** |
+| `RESTORE_LABEL` | **was no** on every card that regains the label | **was no `bumpCard`** | **Fixed in TASK-183.3 — restores each card's `updatedAt`; a pre-183.3 inverse falls back to the command stamp.** |
+| `RENAME_LABEL` / `SET_LABEL_COLOR` | label metadata only; card content unchanged | no card bump | Intentional; document why and pin with an e2e regression. |
 | `ADD_LABEL` | no existing card changes | no card bump | Intentional. |
 
 **TASK-183.2 implementation (2026-11-20).** `SET_CARD_LABEL` now stamps each
@@ -642,23 +642,19 @@ backend tests cover the exact timestamps, including undo through the command
 endpoint. The UI focus diff uses the stamp first and retains the TASK-156
 label-array check for compatibility.
 
-**Follow-up TASK-183.3 — Board-wide label timestamps.** Owner: board commands
-maintainers. Recorded 2026-11-20. `DELETE_LABEL` and `RESTORE_LABEL` still
-change membership without updating `updatedAt`, `version` or `lastActorId`
-on the affected card rows. The multi-card cascade/restore test in
-`backend/test/commands-labels-checklists.e2e-spec.ts` pins this behavior.
-The follow-up owns forward card stamping and backward-compatible validation
-of per-card timestamps in `RestoreLabelAction.assignments` for exact undo.
-
-`DELETE_LABEL` is multi-card: one command removes a label from many cards.
-Fixing it needs both forward stamping for every affected card and a per-card
-timestamp in the inverse. `RestoreLabelAction`’s `assignments` currently
-carries only `{ cardId, index }`; the clean fix is to add the previous
-`updatedAt` per assignment, validate it, and have the reducer use it on
-restore, while the writer calls `bumpCard` for every affected card. If that is
-too large for this ticket, the implementation must record an explicit
-follow-up and keep the current UI workaround; it must not silently leave the
-forward command without its inverse.
+**TASK-183.3 implementation (2026-11-21).** `DELETE_LABEL` now stamps every
+card whose `labelIds` it changes with the command's card stamp, and its inverse
+`RESTORE_LABEL` carries each card's previous `updatedAt` in
+`assignments[].updatedAt`; the reducer applies that per-card stamp and the
+writer calls `bumpCard` once per affected card (version +1, `lastActorId` set).
+A pre-183.3 inverse without `updatedAt` still validates and falls back to the
+restore's command stamp — exact historical restoration is not possible without
+that data, but the undo keeps working and no schema or API break is introduced.
+`invert(RESTORE_LABEL)` likewise records the pre-restore per-card stamps in an
+inverse-only `DELETE_LABEL.cardStamps`, so undo stays byte-exact. The same-class
+audit found no other gap: `SET_CARD_LABEL` is single-card and already stamps
+(183.2); `RENAME_LABEL`/`SET_LABEL_COLOR` change label metadata only and
+deliberately do not touch cards, covered by an e2e regression.
 
 ### 3.4 Proposed fix
 
@@ -688,16 +684,16 @@ forward command without its inverse.
 
 **Same-class decision:**
 
-7. If `DELETE_LABEL` is fixed, forward `DELETE_LABEL` must stamp every affected
-   card (`updatedAt` and `version`) while deleting their label links. Undo
-   `RESTORE_LABEL` needs each card's pre-delete `updatedAt`, not one global
-   `cardUpdatedAt`: extend `RestoreLabelAction.assignments` with a per-card
-   previous timestamp, validate that field, and have the writer call
-   `bumpCard` for every affected card. If that is too large for this ticket,
-   split it into a named follow-up with a test proving the current gap and a
-   note here. Do not half-fix the forward command without its inverse.
+7. TASK-183.3 implements the board-wide case: forward `DELETE_LABEL` stamps
+   every affected card (`updatedAt` and `version`) while deleting their label
+   links; the inverse `RESTORE_LABEL` carries each card's pre-delete
+   `updatedAt` in `assignments`, validated as an optional field. A pre-183.3
+   inverse without it is accepted and falls back to the restore's command
+   stamp. `invert(RESTORE_LABEL)` keeps undo exact through the inverse-only
+   `DELETE_LABEL.cardStamps`.
 8. Do not change `RENAME_LABEL`/`SET_LABEL_COLOR` card timestamps: they are
-   label metadata, not card membership.
+   label metadata, not card membership. The e2e audit test asserts the card
+   row is untouched.
 
 ### 3.5 Acceptance criteria — label timestamp
 
@@ -737,9 +733,11 @@ forward command without its inverse.
 | --- | --- | --- | --- |
 | 183.1 | Demo fixture manifest, reset and verify | P2 | Commit the TASK-176 fixture, complete mutation manifest, drop/recreate or narrowed fallback, env-precedence/API-binding/identity guards, crash-safe lifecycle, redaction, read-only verify, docs. No admin demo-runner changes. |
 | 183.2 | Label timestamp consistency | P3 | Fix `SET_CARD_LABEL` reducer + inverse + `CARD_STAMPED_TYPES`, split reducer/persisted-row tests, audit same-class label writers. |
+| 183.3 | Board-wide label timestamps | P3 | Stamp every card on `DELETE_LABEL`; carry per-card previous `updatedAt` in `RESTORE_LABEL.assignments` with a backward-compatible fallback; exact multi-card undo, version/CAS and label-metadata audit tests. |
 
-Both subtasks are independent and can ship in separate PRs. 183.1 does not
-depend on 183.2.
+183.1 is independent of the label work and can ship in its own PR. 183.3 builds
+on 183.2 (single-card `SET_CARD_LABEL`) but is separately revertable; both share
+the board reducer/command-writer contract and no schema change.
 
 ---
 
@@ -861,14 +859,33 @@ depend on 183.2.
 - UI card surfaces: “Updated”/table date changes after a label toggle; second
   tab/focus refetch reflects it.
 - Audit regression: the §3.3 matrix, especially checklist/link cases, remains
-  green.
-- If `DELETE_LABEL`/`RESTORE_LABEL` are fixed: forward stamping of every
-  affected card, per-card assignment timestamps, validation of those
-  timestamps and exact multi-card undo tests. If deferred: a test names the
-  current gap and the follow-up.
+  green. The 183.3 board-wide delete/restore tests are listed below.
 
 No existing test is weakened. The `TASK-156` label-diff test is updated only
 with an explicit compatibility rationale.
+
+### 183.3 — board-wide label timestamps
+
+- Shared reducer: a `DELETE_LABEL` that touches two cards stamps both
+  `updatedAt` values with the command clock (and leaves an unaffected card
+  untouched); `RESTORE_LABEL` writes each assignment's `updatedAt` back.
+- Shared inverse: `invert(DELETE_LABEL)` carries the per-card previous
+  timestamps, and undo restores the board byte for byte;
+  `invert(RESTORE_LABEL)` carries inverse-only `DELETE_LABEL.cardStamps` so a
+  redo/undo of the restore is exact too.
+- `validate.test.ts`: a pre-183.3 `RESTORE_LABEL` assignment without
+  `updatedAt` is accepted unchanged; a new assignment keeps the timestamp; an
+  inverse `DELETE_LABEL` accepts `cardStamps`, while a fresh delete drops them.
+- Backend writer unit: `DELETE_LABEL` calls the card bump for every live
+  affected card; `RESTORE_LABEL` bumps each assignment with its saved stamp.
+- Persistence/integration through `POST /commands`: every affected card has
+  `updatedAt = command stamp`, `version = previous + 1` and
+  `lastActorId = actor`; the inverse restores the exact prior `updatedAt` and
+  adds one more version step; the old-shape inverse falls back to the undo
+  clock; a stale `ifMatchVersions` card precondition answers `409` while the
+  current one applies. No regression for the 183.2 single-card test.
+- Audit regression: `RENAME_LABEL` and `SET_LABEL_COLOR` leave the card row
+  (timestamp, version, actor) untouched.
 
 ---
 
@@ -968,12 +985,12 @@ with an explicit compatibility rationale.
 4. **One shared reset database or a template clone per session?** Recommended:
    one reset database plus `verify` for the first version; document template
    cloning for teams that need parallel manual sessions.
-5. **Should `DELETE_LABEL` and `RESTORE_LABEL` be fixed in 183.2?** The
-   multi-card change is tracked in TASK-183.3. See §3.3 for the regression
-   coverage and the per-card undo requirement.
-6. **Should label rename/color bump affected cards?** Recommended: no. Label
-   metadata changes, not card membership; the card content is unchanged. Record
-   the decision in the audit table.
+5. **Should `DELETE_LABEL` and `RESTORE_LABEL` be fixed in 183.2?** No — the
+   multi-card change shipped separately as TASK-183.3. See §3.3 for the
+   implementation note, regression coverage and the per-card undo contract.
+6. **Should label rename/color bump affected cards?** No. Label metadata
+   changes, not card membership; the card content is unchanged. The decision is
+   recorded in the audit table and pinned by an e2e regression.
 7. **Where should the demo docs live?** Recommended: `docs/DEMO-FIXTURES.md`
    with a short link from the pixel parity README and the TASK-176 task doc.
 8. **Should `verify` run in CI?** It needs a seeded database; the seed's

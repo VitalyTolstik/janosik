@@ -644,9 +644,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - TASK-183.2: attaching or detaching a card label updates the card's timestamp.
   Undo restores the previous timestamp, and focus refetch can detect the
-  change from the timestamp alone. The label comparison still covers older
-  snapshots and board-wide label deletion and restoration (tracked in
-  TASK-183.3).
+  change from the timestamp alone.
+
+- TASK-183.3: deleting a label stamps every card it leaves (`updatedAt`,
+  `version`, `lastActorId`), and restoring it puts each card's exact previous
+  timestamp back. Old undo records without per-card timestamps still apply
+  using the restore clock; label rename/color deliberately leave cards
+  untouched. The label comparison in the UI diff remains as a compatibility
+  check for older snapshots.
 
 - TASK-182 phase 2: if the due-date picker fails in admin card Properties, the
   popover immediately offers Retry and a native date-and-time input while the
