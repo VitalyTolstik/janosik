@@ -83,7 +83,9 @@ function renderBoard() {
           <I18nProvider>
             <ToastProvider>
               <TooltipProvider>
-                <MemoryRouter initialEntries={["/board/b-1"]}>
+                <MemoryRouter
+                  initialEntries={["/board/b-1?card=card-broken&lng=ru&keep=1"]}
+                >
                   <BoardProvider>
                     <BoardSection />
                     <RouteProbe />
@@ -112,18 +114,17 @@ describe("BoardSection compact boundary reset (TASK-156 review)", () => {
   it("closes the crashed card and clears its deep link on reset", () => {
     renderBoard();
 
-    // Opening the broken card crashes inside the contained boundary.
-    fireEvent.click(screen.getByText("Broken card"));
+    // The deep link opens the broken card inside the contained boundary.
     expect(screen.getByTestId("error-compact")).toBeInTheDocument();
     expect(screen.getByTestId("route-probe").textContent).toBe(
-      "?card=card-broken",
+      "?card=card-broken&lng=ru&keep=1",
     );
 
     // Close: the fallback resets, the card closes and the deep link goes.
     fireEvent.click(screen.getByTestId("error-compact-close"));
     expect(screen.queryByTestId("error-compact")).toBeNull();
     expect(screen.getByTestId("card-dialog-stub").textContent).toBe("closed");
-    expect(screen.getByTestId("route-probe").textContent).toBe("");
+    expect(screen.getByTestId("route-probe").textContent).toBe("?keep=1");
 
     // The boundary is healthy for the next card.
     fireEvent.click(screen.getByText("Fine card"));

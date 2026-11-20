@@ -20,6 +20,7 @@ import { useBoardState } from "@/store/BoardContext";
 import { useBoardMember } from "@/store/board-live";
 import { cardHref, shouldLeaveToBrowser } from "@/utils/card-nav";
 import { linkRowGroups, type CardLinkFacts, type LinkRow } from "@/utils/links";
+import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 
 interface LinkedCardsPopoverProps {
   /** Resolves the assignee's avatar through the member directory. */
@@ -146,7 +147,7 @@ function LinkedCardsContent({
   const groups = linkRowGroups(board.cards, facts, t("card.links.deletedCard"));
 
   const openCard = (targetCardId: string) => {
-    const next = new URLSearchParams(searchParams);
+    const next = copySearchParamsWithoutLanguageHandoff(searchParams);
     next.set("card", targetCardId);
     setSearchParams(next);
     close();

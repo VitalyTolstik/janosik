@@ -6,7 +6,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -27,17 +27,22 @@ import { routes } from "@/routes";
  * badge.
  */
 
-function renderBoard() {
+function RouteProbe() {
+  return <span data-testid="route-probe">{useLocation().search}</span>;
+}
+
+function renderBoard(initialRoute = "/") {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter>
+              <MemoryRouter initialEntries={[initialRoute]}>
                 <ToastProvider>
                   <BoardProvider>
                     <BoardSection />
+                    <RouteProbe />
                   </BoardProvider>
                 </ToastProvider>
               </MemoryRouter>
@@ -253,8 +258,10 @@ describe("CardLinks (TASK-46)", () => {
   });
 
   it("closes the editor when the dialog navigates to a linked card", async () => {
-    renderBoard();
-    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    renderBoard(
+      `${routes.board("board-main")}?card=card-2&lng=ru&f.q=pipeline&keep=1`,
+    );
+    const dialog = await screen.findByRole("dialog");
     await linkCard(dialog, "Fix critical");
     await ensureLinkEditor(dialog);
     expect(within(dialog).getByTestId("card-links-input")).toBeInTheDocument();
@@ -267,6 +274,9 @@ describe("CardLinks (TASK-46)", () => {
     expect(
       within(dialog).getByDisplayValue("Fix critical auth bug"),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("route-probe").textContent).toBe(
+      "?card=card-5&f.q=pipeline&keep=1",
+    );
   });
 
   it("hides an already-linked card from the suggestions", async () => {

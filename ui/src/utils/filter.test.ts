@@ -783,6 +783,15 @@ describe("card link facets (TASK-46)", () => {
 });
 
 describe("filter URL state", () => {
+  it("omits the language handoff while keeping the card and other params", () => {
+    const base = new URLSearchParams("?card=c-1&lng=ru&keep=1");
+    const filter = { ...EMPTY_FILTER, query: "release" };
+
+    expect(writeFilterParams(filter, base).toString()).toBe(
+      "card=c-1&keep=1&f.q=release",
+    );
+  });
+
   it("round-trips every facet and keeps unrelated params", () => {
     const filter: CardFilter = {
       ...EMPTY_FILTER,

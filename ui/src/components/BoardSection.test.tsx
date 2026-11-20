@@ -337,9 +337,22 @@ describe("BoardSection", () => {
     expect(own).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("drops the stale language handoff when writing the search filter", () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view?lng=ru&keep=1&f.due=none");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search cards" }), {
+      target: { value: "Plain" },
+    });
+
+    expect(screen.getByTestId("route-probe").textContent).toBe(
+      "?keep=1&f.q=Plain&f.due=none",
+    );
+  });
+
   it("opens the card dialog from a deep link and from a table row", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
-    renderBoard("/board/board-view?card=card-plain");
+    renderBoard("/board/board-view?card=card-plain&lng=ru&keep=1");
 
     // The deep link opens the dialog directly, in the default board view.
     const dialog = await screen.findByRole("dialog");
@@ -349,6 +362,7 @@ describe("BoardSection", () => {
     // close it first (Escape), then switch to the table view.
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("route-probe").textContent).toBe("?keep=1");
 
     await openTableView();
     fireEvent.click(within(screen.getByRole("table")).getByText("Plain card"));
@@ -363,7 +377,8 @@ describe("BoardSection", () => {
 
   it("mirrors the open card into ?card= and Back closes the dialog", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
-    renderBoard("/board/board-view");
+    const initialSearch = "?f.due=none&keep=1&lng=ru";
+    renderBoard(`/board/board-view${initialSearch}`);
 
     // A plain click opens the dialog and writes the shareable link into
     // the address bar (the same behaviour as the search/archive paths).
@@ -371,25 +386,25 @@ describe("BoardSection", () => {
     expect(
       within(screen.getByRole("dialog")).getByDisplayValue("Plain card"),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("route-probe")).toHaveTextContent(
-      "card=card-plain",
+    expect(screen.getByTestId("route-probe").textContent).toBe(
+      "?f.due=none&keep=1&card=card-plain",
     );
 
     // A history Back (the browser's) closes the dialog and drops the param.
     fireEvent.click(screen.getByTestId("route-back"));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByTestId("route-probe")).toHaveTextContent("");
+    expect(screen.getByTestId("route-probe").textContent).toBe(initialSearch);
   });
 
   it("drops a dead ?card= param and reports the missing card", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
-    renderBoard("/board/board-view?card=does-not-exist");
+    renderBoard("/board/board-view?card=does-not-exist&lng=ru&keep=1");
 
     // No dialog opens for a card that is not on the board…
     expect(screen.queryByRole("dialog")).toBeNull();
     // …the dead param is stripped from the URL (replace, not push)…
     await waitFor(() =>
-      expect(screen.getByTestId("route-probe")).toHaveTextContent(""),
+      expect(screen.getByTestId("route-probe").textContent).toBe("?keep=1"),
     );
     // …and the user is told why nothing happened.
     expect(await screen.findByText("Card not found")).toBeInTheDocument();

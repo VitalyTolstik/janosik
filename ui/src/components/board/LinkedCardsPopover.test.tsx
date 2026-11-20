@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
@@ -65,14 +65,18 @@ function seedBoard() {
   );
 }
 
-function renderBoard() {
+function RouteProbe() {
+  return <span data-testid="route-probe">{useLocation().search}</span>;
+}
+
+function renderBoard(search = "") {
   render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter initialEntries={[routes.board("b-links")]}>
+              <MemoryRouter initialEntries={[routes.board("b-links") + search]}>
                 <ToastProvider>
                   <BoardProvider>
                     <Routes>
@@ -81,6 +85,7 @@ function renderBoard() {
                         element={<BoardSection />}
                       />
                     </Routes>
+                    <RouteProbe />
                   </BoardProvider>
                 </ToastProvider>
               </MemoryRouter>
@@ -140,7 +145,7 @@ describe("LinkedCardsPopover (card-front badges)", () => {
 
   it("navigates to the linked card from a row and closes", async () => {
     seedBoard();
-    renderBoard();
+    renderBoard("?lng=ru&f.due=none&keep=1");
     const alpha = (await screen.findByText("Alpha card")).closest(
       "article",
     ) as HTMLElement;
@@ -153,6 +158,9 @@ describe("LinkedCardsPopover (card-front badges)", () => {
       // The dialog re-points to Beta (the title textarea carries the name).
       expect(screen.getByLabelText("Title")).toHaveValue("Beta card");
     });
+    expect(screen.getByTestId("route-probe").textContent).toBe(
+      "?f.due=none&keep=1&card=c-b",
+    );
     expect(screen.queryByTestId("card-links-popover")).toBeNull();
   });
 });

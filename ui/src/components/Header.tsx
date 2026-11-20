@@ -42,6 +42,7 @@ import {
   useBoardActions,
   useBoardHistory,
 } from "@/store/BoardContext";
+import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 
 /**
  * The approvals/pause dialog is its own lazy chunk: the board loads on the
@@ -197,7 +198,7 @@ export function Header() {
   const agentsValueForTab = (value: AgentControlTab): string =>
     value === "pause" ? "live" : value === "runs" ? "runs" : "inbox";
   const writeAgentsParam = (value: AgentControlTab | null) => {
-    const next = new URLSearchParams(location.search);
+    const next = copySearchParamsWithoutLanguageHandoff(location.search);
     if (value === null) {
       next.delete("agents");
       next.delete("approval");
@@ -346,7 +347,9 @@ export function Header() {
                   .filter((board) => !board.archivedAt)
                   .map((board) => ({ id: board.id, title: board.title }))}
                 onChange={(boardId) => {
-                  const query = new URLSearchParams(location.search);
+                  const query = copySearchParamsWithoutLanguageHandoff(
+                    location.search,
+                  );
                   if (boardId === "all") query.delete("board");
                   else query.set("board", boardId);
                   query.delete("scope");

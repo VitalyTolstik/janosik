@@ -29,6 +29,7 @@ import {
   suggestLinkTargets,
   wouldCreateCycle,
 } from "@/utils/links";
+import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 import type { Board, CardLinkType } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
@@ -469,7 +470,7 @@ export function CardLinks({
   );
 
   function openCard(targetCardId: string) {
-    const next = new URLSearchParams(searchParams);
+    const next = copySearchParamsWithoutLanguageHandoff(searchParams);
     next.set("card", targetCardId);
     setSearchParams(next);
   }
