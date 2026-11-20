@@ -82,11 +82,6 @@ export interface FakeCardLink {
   createdAt: number;
 }
 
-type FakeAttachment = AdminAttachmentRowDto & {
-  isInline?: boolean;
-  descriptionDetached?: boolean;
-};
-
 export interface FakeAdminState {
   admins: FakeAdmin[];
   users: AdminUserRowDto[];
@@ -97,7 +92,7 @@ export interface FakeAdminState {
   sessions: AdminSessionRowDto[];
   tokens: AdminTokenRowDto[];
   comments: AdminCommentRowDto[];
-  attachments: FakeAttachment[];
+  attachments: AdminAttachmentRowDto[];
   activity: AdminActivityRowDto[];
   /** User-detail membership rows (TASK-176.4 inviter links). */
   memberships: AdminUserMembershipDto[];
@@ -266,6 +261,7 @@ export function adminComment(
     authorId: "u-1",
     authorEmail: "member@example.com",
     text: "Looks good",
+    kind: "note",
     createdAt: now,
     updatedAt: now,
     editedAt: null,
@@ -275,8 +271,8 @@ export function adminComment(
 }
 
 export function adminAttachment(
-  overrides: Partial<FakeAttachment> = {},
-): FakeAttachment {
+  overrides: Partial<AdminAttachmentRowDto> = {},
+): AdminAttachmentRowDto {
   return {
     id: "attachment-1",
     cardId: "card-1",
@@ -290,6 +286,8 @@ export function adminAttachment(
     uploadedById: "u-1",
     uploadedByEmail: "member@example.com",
     transcodeStatus: "none",
+    isInline: false,
+    descriptionDetached: false,
     deletedAt: null,
     createdAt: now,
     ...overrides,
@@ -2985,6 +2983,9 @@ export class FakeAdminServer {
     const columnId = url.searchParams.get("columnId");
     const cardId = url.searchParams.get("cardId");
     const cards = url.pathname.endsWith("/cards");
+    const comments = url.pathname.endsWith("/comments");
+    const attachments = url.pathname.endsWith("/attachments");
+    const { searchParams } = url;
     const currentTime = Date.now();
     const matchesCard = cards
       ? this.cardFacets(url.searchParams, currentTime)
@@ -2992,14 +2993,49 @@ export class FakeAdminServer {
     const commandId = url.searchParams.get("commandId");
     const filtered = items.filter((item) => {
       const record = item as Record<string, unknown>;
-      if (boardId && record.boardId !== boardId && record.id !== boardId) {
+      const parent =
+        comments || attachments
+          ? this.state.cards.find((card) => card.id === record.cardId)
+          : undefined;
+      if (
+        boardId &&
+        (comments ? parent?.boardId : record.boardId) !== boardId &&
+        record.id !== boardId
+      ) {
         return false;
       }
-      if (columnId && record.columnId !== columnId) return false;
+      if (columnId && (parent?.columnId ?? record.columnId) !== columnId)
+        return false;
       if (cardId && record.cardId !== cardId && record.id !== cardId) {
         return false;
       }
       if (matchesCard && !matchesCard(item as AdminCardRowDto)) return false;
+      if (comments || attachments) {
+        const labelId = searchParams.get("labelId");
+        if (
+          labelId &&
+          !this.state.cardLabelIds[String(record.cardId)]?.includes(labelId)
+        )
+          return false;
+        const person = searchParams.get(comments ? "authorId" : "uploadedById");
+        if (person && record[comments ? "authorId" : "uploadedById"] !== person)
+          return false;
+        const kinds = searchParams.getAll("kind");
+        if (kinds.length && !kinds.includes(String(record.kind))) return false;
+        const mime = searchParams.get("mime");
+        if (mime && mime !== attachmentMimeFamily(String(record.mimeType)))
+          return false;
+        const transcode = searchParams.get("transcode");
+        if (transcode && record.transcodeStatus !== transcode) return false;
+        const from = searchParams.get("from");
+        const to = searchParams.get("to");
+        if (from !== null && Number(record.createdAt) < Number(from))
+          return false;
+        if (to !== null && Number(record.createdAt) > Number(to)) return false;
+        const status = searchParams.get("status");
+        if (status === "active" && record.deletedAt !== null) return false;
+        if (status === "deleted" && record.deletedAt === null) return false;
+      }
       if (commandId) {
         const details = record.details as Record<string, unknown> | null;
         const matched =
@@ -3198,4 +3234,23 @@ export class FakeAdminServer {
       headers: { "Content-Type": "application/json" },
     });
   }
+}
+
+function attachmentMimeFamily(raw: string) {
+  const mime = raw.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime === "application/pdf") return "pdf";
+  if (
+    mime.startsWith("text/") ||
+    mime.startsWith("application/vnd.openxmlformats-officedocument.") ||
+    [
+      "application/rtf",
+      "application/msword",
+      "application/vnd.ms-excel",
+      "application/vnd.ms-powerpoint",
+    ].includes(mime)
+  )
+    return "document";
+  return "other";
 }

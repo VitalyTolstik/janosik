@@ -5,16 +5,18 @@ import type { AdminListFilters } from "../admin-list-query";
 import { AdminFilterPopover } from "./AdminFilterPopover";
 import { FilterChip, FilterOptionChip } from "./FilterChip";
 import {
-  ATTACHMENT_CHOICES,
-  DUE_CHOICES,
+  KIND_CHOICES,
+  RADIO_FILTERS,
+  type FilterBarSurface,
   PRIORITY_CHOICES,
   shortId,
-  type CardFilterKey,
+  type FilterKey,
 } from "./filter-registry";
-import type { ResolvedCardFilter } from "./use-card-filter-options";
+import type { ResolvedFilter } from "./use-list-filter-options";
 
 export function AdminFilterBar({
   renderHeader,
+  surface,
   triggerRef,
   chipRowRef,
   filters,
@@ -27,15 +29,16 @@ export function AdminFilterBar({
   onClear,
 }: {
   renderHeader: (trigger: ReactNode) => ReactNode;
+  surface: FilterBarSurface;
   triggerRef: RefObject<HTMLButtonElement>;
   chipRowRef: RefObject<HTMLDivElement>;
   filters: AdminListFilters;
-  resolved: ResolvedCardFilter[];
+  resolved: ResolvedFilter[];
   filtered: boolean;
   canClear: boolean;
   total: number | undefined;
   onChange: (patch: Partial<AdminListFilters>) => void;
-  onRemove: (key: CardFilterKey, value?: string) => void;
+  onRemove: (key: FilterKey, value?: string) => void;
   onClear: () => void;
 }) {
   const t = useAdminT();
@@ -53,7 +56,7 @@ export function AdminFilterBar({
   });
 
   const choiceChips: {
-    key: CardFilterKey;
+    key: FilterKey;
     value?: string;
     text: string;
     name?: string;
@@ -85,13 +88,26 @@ export function AdminFilterBar({
         }),
       });
   }
-  const due = DUE_CHOICES.find(({ value }) => value === filters.due);
-  if (due) choiceChips.push({ key: "due", text: t(due.label) });
-  const attachments = ATTACHMENT_CHOICES.find(
-    ({ value }) => value === filters.hasAttachments,
-  );
-  if (attachments)
-    choiceChips.push({ key: "hasAttachments", text: t(attachments.label) });
+  for (const { value, label } of KIND_CHOICES) {
+    if (filters.kind?.includes(value))
+      choiceChips.push({
+        key: "kind",
+        value,
+        text: t(label),
+        name: t("admin.filters.remove", {
+          facet: t("admin.filters.kind"),
+          value: t(label),
+        }),
+      });
+  }
+  for (const key of Object.keys(
+    RADIO_FILTERS,
+  ) as (keyof typeof RADIO_FILTERS)[]) {
+    const choice = RADIO_FILTERS[key].choices.find(
+      ({ value }) => value === filters[key],
+    );
+    if (choice) choiceChips.push({ key, text: t(choice.label) });
+  }
 
   const facets = new Set([
     ...resolved.map(({ key }) => key),
@@ -145,6 +161,7 @@ export function AdminFilterBar({
       {renderHeader(
         <AdminFilterPopover
           triggerRef={triggerRef}
+          surface={surface}
           filters={filters}
           count={facets.size}
           onChange={onChange}
@@ -202,7 +219,7 @@ export function AdminFilterBar({
             variant="outline"
             className="h-11 sm:h-8"
             onClick={() => {
-              const retried = new Set<CardFilterKey>();
+              const retried = new Set<FilterKey>();
               for (const filter of failed) {
                 if (retried.has(filter.key)) continue;
                 retried.add(filter.key);

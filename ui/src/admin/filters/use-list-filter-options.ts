@@ -1,6 +1,6 @@
 import type { AdminListFilters } from "../admin-list-query";
 import {
-  cardFilterFacet,
+  filterFacet,
   selectedFilterValues,
   type LookupFacet,
 } from "./filter-registry";
@@ -11,7 +11,7 @@ function useResolvedFilter(
   key: LookupFacet["key"],
 ) {
   const ids = selectedFilterValues(filters, key);
-  const facet = cardFilterFacet(key);
+  const facet = filterFacet(key);
   const lookup = useFilterOptions(
     ids.length ? { type: facet.type, ids: [...ids] } : null,
   );
@@ -22,21 +22,22 @@ function useResolvedFilter(
   };
 }
 
-export function useCardFilterOptions(filters: AdminListFilters | undefined) {
+export function useListFilterOptions(filters: AdminListFilters | undefined) {
   const board = useResolvedFilter(filters, "boardId");
   const column = useResolvedFilter(filters, "columnId");
   const label = useResolvedFilter(filters, "labelId");
   const card = useResolvedFilter(filters, "cardId");
   const assignee = useResolvedFilter(filters, "assigneeId");
-  return [board, column, label, card, assignee].flatMap(({ ids, ...filter }) =>
-    ids.map((id) => ({
-      ...filter,
-      id,
-      option: filter.data?.items.find((item) => item.id === id),
-    })),
+  const author = useResolvedFilter(filters, "authorId");
+  const uploader = useResolvedFilter(filters, "uploadedById");
+  return [board, column, label, card, assignee, author, uploader].flatMap(
+    ({ ids, ...filter }) =>
+      ids.map((id) => ({
+        ...filter,
+        id,
+        option: filter.data?.items.find((item) => item.id === id),
+      })),
   );
 }
 
-export type ResolvedCardFilter = ReturnType<
-  typeof useCardFilterOptions
->[number];
+export type ResolvedFilter = ReturnType<typeof useListFilterOptions>[number];

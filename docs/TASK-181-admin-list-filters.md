@@ -305,7 +305,7 @@ Current structure: **Comments** and **Attachments** tabs.
 | --- | --- | --- | --- |
 | Board | `boardId` (single) | Existing; board counter link | 181.4 |
 | Card | `cardId` (single) | Exact card thread | 181.4 |
-| Author | `authorId` (repeated) | Find one user's comments across cards | 181.4 |
+| Author | `authorId` (single) | Find one user's comments across cards | 181.4 |
 | Kind | `kind` (repeated: note/status/question/blocker/evidence/handoff) | Triage blockers/questions; TASK-177.11 uses the same enum in the board UI | 181.4 |
 | Status | `status=active\|deleted` | Existing | existing |
 | Period | `period` over `createdAt` | Recent moderation window; 181.4 adds `periods: true` (backend `from`/`to` already exists) | 181.4 |
@@ -321,8 +321,8 @@ support value.
 | --- | --- | --- | --- |
 | Board | `boardId` (single) | Existing; board counter link | 181.4 |
 | Card | `cardId` (single) | Exact card files | 181.4 |
-| Uploader | `uploadedById` (repeated) | Find one user's uploads; abuse/investigation | 181.4 |
-| Type | `mime=image\|video\|audio\|pdf\|document\|other` | Support for file classes; type is visible in the row | 181.4 |
+| Uploader | `uploadedById` (single) | Find one user's uploads; abuse/investigation | 181.4 |
+| Type | `mime=image\|video\|pdf\|document\|other` | Support for file classes; type is visible in the row | 181.4 |
 | Status | `status=active\|deleted` | Existing | existing |
 | Period | `period` over `createdAt` | Recent uploads / retention window; 181.4 adds `periods: true` and `where.createdAt = dateRange(query)` | 181.4 |
 | Transcode | `transcode=pending\|failed\|done\|none` | Find stuck/failed video encodes | 181.4 |
@@ -335,6 +335,21 @@ so they can be moderated/downloaded; there is no inline filter in v1. The card
 `descriptionDetached=false`), so an inline-only card can appear here while its
 `No card attachments` chip is active. This is documented and tested, not a
 counter mismatch.
+
+Both moderation lists default to **All**, which includes live and soft-deleted
+rows. **Active** and **Deleted** use the comment or attachment's own
+`deletedAt`. A live row under an archived or soft-deleted board/card still
+appears in Active. A valid filter combination with no rows shows a tab-specific
+empty message and a clear-filters action. Period bounds are inclusive and
+apply to each row's `createdAt`.
+
+MIME matching is case-insensitive against the stored `mimeType`. Images and
+videos match their MIME prefixes, PDF matches `application/pdf`, and Documents
+covers `text/*`, RTF, and legacy and Open XML Office formats. Other covers
+the remaining types, including audio and archives. Video processing matches
+the stored `transcodeStatus`. **No transcoding** covers non-video uploads and
+videos uploaded with transcoding disabled. Later feature flag changes do not
+change those rows' state.
 
 ### 5.5 Audit & activity hub
 
@@ -586,7 +601,7 @@ chip model; they are not free-text pickers.
 | Attachments | radio group: Any / Has card attachments / No card attachments | `hasAttachments=true\|false` | `Has card attachments` / `No card attachments` | `Card attachment filter` / `Remove filter: Has card attachments` |
 | Verified | radio group: Any / Verified / Unverified | `verified=true\|false` | `Verified` / `Unverified` | `Email verification filter` / `Remove filter: Verified` |
 | Due | radio group: Any / Overdue / Due in 24 hours / No due date | `due=overdue\|soon\|none` | `Overdue` / `Due in 24 hours` / `No due date` | `Due date filter` / `Remove filter: Overdue` |
-| MIME type | radio group: Any / Images / Videos / Audio / PDF / Documents / Other | `mime=image\|video\|audio\|pdf\|document\|other` | localized type label | `File type filter` / `Remove filter: Images` |
+| MIME type | radio group: Any / Images / Videos / PDF / Documents / Other | `mime=image\|video\|pdf\|document\|other` | localized type label | `File type filter` / `Remove filter: Images` |
 | Transcode | radio group: Any / Pending / Failed / Done / No transcoding | `transcode=pending\|failed\|done\|none` | localized state label (`No transcoding` for `none`) | `Video processing filter` / `Remove filter: Failed` |
 
 - “Any” is the unset state: selecting it removes the param and the chip. There
@@ -615,7 +630,7 @@ Cancel and Escape for both draft pickers, plus URL/selection-reset behavior.
 Exact RU chip copy (use one noun form per state, no plural engine):
 `Без исполнителя`, `С файлами карточки` / `Без файлов карточки`, `Подтверждён` /
 `Не подтверждён`, `Просрочено` / `Срок в течение 24 часов` / `Без срока`,
-`Изображения` / `Видео` / `Аудио` / `PDF` / `Документы` / `Другое`,
+`Изображения` / `Видео` / `PDF` / `Документы` / `Другое`,
 `Обработка: в очереди` / `Обработка: ошибка` / `Обработка: готово` /
 `Без перекодирования`, and the label-match chip `Совпадение меток: все`. RU tests assert
 the same add/remove/aria behavior, not only the English strings.
@@ -871,10 +886,10 @@ query params.
 | `hasAttachments` | `true\|false` | cards | `attachmentCount > 0` / `= 0`; counter = live, non-inline files with `descriptionDetached=false`. Inline and `descriptionDetached=true` (detached/hidden) files are excluded |
 | `adminMemberId` | single user id | boards | `members.some` with role ADMIN and acceptedAt not null; not the displayed first-admin label |
 | `verified` | `true\|false` | users | `emailVerifiedAt` null/not |
-| `authorId` | repeated user id (max 20) | comments | OR |
+| `authorId` | single user id | comments | Exact author |
 | `kind` | repeated enum (max 6) | comments | note/status/question/blocker/evidence/handoff |
-| `uploadedById` | repeated user id (max 20) | attachments | OR |
-| `mime` | single enum | attachments | image/video/audio/pdf/document/other |
+| `uploadedById` | single user id | attachments | Exact uploader |
+| `mime` | single enum | attachments | image/video/pdf/document/other |
 | `transcode` | single enum | attachments | none/pending/done/failed; `none` also covers videos when transcoding is disabled |
 | `actorId` | repeated user id (max 20) | commands, activity | OR |
 | `type` | repeated exact code (max 20) | commands, activity, card links | OR; command/activity options from server distinct values; card-link values are the static `CARD_LINK_TYPES` |
@@ -884,15 +899,14 @@ query params.
 | `targetId` | single string ≤100 | audit | Exact; may be `singleton` for settings |
 | `commandId` | single id | commands, audit | Existing 176.10 correlation (only after that branch merges) |
 
-`labelId` (cards), `assigneeId`, `authorId`, `uploadedById`, `actorId`,
-`adminId`, `type`, `action`, `targetType` and `kind` are arrays on the wire. A
-single value is accepted and normalized to a one-element array once the
-facet ships. `labelId` stays single-valued on cards through 181.2 and on
-all other legacy lists.
+`labelId` (cards), `assigneeId`, `actorId`, `adminId`, `type`, `action`,
+`targetType` and `kind` are arrays on the wire. A single value is accepted
+and normalized to a one-element array once the facet ships. `labelId` stays
+single-valued on cards through 181.2 and on all other legacy lists.
 
-Structural params (`boardId`, `columnId`, `cardId`, `checklistId`,
-`adminMemberId`, `commandId`, `targetId`) stay single-valued; a repeated value
-is a validation error rather than first-value-wins.
+`boardId`, `columnId`, `cardId`, `checklistId`, `adminMemberId`, `authorId`,
+`uploadedById`, `commandId` and `targetId` accept one value. Repeated values
+return 400.
 
 ### 7.2 Combination semantics
 
@@ -1475,7 +1489,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Attachments can be narrowed to one uploader, one MIME family, or failed
   transcodes; image/video/pdf/document/other tests cover each branch.
 - Attachments tab shows `Inline`/`Detached` badges; an inline-only card is
-  visible here while its `No card attachments` card filter remains false, tested
+  visible here while the `No card attachments` card filter matches it, tested
   against the counter.
 - `transcode=none` matches non-video files and videos when the transcode flag is
   disabled; the test covers both `No transcoding` states.

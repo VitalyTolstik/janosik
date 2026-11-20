@@ -887,6 +887,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         bulk: true,
         title: t("admin.comments.title"),
         subtitle: t("admin.comments.subtitle"),
+        periods: true,
         statuses: [
           { value: "active", label: statusLabels.active },
           { value: "deleted", label: statusLabels.deleted },
@@ -895,7 +896,10 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comments.column.text"),
             render: (comment) => (
-              <TextCell value={comment.text} maxWidth="26rem" />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <TextCell value={comment.text} maxWidth="26rem" />
+                <Badge>{t(`admin.filters.kind.${comment.kind}`)}</Badge>
+              </div>
             ),
             className: "max-w-[26rem]",
           },
@@ -956,6 +960,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         bulk: true,
         title: t("admin.attachments.title"),
         subtitle: t("admin.attachments.subtitle"),
+        periods: true,
         statuses: [
           { value: "active", label: statusLabels.active },
           { value: "deleted", label: statusLabels.deleted },
@@ -971,11 +976,25 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                   fileName={file.fileName}
                 />
                 <TextCell value={file.fileName} maxWidth="18rem" />
+                {file.isInline ? (
+                  <Badge>{t("admin.attachments.inline")}</Badge>
+                ) : null}
+                {file.descriptionDetached ? (
+                  <Badge>{t("admin.attachments.detached")}</Badge>
+                ) : null}
                 <AttachmentDownloadButton
                   attachmentId={file.id}
                   fileName={file.fileName}
                 />
               </span>
+            ),
+          },
+          {
+            label: t("admin.attachments.column.board"),
+            render: (file) => (
+              <EntityLink to={boardHref(file.boardId)}>
+                {file.boardTitle}
+              </EntityLink>
             ),
           },
           {

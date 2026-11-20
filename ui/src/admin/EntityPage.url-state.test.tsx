@@ -29,6 +29,7 @@ import {
   adminAttachment,
   adminBoard,
   adminCard,
+  adminComment,
   adminLabel,
   adminUser,
   emptyAdminState,
@@ -1064,6 +1065,228 @@ describe("cards filter bar", () => {
       await user.keyboard("{Enter}");
       await waitFor(() => expect(currentQuery().get("boardId")).toBeNull());
       expect(trigger).toHaveFocus();
+    } finally {
+      view.unmount();
+      await i18n.changeLanguage("en");
+    }
+  });
+});
+
+function moderationServer() {
+  const state = stateWithTwoBoards();
+  const now = Date.now();
+  state.users = [adminUser({ displayName: "Alex Moderator" })];
+  state.comments = [
+    adminComment({
+      id: "comment-blocked",
+      text: "Blocked on review",
+      kind: "blocker",
+      createdAt: now,
+    }),
+    adminComment({
+      id: "comment-question",
+      text: "Who can help?",
+      kind: "question",
+      createdAt: now,
+    }),
+    adminComment({
+      id: "comment-note",
+      text: "An ordinary note",
+      createdAt: now,
+    }),
+  ];
+  state.attachments = [
+    adminAttachment({ fileName: "inline.png", isInline: true, createdAt: now }),
+    adminAttachment({
+      id: "attachment-detached",
+      fileName: "detached.png",
+      descriptionDetached: true,
+      createdAt: now,
+    }),
+  ];
+  const server = new FakeAdminServer(state);
+  server.sessionRole = "OPERATOR";
+  vi.stubGlobal("fetch", server.fetchImpl);
+  return server;
+}
+
+async function openModerationFacet(
+  user: ReturnType<typeof userEvent.setup>,
+  title: string,
+  facet: string,
+  trigger = /^Filters/,
+) {
+  await user.click(await screen.findByRole("button", { name: trigger }));
+  const dialog = within(await screen.findByRole("dialog", { name: title }));
+  await user.click(dialog.getByRole("button", { name: facet }));
+  return dialog;
+}
+
+describe("moderation filter bar", () => {
+  it("applies a kind draft and author lookup, then preserves only the board and return link between tabs", async () => {
+    const server = moderationServer();
+    const user = userEvent.setup();
+    renderAdmin(
+      "/admin/moderation?tab=comments&boardId=b-1&cardId=card-1&period=7d&returnTo=%2Fadmin",
+    );
+    const title = "Filters for comments";
+    expect(
+      await screen.findByRole("button", { name: "7 days" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("An ordinary note")).toBeVisible();
+    expect(
+      lastRequest(server, "/admin/entities/comments")?.query.has("from"),
+    ).toBe(true);
+
+    let kind = await openModerationFacet(user, title, "Comment kind");
+    await user.click(kind.getByRole("checkbox", { name: "Blocker" }));
+    await user.keyboard("{Escape}");
+    expect(currentQuery().has("kind")).toBe(false);
+
+    kind = await openModerationFacet(user, title, "Comment kind");
+    await user.click(kind.getByRole("checkbox", { name: "Blocker" }));
+    await user.click(kind.getByRole("checkbox", { name: "Question" }));
+    expect(currentQuery().has("kind")).toBe(false);
+    await user.click(kind.getByRole("button", { name: "Apply" }));
+    expect(currentQuery().getAll("kind")).toEqual(["blocker", "question"]);
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        "Results: 2",
+      ),
+    );
+    const blocked = screen.getByRole("row", { name: /Blocked on review/ });
+    expect(within(blocked).getByText("Blocker")).toBeVisible();
+
+    const author = await openModerationFacet(user, title, "Author");
+    const authorInput = author.getByRole("combobox", {
+      name: "Search options — Author",
+    });
+    await user.type(authorInput, "member@example.com");
+    await user.click(
+      await author.findByRole("option", {
+        name: /Alex Moderator.*member@example.com/,
+      }),
+    );
+    expect(currentQuery().get("authorId")).toBe("u-1");
+    expect(
+      await screen.findByRole("button", {
+        name: /Remove filter: Author.*Alex Moderator.*member@example.com/,
+      }),
+    ).toBeVisible();
+    expect(
+      lastRequest(server, "/admin/entities/comments")?.query.get("authorId"),
+    ).toBe("u-1");
+    expect(
+      server.requests.some(
+        ({ path, query }) =>
+          path === "/admin/filter-options" &&
+          query.get("type") === "user" &&
+          query.get("q") === "member@example.com" &&
+          !query.has("boardId"),
+      ),
+    ).toBe(true);
+
+    await user.click(screen.getByRole("tab", { name: "Attachments" }));
+    expect(await screen.findByText("Inline")).toBeVisible();
+    expect(await screen.findByText("Detached")).toBeVisible();
+    expect(Object.fromEntries(currentQuery())).toEqual({
+      tab: "attachments",
+      boardId: "b-1",
+      returnTo: "/admin",
+    });
+    expect(screen.getByTestId("admin-filter-boardId")).toHaveTextContent(
+      "Same name",
+    );
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    expect(await screen.findByText("An ordinary note")).toBeVisible();
+    expect(Object.fromEntries(currentQuery())).toEqual({
+      tab: "comments",
+      boardId: "b-1",
+      returnTo: "/admin",
+    });
+    expect(
+      lastRequest(server, "/admin/entities/comments")?.query.has("kind"),
+    ).toBe(false);
+  });
+
+  it("uses localized radios, chips and empty state in the Russian phone sheet", async () => {
+    const server = moderationServer();
+    vi.stubGlobal("matchMedia", (media: string) => ({
+      matches: media === "(max-width: 639px)",
+      media,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    await ensureLocale("ru");
+    await i18n.changeLanguage("ru");
+    const user = userEvent.setup();
+    const view = renderAdmin(
+      "/admin/moderation?tab=attachments&boardId=b-1&period=24h",
+    );
+    try {
+      expect(
+        await screen.findByRole("button", { name: "24 часа" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        lastRequest(server, "/admin/entities/attachments")?.query.has("from"),
+      ).toBe(true);
+      const open = (facet: string) =>
+        openModerationFacet(user, "Фильтры вложений", facet, /^Фильтры/);
+      const mime = await open("Тип файла");
+      expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+      const mimeGroup = mime.getByRole("radiogroup", {
+        name: "Фильтр по типу файла",
+      });
+      expect(
+        within(mimeGroup).getByRole("radio", { name: "Любой вариант" }),
+      ).toHaveFocus();
+      await user.keyboard("{ArrowDown}[Space]");
+      expect(currentQuery().get("mime")).toBe("image");
+      expect(
+        await screen.findByRole("button", {
+          name: "Удалить фильтр: Изображения",
+        }),
+      ).toBeVisible();
+
+      let transcode = await open("Обработка видео");
+      const transcodeGroup = transcode.getByRole("radiogroup", {
+        name: "Фильтр по обработке видео",
+      });
+      await user.keyboard("{End}{Escape}");
+      expect(currentQuery().has("transcode")).toBe(false);
+      expect(screen.getByRole("button", { name: /^Фильтры/ })).toHaveFocus();
+      transcode = await open("Обработка видео");
+      await user.click(
+        transcode.getByRole("radio", { name: "Обработка: ошибка" }),
+      );
+      expect(currentQuery().get("transcode")).toBe("failed");
+      expect(
+        await screen.findByRole("button", {
+          name: "Удалить фильтр: Обработка: ошибка",
+        }),
+      ).toBeVisible();
+      expect(
+        await screen.findByText("Нет вложений, соответствующих этим фильтрам."),
+      ).toBeVisible();
+      expect(transcodeGroup).not.toBeInTheDocument();
+      transcode = await open("Обработка видео");
+      await user.click(transcode.getByRole("radio", { name: "Любой вариант" }));
+      expect(currentQuery().has("transcode")).toBe(false);
+      expect(await screen.findByText("Встроено")).toBeVisible();
+      await user.click(
+        screen.getByRole("button", { name: "Удалить фильтр: Изображения" }),
+      );
+      expect(currentQuery().has("mime")).toBe(false);
+
+      const uploader = await open("Кто загрузил");
+      await user.type(uploader.getByRole("combobox"), "Alex Moderator");
+      await user.click(
+        await uploader.findByRole("option", { name: /Alex Moderator/ }),
+      );
+      expect(currentQuery().get("uploadedById")).toBe("u-1");
+      expect(screen.getByTestId("admin-filter-uploadedById")).toHaveTextContent(
+        "Кто загрузил",
+      );
     } finally {
       view.unmount();
       await i18n.changeLanguage("en");

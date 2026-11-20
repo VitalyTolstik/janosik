@@ -18,13 +18,13 @@ import { listFilterError, type AdminListFilters } from "../admin-list-query";
 import { Badge } from "../ui";
 import { DraftFacetPicker, FilterFacetPicker } from "./FilterFacetPicker";
 import {
-  OFFERED_CARD_FILTERS,
-  ATTACHMENT_CHOICES,
-  DUE_CHOICES,
-  removeCardFilter,
+  offeredFilters,
+  RADIO_FILTERS,
+  type FilterBarSurface,
+  removeListFilter,
   selectedFilterValues,
-  type CardFilterFacet,
-  type CardFilterKey,
+  type FilterFacet,
+  type FilterKey,
 } from "./filter-registry";
 
 import { FilterRadioGroup } from "./FilterRadioGroup";
@@ -35,11 +35,13 @@ const titleClass = "border-b border-border px-3 py-3 text-sm font-semibold";
 
 export function AdminFilterPopover({
   triggerRef,
+  surface,
   filters,
   count,
   onChange,
 }: {
   triggerRef: RefObject<HTMLButtonElement>;
+  surface: FilterBarSurface;
   filters: AdminListFilters;
   count: number;
   onChange: (patch: Partial<AdminListFilters>) => void;
@@ -62,7 +64,11 @@ export function AdminFilterPopover({
     triggerRef.current?.focus();
   };
   const titleId = useId();
-  const title = t("admin.filters.title");
+  const title = t(
+    surface === "cards"
+      ? "admin.filters.title"
+      : `admin.filters.title.${surface}`,
+  );
   const trigger = (
     <Button
       ref={triggerRef}
@@ -79,6 +85,7 @@ export function AdminFilterPopover({
   );
   const menu = (
     <FilterMenu
+      surface={surface}
       filters={filters}
       onClose={close}
       onSelect={(patch) => {
@@ -127,21 +134,26 @@ export function AdminFilterPopover({
 }
 
 function FilterMenu({
+  surface,
   filters,
   onClose,
   onSelect,
 }: {
+  surface: FilterBarSurface;
   filters: AdminListFilters;
   onClose: () => void;
   onSelect: (patch: Partial<AdminListFilters>) => void;
 }) {
   const t = useAdminT();
-  const [active, setActive] = useState<CardFilterFacet | null>(null);
-  const [lastFacet, setLastFacet] = useState<CardFilterKey | null>(null);
+  const [active, setActive] = useState<FilterFacet | null>(null);
+  const [lastFacet, setLastFacet] = useState<FilterKey | null>(null);
 
   const [draft, setDraft] = useState(filters);
   const [limitError, setLimitError] = useState(false);
   const drafting = active?.kind === "multi";
+  const radio =
+    active?.kind === "radio" ? RADIO_FILTERS[active.key] : undefined;
+  const facets = offeredFilters(surface);
   const updateDraft = (patch: Partial<AdminListFilters>) => {
     setDraft((previous) => ({ ...previous, ...patch }));
   };
@@ -151,7 +163,7 @@ function FilterMenu({
       next.columnId = next.labelId = next.cardId = null;
       delete next.labelMatch;
     }
-    if (listFilterError(next, "cards")) {
+    if (listFilterError(next, surface)) {
       setLimitError(true);
       return;
     }
@@ -168,9 +180,9 @@ function FilterMenu({
     : undefined;
   const draftError =
     draftChanges !== undefined &&
-    listFilterError({ ...filters, ...draftChanges }, "cards") !== undefined;
+    listFilterError({ ...filters, ...draftChanges }, surface) !== undefined;
 
-  const renderFacet = (facet: CardFilterFacet): ReactNode => (
+  const renderFacet = (facet: FilterFacet): ReactNode => (
     <Button
       key={facet.key}
       type="button"
@@ -223,61 +235,51 @@ function FilterMenu({
                 draft={draft}
                 onChange={updateDraft}
               />
-            ) : active.key === "due" ? (
+            ) : radio ? (
               <FilterRadioGroup
-                label={t("admin.filters.due.control")}
+                label={t(radio.label)}
                 options={[
                   t("admin.filters.any"),
-                  ...DUE_CHOICES.map(({ label }) => t(label)),
+                  ...radio.choices.map(({ label }) => t(label)),
                 ]}
                 selected={
-                  DUE_CHOICES.findIndex(({ value }) => filters.due === value) +
-                  1
-                }
-                onSelect={(index) =>
-                  apply({ due: DUE_CHOICES[index - 1]?.value })
-                }
-              />
-            ) : (
-              <FilterRadioGroup
-                label={t("admin.filters.attachments.control")}
-                options={[
-                  t("admin.filters.any"),
-                  ...ATTACHMENT_CHOICES.map(({ label }) => t(label)),
-                ]}
-                selected={
-                  ATTACHMENT_CHOICES.findIndex(
-                    ({ value }) => filters.hasAttachments === value,
+                  radio.choices.findIndex(
+                    ({ value }) => filters[active.key] === value,
                   ) + 1
                 }
                 onSelect={(index) =>
-                  apply({
-                    hasAttachments: ATTACHMENT_CHOICES[index - 1]?.value,
-                  })
+                  apply({ [active.key]: radio.choices[index - 1]?.value })
                 }
               />
-            )}
+            ) : null}
           </>
         ) : (
           <>
             <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">
               {t("admin.filters.scope")}
             </h3>
-            {OFFERED_CARD_FILTERS.filter(({ kind }) => kind === "lookup").map(
-              renderFacet,
-            )}
+            {facets
+              .filter(
+                (facet) =>
+                  "type" in facet &&
+                  facet.type !== "user" &&
+                  facet.kind === "lookup",
+              )
+              .map(renderFacet)}
             <h3 className="mt-2 px-2 py-1 text-xs font-medium text-muted-foreground">
               {t("admin.filters.people")}
             </h3>
-            {OFFERED_CARD_FILTERS.filter(({ key }) => key === "assigneeId").map(
-              renderFacet,
-            )}
+            {facets
+              .filter((facet) => "type" in facet && facet.type === "user")
+              .map(renderFacet)}
             <h3 className="mt-2 px-2 py-1 text-xs font-medium text-muted-foreground">
               {t("admin.filters.properties")}
             </h3>
-            {OFFERED_CARD_FILTERS.filter(
-              ({ kind, key }) => kind !== "lookup" && key !== "assigneeId",
-            ).map(renderFacet)}
+            {facets
+              .filter(
+                ({ kind, key }) => kind !== "lookup" && key !== "assigneeId",
+              )
+              .map(renderFacet)}
           </>
         )}
       </div>
@@ -296,7 +298,7 @@ function FilterMenu({
               className="mr-auto h-11 sm:h-8"
               onClick={() =>
                 updateDraft({
-                  ...removeCardFilter(draft, active.key),
+                  ...removeListFilter(draft, active.key),
                   ...(active.key === "assigneeId"
                     ? { unassigned: undefined }
                     : {}),

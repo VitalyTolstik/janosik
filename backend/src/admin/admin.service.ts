@@ -2010,7 +2010,10 @@ export class AdminService {
   async listComments(
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCommentRowDto>> {
-    const where: Prisma.CommentWhereInput = {};
+    const where: Prisma.CommentWhereInput = {
+      authorId: query.authorId,
+      kind: query.kind && { in: query.kind },
+    };
     if (query.cardId) where.cardId = query.cardId;
     if (query.boardId || query.columnId || query.singleLabelId) {
       where.card = {
@@ -2060,6 +2063,7 @@ export class AdminService {
           cardId: true,
           authorId: true,
           text: true,
+          kind: true,
           createdAt: true,
           updatedAt: true,
           editedAt: true,
@@ -2079,6 +2083,7 @@ export class AdminService {
         authorId: comment.authorId,
         authorEmail: comment.author.email,
         text: comment.text,
+        kind: comment.kind as AdminCommentRowDto["kind"],
         createdAt: comment.createdAt.getTime(),
         updatedAt: comment.updatedAt.getTime(),
         editedAt: comment.editedAt?.getTime() ?? null,
@@ -2585,7 +2590,7 @@ export class AdminService {
   }
 
   /** `createdAt` range for the log-like listings (period tabs in the UI). */
-  private dateRange(query: AdminListQueryDto): Prisma.DateTimeFilter {
+  dateRange(query: AdminListQueryDto): Prisma.DateTimeFilter {
     const range: Prisma.DateTimeFilter = {};
     if (query.from !== undefined) range.gte = new Date(query.from);
     if (query.to !== undefined) range.lte = new Date(query.to);

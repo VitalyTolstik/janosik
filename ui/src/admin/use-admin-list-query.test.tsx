@@ -37,7 +37,7 @@ describe("URL-backed admin lists", () => {
     ],
     ["/admin/audit?tab=audit&adminId=a-1&targetId=c-1", "?tab=audit"],
     ["/admin/boards?adminMemberId=u-1", ""],
-    ["/admin/moderation?tab=attachments&mime=image", "?tab=attachments"],
+    ["/admin/moderation?tab=attachments&kind=blocker", "?tab=attachments"],
   ])(
     "loads %s without sending deferred filters or entering an error state",
     async (url, canonical) => {
