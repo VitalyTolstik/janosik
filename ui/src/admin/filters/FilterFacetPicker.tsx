@@ -17,6 +17,7 @@ import {
   optionState,
   PRIORITY_CHOICES,
   KIND_CHOICES,
+  LINK_TYPE_CHOICES,
   type FilterChoice,
   selectedFilterValues,
   type DraftFacet,
@@ -245,6 +246,16 @@ export function DraftFacetPicker({
   if ("type" in facet) {
     return (
       <MultiLookupPicker facet={facet} draft={draft} onChange={onChange} />
+    );
+  }
+  if (facet.key === "type") {
+    return (
+      <EnumPicker
+        label={facet.label}
+        choices={LINK_TYPE_CHOICES}
+        selected={draft.type ?? []}
+        onChange={(type) => onChange({ type })}
+      />
     );
   }
   return facet.key === "priority" ? (

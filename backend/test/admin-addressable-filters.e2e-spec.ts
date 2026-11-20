@@ -78,7 +78,13 @@ describe("Admin addressable filters (e2e)", () => {
     ).body.accessToken;
 
     await prisma.user.create({
-      data: { id: userId, email: USER_EMAIL, passwordHash: "unused" },
+      data: {
+        id: userId,
+        email: USER_EMAIL,
+        passwordHash: "unused",
+        createdAt: new Date(at(0) - 1),
+        emailVerifiedAt: new Date(at(0)),
+      },
     });
 
     for (const side of ["a", "b"] as const) {
@@ -93,6 +99,7 @@ describe("Admin addressable filters (e2e)", () => {
           userId,
           role: "ADMIN",
           acceptedAt: new Date(at(0)),
+          createdAt: new Date(at(0)),
         },
       });
       await prisma.column.create({
@@ -258,7 +265,19 @@ describe("Admin addressable filters (e2e)", () => {
       ],
     });
     await prisma.user.create({
-      data: { id: "filter-email-only", email: "email-only@example.com" },
+      data: {
+        id: "filter-email-only",
+        email: "email-only@example.com",
+        createdAt: new Date(at(0)),
+        emailVerifiedAt: new Date(at(1)),
+      },
+    });
+    await prisma.user.create({
+      data: {
+        id: "filter-member",
+        email: "regular-member@example.com",
+        createdAt: new Date(at(0)),
+      },
     });
     const disabledUser = await prisma.user.create({
       data: {
@@ -266,15 +285,33 @@ describe("Admin addressable filters (e2e)", () => {
         email: "disabled@example.com",
         displayName: "Disabled Lookup User",
         disabledAt: new Date(at(0)),
+        createdAt: new Date(at(0) + 1),
       },
     });
-    await prisma.boardMember.create({
-      data: {
-        id: "member-pending",
-        boardId: "board-b",
-        userId: disabledUser.id,
-        role: "VIEWER",
-      },
+    await prisma.boardMember.createMany({
+      data: [
+        {
+          id: "member-second-admin",
+          boardId: "board-a",
+          userId: "filter-email-only",
+          role: "ADMIN",
+          acceptedAt: new Date(at(1)),
+          createdAt: new Date(at(1)),
+        },
+        {
+          id: "member-regular",
+          boardId: "board-a",
+          userId: "filter-member",
+          role: "MEMBER",
+          acceptedAt: new Date(at(1)),
+        },
+        {
+          id: "member-pending",
+          boardId: "board-b",
+          userId: disabledUser.id,
+          role: "ADMIN",
+        },
+      ],
     });
     for (const [side, time] of [
       ["a", 50],
@@ -303,8 +340,9 @@ describe("Admin addressable filters (e2e)", () => {
           id: `link-${side}`,
           boardId,
           fromCardId: cardId,
-          toCardId: cardId,
+          toCardId: side === "a" ? "card-a-2" : cardId,
           type: "blocks",
+          createdAt,
         },
       });
       await prisma.refreshToken.create({
@@ -358,12 +396,34 @@ describe("Admin addressable filters (e2e)", () => {
         },
       });
     }
+    await prisma.cardLink.createMany({
+      data: [
+        {
+          id: "link-relates",
+          boardId: "board-a",
+          fromCardId: "card-a-3",
+          toCardId: "card-a-1",
+          type: "relates_to",
+          createdAt: new Date(at(52)),
+        },
+        {
+          id: "link-duplicates",
+          boardId: "board-a",
+          fromCardId: "card-a-2",
+          toCardId: "card-a-3",
+          type: "duplicates",
+          createdAt: new Date(at(53)),
+          deletedAt: new Date(at(54)),
+        },
+      ],
+    });
     await prisma.label.create({
       data: {
         id: "label-deleted",
         boardId: "board-a",
         name: "Obsolete",
         color: "blue",
+        position: 1,
         deletedAt: new Date(at(55)),
       },
     });
@@ -528,6 +588,89 @@ describe("Admin addressable filters (e2e)", () => {
   const rowIds = (rows: { id?: string; cardId?: string }[]) =>
     rows.map((row) => row.id ?? row.cardId).sort();
 
+  it.each(["users", "entities/users"])(
+    "filters %s by verification and inclusive registration bounds",
+    async (path) => {
+      const unverified = await getRoute(
+        `${path}?verified=false&from=${at(0)}&to=${at(0) + 1}&limit=1`,
+      ).expect(200);
+      expect(unverified.body).toMatchObject({ total: 2, limit: 1, offset: 0 });
+      expect(rowIds(unverified.body.items)).toEqual(["filter-disabled"]);
+
+      const boundary = await getRoute(
+        `${path}?verified=true&from=${at(0)}&to=${at(0)}`,
+      ).expect(200);
+      expect(boundary.body.total).toBe(1);
+      expect(rowIds(boundary.body.items)).toEqual(["filter-email-only"]);
+
+      const active = await getRoute(
+        `${path}?verified=false&from=${at(0)}&status=active`,
+      ).expect(200);
+      expect(active.body.total).toBe(1);
+      expect(rowIds(active.body.items)).toEqual(["filter-member"]);
+    },
+  );
+
+  it.each(["boards", "entities/boards"])(
+    "matches every accepted ADMIN on %s and preserves the displayed first admin",
+    async (path) => {
+      const first = await getRoute(
+        `${path}?adminMemberId=${userId}&limit=1&offset=1`,
+      ).expect(200);
+      expect(first.body).toMatchObject({ total: 2, limit: 1, offset: 1 });
+      expect(first.body.items).toHaveLength(1);
+
+      const second = await getRoute(
+        `${path}?adminMemberId=filter-email-only&search=Same+board&status=active`,
+      ).expect(200);
+      expect(second.body.total).toBe(1);
+      expect(second.body.items).toMatchObject([
+        { id: "board-a", userId, ownerEmail: USER_EMAIL },
+      ]);
+
+      for (const id of ["filter-member", "filter-disabled"]) {
+        const response = await getRoute(`${path}?adminMemberId=${id}`).expect(
+          200,
+        );
+        expect(response.body).toMatchObject({ total: 0, items: [] });
+      }
+      const otherBoard = await getRoute(
+        `${path}?boardId=board-b&adminMemberId=filter-email-only`,
+      ).expect(200);
+      expect(otherBoard.body).toMatchObject({ total: 0, items: [] });
+    },
+  );
+
+  it.each([
+    ["cardLinks", "type=blocks", ["link-a", "link-b"]],
+    ["cardLinks", "type=relates_to&cardId=card-a-1", ["link-relates"]],
+    ["cardLinks", "type=duplicates&status=deleted", ["link-duplicates"]],
+    ["cardLinks", "type=blocks&boardId=board-a&cardId=card-a-1", ["link-a"]],
+    ["cardLinks", "type=duplicates&cardId=card-a-1", []],
+    ["cardLinks", "type=relates_to&boardId=board-b&cardId=card-a-1", []],
+    ["checklists", "boardId=board-a&cardId=card-a-1", ["checklist-a"]],
+    ["checklists", "boardId=board-a&cardId=card-b-1", []],
+  ] as const)(
+    "filters %s with %s and returns exact totals",
+    async (entity, query, ids) => {
+      const { body } = await get(`${entity}?${query}`).expect(200);
+      expect(body.total).toBe(ids.length);
+      expect(rowIds(body.items)).toEqual(ids);
+    },
+  );
+
+  it.each([
+    ["labels?boardId=board-a", "label-deleted"],
+    [
+      "cardLinks?boardId=board-a&cardId=card-a-1&type=blocks&type=relates_to&type=blocks",
+      "link-a",
+    ],
+  ])("keeps the total across pages for %s", async (query, id) => {
+    const { body } = await get(`${query}&limit=1&offset=1`).expect(200);
+    expect(body).toMatchObject({ total: 2, limit: 1, offset: 1 });
+    expect(rowIds(body.items)).toEqual([id]);
+  });
+
   const structure = [
     ["boardId", "board-a"],
     ["columnId", "col-a"],
@@ -585,11 +728,23 @@ describe("Admin addressable filters (e2e)", () => {
     ["commands", "cardId=card-a-1", ["command-a-1"]],
     ["commands", "commandId=command-a-1", ["command-a-1"]],
     ["audit", "commandId=command-a-1", ["audit-a"]],
-    ["cardLinks", "boardId=board-a", ["link-a"]],
-    ["cardLinks", "cardId=card-a-1", ["link-a"]],
-    ["boardMembers", "boardId=board-a", ["member-a"]],
+    [
+      "cardLinks",
+      "boardId=board-a",
+      ["link-a", "link-duplicates", "link-relates"],
+    ],
+    ["cardLinks", "cardId=card-a-1", ["link-a", "link-relates"]],
+    [
+      "boardMembers",
+      "boardId=board-a",
+      ["member-a", "member-regular", "member-second-admin"],
+    ],
     ["boardMembers", "status=disabled", ["member-pending"]],
-    ["boardMembers", "status=active", ["member-a", "member-b"]],
+    [
+      "boardMembers",
+      "status=active",
+      ["member-a", "member-b", "member-regular", "member-second-admin"],
+    ],
     ["shares", "boardId=board-a", ["share-a"]],
     ["tokens", "status=active", ["token-a"]],
     ["tokens", "status=disabled", ["token-b"]],
@@ -684,6 +839,12 @@ describe("Admin addressable filters (e2e)", () => {
   });
 
   it.each([
+    ["users", "verified=1"],
+    ["users", "verified=true&verified=false"],
+    ["users", "from=-1"],
+    ["users", "to=invalid"],
+    ["boards", "adminMemberId=bad%2Fid"],
+    ["boards", "adminMemberId=someone&adminMemberId=someone"],
     ["cards", "boardId=board-a&boardId=board-a"],
     ["cards", "cardId=card-a-1&cardId=card-b-1"],
     ["cards", "columnId=col-a&columnId=col-a"],
@@ -728,15 +889,28 @@ describe("Admin addressable filters (e2e)", () => {
     await getRoute(`${entity}?${query}`).expect(400);
   });
 
+  it.each(["type=BLOCKS", "type=links", "type=blocks&type=unknown", "type="])(
+    "rejects invalid card link type values (%s)",
+    async (query) => {
+      await getRoute(`entities/cardLinks?${query}`).expect(400);
+    },
+  );
+
   const deferredCases = [
-    ["users", "verified=true", "verified"],
-    ["users", "from=0", "from"],
-    ["boards", "adminMemberId=someone", "adminMemberId"],
-    ["boards", "adminMemberId=someone&adminMemberId=someone", "adminMemberId"],
+    ["users", "period=24h", "period"],
+    ["users", "adminMemberId=someone", "adminMemberId"],
+    ["boards", "verified=false", "verified"],
+    ["boards", "type=blocks", "type"],
     ["boards", "labelMatch=all", "labelMatch"],
+    ["columns", "type=blocks", "type"],
+    ["labels", "verified=false", "verified"],
+    ["checklists", "adminMemberId=someone", "adminMemberId"],
+    ["checklistItems", "checklistId=checklist-a", "checklistId"],
     ["comments", "due=none", "due"],
     ["attachments", "hasAttachments=false", "hasAttachments"],
-    ["cardLinks", "type=blocks", "type"],
+    ["cardLinks", "columnId=col-a", "columnId"],
+    ["cardLinks", "labelId=label-a", "labelId"],
+    ["cardLinks", "from=0", "from"],
     ["cards", "authorId=someone", "authorId"],
     ["comments", "mime=image", "mime"],
     ["attachments", "kind=note", "kind"],

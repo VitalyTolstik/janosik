@@ -5,10 +5,13 @@ import type { AdminListFilters } from "../admin-list-query";
 import { AdminFilterPopover } from "./AdminFilterPopover";
 import { FilterChip, FilterOptionChip } from "./FilterChip";
 import {
+  filterFacet,
   KIND_CHOICES,
+  LINK_TYPE_CHOICES,
   RADIO_FILTERS,
   type FilterBarSurface,
   PRIORITY_CHOICES,
+  selectedFilterValues,
   shortId,
   type FilterKey,
 } from "./filter-registry";
@@ -76,29 +79,24 @@ export function AdminFilterBar({
       key: "unassigned",
       text: t("admin.filters.unassigned"),
     });
-  for (const { value, label } of PRIORITY_CHOICES) {
-    if (filters.priority?.includes(value))
-      choiceChips.push({
-        key: "priority",
-        value,
-        text: t(label),
-        name: t("admin.filters.remove", {
-          facet: t("admin.filters.priority"),
-          value: t(label),
-        }),
-      });
-  }
-  for (const { value, label } of KIND_CHOICES) {
-    if (filters.kind?.includes(value))
-      choiceChips.push({
-        key: "kind",
-        value,
-        text: t(label),
-        name: t("admin.filters.remove", {
-          facet: t("admin.filters.kind"),
-          value: t(label),
-        }),
-      });
+  for (const [key, choices] of [
+    ["priority", PRIORITY_CHOICES],
+    ["kind", KIND_CHOICES],
+    ["type", LINK_TYPE_CHOICES],
+  ] as const) {
+    const selected = selectedFilterValues(filters, key);
+    for (const { value, label } of choices) {
+      if (selected.includes(value))
+        choiceChips.push({
+          key,
+          value,
+          text: t(label),
+          name: t("admin.filters.remove", {
+            facet: t(filterFacet(key).label),
+            value: t(label),
+          }),
+        });
+    }
   }
   for (const key of Object.keys(
     RADIO_FILTERS,

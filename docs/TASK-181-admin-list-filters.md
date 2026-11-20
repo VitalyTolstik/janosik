@@ -287,7 +287,8 @@ possible later refinement; it is not needed to answer "what touches this card?".
 There is an `AdminChecklistItemRowDto` and a generic
 `GET /admin/entities/checklistItems`, but **no UI tab**. TASK-176.12 explicitly
 deferred a top-level browser as low value and recommended a card-anchored filter
-if the need appears. This task keeps that decision.
+if the need appears. TASK-181.5 keeps checklist items on card detail and
+retains the existing generic endpoint and its legacy scopes.
 
 If support later provides evidence, add a tab (not before) with:
 `boardId`, `cardId`, `checklistId`, `done=true|false`, `status`. Until then,
@@ -468,8 +469,8 @@ Clear search and filters.
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
 surface. The matrix starts from the 181.1 legacy scopes and includes the
-181.3 card facets and 181.4 moderation additions. **Offered** records facets
-planned for the picker.
+181.3 card facets, 181.4 moderation facets, and 181.5 content facets.
+**Offered** records facets planned for the picker.
 A picker can expose a facet once its owning wave implements it. Legacy deep
 links keep their existing behavior regardless of picker visibility.
 
@@ -480,14 +481,14 @@ can resolve options for later waves independently of list filtering.
 
 | Entity | Implemented | Deferred until owning wave | Planned or existing menu/header |
 | --- | --- | --- | --- |
-| users | — | `verified`, `from`/`to` (period) | status, verified, period |
-| boards | `boardId`, `columnId`, `cardId`, `labelId` | `adminMemberId` | status, adminMemberId |
+| users | `verified`, `from`/`to` (period) | — | status, verified, period |
+| boards | `boardId`, `columnId`, `cardId`, `labelId`, `adminMemberId` | — | status, adminMemberId |
 | cards | `boardId`, `columnId`, `cardId`, `labelId` (repeatable), `labelMatch`, `assigneeId`, `unassigned`, `priority`, `due`, `hasAttachments`, `from`/`to` | — | board, column, label (any/all), assignee, unassigned, priority, due, has attachments, period header, `cardId` advanced paste/URL |
 | columns | `boardId`, `columnId`, `cardId`, `labelId` | — | board, status |
 | labels | `boardId`, `labelId`, `cardId`, `columnId` | — | board, status |
 | checklists | `boardId`, `columnId`, `cardId`, `labelId` | — | board, card, status |
 | checklistItems | `boardId`, `columnId`, `cardId`, `labelId` | — (no tab v1) | none |
-| cardLinks | `boardId`, `cardId` | `type` (static `CARD_LINK_TYPES`) | board, card, type, status |
+| cardLinks | `boardId`, `cardId`, `type` (static `CARD_LINK_TYPES`) | — | board, card, type, status |
 | comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to`, `authorId`, `kind` | — | board, card, author, kind, period, status |
 | attachments | `boardId`, `cardId`, `columnId`, `labelId`, `uploadedById`, `mime`, `transcode`, `from`/`to` | — | board, card, uploader, mime, transcode, period, status |
 | activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |

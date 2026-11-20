@@ -28,7 +28,7 @@ function setup(url: string, preceding?: string) {
 describe("URL-backed admin lists", () => {
   it.each([
     [
-      "/admin/users?verified=true&assigneeId=u-1&returnTo=%2Fadmin",
+      "/admin/users?adminMemberId=u-1&assigneeId=u-1&returnTo=%2Fadmin",
       "?returnTo=%2Fadmin",
     ],
     [
@@ -36,7 +36,7 @@ describe("URL-backed admin lists", () => {
       "?tab=cards",
     ],
     ["/admin/audit?tab=audit&adminId=a-1&targetId=c-1", "?tab=audit"],
-    ["/admin/boards?adminMemberId=u-1", ""],
+    ["/admin/boards?verified=true", ""],
     ["/admin/moderation?tab=attachments&kind=blocker", "?tab=attachments"],
   ])(
     "loads %s without sending deferred filters or entering an error state",

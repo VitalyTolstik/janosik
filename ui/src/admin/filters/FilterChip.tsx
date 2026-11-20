@@ -62,7 +62,7 @@ export function FilterOptionChip({
           option?.columnId && "flex-col items-start gap-0",
         )}
       >
-        <span className="flex min-w-0 items-center gap-1">
+        <span className="flex min-w-0 max-w-full items-center gap-1">
           {option || loading ? (
             <span className="shrink-0 text-muted-foreground">{facet}:</span>
           ) : null}

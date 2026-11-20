@@ -36,10 +36,10 @@ describe("admin contract", () => {
 const scoped = "boardId columnId labelId cardId";
 const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
   [
-    ["users", "", "verified", "active disabled", false, false],
+    ["users", "verified", "verified", "active disabled", true, true],
     [
       "boards",
-      scoped,
+      `${scoped} adminMemberId`,
       "adminMemberId",
       "active archived deleted",
       false,
@@ -59,7 +59,7 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ["checklistItems", scoped, "", "active deleted", false, false],
     [
       "cardLinks",
-      "boardId cardId",
+      "boardId cardId type",
       "boardId cardId type",
       "active deleted",
       false,
@@ -133,6 +133,25 @@ describe("admin filter surface matrix", () => {
 });
 
 describe("admin filter values", () => {
+  it("serializes content facets only for their owning surfaces", () => {
+    const filters = {
+      adminMemberId: "user-1",
+      verified: false,
+      type: ["relates_to", "blocks", "invalid", "relates_to"],
+    };
+    expect(adminFilterEntries(filters, "users")).toEqual([
+      ["verified", "false"],
+    ]);
+    expect(adminFilterEntries(filters, "boards")).toEqual([
+      ["adminMemberId", "user-1"],
+    ]);
+    expect(adminFilterEntries(filters, "cardLinks")).toEqual([
+      ["type", "blocks"],
+      ["type", "relates_to"],
+    ]);
+    expect(adminFilterEntries(filters, "commands")).toEqual([]);
+  });
+
   it("allows multiple labels on cards and keeps legacy ids single-valued", () => {
     expect(adminFilterValueLimit("labelId", "cards")).toBe(20);
     expect(adminFilterValueLimit("labelId", "comments")).toBe(1);

@@ -30,13 +30,22 @@ export function useListFilterOptions(filters: AdminListFilters | undefined) {
   const assignee = useResolvedFilter(filters, "assigneeId");
   const author = useResolvedFilter(filters, "authorId");
   const uploader = useResolvedFilter(filters, "uploadedById");
-  return [board, column, label, card, assignee, author, uploader].flatMap(
-    ({ ids, ...filter }) =>
-      ids.map((id) => ({
-        ...filter,
-        id,
-        option: filter.data?.items.find((item) => item.id === id),
-      })),
+  const adminMember = useResolvedFilter(filters, "adminMemberId");
+  return [
+    board,
+    column,
+    label,
+    card,
+    assignee,
+    author,
+    uploader,
+    adminMember,
+  ].flatMap(({ ids, ...filter }) =>
+    ids.map((id) => ({
+      ...filter,
+      id,
+      option: filter.data?.items.find((item) => item.id === id),
+    })),
   );
 }
 

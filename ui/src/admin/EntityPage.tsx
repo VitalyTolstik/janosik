@@ -27,8 +27,10 @@ import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { AdminFilterBar } from "./filters/AdminFilterBar";
 import {
   BOARD_DEPENDENTS,
+  FILTER_BAR_TITLES,
   filterLabel,
   removeListFilter,
+  type FilterBarSurface,
   type FilterKey,
 } from "./filters/filter-registry";
 import { useListFilterOptions } from "./filters/use-list-filter-options";
@@ -112,10 +114,9 @@ export function EntityPage<E extends AdminEntity>({
   const location = useLocation();
   const returnTo = currentAdminPath(location);
   const { entity } = config;
-  const filterSurface =
-    entity === "cards" || entity === "comments" || entity === "attachments"
-      ? entity
-      : undefined;
+  const filterSurface = Object.hasOwn(FILTER_BAR_TITLES, entity)
+    ? (entity as FilterBarSurface)
+    : undefined;
   const list = useAdminListQuery<AdminEntityRowMap[E]>(
     (params) =>
       adminApi.listEntity(config.entity, params) as Promise<
@@ -615,9 +616,12 @@ export function EntityPage<E extends AdminEntity>({
                       )
                     : filtered
                       ? t(
-                          filterSurface === "cards"
-                            ? "admin.filters.noMatches"
-                            : `admin.filters.noMatches.${filterSurface}`,
+                          filterSurface === "comments" ||
+                            filterSurface === "attachments"
+                            ? `admin.filters.noMatches.${filterSurface}`
+                            : filterSurface === "cards"
+                              ? "admin.filters.noMatches"
+                              : "admin.common.emptyFiltered",
                         )
                       : undefined
                 }
