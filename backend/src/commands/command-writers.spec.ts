@@ -16,13 +16,16 @@ describe("command writers — soft-delete hygiene (TASK-156)", () => {
     updatedAt: 2_000,
   };
 
-  const boardOf = (cards: Record<string, unknown>): Board =>
+  const boardOf = (
+    cards: Record<string, unknown>,
+    labels: unknown[] = [],
+  ): Board =>
     ({
       id: "board-1",
       title: "Board",
       columns: [],
       cards,
-      labels: [],
+      labels,
       createdAt: 1,
       updatedAt: 1,
     }) as unknown as Board;
@@ -79,7 +82,7 @@ describe("command writers — soft-delete hygiene (TASK-156)", () => {
   });
 
   describe("DELETE_LABEL", () => {
-    it("hard-deletes only the links of live/archived cards", async () => {
+    it("hard-deletes the live links and stamps every affected card", async () => {
       const action = {
         type: "DELETE_LABEL",
         labelId: "label-1",
@@ -91,12 +94,15 @@ describe("command writers — soft-delete hygiene (TASK-156)", () => {
           deleteMany: jest.fn(),
         },
         label: { update: jest.fn() },
+        card: { update: jest.fn() },
         board: { update: jest.fn() },
       };
+      // The reducer's after-state carries the delete stamp on the card.
+      const afterCard = { ...card, id: "card-live", updatedAt: 1_000 };
 
       const touches = await applyCommandWrites(
         tx as never,
-        ctxOf(action, boardOf({ "card-1": card })),
+        ctxOf(action, boardOf({ "card-live": afterCard })),
       );
 
       // The reducer removes labelIds only from cards in its state — live
@@ -113,6 +119,67 @@ describe("command writers — soft-delete hygiene (TASK-156)", () => {
       expect(tx.label.update).toHaveBeenCalledWith({
         where: { id: "label-1" },
         data: { deletedAt: new Date(1_000), version: { increment: 1 } },
+      });
+      expect(tx.card.update).toHaveBeenCalledWith({
+        where: { id: "card-live" },
+        data: {
+          lastActorId: "user-1",
+          updatedAt: new Date(1_000),
+          version: { increment: 1 },
+        },
+      });
+      expect(touches).toEqual([
+        "board:board-1",
+        "label:label-1",
+        "card:card-live",
+      ]);
+    });
+  });
+
+  describe("RESTORE_LABEL", () => {
+    it("writes the links and stamps each assignment's saved updatedAt", async () => {
+      const label = { id: "label-1", name: "Bug", color: "red" };
+      const action = {
+        type: "RESTORE_LABEL",
+        label,
+        index: 0,
+        assignments: [{ cardId: "card-live", index: 0, updatedAt: 1_234 }],
+        at: 1_000,
+      } as unknown as BoardAction;
+      const afterCard = {
+        ...card,
+        id: "card-live",
+        labelIds: ["label-1"],
+        updatedAt: 1_234,
+      };
+      const tx = {
+        label: {
+          upsert: jest.fn(),
+          findFirst: jest.fn().mockResolvedValue({ id: "label-1" }),
+        },
+        cardLabel: { deleteMany: jest.fn(), create: jest.fn() },
+        card: { update: jest.fn() },
+        board: { update: jest.fn() },
+        $executeRaw: jest.fn(),
+      };
+
+      const touches = await applyCommandWrites(
+        tx as never,
+        ctxOf(action, boardOf({ "card-live": afterCard }, [label])),
+      );
+
+      expect(tx.label.upsert).toHaveBeenCalled();
+      expect(tx.cardLabel.create).toHaveBeenCalledWith({
+        data: { cardId: "card-live", labelId: "label-1", position: 0 },
+      });
+      // The per-assignment stamp, not the restore clock.
+      expect(tx.card.update).toHaveBeenCalledWith({
+        where: { id: "card-live" },
+        data: {
+          lastActorId: "user-1",
+          updatedAt: new Date(1_234),
+          version: { increment: 1 },
+        },
       });
       expect(touches).toEqual([
         "board:board-1",

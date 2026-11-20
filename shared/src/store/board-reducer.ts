@@ -401,9 +401,38 @@ export interface SetLabelColorAction {
   color: Label["color"];
 }
 
+/**
+ * The cards a label sat on, where it sat in each `labelIds` list and — since
+ * TASK-183.3 — the card's `updatedAt` before the change.
+ *
+ * `updatedAt` is optional so an inverse recorded by an older client (before
+ * TASK-183.3) still validates: the restore then falls back to its own command
+ * stamp instead of failing the undo.
+ */
+export interface LabelAssignment {
+  cardId: string;
+  index: number;
+  /** Card `updatedAt` before the delete; absent on a pre-183.3 inverse. */
+  updatedAt?: number;
+}
+
+/** A per-card `updatedAt` an inverse restores for a multi-card command. */
+export interface LabelCardStamp {
+  cardId: string;
+  updatedAt: number;
+}
+
 export interface DeleteLabelAction {
   type: "DELETE_LABEL";
   labelId: string;
+  /**
+   * Inverse-only per-card stamps (TASK-183.3): the cards the label is removed
+   * from and the `updatedAt` each had before the restore being undone. A fresh
+   * delete omits it and stamps every affected card with the command clock;
+   * validation drops it from a non-inverse command so it cannot back-date
+   * cards.
+   */
+  cardStamps?: readonly LabelCardStamp[];
 }
 
 export interface AddChecklistAction {
@@ -652,7 +681,7 @@ export interface RestoreLabelAction {
   /** Position in `board.labels`. */
   index: number;
   /** Where the label sat in each card's `labelIds`. */
-  assignments?: { cardId: string; index: number }[];
+  assignments?: readonly LabelAssignment[];
 }
 
 /** Put a deleted checklist back on its card, at its old position. */
@@ -1423,12 +1452,30 @@ function setLabelColor(board: Board, action: SetLabelColorAction): Board {
   };
 }
 
-function deleteLabel(board: Board, action: DeleteLabelAction): Board {
+function deleteLabel(
+  board: Board,
+  action: BoardScoped<DeleteLabelAction>,
+): Board {
   if (!board.labels.some((l) => l.id === action.labelId)) return board;
+  // One delete removes the label from many cards (TASK-183.3): every card
+  // that loses it gets the same stamp a single-card mutation would get.
+  // An inverse may carry each card's previous stamp instead, so undoing a
+  // restore puts the old timestamps back exactly.
+  const at = cardStamp(action);
+  const stamps = new Map(
+    (action.cardStamps ?? []).map(({ cardId, updatedAt }) => [
+      cardId,
+      updatedAt,
+    ]),
+  );
   const cards: Record<string, Card> = {};
   for (const [id, card] of Object.entries(board.cards)) {
     cards[id] = card.labelIds.includes(action.labelId)
-      ? { ...card, labelIds: card.labelIds.filter((x) => x !== action.labelId) }
+      ? {
+          ...card,
+          labelIds: card.labelIds.filter((x) => x !== action.labelId),
+          updatedAt: stamps.get(id) ?? at,
+        }
       : card;
   }
   return {
@@ -2349,7 +2396,7 @@ function restoreLabel(
     return board;
   }
   const cards = { ...board.cards };
-  for (const { cardId, index } of action.assignments ?? []) {
+  for (const { cardId, index, updatedAt } of action.assignments ?? []) {
     const card = Object.hasOwn(cards, cardId) ? cards[cardId] : undefined;
     if (!card || card.labelIds.includes(label.id)) continue;
     if (guarded(action) && card.labelIds.length >= LIMITS.labelsPerCard) {
@@ -2362,6 +2409,10 @@ function restoreLabel(
         clamp(index, 0, card.labelIds.length),
         label.id,
       ),
+      // TASK-183.3: a restore rewrites card content, so it stamps the card
+      // like any other mutation. The inverse carries the pre-delete stamp;
+      // a pre-183.3 inverse has none and falls back to the command stamp.
+      updatedAt: updatedAt ?? cardStamp(action),
     };
   }
   return {
