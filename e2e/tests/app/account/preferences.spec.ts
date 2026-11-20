@@ -52,6 +52,9 @@ test("a language handoff is consumed before later URL writes and survives reload
   await expect(page.getByTestId("pref-language")).toContainText("English");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("account-dialog")).toBeHidden();
+  await expect(page).toHaveURL((url) => !url.searchParams.has("lng"), {
+    timeout: 10_000,
+  });
 
   // The board filter rebuilds its URL from useSearchParams. A stale router
   // location would copy `lng=ru` back and re-pin Russian on reload.
