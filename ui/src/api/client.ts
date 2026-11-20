@@ -1086,6 +1086,17 @@ export class ApiClient {
     );
   }
 
+  /**
+   * Leave a board as the caller (TASK-177.2). The server refuses the last
+   * ADMIN with `409 { code: "last_admin" }`; a successful call removes the
+   * membership, writes `member_left` and publishes the membership SSE frame.
+   */
+  leaveBoard(boardId: string): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(`/boards/${boardId}/members/me`, {
+      method: "DELETE",
+    });
+  }
+
   listAttentionNotifications(
     cursor?: string,
   ): Promise<AttentionNotificationPage> {

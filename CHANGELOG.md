@@ -8,6 +8,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.1 share link editing: every non-revoked share row now has `Edit`,
+  which reuses the create form to change the label, comments/attachments
+  visibility and expiry while the mode and `/s/<token>` stay immutable.
+  Changes go through the existing `PATCH /boards/:id/shares/:shareId`; the
+  row and list refresh on success and a failed update keeps the form and its
+  values open with an inline error. Changing privacy flags on a live link asks
+  for confirmation first (the server audit already records `share.update`),
+  and choosing `Never` clears the expiry with `expiresAt: null`. EN/RU copy, `ShareDialog` unit tests and a Playwright
+  share-edit case cover the flow.
+- TASK-177.2 self-leave: `DELETE /boards/:id/members/me` lets an accepted
+  `MEMBER` or `VIEWER` leave a board from the Members dialog (`Leave board`,
+  with an inline confirmation). An `ADMIN` may leave only while another
+  accepted `ADMIN` remains; the last admin gets
+  `409 { code: "last_admin", action: "leave" }` and the button explains why it
+  is disabled. The route is session-only. The membership row is removed, the
+  feed records `member_left`, and a `membership: removed` SSE frame closes the
+  leaver's stream. The board disappears from the switcher, direct board URLs
+  answer `403`, and authored cards/comments keep their original attribution.
+  Admin remove-other behaviour (`DELETE /boards/:id/members/:userId`) is
+  unchanged. EN/RU copy and the API docs/openapi cover the route.
+- TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
+  read-only verification and master-account commands. The reset uses a
+  private backend to verify database identity before schema recreation and
+  supports a transactional fallback that retains global settings.
+  See [the demo fixture guide](docs/DEMO-FIXTURES.md).
+
 - TASK-176.9 B2 admin card checklists and links: `/admin/cards/:id` now shows a
   lazy `Checklists and links` panel beside the field editor on non-deleted
   cards. It is admin-native (no `BoardContext`), uses the same owner-attribution
@@ -650,9 +676,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - TASK-183.2: attaching or detaching a card label updates the card's timestamp.
   Undo restores the previous timestamp, and focus refetch can detect the
-  change from the timestamp alone. The label comparison still covers older
-  snapshots and board-wide label deletion and restoration (tracked in
-  TASK-183.3).
+  change from the timestamp alone.
+
+- TASK-183.3: deleting a label stamps every card it leaves (`updatedAt`,
+  `version`, `lastActorId`), and restoring it puts each card's exact previous
+  timestamp back. Old undo records without per-card timestamps still apply
+  using the restore clock; label rename/color deliberately leave cards
+  untouched. The label comparison in the UI diff remains as a compatibility
+  check for older snapshots.
 
 - TASK-182 phase 2: if the due-date picker fails in admin card Properties, the
   popover immediately offers Retry and a native date-and-time input while the

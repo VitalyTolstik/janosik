@@ -421,6 +421,8 @@ model Command {
   // history/time-window reads use the composite.
   @@index([createdAt])
   @@index([boardId, createdAt, seq])
+  @@index([actorId, createdAt])
+  @@index([type, createdAt])
   @@index([apiTokenId, createdAt])
   @@index([agentSessionId, createdAt])
   @@index([runId])
@@ -750,6 +752,8 @@ model Activity {
   @@index([boardId, createdAt])
   @@index([cardId, createdAt])
   @@index([createdAt]) // activity retention sweep (TASK-148)
+  @@index([actorId, createdAt])
+  @@index([type, createdAt])
   @@index([apiTokenId, createdAt])
   @@index([agentSessionId, createdAt])
   @@index([runId])
@@ -920,6 +924,7 @@ model AdminAuditLog {
 
   @@index([createdAt])
   @@index([adminId, createdAt])
+  @@index([action, createdAt])
   @@index([targetType, targetId])
 }
 

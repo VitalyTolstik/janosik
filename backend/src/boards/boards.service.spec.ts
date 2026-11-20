@@ -205,6 +205,88 @@ describe("BoardsService.inviteMember — reviving a pending invite", () => {
   });
 });
 
+describe("BoardsService.leaveBoard (TASK-177.2)", () => {
+  function makeService(role: "ADMIN" | "MEMBER" | "VIEWER", otherAdmins = 0) {
+    const member = {
+      id: "m-1",
+      boardId: "board-1",
+      userId: "u-1",
+      role,
+      acceptedAt: new Date(),
+      user: { email: "user@example.com" },
+    };
+    const remove = jest.fn().mockResolvedValue({});
+    const activity = jest.fn().mockResolvedValue({});
+    const tx = {
+      boardMember: {
+        findUnique: jest.fn().mockResolvedValue(member),
+        count: jest.fn().mockResolvedValue(otherAdmins),
+        delete: remove,
+      },
+      activity: { create: activity },
+    };
+    const boardWrite = {
+      run: jest.fn((_boardId: string, fn: (tx: unknown) => Promise<unknown>) =>
+        fn(tx),
+      ),
+    };
+    const realtime = { publish: jest.fn() };
+    const service = new BoardsService(
+      {} as unknown as PrismaService,
+      boardWrite as never,
+      realtime as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, remove, activity, realtime };
+  }
+
+  it("removes the membership, records member_left and publishes SSE", async () => {
+    const { service, remove, activity, realtime } = makeService("MEMBER");
+
+    await service.leaveBoard("board-1", "u-1");
+
+    expect(remove).toHaveBeenCalledWith({ where: { id: "m-1" } });
+    expect(activity).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        boardId: "board-1",
+        type: "member_left",
+        actorId: "u-1",
+        details: {
+          userId: "u-1",
+          email: "user@example.com",
+          role: "MEMBER",
+        },
+      }),
+    });
+    expect(realtime.publish).toHaveBeenCalledWith("board-1", {
+      type: "membership",
+      boardId: "board-1",
+      userId: "u-1",
+      change: "removed",
+    });
+  });
+
+  it("refuses the last ADMIN with a clear last_admin code", async () => {
+    const { service, remove, activity, realtime } = makeService("ADMIN", 0);
+
+    await expect(service.leaveBoard("board-1", "u-1")).rejects.toMatchObject({
+      response: { code: "last_admin", action: "leave" },
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(activity).not.toHaveBeenCalled();
+    expect(realtime.publish).not.toHaveBeenCalled();
+  });
+
+  it("lets an ADMIN leave once another accepted admin exists", async () => {
+    const { service, remove } = makeService("ADMIN", 1);
+
+    await service.leaveBoard("board-1", "u-1");
+
+    expect(remove).toHaveBeenCalled();
+  });
+});
+
 describe("BoardsService.createBoard — L24 rollback proof", () => {
   it("marks a write-transaction P2028 as a guaranteed rollback", async () => {
     const timeout = Object.assign(

@@ -1,19 +1,13 @@
-import { createHmac } from "node:crypto";
-import type { User } from "@prisma/client";
 import { env } from "@/config/env";
+import {
+  securityStamp as stampWithSecret,
+  type StampUser,
+} from "./security-stamp-hmac";
 
 /** Changes whenever credentials or mailbox ownership change. */
 export function securityStamp(
-  user: Pick<User, "id" | "email" | "passwordHash" | "emailVerifiedAt">,
+  user: StampUser,
+  secret = env.JWT_SECRET,
 ): string {
-  return createHmac("sha256", env.JWT_SECRET)
-    .update(
-      JSON.stringify([
-        user.id,
-        user.email,
-        user.passwordHash,
-        user.emailVerifiedAt?.toISOString() ?? null,
-      ]),
-    )
-    .digest("base64url");
+  return stampWithSecret(user, secret);
 }
