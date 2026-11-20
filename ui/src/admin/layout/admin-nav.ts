@@ -121,6 +121,7 @@ export interface HubTab {
   legacyPath?: string;
   icon?: typeof LayoutDashboard;
   ownerOnly?: boolean;
+  preserves?: readonly "boardId"[];
 }
 
 export const HUB_TABS: Record<AdminHubKey, HubTab[]> = {
@@ -131,36 +132,42 @@ export const HUB_TABS: Record<AdminHubKey, HubTab[]> = {
       key: "boards",
       labelKey: "admin.nav.boards",
       legacyPath: "/admin/boards",
+      preserves: ["boardId"],
       icon: KanbanSquare,
     },
     {
       key: "cards",
       labelKey: "admin.nav.cards",
       legacyPath: "/admin/cards",
+      preserves: ["boardId"],
       icon: FileText,
     },
     {
       key: "columns",
       labelKey: "admin.nav.columns",
       legacyPath: "/admin/columns",
+      preserves: ["boardId"],
       icon: KanbanSquare,
     },
     {
       key: "labels",
       labelKey: "admin.nav.labels",
       legacyPath: "/admin/labels",
+      preserves: ["boardId"],
       icon: KanbanSquare,
     },
     {
       key: "checklists",
       labelKey: "admin.nav.checklists",
       legacyPath: "/admin/checklists",
+      preserves: ["boardId"],
       icon: KanbanSquare,
     },
     {
       key: "links",
       labelKey: "admin.nav.cardLinks",
       legacyPath: "/admin/cardLinks",
+      preserves: ["boardId"],
       icon: KanbanSquare,
     },
   ],
@@ -169,12 +176,14 @@ export const HUB_TABS: Record<AdminHubKey, HubTab[]> = {
       key: "comments",
       labelKey: "admin.nav.comments",
       legacyPath: "/admin/comments",
+      preserves: ["boardId"],
       icon: MessageSquare,
     },
     {
       key: "attachments",
       labelKey: "admin.nav.attachments",
       legacyPath: "/admin/attachments",
+      preserves: ["boardId"],
       icon: Paperclip,
     },
   ],
@@ -189,12 +198,14 @@ export const HUB_TABS: Record<AdminHubKey, HubTab[]> = {
       key: "commands",
       labelKey: "admin.nav.log",
       legacyPath: "/admin/commands",
+      preserves: ["boardId"],
       icon: ClipboardList,
     },
     {
       key: "activity",
       labelKey: "admin.nav.activity",
       legacyPath: "/admin/activity",
+      preserves: ["boardId"],
       icon: Activity,
     },
   ],

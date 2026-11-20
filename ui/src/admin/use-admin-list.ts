@@ -9,6 +9,7 @@ import {
   type AdminPage,
 } from "@janosik/shared";
 import type { AdminListParams } from "./admin-client";
+import { ApiError } from "@/api/client";
 import {
   EMPTY_ADMIN_LIST_FILTERS,
   PERIOD_WINDOWS_MS,
@@ -71,6 +72,7 @@ export interface AdminListState<T> {
   applyState: (state: AdminListQueryState) => void;
   /** HTTP status of the failed request (`null` when the last answer was ok). */
   errorStatus: number | null;
+  errorBody?: unknown;
   reload: () => void;
 }
 
@@ -80,6 +82,7 @@ interface ListResult<T> {
   total: number;
   error: boolean;
   errorStatus?: number | null;
+  errorBody?: unknown;
 }
 
 export function useAdminList<T>(
@@ -186,6 +189,7 @@ export function useAdminList<T>(
           total: 0,
           error: true,
           errorStatus: status,
+          errorBody: error instanceof ApiError ? error.body : undefined,
         });
       });
     return () => {
@@ -320,6 +324,7 @@ export function useAdminList<T>(
     applyState,
     errorStatus:
       filterError === undefined ? (result?.errorStatus ?? null) : null,
+    errorBody: result?.key === requestKey ? result.errorBody : undefined,
     reload,
   };
 }

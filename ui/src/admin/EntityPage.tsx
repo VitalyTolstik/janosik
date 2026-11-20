@@ -12,15 +12,24 @@ import { useToast } from "@/components/Toast";
 import { adminApi } from "./admin-client";
 import {
   ADMIN_LIST_FILTER_KEYS,
+  EMPTY_ADMIN_LIST_FILTERS,
   adminFiltersKey,
   hasAdminFilters,
+  writeAdminListQuery,
   type AdminListFilterKey,
+  type AdminListQueryState,
 } from "./admin-list-query";
 import { currentAdminPath, withReturnTo } from "./admin-navigation";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
+import { AdminFilterBar } from "./filters/AdminFilterBar";
+import {
+  BOARD_DEPENDENTS,
+  type CardFilterKey,
+} from "./filters/filter-registry";
+import { useCardFilterOptions } from "./filters/use-card-filter-options";
 import { RowActions, type EntityAction } from "./row-actions";
 import { EntityListSkeleton } from "./skeletons";
-import { useAdminListQuery } from "./use-admin-list-query";
+import { listStateOf, useAdminListQuery } from "./use-admin-list-query";
 import {
   ConfirmDialog,
   EmptyState,
@@ -97,12 +106,14 @@ export function EntityPage<E extends AdminEntity>({
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = currentAdminPath(location);
+  const cards = config.entity === "cards";
   const list = useAdminListQuery<AdminEntityRowMap[E]>(
     (params) =>
       adminApi.listEntity(config.entity, params) as Promise<
         AdminPage<AdminEntityRowMap[E]>
       >,
     {
+      surface: cards ? "cards" : undefined,
       statuses: config.statuses?.map((status) => status.value),
       periods: config.periods === true,
     },
@@ -129,6 +140,9 @@ export function EntityPage<E extends AdminEntity>({
     scope: selectionScopeKey,
     ids: new Set(),
   }));
+  if (selection.scope !== selectionScopeKey) {
+    setSelection({ scope: selectionScopeKey, ids: new Set() });
+  }
   const selected =
     selection.scope === selectionScopeKey ? selection.ids : EMPTY_SELECTION;
   const visibleIds = list.items
@@ -263,12 +277,68 @@ export function EntityPage<E extends AdminEntity>({
   );
 
   const filtered =
-    list.search.trim() !== "" ||
+    (cards ? list.effectiveSearch : list.search).trim() !== "" ||
     list.status !== "all" ||
     list.period !== "any" ||
     hasAdminFilters(list.filters);
+  const resolvedFilters = useCardFilterOptions(
+    cards ? list.filters : undefined,
+  );
+  const lookupPending = resolvedFilters.some(({ loading }) => loading);
+  const lookupFailed = resolvedFilters.some(({ error }) => error);
+  const rejectedFilter = cards ? unsupportedFilter(list.errorBody) : undefined;
+  const rejectedFacet = resolvedFilters.find(
+    ({ key }) => key === rejectedFilter,
+  );
+  const rejectedName = rejectedFacet ? t(rejectedFacet.label) : rejectedFilter;
+
+  const commitCardsView = (next: AdminListQueryState) => {
+    const current = new URLSearchParams(location.search);
+    const query = writeAdminListQuery(current, next, { surface: "cards" });
+    if (query.toString() === current.toString()) {
+      list.applyState(next);
+    } else {
+      // Write the whole view before updating the list. An immediate browser
+      // Back can otherwise race the list-to-URL effect and leave stale chips.
+      void navigate({ search: query.toString(), hash: location.hash });
+    }
+  };
+
+  const changeCardFilter = (key: CardFilterKey, id: string | null) => {
+    if (list.filters[key] === id) return;
+    withSelectionReset(() => {
+      const filters = { ...list.filters, [key]: id };
+      const cleared =
+        key === "boardId"
+          ? BOARD_DEPENDENTS.filter((dependent) => filters[dependent] !== null)
+          : [];
+      for (const dependent of cleared) filters[dependent] = null;
+      commitCardsView({
+        ...listStateOf(list),
+        search: list.search,
+        offset: 0,
+        filters,
+        filterError: undefined,
+      });
+      if (cleared.length > 0) {
+        toast.info(t("admin.filters.boardCleared", { count: cleared.length }));
+      }
+    });
+  };
+
   const clearAllFilters = () => {
     withSelectionReset(() => {
+      if (cards) {
+        commitCardsView({
+          search: "",
+          status: "all",
+          period: "any",
+          limit: list.limit,
+          offset: 0,
+          filters: EMPTY_ADMIN_LIST_FILTERS,
+        });
+        return;
+      }
       list.setSearch("");
       list.setStatus("all");
       list.setPeriod("any");
@@ -276,42 +346,98 @@ export function EntityPage<E extends AdminEntity>({
     });
   };
 
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
-      <PageHeader
-        title={config.title}
-        subtitle={config.subtitle?.replaceAll("{total}", String(list.total))}
-        actions={
-          <>
-            <SearchInput
-              value={list.search}
+  const tabsClassName = cards
+    ? "admin-tab-strip max-w-full max-sm:h-auto max-sm:overflow-x-auto max-sm:[&_button]:h-11 max-sm:[&_button]:shrink-0"
+    : undefined;
+  const renderHeader = (filterTrigger?: ReactNode) => (
+    <PageHeader
+      title={config.title}
+      subtitle={config.subtitle?.replaceAll("{total}", String(list.total))}
+      actionsClassName={cards ? "max-w-full max-sm:w-full" : undefined}
+      actions={
+        <>
+          <SearchInput
+            value={list.search}
+            className={
+              cards
+                ? "max-sm:h-11 max-sm:min-w-0 max-sm:flex-1 max-sm:basis-40"
+                : undefined
+            }
+            onChange={(value) =>
+              withSelectionReset(() => list.setSearch(value))
+            }
+          />
+          {filterTrigger}
+          {statusOptions ? (
+            <FilterTabs
+              className={tabsClassName}
+              value={list.status}
+              options={statusOptions}
               onChange={(value) =>
-                withSelectionReset(() => list.setSearch(value))
+                withSelectionReset(() => list.setStatus(value))
               }
             />
-            {statusOptions ? (
-              <FilterTabs
-                value={list.status}
-                options={statusOptions}
-                onChange={(value) =>
-                  withSelectionReset(() => list.setStatus(value))
-                }
-              />
-            ) : null}
-            {periodOptions ? (
-              <FilterTabs
-                value={list.period}
-                options={periodOptions}
-                onChange={(value) =>
-                  withSelectionReset(() => list.setPeriod(value))
-                }
-              />
-            ) : null}
-            {config.toolbar?.(list.reload)}
-          </>
-        }
-      />
-      {activeFilters.length > 0 ? (
+          ) : null}
+          {periodOptions ? (
+            <FilterTabs
+              className={tabsClassName}
+              value={list.period}
+              options={periodOptions}
+              onChange={(value) =>
+                withSelectionReset(() => list.setPeriod(value))
+              }
+            />
+          ) : null}
+          {config.toolbar?.(list.reload)}
+        </>
+      }
+    />
+  );
+  const pagination = (
+    <Pagination
+      total={list.total}
+      limit={list.limit}
+      offset={list.offset}
+      onChange={list.setOffset}
+      onLimitChange={(limit) => withSelectionReset(() => list.setLimit(limit))}
+    />
+  );
+  const clearAction = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-11 sm:h-8"
+      onClick={clearAllFilters}
+    >
+      {t("admin.filters.clearAll")}
+    </Button>
+  );
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 p-4">
+      {cards ? (
+        <AdminFilterBar
+          renderHeader={renderHeader}
+          filters={list.filters}
+          resolved={resolvedFilters}
+          filtered={filtered}
+          canClear={
+            filtered ||
+            list.search.trim() !== "" ||
+            list.filterError !== undefined
+          }
+          total={
+            list.loading || list.refreshing || list.error
+              ? undefined
+              : list.total
+          }
+          onChange={changeCardFilter}
+          onClear={clearAllFilters}
+        />
+      ) : (
+        renderHeader()
+      )}
+      {!cards && activeFilters.length > 0 ? (
         <div
           className="flex flex-wrap items-center gap-1.5"
           data-testid="admin-filter-banner"
@@ -368,13 +494,50 @@ export function EntityPage<E extends AdminEntity>({
           />
         ) : list.errorStatus === 403 ? (
           <ForbiddenState onBack={() => navigate("/admin")} />
+        ) : rejectedName ? (
+          <EmptyState
+            message={t("admin.filters.unsupported", { facet: rejectedName })}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 sm:h-8"
+                onClick={() => {
+                  if (rejectedFacet) changeCardFilter(rejectedFacet.key, null);
+                  else clearAllFilters();
+                }}
+              >
+                {t("admin.filters.removeUnsupported", { facet: rejectedName })}
+              </Button>
+            }
+          />
+        ) : cards && list.filterError !== undefined ? (
+          <EmptyState
+            message={t("admin.filters.invalid")}
+            action={clearAction}
+          />
         ) : list.error ? (
           <ErrorState
             onRetry={list.reload}
             reference={`${config.entity}:${new Date().toISOString().slice(0, 19)}`}
           />
         ) : list.items.length === 0 ? (
-          <EmptyState filtered={filtered} onClear={clearAllFilters} />
+          cards ? (
+            !list.refreshing && !lookupFailed && !lookupPending ? (
+              <EmptyState
+                message={
+                  list.total > 0
+                    ? t("admin.filters.emptyPage")
+                    : filtered
+                      ? t("admin.filters.noMatches")
+                      : undefined
+                }
+                action={filtered ? clearAction : undefined}
+              />
+            ) : null
+          ) : (
+            <EmptyState filtered={filtered} onClear={clearAllFilters} />
+          )
         ) : (
           <>
             {bulkEnabled && selected.size > 0 ? (
@@ -424,6 +587,7 @@ export function EntityPage<E extends AdminEntity>({
                         aria-label={t("admin.common.selectAll")}
                         data-testid="admin-select-all"
                         checked={allSelected}
+                        disabled={cards && list.refreshing}
                         onCheckedChange={toggleAll}
                       />
                     </Th>
@@ -499,6 +663,7 @@ export function EntityPage<E extends AdminEntity>({
                                 } else if (
                                   event.key === " " &&
                                   bulkEnabled &&
+                                  !(cards && list.refreshing) &&
                                   id !== null
                                 ) {
                                   event.preventDefault();
@@ -515,6 +680,7 @@ export function EntityPage<E extends AdminEntity>({
                                 aria-label={id}
                                 data-testid={`admin-select-${id}`}
                                 checked={selected.has(id)}
+                                disabled={cards && list.refreshing}
                                 onCheckedChange={() => toggleRow(id)}
                               />
                             </span>
@@ -553,17 +719,11 @@ export function EntityPage<E extends AdminEntity>({
                 })}
               </tbody>
             </Table>
-            <Pagination
-              total={list.total}
-              limit={list.limit}
-              offset={list.offset}
-              onChange={list.setOffset}
-              onLimitChange={(value) =>
-                withSelectionReset(() => list.setLimit(value))
-              }
-            />
           </>
         )}
+        {!list.loading && !list.error && (cards || list.items.length > 0)
+          ? pagination
+          : null}
       </Panel>
       {bulkPending ? (
         <ConfirmDialog
@@ -578,6 +738,19 @@ export function EntityPage<E extends AdminEntity>({
       ) : null}
     </div>
   );
+}
+
+function unsupportedFilter(body: unknown): string | undefined {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "unsupported_filter" &&
+    "filter" in body &&
+    typeof body.filter === "string"
+  ) {
+    return body.filter;
+  }
 }
 
 function rowHrefKey(row: unknown, index: number): string {

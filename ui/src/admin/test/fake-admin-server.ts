@@ -27,6 +27,7 @@ import type {
   AdminDemoStartRequest,
   AdminDemoStatusDto,
   AdminEmailSettingsDto,
+  AdminFilterOptionDto,
   AdminShareRowDto,
   AdminEmailTestResponse,
   AdminMasterRowDto,
@@ -1261,6 +1262,9 @@ export class FakeAdminServer {
 
     if (path === "/admin/cards" && method === "GET") {
       return this.json(this.page(this.state.cards, url));
+    }
+    if (path === "/admin/filter-options" && method === "GET") {
+      return this.filterOptions(url.searchParams);
     }
     const cardArchive = path.match(
       /^\/admin\/cards\/([^/]+)\/(archive|unarchive)$/,
@@ -2973,16 +2977,24 @@ export class FakeAdminServer {
     const boardId = url.searchParams.get("boardId");
     const columnId = url.searchParams.get("columnId");
     const cardId = url.searchParams.get("cardId");
+    const labelId = url.pathname.endsWith("/cards")
+      ? url.searchParams.get("labelId")
+      : null;
     const commandId = url.searchParams.get("commandId");
     const filtered = items.filter((item) => {
       const record = item as Record<string, unknown>;
-      // Mirrors the server's structural filters enough to catch a cross-board
-      // row in the UI tests; labels are exercised in the backend e2e suite.
       if (boardId && record.boardId !== boardId && record.id !== boardId) {
         return false;
       }
       if (columnId && record.columnId !== columnId) return false;
       if (cardId && record.cardId !== cardId && record.id !== cardId) {
+        return false;
+      }
+      if (
+        labelId &&
+        (typeof record.id !== "string" ||
+          !this.state.cardLabelIds[record.id]?.includes(labelId))
+      ) {
         return false;
       }
       if (commandId) {
@@ -3007,6 +3019,99 @@ export class FakeAdminServer {
       limit,
       offset,
     };
+  }
+
+  private filterOptions(params: URLSearchParams): Response {
+    const type = params.get("type");
+    const stateOf = (row: {
+      deletedAt: number | null;
+      archivedAt?: number | null;
+    }) =>
+      row.deletedAt !== null
+        ? "deleted"
+        : row.archivedAt != null
+          ? "archived"
+          : "active";
+    let options: AdminFilterOptionDto[];
+    switch (type) {
+      case "board":
+        options = this.state.boards.map((row) => ({
+          id: row.id,
+          label: row.title,
+          sublabel: null,
+          state: stateOf(row),
+          boardId: null,
+          columnId: null,
+        }));
+        break;
+      case "column":
+        options = Object.values(this.boardColumns)
+          .flat()
+          .map((row) => ({
+            id: row.id,
+            label: row.title,
+            sublabel: row.boardTitle,
+            state: stateOf(row),
+            boardId: row.boardId,
+            columnId: null,
+          }));
+        break;
+      case "label":
+        options = Object.values(this.boardLabels)
+          .flat()
+          .map((row) => ({
+            id: row.id,
+            label: row.name,
+            sublabel: row.boardTitle,
+            state: stateOf(row),
+            boardId: row.boardId,
+            columnId: null,
+            color: row.color,
+          }));
+        break;
+      case "card":
+        options = this.state.cards.map((row) => ({
+          id: row.id,
+          label: row.title,
+          sublabel: `${row.boardTitle} / ${row.columnTitle}`,
+          state: stateOf(row),
+          boardId: row.boardId,
+          columnId: row.columnId,
+        }));
+        break;
+      default:
+        return this.json({ message: "Unknown lookup type" }, 400);
+    }
+    const ids = params.getAll("ids");
+    if (ids.length > 0) {
+      const items = options.filter(({ id }) => ids.includes(id));
+      return this.json({
+        items,
+        missing: ids.filter((id) => !items.some((item) => item.id === id)),
+        hasMore: false,
+      });
+    }
+    const boardId = params.get("boardId");
+    const query = params.get("q")?.trim() ?? "";
+    const search = query.toLowerCase();
+    const limit = Number(params.get("limit") ?? 20);
+    const matches = options.filter(
+      ({ id, label, boardId: parent }) =>
+        (!boardId || parent === boardId) &&
+        (label.toLowerCase().includes(search) ||
+          id.toLowerCase().includes(search)),
+    );
+    matches.sort(
+      (a, b) =>
+        Number(b.id === query) - Number(a.id === query) ||
+        a.label.localeCompare(b.label) ||
+        a.id.localeCompare(b.id),
+    );
+    return this.json({
+      items: matches.slice(0, limit),
+      missing: [],
+      hasMore: matches.length > limit,
+    });
   }
 
   private json(body: unknown, status = 200): Response {
