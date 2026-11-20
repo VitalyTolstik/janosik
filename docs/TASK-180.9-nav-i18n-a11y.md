@@ -60,7 +60,7 @@ Scope follows [remediation §180.9](TASK-180-bug-research-remediation.md#1809--n
   referenced grid stays mounted empty when no board matches instead of being
   hidden. “My boards” and “Shared with me” are real full-width grid
   rows/gridcells with accessible names.
-- **M6 — dead guard removed.** `BoardSettingsDialog` no longer checks the
+- **Dead-guard cleanup.** `BoardSettingsDialog` no longer checks the
   always-mounted workflow panel ref before closing after a successful save.
 - **RU docs.** The collaboration shortcut table now says “Поиск по доскам”,
   matching the EN “Search across boards”.
