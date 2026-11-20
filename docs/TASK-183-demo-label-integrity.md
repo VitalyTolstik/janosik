@@ -1,6 +1,7 @@
 # TASK-183 — Demo fixture hygiene and card label timestamp integrity
 
-**Status:** TASK-183.1 implemented on its feature branch. Label timestamp work is planned.\
+**Status:** TASK-183.1 implemented on its feature branch. Label timestamp work is planned.
+
 **Priority:** P2 for demo fixture hygiene; P3 for the label timestamp bug  
 **Base:** `main` = `002a31ec`  
 **Branch:** `docs/TASK-183-demo-label-integrity`  
@@ -228,9 +229,9 @@ never rely on manual SQL.**
      `production` while reset mode is requested, fail closed and refuse.
      Do **not** use a `.env.local` fallback: a crash could leave it behind and
      silently redirect normal dev boot to the demo DB. Sweep stale reset
-     env/temp/lock files at reset start. Add a tampered-`.env` test with
-     conflicting `JANOSIK_*`/`NODE_ENV=development` values; the CLI/snapshot must
-     win;
+     env/temp files at reset start and keep the lock file in place. Add a
+     tampered-`.env` test with conflicting `JANOSIK_*`/`NODE_ENV=development`
+     values; the CLI/snapshot must win;
    - require `SEED_ALLOW=1` or `DEMO_RESET_ALLOW=1`;
    - on a complete schema, prove that the backend reads the demo DB before
      the fixture reset. `/health`
@@ -245,9 +246,10 @@ never rely on manual SQL.**
      that reads dev `env.JWT_SECRET`. Use the API only for
      `GET /boards/:marker`; any non-200 aborts. Delete marker rows before the
      drop and in `finally`, and sweep stale `task176-marker-*`/`t176-marker-*`
-     rows at reset start. After `migrate reset`, use a fresh connection/state
-     for marker cleanup. Do not create markers through `DEMO_API_URL`; that
-     would be self-fulfilling and prove nothing;
+     rows after schema inspection and before booting the probe backend, ahead
+     of any destructive reset work. After `migrate reset`, use a fresh
+     connection/state for marker cleanup. Do not create markers through
+     `DEMO_API_URL`; that would be self-fulfilling and prove nothing;
    - **own the backend lifecycle under crashes.** Run the backend in its own
      process group, persist PID/port/lock files per demo DB, and take a reset
      lock so two resets cannot run concurrently. On reset start detect and kill
@@ -435,10 +437,12 @@ verifier is the only maintainable path.
    `JWT_SECRET`, where `stamp` is the parameterized `securityStamp(user, secret)`
    (not the env-bound dev helper); only `GET /boards/:marker` goes through the
    API. Correct DB → 200; any non-200 (401/403/404) aborts. `/health` `db: up`
-   alone is not accepted. Markers are cleaned before the drop, in `finally`, and
-   swept at start; post-reset cleanup uses a fresh connection/state. A primary
-   reset with a missing or partial schema repairs it under the validated target
-   and locks, then runs the identity probe before seeding.
+   alone is not accepted. Stale markers are swept after schema inspection and
+   before booting the probe backend, ahead of any destructive reset work.
+   Probe markers are cleaned before the drop and in `finally`. Post-reset
+   cleanup uses a fresh connection/state. A primary reset with a missing or
+   partial schema repairs it under the validated target and locks, then runs
+   the identity probe before seeding.
 6. The TASK-176 seed/overlay uses `DEMO_DATABASE_URL`/`DEMO_API_URL`
    exclusively, validates the DB name before constructing `PrismaClient`, and
    refuses ambient `DATABASE_URL`/`API_URL` mismatches. It runs only under the
@@ -491,15 +495,18 @@ second opinion; no login is involved.
 
 **Recovery after a crash/SIGKILL:**
 
-Rerun `npm run demo:task176:reset`. At start it sweeps stale reset env/temp/lock
-and marker rows, proves process ownership from PID/start time/command
-line/port/nonce, kills only that reset-owned group and terminates remaining
-demo-DB connections before the drop. If ownership cannot be proven, it clears
-stale bookkeeping and fails closed with the stale PID/lock path printed; do not
-kill a process by hand and do not patch rows. A partial schema is recovered by
-rerunning the same reset. Linux/WSL is the supported environment for the
-`/proc` ownership check; on other platforms the reset either uses a fail-closed
-`ps` fallback or refuses with a clear prerequisite message.
+Rerun `npm run demo:task176:reset`. It takes the per-database lock, verifies
+process ownership from PID/start time/command line/port/nonce before signaling
+the reset-owned group, and sweeps stale reset env/temp files. If schema
+inspection confirms a complete schema, it sweeps stale marker rows before
+booting the probe backend and before any destructive reset work. It terminates
+remaining demo-DB connections before the drop. If ownership cannot be proven,
+it clears stale bookkeeping and fails closed with the stale state path and any
+known PID. Do not kill a process by hand and do not patch rows. A partial
+schema is recovered by rerunning the same reset. Linux/WSL is the supported
+environment for the `/proc` ownership check; on other platforms the reset
+either uses a fail-closed `ps` fallback or refuses with a clear prerequisite
+message.
 
 Manual test edits remain reset-only: run the reset before/after a session; do
 not hand-edit the canonical demo rows.
@@ -763,7 +770,8 @@ depend on 183.2.
 - Crash test: SIGKILL the **reset wrapper/process group** (not only the
   backend) mid-seed; PID/port/lock/env/marker state remains. The next reset
   proves ownership, kills only that group, terminates demo-DB connections,
-  clears the lock/env/markers and succeeds.
+  clears stale env files and markers, and succeeds. It releases the lock on
+  exit and leaves the lock file and its inode in place for reuse.
 - Port test: `DEMO_API_URL` must be loopback and an owned/free port, or the
   reset allocates and prints it; a port already in use is refused before any
   delete.
@@ -944,7 +952,8 @@ with an explicit compatibility rationale.
    same HMAC (not the env-bound dev helper); call only `GET /boards/:marker`.
    Correct DB → 200; any non-200 aborts before delete. Clean markers before the
    drop and in `finally`, use a fresh connection after reset, and sweep stale
-   markers at start.
+   markers after schema inspection and before booting the probe backend,
+   ahead of any destructive reset work.
 10. **How should the reset force `DATABASE_URL` past `dotenv override: true`?**
     Required: snapshot `process.env` before dotenv, pass reset mode/path/nonce
     **only as CLI args** (`--demo-reset`, `--demo-reset-env-file`,
@@ -990,8 +999,10 @@ with an explicit compatibility rationale.
   `aud: "janosik-user"` and a stamp from the **parameterized** `securityStamp`
   using the reset secret, and only `GET /boards/:marker` goes through the API.
   Correct DB → 200. A non-200 aborts before fixture reset on a complete
-  schema or before seeding after repair. Marker cleanup runs at startup, in
-  `finally`, and with a fresh connection after migration.
+  schema or before seeding after repair. On a complete schema, the stale marker
+  sweep follows schema inspection and precedes the probe backend and any
+  destructive reset work. Marker cleanup also runs in `finally` and with a
+  fresh connection after migration.
 - The reset owns the backend process group on a fresh private port with
   PID/start-time/port/lock/nonce, verifies ownership before killing a stale
   process, terminates demo-DB connections before the drop, restarts for seed

@@ -68,20 +68,23 @@ one-time seed authorization run against the repaired schema before any fixture
 seeding. This recovery uses the primary reset's full schema scope.
 
 The wrapper checks process identity before signaling a stale backend group and
-sweeps stale reset files. The lock inode is reused in
+sweeps stale reset files. The reset releases the lock on exit and leaves the
+lock file and its inode in place for reuse in
 `$XDG_RUNTIME_DIR/janosik/<database>` when set, or
-`~/.local/state/janosik/<database>` otherwise. The application state directories
-are private (0700). Keep the runtime directory consistent across runs and leave
-the lock file in place. If process ownership is unproven, the reset fails
-closed.
+`~/.local/state/janosik/<database>` otherwise. The `janosik` state directory and
+its per-database directories use mode 0700. The shared state home may be 0755
+and must be owned by the current user and writable only by that user. Keep the
+runtime directory consistent across runs and leave the lock file in place. If
+process ownership is unproven, the reset fails closed.
 
-On a complete schema the wrapper sweeps stale `task176-marker-*` and
-`t176-marker-*` IDs before booting the probe backend. It removes marker
-memberships and refresh tokens before deleting marker boards and users. If a
-foreign key blocks the sweep, the reset identifies the child table and stops.
-Remove the rows referencing those stale markers from the named table in the
-disposable database, then rerun the reset. Probe cleanup tolerates missing
-relations or columns and the wrapper sweeps again after migration.
+After schema inspection confirms a complete schema, the wrapper sweeps stale
+`task176-marker-*` and `t176-marker-*` IDs before booting the probe backend and
+before any destructive reset work. It removes marker memberships and refresh
+tokens before deleting marker boards and users. If a foreign key blocks the
+sweep, the reset identifies the child table and stops. Remove the rows
+referencing those stale markers from the named table in the disposable
+database, then rerun the reset. Probe cleanup tolerates missing relations or
+columns and the wrapper sweeps again after migration.
 
 ## Keep global settings
 
@@ -143,8 +146,8 @@ due date, task spec, claim and archive fields for every card.
 - Keep the pink `TASK-176 demo` label, the `TASK-176 acceptance` checklist and
   items, and links `px-link-task176-demo` (relates to MCP write contract) and
   `px-link-task176-blocks` (blocks Approval inbox polish). Remove the random
-  UUID link, checklist `123` and item `1`. The label toggles are command
-  history. The final label attachment is canonical.
+  UUID link, checklist `123` and item `1`. The canonical fixture creates the
+  final label attachment directly, without recording label toggle commands.
 - The 60 `t176-comment-*` rows, including the nine soft-deleted rows, belong to
   manual TASK-176.9 testing. The canonical TASK-176 comment set is empty.
 - The seed's `run-124` represents a reverted history state in the UI. Its card
@@ -200,6 +203,12 @@ printf '\n'
 export TASK176_TEST_DATABASE_URL
 TASK176_INTEGRATION_ALLOW=1 npm run demo:task176:test
 ```
+
+### Residual verification ledger
+
+- Prisma-process SIGKILL during `migrate reset` was not exercised; the suite
+  covers wrapper and wrapper-process-group SIGKILL only.
+- The manual `demo:task176:integration` GitHub Actions job has not been run.
 
 Module-boundary nonce validation and configurable database lease or fallback
 timeouts are follow-ups.
