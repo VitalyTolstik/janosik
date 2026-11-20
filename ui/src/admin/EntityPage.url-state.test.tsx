@@ -1201,8 +1201,9 @@ describe("content list filters", () => {
         expect(chip).toHaveTextContent(unverified);
         expect(
           within(chip).getByRole("button", {
-            name: adminMessage("admin.filters.removeUnsupported", locale, {
-              facet: unverified,
+            name: adminMessage("admin.filters.remove", locale, {
+              facet: copy("admin.filters.verified"),
+              value: unverified,
             }),
           }),
         ).toBeVisible();
@@ -1237,15 +1238,23 @@ describe("content list filters", () => {
 
   it("filters by a second accepted admin and resolves a missing user id", async () => {
     const state = stateWithTwoBoards();
+    // A stale displayed owner must not override the current membership.
+    state.boards[1].userId = "second-admin";
     state.users = [
       adminUser({ id: "second-admin", displayName: "Second Admin" }),
     ];
     const server = new FakeAdminServer(state);
     server.boardMembers["b-1"] = [
-      boardMember({ userId: "second-admin", role: "ADMIN" }),
+      boardMember({ role: "ADMIN" }),
+      boardMember({ id: "member-2", userId: "second-admin", role: "ADMIN" }),
     ];
     server.boardMembers["b-2"] = [
-      boardMember({ userId: "second-admin", role: "ADMIN", acceptedAt: null }),
+      boardMember({
+        boardId: "b-2",
+        userId: "second-admin",
+        role: "ADMIN",
+        acceptedAt: null,
+      }),
     ];
     vi.stubGlobal("fetch", server.fetchImpl);
     const user = userEvent.setup();

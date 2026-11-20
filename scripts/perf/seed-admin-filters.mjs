@@ -19,6 +19,8 @@ export function perfDataset(preset) {
     columns: boards * 5,
     labels: boards * 2,
     users: Math.max(20, boards * 5),
+    checklists: cards,
+    checklistItems: cards * 3,
     admins: 10,
     comments: cards * 2,
     attachments: (cards * 2) / 5,
@@ -67,6 +69,7 @@ async function seed(db, preset) {
   }
   const now = new Date();
   const recent = (i) => new Date(now.getTime() - i * 90_000);
+  const signup = (i) => new Date(now.getTime() - i * 43_200_000);
   const due = (i) => new Date(now.getTime() + ((i % 144) - 72) * 3_600_000);
   const priorities = [
     null,
@@ -119,8 +122,8 @@ async function seed(db, preset) {
     id: user(i),
     email: `${user(i)}@example.invalid`,
     displayName: `Perf user ${i}`,
-    createdAt: recent(i),
-    emailVerifiedAt: i % 5 ? recent(i) : null,
+    createdAt: signup(i),
+    emailVerifiedAt: i % 5 ? signup(i) : null,
   }));
   await insert(db.adminUser, size.admins, (i) => ({
     id: id("actor", i),
@@ -139,6 +142,7 @@ async function seed(db, preset) {
     userId: user(i),
     role: i < size.boards * 2 ? "ADMIN" : "MEMBER",
     acceptedAt: recent(i),
+    createdAt: new Date(now.getTime() + i),
   }));
   await insert(db.column, size.columns, (i) => ({
     id: id("column", i),
@@ -187,6 +191,19 @@ async function seed(db, preset) {
       position: 1,
     };
   });
+  await insert(db.checklist, size.checklists, (i) => ({
+    id: id("checklist", i),
+    cardId: card(i),
+    title: "Review checklist",
+    position: 0,
+  }));
+  await insert(db.checklistItem, size.checklistItems, (i) => ({
+    id: id("checklist-item", i),
+    checklistId: id("checklist", Math.floor(i / 3)),
+    text: `Review step ${(i % 3) + 1}`,
+    position: i % 3,
+    done: i % 3 === 0,
+  }));
   await insert(db.cardLink, size.cardLinks, (i) => ({
     id: id("link", i),
     boardId: id("board", boardIndex(i)),

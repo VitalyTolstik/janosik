@@ -39,7 +39,7 @@ describe("URL-backed admin lists", () => {
     ["/admin/boards?verified=true", ""],
     ["/admin/moderation?tab=attachments&kind=blocker", "?tab=attachments"],
   ])(
-    "loads %s without sending deferred filters or entering an error state",
+    "loads %s without sending unsupported filter keys or entering an error state",
     async (url, canonical) => {
       const { result, fetcher } = setup(url);
       await waitFor(() =>

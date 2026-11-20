@@ -3085,7 +3085,6 @@ export class FakeAdminServer {
       if (entity === "boards") {
         if (
           adminMemberId &&
-          record.userId !== adminMemberId &&
           !this.boardMembers[String(record.id)]?.some(
             (member) =>
               member.userId === adminMemberId &&

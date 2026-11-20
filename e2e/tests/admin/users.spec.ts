@@ -55,6 +55,12 @@ test("U1: user list searches by email and filters by status", async ({
   await expect(row).toBeVisible();
   await expect(row).toContainText("Disabled");
   await expect(page.getByTestId(`admin-user-row-${active.id}`)).toHaveCount(0);
+  await page.goto(adminPath("users?verified=true"));
+  await expect(
+    page.getByRole("button", {
+      name: "Remove filter: Email verification — Verified",
+    }),
+  ).toBeVisible();
 });
 
 test("U2: a user created with a chosen password can sign in", async ({

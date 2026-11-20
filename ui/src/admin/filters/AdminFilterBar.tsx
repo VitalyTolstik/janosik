@@ -104,7 +104,20 @@ export function AdminFilterBar({
     const choice = RADIO_FILTERS[key].choices.find(
       ({ value }) => value === filters[key],
     );
-    if (choice) choiceChips.push({ key, text: t(choice.label) });
+    if (choice) {
+      const text = t(choice.label);
+      choiceChips.push({
+        key,
+        text,
+        name:
+          key === "verified"
+            ? t("admin.filters.remove", {
+                facet: t(filterFacet(key).label),
+                value: text,
+              })
+            : undefined,
+      });
+    }
   }
 
   const facets = new Set([
