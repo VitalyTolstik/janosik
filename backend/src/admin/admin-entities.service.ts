@@ -439,6 +439,7 @@ export class AdminEntitiesService {
   ): Promise<AdminPage<AdminCardLinkRowDto>> {
     const where: Prisma.CardLinkWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
+    if (query.type?.length) where.type = { in: query.type };
     if (query.cardId) {
       where.AND = [
         {

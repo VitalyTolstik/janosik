@@ -162,8 +162,12 @@ function createEntityFilters(): Record<
 > {
   const statusAndPeriodTabs = { ...STATUS_TABS, ...PERIOD_TABS };
   return {
-    users: filterSurface([], ["verified"], STATUS_TABS),
-    boards: filterSurface(ADMIN_CARD_SCOPE, ["adminMemberId"], STATUS_TABS),
+    users: filterSurface(["verified"], ["verified"], statusAndPeriodTabs),
+    boards: filterSurface(
+      [...ADMIN_CARD_SCOPE, "adminMemberId"],
+      ["adminMemberId"],
+      STATUS_TABS,
+    ),
     cards: filterSurface(
       ["cardId", ...CARD_FACETS],
       CARD_FACETS,
@@ -174,7 +178,7 @@ function createEntityFilters(): Record<
     checklists: filterSurface(ADMIN_CARD_SCOPE, BOARD_CARD_SCOPE, STATUS_TABS),
     checklistItems: filterSurface(ADMIN_CARD_SCOPE),
     cardLinks: filterSurface(
-      BOARD_CARD_SCOPE,
+      [...BOARD_CARD_SCOPE, "type"],
       [...BOARD_CARD_SCOPE, "type"],
       STATUS_TABS,
     ),
@@ -257,6 +261,7 @@ export function adminFilterValueLimit(
   surface?: AdminListSurface,
 ): number {
   if (key === "labelId" && surface === "cards") return ADMIN_FILTER_MAX_VALUES;
+  if (key === "type" && surface === "cardLinks") return CARD_LINK_TYPES.length;
   return MULTI_VALUE_LIMITS[key] ?? 1;
 }
 

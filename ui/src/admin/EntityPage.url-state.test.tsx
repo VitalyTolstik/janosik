@@ -29,9 +29,11 @@ import {
   adminAttachment,
   adminBoard,
   adminCard,
+  adminCardLink,
   adminComment,
   adminLabel,
   adminUser,
+  boardMember,
   emptyAdminState,
 } from "./test/fake-admin-server";
 
@@ -1110,7 +1112,7 @@ function moderationServer() {
   return server;
 }
 
-async function openModerationFacet(
+async function openListFacet(
   user: ReturnType<typeof userEvent.setup>,
   title: string,
   facet: string,
@@ -1121,6 +1123,265 @@ async function openModerationFacet(
   await user.click(dialog.getByRole("button", { name: facet }));
   return dialog;
 }
+
+describe("content list filters", () => {
+  it.each(["en", "ru"] as const)(
+    "uses the %s verification radio, combines it with period, and clears with Any",
+    async (locale) => {
+      await ensureLocale(locale);
+      await i18n.changeLanguage(locale);
+      try {
+        const copy = (key: Parameters<typeof adminMessage>[0]) =>
+          adminMessage(key, locale);
+        const now = Date.now();
+        const state = emptyAdminState();
+        state.users = [
+          adminUser({ id: "verified", createdAt: now }),
+          adminUser({
+            id: "unverified",
+            createdAt: now,
+            emailVerifiedAt: null,
+          }),
+          adminUser({
+            id: "old",
+            createdAt: now - 2 * 86_400_000,
+            emailVerifiedAt: null,
+          }),
+        ];
+        const server = new FakeAdminServer(state);
+        vi.stubGlobal("fetch", server.fetchImpl);
+        const user = userEvent.setup();
+        renderAdmin("/admin/users?period=24h");
+        await screen.findByTestId("admin-user-row-verified");
+        expect(screen.queryByTestId("admin-user-row-old")).toBeNull();
+        expect(
+          screen.getByRole("button", { name: copy("admin.filter.period.24h") }),
+        ).toHaveAttribute("aria-pressed", "true");
+
+        const trigger = () =>
+          screen.getByRole("button", {
+            name: new RegExp(`^${copy("admin.filters.open")}( \\d+)?$`),
+          });
+        const open = async () => {
+          await user.click(trigger());
+          const dialog = within(
+            screen.getByRole("dialog", {
+              name: copy("admin.filters.title.users"),
+            }),
+          );
+          await user.click(
+            dialog.getByRole("button", {
+              name: copy("admin.filters.verified"),
+            }),
+          );
+          return within(
+            dialog.getByRole("radiogroup", {
+              name: copy("admin.filters.verified.control"),
+            }),
+          );
+        };
+        let choices = await open();
+        expect(
+          choices.getByRole("radio", { name: copy("admin.filters.any") }),
+        ).toHaveFocus();
+        await user.keyboard("{ArrowDown}");
+        expect(
+          choices.getByRole("radio", {
+            name: copy("admin.filters.verified.yes"),
+          }),
+        ).toHaveFocus();
+        await user.keyboard("{Escape}");
+        await waitFor(() => expect(trigger()).toHaveFocus());
+        expect(currentQuery().has("verified")).toBe(false);
+
+        await open();
+        await user.keyboard("{End}{Enter}");
+        const chip = await screen.findByTestId("admin-filter-verified");
+        const unverified = copy("admin.filters.verified.no");
+        expect(chip).toHaveTextContent(unverified);
+        expect(
+          within(chip).getByRole("button", {
+            name: adminMessage("admin.filters.remove", locale, {
+              facet: copy("admin.filters.verified"),
+              value: unverified,
+            }),
+          }),
+        ).toBeVisible();
+        expect(currentQuery().get("verified")).toBe("false");
+        await waitFor(() => {
+          const query = lastRequest(server, "/admin/entities/users")?.query;
+          expect(query?.get("verified")).toBe("false");
+          expect(Number(query?.get("from"))).toBeGreaterThan(
+            now - 86_400_000 - 1000,
+          );
+          expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+            adminMessage("admin.filters.results", locale, { total: 1 }),
+          );
+        });
+        expect(screen.getByTestId("admin-user-row-unverified")).toBeVisible();
+        expect(screen.queryByTestId("admin-user-row-verified")).toBeNull();
+
+        choices = await open();
+        expect(
+          choices.getByRole("radio", { name: unverified }),
+        ).toHaveAttribute("aria-checked", "true");
+        await user.keyboard("{Home}[Space]");
+        await screen.findByTestId("admin-user-row-verified");
+        expect(screen.queryByTestId("admin-filter-verified")).toBeNull();
+        expect(currentQuery().get("period")).toBe("24h");
+        expect(currentQuery().has("verified")).toBe(false);
+      } finally {
+        await i18n.changeLanguage("en");
+      }
+    },
+  );
+
+  it("filters by a second accepted admin and resolves a missing user id", async () => {
+    const state = stateWithTwoBoards();
+    // A stale displayed owner must not override the current membership.
+    state.boards[1].userId = "second-admin";
+    state.users = [
+      adminUser({ id: "second-admin", displayName: "Second Admin" }),
+    ];
+    const server = new FakeAdminServer(state);
+    server.boardMembers["b-1"] = [
+      boardMember({ role: "ADMIN" }),
+      boardMember({ id: "member-2", userId: "second-admin", role: "ADMIN" }),
+    ];
+    server.boardMembers["b-2"] = [
+      boardMember({
+        boardId: "b-2",
+        userId: "second-admin",
+        role: "ADMIN",
+        acceptedAt: null,
+      }),
+    ];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const user = userEvent.setup();
+    renderAdmin(
+      "/admin/boards?tab=boards&adminMemberId=missing-user&verified=false",
+    );
+
+    const chip = await screen.findByTestId("admin-filter-adminMemberId");
+    await waitFor(() =>
+      expect(
+        within(chip).getByRole("button", {
+          name: "Remove filter: Admin member — Unknown user · missing-",
+        }),
+      ).toBeVisible(),
+    );
+    await waitFor(() => expect(currentQuery().has("verified")).toBe(false));
+    const dialog = await openListFacet(
+      user,
+      "Filters for boards",
+      "Admin member",
+    );
+    await user.type(dialog.getByRole("combobox"), "Second Admin");
+    await user.click(
+      await dialog.findByRole("option", {
+        name: /Second Admin.*member@example.com/,
+      }),
+    );
+    await screen.findByTestId("admin-board-row-b-1");
+    expect(screen.queryByTestId("admin-board-row-b-2")).toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-filter-adminMemberId"),
+      ).toHaveTextContent("Second Admin"),
+    );
+    expect(currentQuery().get("adminMemberId")).toBe("second-admin");
+    expect(
+      server.requests.some(
+        ({ path, query }) =>
+          path === "/admin/filter-options" &&
+          query.get("type") === "user" &&
+          query.get("ids") === "second-admin",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps board scope across content tabs and filters links by either card and link type", async () => {
+    const state = stateWithTwoBoards();
+    state.cards.push(
+      adminCard({ id: "other-card", boardId: "b-1", title: "Linked card" }),
+      adminCard({
+        id: "incoming-card",
+        boardId: "b-1",
+        title: "Incoming link",
+      }),
+    );
+    state.cardLinks = [
+      adminCardLink({
+        id: "incoming",
+        boardId: "b-1",
+        fromCardId: "incoming-card",
+        toCardId: "card-1",
+        type: "blocks",
+      }),
+      adminCardLink({
+        id: "outgoing",
+        boardId: "b-1",
+        fromCardId: "card-1",
+        toCardId: "other-card",
+        type: "relates_to",
+      }),
+    ];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const user = userEvent.setup();
+    renderAdmin(
+      "/admin/boards?tab=columns&boardId=b-1&adminMemberId=second-admin",
+    );
+
+    for (const [tab, title, facets] of [
+      ["columns", "columns", ["Board"]],
+      ["labels", "labels", ["Board"]],
+      ["checklists", "checklists", ["Board", "Card"]],
+      ["links", "card links", ["Board", "Card", "Link type"]],
+    ] as const) {
+      await user.click(await screen.findByTestId(`admin-hub-tab-${tab}`));
+      await user.click(screen.getByRole("button", { name: /^Filters/ }));
+      const dialog = within(
+        screen.getByRole("dialog", { name: `Filters for ${title}` }),
+      );
+      expect(
+        dialog.getAllByRole("button").map((button) => button.textContent),
+      ).toEqual([...facets, "Close"]);
+      await user.keyboard("{Escape}");
+      expect(currentQuery().get("boardId")).toBe("b-1");
+      expect(currentQuery().has("adminMemberId")).toBe(false);
+    }
+    expect(screen.queryByTestId("admin-hub-tab-checklistItems")).toBeNull();
+
+    const card = await openListFacet(user, "Filters for card links", "Card");
+    await user.click(
+      await card.findByRole("option", { name: /Moderate me.*card-1/ }),
+    );
+    const types = await openListFacet(
+      user,
+      "Filters for card links",
+      "Link type",
+    );
+    await user.click(types.getByRole("checkbox", { name: "Blocks" }));
+    await user.click(types.getByRole("checkbox", { name: "Relates to" }));
+    await user.click(types.getByRole("button", { name: "Apply" }));
+    expect(currentQuery().getAll("type")).toEqual(["blocks", "relates_to"]);
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        "Results: 2",
+      ),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Remove filter: Link type — Blocks" }),
+    );
+    expect(currentQuery().getAll("type")).toEqual(["relates_to"]);
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        "Results: 1",
+      ),
+    );
+  });
+});
 
 describe("moderation filter bar", () => {
   it("applies a kind draft and author lookup, then preserves only the board and return link between tabs", async () => {
@@ -1138,12 +1399,12 @@ describe("moderation filter bar", () => {
       lastRequest(server, "/admin/entities/comments")?.query.has("from"),
     ).toBe(true);
 
-    let kind = await openModerationFacet(user, title, "Comment kind");
+    let kind = await openListFacet(user, title, "Comment kind");
     await user.click(kind.getByRole("checkbox", { name: "Blocker" }));
     await user.keyboard("{Escape}");
     expect(currentQuery().has("kind")).toBe(false);
 
-    kind = await openModerationFacet(user, title, "Comment kind");
+    kind = await openListFacet(user, title, "Comment kind");
     await user.click(kind.getByRole("checkbox", { name: "Blocker" }));
     await user.click(kind.getByRole("checkbox", { name: "Question" }));
     expect(currentQuery().has("kind")).toBe(false);
@@ -1157,7 +1418,7 @@ describe("moderation filter bar", () => {
     const blocked = screen.getByRole("row", { name: /Blocked on review/ });
     expect(within(blocked).getByText("Blocker")).toBeVisible();
 
-    const author = await openModerationFacet(user, title, "Author");
+    const author = await openListFacet(user, title, "Author");
     const authorInput = author.getByRole("combobox", {
       name: "Search options — Author",
     });
@@ -1231,7 +1492,7 @@ describe("moderation filter bar", () => {
         lastRequest(server, "/admin/entities/attachments")?.query.has("from"),
       ).toBe(true);
       const open = (facet: string) =>
-        openModerationFacet(user, "Фильтры вложений", facet, /^Фильтры/);
+        openListFacet(user, "Фильтры вложений", facet, /^Фильтры/);
       const mime = await open("Тип файла");
       expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
       const mimeGroup = mime.getByRole("radiogroup", {

@@ -20,7 +20,9 @@ import type {
   AdminAuditRowDto,
   AdminBoardRowDto,
   AdminCardChecklistDto,
+  AdminCardLinkRowDto,
   AdminCardRowDto,
+  AdminChecklistRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
   AdminColumnRowDto,
@@ -2065,6 +2067,10 @@ export class FakeAdminServer {
         users: this.state.users,
         boards: this.state.boards,
         cards: this.state.cards,
+        columns: Object.values(this.boardColumns).flat(),
+        labels: Object.values(this.boardLabels).flat(),
+        checklists: this.checklistRows(),
+        cardLinks: this.linkRows(),
         comments: this.state.comments,
         attachments: this.state.attachments,
         sessions: this.state.sessions.filter(
@@ -2968,6 +2974,42 @@ export class FakeAdminServer {
     };
   }
 
+  private checklistRows(): AdminChecklistRowDto[] {
+    return this.state.cards.flatMap((card) =>
+      (this.state.cardChecklists[card.id] ?? []).map((checklist) => {
+        const items = checklist.items.filter((item) => item.deletedAt === null);
+        return {
+          id: checklist.id,
+          title: checklist.title,
+          position: checklist.position,
+          deletedAt: checklist.deletedAt,
+          cardId: card.id,
+          cardTitle: card.title,
+          boardId: card.boardId,
+          boardTitle: card.boardTitle,
+          itemCount: items.length,
+          doneCount: items.filter((item) => item.done).length,
+          version: 0,
+        };
+      }),
+    );
+  }
+
+  private linkRows(): AdminCardLinkRowDto[] {
+    return this.state.cardLinks.map((link, position) => ({
+      ...link,
+      position,
+      boardTitle:
+        this.state.boards.find((board) => board.id === link.boardId)?.title ??
+        "",
+      fromCardTitle:
+        this.state.cards.find((card) => card.id === link.fromCardId)?.title ??
+        "",
+      toCardTitle:
+        this.state.cards.find((card) => card.id === link.toCardId)?.title ?? "",
+    }));
+  }
+
   private page<T>(
     items: T[],
     url: URL,
@@ -2982,10 +3024,23 @@ export class FakeAdminServer {
     const boardId = url.searchParams.get("boardId");
     const columnId = url.searchParams.get("columnId");
     const cardId = url.searchParams.get("cardId");
+    const entity = url.pathname.split("/").at(-1);
     const cards = url.pathname.endsWith("/cards");
     const comments = url.pathname.endsWith("/comments");
     const attachments = url.pathname.endsWith("/attachments");
     const { searchParams } = url;
+    const status = searchParams.get("status");
+    const verified = searchParams.get("verified");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    const adminMemberId = searchParams.get("adminMemberId");
+    const linkTypes = searchParams.getAll("type");
+    const links = entity === "cardLinks";
+    const boardContent =
+      entity === "columns" ||
+      entity === "labels" ||
+      entity === "checklists" ||
+      links;
     const currentTime = Date.now();
     const matchesCard = cards
       ? this.cardFacets(url.searchParams, currentTime)
@@ -3006,9 +3061,57 @@ export class FakeAdminServer {
       }
       if (columnId && (parent?.columnId ?? record.columnId) !== columnId)
         return false;
-      if (cardId && record.cardId !== cardId && record.id !== cardId) {
+      if (
+        cardId &&
+        (links
+          ? record.fromCardId !== cardId && record.toCardId !== cardId
+          : record.cardId !== cardId && record.id !== cardId)
+      ) {
         return false;
       }
+      if (links && linkTypes.length && !linkTypes.includes(String(record.type)))
+        return false;
+      if (entity === "users") {
+        if (
+          verified !== null &&
+          (record.emailVerifiedAt !== null) !== (verified === "true")
+        )
+          return false;
+        if (from && Number(record.createdAt) < Number(from)) return false;
+        if (to && Number(record.createdAt) > Number(to)) return false;
+        if (status === "active" && record.disabledAt !== null) return false;
+        if (status === "disabled" && record.disabledAt === null) return false;
+      }
+      if (entity === "boards") {
+        if (
+          adminMemberId &&
+          !this.boardMembers[String(record.id)]?.some(
+            (member) =>
+              member.userId === adminMemberId &&
+              member.role === "ADMIN" &&
+              member.acceptedAt !== null,
+          )
+        )
+          return false;
+        if (
+          status === "active" &&
+          (record.deletedAt !== null || record.archivedAt !== null)
+        )
+          return false;
+        if (
+          status === "archived" &&
+          (record.deletedAt !== null || record.archivedAt === null)
+        )
+          return false;
+      }
+      if (boardContent && status === "active" && record.deletedAt !== null)
+        return false;
+      if (
+        (boardContent || entity === "boards") &&
+        status === "deleted" &&
+        record.deletedAt === null
+      )
+        return false;
       if (matchesCard && !matchesCard(item as AdminCardRowDto)) return false;
       if (comments || attachments) {
         const labelId = searchParams.get("labelId");
@@ -3027,12 +3130,9 @@ export class FakeAdminServer {
           return false;
         const transcode = searchParams.get("transcode");
         if (transcode && record.transcodeStatus !== transcode) return false;
-        const from = searchParams.get("from");
-        const to = searchParams.get("to");
         if (from !== null && Number(record.createdAt) < Number(from))
           return false;
         if (to !== null && Number(record.createdAt) > Number(to)) return false;
-        const status = searchParams.get("status");
         if (status === "active" && record.deletedAt !== null) return false;
         if (status === "deleted" && record.deletedAt === null) return false;
       }

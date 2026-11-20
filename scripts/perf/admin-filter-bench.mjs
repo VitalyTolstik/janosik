@@ -53,6 +53,161 @@ const ATTACHMENTS = {
   order: sql`t."createdAt" DESC`,
 };
 
+const USERS = {
+  from: sql`"User" t`,
+  select: sql`t.id, t.email, t."displayName", t."createdAt", t."disabledAt", t."emailVerifiedAt"`,
+  order: sql`t."createdAt" DESC`,
+};
+
+const BOARDS = {
+  from: sql`"Board" t`,
+  pageAlias: sql`t`,
+  displayJoins: sql`LEFT JOIN LATERAL (
+    SELECT m."userId", u.email FROM "BoardMember" m JOIN "User" u ON u.id = m."userId"
+    WHERE m."boardId" = t.id AND m.role = 'ADMIN' AND m."acceptedAt" IS NOT NULL
+    ORDER BY m."createdAt" ASC LIMIT 1
+  ) owner ON TRUE`,
+  select: sql`t.id, t.title, t."createdAt", t."updatedAt", t."archivedAt",
+    t."deletedAt", owner."userId", owner.email`,
+  order: sql`t."updatedAt" DESC`,
+};
+
+const COLUMNS = {
+  from: sql`"Column" t`,
+  pageAlias: sql`t`,
+  pageColumns: sql`t.*, COALESCE(counts.total, 0) AS card_count`,
+  pageJoins: sql`LEFT JOIN (
+    SELECT "columnId", COUNT(*) AS total FROM "Card"
+    WHERE "deletedAt" IS NULL GROUP BY "columnId"
+  ) counts ON counts."columnId" = t.id`,
+  displayJoins: sql`JOIN "Board" b ON b.id = t."boardId"`,
+  select: sql`t.id, t.title, t."wipLimit", t.position, t."deletedAt", t.version,
+    t."createdAt", t."updatedAt", t."boardId", b.title AS board_title, t.card_count`,
+  order: sql`t."updatedAt" DESC`,
+};
+
+const LABELS = {
+  from: sql`"Label" t`,
+  pageAlias: sql`t`,
+  pageColumns: sql`t.*, COALESCE(counts.total, 0) AS card_count`,
+  pageJoins: sql`LEFT JOIN (
+    SELECT cl."labelId", COUNT(*) AS total FROM "CardLabel" cl
+    JOIN "Card" c ON c.id = cl."cardId" WHERE c."deletedAt" IS NULL GROUP BY cl."labelId"
+  ) counts ON counts."labelId" = t.id`,
+  displayJoins: sql`JOIN "Board" b ON b.id = t."boardId"`,
+  select: sql`t.id, t.name, t.color, t.position, t."deletedAt", t.version,
+    t."boardId", b.title AS board_title, t.card_count`,
+  order: sql`t."boardId" ASC, t.position ASC`,
+};
+
+const CHECKLISTS = {
+  from: sql`"Checklist" t`,
+  pageAlias: sql`t`,
+  displayJoins: sql`JOIN "Card" c ON c.id = t."cardId"
+    JOIN "Column" co ON co.id = c."columnId" JOIN "Board" b ON b.id = co."boardId"
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE ci.done) AS done
+      FROM "ChecklistItem" ci WHERE ci."checklistId" = t.id AND ci."deletedAt" IS NULL
+    ) items ON TRUE`,
+  select: sql`t.id, t.title, t.position, t."deletedAt", t.version, t."cardId",
+    c.title AS card_title, b.id AS board_id, b.title AS board_title,
+    items.total AS item_count, items.done AS done_count`,
+  order: sql`t."cardId" ASC, t.position ASC`,
+};
+
+const CARD_LINKS = {
+  from: sql`"CardLink" t`,
+  pageAlias: sql`t`,
+  displayJoins: sql`JOIN "Board" b ON b.id = t."boardId"
+    JOIN "Card" src ON src.id = t."fromCardId" JOIN "Card" dst ON dst.id = t."toCardId"`,
+  select: sql`t.id, t.type, t.position, t."deletedAt", t."createdAt", t."boardId",
+    t."fromCardId", t."toCardId", b.title AS board_title,
+    src.title AS from_card_title, dst.title AS to_card_title`,
+  order: sql`t."createdAt" DESC`,
+};
+
+function contentCases(preset, referenceTime) {
+  const { boards } = perfDataset(preset);
+  const boardId = perfId(preset, "board", 0);
+  // This card has an outgoing and an incoming link on board zero.
+  const cardId = perfId(preset, "card", boards);
+  const board = sql`t."boardId" = ${boardId}`;
+  const checklistBoard = sql`EXISTS (
+    SELECT 1 FROM "Card" c JOIN "Column" co ON co.id = c."columnId"
+    WHERE c.id = t."cardId" AND co."boardId" = ${boardId}
+  )`;
+  const checklistCard = sql`t."cardId" = ${cardId}`;
+  const linkCard = sql`(t."fromCardId" = ${cardId} OR t."toCardId" = ${cardId})`;
+  const linkTypes = sql`t.type IN ('blocks', 'relates_to')`;
+  const verified = sql`t."emailVerifiedAt" IS NOT NULL`;
+  const unverified = sql`t."emailVerifiedAt" IS NULL`;
+  const period = (days) =>
+    sql`t."createdAt" >= ${new Date(referenceTime.getTime() - days * 86_400_000)}`;
+
+  return [
+    [
+      "users",
+      USERS,
+      [
+        ["verified", verified],
+        ["unverified", unverified],
+        ["period-24h", period(1)],
+        ["period-7d", period(7)],
+        ["period-30d", period(30)],
+        ["verified-period-30d", sql`${verified} AND ${period(30)}`],
+        ["unverified-period-7d", sql`${unverified} AND ${period(7)}`],
+      ],
+    ],
+    [
+      "boards",
+      BOARDS,
+      [
+        [
+          "adminMemberId",
+          sql`EXISTS (
+            SELECT 1 FROM "BoardMember" m WHERE m."boardId" = t.id
+            AND m."userId" = ${perfId(preset, "user", boards)}
+            AND m.role = 'ADMIN' AND m."acceptedAt" IS NOT NULL
+          )`,
+        ],
+      ],
+    ],
+    ["columns", COLUMNS, [["board", board]]],
+    ["labels", LABELS, [["board", board]]],
+    [
+      "checklists",
+      CHECKLISTS,
+      [
+        ["board", checklistBoard],
+        ["card", checklistCard],
+        ["board-card", sql`${checklistBoard} AND ${checklistCard}`],
+      ],
+    ],
+    [
+      "cardLinks",
+      CARD_LINKS,
+      [
+        ["blocks", sql`t.type IN ('blocks')`],
+        ["relates_to", sql`t.type IN ('relates_to')`],
+        ["duplicates", sql`t.type IN ('duplicates')`],
+        ["type-multiple", linkTypes],
+        ["card", linkCard],
+        ["board", board],
+        ["type-board", sql`${linkTypes} AND ${board}`],
+        ["type-board-card", sql`${linkTypes} AND ${board} AND ${linkCard}`],
+      ],
+    ],
+  ].flatMap(([list, model, facets]) =>
+    [["unfiltered", unfiltered], ...facets].map(([facet, predicate]) => ({
+      list,
+      model,
+      facet,
+      predicate,
+      extended: true,
+    })),
+  );
+}
+
 function moderationCases(preset, referenceTime) {
   const dayAgo = new Date(referenceTime.getTime() - 86_400_000);
   const period = sql`t."createdAt" >= ${dayAgo}`;
@@ -218,8 +373,13 @@ function facetCases(preset, referenceTime) {
     extended: true,
   }));
 
-  const moderation = moderationCases(preset, referenceTime);
-  if (preset !== "full") return [...cases, ...additionalCards, ...moderation];
+  const core = [
+    ...cases,
+    ...additionalCards,
+    ...moderationCases(preset, referenceTime),
+    ...contentCases(preset, referenceTime),
+  ];
+  if (preset !== "full") return core;
   const additional = [
     {
       list: "cards",
@@ -236,15 +396,6 @@ function facetCases(preset, referenceTime) {
   ].map((entry) => ({ ...entry, extended: true }));
 
   const modelCases = [
-    [
-      "cardLinks",
-      {
-        from: sql`"CardLink" t`,
-        select: sql`t.*`,
-        order: sql`t."createdAt" DESC`,
-      },
-      [["type", sql`t.type IN ('blocks')`]],
-    ],
     [
       "commands",
       {
@@ -269,49 +420,23 @@ function facetCases(preset, referenceTime) {
         ["type", sql`t.type IN ('comment_added')`],
       ],
     ],
-    [
-      "users",
-      {
-        from: sql`"User" t`,
-        select: sql`t.id, t.email, t."createdAt", t."emailVerifiedAt"`,
-        order: sql`t."createdAt" DESC`,
-      },
-      [
-        ["verified", sql`t."emailVerifiedAt" IS NULL`],
-        ["period", sql`t."createdAt" >= ${referenceTime} - INTERVAL '1 hour'`],
-      ],
-    ],
-    [
-      "boards",
-      {
-        from: sql`"Board" t`,
-        select: sql`t.*`,
-        order: sql`t."updatedAt" DESC`,
-      },
-      [
-        [
-          "adminMember",
-          sql`EXISTS (SELECT 1 FROM "BoardMember" m WHERE m."boardId" = t.id
-         AND m."userId" = ${id("user", 0)} AND m.role = 'ADMIN' AND m."acceptedAt" IS NOT NULL)`,
-        ],
-      ],
-    ],
   ];
   for (const [list, model, facets] of modelCases) {
     for (const [facet, predicate] of [["unfiltered", unfiltered], ...facets]) {
       additional.push({ list, facet, model, predicate, extended: true });
     }
   }
-  return [...cases, ...additionalCards, ...moderation, ...additional];
+  return [...core, ...additional];
 }
 
 function statements({ model, predicate }, pageSize) {
   const order = sql`ORDER BY ${model.order}`;
   const window = sql`LIMIT ${pageSize} OFFSET 0`;
-  // Prisma fetches the moderation page before loading its display relations.
+  // Prisma computes relation counts before pagination and loads relations after it.
   const page = model.pageAlias
     ? sql`SELECT ${model.select} FROM (
-        SELECT ${model.pageAlias}.* FROM ${model.from} WHERE ${predicate} ${order} ${window}
+        SELECT ${model.pageColumns ?? sql`${model.pageAlias}.*`} FROM ${model.from}
+        ${model.pageJoins ?? Prisma.empty} WHERE ${predicate} ${order} ${window}
       ) ${model.pageAlias} ${model.displayJoins} ${order}`
     : sql`SELECT ${model.select} FROM ${model.from} ${model.displayJoins ?? Prisma.empty}
         WHERE ${predicate} ${order} ${window}`;
@@ -393,12 +518,13 @@ async function main() {
       output: { type: "string" },
       cards: { type: "boolean" },
       moderation: { type: "boolean" },
+      content: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
   if (values.help) {
     console.log(
-      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards|--moderation] [--output timings.json]",
+      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards|--moderation|--content] [--output timings.json]",
     );
     return;
   }
@@ -407,10 +533,11 @@ async function main() {
     output,
     cards: cardsOnly,
     moderation: moderationOnly,
+    content: contentOnly,
   } = values;
   if (!Object.hasOwn(PRESETS, preset))
     throw new Error("Use --preset small, gate, or full.");
-  if (cardsOnly && moderationOnly)
+  if ([cardsOnly, moderationOnly, contentOnly].filter(Boolean).length > 1)
     throw new Error("Choose one benchmark scope.");
   const db = perfDatabase();
   const rows = perfDataset(preset);
@@ -428,7 +555,7 @@ async function main() {
         `Expected the ${preset} fixture in a dedicated database. Run seed-admin-filters.mjs with the matching preset.`,
       );
     }
-    if (!cardsOnly) {
+    if (!cardsOnly && !contentOnly) {
       const [comments, attachments] = await Promise.all([
         db.comment.count(),
         db.attachment.count(),
@@ -439,9 +566,30 @@ async function main() {
         );
       }
     }
+    if (!cardsOnly && !moderationOnly) {
+      const counts = await Promise.all(
+        Object.entries({
+          users: db.user,
+          boards: db.board,
+          columns: db.column,
+          labels: db.label,
+          checklists: db.checklist,
+          checklistItems: db.checklistItem,
+          cardLinks: db.cardLink,
+        }).map(async ([list, model]) => (await model.count()) === rows[list]),
+      );
+      if (counts.includes(false)) {
+        throw new Error(
+          "Expected the matching content fixture in a dedicated database.",
+        );
+      }
+    }
     const pageSizes = preset === "small" ? [25] : [25, 50, 100];
     const results = [];
-    for (const entry of facetCases(preset, firstCard.updatedAt)) {
+    const entries = contentOnly
+      ? contentCases(preset, firstCard.updatedAt)
+      : facetCases(preset, firstCard.updatedAt);
+    for (const entry of entries) {
       if (cardsOnly && entry.list !== "cards") continue;
       if (
         moderationOnly &&

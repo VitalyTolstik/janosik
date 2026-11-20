@@ -2,7 +2,7 @@
 
 **Status:** planned
 
-**Revision:** 8 (2026-11-20) — records the TASK-181.4 moderation filters and
+**Revision:** 9 (2026-11-20) — records the TASK-181.5 content facets and
 their performance evidence.
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
@@ -287,7 +287,8 @@ possible later refinement; it is not needed to answer "what touches this card?".
 There is an `AdminChecklistItemRowDto` and a generic
 `GET /admin/entities/checklistItems`, but **no UI tab**. TASK-176.12 explicitly
 deferred a top-level browser as low value and recommended a card-anchored filter
-if the need appears. This task keeps that decision.
+if the need appears. TASK-181.5 keeps checklist items on card detail and
+retains the existing generic endpoint and its legacy scopes.
 
 If support later provides evidence, add a tab (not before) with:
 `boardId`, `cardId`, `checklistId`, `done=true|false`, `status`. Until then,
@@ -468,8 +469,8 @@ Clear search and filters.
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
 surface. The matrix starts from the 181.1 legacy scopes and includes the
-181.3 card facets and 181.4 moderation additions. **Offered** records facets
-planned for the picker.
+181.3 card facets, 181.4 moderation facets, and 181.5 content facets.
+**Offered** records facets planned for the picker.
 A picker can expose a facet once its owning wave implements it. Legacy deep
 links keep their existing behavior regardless of picker visibility.
 
@@ -480,14 +481,14 @@ can resolve options for later waves independently of list filtering.
 
 | Entity | Implemented | Deferred until owning wave | Planned or existing menu/header |
 | --- | --- | --- | --- |
-| users | — | `verified`, `from`/`to` (period) | status, verified, period |
-| boards | `boardId`, `columnId`, `cardId`, `labelId` | `adminMemberId` | status, adminMemberId |
+| users | `verified`, `from`/`to` (period) | — | status, verified, period |
+| boards | `boardId`, `columnId`, `cardId`, `labelId`, `adminMemberId` | — | status, adminMemberId |
 | cards | `boardId`, `columnId`, `cardId`, `labelId` (repeatable), `labelMatch`, `assigneeId`, `unassigned`, `priority`, `due`, `hasAttachments`, `from`/`to` | — | board, column, label (any/all), assignee, unassigned, priority, due, has attachments, period header, `cardId` advanced paste/URL |
 | columns | `boardId`, `columnId`, `cardId`, `labelId` | — | board, status |
 | labels | `boardId`, `labelId`, `cardId`, `columnId` | — | board, status |
 | checklists | `boardId`, `columnId`, `cardId`, `labelId` | — | board, card, status |
 | checklistItems | `boardId`, `columnId`, `cardId`, `labelId` | — (no tab v1) | none |
-| cardLinks | `boardId`, `cardId` | `type` (static `CARD_LINK_TYPES`) | board, card, type, status |
+| cardLinks | `boardId`, `cardId`, `type` (static `CARD_LINK_TYPES`) | — | board, card, type, status |
 | comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to`, `authorId`, `kind` | — | board, card, author, kind, period, status |
 | attachments | `boardId`, `cardId`, `columnId`, `labelId`, `uploadedById`, `mime`, `transcode`, `from`/`to` | — | board, card, uploader, mime, transcode, period, status |
 | activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |
@@ -829,9 +830,11 @@ compaction is a follow-up backlog item, not part of 181.7.
   status announces “Filters applied · Results: N” using the server total after
   the response. Do not announce a speculative count before it arrives.
 - Chip remove buttons are reachable in DOM order; removing a chip keeps focus
-  on the next chip or the Filters button if none remain. The remove button has
-  an accessible name with the full title and own/parent short ids; no hover or
-  tooltip is required to remove it by keyboard/screen reader.
+  on the next chip or the Filters button if none remain. The accessible name
+  for a lookup chip includes its facet, full title and own/parent short ids
+  where applicable. The verification chip includes its facet and selected
+  value (“Remove filter: Email verification — Unverified”). All chips can be
+  removed by keyboard or screen reader without a tooltip.
 - Table rows/links keep their existing keyboard behavior; filters must not
   steal row clicks (the 176.5 cell-link guard stays).
 - Color contrast: chips/inputs/section headings meet AA in light/dark; the label
@@ -1125,6 +1128,9 @@ Behavior:
 - [TASK-181.4 benchmark evidence](./TASK-181.4-moderation-perf.md) records the
   moderation predicates on the 5k gate fixture, including period and combined
   cases and their query plans.
+- [TASK-181.5 benchmark evidence](./TASK-181.5-content-perf.md) records the
+  six content lists on the 5k gate fixture, including combined cases and their
+  query plans.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;
@@ -1517,7 +1523,8 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   dateRange(query)`); verified uses the radio group from §6.3.
 - Boards: accepted-ADMIN member filter via `members.some({role: ADMIN,
   acceptedAt: not null, userId})`; not the displayed first-admin label.
-- Columns/labels/checklists: board/card filters exposed through the kit.
+- Columns and labels offer Board. Checklists offer Board and Card. The
+  supported legacy scopes are listed in §5.8.
 - Card links: type filter (static `CARD_LINK_TYPES`) + card/board.
 - No new checklist-items tab; decision recorded in the spec/docs.
 - Tests per entity, multi-admin seed and a browser sweep of the Boards hub.
@@ -1534,6 +1541,14 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   side).
 - Existing 176.6 counter/column/label links still work and now show readable
   chips.
+
+**Residuals**
+
+- The pre-existing notification-digest test race can affect the full backend
+  suite. The attention-notifications spec passes as a standalone file.
+  Running only the digest case can pick up a pending approval email.
+- The Users period tabs send a relative lower bound. Explicit `from`/`to`
+  bounds in the browser URL and per-surface empty-state copy remain follow-ups.
 
 ### 181.6 — Audit hub (P2)
 
@@ -1585,6 +1600,7 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   checklist has no new violations.
 - No regressions in existing admin URLs, global search, bulk actions or
   `returnTo`.
+- Pass the 25k moderation and content qualifications before rollout.
 
 ## 10. Test plan
 
@@ -1749,8 +1765,11 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
    its entries with the corresponding predicates and measured performance
    evidence. 181.4 owns the comments and attachments entries and their
    [5k pre-rollout exception](./TASK-181.4-moderation-perf.md#pre-rollout-exception).
+   181.5 owns the content entries and their
+   [5k pre-rollout exception](./TASK-181.5-content-perf.md#pre-rollout-exception).
 4. Merge **181.7** docs/acceptance last. The full 25k qualification remains
-   part of rollout. The moderation qualification must pass before rollout.
+   part of rollout. The moderation and content qualifications must pass
+   before rollout.
 5. The admin UI and API ship atomically from the same image. Starting with
    the filter bar in 181.2, an unexpected `unsupported_filter` response for an
    active chip shows a blocking error with a Remove action.

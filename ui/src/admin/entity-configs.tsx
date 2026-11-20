@@ -98,6 +98,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         entity,
         title: t("admin.users.title"),
         subtitle: t("admin.users.subtitle"),
+        periods: true,
         statuses: [
           { value: "active", label: t("admin.users.filter.active") },
           { value: "disabled", label: t("admin.users.filter.disabled") },

@@ -332,6 +332,10 @@ export class AdminService {
     }
     if (query.status === "active") where.disabledAt = null;
     if (query.status === "disabled") where.disabledAt = { not: null };
+    if (query.verified !== undefined) {
+      where.emailVerifiedAt = query.verified ? { not: null } : null;
+    }
+    where.createdAt = this.dateRange(query);
 
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
@@ -930,6 +934,15 @@ export class AdminService {
     }
     if (query.status === "deleted") where.deletedAt = { not: null };
     if (query.boardId) where.id = query.boardId;
+    if (query.adminMemberId) {
+      where.members = {
+        some: {
+          role: Role.ADMIN,
+          acceptedAt: { not: null },
+          userId: query.adminMemberId,
+        },
+      };
+    }
     if (query.columnId || query.cardId) {
       where.columns = {
         some: {

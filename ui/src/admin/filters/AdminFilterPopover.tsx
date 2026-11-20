@@ -18,6 +18,7 @@ import { listFilterError, type AdminListFilters } from "../admin-list-query";
 import { Badge } from "../ui";
 import { DraftFacetPicker, FilterFacetPicker } from "./FilterFacetPicker";
 import {
+  FILTER_BAR_TITLES,
   offeredFilters,
   RADIO_FILTERS,
   type FilterBarSurface,
@@ -64,11 +65,7 @@ export function AdminFilterPopover({
     triggerRef.current?.focus();
   };
   const titleId = useId();
-  const title = t(
-    surface === "cards"
-      ? "admin.filters.title"
-      : `admin.filters.title.${surface}`,
-  );
+  const title = t(FILTER_BAR_TITLES[surface]);
   const trigger = (
     <Button
       ref={triggerRef}
@@ -154,6 +151,27 @@ function FilterMenu({
   const radio =
     active?.kind === "radio" ? RADIO_FILTERS[active.key] : undefined;
   const facets = offeredFilters(surface);
+  const groups = [
+    {
+      label: "admin.filters.scope",
+      facets: facets.filter(
+        (facet) =>
+          "type" in facet && facet.type !== "user" && facet.kind === "lookup",
+      ),
+    },
+    {
+      label: "admin.filters.people",
+      facets: facets.filter(
+        (facet) => "type" in facet && facet.type === "user",
+      ),
+    },
+    {
+      label: "admin.filters.properties",
+      facets: facets.filter(
+        ({ kind, key }) => kind !== "lookup" && key !== "assigneeId",
+      ),
+    },
+  ] as const;
   const updateDraft = (patch: Partial<AdminListFilters>) => {
     setDraft((previous) => ({ ...previous, ...patch }));
   };
@@ -254,33 +272,16 @@ function FilterMenu({
             ) : null}
           </>
         ) : (
-          <>
-            <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">
-              {t("admin.filters.scope")}
-            </h3>
-            {facets
-              .filter(
-                (facet) =>
-                  "type" in facet &&
-                  facet.type !== "user" &&
-                  facet.kind === "lookup",
-              )
-              .map(renderFacet)}
-            <h3 className="mt-2 px-2 py-1 text-xs font-medium text-muted-foreground">
-              {t("admin.filters.people")}
-            </h3>
-            {facets
-              .filter((facet) => "type" in facet && facet.type === "user")
-              .map(renderFacet)}
-            <h3 className="mt-2 px-2 py-1 text-xs font-medium text-muted-foreground">
-              {t("admin.filters.properties")}
-            </h3>
-            {facets
-              .filter(
-                ({ kind, key }) => kind !== "lookup" && key !== "assigneeId",
-              )
-              .map(renderFacet)}
-          </>
+          groups
+            .filter(({ facets }) => facets.length > 0)
+            .map(({ label, facets }) => (
+              <div key={label} className="mt-2 first:mt-0">
+                <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                  {t(label)}
+                </h3>
+                {facets.map(renderFacet)}
+              </div>
+            ))
         )}
       </div>
       <div className="shrink-0 border-t border-border px-3 py-2">

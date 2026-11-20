@@ -1,5 +1,6 @@
 import {
   ADMIN_MIME_FAMILIES,
+  CARD_LINK_TYPES,
   CARD_PRIORITIES,
   COMMENT_KINDS,
   ENTITY_FILTERS,
@@ -9,12 +10,29 @@ import {
 import type { AdminMessageKey, AdminT } from "../admin-i18n";
 import type { AdminListFilters } from "../admin-list-query";
 
-export type FilterBarSurface = "cards" | "comments" | "attachments";
+export const FILTER_BAR_TITLES = {
+  users: "admin.filters.title.users",
+  boards: "admin.filters.title.boards",
+  cards: "admin.filters.title",
+  columns: "admin.filters.title.columns",
+  labels: "admin.filters.title.labels",
+  checklists: "admin.filters.title.checklists",
+  cardLinks: "admin.filters.title.cardLinks",
+  comments: "admin.filters.title.comments",
+  attachments: "admin.filters.title.attachments",
+} as const satisfies Record<string, AdminMessageKey>;
+
+export type FilterBarSurface = keyof typeof FILTER_BAR_TITLES;
 
 const definitions = {
   boardId: { kind: "lookup", type: "board", label: "admin.filter.board" },
   columnId: { kind: "lookup", type: "column", label: "admin.filter.column" },
   cardId: { kind: "lookup", type: "card", label: "admin.filter.card" },
+  adminMemberId: {
+    kind: "lookup",
+    type: "user",
+    label: "admin.filters.adminMember",
+  },
   assigneeId: { kind: "multi", type: "user", label: "admin.filters.assignee" },
   labelId: { kind: "multi", type: "label", label: "admin.filter.label" },
   authorId: { kind: "lookup", type: "user", label: "admin.filters.author" },
@@ -24,6 +42,8 @@ const definitions = {
     label: "admin.filters.uploader",
   },
   kind: { kind: "multi", label: "admin.filters.kind" },
+  type: { kind: "multi", label: "admin.filters.linkType" },
+  verified: { kind: "radio", label: "admin.filters.verified" },
   mime: { kind: "radio", label: "admin.filters.mime" },
   transcode: { kind: "radio", label: "admin.filters.transcode" },
   priority: { kind: "multi", label: "admin.filters.priority" },
@@ -99,7 +119,19 @@ export const KIND_CHOICES = COMMENT_KINDS.map((value) => ({
   label: `admin.filters.kind.${value}` as const,
 }));
 
+export const LINK_TYPE_CHOICES = CARD_LINK_TYPES.map((value) => ({
+  value,
+  label: `admin.filters.linkType.${value}` as const,
+}));
+
 export const RADIO_FILTERS = {
+  verified: {
+    label: "admin.filters.verified.control",
+    choices: [
+      { value: true, label: "admin.filters.verified.yes" },
+      { value: false, label: "admin.filters.verified.no" },
+    ],
+  },
   due: {
     label: "admin.filters.due.control",
     choices: [
@@ -150,12 +182,12 @@ export function removeListFilter(
           : filters.priority?.filter((priority) => priority !== value),
     };
   }
-  if (key === "kind") {
+  if (key === "kind" || key === "type") {
     return {
-      kind:
+      [key]:
         value === undefined
           ? undefined
-          : filters.kind?.filter((kind) => kind !== value),
+          : filters[key]?.filter((entry) => entry !== value),
     };
   }
   if (key === "labelId" || key === "assigneeId") {
