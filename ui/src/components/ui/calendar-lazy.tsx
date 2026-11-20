@@ -7,29 +7,36 @@ import { Skeleton } from "@/components/ui/skeleton";
 // path and load the module on first mount (TASK-19). The `ru` locale lives in
 // the same chunk, so it is resolved on demand too (a static
 // `react-day-picker/locale` import here would eagerly pull the chunk).
-const CalendarImpl = React.lazy(() =>
-  import("@/components/ui/calendar").then((m) => ({ default: m.Calendar })),
-);
+const loadCalendar = () => import("@/components/ui/calendar");
 
 // Type-only (erased at runtime). DayPicker's props are a discriminated union
 // on `mode` — ComponentProps collapses it, so derive the parameter type and
 // keep the wrapper generic to preserve `mode`/`selected` at call sites.
-type CalendarComponent = typeof import("@/components/ui/calendar").Calendar;
-type CalendarProps = Parameters<CalendarComponent>[0];
+export type CalendarComponent =
+  typeof import("@/components/ui/calendar").Calendar;
+export type CalendarProps = Parameters<CalendarComponent>[0] & {
+  localeTag?: string;
+};
 
 function useRdpLocale(tag?: string): CalendarProps["locale"] {
+  const isRussian = tag?.startsWith("ru") ?? false;
   const [locale, setLocale] = React.useState<CalendarProps["locale"]>();
   React.useEffect(() => {
-    if (!tag || !tag.startsWith("ru")) return;
+    if (!isRussian) return;
     let alive = true;
-    import("react-day-picker/locale").then((m) => {
-      if (alive) setLocale(m.ru);
-    });
+    import("react-day-picker/locale").then(
+      (m) => {
+        if (alive) setLocale(m.ru);
+      },
+      () => {
+        if (alive) setLocale(undefined);
+      },
+    );
     return () => {
       alive = false;
     };
-  }, [tag]);
-  return locale;
+  }, [isRussian]);
+  return isRussian ? locale : undefined;
 }
 
 /**
@@ -37,19 +44,33 @@ function useRdpLocale(tag?: string): CalendarProps["locale"] {
  * While the chunk loads, a skeleton with the calendar's footprint keeps the
  * popover from collapsing (first open only — afterwards the module is cached).
  */
-function Calendar<P extends CalendarProps>(props: P & { localeTag?: string }) {
-  const { localeTag, ...rest } = props;
-  const resolvedLocale = useRdpLocale(localeTag);
-  return (
-    <React.Suspense
-      fallback={<Skeleton width={288} height={320} className="rounded-md" />}
-    >
-      <CalendarImpl
-        {...(rest as CalendarProps)}
-        locale={(rest as CalendarProps).locale ?? resolvedLocale}
-      />
-    </React.Suspense>
+export function createCalendar(
+  loader: () => Promise<{ Calendar: CalendarComponent }> = loadCalendar,
+  showSkeleton = true,
+) {
+  const CalendarImpl = React.lazy(() =>
+    loader().then(({ Calendar }) => ({ default: Calendar })),
   );
+
+  return function LazyCalendar<P extends CalendarProps>(props: P) {
+    const { localeTag, ...rest } = props;
+    const resolvedLocale = useRdpLocale(localeTag);
+    const calendar = (
+      <CalendarImpl
+        {...(rest as Parameters<CalendarComponent>[0])}
+        locale={rest.locale ?? resolvedLocale}
+      />
+    );
+    return showSkeleton ? (
+      <React.Suspense
+        fallback={<Skeleton width={288} height={320} className="rounded-md" />}
+      >
+        {calendar}
+      </React.Suspense>
+    ) : (
+      calendar
+    );
+  };
 }
 
-export { Calendar };
+export const Calendar = createCalendar();

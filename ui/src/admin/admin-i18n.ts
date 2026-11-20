@@ -889,6 +889,10 @@ const en = {
   "admin.cards.fields.duePlaceholder": "No due date",
   "admin.cards.fields.dueClearDraft": "Clear",
   "admin.cards.fields.dueTime": "Time",
+  "admin.cards.fields.calendarFailed":
+    "The date and time picker could not load. Other fields are still editable.",
+  "admin.cards.fields.calendarRetry": "Retry date and time picker",
+  "admin.cards.fields.calendarFallbackLabel": "Due date and time",
   "admin.cards.fields.dueSave": "Save date",
   "admin.cards.fields.dueClear": "Remove",
   "admin.cards.fields.dueCurrent": "Current: {value}",
@@ -2292,6 +2296,10 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.fields.duePlaceholder": "Без срока",
   "admin.cards.fields.dueClearDraft": "Очистить",
   "admin.cards.fields.dueTime": "Время",
+  "admin.cards.fields.calendarFailed":
+    "Панель выбора даты и времени не загрузилась. Остальные поля доступны.",
+  "admin.cards.fields.calendarRetry": "Повторить загрузку",
+  "admin.cards.fields.calendarFallbackLabel": "Срок и время",
   "admin.cards.fields.dueSave": "Сохранить срок",
   "admin.cards.fields.dueClear": "Убрать",
   "admin.cards.fields.dueCurrent": "Сейчас: {value}",
