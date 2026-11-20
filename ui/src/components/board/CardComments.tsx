@@ -727,8 +727,12 @@ function CommentRow({
   const member = useBoardMember(boardId, comment.authorId);
   const own = currentUserId !== undefined && comment.authorId === currentUserId;
   const pending = comment.id.startsWith("pending-");
-  const email = member?.email ?? "";
-  const name = userLabel(member?.displayName ?? null, email) || "?";
+  // The DTO carries the author's display identity (TASK-177.2): once that
+  // person leaves, the member roster no longer has them and the comment
+  // would otherwise collapse to `?`.
+  const email = comment.authorEmail ?? member?.email ?? "";
+  const displayName = comment.authorName ?? member?.displayName ?? null;
+  const name = userLabel(displayName, email) || "?";
 
   // Inline edit (TASK-176.2): the row stays in place; only its body swaps
   // for the same markdown editor the composer uses.
@@ -799,7 +803,7 @@ function CommentRow({
       >
         <UserAvatar
           userId={comment.authorId}
-          displayName={member?.displayName ?? null}
+          displayName={displayName}
           email={email}
           color={member?.avatarColor}
           avatarPath={member?.avatarPath}

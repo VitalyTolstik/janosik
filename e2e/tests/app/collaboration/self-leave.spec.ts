@@ -11,6 +11,34 @@ test.describe.configure({ timeout: 90_000 });
  * board disappears from the switcher, the direct URL becomes a 404 and the
  * owner keeps the card the member wrote.
  */
+test("a MEMBER can leave from the switcher on a phone viewport", async ({
+  board,
+  partner,
+  partnerBrowser,
+}) => {
+  await board.column("Todo");
+  await partner.invite("MEMBER");
+  await partner.accept();
+
+  const page = partnerBrowser.page;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await partner.openBoard(page);
+
+  await page.getByRole("button", { name: "Switch board" }).click();
+  const grid = page.getByRole("grid", { name: "Switch board" });
+  const row = grid.getByRole("row").filter({ hasText: board.title });
+  await row
+    .getByRole("button", { name: `Leave board — ${board.title}` })
+    .click();
+  await row.getByRole("button", { name: "Yes, leave" }).click();
+
+  await expect(page.getByText("You left the board")).toBeVisible();
+  const listed = await partner.api.get("/api/v1/boards");
+  expect(listed.ok()).toBeTruthy();
+  const boards = (await listed.json()) as { id: string }[];
+  expect(boards.map((entry) => entry.id)).not.toContain(board.id);
+});
+
 test("a MEMBER can leave a board and loses direct access", async ({
   page: ownerPage,
   board,

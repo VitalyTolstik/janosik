@@ -343,22 +343,20 @@ export class BoardsController {
    * it, but the last ADMIN cannot — a board must never be left adminless.
    * Session-only: a PAT must not drop its owner's membership.
    *
-   * Declared before the `:userId` route so "me" is not parsed as an id.
+   * No `MembershipGuard`: a repeated DELETE after a lost response must answer
+   * success instead of 403. The service checks the board and treats an absent
+   * membership as already-left. Declared before the `:userId` route so "me"
+   * is not parsed as an id.
    */
-  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @UseGuards(JwtAuthGuard, SessionOnlyGuard)
   @Delete(":id/members/me")
   @HttpCode(HttpStatus.OK)
   async leaveBoard(
     @Param("id") id: string,
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
-    @CurrentAgentSession() session: AgentSessionContext | undefined,
   ): Promise<{ status: "ok" }> {
-    await this.boards.leaveBoard(
-      id,
-      user.id,
-      requestAttribution(principal, session?.id),
-    );
+    await this.boards.leaveBoard(id, user.id, requestAttribution(principal));
     return { status: "ok" };
   }
 

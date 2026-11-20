@@ -895,6 +895,30 @@ describe("Board events SSE (e2e)", () => {
     await retry.body?.cancel().catch(() => undefined);
   }, 20_000);
 
+  it("closes a voluntary leaver's stream with change: left", async () => {
+    const stream = openReader(
+      await openStream(viewerToken, await boardSeq(ownerToken), "left-tab-1"),
+    );
+    await stream.next(1, "presence");
+
+    await server()
+      .delete(`/api/v1/boards/${boardId}/members/me`)
+      .set(auth(viewerToken))
+      .expect(200);
+
+    // A voluntary leave is distinguishable from an admin removal, so the
+    // other tab can say "You left the board" instead of "access revoked".
+    const frames = await stream.next(1, "membership");
+    expect(frames[0].boardId).toBe(boardId);
+    expect(frames[0].change).toBe("left");
+    expect(await stream.ended()).toBe(true);
+    await stream.close();
+
+    const retry = await openStream(viewerToken, 0, "left-tab-2");
+    expect(retry.status).toBe(403);
+    await retry.body?.cancel().catch(() => undefined);
+  }, 20_000);
+
   async function wipe(db: PrismaService): Promise<void> {
     await db.attachment.deleteMany();
     await db.cardLink.deleteMany();

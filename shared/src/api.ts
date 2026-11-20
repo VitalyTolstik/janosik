@@ -411,7 +411,7 @@ export interface KeepAliveSseEvent {
 }
 
 /** What happened to a user's membership of a board (TASK-36). */
-export type MembershipChange = "accepted" | "updated" | "removed";
+export type MembershipChange = "accepted" | "updated" | "removed" | "left";
 
 /**
  * Server-sent event: a board's member directory changed (TASK-36). Open
@@ -674,6 +674,13 @@ export interface ActivityFeedEntry {
   /** Who caused the entry (real user id). */
   actorId: string;
   /**
+   * Display identity snapshotted from `User` at read time (TASK-177.2).
+   * Optional: legacy/agent rows may lack it; `actorEmail` also falls back to
+   * the membership `details.email` so a leaver still renders with a name.
+   */
+  actorName?: string;
+  actorEmail?: string;
+  /**
    * Whether a person or an agent caused the entry (TASK-157). Omitted on
    * legacy rows — treat as `"human"`.
    */
@@ -845,6 +852,13 @@ export interface CommentDto {
   id: string;
   cardId: string;
   authorId: string;
+  /**
+   * Author display identity (TASK-177.2), joined from `User` on read. Lets a
+   * comment keep its author's name after that person leaves the board; the
+   * member roster alone would render them as `?`.
+   */
+  authorName?: string | null;
+  authorEmail?: string | null;
   text: string;
   /**
    * Structured kind (TASK-157, D10) — `note` by default, or one of the swarm

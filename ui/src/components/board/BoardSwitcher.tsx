@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Eye,
+  LogOut,
   Plus,
   Search,
   Trash2,
@@ -118,6 +119,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
     board,
     addBoard,
     removeBoard,
+    leaveBoard,
     archiveBoard,
     unarchiveBoard,
     roleOf,
@@ -132,6 +134,8 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
   const rowId = (id: string) => `${gridId}-board-${id}`;
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmLeaveId, setConfirmLeaveId] = useState<string | null>(null);
+  const [leavingId, setLeavingId] = useState<string | null>(null);
   // TASK-166: server mode has no 10-board product limit. `undefined` while
   // the runtime config loads; `null` = unlimited; a number is an operator cap.
   const serverMode = isApiEnabled();
@@ -263,6 +267,16 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
     }
   };
 
+  const handleLeave = async (target: Board) => {
+    setLeavingId(target.id);
+    const left = await leaveBoard(target.id);
+    setLeavingId(null);
+    if (left) {
+      setConfirmLeaveId(null);
+      onClose();
+    }
+  };
+
   const handleDeleteArchived = (target: Board) => {
     setConfirmDeleteId(null);
     // REST delete in server mode; a refusal surfaces as a toast.
@@ -277,7 +291,11 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setCursor(Math.max(highlighted - 1, 0));
-    } else if (e.key === "Enter" && confirmArchiveId !== highlightedBoard.id) {
+    } else if (
+      e.key === "Enter" &&
+      confirmArchiveId !== highlightedBoard.id &&
+      confirmLeaveId !== highlightedBoard.id
+    ) {
       e.preventDefault();
       openBoard(highlightedBoard);
     }
@@ -356,6 +374,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
             const isActive = b.id === board?.id;
             const isHighlighted = index === highlighted;
             const isConfirming = confirmArchiveId === b.id;
+            const isConfirmingLeave = confirmLeaveId === b.id;
             // Only ADMINs manage a board (the server enforces it too); in
             // local mode every board is ADMIN, so the action stays visible.
             const canManage = roleOf(b.id) === "ADMIN";
@@ -395,7 +414,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                   aria-current={isActive ? "true" : undefined}
                   onMouseEnter={() => setCursor(index)}
                   onClick={() => {
-                    if (isConfirming) return;
+                    if (isConfirming || isConfirmingLeave) return;
                     openBoard(b);
                   }}
                   className={cn(
@@ -432,7 +451,37 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                     role="gridcell"
                     className="flex shrink-0 items-center gap-2.5"
                   >
-                    {isConfirming ? (
+                    {isConfirmingLeave ? (
+                      <span
+                        data-testid="board-switcher-leave-confirm"
+                        className="flex items-center gap-1"
+                      >
+                        <span className="text-xs text-muted-foreground">
+                          {t("board.members.leaveConfirm")}
+                        </span>
+                        <button
+                          aria-label={t("board.members.leaveConfirmYes")}
+                          disabled={leavingId === b.id}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10 disabled:opacity-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleLeave(b);
+                          }}
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          aria-label={t("common.cancel")}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmLeaveId(null);
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </span>
+                    ) : isConfirming ? (
                       <span className="flex items-center gap-1">
                         <span className="text-xs text-muted-foreground">
                           {t("board.switcher.archiveConfirm")}
@@ -525,6 +574,24 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                             </Tooltip>
                           )}
                         </span>
+                        {/* TASK-177.2 review: the members dialog is desktop
+                            only, so the switcher carries Leave at every
+                            width. Server mode only: local boards have no
+                            membership row to leave. */}
+                        {serverMode ? (
+                          <button
+                            aria-label={`${t("board.members.leave")} — ${b.title}`}
+                            data-testid="board-switcher-leave"
+                            disabled={leavingId === b.id}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmLeaveId(b.id);
+                            }}
+                          >
+                            <LogOut size={13} />
+                          </button>
+                        ) : null}
                       </>
                     )}
                   </div>

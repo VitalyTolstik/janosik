@@ -206,7 +206,11 @@ describe("BoardsService.inviteMember — reviving a pending invite", () => {
 });
 
 describe("BoardsService.leaveBoard (TASK-177.2)", () => {
-  function makeService(role: "ADMIN" | "MEMBER" | "VIEWER", otherAdmins = 0) {
+  function makeService(
+    role: "ADMIN" | "MEMBER" | "VIEWER",
+    otherAdmins = 0,
+    options: { memberMissing?: boolean; boardMissing?: boolean } = {},
+  ) {
     const member = {
       id: "m-1",
       boardId: "board-1",
@@ -217,10 +221,20 @@ describe("BoardsService.leaveBoard (TASK-177.2)", () => {
     };
     const remove = jest.fn().mockResolvedValue({});
     const activity = jest.fn().mockResolvedValue({});
+    const count = jest.fn().mockResolvedValue(otherAdmins);
     const tx = {
+      board: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(
+            options.boardMissing === true ? null : { id: "board-1" },
+          ),
+      },
       boardMember: {
-        findUnique: jest.fn().mockResolvedValue(member),
-        count: jest.fn().mockResolvedValue(otherAdmins),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(options.memberMissing === true ? null : member),
+        count,
         delete: remove,
       },
       activity: { create: activity },
@@ -238,7 +252,7 @@ describe("BoardsService.leaveBoard (TASK-177.2)", () => {
       {} as never,
       {} as never,
     );
-    return { service, remove, activity, realtime };
+    return { service, remove, activity, realtime, count };
   }
 
   it("removes the membership, records member_left and publishes SSE", async () => {
@@ -263,7 +277,45 @@ describe("BoardsService.leaveBoard (TASK-177.2)", () => {
       type: "membership",
       boardId: "board-1",
       userId: "u-1",
-      change: "removed",
+      change: "left",
+    });
+  });
+
+  it("is idempotent and does not publish twice when the row is already gone", async () => {
+    const { service, remove, activity, realtime } = makeService("MEMBER", 0, {
+      memberMissing: true,
+    });
+
+    await expect(service.leaveBoard("board-1", "u-1")).resolves.toBeUndefined();
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(activity).not.toHaveBeenCalled();
+    expect(realtime.publish).not.toHaveBeenCalled();
+  });
+
+  it("counts only active admins in the last-admin guard", async () => {
+    const { service, count } = makeService("ADMIN", 0);
+
+    await expect(service.leaveBoard("board-1", "u-1")).rejects.toMatchObject({
+      response: { code: "last_admin" },
+    });
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        boardId: "board-1",
+        role: "ADMIN",
+        userId: { not: "u-1" },
+        acceptedAt: { not: null },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+      },
+    });
+  });
+
+  it("404s a missing board even when the membership is absent", async () => {
+    const { service } = makeService("MEMBER", 0, { boardMissing: true });
+
+    await expect(service.leaveBoard("board-1", "u-1")).rejects.toMatchObject({
+      status: 404,
     });
   });
 

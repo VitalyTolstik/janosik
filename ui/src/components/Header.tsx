@@ -390,7 +390,7 @@ export function Header() {
         {isBoardRoute ? (
           <>
             <div className="hidden min-[1024px]:block">
-              <BoardMembersDialog />
+              <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
             </div>
             <div className="hidden min-[1024px]:block">
               <ShareDialog />

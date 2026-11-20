@@ -153,12 +153,14 @@ export class ActivityService {
           runId: true,
           agentName: true,
           details: true,
+          actor: { select: { displayName: true, email: true } },
         },
       }),
       this.prisma.activity.findMany({
         where: activityWhere,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: limit + 1,
+        include: { actor: { select: { displayName: true, email: true } } },
       }),
     ]);
 
@@ -185,6 +187,39 @@ interface RankedEntry {
   seq?: bigint;
 }
 
+interface ActorIdentity {
+  displayName: string | null;
+  email: string;
+}
+
+/**
+ * Display identity for an actor (TASK-177.2). The join normally answers, but
+ * a membership change also froze the email in `details`, so a `member_left`
+ * row still renders after the roster no longer contains that person.
+ */
+function actorFields(
+  actor: ActorIdentity | null | undefined,
+  details: Prisma.JsonValue | null,
+  includeDetailsEmail: boolean,
+): { actorName?: string; actorEmail?: string } {
+  const detailsRecord =
+    includeDetailsEmail &&
+    details !== null &&
+    typeof details === "object" &&
+    !Array.isArray(details)
+      ? (details as Record<string, unknown>)
+      : null;
+  const detailEmail =
+    detailsRecord !== null && typeof detailsRecord.email === "string"
+      ? detailsRecord.email
+      : undefined;
+  const email = actor?.email ?? detailEmail;
+  return {
+    ...(actor?.displayName ? { actorName: actor.displayName } : {}),
+    ...(email !== undefined ? { actorEmail: email } : {}),
+  };
+}
+
 function toCommandEntry(row: {
   id: string;
   seq: bigint;
@@ -198,6 +233,7 @@ function toCommandEntry(row: {
   runId: string | null;
   agentName: string | null;
   details: Prisma.JsonValue | null;
+  actor: ActorIdentity | null;
 }): RankedEntry {
   const cardTouches = row.touches.filter((label) => label.startsWith("card:"));
   const snapshot = readCommandSnapshot(row.details);
@@ -208,6 +244,7 @@ function toCommandEntry(row: {
     at: row.createdAt.getTime(),
     type: row.type,
     actorId: row.actorId,
+    ...actorFields(row.actor, null, false),
     actorType: toActorType(row.actorType),
     ...attributionFields(row),
     // Only a command that touched a single card is card-attributed: a
@@ -269,6 +306,7 @@ function toActivityEntry(row: {
   agentName: string | null;
   details: Prisma.JsonValue | null;
   createdAt: Date;
+  actor: ActorIdentity | null;
 }): RankedEntry {
   const snapshot = readActivitySnapshot(row.type, row.details);
   const entry: ActivityFeedEntry = {
@@ -277,6 +315,14 @@ function toActivityEntry(row: {
     at: row.createdAt.getTime(),
     type: row.type,
     actorId: row.actorId,
+    // Only `member_left` freezes the *actor's* email in `details`; other
+    // membership rows store the target's email, which must not be mistaken
+    // for the admin who performed the change.
+    ...actorFields(
+      row.actor,
+      row.type === "member_left" ? row.details : null,
+      true,
+    ),
     actorType: toActorType(row.actorType),
     ...attributionFields(row),
     ...(row.cardId ? { cardId: row.cardId } : {}),

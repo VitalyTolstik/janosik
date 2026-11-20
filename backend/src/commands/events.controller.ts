@@ -174,7 +174,7 @@ export class EventsController {
         if (event.type === "membership") {
           send(event as unknown as object);
           if (
-            event.change === "removed" &&
+            (event.change === "removed" || event.change === "left") &&
             user !== undefined &&
             event.userId === user.id
           ) {

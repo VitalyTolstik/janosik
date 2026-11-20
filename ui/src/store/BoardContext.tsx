@@ -1491,6 +1491,17 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       try {
         await api.leaveBoard(boardId);
       } catch (error) {
+        // The DELETE may have committed while its response was lost. Give the
+        // already-published membership frame one turn to land, then treat a
+        // board that is gone as a successful leave instead of toasting an
+        // error after the success toast.
+        if (error instanceof ApiError && error.offline) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+        if (!stateRef.current.some((board) => board.id === boardId)) {
+          leavingBoardsRef.current.delete(boardId);
+          return true;
+        }
         leavingBoardsRef.current.delete(boardId);
         const code = error instanceof ApiError ? error.code : undefined;
         toast.error(
@@ -1518,10 +1529,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    */
   const onMembershipChange = useCallback(
     (boardId: string, userId: string, change: MembershipChange) => {
-      if (change === "removed" && userId === userIdRef.current) {
+      if (
+        (change === "removed" || change === "left") &&
+        userId === userIdRef.current
+      ) {
+        // A voluntary leave is `left`; `removed` stays the admin-removal
+        // wording. The client-side marker covers an older server that still
+        // sends `removed` for a self-leave.
         revokeBoard(
           boardId,
-          leavingBoardsRef.current.has(boardId) ? "left" : "access",
+          change === "left" || leavingBoardsRef.current.has(boardId)
+            ? "left"
+            : "access",
         );
         return;
       }

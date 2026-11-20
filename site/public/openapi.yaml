@@ -549,11 +549,14 @@ paths:
       summary: Leave the board
       description: |
         Any accepted member may leave as themselves. An `ADMIN` may leave only
-        while another accepted `ADMIN` remains; the last `ADMIN` answers
+        while another active `ADMIN` remains (pending and expired rows do not
+        count); the last `ADMIN` answers
         `409 { code: "last_admin", action: "leave" }`. Session-only: a PAT gets
         `403 pat_forbidden`. Authored content stays with its original
         attribution, the departure is recorded as `member_left`, and a
-        `membership: removed` SSE frame closes the caller's stream.
+        `membership: left` SSE frame closes the caller's stream. The route is
+        idempotent: repeating it after a successful leave (or after a lost
+        response) answers `200`; only an unknown or deleted board is `404`.
       responses:
         "200":
           description: Left.
@@ -5857,6 +5860,12 @@ components:
           type: string
         authorId:
           type: string
+        authorName:
+          type: [string, "null"]
+          description: Author display name joined from `User`; survives board leave.
+        authorEmail:
+          type: [string, "null"]
+          description: Author email joined from `User`; survives board leave.
         text:
           type: string
         kind:
@@ -5975,6 +5984,12 @@ components:
           type: string
         actorId:
           type: string
+        actorName:
+          type: string
+          description: Display name joined from `User`; omitted when unavailable.
+        actorEmail:
+          type: string
+          description: Email joined from `User` or frozen in membership details.
         actorType:
           $ref: "#/components/schemas/ActorType"
         apiTokenId:

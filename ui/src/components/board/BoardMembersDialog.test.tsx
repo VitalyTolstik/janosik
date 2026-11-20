@@ -56,6 +56,7 @@ function renderPanel(
   children?: ReactNode,
   currentUserId?: string,
   onLeave?: (boardId: string) => Promise<boolean>,
+  boardTitle?: string,
 ) {
   return render(
     <I18nProvider>
@@ -65,6 +66,7 @@ function renderPanel(
             <DialogContent>
               <BoardMembersPanel
                 boardId="board-1"
+                boardTitle={boardTitle}
                 canManage={canManage}
                 currentUserId={currentUserId}
                 onLeave={onLeave}
@@ -328,12 +330,17 @@ describe("BoardMembersPanel (TASK-35)", () => {
       within(row!).getByTestId("member-leave-confirm"),
     ).toBeInTheDocument();
     expect(leave).not.toHaveBeenCalled();
+    // The Yes action takes focus; cancelling returns it to Leave.
+    expect(
+      within(row!).getByRole("button", { name: "Yes, leave" }),
+    ).toHaveFocus();
 
     fireEvent.click(within(row!).getByRole("button", { name: "Cancel" }));
     expect(
       within(row!).queryByTestId("member-leave-confirm"),
     ).not.toBeInTheDocument();
     expect(leave).not.toHaveBeenCalled();
+    expect(within(row!).getByTestId("board-member-leave")).toHaveFocus();
 
     fireEvent.click(within(row!).getByTestId("board-member-leave"));
     fireEvent.click(within(row!).getByRole("button", { name: "Yes, leave" }));
@@ -360,6 +367,11 @@ describe("BoardMembersPanel (TASK-35)", () => {
       "title",
       "The last admin cannot leave — promote another admin first",
     );
+    const reasonId = button.getAttribute("aria-describedby");
+    expect(reasonId).toBeTruthy();
+    expect(document.getElementById(reasonId!)).toHaveTextContent(
+      "The last admin cannot leave — promote another admin first",
+    );
     // The own row uses Leave instead of the admin's remove-other control.
     expect(
       within(own!).queryByRole("button", { name: "Remove — Boris" }),
@@ -369,6 +381,104 @@ describe("BoardMembersPanel (TASK-35)", () => {
         name: "Remove — quiet@example.com",
       }),
     ).toBeEnabled();
+  });
+
+  it("shows the board title in the dialog header", async () => {
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    renderPanel(true, undefined, undefined, undefined, "Roadmap board");
+
+    expect(await screen.findByText("Boris")).toBeInTheDocument();
+    expect(screen.getByTestId("board-members-board-title")).toHaveTextContent(
+      "Roadmap board",
+    );
+  });
+
+  it("keeps Remove for other admins while the own row offers Leave", async () => {
+    const secondAdmin: BoardMemberDto = {
+      ...MEMBER,
+      userId: "user-2",
+      role: "ADMIN",
+    };
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN, secondAdmin]);
+    const leave = vi.fn().mockResolvedValue(true);
+
+    renderPanel(true, undefined, ADMIN.userId, leave);
+    const own = (await screen.findAllByTestId("board-member-row")).find(
+      (item) => item.getAttribute("data-user-id") === ADMIN.userId,
+    );
+    const other = screen
+      .getAllByTestId("board-member-row")
+      .find((item) => item.getAttribute("data-user-id") === secondAdmin.userId);
+
+    expect(within(own!).getByTestId("board-member-leave")).toBeEnabled();
+    expect(
+      within(own!).queryByRole("button", { name: "Remove — Boris" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(other!).getByRole("button", {
+        name: "Remove — quiet@example.com",
+      }),
+    ).toBeEnabled();
+  });
+
+  it("maps a last-admin refusal to the admin message, not 'already a member'", async () => {
+    const secondAdmin: BoardMemberDto = { ...MEMBER, role: "ADMIN" };
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN, secondAdmin]);
+    vi.spyOn(api, "updateMember").mockRejectedValue(
+      new ApiError(409, {
+        message: "Cannot demote the last ADMIN of the board",
+        code: "last_admin",
+        action: "demote",
+      }),
+    );
+
+    renderPanel(true);
+    await screen.findByText("Boris");
+    fireEvent.click(screen.getByRole("button", { name: "Role of Boris" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Member" }));
+
+    expect(
+      await screen.findByText("The last admin cannot be demoted or removed"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("This user is already a member of the board"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refreshes the roster after a refused leave and disables the stale action", async () => {
+    const lastAdmin: BoardMemberDto = {
+      ...MEMBER,
+      userId: "user-2",
+      role: "ADMIN",
+      displayName: "Boris",
+      email: "boris@example.com",
+    };
+    const firstAdmin: BoardMemberDto = {
+      ...ADMIN,
+      userId: "user-1",
+      displayName: "Ada",
+      email: "ada@example.com",
+    };
+    const list = vi
+      .spyOn(api, "listMembers")
+      .mockResolvedValueOnce([firstAdmin, lastAdmin])
+      .mockResolvedValueOnce([lastAdmin]);
+    const leave = vi.fn().mockResolvedValue(false);
+
+    renderPanel(true, undefined, lastAdmin.userId, leave);
+    const row = (await screen.findAllByTestId("board-member-row")).find(
+      (item) => item.getAttribute("data-user-id") === lastAdmin.userId,
+    );
+    fireEvent.click(within(row!).getByTestId("board-member-leave"));
+    fireEvent.click(within(row!).getByRole("button", { name: "Yes, leave" }));
+
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-member-leave")).toBeDisabled(),
+    );
+    expect(
+      screen.queryByTestId("member-leave-confirm"),
+    ).not.toBeInTheDocument();
   });
 
   it("removes a member after the inline confirmation", async () => {
@@ -480,6 +590,57 @@ describe("BoardMembersPanel (TASK-35)", () => {
       (await screen.findAllByText("quiet@example.com")).length,
     ).toBeGreaterThan(0);
     expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("adapts the own row when a live role change demotes the caller", async () => {
+    const secondAdmin: BoardMemberDto = {
+      ...MEMBER,
+      userId: "user-2",
+      role: "ADMIN",
+    };
+    const demotedSelf: BoardMemberDto = { ...ADMIN, role: "MEMBER" };
+    vi.spyOn(api, "listMembers")
+      .mockResolvedValueOnce([ADMIN, secondAdmin])
+      .mockResolvedValueOnce([demotedSelf, secondAdmin]);
+    const live = createBoardLive();
+
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <ToastProvider>
+            <BoardLiveProvider live={live}>
+              <Dialog open>
+                <DialogContent>
+                  <BoardMembersPanel
+                    boardId="board-1"
+                    canManage
+                    currentUserId={ADMIN.userId}
+                    onLeave={vi.fn().mockResolvedValue(true)}
+                  />
+                </DialogContent>
+              </Dialog>
+            </BoardLiveProvider>
+          </ToastProvider>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    await screen.findByText("Boris");
+    expect(
+      screen.getByRole("button", { name: "Role of Boris" }),
+    ).toHaveTextContent("Admin");
+
+    act(() => {
+      live.members.set("board-1", [demotedSelf, secondAdmin]);
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("board-member-leave")).toBeEnabled(),
+    );
+    const own = screen
+      .getAllByTestId("board-member-row")
+      .find((row) => row.getAttribute("data-user-id") === ADMIN.userId);
+    expect(own).toHaveAttribute("data-role", "MEMBER");
+    expect(within(own!).getByText("Member")).toBeInTheDocument();
   });
 
   it("lists pending invitations and cancels one", async () => {

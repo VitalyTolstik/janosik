@@ -759,7 +759,7 @@ export class FakeServer {
       const boardId = leaveMatch[1];
       this.revoked.add(boardId);
       this.membersByBoard.delete(boardId);
-      this.publishMembership(boardId, this.account.id, "removed");
+      this.publishMembership(boardId, this.account.id, "left");
       return json(200, { status: "ok" });
     }
     const membersMatch = /^\/api\/v1\/boards\/([^/]+)\/members$/.exec(path);

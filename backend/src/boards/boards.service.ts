@@ -1042,12 +1042,21 @@ export class BoardsService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
   ): Promise<void> {
     const member = await this.boardWrite.run(boardId, async (tx) => {
+      // Idempotent self-leave (TASK-177.2 review): the route deliberately has
+      // no membership precondition, so a retried DELETE after a lost response
+      // finds no row and answers success. A board that does not exist is
+      // still a 404; an absent row on a live board means "already left".
+      const board = await tx.board.findFirst({
+        where: { id: boardId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!board) throw new NotFoundException("Board not found");
       const member = await tx.boardMember.findUnique({
         where: { boardId_userId: { boardId, userId } },
         include: { user: true },
       });
       if (!member || member.acceptedAt === null) {
-        throw new NotFoundException("Board member not found");
+        return null;
       }
       if (member.role === Role.ADMIN) {
         await this.assertNotLastAdmin(tx, boardId, userId, "leave");
@@ -1071,11 +1080,14 @@ export class BoardsService {
       });
       return member;
     });
+    if (member === null) return;
+    // `left` is deliberate: another tab must say "You left the board", not
+    // "access revoked", while an admin removal keeps `removed`.
     this.realtime.publish(boardId, {
       type: "membership",
       boardId,
       userId: member.userId,
-      change: "removed",
+      change: "left",
     });
   }
 
@@ -1289,8 +1301,10 @@ export class BoardsService {
       where: {
         boardId,
         role: Role.ADMIN,
-        acceptedAt: { not: null },
         userId: { not: targetUserId },
+        // TASK-177.2 review: an expired row is not a functioning admin —
+        // activeMembershipWhere keeps "another admin exists" honest.
+        ...activeMembershipWhere(),
       },
     });
     if (otherAdmins === 0) {

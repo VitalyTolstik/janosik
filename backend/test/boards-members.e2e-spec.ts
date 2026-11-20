@@ -589,6 +589,137 @@ describe("Boards API (e2e)", () => {
         .expect(200);
     });
 
+    it("keeps the leaver's display identity on comments and the Watch feed", async () => {
+      const boardId = await createBoard("Leaver attribution");
+      const memberId = await userIdOf(memberToken);
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: "col-attribution",
+        title: "Todo",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: "card-attribution",
+        columnId: "col-attribution",
+        title: "Comment target",
+      }).expect(200);
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: MEMBER_EMAIL, role: "MEMBER" })
+        .expect(201);
+      await acceptInvitation(memberToken, boardId);
+
+      const comment = await server()
+        .post("/api/v1/cards/card-attribution/comments")
+        .set(auth(memberToken))
+        .send({ text: "Written by a member who leaves" })
+        .expect(201);
+      expect(comment.body).toMatchObject({
+        authorName: "Member",
+        authorEmail: MEMBER_EMAIL,
+      });
+
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(memberToken))
+        .expect(200);
+      // A lost-response retry is idempotent, not a 403.
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(memberToken))
+        .expect(200);
+
+      const comments = await server()
+        .get("/api/v1/cards/card-attribution/comments")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(comments.body.items[0]).toMatchObject({
+        authorId: memberId,
+        authorName: "Member",
+        authorEmail: MEMBER_EMAIL,
+      });
+
+      const watch = await server()
+        .get(`/api/v1/boards/${boardId}/activity?limit=100`)
+        .set(auth(adminToken))
+        .expect(200);
+      const commentEntry = watch.body.items.find(
+        (entry: { type: string }) => entry.type === "comment_added",
+      );
+      const leftEntry = watch.body.items.find(
+        (entry: { type: string }) => entry.type === "member_left",
+      );
+      expect(commentEntry).toMatchObject({
+        actorId: memberId,
+        actorName: "Member",
+        actorEmail: MEMBER_EMAIL,
+      });
+      expect(leftEntry).toMatchObject({
+        actorId: memberId,
+        actorName: "Member",
+        actorEmail: MEMBER_EMAIL,
+      });
+      // The roster no longer contains the leaver, so the client must use
+      // these fields instead of rendering `?`.
+      expect(
+        await prisma.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: memberId } },
+        }),
+      ).toBeNull();
+    });
+
+    it("does not count a pending ADMIN as the other admin", async () => {
+      const boardId = await createBoard("Pending admin");
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: OUTSIDER_EMAIL, role: "ADMIN" })
+        .expect(201);
+
+      const refused = await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(adminToken))
+        .expect(409);
+      expect(refused.body.code).toBe("last_admin");
+
+      await acceptInvitation(outsiderToken, boardId);
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(adminToken))
+        .expect(200);
+    });
+
+    it("does not count an expired ADMIN as the other admin", async () => {
+      const boardId = await createBoard("Expired admin");
+      const outsiderId = await userIdOf(outsiderToken);
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: OUTSIDER_EMAIL, role: "ADMIN" })
+        .expect(201);
+      await acceptInvitation(outsiderToken, boardId);
+      await prisma.boardMember.update({
+        where: { boardId_userId: { boardId, userId: outsiderId } },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+
+      const refused = await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(adminToken))
+        .expect(409);
+      expect(refused.body.code).toBe("last_admin");
+
+      await prisma.boardMember.update({
+        where: { boardId_userId: { boardId, userId: outsiderId } },
+        data: { expiresAt: null },
+      });
+      await server()
+        .delete(`/api/v1/boards/${boardId}/members/me`)
+        .set(auth(adminToken))
+        .expect(200);
+    });
+
     it("keeps admin remove-other behaviour on the sibling route", async () => {
       const boardId = await createBoard("Admin removes");
       const memberId = await userIdOf(memberToken);
