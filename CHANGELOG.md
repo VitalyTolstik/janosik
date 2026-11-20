@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.1 share link editing: every non-revoked share row now has `Edit`,
+  which reuses the create form to change the label, comments/attachments
+  visibility and expiry while the mode and `/s/<token>` stay immutable.
+  Changes go through the existing `PATCH /boards/:id/shares/:shareId`; the
+  row and list refresh on success and a failed update keeps the form and its
+  values open with an inline error. Changing privacy flags on a live link asks
+  for confirmation first (the server audit already records `share.update`),
+  and choosing `Never` clears the expiry with `expiresAt: null`. EN/RU copy, `ShareDialog` unit tests and a Playwright
+  share-edit case cover the flow.
+
 - TASK-176.9 B2 admin card checklists and links: `/admin/cards/:id` now shows a
   lazy `Checklists and links` panel beside the field editor on non-deleted
   cards. It is admin-native (no `BoardContext`), uses the same owner-attribution
