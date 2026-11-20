@@ -1711,6 +1711,7 @@ TASK-36 и TASK-37.)*
 | 112 | TASK-181 `admin-list-filters` | `docs/TASK-181-admin-list-filters.md` → отдельные `feat/TASK-181.x-*` | §7.30: сделать фильтры админских списков обнаруживаемыми и честными — supported/offered matrix вместо молчаливых no-op, панель «Фильтры»/чипы с человеческими названиями и visible short-id, карточки (board/column/label any-all/assignee/priority/due/attachments/period), moderation (author/kind/uploader/MIME/period/inline badge), audit/commands/activity (audit-visible actor/action/type/target), users/boards (accepted ADMIN)/content lists; parent-conflict vs unknown vs valid zero; `status=all` universal; URL/deep links, exact totals, bulk-selection contract, EN/RU, 1440/1024/390 | **Запланировано:** 7 подзадач; wave 1 — 181.1 контракт + lookup, 181.2 панель/чипы на карточках, 181.3 полный набор карточек; wave 2 — 181.4 moderation, 181.5 content lists, 181.6 audit hub; 181.7 docs/visual/perf. Зависит от 176.5/176.6 (уже в main); 176.10 — для `commandId`; shares — TASK-177.5; 180.9 — до 181.2. См. §7.30 |
 | 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: help-поповер у заголовка Labels + один обновляемый keyed success-toast (без label command concurrency/dedup) и card-local fallback для падения lazy-календаря due-date: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear только после accepted команды, fresh append, timer/map cleanup; `SET_CARD_LABEL`/cap/`onSaved: () => void` не меняются, а `send`/`toggleLabel` получают optional key, keyed clear/success и post-await card/mounted guard для toast/onSaved/errors/busy; inline-ошибки остаются; same-label double-click и reload ordering — residual out of scope. Фаза 2 — `calendarFallback: ComponentType<...>` заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
 | 114 | TASK-183 `demo-label-integrity` | `docs/TASK-183-demo-label-integrity.md` → отдельные `feat/TASK-183.x-*` | §7.32: две независимые находки TASK-176 demo investigation — (1) воспроизводимый demo-fixture: полный mutation inventory, drop/recreate reset, manifest/verify, DB/API binding guard и удаление ручных артефактов `Card claim visibility 123`, `фывфыв`, checklist `123`, random link, 60 comments, extra users/admin/security rows; (2) `SET_CARD_LABEL` обновляет `Card.updatedAt` вместе с версией, inverse `cardUpdatedAt` проходит `CARD_STAMPED_TYPES`, аудит `DELETE_LABEL`/`RESTORE_LABEL` и тесты | **Запланировано:** docs-only spec; 183.1 demo hygiene, 183.2 label timestamp; reset дважды после checklist+link; без изменений admin demo runner и TASK-176.9. См. §7.32 |
+| 115 | TASK-185 `comment-history` | `docs/TASK-185-comment-history.md` → отдельные `feat/TASK-185.x-*` | §7.33: таблица `CommentRevision` сохраняет старый текст при правке автором, diff в History, revisions API, поповер истории комментария, счётчик и диалог в админке, retention/GDPR | **Запланировано:** 6 подзадач, зависит от TASK-176.2, согласовать с TASK-177.11 и TASK-174. См. §7.33 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5476,6 +5477,85 @@ TASK-21.7d (inverse timestamps, `invert.ts` + `validate.ts`), TASK-180.7 — т�
 координация по demo lifecycle. Backend-схемы и forward API-контракта не
 меняем; `SET_CARD_LABEL` не получает нового обязательного поля. Demo reset
 добавляет только fail-closed env-precedence hook; новых миграций нет.
+
+---
+
+### 7.33. Comment edit history and diff (TASK-185)
+
+> **Статус** — Запланировано (docs-only, 2026-11-20).
+>
+> **Спецификация** — [`docs/TASK-185-comment-history.md`](docs/TASK-185-comment-history.md).
+>
+> **Доставка** — одна ветка `feat/TASK-185.x-*` и один PR на подзадачу.
+
+**Зачем.** TASK-176.2 оставляет в комментарии `editedAt` и новый текст.
+Предыдущий текст перезаписывается. В History запись о правке содержит
+только сообщение о событии, а в админке видна лишь пометка `Edited`.
+Ревизии дают людям и агентам на доске проверяемую историю изменений
+и помогают администратору разбирать спорные правки.
+
+**Объём.**
+
+- На каждый изменившийся текст `PATCH /comments/:id` сохраняет предыдущий
+  текст в `CommentRevision` с временем, редактором и порядковым номером.
+  Чтение текущего текста, ревизия, обновление комментария, сверка inline-медиа
+  и запись Activity выполняются под существующей board-write блокировкой в
+  одной транзакции. Редактирование доступно автору с правом записи.
+- `comment_updated` содержит ID ревизии и пару `beforeText`/`afterText`.
+  History использует эту пару для word-level diff. SSE сохраняет событие
+  `comment_updated` с ID комментария и запускает повторное чтение после
+  коммита. Старые события остаются текстовыми.
+- Read-only `GET /comments/:id/revisions` выдаёт историю с cursor/limit
+  участникам доски, которым доступна карточка, включая board `ADMIN`.
+  Master-панель читает ревизии через отдельный защищённый админский маршрут.
+  Пометка «Изменён» показывает время и открывает поповер или диалог истории.
+  В admin card detail видны количество ревизий и диалог сравнения.
+- Legacy `editedAt` сохраняется с пояснением «история доступна с TASK-185».
+  Soft delete скрывает историю, счётчики и diff правок. Hard purge и GDPR
+  erase удаляют ревизии и копии «до/после» в Activity. Ревизии соблюдают
+  лимит текста и не копируют blob inline-вложений.
+
+**Подзадачи.**
+
+| ID | Результат |
+| --- | --- |
+| 185.1 | Схема, миграция и запись ревизии в транзакции edit. |
+| 185.2 | Activity payload, совместимый SSE и данные для diff в feed. |
+| 185.3 | Read-only revisions API, права, cursor и limit. |
+| 185.4 | Пометка «Изменён» с историей и word-level diff в History карточки. |
+| 185.5 | Счётчик и диалог ревизий в admin card detail. |
+| 185.6 | Сквозные тесты, retention/erase, документация, EN/RU и CHANGELOG. |
+
+**Порядок.** Схема и writer (185.1) → API (185.3) → feed (185.2) → карточка
+(185.4) → админка (185.5) → docs и сквозные проверки (185.6). Фильтрация
+удалённого и очистка копий входят в условия выпуска API и diff.
+
+**DoD.** Миграция проходит на пустой и существующей БД. Реальная правка
+создаёт ровно одну ревизию, конкурентные правки сохраняют правильный
+порядок. History показывает настоящую пару «до → после». «Изменён»
+показывает время и открывает историю, диалог админки показывает те же
+ревизии и корректный счётчик. Права не раскрывают текст или счётчик,
+soft delete скрывает историю, hard purge и erase удаляют ревизии и
+копии diff. Во второй вкладке SSE обновляет комментарий и History.
+Unit, API e2e и браузерные тесты проходят, интерфейс доступен на EN/RU.
+
+**Зависимости.** TASK-176.2 уже в базе. С TASK-177.11 согласовать
+редактирование `kind` в том же PATCH и семантику `comment_updated`.
+С TASK-174.1 (human control) согласовать модерацию и приватность share.
+Изменения схем `Comment`/`Activity` и общего writer выполнять
+последовательно.
+
+**Не входит.** Редактирование чужих комментариев, admin override, откат к
+ревизии, совместное редактирование, аудит каждого нажатия клавиши,
+изменения MCP (отдельная задача при необходимости) и переписывание старой
+истории.
+
+**Риски.** Рост хранения длинных историй, чувствительный текст и его копии,
+retention/GDPR, diff для Markdown и mentions, ссылки на удалённые inline-медиа,
+права доступа и гонки между правками или удалением.
+
+**Оценка.** 7–10 инженерных дней на полную историю, diff и просмотр в
+админке. Ориентир для планирования.
 
 ---
 
