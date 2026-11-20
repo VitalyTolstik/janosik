@@ -32,7 +32,7 @@ describe("URL-backed admin lists", () => {
       "?returnTo=%2Fadmin",
     ],
     [
-      "/admin/boards?tab=cards&assigneeId=u-1&labelMatch=all&labelId=l-1&labelId=l-2",
+      "/admin/boards?tab=cards&verified=true&authorId=u-1&adminMemberId=u-1",
       "?tab=cards",
     ],
     ["/admin/audit?tab=audit&adminId=a-1&targetId=c-1", "?tab=audit"],
@@ -58,6 +58,28 @@ describe("URL-backed admin lists", () => {
       expect(result.current.list.filterError).toBeUndefined();
     },
   );
+
+  it("sends the card facets from the canonical deep link", async () => {
+    const { result, fetcher } = setup(
+      "/admin/boards?tab=cards&assigneeId=u-1&labelMatch=all&labelId=l-2&labelId=l-1",
+    );
+    await waitFor(() =>
+      expect(result.current.location.search).toBe(
+        "?tab=cards&assigneeId=u-1&labelId=l-1&labelId=l-2&labelMatch=all",
+      ),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith({
+      search: "",
+      status: "all",
+      from: undefined,
+      limit: 50,
+      offset: 0,
+      assigneeId: ["u-1"],
+      labelId: ["l-1", "l-2"],
+      labelMatch: "all",
+    });
+  });
 
   it("preserves explicit URL bounds while paging", async () => {
     const { result, fetcher } = setup(

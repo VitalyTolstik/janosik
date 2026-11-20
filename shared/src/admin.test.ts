@@ -47,11 +47,11 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "cards",
-      scoped,
+      `${scoped} labelMatch assigneeId unassigned priority due hasAttachments`,
       "boardId columnId labelId labelMatch assigneeId unassigned priority due hasAttachments",
       "active archived deleted",
-      false,
-      false,
+      true,
+      true,
     ],
     ["columns", scoped, "boardId", "active deleted", false, false],
     ["labels", scoped, "boardId", "active deleted", false, false],
@@ -133,9 +133,26 @@ describe("admin filter surface matrix", () => {
 });
 
 describe("admin filter values", () => {
-  it("keeps label and structural ids single-valued", () => {
-    expect(adminFilterValueLimit("labelId")).toBe(1);
-    expect(adminFilterEntries({ labelId: ["label-a"] }, "cards")).toEqual([]);
+  it("allows multiple labels on cards and keeps legacy ids single-valued", () => {
+    expect(adminFilterValueLimit("labelId", "cards")).toBe(20);
+    expect(adminFilterValueLimit("labelId", "comments")).toBe(1);
+    expect(adminFilterValueLimit("boardId", "cards")).toBe(1);
+    const labels = {
+      labelId: ["label-b", " label-a", "label-b"],
+      labelMatch: "all",
+    } as const;
+    expect(adminFilterEntries(labels, "cards")).toEqual([
+      ["labelId", "label-a"],
+      ["labelId", "label-b"],
+      ["labelMatch", "all"],
+    ]);
+    expect(adminFilterEntries(labels, "comments")).toEqual([]);
+    expect(
+      adminFilterEntries(
+        { labelId: ["label-a", "label-a"], labelMatch: "all" },
+        "cards",
+      ),
+    ).toEqual([["labelId", "label-a"]]);
   });
 
   it("counts unique values towards the total and encoded length limits", () => {

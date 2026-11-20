@@ -170,7 +170,9 @@ async function seed(db, preset) {
     position: 0,
   }));
   await insert(db.cardLabel, Math.ceil(size.cards / 5), (i) => {
-    const index = i * 5;
+    // Spread two-label cards across every board, including board zero.
+    const index =
+      Math.floor(i / size.boards) * size.boards * 5 + (i % size.boards);
     return {
       cardId: card(index),
       labelId: id("label", boardIndex(index) + (index % 3 ? size.boards : 0)),

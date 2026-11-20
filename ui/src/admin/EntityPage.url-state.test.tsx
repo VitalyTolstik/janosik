@@ -26,9 +26,11 @@ import { adminMessage } from "./admin-i18n";
 import {
   FakeAdminServer,
   adminActivity,
+  adminAttachment,
   adminBoard,
   adminCard,
   adminLabel,
+  adminUser,
   emptyAdminState,
 } from "./test/fake-admin-server";
 
@@ -137,7 +139,9 @@ afterEach(() => {
 
 describe("admin list URL state", () => {
   it("restores search, status, page size and the exact board filter", async () => {
-    const server = new FakeAdminServer(stateWithTwoBoards());
+    const state = stateWithTwoBoards();
+    state.cards[1].archivedAt = 1;
+    const server = new FakeAdminServer(state);
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin(
       "/admin/boards?tab=cards&search=moderate&status=archived&limit=25&boardId=b-2",
@@ -442,7 +446,7 @@ describe("cards filter bar", () => {
     expect(currentQuery().get("returnTo")).toBe("/admin");
     await waitFor(() => {
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        /^Filters applied · 2 results$/,
+        /^Filters applied · Results: 2$/,
       );
     });
     expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
@@ -462,11 +466,13 @@ describe("cards filter bar", () => {
 
     const labels = await openFacet("Label");
     expect(
-      await labels.findAllByRole("option", { name: /urgent/ }),
+      await labels.findAllByRole("checkbox", { name: /urgent/ }),
     ).toHaveLength(2);
     await user.click(
-      labels.getByRole("option", { name: /urgent.*label-AA.*board-AA/ }),
+      labels.getByRole("checkbox", { name: /urgent.*label-AA.*board-AA/ }),
     );
+    expect(currentQuery().has("labelId")).toBe(false);
+    await user.click(labels.getByRole("button", { name: "Apply" }));
     const labelChip = await screen.findByRole("button", {
       name: /Remove filter: Label.*urgent.*label-AA.*board-AA/,
     });
@@ -675,6 +681,346 @@ describe("cards filter bar", () => {
     );
   });
 
+  it("keeps assignee and unassigned drafts until Apply and resolves user chips", async () => {
+    const server = filterServer();
+    server.state.users = [
+      adminUser({
+        id: "user-name",
+        email: "named@example.com",
+        displayName: "Casey Example",
+      }),
+      adminUser({
+        id: "user-mail",
+        email: "fallback@example.com",
+        displayName: null,
+        disabledAt: 1,
+      }),
+    ];
+    server.state.cards[0].assigneeId = "user-name";
+    server.state.cards[1].assigneeId = "user-mail";
+    const user = userEvent.setup();
+    renderAdmin(cardsUrl);
+
+    let picker = await openFacet("Assignee");
+    let unassigned = picker.getByRole("checkbox", {
+      name: "Unassigned assignee",
+    });
+    unassigned.focus();
+    await user.keyboard("[Space]");
+    expect(unassigned).toBeChecked();
+    expect(currentQuery().has("unassigned")).toBe(false);
+    await user.click(picker.getByRole("button", { name: "Cancel" }));
+
+    picker = await openFacet("Assignee");
+    unassigned = picker.getByRole("checkbox", { name: "Unassigned assignee" });
+    expect(unassigned).not.toBeChecked();
+    await user.click(unassigned);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(currentQuery().has("unassigned")).toBe(false);
+    expect(screen.getByRole("button", { name: "Filters" })).toHaveFocus();
+
+    picker = await openFacet("Assignee");
+    expect(
+      picker.getByRole("checkbox", { name: "Unassigned assignee" }),
+    ).not.toBeChecked();
+    await user.click(
+      await picker.findByRole("checkbox", {
+        name: /Casey Example.*named@example.com/,
+      }),
+    );
+    await user.click(
+      await picker.findByRole("checkbox", {
+        name: /fallback@example.com.*disabled/,
+      }),
+    );
+    await user.click(
+      picker.getByRole("checkbox", { name: "Unassigned assignee" }),
+    );
+    await user.click(picker.getByRole("button", { name: "Apply" }));
+    expect(currentQuery().getAll("assigneeId")).toEqual([
+      "user-mail",
+      "user-name",
+    ]);
+    expect(currentQuery().get("unassigned")).toBe("true");
+    expect(screen.getByRole("button", { name: "Filters 1" })).toHaveFocus();
+    expect(screen.getByTestId("admin-filter-unassigned")).toHaveTextContent(
+      /^Unassigned$/,
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: /Remove filter: Assignee.*Casey Example.*user-nam/,
+      }),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("button", {
+        name: /Remove filter: Assignee.*fallback@example.com.*disabled/,
+      }),
+    ).toBeVisible();
+    const remove = screen.getByRole("button", {
+      name: "Remove filter: Unassigned",
+    });
+    remove.focus();
+    await user.keyboard("{Enter}");
+    expect(currentQuery().has("unassigned")).toBe(false);
+    expect(currentQuery().getAll("assigneeId")).toEqual([
+      "user-mail",
+      "user-name",
+    ]);
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        /^Filters applied · Results: 2$/,
+      ),
+    );
+  });
+
+  it("keeps selected labels checked while resolving them outside the search results", async () => {
+    const server = filterServer();
+    const fetch = server.fetchImpl;
+    const missing = "missing-label";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        if (
+          url.pathname.endsWith("/admin/filter-options") &&
+          url.searchParams.getAll("ids").includes(missing)
+        ) {
+          await gate;
+        }
+        return fetch(input, init);
+      },
+    );
+    renderAdmin(
+      `${cardsUrl}&boardId=${boardA}&labelId=${labelA}&labelId=${missing}`,
+    );
+
+    const picker = await openFacet("Label");
+    expect(
+      await picker.findByRole("checkbox", { name: /urgent.*label-AA/ }),
+    ).toBeChecked();
+    await userEvent.type(
+      picker.getByRole("searchbox", { name: "Search options — Label" }),
+      "no such label",
+    );
+    await waitFor(() =>
+      expect(
+        picker.queryByText("Looking up values…", { exact: true }),
+      ).not.toBeInTheDocument(),
+    );
+    for (const id of ["label-AA", "missing-"]) {
+      expect(
+        picker.getByRole("checkbox", {
+          name: `Looking up values… · ${id}`,
+        }),
+      ).toBeChecked();
+    }
+    expect(picker.queryByText(/Unknown label/)).not.toBeInTheDocument();
+    expect(picker.queryByText("No options found.")).not.toBeInTheDocument();
+
+    release();
+    expect(
+      await picker.findByRole("checkbox", { name: /urgent.*label-AA/ }),
+    ).toBeChecked();
+    expect(
+      picker.getByRole("checkbox", {
+        name: "Unknown label · missing-",
+      }),
+    ).toBeChecked();
+    expect(picker.queryByText("No options found.")).not.toBeInTheDocument();
+  });
+
+  it("commits label mode once, discards changed drafts and removes All with one remaining label", async () => {
+    const server = filterServer();
+    const secondLabel = "label-CC-duplicate";
+    server.state.cardLabelIds[cardA].push(secondLabel);
+    server.state.cardLabelIds["card-AAA-other"] = [labelA];
+    const user = userEvent.setup();
+    renderAdmin(`${cardsUrl}&boardId=${boardA}&labelId=${labelA}`);
+
+    let picker = await openFacet("Label");
+    expect(
+      picker.queryByRole("radiogroup", { name: "Label match mode" }),
+    ).not.toBeInTheDocument();
+    await user.click(await picker.findByRole("checkbox", { name: /label-CC/ }));
+    const any = picker.getByRole("radio", { name: "Any label" });
+    const all = picker.getByRole("radio", { name: "All labels" });
+    expect(any).toHaveAttribute("aria-checked", "true");
+    any.focus();
+    await user.keyboard("{End}");
+    expect(all).toHaveFocus();
+    expect(all).toHaveAttribute("aria-checked", "false");
+    await user.keyboard("[Space]");
+    expect(all).toHaveAttribute("aria-checked", "true");
+    expect(currentQuery().getAll("labelId")).toEqual([labelA]);
+    expect(currentQuery().has("labelMatch")).toBe(false);
+    await user.click(picker.getByRole("button", { name: "Apply" }));
+
+    const chip = await screen.findByRole("button", {
+      name: "Remove filter: Label match — All",
+    });
+    expect(chip.parentElement).toHaveTextContent(/^Label match: All$/);
+    expect(currentQuery().getAll("labelId")).toEqual([labelA, secondLabel]);
+    expect(currentQuery().get("labelMatch")).toBe("all");
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        /^Filters applied · Results: 1$/,
+      ),
+    );
+
+    for (const close of ["Cancel", "Escape"]) {
+      picker = await openFacet("Label");
+      expect(picker.getByRole("radio", { name: "All labels" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await user.click(picker.getByRole("radio", { name: "Any label" }));
+      if (close === "Cancel")
+        await user.click(picker.getByRole("button", { name: close }));
+      else await user.keyboard("{Escape}");
+      expect(chip).toBeVisible();
+      expect(currentQuery().get("labelMatch")).toBe("all");
+    }
+    await user.click(chip);
+    expect(currentQuery().has("labelMatch")).toBe(false);
+    expect(currentQuery().getAll("labelId")).toEqual([labelA, secondLabel]);
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        /^Filters applied · Results: 2$/,
+      ),
+    );
+    await user.click(screen.getByTestId("test-back"));
+    await screen.findByRole("button", {
+      name: "Remove filter: Label match — All",
+    });
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Remove filter: Label — urgent.*label-CC/,
+      }),
+    );
+    expect(currentQuery().getAll("labelId")).toEqual([labelA]);
+    expect(currentQuery().has("labelMatch")).toBe(false);
+  });
+
+  it("preserves selection on paging and resets it for priority, period and radio filters", async () => {
+    const server = filterServer();
+    const recent = Date.now() - 3_600_000;
+    server.state.cards[0].createdAt = recent;
+    server.state.cards[1].createdAt = recent - 2 * 86_400_000;
+    server.state.cards[2].priority = "high";
+    server.state.attachments = [
+      adminAttachment({ cardId: cardA }),
+      adminAttachment({ cardId: "card-BBB", descriptionDetached: true }),
+    ];
+    const user = userEvent.setup();
+    renderAdmin(`${cardsUrl}&period=7d&limit=1&offset=1`);
+    expect(
+      await screen.findByRole("button", { name: "7 days" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      await screen.findByTestId("admin-pagination-status"),
+    ).toHaveTextContent("Page 2 of 2");
+    await user.click(await screen.findByTestId("admin-select-card-BBB"));
+    await user.click(screen.getByRole("button", { name: "Previous" }));
+    await screen.findByTestId(`admin-card-row-${cardA}`);
+    expect(screen.getByTestId("admin-bulk-delete")).toBeVisible();
+    await user.click(screen.getByTestId("admin-pagination-next"));
+    await screen.findByTestId("admin-card-row-card-BBB");
+
+    const priority = await openFacet("Priority");
+    expect(
+      priority.getByText("Medium includes cards without a priority."),
+    ).toBeVisible();
+    const medium = priority.getByRole("checkbox", { name: "Medium" });
+    medium.focus();
+    await user.keyboard("[Space]");
+    await user.type(
+      priority.getByRole("searchbox", { name: "Search options — Priority" }),
+      "high",
+    );
+    expect(medium).toBeChecked();
+    expect(
+      priority.queryByRole("checkbox", { name: "Low" }),
+    ).not.toBeInTheDocument();
+    await user.click(priority.getByRole("checkbox", { name: "High" }));
+    expect(currentQuery().has("priority")).toBe(false);
+    await user.click(priority.getByRole("button", { name: "Apply" }));
+    expect(currentQuery().getAll("priority")).toEqual(["high", "medium"]);
+    expect(currentQuery().has("offset")).toBe(false);
+    expect(screen.queryByTestId("admin-bulk-delete")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove filter: Priority — High" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Remove filter: Priority — Medium" }),
+    ).toBeVisible();
+
+    await user.click(await screen.findByTestId(`admin-select-${cardA}`));
+    await user.click(screen.getByRole("button", { name: "24 hours" }));
+    await waitFor(() => expect(currentQuery().get("period")).toBe("24h"));
+    expect(screen.queryByTestId("admin-bulk-delete")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        /^Filters applied · Results: 1$/,
+      ),
+    );
+    const from = Number(
+      lastRequest(server, "/admin/entities/cards")?.query.get("from"),
+    );
+    expect(from).toBeGreaterThanOrEqual(Date.now() - 86_400_000 - 1000);
+    expect(from).toBeLessThanOrEqual(Date.now() - 86_400_000);
+    await user.click(await screen.findByTestId(`admin-select-${cardA}`));
+    const attachments = await openFacet("Card attachments");
+    const group = within(
+      attachments.getByRole("radiogroup", { name: "Card attachment filter" }),
+    );
+    const any = group.getByRole("radio", { name: "Any" });
+    const has = group.getByRole("radio", { name: "Has card attachments" });
+    expect(any).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(has).toHaveFocus();
+    expect(has).toHaveAttribute("aria-checked", "false");
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(currentQuery().get("hasAttachments")).toBe("true");
+    expect(screen.queryByTestId("admin-bulk-delete")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        /^Filters applied · Results: 1$/,
+      ),
+    );
+  });
+
+  it("allows clearing an over-budget cards link without sending an invalid request", async () => {
+    const server = filterServer();
+    const facets = new URLSearchParams();
+    for (let index = 0; index < 20; index++)
+      facets.append("assigneeId", `assignee-${index}`);
+    for (let index = 0; index < 15; index++)
+      facets.append("labelId", `label-${index}`);
+    renderAdmin(`${cardsUrl}&${facets}`);
+
+    await screen.findByText("The URL contains invalid filters.");
+    await userEvent.click(
+      screen.getAllByTestId("admin-filter-clear-labelId")[0],
+    );
+    expect(
+      screen.getByText(
+        "Too many filter values. Remove some values to continue.",
+      ),
+    ).toBeVisible();
+    expect(currentQuery().getAll("labelId")).toHaveLength(15);
+    expect(lastRequest(server, "/admin/entities/cards")).toBeUndefined();
+
+    await userEvent.click(screen.getByTestId("admin-filter-clear"));
+    await waitFor(() => expect([...currentQuery().keys()]).toEqual(["tab"]));
+    await screen.findByTestId(`admin-card-row-${cardA}`);
+  });
+
   it("supports keyboard selection and focus return in the Russian phone sheet", async () => {
     filterServer();
     vi.stubGlobal("matchMedia", (media: string) => ({
@@ -712,8 +1058,8 @@ describe("cards filter bar", () => {
         name: /Удалить фильтр: Доска.*Design system.*board-AA/,
       });
       await user.tab();
-      // Status tabs precede the chips in the keyboard order.
-      for (let index = 0; index < 4; index++) await user.tab();
+      // Status and period tabs precede the chips in the keyboard order.
+      for (let index = 0; index < 8; index++) await user.tab();
       expect(remove).toHaveFocus();
       await user.keyboard("{Enter}");
       await waitFor(() => expect(currentQuery().get("boardId")).toBeNull());

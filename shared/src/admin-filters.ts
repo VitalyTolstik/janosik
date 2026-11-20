@@ -162,7 +162,11 @@ function createEntityFilters(): Record<
   return {
     users: filterSurface([], ["verified"], STATUS_TABS),
     boards: filterSurface(ADMIN_CARD_SCOPE, ["adminMemberId"], STATUS_TABS),
-    cards: filterSurface(ADMIN_CARD_SCOPE, CARD_FACETS, STATUS_TABS),
+    cards: filterSurface(
+      ["cardId", ...CARD_FACETS],
+      CARD_FACETS,
+      statusAndPeriodTabs,
+    ),
     columns: filterSurface(ADMIN_CARD_SCOPE, ["boardId"], STATUS_TABS),
     labels: filterSurface(ADMIN_CARD_SCOPE, ["boardId"], STATUS_TABS),
     checklists: filterSurface(ADMIN_CARD_SCOPE, BOARD_CARD_SCOPE, STATUS_TABS),
@@ -246,7 +250,11 @@ export function normalizeAdminStatus(
     : status;
 }
 
-export function adminFilterValueLimit(key: AdminFilterKey): number {
+export function adminFilterValueLimit(
+  key: AdminFilterKey,
+  surface?: AdminListSurface,
+): number {
+  if (key === "labelId" && surface === "cards") return ADMIN_FILTER_MAX_VALUES;
   return MULTI_VALUE_LIMITS[key] ?? 1;
 }
 
@@ -307,7 +315,7 @@ export function adminFilterEntries(
     if (
       surface !== undefined &&
       Array.isArray(value) &&
-      adminFilterValueLimit(key) === 1
+      adminFilterValueLimit(key, surface) === 1
     )
       return [];
     const rawValues = typeof value === "object" ? value : [value];

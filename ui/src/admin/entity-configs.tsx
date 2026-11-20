@@ -491,6 +491,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
         bulk: true,
         title: t("admin.cards.title"),
         subtitle: t("admin.cards.subtitle"),
+        periods: true,
         statuses: [
           { value: "active", label: t("admin.boards.filter.active") },
           { value: "archived", label: t("admin.boards.filter.archived") },

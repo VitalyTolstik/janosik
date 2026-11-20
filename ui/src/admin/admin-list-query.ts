@@ -119,13 +119,10 @@ function readFilters(
   for (const key of supportedKeys(surface)) {
     const values = params.getAll(key);
     if (values.length === 0) continue;
-    const max = adminFilterValueLimit(key);
+    const max = adminFilterValueLimit(key, surface);
     if (max === 1) {
       if (values.length > 1) {
-        // Repeated card labels belong to a later rollout wave.
-        if (surface !== "cards" || key !== "labelId") {
-          filterError ??= `${key} accepts one value. Remove the repeated filter.`;
-        }
+        filterError ??= `${key} accepts one value. Remove the repeated filter.`;
         continue;
       }
       const value = parseAdminFilterValue(key, values[0], surface);
@@ -139,7 +136,9 @@ function readFilters(
       if (valid.length > max) {
         filterError ??= `${key} accepts up to ${max} values. Remove some values to continue.`;
       } else if (valid.length > 0) {
-        Object.assign(filters, { [key]: valid });
+        Object.assign(filters, {
+          [key]: key === "labelId" && valid.length === 1 ? valid[0] : valid,
+        });
       }
     }
   }
@@ -220,7 +219,8 @@ export function adminListRequestFilters(
   )) {
     const values = params.getAll(key);
     const value =
-      adminFilterValueLimit(key) > 1
+      adminFilterValueLimit(key, surface) > 1 &&
+      (key !== "labelId" || values.length > 1)
         ? values
         : parseAdminFilterValue(key, values[0], surface);
     Object.assign(request, { [key]: value });
@@ -235,7 +235,7 @@ export function listFilterError(
   if (surface === undefined) return undefined;
   for (const key of supportedKeys(surface)) {
     const value = filters[key];
-    const max = adminFilterValueLimit(key);
+    const max = adminFilterValueLimit(key, surface);
     if (
       Array.isArray(value) &&
       max > 1 &&

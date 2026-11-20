@@ -1,9 +1,9 @@
 import { X } from "lucide-react";
-import type { Ref } from "react";
+import type { ReactNode } from "react";
 import { LABEL_COLOR_DOT, type LabelColor } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { useAdminT } from "../admin-i18n";
-import { optionIds, optionState } from "./filter-registry";
+import { optionIds, optionState, type CardFilterKey } from "./filter-registry";
 import type { ResolvedCardFilter } from "./use-card-filter-options";
 
 export function FilterColorDot({ color }: { color?: string }) {
@@ -19,13 +19,11 @@ export function FilterColorDot({ color }: { color?: string }) {
   );
 }
 
-export function FilterChip({
+export function FilterOptionChip({
   filter,
-  buttonRef,
   onRemove,
 }: {
   filter: ResolvedCardFilter;
-  buttonRef: Ref<HTMLButtonElement>;
   onRemove: () => void;
 }) {
   const t = useAdminT();
@@ -39,17 +37,24 @@ export function FilterChip({
         ? t(`admin.filters.unknown.${key}`)
         : facet);
   const state = optionState(t, option?.state);
+  const email = key === "assigneeId" ? option?.sublabel : null;
   const ids = loading ? undefined : optionIds(id, option);
   const title = `${name} · ${optionIds(id, option, false)}`;
-  const value = [loading ? t("admin.filters.loading") : name, state, ids]
+  const value = [loading ? t("admin.filters.loading") : name, email, state, ids]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <span
-      className="inline-flex min-w-0 max-w-[min(20rem,calc(100dvw-2rem))] items-center gap-1 rounded-md border border-border bg-hover/40 pl-2 text-xs text-foreground"
-      data-testid={`admin-filter-${key}`}
-      title={loading ? undefined : title}
+    <FilterChip
+      filterKey={key}
+      value={id}
+      title={
+        loading
+          ? undefined
+          : [title, option?.sublabel].filter(Boolean).join(" · ")
+      }
+      removeLabel={t("admin.filters.remove", { facet, value })}
+      onRemove={onRemove}
     >
       <span
         className={cn(
@@ -62,9 +67,23 @@ export function FilterChip({
             <span className="shrink-0 text-muted-foreground">{facet}:</span>
           ) : null}
           <FilterColorDot color={option?.color} />
-          <span className="min-w-0 truncate" title={title}>
-            {name}
-          </span>
+          {email ? (
+            <span className="min-w-0">
+              <span className="block truncate" title={title}>
+                {name}
+              </span>
+              <span
+                className="block truncate text-[10px] text-muted-foreground"
+                title={email}
+              >
+                {email}
+              </span>
+            </span>
+          ) : (
+            <span className="min-w-0 truncate" title={title}>
+              {name}
+            </span>
+          )}
           {state ? (
             <span className="shrink-0 text-[10px] text-muted-foreground">
               {state}
@@ -77,12 +96,39 @@ export function FilterChip({
           </span>
         ) : null}
       </span>
+    </FilterChip>
+  );
+}
+
+export function FilterChip({
+  filterKey,
+  value,
+  title,
+  removeLabel,
+  onRemove,
+  children,
+}: {
+  filterKey: CardFilterKey;
+  value?: string;
+  title?: string;
+  removeLabel: string;
+  onRemove: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className="inline-flex min-w-0 max-w-[min(20rem,calc(100dvw-2rem))] items-center gap-1 rounded-md border border-border bg-hover/40 pl-2 text-xs text-foreground"
+      data-testid={`admin-filter-${filterKey}`}
+      title={title}
+    >
+      {children}
       <button
-        ref={buttonRef}
         type="button"
         className="inline-grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:size-8"
-        aria-label={t("admin.filters.remove", { facet, value })}
-        data-testid={`admin-filter-clear-${key}`}
+        aria-label={removeLabel}
+        data-testid={`admin-filter-clear-${filterKey}`}
+        data-filter-key={filterKey}
+        data-filter-value={value}
         onClick={onRemove}
       >
         <X className="size-3.5" aria-hidden />

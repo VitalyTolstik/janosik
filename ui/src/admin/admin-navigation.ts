@@ -1,8 +1,4 @@
-import {
-  ADMIN_CARD_SCOPE,
-  parseAdminFilterId,
-  type AdminFilters,
-} from "@janosik/shared";
+import { adminFilterEntries, type AdminFilters } from "@janosik/shared";
 
 /**
  * Links and return paths for the admin panel (TASK-176.5/176.6).
@@ -75,10 +71,8 @@ export function adminListHref(
 
 export function adminCardsHref(filters: AdminFilters = {}): string {
   const params = new URLSearchParams({ tab: "cards" });
-  // Match the canonical list query order for structural card links.
-  for (const key of [...ADMIN_CARD_SCOPE].sort()) {
-    const value = parseAdminFilterId(filters[key]);
-    if (value !== undefined) params.append(key, value);
+  for (const [key, value] of adminFilterEntries(filters, "cards")) {
+    params.append(key, value);
   }
   return `/admin/boards?${params}`;
 }

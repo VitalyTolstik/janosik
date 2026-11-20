@@ -4,6 +4,7 @@ import {
   completeness,
   COVER_COLORS,
   COVER_GRADIENTS,
+  DEFAULT_CARD_PRIORITY,
   EMAIL_SMTP_PRESETS,
   EMAIL_SMTP_TEST_PRESETS,
   isCardLinkType,
@@ -53,6 +54,7 @@ import type {
   AdminRetentionDto,
   AdminSecurityDto,
 } from "@janosik/shared";
+import { dueStatus } from "@/utils/due-date";
 
 /**
  * In-memory admin API for component tests (TASK-36): implements just enough
@@ -80,6 +82,11 @@ export interface FakeCardLink {
   createdAt: number;
 }
 
+type FakeAttachment = AdminAttachmentRowDto & {
+  isInline?: boolean;
+  descriptionDetached?: boolean;
+};
+
 export interface FakeAdminState {
   admins: FakeAdmin[];
   users: AdminUserRowDto[];
@@ -90,7 +97,7 @@ export interface FakeAdminState {
   sessions: AdminSessionRowDto[];
   tokens: AdminTokenRowDto[];
   comments: AdminCommentRowDto[];
-  attachments: AdminAttachmentRowDto[];
+  attachments: FakeAttachment[];
   activity: AdminActivityRowDto[];
   /** User-detail membership rows (TASK-176.4 inviter links). */
   memberships: AdminUserMembershipDto[];
@@ -268,8 +275,8 @@ export function adminComment(
 }
 
 export function adminAttachment(
-  overrides: Partial<AdminAttachmentRowDto> = {},
-): AdminAttachmentRowDto {
+  overrides: Partial<FakeAttachment> = {},
+): FakeAttachment {
   return {
     id: "attachment-1",
     cardId: "card-1",
@@ -2977,8 +2984,10 @@ export class FakeAdminServer {
     const boardId = url.searchParams.get("boardId");
     const columnId = url.searchParams.get("columnId");
     const cardId = url.searchParams.get("cardId");
-    const labelId = url.pathname.endsWith("/cards")
-      ? url.searchParams.get("labelId")
+    const cards = url.pathname.endsWith("/cards");
+    const currentTime = Date.now();
+    const matchesCard = cards
+      ? this.cardFacets(url.searchParams, currentTime)
       : null;
     const commandId = url.searchParams.get("commandId");
     const filtered = items.filter((item) => {
@@ -2990,13 +2999,7 @@ export class FakeAdminServer {
       if (cardId && record.cardId !== cardId && record.id !== cardId) {
         return false;
       }
-      if (
-        labelId &&
-        (typeof record.id !== "string" ||
-          !this.state.cardLabelIds[record.id]?.includes(labelId))
-      ) {
-        return false;
-      }
+      if (matchesCard && !matchesCard(item as AdminCardRowDto)) return false;
       if (commandId) {
         const details = record.details as Record<string, unknown> | null;
         const matched =
@@ -3018,6 +3021,70 @@ export class FakeAdminServer {
       total: filtered.length,
       limit,
       offset,
+    };
+  }
+
+  private cardFacets(params: URLSearchParams, currentTime: number) {
+    const labels = params.getAll("labelId");
+    const labelMatch = params.get("labelMatch");
+    const assignees = params.getAll("assigneeId");
+    const unassigned = params.get("unassigned") === "true";
+    const priorities = params.getAll("priority");
+    const due = params.get("due");
+    const hasAttachments = params.get("hasAttachments");
+    const from = params.get("from");
+    const to = params.get("to");
+    const status = params.get("status");
+
+    return (card: AdminCardRowDto) => {
+      const cardLabels = this.state.cardLabelIds[card.id] ?? [];
+      const matchesLabel = (id: string) => cardLabels.includes(id);
+      if (
+        labels.length &&
+        !(labelMatch === "all"
+          ? labels.every(matchesLabel)
+          : labels.some(matchesLabel))
+      )
+        return false;
+      if (assignees.length || unassigned) {
+        if (
+          card.assigneeId === null
+            ? !unassigned
+            : !assignees.includes(card.assigneeId)
+        )
+          return false;
+      }
+      if (
+        priorities.length &&
+        !priorities.includes(card.priority ?? DEFAULT_CARD_PRIORITY)
+      )
+        return false;
+      if (due === "none" && card.dueDate !== null) return false;
+      if (due === "overdue" || due === "soon") {
+        if (
+          card.dueDate === null ||
+          dueStatus(card.dueDate, currentTime) !== due
+        )
+          return false;
+      }
+      if (hasAttachments !== null) {
+        const hasFiles = this.state.attachments.some(
+          (row) =>
+            row.cardId === card.id &&
+            row.deletedAt === null &&
+            !row.isInline &&
+            !row.descriptionDetached,
+        );
+        if (hasFiles !== (hasAttachments === "true")) return false;
+      }
+      if (from && card.createdAt < Number(from)) return false;
+      if (to && card.createdAt > Number(to)) return false;
+      if (status === "deleted") return card.deletedAt !== null;
+      if (status === "archived")
+        return card.deletedAt === null && card.archivedAt !== null;
+      if (status === "active")
+        return card.deletedAt === null && card.archivedAt === null;
+      return true;
     };
   }
 
@@ -3079,6 +3146,16 @@ export class FakeAdminServer {
           columnId: row.columnId,
         }));
         break;
+      case "user":
+        options = this.state.users.map((row) => ({
+          id: row.id,
+          label: row.displayName?.trim() || row.email,
+          sublabel: row.displayName?.trim() ? row.email : null,
+          state: row.disabledAt === null ? "active" : "disabled",
+          boardId: null,
+          columnId: null,
+        }));
+        break;
       default:
         return this.json({ message: "Unknown lookup type" }, 400);
     }
@@ -3096,9 +3173,10 @@ export class FakeAdminServer {
     const search = query.toLowerCase();
     const limit = Number(params.get("limit") ?? 20);
     const matches = options.filter(
-      ({ id, label, boardId: parent }) =>
+      ({ id, label, sublabel, boardId: parent }) =>
         (!boardId || parent === boardId) &&
         (label.toLowerCase().includes(search) ||
+          sublabel?.toLowerCase().includes(search) ||
           id.toLowerCase().includes(search)),
     );
     matches.sort(

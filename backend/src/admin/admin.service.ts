@@ -38,6 +38,7 @@ import type {
 } from "@janosik/shared";
 import {
   ADMIN_PAGE_LIMITS,
+  DEFAULT_CARD_PRIORITY,
   LIMITS,
   linkPairKey,
   serializeExport,
@@ -87,6 +88,7 @@ import {
 import { AuthService } from "@/auth/auth.service";
 import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
 import { JwtService } from "@nestjs/jwt";
+import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { StorageService } from "@/attachments/storage.service";
 import { OpsSettingsService } from "@/ops/ops-settings.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
@@ -1571,11 +1573,14 @@ export class AdminService {
   }
 
   /** Recompute the card-face attachment badge from the live rows (B11). */
-  private async recountCardAttachments(cardId: string): Promise<void> {
-    const live = await this.prisma.attachment.count({
-      where: { cardId, deletedAt: null, isInline: false },
+  private async recountCardAttachments(
+    tx: Prisma.TransactionClient,
+    cardId: string,
+  ): Promise<void> {
+    const live = await tx.attachment.count({
+      where: { cardId, ...CARD_ATTACHMENT_WHERE },
     });
-    await this.prisma.card.updateMany({
+    await tx.card.updateMany({
       where: { id: cardId },
       data: { attachmentCount: live },
     });
@@ -1621,26 +1626,69 @@ export class AdminService {
   async listCards(
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCardRowDto>> {
-    const where: Prisma.CardWhereInput = {};
+    const and: Prisma.CardWhereInput[] = [];
+    const where: Prisma.CardWhereInput = { AND: and };
     if (query.cardId) where.id = query.cardId;
     if (query.columnId) where.columnId = query.columnId;
     if (query.boardId) where.column = { boardId: query.boardId };
-    if (query.singleLabelId) {
-      where.labels = { some: { labelId: query.singleLabelId } };
+    where.createdAt = this.dateRange(query);
+
+    const labels =
+      typeof query.labelId === "string" ? [query.labelId] : query.labelId;
+    if (labels?.length) {
+      if (query.labelMatch === "all") {
+        and.push(
+          ...labels.map((labelId) => ({ labels: { some: { labelId } } })),
+        );
+      } else {
+        where.labels = { some: { labelId: { in: labels } } };
+      }
     }
-    if (query.search) {
-      where.OR = [
-        { id: { contains: query.search } },
-        { title: { contains: query.search, mode: "insensitive" } },
-        // Join keys: boardId / columnId locate a card when titles collide.
-        { columnId: { contains: query.search } },
-        { column: { boardId: { contains: query.search } } },
-        {
-          column: {
-            board: { title: { contains: query.search, mode: "insensitive" } },
-          },
-        },
+
+    const assignees: Prisma.CardWhereInput[] = [];
+    if (query.assigneeId?.length) {
+      assignees.push({ assigneeId: { in: query.assigneeId } });
+    }
+    if (query.unassigned) assignees.push({ assigneeId: null });
+    if (assignees.length) and.push({ OR: assignees });
+
+    if (query.priority?.length) {
+      const priorities: Prisma.CardWhereInput[] = [
+        { priority: { in: query.priority } },
       ];
+      if (query.priority.includes(DEFAULT_CARD_PRIORITY)) {
+        priorities.push({ priority: null });
+      }
+      and.push({ OR: priorities });
+    }
+
+    if (query.due === "none") where.dueDate = null;
+    if (query.due === "overdue" || query.due === "soon") {
+      const now = Date.now();
+      where.dueDate =
+        query.due === "overdue"
+          ? { lt: new Date(now) }
+          : { gte: new Date(now), lte: new Date(now + DAY_MS) };
+    }
+    if (query.hasAttachments !== undefined) {
+      where.attachmentCount = query.hasAttachments ? { gt: 0 } : 0;
+    }
+
+    if (query.search) {
+      and.push({
+        OR: [
+          { id: { contains: query.search } },
+          { title: { contains: query.search, mode: "insensitive" } },
+          // Join keys: boardId / columnId locate a card when titles collide.
+          { columnId: { contains: query.search } },
+          { column: { boardId: { contains: query.search } } },
+          {
+            column: {
+              board: { title: { contains: query.search, mode: "insensitive" } },
+            },
+          },
+        ],
+      });
     }
     if (query.status === "active") {
       where.deletedAt = null;
@@ -2883,15 +2931,13 @@ export class AdminService {
       where: { id: attachmentId },
     });
     if (!row) throw new NotFoundException("Attachment not found");
-    await this.boardWrite.run(row.boardId, (tx) =>
-      tx.attachment.update({
+    await this.boardWrite.run(row.boardId, async (tx) => {
+      await tx.attachment.update({
         where: { id: attachmentId },
         data: { deletedAt: new Date() },
-      }),
-    );
-    // TASK-149 (B11): recount instead of a blind decrement — inline media
-    // and double-clicks drifted the badge (negative, then wrong forever).
-    await this.recountCardAttachments(row.cardId);
+      });
+      await this.recountCardAttachments(tx, row.cardId);
+    });
     // TASK-88: keep the blob — a soft-deleted attachment can be restored
     // (`restoreEntity`) and must stream again; the purge sweep reclaims it.
     await this.audit(admin, "attachment.delete", "attachment", attachmentId, {
@@ -3265,15 +3311,13 @@ export class AdminService {
           where: { id },
         });
         if (!row) throw new NotFoundException("Attachment not found");
-        await this.boardWrite.run(row.boardId, (tx) =>
-          tx.attachment.update({
+        await this.boardWrite.run(row.boardId, async (tx) => {
+          await tx.attachment.update({
             where: { id },
             data: { deletedAt: when },
-          }),
-        );
-        // TASK-149 (B11): bulk delete/restore used to bypass the counter
-        // entirely; recount from the rows so the badge is exact either way.
-        await this.recountCardAttachments(row.cardId);
+          });
+          await this.recountCardAttachments(tx, row.cardId);
+        });
         return;
       }
       default:

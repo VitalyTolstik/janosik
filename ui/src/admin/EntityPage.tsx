@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import type {
@@ -15,8 +15,11 @@ import {
   EMPTY_ADMIN_LIST_FILTERS,
   adminFiltersKey,
   hasAdminFilters,
+  listFilterError,
+  readAdminListQuery,
   writeAdminListQuery,
   type AdminListFilterKey,
+  type AdminListFilters,
   type AdminListQueryState,
 } from "./admin-list-query";
 import { currentAdminPath, withReturnTo } from "./admin-navigation";
@@ -24,12 +27,14 @@ import { useAdminT, type AdminMessageKey } from "./admin-i18n";
 import { AdminFilterBar } from "./filters/AdminFilterBar";
 import {
   BOARD_DEPENDENTS,
+  cardFilterLabel,
+  removeCardFilter,
   type CardFilterKey,
 } from "./filters/filter-registry";
 import { useCardFilterOptions } from "./filters/use-card-filter-options";
 import { RowActions, type EntityAction } from "./row-actions";
 import { EntityListSkeleton } from "./skeletons";
-import { listStateOf, useAdminListQuery } from "./use-admin-list-query";
+import { useAdminListQuery } from "./use-admin-list-query";
 import {
   ConfirmDialog,
   EmptyState,
@@ -285,69 +290,111 @@ export function EntityPage<E extends AdminEntity>({
     cards ? list.filters : undefined,
   );
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
-  const filterChipButtons = useRef<
-    Partial<Record<CardFilterKey, HTMLButtonElement | null>>
-  >({});
+  const filterChipRowRef = useRef<HTMLDivElement>(null);
   const lookupPending = resolvedFilters.some(({ loading }) => loading);
   const lookupFailed = resolvedFilters.some(({ error }) => error);
   const rejectedFilter = cards ? unsupportedFilter(list.errorBody) : undefined;
-  const rejectedFacet = resolvedFilters.find(
-    ({ key }) => key === rejectedFilter,
-  );
-  const rejectedName = rejectedFacet ? t(rejectedFacet.label) : rejectedFilter;
+  const rejectedLabel = rejectedFilter && cardFilterLabel(rejectedFilter);
+  const rejectedName = rejectedLabel ? t(rejectedLabel) : rejectedFilter;
 
-  const focusAfterFilterRemoval = (key?: CardFilterKey) => {
-    if (key !== undefined && key !== "boardId") {
-      const index = resolvedFilters.findIndex((filter) => filter.key === key);
-      const neighbor = resolvedFilters[index + 1] ?? resolvedFilters[index - 1];
-      const button = neighbor && filterChipButtons.current[neighbor.key];
-      if (button) {
-        button.focus();
-        return;
-      }
-    }
-    filterTriggerRef.current?.focus();
-  };
+  const pendingCardsView = useRef<{
+    query: string;
+    state: AdminListQueryState;
+  }>();
+  useLayoutEffect(() => {
+    pendingCardsView.current = undefined;
+  }, [location.key]);
+
+  const currentCardsView = () =>
+    pendingCardsView.current?.state ??
+    readAdminListQuery(new URLSearchParams(location.search), {
+      surface: "cards",
+    });
 
   const commitCardsView = (next: AdminListQueryState) => {
     const current = new URLSearchParams(location.search);
-    const query = writeAdminListQuery(current, next, { surface: "cards" });
-    if (query.toString() === current.toString()) {
+    const query = writeAdminListQuery(current, next, {
+      surface: "cards",
+    }).toString();
+    if (query === (pendingCardsView.current?.query ?? current.toString())) {
       list.applyState(next);
     } else {
-      // Write the whole view before updating the list. An immediate browser
-      // Back can otherwise race the list-to-URL effect and leave stale chips.
-      void navigate({ search: query.toString(), hash: location.hash });
+      // A second chip action can run before the router renders the first.
+      pendingCardsView.current = { query, state: next };
+      void navigate({ search: query, hash: location.hash });
     }
   };
 
-  const changeCardFilter = (key: CardFilterKey, id: string | null) => {
-    if (list.filters[key] === id) return;
-    if (id === null) focusAfterFilterRemoval(key);
+  const changeCardFilters = (
+    patch: Partial<AdminListFilters>,
+    view = currentCardsView(),
+  ) => {
+    const filters = { ...view.filters, ...patch };
+    const cleared =
+      filters.boardId !== view.filters.boardId
+        ? BOARD_DEPENDENTS.filter((dependent) => filters[dependent] !== null)
+        : [];
+    for (const dependent of cleared) filters[dependent] = null;
+    if (filters.labelId === null) delete filters.labelMatch;
+    if (adminFiltersKey(view.filters) === adminFiltersKey(filters)) return;
+    if (listFilterError(filters, "cards")) {
+      toast.error(t("admin.filters.limit"));
+      return;
+    }
     withSelectionReset(() => {
-      const filters = { ...list.filters, [key]: id };
-      const cleared =
-        key === "boardId"
-          ? BOARD_DEPENDENTS.filter((dependent) => filters[dependent] !== null)
-          : [];
-      for (const dependent of cleared) filters[dependent] = null;
       commitCardsView({
-        ...listStateOf(list),
+        ...view,
         search: list.search,
         offset: 0,
         filters,
         filterError: undefined,
       });
-      if (cleared.length > 0) {
-        toast.info(t("admin.filters.boardCleared", { count: cleared.length }));
+      const clearedMode =
+        cleared.includes("labelId") && view.filters.labelMatch === "all";
+      const count = cleared.length + Number(clearedMode);
+      if (count > 0) {
+        toast.info(t("admin.filters.boardCleared", { count }));
       }
     });
+  };
+
+  const removeFilter = (key: CardFilterKey, value?: string) => {
+    const view = currentCardsView();
+    const patch = removeCardFilter(view.filters, key, value);
+    const buttons = Array.from(
+      filterChipRowRef.current?.querySelectorAll<HTMLButtonElement>(
+        "[data-filter-key]",
+      ) ?? [],
+    );
+    const removes = (button: HTMLButtonElement) =>
+      button.dataset.filterKey === key &&
+      (value === undefined || button.dataset.filterValue === value);
+    const index = buttons.findIndex(removes);
+    const removedKeys: readonly string[] =
+      key === "boardId"
+        ? [...BOARD_DEPENDENTS, "labelMatch"]
+        : key === "labelId" && patch.labelMatch === undefined
+          ? ["labelMatch"]
+          : [];
+    const neighbor =
+      index >= 0
+        ? [
+            ...buttons.slice(index + 1),
+            ...buttons.slice(0, index).reverse(),
+          ].find(
+            (button) =>
+              !removes(button) &&
+              !removedKeys.includes(button.dataset.filterKey ?? ""),
+          )
+        : undefined;
+    (neighbor ?? filterTriggerRef.current)?.focus();
+    changeCardFilters(patch, view);
   };
 
   const clearAllFilters = () => {
     withSelectionReset(() => {
       if (cards) {
-        focusAfterFilterRemoval();
+        filterTriggerRef.current?.focus();
         commitCardsView({
           search: "",
           status: "all",
@@ -438,7 +485,7 @@ export function EntityPage<E extends AdminEntity>({
         <AdminFilterBar
           renderHeader={renderHeader}
           triggerRef={filterTriggerRef}
-          chipButtons={filterChipButtons}
+          chipRowRef={filterChipRowRef}
           filters={list.filters}
           resolved={resolvedFilters}
           filtered={filtered}
@@ -452,7 +499,8 @@ export function EntityPage<E extends AdminEntity>({
               ? undefined
               : list.total
           }
-          onChange={changeCardFilter}
+          onChange={changeCardFilters}
+          onRemove={removeFilter}
           onClear={clearAllFilters}
         />
       ) : (
@@ -525,8 +573,11 @@ export function EntityPage<E extends AdminEntity>({
                 size="sm"
                 className="h-11 sm:h-8"
                 onClick={() => {
-                  if (rejectedFacet) changeCardFilter(rejectedFacet.key, null);
-                  else clearAllFilters();
+                  if (rejectedFilter && rejectedLabel) {
+                    removeFilter(rejectedFilter as CardFilterKey);
+                  } else {
+                    clearAllFilters();
+                  }
                 }}
               >
                 {t("admin.filters.removeUnsupported", { facet: rejectedName })}

@@ -1,3 +1,4 @@
+import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { Prisma } from "@prisma/client";
 import type {
   Board,
@@ -188,12 +189,7 @@ export async function reconcileDescriptionAttachments(
   }
   for (const cardId of changedCards) {
     const count = await tx.attachment.count({
-      where: {
-        cardId,
-        deletedAt: null,
-        isInline: false,
-        descriptionDetached: false,
-      },
+      where: { cardId, ...CARD_ATTACHMENT_WHERE },
     });
     // Avoid changing updatedAt or version for attachment bookkeeping.
     await tx.$executeRaw`UPDATE "Card" SET "attachmentCount" = ${count} WHERE "id" = ${cardId}`;
@@ -424,12 +420,7 @@ async function upsertCard(
   // it in the same statement — a second `update` would stamp `updatedAt`
   // and break the aggregate/inverse equality.
   const liveAttachments = await tx.attachment.count({
-    where: {
-      cardId: card.id,
-      deletedAt: null,
-      isInline: false,
-      descriptionDetached: false,
-    },
+    where: { cardId: card.id, ...CARD_ATTACHMENT_WHERE },
   });
   await tx.card.upsert({
     where: { id: card.id },

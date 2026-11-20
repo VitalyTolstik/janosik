@@ -204,9 +204,19 @@ describe("AdminApiClient", () => {
       hasAttachments: false,
     });
     const multiple = new URL(calls[3].url).searchParams;
-    expect(multiple.getAll("labelId")).toEqual([]);
-    expect(multiple.has("labelMatch")).toBe(false);
-    expect(multiple.has("hasAttachments")).toBe(false);
+    expect(multiple.getAll("labelId")).toEqual(["l-1", "l-2"]);
+    expect(multiple.get("labelMatch")).toBe("all");
+    expect(multiple.get("hasAttachments")).toBe("false");
+
+    await api.listEntity("comments", {
+      labelId: ["l-2", "l-1"],
+      labelMatch: "all",
+      hasAttachments: false,
+    });
+    const legacy = new URL(calls[4].url).searchParams;
+    expect(legacy.getAll("labelId")).toEqual([]);
+    expect(legacy.has("labelMatch")).toBe(false);
+    expect(legacy.has("hasAttachments")).toBe(false);
   });
 
   it("builds paged detail queries for the windowed tabs (TASK-176.3)", async () => {
