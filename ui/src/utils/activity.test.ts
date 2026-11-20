@@ -137,6 +137,7 @@ describe("sentenceFor", () => {
     "member_role_changed",
     "member_expiry_changed",
     "member_removed",
+    "member_left",
     "run_reverted",
     "agent_policy_changed",
   ] as const)("maps the activity event %s to a real sentence", (type) => {
