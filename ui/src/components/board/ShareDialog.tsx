@@ -4,16 +4,23 @@ import {
   ChevronDown,
   Copy,
   Link2,
+  Pencil,
   RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
 
-import type { BoardShareDto, BoardShareMode } from "@janosik/shared";
+import type {
+  BoardShareDto,
+  BoardShareMode,
+  CreateShareRequest,
+  UpdateShareRequest,
+} from "@janosik/shared";
 import { SHARE_LIMITS, SHARE_TTL_HOURS } from "@janosik/shared";
 import { api, ApiError, isApiEnabled } from "@/api/client";
 import { appShareUrl } from "@/utils/app-path";
 import { useToast } from "@/components/Toast";
+import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -122,6 +129,9 @@ function routesShare(token: string): string {
 
 type EmbedTheme = "system" | "light" | "dark";
 
+/** Edit-mode TTL sentinel: omit `expiresAt` from PATCH and keep the deadline. */
+const KEEP_EXPIRY = -1;
+
 function buildEmbed(token: string, theme: EmbedTheme): string {
   return `<iframe src="${appShareUrl(`/s/${token}?embed=1&theme=${theme}`)}" width="100%" height="600" style="border:0" loading="lazy" title="Janosik board"></iframe>`;
 }
@@ -131,6 +141,9 @@ function SharePanel({ boardId }: { boardId: string }) {
   const toast = useToast();
   const [shares, setShares] = useState<BoardShareDto[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<BoardShareDto | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const [mode, setMode] = useState<BoardShareMode>("live");
   const [now, setNow] = useState(() => Date.now());
 
@@ -155,12 +168,19 @@ function SharePanel({ boardId }: { boardId: string }) {
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-      <CreateForm
-        busy={creating}
+      <ShareForm
+        key={editing?.id ?? "create"}
+        busy={editing ? updating : creating}
         shares={shares}
         now={now}
         mode={mode}
+        editing={editing}
+        error={editing ? updateError : null}
         onModeChange={setMode}
+        onCancel={() => {
+          setEditing(null);
+          setUpdateError(null);
+        }}
         onCreate={async (request) => {
           setCreating(true);
           try {
@@ -185,6 +205,30 @@ function SharePanel({ boardId }: { boardId: string }) {
             if (error instanceof ApiError && error.status === 409) await load();
           } finally {
             setCreating(false);
+          }
+        }}
+        onUpdate={async (request) => {
+          if (!editing) return;
+          setUpdating(true);
+          setUpdateError(null);
+          try {
+            await api.updateShare(boardId, editing.id, request);
+            toast.success(t("share.editSaved"));
+            setEditing(null);
+            await load();
+          } catch (error) {
+            // The form stays open with the user's values, so the error is
+            // shown inline as well as in the toast (TASK-177.1).
+            const message =
+              error instanceof ApiError && error.status === 409
+                ? t("share.limitReached")
+                : error instanceof ApiError && error.offline
+                  ? t("share.offline")
+                  : t("share.editError");
+            setUpdateError(message);
+            toast.error(message);
+          } finally {
+            setUpdating(false);
           }
         }}
       />
@@ -214,6 +258,11 @@ function SharePanel({ boardId }: { boardId: string }) {
                   boardId={boardId}
                   now={now}
                   onChanged={load}
+                  onEdit={(target) => {
+                    setUpdateError(null);
+                    setEditing(target);
+                    setMode(target.mode);
+                  }}
                 />
               ))}
           </ul>
@@ -249,11 +298,13 @@ function ShareRow({
   share,
   boardId,
   onChanged,
+  onEdit,
   now,
 }: {
   share: BoardShareDto;
   boardId: string;
   onChanged: () => Promise<void>;
+  onEdit: (share: BoardShareDto) => void;
   now: number;
 }) {
   const { t } = useI18n();
@@ -341,6 +392,17 @@ function ShareRow({
       </p>
 
       <div className="flex flex-wrap items-center gap-1">
+        {!revoked ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => onEdit(share)}
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+            {t("share.edit")}
+          </Button>
+        ) : null}
         {!revoked && !expired ? (
           <>
             <Button
@@ -495,20 +557,31 @@ function EmbedPicker({ token }: { token: string }) {
  * with the project's check-mark idiom (BoardMembersDialog's RolePicker) —
  * a native `<select>` renders as a black browser control in the dark theme
  * and cannot be styled to match the dialog.
+ *
+ * In edit mode `allowKeep` adds a "keep current expiry" row so changing a
+ * title or a flag never silently re-bases the deadline (TASK-177.1).
  */
 function TtlPicker({
   value,
   onChange,
+  allowKeep = false,
 }: {
   value: number;
   onChange: (value: number) => void;
+  allowKeep?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
   const label = (hours: number) =>
-    hours === 0 ? t("share.ttl.never") : t("share.ttl.hours", { count: hours });
-  const options = [0, ...SHARE_TTL_HOURS];
+    hours === KEEP_EXPIRY
+      ? t("share.ttl.keep")
+      : hours === 0
+        ? t("share.ttl.never")
+        : t("share.ttl.hours", { count: hours });
+  const options = allowKeep
+    ? [KEEP_EXPIRY, 0, ...SHARE_TTL_HOURS]
+    : [0, ...SHARE_TTL_HOURS];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -556,91 +629,165 @@ function TtlPicker({
   );
 }
 
-function CreateForm({
+/**
+ * Create and edit share form (TASK-58, TASK-177.1). Edit mode locks the
+ * mode/token (they live in the URL and on the public page), seeds the form
+ * from the row and PATCHes only the mutable fields. A privacy change on a
+ * live link goes through a confirmation before the request.
+ */
+function ShareForm({
   busy,
   shares,
   now,
   mode,
+  editing,
+  error,
   onModeChange,
+  onCancel,
   onCreate,
+  onUpdate,
 }: {
   busy: boolean;
   shares: BoardShareDto[] | null;
   now: number;
   mode: BoardShareMode;
+  editing: BoardShareDto | null;
+  error: string | null;
   onModeChange: (mode: BoardShareMode) => void;
-  onCreate: (request: {
-    mode: BoardShareMode;
-    title?: string;
-    includeComments: boolean;
-    includeAttachments: boolean;
-    expiresAt: string | null;
-  }) => Promise<void>;
+  onCancel: () => void;
+  onCreate: (request: CreateShareRequest) => Promise<void>;
+  onUpdate: (request: UpdateShareRequest) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(editing?.title ?? "");
   const [includeComments, setIncludeComments] = useState<boolean>(
-    SHARE_LIMITS.defaultIncludeCommentsLive,
+    editing ? editing.includeComments : SHARE_LIMITS.defaultIncludeCommentsLive,
   );
-  const [includeAttachments, setIncludeAttachments] = useState(false);
-  const [ttlHours, setTtlHours] = useState<number>(SHARE_TTL_HOURS[1]);
+  const [includeAttachments, setIncludeAttachments] = useState(
+    editing ? editing.includeAttachments : false,
+  );
+  const [ttlHours, setTtlHours] = useState<number>(
+    editing
+      ? editing.expiresAt === null
+        ? 0
+        : KEEP_EXPIRY
+      : SHARE_TTL_HOURS[1],
+  );
+  const [ttlTouched, setTtlTouched] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<UpdateShareRequest | null>(
+    null,
+  );
   const active = (shares ?? []).filter(
     (share) =>
       !share.revokedAt && (share.expiresAt === null || share.expiresAt > now),
   );
   const count = active.filter((share) => share.mode === mode).length;
   const limit = SHARE_LIMITS.activePerBoard[mode];
-  const similar = active.find(
-    (share) =>
-      share.mode === mode &&
-      (share.title ?? "") === title.trim() &&
-      share.includeComments === includeComments &&
-      share.includeAttachments === includeAttachments &&
-      (ttlHours === 0
-        ? share.expiresAt === null
-        : share.expiresAt !== null &&
-          Math.abs(share.expiresAt - share.createdAt - ttlHours * 3_600_000) <
-            60_000),
-  );
+  const similar = editing
+    ? undefined
+    : active.find(
+        (share) =>
+          share.mode === mode &&
+          (share.title ?? "") === title.trim() &&
+          share.includeComments === includeComments &&
+          share.includeAttachments === includeAttachments &&
+          (ttlHours === 0
+            ? share.expiresAt === null
+            : share.expiresAt !== null &&
+              Math.abs(
+                share.expiresAt - share.createdAt - ttlHours * 3_600_000,
+              ) < 60_000),
+      );
+
+  const submit = () => {
+    if (editing) {
+      const request: UpdateShareRequest = {
+        title: title.trim() === "" ? null : title.trim(),
+        includeComments,
+        includeAttachments,
+      };
+      if (ttlTouched) request.expiresAt = expiryFromTtl(ttlHours);
+      const flagsChanged =
+        includeComments !== editing.includeComments ||
+        includeAttachments !== editing.includeAttachments;
+      const liveLink = editing.mode === "live" && editing.revokedAt === null;
+      // A public live link exposes the board immediately; a snapshot keeps
+      // its frozen content until the owner refreshes it (TASK-177.1).
+      if (liveLink && flagsChanged) {
+        setPendingUpdate(request);
+        return;
+      }
+      void onUpdate(request);
+      return;
+    }
+    void onCreate({
+      mode,
+      ...(title.trim() !== "" ? { title: title.trim() } : {}),
+      includeComments,
+      includeAttachments,
+      expiresAt: expiryFromTtl(ttlHours),
+    });
+  };
 
   return (
     <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-      <div className="flex gap-2">
-        {(["live", "snapshot"] as const).map((option) => (
-          <Button
-            key={option}
-            type="button"
-            variant={mode === option ? "default" : "outline"}
-            size="sm"
-            className="flex-1"
-            data-testid={`share-mode-${option}`}
-            aria-pressed={mode === option}
-            onClick={() => {
-              if (option === mode) return;
-              setIncludeComments(
-                option === "live"
-                  ? SHARE_LIMITS.defaultIncludeCommentsLive
-                  : SHARE_LIMITS.defaultIncludeCommentsSnapshot,
-              );
-              onModeChange(option);
-            }}
-          >
-            {t(`share.mode.${option}`)}
-          </Button>
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {mode === "live"
-          ? t("share.mode.liveHint")
-          : t("share.mode.snapshotHint")}
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {t("share.count", { count, limit })}
-      </p>
+      {editing ? (
+        <>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">{t("share.editTitle")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("share.editImmutable")}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+              {t(`share.mode.${editing.mode}`)}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+              /s/{editing.token}
+            </span>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex gap-2">
+            {(["live", "snapshot"] as const).map((option) => (
+              <Button
+                key={option}
+                type="button"
+                variant={mode === option ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                data-testid={`share-mode-${option}`}
+                aria-pressed={mode === option}
+                onClick={() => {
+                  if (option === mode) return;
+                  setIncludeComments(
+                    option === "live"
+                      ? SHARE_LIMITS.defaultIncludeCommentsLive
+                      : SHARE_LIMITS.defaultIncludeCommentsSnapshot,
+                  );
+                  onModeChange(option);
+                }}
+              >
+                {t(`share.mode.${option}`)}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {mode === "live"
+              ? t("share.mode.liveHint")
+              : t("share.mode.snapshotHint")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t("share.count", { count, limit })}
+          </p>
+        </>
+      )}
 
       <Input
         value={title}
-        maxLength={100}
+        maxLength={SHARE_LIMITS.titleMax}
         aria-label={t("share.titlePlaceholder")}
         placeholder={t("share.titlePlaceholder")}
         onChange={(event) => setTitle(event.target.value)}
@@ -667,7 +814,14 @@ function CreateForm({
 
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="text-muted-foreground">{t("share.ttl.label")}</span>
-        <TtlPicker value={ttlHours} onChange={setTtlHours} />
+        <TtlPicker
+          value={ttlHours}
+          allowKeep={editing !== null && editing.expiresAt !== null}
+          onChange={(hours) => {
+            setTtlHours(hours);
+            setTtlTouched(true);
+          }}
+        />
       </div>
 
       {similar && (
@@ -675,33 +829,66 @@ function CreateForm({
           {t(mode === "snapshot" ? "share.similarSnapshot" : "share.similar")}
         </p>
       )}
-      {count >= limit && (
+      {!editing && count >= limit && (
         <p className="text-xs text-destructive">{t("share.limitReached")}</p>
       )}
+      {editing && error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+        >
+          {error}
+        </p>
+      ) : null}
 
-      <Button
-        type="button"
-        className="w-full gap-1.5"
-        disabled={busy || shares === null || count >= limit}
-        data-testid="share-create"
-        onClick={() =>
-          void onCreate({
-            mode,
-            ...(title.trim() !== "" ? { title: title.trim() } : {}),
-            includeComments,
-            includeAttachments,
-            expiresAt:
-              ttlHours === 0
-                ? null
-                : new Date(Date.now() + ttlHours * 3_600_000).toISOString(),
-          })
-        }
-      >
-        <Check className="h-4 w-4" aria-hidden />
-        {similar ? t("share.createAnother") : t("share.create")}
-      </Button>
+      <div className="flex gap-2">
+        {editing ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {t("common.cancel")}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          className={editing ? "flex-1 gap-1.5" : "w-full gap-1.5"}
+          disabled={busy || shares === null || (!editing && count >= limit)}
+          data-testid={editing ? "share-save" : "share-create"}
+          onClick={submit}
+        >
+          <Check className="h-4 w-4" aria-hidden />
+          {editing
+            ? t("share.editSave")
+            : similar
+              ? t("share.createAnother")
+              : t("share.create")}
+        </Button>
+      </div>
+
+      <ConfirmDialog
+        open={pendingUpdate !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingUpdate(null);
+        }}
+        title={t("share.editPrivacyTitle")}
+        description={t("share.editPrivacyDescription")}
+        confirmLabel={t("share.editPrivacyConfirm")}
+        onConfirm={() => {
+          if (pendingUpdate) void onUpdate(pendingUpdate);
+        }}
+      />
     </div>
   );
+}
+
+function expiryFromTtl(hours: number): string | null {
+  return hours === 0
+    ? null
+    : new Date(Date.now() + hours * 3_600_000).toISOString();
 }
 
 async function copy(text: string): Promise<boolean> {

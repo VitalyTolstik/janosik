@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.1 share link editing: every non-revoked share row now has `Edit`,
+  which reuses the create form to change the label, comments/attachments
+  visibility and expiry while the mode and `/s/<token>` stay immutable.
+  Changes go through the existing `PATCH /boards/:id/shares/:shareId`; the
+  row and list refresh on success and a failed update keeps the form and its
+  values open with an inline error. Changing privacy flags on a live link asks
+  for confirmation first (the server audit already records `share.update`),
+  and choosing `Never` clears the expiry with `expiresAt: null`. EN/RU copy, `ShareDialog` unit tests and a Playwright
+  share-edit case cover the flow.
 - TASK-177.2 self-leave: `DELETE /boards/:id/members/me` lets an accepted
   `MEMBER` or `VIEWER` leave a board from the Members dialog (`Leave board`,
   with an inline confirmation). An `ADMIN` may leave only while another

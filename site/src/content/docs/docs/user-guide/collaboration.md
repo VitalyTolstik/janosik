@@ -128,6 +128,11 @@ PAT on a board that requires approval gets `409 approval_required` and must
 retry with `X-Approval-Id`; the applied refresh is audited.
 Select Live or Snapshot to see links of that type.
 
+`Edit` changes a link's label, comments and attachments visibility, and
+expiry. Its mode and `/s/<token>` stay fixed. Changing what a live link shows
+asks for confirmation before saving, and the update is audited like the other
+link changes.
+
 When copying an embed code, choose System, Light or Dark. System follows the
 visitor's device preference; Light and Dark keep a fixed appearance. The
 embedded board does not automatically follow a theme chosen on the host site.

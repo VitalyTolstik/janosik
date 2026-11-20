@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -72,6 +73,7 @@ function openStream(): ReadableStream<Uint8Array> {
 
 let shares: BoardShareDto[];
 let publicSharesEnabled = true;
+let patchFailure = false;
 const requests: Array<{ method: string; path: string; body: unknown }> = [];
 
 function router(input: RequestInfo | URL, init?: RequestInit): Response {
@@ -115,6 +117,36 @@ function router(input: RequestInfo | URL, init?: RequestInit): Response {
   }
   const revoke = path.match(/^\/boards\/b1\/shares\/([^/]+)$/);
   const permanent = path.match(/^\/boards\/b1\/shares\/([^/]+)\/permanent$/);
+  if (revoke && method === "PATCH") {
+    if (patchFailure) return json({ message: "boom" }, 500);
+    const id = revoke[1] ?? "";
+    const patch = body as Record<string, unknown>;
+    shares = shares.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            ...(patch.title !== undefined
+              ? { title: patch.title as string | null }
+              : {}),
+            ...(typeof patch.includeComments === "boolean"
+              ? { includeComments: patch.includeComments }
+              : {}),
+            ...(typeof patch.includeAttachments === "boolean"
+              ? { includeAttachments: patch.includeAttachments }
+              : {}),
+            ...(patch.expiresAt !== undefined
+              ? {
+                  expiresAt:
+                    patch.expiresAt === null
+                      ? null
+                      : Date.parse(String(patch.expiresAt)),
+                }
+              : {}),
+          }
+        : s,
+    );
+    return json(shares.find((s) => s.id === id));
+  }
   if (permanent && method === "DELETE") {
     shares = shares.filter((s) => s.id !== permanent[1]);
     return new Response(null, { status: 204 });
@@ -152,6 +184,7 @@ function renderDialog() {
 beforeEach(() => {
   shares = [];
   publicSharesEnabled = true;
+  patchFailure = false;
   requests.length = 0;
   vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
@@ -379,5 +412,196 @@ describe("ShareDialog", () => {
     expect(
       screen.queryByRole("button", { name: "Embed code" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("edits a link through PATCH and keeps mode and token immutable", async () => {
+    shares = [share({ title: "Old label", expiresAt: Date.now() + 3_600_000 })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+    expect(screen.getByText("Edit link")).toBeInTheDocument();
+    expect(
+      screen.getByText("Mode and token can't be changed"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("share-mode-live")).toBeNull();
+    expect(screen.queryByTestId("share-mode-snapshot")).toBeNull();
+
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: "Label (optional, for your list)",
+      }),
+      { target: { value: "Renamed" } },
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show comments" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show attachments" }));
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    expect(
+      await screen.findByText("Change what this live link shows?"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change visibility" }));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+        ),
+      ).toBe(true),
+    );
+    const patch = requests.find(
+      (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+    );
+    expect(patch?.body).toEqual({
+      title: "Renamed",
+      includeComments: false,
+      includeAttachments: true,
+    });
+    expect(patch?.body).not.toHaveProperty("mode");
+    expect(patch?.body).not.toHaveProperty("token");
+    // An untouched expiry is omitted, not re-based on save.
+    expect(patch?.body).not.toHaveProperty("expiresAt");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("share-row")).toHaveTextContent("Renamed"),
+    );
+    expect(screen.getByTestId("share-mode-live")).toBeInTheDocument();
+  });
+
+  it("cancels editing without a request", async () => {
+    shares = [share({ title: "Old label" })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: "Label (optional, for your list)",
+      }),
+      { target: { value: "Discarded" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
+    expect(screen.queryByText("Edit link")).toBeNull();
+    expect(screen.queryByText("Discarded")).toBeNull();
+    expect(screen.getByText("Old label")).toBeInTheDocument();
+  });
+
+  it("confirms before changing privacy flags on an active live link", async () => {
+    shares = [share({ includeComments: true, includeAttachments: false })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show comments" }));
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Change what this live link shows?",
+    });
+    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
+    expect(
+      screen.getByRole("checkbox", { name: "Show comments" }),
+    ).not.toBeChecked();
+
+    fireEvent.click(screen.getByTestId("share-save"));
+    const again = await screen.findByRole("dialog", {
+      name: "Change what this live link shows?",
+    });
+    fireEvent.click(
+      within(again).getByRole("button", { name: "Change visibility" }),
+    );
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("clears a link's expiry", async () => {
+    shares = [share({ title: "Expiring", expiresAt: Date.now() + 3_600_000 })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+    const ttl = screen.getByTestId("share-ttl");
+    expect(ttl).toHaveTextContent("Keep current expiry");
+    fireEvent.click(ttl);
+    fireEvent.click(await screen.findByRole("radio", { name: "Never" }));
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+        ),
+      ).toBe(true),
+    );
+    const patch = requests.find(
+      (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+    );
+    expect(patch?.body).toEqual({
+      title: "Expiring",
+      includeComments: true,
+      includeAttachments: false,
+      expiresAt: null,
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("share-row")).toHaveTextContent("No expiry"),
+    );
+  });
+
+  it("keeps an update failure visible in the form", async () => {
+    patchFailure = true;
+    shares = [share({ title: "Old label" })];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: "Label (optional, for your list)",
+      }),
+      { target: { value: "Still here" } },
+    );
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save the link — your changes are still here",
+    );
+    expect(
+      screen.getByRole("textbox", {
+        name: "Label (optional, for your list)",
+      }),
+    ).toHaveValue("Still here");
+    expect(screen.getByText("Edit link")).toBeInTheDocument();
+  });
+
+  it("does not confirm a snapshot's flag change", async () => {
+    shares = [
+      share({ mode: "snapshot", includeComments: false, expiresAt: null }),
+    ];
+    renderDialog();
+    fireEvent.click(await screen.findByTestId("share-trigger"));
+    fireEvent.click(await screen.findByTestId("share-mode-snapshot"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show comments" }));
+    fireEvent.click(screen.getByTestId("share-save"));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.method === "PATCH" && r.path === "/boards/b1/shares/sh1",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByText("Change what this live link shows?"),
+    ).not.toBeInTheDocument();
+    const patch = requests.find((r) => r.method === "PATCH");
+    expect(patch?.body).toMatchObject({ includeComments: true });
   });
 });
