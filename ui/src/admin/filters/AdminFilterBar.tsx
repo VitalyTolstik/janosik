@@ -1,13 +1,16 @@
 import type { ReactNode, RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { useAdminT } from "../admin-i18n";
+import { CopyButton } from "../cells";
 import type { AdminListFilters } from "../admin-list-query";
 import { AdminFilterPopover } from "./AdminFilterPopover";
 import { FilterChip, FilterOptionChip } from "./FilterChip";
 import {
   filterFacet,
+  isCodeLookup,
   KIND_CHOICES,
   LINK_TYPE_CHOICES,
+  offeredFilters,
   RADIO_FILTERS,
   type FilterBarSurface,
   PRIORITY_CHOICES,
@@ -47,7 +50,8 @@ export function AdminFilterBar({
   const t = useAdminT();
   const failed = resolved.filter((filter) => filter.error);
   const conflicts = resolved.filter(({ option }) => {
-    if (!option) return false;
+    // A command may have touched the card before it moved columns or boards.
+    if (!option || surface === "commands") return false;
     return (
       (filters.boardId !== null &&
         option.boardId !== null &&
@@ -63,6 +67,7 @@ export function AdminFilterBar({
     value?: string;
     text: string;
     name?: string;
+    context?: string;
   }[] = [];
   if (filters.labelMatch === "all") {
     choiceChips.push({
@@ -82,7 +87,7 @@ export function AdminFilterBar({
   for (const [key, choices] of [
     ["priority", PRIORITY_CHOICES],
     ["kind", KIND_CHOICES],
-    ["type", LINK_TYPE_CHOICES],
+    ...(surface === "cardLinks" ? [["type", LINK_TYPE_CHOICES] as const] : []),
   ] as const) {
     const selected = selectedFilterValues(filters, key);
     for (const { value, label } of choices) {
@@ -96,6 +101,36 @@ export function AdminFilterBar({
             value: t(label),
           }),
         });
+    }
+  }
+  for (const facet of offeredFilters(surface)) {
+    if ("type" in facet && isCodeLookup(facet)) {
+      const label = t(facet.label);
+      for (const value of selectedFilterValues(filters, facet.key)) {
+        choiceChips.push({
+          key: facet.key,
+          value,
+          text: value,
+          context: label,
+          name: t("admin.filters.remove", { facet: label, value }),
+        });
+      }
+    } else if (facet.kind === "id") {
+      const value = filters[facet.key];
+      if (!value) continue;
+      const label = t(facet.label);
+      const targetType =
+        filters.targetType?.length === 1 ? filters.targetType[0] : undefined;
+      choiceChips.push({
+        key: facet.key,
+        value,
+        text: value,
+        context:
+          facet.key === "targetId" && targetType
+            ? `${label} · ${targetType}`
+            : label,
+        name: t("admin.filters.remove", { facet: label, value }),
+      });
     }
   }
   for (const key of Object.keys(
@@ -135,19 +170,42 @@ export function AdminFilterBar({
     value,
     text,
     name,
+    context,
   }: (typeof choiceChips)[number]) => (
     <FilterChip
       key={`${key}:${value ?? ""}`}
       filterKey={key}
       value={value}
+      title={context ? `${context}: ${text}` : undefined}
       removeLabel={
         name ?? t("admin.filters.removeUnsupported", { facet: text })
       }
       onRemove={() => onRemove(key, value)}
     >
-      <span className="min-w-0 truncate" title={text}>
-        {text}
-      </span>
+      {context ? (
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 truncate text-muted-foreground">
+            {context}
+          </span>
+          <span
+            className={
+              key === "commandId" || key === "targetId"
+                ? "min-w-0 max-w-[12ch] truncate font-mono"
+                : "min-w-0 truncate font-mono"
+            }
+            title={text}
+          >
+            {text}
+          </span>
+        </span>
+      ) : (
+        <span className="min-w-0 truncate" title={text}>
+          {text}
+        </span>
+      )}
+      {key === "commandId" && value ? (
+        <CopyButton value={value} ariaLabel={t("admin.common.copy")} />
+      ) : null}
     </FilterChip>
   );
 

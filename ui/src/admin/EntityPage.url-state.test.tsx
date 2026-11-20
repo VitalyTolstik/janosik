@@ -1124,6 +1124,193 @@ async function openListFacet(
   return dialog;
 }
 
+describe("Audit hub filters", () => {
+  it("filters as an operator with a keyboard-applied audit actor and an exact target", async () => {
+    const state = emptyAdminState();
+    const email = "master-who-authored-the-audit-entry@example.com";
+    state.audit = [
+      {
+        id: "event-1",
+        adminId: "actor-1",
+        adminEmail: email,
+        action: "board.archive",
+        targetType: "board",
+        targetId: "scope:b-1",
+        targetExists: null,
+        details: null,
+        createdAt: Date.now(),
+      },
+      {
+        id: "event-2",
+        adminId: "actor-2",
+        adminEmail: "reader@example.com",
+        action: "board.archive",
+        targetType: "board",
+        targetId: "scope:b-1",
+        targetExists: null,
+        details: null,
+        createdAt: Date.now(),
+      },
+    ];
+    const server = new FakeAdminServer(state);
+    server.sessionRole = "OPERATOR";
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const user = userEvent.setup();
+    renderAdmin(
+      "/admin/audit?tab=audit&action=board.archive&targetType=board&period=30d",
+    );
+
+    const dialog = await openListFacet(
+      user,
+      "Filters for the audit trail",
+      "Master",
+    );
+    const search = dialog.getByRole("searchbox", {
+      name: "Search options — Master",
+    });
+    await user.type(search, "who-authored");
+    const actor = await dialog.findByRole("checkbox", {
+      name: new RegExp(email),
+    });
+    expect(
+      dialog.queryByRole("checkbox", { name: /reader@example.com/ }),
+    ).not.toBeInTheDocument();
+    await user.tab();
+    expect(actor).toHaveFocus();
+    await user.keyboard("[Space]");
+    expect(actor).toBeChecked();
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+    const chip = await screen.findByTestId("admin-filter-adminId");
+    expect(chip).toHaveTextContent(email);
+    expect(screen.queryByRole("link", { name: email })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Filters/ })).toHaveFocus();
+    expect(
+      lastRequest(server, "/admin/filter-options")?.query.get("type"),
+    ).toBe("auditActor");
+    expect(currentQuery().getAll("adminId")).toEqual(["actor-1"]);
+
+    const target = await openListFacet(
+      user,
+      "Filters for the audit trail",
+      "Target ID",
+    );
+    const input = target.getByRole("textbox", { name: "Target ID" });
+    await user.type(input, "scope:b-1{Enter}");
+    expect(
+      await screen.findByTestId("admin-filter-targetId"),
+    ).toHaveTextContent("Target ID · board");
+    await waitFor(() => {
+      const request = lastRequest(server, "/admin/entities/audit")?.query;
+      expect(request?.get("targetId")).toBe("scope:b-1");
+      expect(request?.get("targetType")).toBe("board");
+      expect(request?.get("action")).toBe("board.archive");
+      expect(request?.get("from")).toBeTruthy();
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        "Filters applied · Results: 1",
+      );
+    });
+    await user.click(screen.getByTestId("admin-filter-clear-action"));
+    expect(currentQuery().has("action")).toBe(false);
+    expect(currentQuery().get("period")).toBe("30d");
+  });
+
+  it("loads each event type from its own list and keeps a command's historical card scope", async () => {
+    const state = stateWithTwoBoards();
+    state.users = [adminUser({ id: "event-user", displayName: "Event user" })];
+    state.commands = [
+      {
+        id: "cmd-1",
+        boardId: "b-1",
+        boardTitle: "Same name",
+        actorId: "event-user",
+        actorEmail: "event-user@example.com",
+        type: "MOVE_CARD",
+        seq: 1,
+        createdAt: Date.now(),
+        payload: null,
+        auditId: null,
+        touches: ["card:card-2", "column:col-1"],
+      },
+    ];
+    state.activity = [
+      adminActivity({
+        id: "member-event",
+        boardId: "b-1",
+        type: "member_role_changed",
+        actorId: "event-user",
+        cardId: null,
+        createdAt: Date.now(),
+      }),
+      adminActivity({
+        id: "comment-event",
+        boardId: "b-1",
+        type: "comment_edited",
+        actorId: "event-user",
+        createdAt: Date.now(),
+      }),
+    ];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const user = userEvent.setup();
+    renderAdmin(
+      "/admin/audit?tab=commands&boardId=b-1&cardId=card-2&columnId=col-1&actorId=event-user",
+    );
+
+    const command = await openListFacet(
+      user,
+      "Filters for the command log",
+      "Action",
+    );
+    await user.click(
+      await command.findByRole("checkbox", { name: "MOVE_CARD" }),
+    );
+    await user.click(command.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByTestId("admin-filter-cardId")).toHaveTextContent(
+      "Moderate me too",
+    );
+    expect(screen.getByTestId("admin-filter-type")).toHaveTextContent(
+      "MOVE_CARD",
+    );
+    expect(
+      lastRequest(server, "/admin/filter-options")?.query.get("type"),
+    ).toBe("commandType");
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        "Results: 1",
+      );
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("admin-hub-tab-activity"));
+    const activity = await openListFacet(user, "Filters for activity", "Event");
+    await user.click(
+      await activity.findByRole("checkbox", { name: "member_role_changed" }),
+    );
+    expect(
+      activity.getByRole("checkbox", { name: "comment_edited" }),
+    ).toBeVisible();
+    expect(
+      activity.queryByRole("checkbox", { name: "MOVE_CARD" }),
+    ).not.toBeInTheDocument();
+    await user.click(activity.getByRole("button", { name: "Apply" }));
+    expect(screen.getByTestId("admin-filter-type")).toHaveTextContent(
+      "member_role_changed",
+    );
+    expect(
+      lastRequest(server, "/admin/filter-options")?.query.get("type"),
+    ).toBe("activityType");
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        "Results: 1",
+      ),
+    );
+    expect(
+      screen.queryByRole("row", { name: /comment_edited/ }),
+    ).not.toBeInTheDocument();
+    expect(currentQuery().get("boardId")).toBe("b-1");
+  });
+});
+
 describe("content list filters", () => {
   it.each(["en", "ru"] as const)(
     "uses the %s verification radio, combines it with period, and clears with Any",

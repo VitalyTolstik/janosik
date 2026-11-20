@@ -8,7 +8,7 @@ import { useFilterOptions } from "./use-filter-options";
 
 function useResolvedFilter(
   filters: AdminListFilters | undefined,
-  key: LookupFacet["key"],
+  key: Exclude<LookupFacet["key"], "type" | "action" | "targetType">,
 ) {
   const ids = selectedFilterValues(filters, key);
   const facet = filterFacet(key);
@@ -31,6 +31,8 @@ export function useListFilterOptions(filters: AdminListFilters | undefined) {
   const author = useResolvedFilter(filters, "authorId");
   const uploader = useResolvedFilter(filters, "uploadedById");
   const adminMember = useResolvedFilter(filters, "adminMemberId");
+  const actor = useResolvedFilter(filters, "actorId");
+  const admin = useResolvedFilter(filters, "adminId");
   return [
     board,
     column,
@@ -40,6 +42,8 @@ export function useListFilterOptions(filters: AdminListFilters | undefined) {
     author,
     uploader,
     adminMember,
+    actor,
+    admin,
   ].flatMap(({ ids, ...filter }) =>
     ids.map((id) => ({
       ...filter,

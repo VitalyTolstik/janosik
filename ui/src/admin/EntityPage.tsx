@@ -301,7 +301,10 @@ export function EntityPage<E extends AdminEntity>({
   const rejectedFilter = filterSurface
     ? unsupportedFilter(list.errorBody)
     : undefined;
-  const rejectedLabel = rejectedFilter && filterLabel(rejectedFilter);
+  const rejectedLabel =
+    rejectedFilter &&
+    filterSurface &&
+    filterLabel(rejectedFilter, filterSurface);
   const rejectedName = rejectedLabel ? t(rejectedLabel) : rejectedFilter;
 
   const pendingFilterView = useRef<{
@@ -338,7 +341,7 @@ export function EntityPage<E extends AdminEntity>({
   ) => {
     const filters = { ...view.filters, ...patch };
     const cleared =
-      filters.boardId !== view.filters.boardId
+      filterSurface !== "commands" && filters.boardId !== view.filters.boardId
         ? BOARD_DEPENDENTS.filter((dependent) => filters[dependent] !== null)
         : [];
     for (const dependent of cleared) filters[dependent] = null;
@@ -378,7 +381,7 @@ export function EntityPage<E extends AdminEntity>({
       (value === undefined || button.dataset.filterValue === value);
     const index = buttons.findIndex(removes);
     const removedKeys: readonly string[] =
-      key === "boardId"
+      key === "boardId" && filterSurface !== "commands"
         ? [...BOARD_DEPENDENTS, "labelMatch"]
         : key === "labelId" && patch.labelMatch === undefined
           ? ["labelMatch"]

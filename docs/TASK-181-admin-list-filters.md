@@ -371,6 +371,8 @@ Omitted: board/column/label direct filters (target type + id covers the reliable
 fields), status. Audit details are free JSON; do not invent filters over
 unvalidated detail keys. The owner-only Masters page remains unchanged and is
 not reused as the actor picker: actor options come only from audit-visible rows.
+For failed sign-ins without an admin id, clear the Master chip and search for
+the attempted email. The Action filter can still narrow to `admin.login_failed`.
 
 #### Commands (`/admin/audit?tab=commands`)
 
@@ -387,6 +389,8 @@ not reused as the actor picker: actor options come only from audit-visible rows.
 Omitted: status, priority, due, label. A command is an event; its type/actor/
 target are the honest facets. `labelId` would require parsing payloads and is not
 reliable.
+Card and Column match historical `touches` entries. A card's current board or
+column does not restrict the commands that can appear in its history.
 
 #### Activity (`/admin/audit?tab=activity`)
 
@@ -469,7 +473,8 @@ Clear search and filters.
 follows the existing per-entity allowlist, with `all` accepted everywhere.
 The registry's **implemented** set contains predicates shipped on the
 surface. The matrix starts from the 181.1 legacy scopes and includes the
-181.3 card facets, 181.4 moderation facets, and 181.5 content facets.
+181.3 card facets, 181.4 moderation facets, 181.5 content facets, and 181.6
+audit hub facets.
 **Offered** records facets planned for the picker.
 A picker can expose a facet once its owning wave implements it. Legacy deep
 links keep their existing behavior regardless of picker visibility.
@@ -491,9 +496,9 @@ can resolve options for later waves independently of list filtering.
 | cardLinks | `boardId`, `cardId`, `type` (static `CARD_LINK_TYPES`) | — | board, card, type, status |
 | comments | `boardId`, `columnId`, `labelId`, `cardId`, `from`/`to`, `authorId`, `kind` | — | board, card, author, kind, period, status |
 | attachments | `boardId`, `cardId`, `columnId`, `labelId`, `uploadedById`, `mime`, `transcode`, `from`/`to` | — | board, card, uploader, mime, transcode, period, status |
-| activity | `boardId`, `cardId`, `columnId`, `labelId`, `from`/`to` | `actorId`, `type` | board, card, actor, type, period |
-| commands | `boardId`, `columnId`, `cardId`, `commandId` (176.10), `from`/`to` | `actorId`, `type` | board, actor, type, card, column, commandId, period |
-| audit | `commandId` (176.10), `from`/`to` | `adminId`, `action`, `targetType`, `targetId` | audit actor, action, targetType, targetId, commandId, period |
+| activity | `boardId`, `cardId`, `columnId`, `labelId`, `actorId`, `type`, `from`/`to` | — | board, card, actor, type, period |
+| commands | `boardId`, `columnId`, `cardId`, `actorId`, `type`, `commandId` (176.10), `from`/`to` | — | board, actor, type, card, column, commandId, period |
+| audit | `adminId`, `action`, `targetType`, `targetId`, `commandId` (176.10), `from`/`to` | — | audit actor, action, targetType, targetId, commandId, period |
 | sessions | `from`/`to` | — | period only (existing) |
 | tokens | `status`, `from`/`to` | — | period only (existing) |
 | shares | `boardId`, `from`/`to` | — | none (TASK-177.5) |
@@ -1131,6 +1136,8 @@ Behavior:
 - [TASK-181.5 benchmark evidence](./TASK-181.5-content-perf.md) records the
   six content lists on the 5k gate fixture, including combined cases and their
   query plans.
+- [TASK-181.6 benchmark evidence](./TASK-181.6-audit-perf.md) records the Audit
+  hub's 5k before/after runs, index decisions and 25k rollout gate.
 - Candidate indexes (add only when the query plan proves a need; do not add a
   blanket index for every low-cardinality facet):
   - `Command @@index([actorId, createdAt])` for actor + period;

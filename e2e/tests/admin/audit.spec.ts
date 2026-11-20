@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Locator } from "@playwright/test";
 import { test, expect } from "@/fixtures/admin.js";
 import {
   adminPath,
@@ -12,7 +13,7 @@ import {
   submitAdminLogin,
   uniqueToken,
 } from "@/helpers/admin.js";
-import { seedRichCard } from "@/helpers/admin-content.js";
+import { addComment, seedRichCard } from "@/helpers/admin-content.js";
 
 /**
  * Audit and security events (TASK-162.15 full): successful/failed sign-ins,
@@ -304,4 +305,218 @@ test("F4: a commandId deep link opens exactly the correlated audit row", async (
       url.searchParams.get("commandId") === commandId
     );
   });
+
+  await page.goto(
+    `${adminPath("audit")}?tab=commands&commandId=${commandId}&type=UPDATE_CARD&boardId=${board.id}`,
+  );
+  await page.getByTestId(`admin-command-audit-${commandId}`).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("tab") === "audit" &&
+      url.searchParams.get("commandId") === commandId &&
+      url.searchParams.get("returnTo")?.includes("type=UPDATE_CARD") === true,
+  );
+  await expect(row).toHaveCount(1);
+  await row.locator("button[aria-expanded]").click();
+  await expect(row.locator("pre")).toContainText(commandId);
+});
+
+async function expectWithinWidth(control: Locator, width: number) {
+  await control.scrollIntoViewIfNeeded();
+  await expect(control).toBeInViewport();
+  const box = await control.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+  return box!;
+}
+
+for (const { width, lang } of [
+  { width: 1440, lang: "en" },
+  { width: 1024, lang: "ru" },
+  { width: 390, lang: "ru" },
+]) {
+  test(`operator filters the audit trail at ${width}px in ${lang}`, async ({
+    page,
+    admin,
+    operator,
+    targetUser,
+  }) => {
+    const blocked = await admin.patch(`/api/v1/admin/users/${targetUser.id}`, {
+      data: { disabled: true },
+    });
+    expect(blocked.ok(), await blocked.text()).toBeTruthy();
+    await loginAsMaster(page, operator);
+    await page.goto(`${adminPath("audit")}?tab=audit&offset=1`);
+    if (lang === "ru") {
+      await page.getByRole("button", { name: "Change language" }).click();
+      await page.getByRole("menuitem", { name: "Русский" }).click();
+      await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+    }
+    await page.setViewportSize({ width, height: 844 });
+    const ru = lang === "ru";
+    const master = ru ? "Мастер" : "Master";
+    const action = ru ? "Действие" : "Action";
+    const targetType = ru ? "Тип цели" : "Target type";
+    const targetId = ru ? "ID цели" : "Target ID";
+    const apply = ru ? "Применить" : "Apply";
+    const trigger = page.getByRole("button", {
+      name: ru ? /^Фильтры( \d+)?$/ : /^Filters( \d+)?$/,
+    });
+    const dialog = page.getByRole("dialog", {
+      name: ru ? "Фильтры журнала аудита" : "Filters for the audit trail",
+    });
+    const open = async (facet: string) => {
+      await trigger.focus();
+      await trigger.press("Enter");
+      await expect(dialog).toBeVisible();
+      const button = dialog.getByRole("button", { name: facet, exact: true });
+      const bounds = await expectWithinWidth(button, width);
+      expect(bounds.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 32);
+      await button.press("Enter");
+    };
+    const select = async (
+      facet: string,
+      query: string,
+      name: string | RegExp,
+    ) => {
+      await open(facet);
+      const input = dialog.getByRole("searchbox", {
+        name: `${ru ? "Найти значение" : "Search options"} — ${facet}`,
+      });
+      await expect(input).toBeFocused();
+      await expectWithinWidth(input, width);
+      await input.fill(query);
+      const option = dialog.getByRole("checkbox", { name });
+      const row = await expectWithinWidth(option.locator(".."), width);
+      expect(row.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 32);
+      await option.press("Space");
+      await expect(option).toBeChecked();
+      const submit = dialog.getByRole("button", { name: apply, exact: true });
+      await expectWithinWidth(submit, width);
+      await submit.press("Enter");
+      await expect(trigger).toBeFocused();
+    };
+
+    for (const name of ["audit", "commands", "activity"]) {
+      await expectWithinWidth(page.getByTestId(`admin-hub-tab-${name}`), width);
+    }
+    await trigger.press("Space");
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    const { email } = ownerCredentials();
+    await select(master, email, new RegExp(email));
+    await expect(page).toHaveURL(
+      (url) =>
+        url.searchParams.has("adminId") && !url.searchParams.has("offset"),
+    );
+    await select(action, "user.disable", "user.disable");
+    await select(targetType, "user", "user");
+    await open(targetId);
+    const id = dialog.getByRole("textbox", { name: targetId, exact: true });
+    await expectWithinWidth(id, width);
+    await id.fill(targetUser.id);
+    await id.press("Enter");
+
+    const periods = ru
+      ? ["За всё время", "24 часа", "7 дней", "30 дней"]
+      : ["Any time", "24 hours", "7 days", "30 days"];
+    for (const label of periods)
+      await expectWithinWidth(
+        page.getByRole("button", { name: label, exact: true }),
+        width,
+      );
+    await page.getByRole("button", { name: periods[3], exact: true }).click();
+    const results = page.getByTestId("admin-filter-results");
+    await expect(results).toHaveText(
+      ru
+        ? "Фильтры применены · Результатов: 1"
+        : "Filters applied · Results: 1",
+    );
+    await expect(page).toHaveURL(
+      (url) =>
+        url.searchParams.get("period") === "30d" &&
+        url.searchParams.get("targetId") === targetUser.id,
+    );
+    const row = page
+      .getByRole("row")
+      .filter({ has: page.getByTestId(`admin-id-${targetUser.id}`) });
+    await expect(row).toContainText(email);
+    await expect(
+      row.getByRole("link", { name: email, exact: true }),
+    ).toHaveCount(0);
+    const chips = ["adminId", "action", "targetType", "targetId"];
+    for (const key of chips) {
+      const chip = await expectWithinWidth(
+        page.getByTestId(`admin-filter-${key}`),
+        width,
+      );
+      expect(chip.width).toBeLessThanOrEqual(Math.min(320, width - 32));
+      const remove = await expectWithinWidth(
+        page.getByTestId(`admin-filter-clear-${key}`),
+        width,
+      );
+      expect(remove.width).toBeGreaterThanOrEqual(24);
+      expect(remove.height).toBeGreaterThanOrEqual(24);
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await page.reload();
+    await expect(results).toContainText(/1$/);
+    await page.getByTestId("admin-filter-clear-action").press("Enter");
+    await expect(
+      page.getByTestId("admin-filter-clear-targetType"),
+    ).toBeFocused();
+    await expect(page).toHaveURL(
+      (url) =>
+        !url.searchParams.has("action") && url.searchParams.has("adminId"),
+    );
+  });
+}
+
+test("operator can filter commands and activity on the same board", async ({
+  page,
+  board,
+  operator,
+}) => {
+  const columnId = await board.column(uniqueToken("filter-column"));
+  const cardId = await board.card(columnId, uniqueToken("filter-card"));
+  await addComment(board.api, cardId, "Audit hub activity fixture");
+  await loginAsMaster(page, operator);
+  const scope = new URLSearchParams({
+    tab: "commands",
+    boardId: board.id,
+    cardId,
+    columnId,
+    actorId: board.userId,
+    type: "ADD_CARD",
+    period: "24h",
+  });
+  await page.goto(`${adminPath("audit")}?${scope}`);
+  const results = page.getByTestId("admin-filter-results");
+  await expect(results).toHaveText("Filters applied · Results: 1");
+  for (const key of ["boardId", "cardId", "columnId", "actorId", "type"])
+    await expect(page.getByTestId(`admin-filter-${key}`)).toBeVisible();
+  await page.getByTestId("admin-hub-tab-activity").click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("boardId") === board.id &&
+      !url.searchParams.has("type"),
+  );
+  await page.getByRole("button", { name: /^Filters/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Filters for activity" });
+  await dialog.getByRole("button", { name: "Event", exact: true }).click();
+  await dialog
+    .getByRole("checkbox", { name: "comment_added", exact: true })
+    .check();
+  await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(results).toHaveText("Filters applied · Results: 1");
+  await expect(
+    page.getByRole("row").filter({ hasText: "comment_added" }),
+  ).toHaveCount(1);
+  await expect(page.getByTestId("admin-filter-type")).toContainText(
+    "comment_added",
+  );
 });

@@ -35,7 +35,7 @@ describe("URL-backed admin lists", () => {
       "/admin/boards?tab=cards&verified=true&authorId=u-1&adminMemberId=u-1",
       "?tab=cards",
     ],
-    ["/admin/audit?tab=audit&adminId=a-1&targetId=c-1", "?tab=audit"],
+    ["/admin/audit?tab=audit&actorId=a-1&boardId=b-1", "?tab=audit"],
     ["/admin/boards?verified=true", ""],
     ["/admin/moderation?tab=attachments&kind=blocker", "?tab=attachments"],
   ])(
@@ -58,6 +58,28 @@ describe("URL-backed admin lists", () => {
       expect(result.current.list.filterError).toBeUndefined();
     },
   );
+
+  it("sends repeated audit facets and the target from the canonical deep link", async () => {
+    const { result, fetcher } = setup(
+      "/admin/audit?tab=audit&adminId=a-2&adminId=a-1&action=board.command&targetId=scope:b-1&offset=2",
+    );
+    await waitFor(() =>
+      expect(result.current.location.search).toBe(
+        "?tab=audit&offset=2&action=board.command&adminId=a-1&adminId=a-2&targetId=scope%3Ab-1",
+      ),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith({
+      search: "",
+      status: "all",
+      from: undefined,
+      limit: 50,
+      offset: 2,
+      action: ["board.command"],
+      adminId: ["a-1", "a-2"],
+      targetId: "scope:b-1",
+    });
+  });
 
   it("sends the card facets from the canonical deep link", async () => {
     const { result, fetcher } = setup(
