@@ -642,6 +642,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the total is unknown, or `N of M` when the total is known. A 65-comment
   regression test covers the transition to an exact count after pagination.
 
+- TASK-182 phase 2: if the due-date picker fails in admin card Properties, the
+  popover immediately offers Retry and a native date-and-time input while the
+  other fields stay editable. A successful Retry moves keyboard focus into the
+  restored picker. The native input uses the existing Save and Remove controls.
+
 - TASK-179 agents live-review feedback: the Attention badge counts pending
   decisions only (stale sessions no longer inflate it), and a paused session
   stays in the Attention live preview with a `Paused` pill even when its

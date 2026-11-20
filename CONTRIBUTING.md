@@ -43,6 +43,13 @@ npm install
 npm run dev          # UI dev server on http://localhost:5173
 ```
 
+Worktrees that symlink the same `node_modules` may also share Vite's dependency
+cache. Stale prebundles were suspected in a dev-only admin calendar failure.
+If it happens after switching worktrees or changing dependencies, stop that dev
+server and restart it with `npm run dev -w ui -- --force`. This rebuilds the dev
+prebundles. The production build uses its own bundled assets, and the admin
+due-date editor can fall back to native input if its calendar fails at runtime.
+
 The dev UI runs in **server mode** — it talks to the API, so it shows a
 **sign-in screen** until you have an account; `npm run dev` alone does not show a
 board. In server mode (accounts, shared boards, realtime) you also need
