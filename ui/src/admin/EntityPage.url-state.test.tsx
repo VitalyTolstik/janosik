@@ -14,6 +14,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { ADMIN_FILTER_OPTION_LIMITS } from "@janosik/shared";
 
 import { I18nProvider } from "@/i18n";
 import i18n, { ensureLocale } from "@/i18n/i18n";
@@ -1125,12 +1126,40 @@ async function openListFacet(
   return dialog;
 }
 
+function auditTargetServer() {
+  const state = stateWithTwoBoards();
+  const entry = {
+    id: "board-event",
+    adminId: "master-1",
+    adminEmail: "master@example.com",
+    action: "board.archive",
+    targetType: "board",
+    targetId: "b-1",
+    targetExists: true,
+    details: null,
+    createdAt: Date.now(),
+  };
+  state.audit = [
+    entry,
+    {
+      ...entry,
+      id: "user-event",
+      action: "user.disable",
+      targetType: "user",
+      targetId: "user-1",
+    },
+  ];
+  const server = new FakeAdminServer(state);
+  vi.stubGlobal("fetch", server.fetchImpl);
+  return server;
+}
+
 describe("Audit hub filters", () => {
-  it("leaves unsupported audit type filters unlabeled", () => {
+  it("uses each surface's type label only where it supports the facet", () => {
     expect(filterLabel("type", "audit")).toBeUndefined();
     expect(filterLabel("type", "cardLinks")).toBe("admin.filters.linkType");
-    expect(filterLabel("type", "commands")).toBeUndefined();
-    expect(filterLabel("type", "activity")).toBeUndefined();
+    expect(filterLabel("type", "commands")).toBe("admin.commands.column.type");
+    expect(filterLabel("type", "activity")).toBe("admin.activity.column.type");
   });
 
   it.each([
@@ -1151,6 +1180,140 @@ describe("Audit hub filters", () => {
     await waitFor(() => expect(currentQuery().get("boardId")).toBe(boardB));
     expect(currentQuery().get("cardId")).toBe(keepTouches ? cardA : null);
     expect(currentQuery().get("columnId")).toBe(keepTouches ? columnA : null);
+  });
+
+  it("keeps command card and column touches when removing the board chip", async () => {
+    const server = filterServer();
+    renderAdmin(
+      `/admin/audit?tab=commands&boardId=${boardA}&cardId=${cardA}&columnId=${columnA}`,
+    );
+    await userEvent.click(
+      await screen.findByTestId("admin-filter-clear-boardId"),
+    );
+
+    await waitFor(() => {
+      expect([...currentQuery()]).toEqual([
+        ["tab", "commands"],
+        ["cardId", cardA],
+        ["columnId", columnA],
+      ]);
+      const request = lastRequest(server, "/admin/entities/commands")?.query;
+      expect(request?.has("boardId")).toBe(false);
+      expect(request?.get("cardId")).toBe(cardA);
+      expect(request?.get("columnId")).toBe(columnA);
+    });
+    expect(screen.getByTestId("admin-filter-cardId")).toBeVisible();
+    expect(screen.getByTestId("admin-filter-columnId")).toBeVisible();
+  });
+
+  it.each([
+    ["en", "Actor", "Type to narrow the column list."],
+    ["ru", "Инициатор", "Введите запрос, чтобы сузить список колонок."],
+  ] as const)(
+    "shows the %s commands column hint and actor facet",
+    async (locale, actor, hint) => {
+      const server = filterServer();
+      const [column] = server.boardColumns[boardB];
+      server.boardColumns[boardB] = Array.from(
+        { length: ADMIN_FILTER_OPTION_LIMITS.default + 1 },
+        (_, index) => ({ ...column, id: `column-B-${index}` }),
+      );
+      const copy = (key: Parameters<typeof adminMessage>[0], facet?: string) =>
+        adminMessage(key, locale, facet ? { facet } : {});
+      await ensureLocale(locale);
+      await i18n.changeLanguage(locale);
+      const user = userEvent.setup();
+      const view = renderAdmin(`/admin/audit?tab=commands&boardId=${boardA}`);
+      try {
+        const columnLabel = copy("admin.filter.column");
+        const dialog = await openListFacet(
+          user,
+          copy("admin.filters.title.commands"),
+          columnLabel,
+          new RegExp(`^${copy("admin.filters.open")}`),
+        );
+        expect(await dialog.findByText(hint, { exact: true })).toBeVisible();
+        await user.click(
+          dialog.getByRole("button", {
+            name: copy("admin.filters.back", columnLabel),
+          }),
+        );
+        await user.click(dialog.getByRole("button", { name: actor }));
+        expect(
+          dialog.getByRole("searchbox", {
+            name: copy("admin.filters.search", actor),
+          }),
+        ).toBeVisible();
+      } finally {
+        view.unmount();
+        await i18n.changeLanguage("en");
+      }
+    },
+  );
+
+  it("recovers from a rejected audit type while keeping the action and exact total", async () => {
+    const server = auditTargetServer();
+    server.failNextStatuses.push({
+      path: "/admin/entities/audit",
+      status: 400,
+      body: { code: "unsupported_filter", filter: "type" },
+    });
+    renderAdmin("/admin/audit?tab=audit&action=board.archive&type=reference");
+
+    const remove = await screen.findByRole("button", {
+      name: "Remove filter: type",
+    });
+    expect(screen.getByTestId("admin-filter-action")).toHaveTextContent(
+      "board.archive",
+    );
+    await userEvent.click(remove);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+        /^Filters applied · Results: 1$/,
+      ),
+    );
+    expect([...currentQuery()]).toEqual([
+      ["tab", "audit"],
+      ["action", "board.archive"],
+    ]);
+    expect(screen.getByTestId("admin-filter-action")).toHaveTextContent(
+      "board.archive",
+    );
+    expect(screen.getByText("1 admin actions")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Remove filter: type" }),
+    ).not.toBeInTheDocument();
+    const request = lastRequest(server, "/admin/entities/audit")?.query;
+    expect(request?.getAll("action")).toEqual(["board.archive"]);
+    expect(request?.has("type")).toBe(false);
+  });
+
+  it("renders the target chip as text after selecting a second target type", async () => {
+    auditTargetServer();
+    const user = userEvent.setup();
+    renderAdmin("/admin/audit?tab=audit&targetId=b-1&targetType=board");
+
+    const chip = within(await screen.findByTestId("admin-filter-targetId"));
+    expect(await chip.findByRole("link", { name: "b-1" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/admin\/boards\/b-1\?returnTo=/),
+    );
+
+    const dialog = await openListFacet(
+      user,
+      "Filters for the audit trail",
+      "Target type",
+    );
+    await user.click(await dialog.findByRole("checkbox", { name: "user" }));
+    await user.click(dialog.getByRole("button", { name: "Apply" }));
+
+    expect(currentQuery().getAll("targetType")).toEqual(["board", "user"]);
+    expect(chip.getByTitle("b-1")).toHaveTextContent(/^b-1$/);
+    expect(chip.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
+      /^Filters applied · Results: 1$/,
+    );
   });
 
   it("filters as an operator with a keyboard-applied audit actor and an exact target", async () => {

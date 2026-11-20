@@ -145,8 +145,11 @@ export function filterLabel(
 ): AdminMessageKey | undefined {
   if (key === "unassigned") return "admin.filters.unassigned";
   if (key === "labelMatch") return "admin.filters.labelMatch";
-  if (key === "type")
+  if (key === "type") {
+    if (surface === "commands" || surface === "activity")
+      return eventTypes[surface].label;
     return surface === "cardLinks" ? definitions.type.label : undefined;
+  }
   if (key === "actorId" && surface === "commands") return commandActor.label;
   return Object.hasOwn(definitions, key)
     ? definitions[key as FacetKey].label

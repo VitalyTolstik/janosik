@@ -577,7 +577,7 @@ export function EntityPage<E extends AdminEntity>({
           />
         ) : list.errorStatus === 403 ? (
           <ForbiddenState onBack={() => navigate("/admin")} />
-        ) : rejectedName ? (
+        ) : rejectedFilter && rejectedName ? (
           <EmptyState
             announce
             message={t("admin.filters.unsupported", { facet: rejectedName })}
@@ -587,11 +587,21 @@ export function EntityPage<E extends AdminEntity>({
                 size="sm"
                 className="h-11 sm:h-8"
                 onClick={() => {
-                  if (rejectedFilter && rejectedLabel) {
+                  if (rejectedLabel) {
                     removeFilter(rejectedFilter as FilterKey);
-                  } else {
-                    clearAllFilters();
+                    return;
                   }
+                  filterTriggerRef.current?.focus();
+                  const query = new URLSearchParams(location.search);
+                  if (query.has(rejectedFilter)) {
+                    query.delete(rejectedFilter);
+                    void navigate({
+                      search: query.toString(),
+                      hash: location.hash,
+                    });
+                  }
+                  // The unsupported key may already have been dropped by URL canonicalization.
+                  list.reload();
                 }}
               >
                 {t("admin.filters.removeUnsupported", { facet: rejectedName })}
