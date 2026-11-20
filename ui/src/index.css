@@ -190,7 +190,7 @@ html.light {
 @media (min-width: 761px) {
   html[lang="ru"] .agents-session-grid {
     grid-template-columns:
-      minmax(128px, 1.35fr) minmax(120px, 1.2fr) 82px
+      minmax(128px, 1.35fr) minmax(120px, 1.2fr) 112px
       140px;
   }
 }
@@ -199,7 +199,7 @@ html.light {
   html[lang="ru"] .agents-session-grid {
     grid-template-columns:
       minmax(140px, 1.4fr) minmax(140px, 1.35fr) minmax(108px, 1.1fr)
-      82px 140px;
+      112px 140px;
   }
 }
 
