@@ -35,7 +35,10 @@ describe("URL-backed admin lists", () => {
       "/admin/boards?tab=cards&verified=true&authorId=u-1&adminMemberId=u-1",
       "?tab=cards",
     ],
-    ["/admin/audit?tab=audit&actorId=a-1&boardId=b-1", "?tab=audit"],
+    [
+      "/admin/audit?tab=audit&actorId=a-1&boardId=b-1&type=reference",
+      "?tab=audit",
+    ],
     ["/admin/boards?verified=true", ""],
     ["/admin/moderation?tab=attachments&kind=blocker", "?tab=attachments"],
   ])(

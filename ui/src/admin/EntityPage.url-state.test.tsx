@@ -23,6 +23,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { adminApi } from "./admin-client";
 import AdminApp from "./AdminApp";
 import { adminMessage } from "./admin-i18n";
+import { filterLabel } from "./filters/filter-registry";
 import {
   FakeAdminServer,
   adminActivity,
@@ -1125,6 +1126,33 @@ async function openListFacet(
 }
 
 describe("Audit hub filters", () => {
+  it("leaves unsupported audit type filters unlabeled", () => {
+    expect(filterLabel("type", "audit")).toBeUndefined();
+    expect(filterLabel("type", "cardLinks")).toBe("admin.filters.linkType");
+    expect(filterLabel("type", "commands")).toBeUndefined();
+    expect(filterLabel("type", "activity")).toBeUndefined();
+  });
+
+  it.each([
+    ["/admin/audit?tab=commands", "Filters for the command log", true],
+    ["/admin/boards?tab=cards", "Filters for cards", false],
+    ["/admin/audit?tab=activity", "Filters for activity", false],
+  ])("updates the board scope on %s", async (path, title, keepTouches) => {
+    filterServer();
+    const user = userEvent.setup();
+    renderAdmin(
+      `${path}&boardId=${boardA}&cardId=${cardA}&columnId=${columnA}`,
+    );
+    const boards = await openListFacet(user, title, "Board");
+    await user.click(
+      await boards.findByRole("option", { name: /Design system.*board-BB/ }),
+    );
+
+    await waitFor(() => expect(currentQuery().get("boardId")).toBe(boardB));
+    expect(currentQuery().get("cardId")).toBe(keepTouches ? cardA : null);
+    expect(currentQuery().get("columnId")).toBe(keepTouches ? columnA : null);
+  });
+
   it("filters as an operator with a keyboard-applied audit actor and an exact target", async () => {
     const state = emptyAdminState();
     const email = "master-who-authored-the-audit-entry@example.com";
@@ -1196,9 +1224,12 @@ describe("Audit hub filters", () => {
     );
     const input = target.getByRole("textbox", { name: "Target ID" });
     await user.type(input, "scope:b-1{Enter}");
-    expect(
-      await screen.findByTestId("admin-filter-targetId"),
-    ).toHaveTextContent("Target ID · board");
+    const targetChip = await screen.findByTestId("admin-filter-targetId");
+    expect(targetChip).toHaveTextContent("Target ID · board");
+    expect(within(targetChip).getByTitle("scope:b-1")).toHaveTextContent(
+      /^scope:b-$/,
+    );
+    expect(within(targetChip).queryByRole("link")).not.toBeInTheDocument();
     await waitFor(() => {
       const request = lastRequest(server, "/admin/entities/audit")?.query;
       expect(request?.get("targetId")).toBe("scope:b-1");

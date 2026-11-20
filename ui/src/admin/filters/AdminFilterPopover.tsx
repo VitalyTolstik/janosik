@@ -254,6 +254,11 @@ function FilterMenu({
                 key={active.key}
                 facet={active}
                 boardId={surface === "commands" ? null : filters.boardId}
+                columnHint={
+                  surface === "commands"
+                    ? "admin.filters.narrowCommandColumn"
+                    : undefined
+                }
                 value={selectedFilterValues(filters, active.key)[0] ?? null}
                 onSelect={(id) => apply({ [active.key]: id })}
               />

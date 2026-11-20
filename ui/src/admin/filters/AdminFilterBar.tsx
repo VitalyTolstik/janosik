@@ -1,7 +1,7 @@
 import type { ReactNode, RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { useAdminT } from "../admin-i18n";
-import { CopyButton } from "../cells";
+import { CopyButton, EntityLink } from "../cells";
 import type { AdminListFilters } from "../admin-list-query";
 import { AdminFilterPopover } from "./AdminFilterPopover";
 import { FilterChip, FilterOptionChip } from "./FilterChip";
@@ -26,6 +26,7 @@ export function AdminFilterBar({
   triggerRef,
   chipRowRef,
   filters,
+  targetHref,
   resolved,
   filtered,
   canClear,
@@ -39,6 +40,7 @@ export function AdminFilterBar({
   triggerRef: RefObject<HTMLButtonElement>;
   chipRowRef: RefObject<HTMLDivElement>;
   filters: AdminListFilters;
+  targetHref?: string | null;
   resolved: ResolvedFilter[];
   filtered: boolean;
   canClear: boolean;
@@ -124,7 +126,7 @@ export function AdminFilterBar({
       choiceChips.push({
         key: facet.key,
         value,
-        text: value,
+        text: facet.key === "targetId" ? shortId(value) : value,
         context:
           facet.key === "targetId" && targetType
             ? `${label} · ${targetType}`
@@ -176,7 +178,7 @@ export function AdminFilterBar({
       key={`${key}:${value ?? ""}`}
       filterKey={key}
       value={value}
-      title={context ? `${context}: ${text}` : undefined}
+      title={context ? `${context}: ${value ?? text}` : undefined}
       removeLabel={
         name ?? t("admin.filters.removeUnsupported", { facet: text })
       }
@@ -193,9 +195,15 @@ export function AdminFilterBar({
                 ? "min-w-0 max-w-[12ch] truncate font-mono"
                 : "min-w-0 truncate font-mono"
             }
-            title={text}
+            title={value ?? text}
           >
-            {text}
+            {key === "targetId" && targetHref ? (
+              <EntityLink to={targetHref} ariaLabel={value}>
+                <>{text}</>
+              </EntityLink>
+            ) : (
+              text
+            )}
           </span>
         </span>
       ) : (

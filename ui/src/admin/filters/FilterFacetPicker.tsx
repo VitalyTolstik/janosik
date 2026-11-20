@@ -70,11 +70,13 @@ export function FilterIdPicker({
 export function FilterFacetPicker({
   facet,
   boardId,
+  columnHint,
   value,
   onSelect,
 }: {
   facet: Extract<LookupFacet, { kind: "lookup" }>;
   boardId: string | null;
+  columnHint?: AdminMessageKey;
   value: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -131,7 +133,12 @@ export function FilterFacetPicker({
           </Combobox.Item>
         ) : null}
       </Combobox.List>
-      <LookupStatus lookup={lookup} facet={facet} boardId={boardId} />
+      <LookupStatus
+        lookup={lookup}
+        facet={facet}
+        boardId={boardId}
+        columnHint={columnHint}
+      />
     </Combobox.Root>
   );
 }
@@ -208,11 +215,13 @@ function LookupStatus({
   lookup,
   facet,
   boardId,
+  columnHint = "admin.filters.narrowColumn",
   hasPinnedRows = false,
 }: {
   lookup: ReturnType<typeof useFilterOptions>;
   facet: LookupFacet;
   boardId: string | null;
+  columnHint?: AdminMessageKey;
   hasPinnedRows?: boolean;
 }) {
   const t = useAdminT();
@@ -237,7 +246,7 @@ function LookupStatus({
       ? "admin.filters.noOptions"
       : lookup.data?.hasMore
         ? facet.key === "columnId" && boardId === null
-          ? "admin.filters.narrowColumn"
+          ? columnHint
           : "admin.filters.refineSearch"
         : undefined;
   return (

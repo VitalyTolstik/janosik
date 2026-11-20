@@ -95,6 +95,7 @@ export interface EntityListConfig<T> {
   columns: Array<EntityColumn<T>>;
   /** Click target for a row — the entity's detail page when one exists. */
   rowHref?: (row: T) => string;
+  filterTargetHref?: (filters: AdminListFilters, rows: T[]) => string | null;
   rowTestId?: (row: T) => string;
   toolbar?: (reload: () => void) => ReactNode;
   actions?: (row: T, reload: () => void) => Array<EntityAction>;
@@ -293,6 +294,7 @@ export function EntityPage<E extends AdminEntity>({
     hasAdminFilters(list.filters);
   const resolvedFilters = useListFilterOptions(
     filterSurface ? list.filters : undefined,
+    filterSurface,
   );
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const filterChipRowRef = useRef<HTMLDivElement>(null);
@@ -498,6 +500,7 @@ export function EntityPage<E extends AdminEntity>({
           triggerRef={filterTriggerRef}
           chipRowRef={filterChipRowRef}
           filters={list.filters}
+          targetHref={config.filterTargetHref?.(list.filters, list.items)}
           resolved={resolvedFilters}
           filtered={filtered}
           canClear={

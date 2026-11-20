@@ -2,9 +2,12 @@
 
 On PostgreSQL 16.15, applying the five measured indexes cut the work of the
 Audit Action, Command Actor/Action, and Activity Actor/Event exact counts.
-After the migration, 81 of 87 filtered cases met both 5k thresholds. The
-remaining six are listed below. No filtered page or count plan examined
-10,000 or more rows in a sequential scan.
+Before the migration, 85/87 filtered cases passed. After the migration,
+81/87 passed. The index-only exact-count gains are real, but warm p95 was
+mixed and did not improve overall. Four cases newly missed the p95 budget:
+`commands/period@25`, `commands/combined@50`, `activity/period@50`, and
+`activity/combined-period@100`. The exception table lists all six
+after-migration misses.
 
 Raw SQL, exact totals, samples, and `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`
 for every page and count are in the
@@ -32,6 +35,17 @@ same for both runs, with `ANALYZE` after seeding and after the migration.
 A filtered case fails above +20% warm p95 versus its unfiltered list at the
 same page size, or when a sequential scan in either plan examines at least
 10,000 rows across all loops, including rows rejected by the filter.
+The largest sequential scan nodes on this fixture examined 5,000 rows.
+Before the migration the Audit Action count scanned all 5,000 `AdminAuditLog`
+rows, and Commands and Activity actor plans scanned 2,000 rows of their
+respective event tables. Activity page plans at page size 100 for Period,
+Event, and Event + Period still scan all 5,000 `Card` rows after the migration.
+The 10,000-row cutoff is above the size of the relations scanned in these
+5k plans. Only the 25k full preset exercises that cutoff.
+
+The artifact contains no before/after plans for `filter-options`, which
+uses `DISTINCT ON` for `auditActor` and `SELECT DISTINCT` for code option
+types. Those queries are part of the 25k qualification.
 
 ```bash
 # Set DATABASE_URL and ADMIN_FILTER_PERF_DATABASE_URL to the same scratch DB.
@@ -117,8 +131,8 @@ also contain cold and warm p50, cold p95, and each case's delta.
 ## Pre-rollout exception
 
 **Recorded 2026-11-20 for TASK-181.6.** Six after-migration cases exceeded
-the relative p95 budget. Their exact totals and scan limits held. The highest
-warm p95 was 7.164 ms. Page and count EXPLAIN execution together stayed below
+the relative p95 budget. Their exact totals matched. The highest warm p95 was
+7.164 ms. Page and count EXPLAIN execution together stayed below
 1.3 ms for these cases, while several of the warm misses came from a single
 round trip in the ten-sample window.
 
@@ -133,5 +147,7 @@ round trip in the ten-sample window.
 
 These results permit integration. **Passing both thresholds at 25k is a hard
 rollout gate for the Audit hub.** Seed a fresh dedicated database with
-`--preset full`, run `npm run perf:admin-filters -- --preset full --audit`
-with the shipping migration, and record page and count plans before rollout.
+`--preset full` and run `npm run perf:admin-filters -- --preset full --audit`
+with the shipping migration. Record the page and count plans from that run
+and capture `filter-options` plans separately on the same fixture before
+rollout.

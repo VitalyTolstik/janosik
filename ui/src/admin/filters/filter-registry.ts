@@ -111,11 +111,17 @@ const eventTypes = {
   }
 >;
 
+const commandActor = {
+  ...filterFacet("actorId"),
+  label: "admin.commands.filter.actor",
+} as const;
+
 export type FilterFacet =
   | {
       [Key in FacetKey]: ReturnType<typeof filterFacet<Key>>;
     }[FacetKey]
-  | (typeof eventTypes)[keyof typeof eventTypes];
+  | (typeof eventTypes)[keyof typeof eventTypes]
+  | typeof commandActor;
 
 export type LookupFacet = Extract<FilterFacet, { type: AdminFilterOptionType }>;
 export type DraftFacet = Extract<FilterFacet, { kind: "multi" }>;
@@ -128,6 +134,7 @@ export function offeredFilters(surface: FilterBarSurface): FilterFacet[] {
       return [];
     if (key === "type" && (surface === "commands" || surface === "activity"))
       return [eventTypes[surface]];
+    if (key === "actorId" && surface === "commands") return [commandActor];
     return [filterFacet(key as FacetKey) as FilterFacet];
   });
 }
@@ -138,8 +145,9 @@ export function filterLabel(
 ): AdminMessageKey | undefined {
   if (key === "unassigned") return "admin.filters.unassigned";
   if (key === "labelMatch") return "admin.filters.labelMatch";
-  if (key === "type" && (surface === "commands" || surface === "activity"))
-    return eventTypes[surface].label;
+  if (key === "type")
+    return surface === "cardLinks" ? definitions.type.label : undefined;
+  if (key === "actorId" && surface === "commands") return commandActor.label;
   return Object.hasOwn(definitions, key)
     ? definitions[key as FacetKey].label
     : undefined;

@@ -429,11 +429,10 @@ for (const { width, lang } of [
       );
     await page.getByRole("button", { name: periods[3], exact: true }).click();
     const results = page.getByTestId("admin-filter-results");
-    await expect(results).toHaveText(
-      ru
-        ? "Фильтры применены · Результатов: 1"
-        : "Filters applied · Results: 1",
-    );
+    const oneResult = ru
+      ? "Фильтры применены · Результатов: 1"
+      : "Filters applied · Results: 1";
+    await expect(results).toHaveText(oneResult);
     await expect(page).toHaveURL(
       (url) =>
         url.searchParams.get("period") === "30d" &&
@@ -464,7 +463,7 @@ for (const { width, lang } of [
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
     await page.reload();
-    await expect(results).toContainText(/1$/);
+    await expect(results).toHaveText(oneResult);
     await page.getByTestId("admin-filter-clear-action").press("Enter");
     await expect(
       page.getByTestId("admin-filter-clear-targetType"),
@@ -475,6 +474,56 @@ for (const { width, lang } of [
     );
   });
 }
+
+test("audit restores the filter URL and exact total through back and forward", async ({
+  page,
+  admin,
+  operator,
+}) => {
+  const user = await createUserViaAdmin(admin);
+  const blocked = await admin.patch(`/api/v1/admin/users/${user.id}`, {
+    data: { disabled: true },
+  });
+  expect(blocked.ok(), await blocked.text()).toBeTruthy();
+  await loginAsMaster(page, operator);
+  const targetQuery = `targetId=${encodeURIComponent(user.id)}&targetType=user`;
+  const initialUrl = `${adminPath("audit")}?tab=audit&${targetQuery}`;
+  const filteredUrl = `${adminPath("audit")}?tab=audit&action=user.disable&${targetQuery}`;
+  await page.goto(initialUrl);
+
+  const results = page.getByTestId("admin-filter-results");
+  await expect(results).toHaveText("Filters applied · Results: 2");
+  const chip = page.getByTestId("admin-filter-targetId");
+  const targetLink = chip.getByRole("link", {
+    name: user.id,
+    exact: true,
+  });
+  await expect(targetLink).toHaveText(user.id.slice(-8));
+  await expect(targetLink).toHaveAttribute(
+    "href",
+    new RegExp(`/admin/users/${user.id}\\?returnTo=`),
+  );
+  await expect(chip.getByTitle(user.id, { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: /^Filters/ }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Filters for the audit trail",
+  });
+  await dialog.getByRole("button", { name: "Action", exact: true }).click();
+  await dialog
+    .getByRole("checkbox", { name: "user.disable", exact: true })
+    .check();
+  await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page).toHaveURL(filteredUrl);
+  await expect(results).toHaveText("Filters applied · Results: 1");
+
+  await page.goBack();
+  await expect(page).toHaveURL(initialUrl);
+  await expect(results).toHaveText("Filters applied · Results: 2");
+  await page.goForward();
+  await expect(page).toHaveURL(filteredUrl);
+  await expect(results).toHaveText("Filters applied · Results: 1");
+});
 
 test("operator can filter commands and activity on the same board", async ({
   page,

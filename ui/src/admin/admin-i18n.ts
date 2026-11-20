@@ -1294,6 +1294,7 @@ const en = {
   "admin.commands.column.created": "When",
   "admin.commands.column.seq": "Seq",
   "admin.commands.column.type": "Action",
+  "admin.commands.filter.actor": "Actor",
   "admin.commands.column.audit": "Audit",
   "admin.commands.auditLabel": "Audit command {commandId} ({type})",
   "admin.commands.subtitle": "Every board action, newest first",
@@ -1412,6 +1413,7 @@ const en = {
   "admin.filters.refineSearch": "Refine the search to find more options.",
   "admin.filters.narrowColumn":
     "Choose a board or refine the search to find a column.",
+  "admin.filters.narrowCommandColumn": "Type to narrow the column list.",
   "admin.filters.useId": "Use id “{id}”",
   "admin.filters.remove": "Remove filter: {facet} — {value}",
   "admin.filters.unknown.boardId": "Unknown board",
@@ -2826,6 +2828,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.commands.column.created": "Когда",
   "admin.commands.column.seq": "Seq",
   "admin.commands.column.type": "Действие",
+  "admin.commands.filter.actor": "Инициатор",
   "admin.commands.column.audit": "Аудит",
   "admin.commands.auditLabel": "Аудит команды {commandId} ({type})",
   "admin.commands.subtitle": "Все действия с досками, свежие сверху",
@@ -2947,6 +2950,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.filters.refineSearch": "Уточните запрос, чтобы найти другие варианты.",
   "admin.filters.narrowColumn":
     "Выберите доску или уточните запрос, чтобы найти колонку.",
+  "admin.filters.narrowCommandColumn":
+    "Введите запрос, чтобы сузить список колонок.",
   "admin.filters.useId": "Использовать ID «{id}»",
   "admin.filters.remove": "Удалить фильтр: {facet} — {value}",
   "admin.filters.unknown.boardId": "Неизвестная доска",
