@@ -285,8 +285,14 @@ export function apiErrorEnvelope(
     stringArray(workflow?.allowedToColumnIds);
   const missingLocales = stringArray(body?.missingLocales);
   const explicitDetails = asRecord(body?.details);
+  const filter =
+    code === "unsupported_filter" ? stringField(body?.filter) : undefined;
   const extras = Object.fromEntries(
-    Object.entries(body ?? {}).filter(([key]) => !RESERVED_BODY_KEYS.has(key)),
+    Object.entries(body ?? {}).filter(
+      ([key]) =>
+        !RESERVED_BODY_KEYS.has(key) &&
+        !(key === "filter" && filter !== undefined),
+    ),
   );
   const details =
     explicitDetails !== undefined || Object.keys(extras).length > 0
@@ -300,6 +306,7 @@ export function apiErrorEnvelope(
     requestId,
     currentVersion: numberOrNull(body?.currentVersion),
     statusCode: status,
+    ...(filter !== undefined ? { filter, error: "Bad Request" } : {}),
     ...(stringField(body?.field) !== undefined
       ? { field: stringField(body?.field) as string }
       : {}),

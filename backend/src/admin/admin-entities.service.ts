@@ -131,7 +131,8 @@ function cardScope(query: AdminListQueryDto): Prisma.CardWhereInput | null {
   if (query.cardId) scope.id = query.cardId;
   if (query.columnId) scope.columnId = query.columnId;
   if (query.boardId) scope.column = { boardId: query.boardId };
-  if (query.labelId) scope.labels = { some: { labelId: query.labelId } };
+  if (query.singleLabelId)
+    scope.labels = { some: { labelId: query.singleLabelId } };
   return Object.keys(scope).length === 0 ? null : scope;
 }
 
@@ -373,8 +374,8 @@ export class AdminEntitiesService {
     if (query.boardId) where.boardId = query.boardId;
     if (query.columnId) where.id = query.columnId;
     if (query.cardId) where.cards = { some: { id: query.cardId } };
-    if (query.labelId) {
-      where.board = { labels: { some: { id: query.labelId } } };
+    if (query.singleLabelId) {
+      where.board = { labels: { some: { id: query.singleLabelId } } };
     }
     if (query.search) {
       where.OR = [
@@ -509,7 +510,7 @@ export class AdminEntitiesService {
   ): Promise<AdminPage<AdminLabelRowDto>> {
     const where: Prisma.LabelWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
-    if (query.labelId) where.id = query.labelId;
+    if (query.singleLabelId) where.id = query.singleLabelId;
     if (query.cardId || query.columnId) {
       where.cards = {
         some: {
@@ -576,7 +577,7 @@ export class AdminEntitiesService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCardLabelRowDto>> {
     const where: Prisma.CardLabelWhereInput = {};
-    if (query.labelId) where.labelId = query.labelId;
+    if (query.singleLabelId) where.labelId = query.singleLabelId;
     if (query.cardId) where.cardId = query.cardId;
     if (query.boardId || query.columnId) {
       where.card = {
@@ -792,11 +793,11 @@ export class AdminEntitiesService {
     const where: Prisma.AttachmentWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
     if (query.cardId) where.cardId = query.cardId;
-    if (query.columnId || query.labelId) {
+    if (query.columnId || query.singleLabelId) {
       where.card = {
         ...(query.columnId ? { columnId: query.columnId } : {}),
-        ...(query.labelId
-          ? { labels: { some: { labelId: query.labelId } } }
+        ...(query.singleLabelId
+          ? { labels: { some: { labelId: query.singleLabelId } } }
           : {}),
       };
     }
@@ -870,11 +871,11 @@ export class AdminEntitiesService {
     const where: Prisma.ActivityWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
     if (query.cardId) where.cardId = query.cardId;
-    if (query.columnId || query.labelId) {
+    if (query.columnId || query.singleLabelId) {
       where.card = {
         ...(query.columnId ? { columnId: query.columnId } : {}),
-        ...(query.labelId
-          ? { labels: { some: { labelId: query.labelId } } }
+        ...(query.singleLabelId
+          ? { labels: { some: { labelId: query.singleLabelId } } }
           : {}),
       };
     }

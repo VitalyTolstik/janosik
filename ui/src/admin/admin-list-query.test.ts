@@ -158,3 +158,106 @@ describe("admin list query state", () => {
     expect(cleared.get("tab")).toBe("audit");
   });
 });
+
+describe("surface-aware admin queries", () => {
+  it("round-trips only the card facets with canonical order and defaults", () => {
+    const options = { surface: "cards" } as const;
+    const source = new URLSearchParams(
+      "tab=cards&returnTo=%2Fadmin&labelId=l-2&labelId=l-1&labelId=l-2" +
+        "&labelMatch=all&verified=true&priority=high&priority=medium" +
+        "&priority=invalid&unassigned=false&hasAttachments=false&boardId=+b-1+",
+    );
+    const state = readAdminListQuery(source, options);
+    expect(state.filters).toEqual({
+      ...EMPTY_ADMIN_LIST_FILTERS,
+      boardId: "b-1",
+      labelId: ["l-1", "l-2"],
+      labelMatch: "all",
+      priority: ["high", "medium"],
+      hasAttachments: false,
+    });
+    const canonical = writeAdminListQuery(source, state, options);
+    expect(canonical.toString()).toBe(
+      "tab=cards&returnTo=%2Fadmin&boardId=b-1&hasAttachments=false&labelId=l-1" +
+        "&labelId=l-2&labelMatch=all&priority=high&priority=medium",
+    );
+    expect(readAdminListQuery(canonical, options)).toEqual(state);
+    expect(
+      adminFiltersKey({ ...state.filters, labelId: ["l-2", "l-1", "l-2"] }),
+    ).toBe(adminFiltersKey(state.filters));
+    expect(
+      adminFiltersKey({ ...state.filters, hasAttachments: true }),
+    ).not.toBe(adminFiltersKey(state.filters));
+    expect(adminFiltersKey({ ...state.filters, labelMatch: "any" })).not.toBe(
+      adminFiltersKey(state.filters),
+    );
+  });
+
+  it("drops unsupported user facets but keeps supported legacy comment scopes", () => {
+    const params = new URLSearchParams(
+      "boardId=b-1&columnId=c-1&labelId=l-1&assigneeId=u-1&verified=false",
+    );
+    const users = readAdminListQuery(params, { surface: "users" });
+    expect(users.filters).toEqual({
+      ...EMPTY_ADMIN_LIST_FILTERS,
+      verified: false,
+    });
+    expect(
+      writeAdminListQuery(params, users, { surface: "users" }).toString(),
+    ).toBe("verified=false");
+    const comments = readAdminListQuery(params, { surface: "comments" });
+    expect(comments.filters).toEqual({
+      ...EMPTY_ADMIN_LIST_FILTERS,
+      boardId: "b-1",
+      columnId: "c-1",
+      labelId: "l-1",
+    });
+  });
+
+  it("reports oversized and repeated single-value filters before a request", () => {
+    const cards = { surface: "cards" } as const;
+    const oversized = new URLSearchParams(
+      Array.from({ length: 21 }, () => ["labelId", "l-1"]),
+    );
+    const state = readAdminListQuery(oversized, cards);
+    expect(state.filterError).toContain("20");
+    expect(() => writeAdminListQuery(oversized, state, cards)).toThrow("20");
+    const repeated = new URLSearchParams("labelId=l-1&labelId=l-1");
+    expect(
+      readAdminListQuery(repeated, { surface: "comments" }).filterError,
+    ).toContain("one value");
+    expect(readAdminListQuery(repeated, cards).filters.labelId).toEqual([
+      "l-1",
+    ]);
+    const combined = new URLSearchParams([
+      ...Array.from({ length: 17 }, (_, i) => ["labelId", `l-${i}`]),
+      ...Array.from({ length: 16 }, (_, i) => ["assigneeId", `u-${i}`]),
+    ]);
+    expect(readAdminListQuery(combined, cards).filterError).toContain("32");
+    const long = new URLSearchParams([
+      ...Array.from({ length: 16 }, (_, i) => [
+        "labelId",
+        `${"l".repeat(62)}${i}`,
+      ]),
+      ...Array.from({ length: 16 }, (_, i) => [
+        "assigneeId",
+        `${"u".repeat(62)}${i}`,
+      ]),
+    ]);
+    expect(readAdminListQuery(long, cards).filterError).toContain("too long");
+  });
+
+  it("normalizes announcement status while reading and writing", () => {
+    const options = { surface: "announcements" } as const;
+    const alias = new URLSearchParams("tab=history&status=deleted");
+    const state = readAdminListQuery(alias, options);
+    expect(state.status).toBe("disabled");
+    expect(
+      writeAdminListQuery(
+        alias,
+        { ...state, status: "deleted" },
+        options,
+      ).toString(),
+    ).toBe("tab=history&status=disabled");
+  });
+});

@@ -936,7 +936,8 @@ export class AdminService {
         },
       };
     }
-    if (query.labelId) where.labels = { some: { id: query.labelId } };
+    if (query.singleLabelId)
+      where.labels = { some: { id: query.singleLabelId } };
 
     const { limit, offset } = this.window(query);
     const [items, total] = await this.prisma.$transaction([
@@ -1624,8 +1625,16 @@ export class AdminService {
     if (query.cardId) where.id = query.cardId;
     if (query.columnId) where.columnId = query.columnId;
     if (query.boardId) where.column = { boardId: query.boardId };
-    if (query.labelId) {
-      where.labels = { some: { labelId: query.labelId } };
+    const labelIds =
+      typeof query.labelId === "string" ? [query.labelId] : query.labelId;
+    if (labelIds?.length) {
+      if (query.labelMatch === "all") {
+        where.AND = labelIds.map((labelId) => ({
+          labels: { some: { labelId } },
+        }));
+      } else {
+        where.labels = { some: { labelId: { in: labelIds } } };
+      }
     }
     if (query.search) {
       where.OR = [
@@ -1963,12 +1972,12 @@ export class AdminService {
   ): Promise<AdminPage<AdminCommentRowDto>> {
     const where: Prisma.CommentWhereInput = {};
     if (query.cardId) where.cardId = query.cardId;
-    if (query.boardId || query.columnId || query.labelId) {
+    if (query.boardId || query.columnId || query.singleLabelId) {
       where.card = {
         ...(query.columnId ? { columnId: query.columnId } : {}),
         ...(query.boardId ? { column: { boardId: query.boardId } } : {}),
-        ...(query.labelId
-          ? { labels: { some: { labelId: query.labelId } } }
+        ...(query.singleLabelId
+          ? { labels: { some: { labelId: query.singleLabelId } } }
           : {}),
       };
     }

@@ -4,49 +4,97 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  Matches,
   Max,
   MaxLength,
   Min,
+  ValidateBy,
 } from "class-validator";
-import { ADMIN_PAGE_LIMITS } from "@janosik/shared";
+import {
+  ADMIN_FILTER_QUERY_MAX_LENGTH,
+  ADMIN_PAGE_LIMITS,
+  adminFilterValueLimit,
+  parseAdminFilterValue,
+  type AdminFilterKey,
+  type AdminFilterValues,
+  type AdminFilters,
+} from "@janosik/shared";
 
-/**
- * Structural ids accepted by every admin listing (TASK-176.6). The ids are
- * client-generated (`cuid`/UUID-style), so validation is shape-only: trim,
- * cap the length and refuse anything that is not an id token. The server
- * still scopes every row through Prisma's relations, so a valid id from
- * another board cannot leak a row into this board's list.
- */
-export const ADMIN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export { ADMIN_ID_PATTERN } from "@janosik/shared";
 
-const trimOptionalId = ({ value }: { value: unknown }): unknown =>
-  typeof value === "string"
-    ? value.trim() === ""
-      ? undefined
-      : value.trim()
+function trim(value: unknown): unknown {
+  return typeof value === "string" ? value.trim() : value;
+}
+
+function numberValue({ value }: { value: unknown }): unknown {
+  return typeof value === "string" && value.trim() !== ""
+    ? Number(value)
     : value;
+}
 
-/** Trim but keep an empty string so `Matches` rejects `?commandId=`. */
-const trimRequiredId = ({ value }: { value: unknown }): unknown =>
-  typeof value === "string" ? value.trim() : value;
+/** Validate raw cardinality and every member before deduplicating. */
+function FilterField(
+  key: AdminFilterKey,
+  { optionalEmpty = false, flexibleLabel = false } = {},
+): PropertyDecorator {
+  const limit = adminFilterValueLimit(key, "cards");
+  return (target, property) => {
+    IsOptional()(target, property);
+    Transform(({ value }: { value: unknown }) => {
+      if (optionalEmpty && typeof value === "string" && value.trim() === "") {
+        return undefined;
+      }
+      const parse = (entry: unknown) =>
+        parseAdminFilterValue(key, entry) ?? entry;
+      if (limit > 1 && (!flexibleLabel || Array.isArray(value))) {
+        return (Array.isArray(value) ? value : [value]).map(parse);
+      }
+      return parse(value);
+    })(target, property);
+    ValidateBy({
+      name: "adminFilterValue",
+      validator: {
+        validate(value: unknown) {
+          if (!Array.isArray(value)) {
+            return (
+              (limit === 1 || flexibleLabel) &&
+              parseAdminFilterValue(key, value) !== undefined
+            );
+          }
+          return (
+            limit > 1 &&
+            value.length > 0 &&
+            value.length <= limit &&
+            value.every(
+              (entry) => parseAdminFilterValue(key, entry) !== undefined,
+            )
+          );
+        },
+        defaultMessage() {
+          return limit === 1
+            ? `${key} must be a single valid value`
+            : `${key} must contain between 1 and ${limit} valid values`;
+        },
+      },
+    })(target, property);
+  };
+}
 
-export class AdminListQueryDto {
+export class AdminListQueryDto implements AdminFilters {
   @IsOptional()
-  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @Transform(({ value }) => trim(value))
   @IsString()
-  @MaxLength(200)
+  @MaxLength(ADMIN_FILTER_QUERY_MAX_LENGTH)
   search?: string;
 
   @IsOptional()
-  @Transform(({ value }) => Number(value))
+  @Transform(numberValue)
   @IsInt()
   @Min(ADMIN_PAGE_LIMITS.min)
   @Max(ADMIN_PAGE_LIMITS.max)
   limit?: number;
 
   @IsOptional()
-  @Transform(({ value }) => Number(value))
+  @Transform(numberValue)
   @IsInt()
   @Min(0)
   @Max(ADMIN_PAGE_LIMITS.maxOffset)
@@ -56,61 +104,95 @@ export class AdminListQueryDto {
   @IsIn(["all", "active", "disabled", "archived", "deleted"])
   status?: "all" | "active" | "disabled" | "archived" | "deleted";
 
-  /** Inclusive lower bound of the row's `createdAt`, unix ms (TASK-48). */
+  /** Inclusive bounds on createdAt, in unix milliseconds. */
   @IsOptional()
-  @Transform(({ value }) => Number(value))
+  @Transform(numberValue)
   @IsInt()
   @Min(0)
+  @Max(8.64e15)
   from?: number;
 
-  /** Inclusive upper bound of the row's `createdAt`, unix ms. */
   @IsOptional()
-  @Transform(({ value }) => Number(value))
+  @Transform(numberValue)
   @IsInt()
   @Min(0)
+  @Max(8.64e15)
   to?: number;
 
-  /** Exact board filter; links from board counters and board detail use it. */
-  @IsOptional()
-  @Transform(trimOptionalId)
-  @IsString()
-  @MaxLength(64)
-  @Matches(ADMIN_ID_PATTERN)
+  @FilterField("boardId", { optionalEmpty: true })
   boardId?: string;
 
-  /** Exact column filter; a column links to its cards. */
-  @IsOptional()
-  @Transform(trimOptionalId)
-  @IsString()
-  @MaxLength(64)
-  @Matches(ADMIN_ID_PATTERN)
+  @FilterField("columnId", { optionalEmpty: true })
   columnId?: string;
 
-  /** Exact label filter; a label links to the cards that carry it. */
-  @IsOptional()
-  @Transform(trimOptionalId)
-  @IsString()
-  @MaxLength(64)
-  @Matches(ADMIN_ID_PATTERN)
-  labelId?: string;
+  @FilterField("labelId", { optionalEmpty: true, flexibleLabel: true })
+  labelId?: AdminFilterValues["labelId"];
 
-  /** Exact card filter for comment/attachment/checklist drill-downs. */
-  @IsOptional()
-  @Transform(trimOptionalId)
-  @IsString()
-  @MaxLength(64)
-  @Matches(ADMIN_ID_PATTERN)
+  /** Used by lists that retain TASK-176.6's single-label contract. */
+  get singleLabelId(): string | undefined {
+    return typeof this.labelId === "string" ? this.labelId : undefined;
+  }
+
+  @FilterField("cardId", { optionalEmpty: true })
   cardId?: string;
 
-  /**
-   * Exact command ↔ audit correlation (TASK-176.10): a command id matches
-   * `Command.id` in the command log and `details.commandId` in the audit
-   * trail, so both lists can deep-link to the same row.
-   */
-  @IsOptional()
-  @Transform(trimRequiredId)
-  @IsString()
-  @MaxLength(64)
-  @Matches(ADMIN_ID_PATTERN)
+  @FilterField("commandId")
   commandId?: string;
+
+  @FilterField("labelMatch")
+  labelMatch?: AdminFilterValues["labelMatch"];
+
+  @FilterField("assigneeId")
+  assigneeId?: string[];
+
+  @FilterField("unassigned")
+  unassigned?: boolean;
+
+  @FilterField("priority")
+  priority?: AdminFilterValues["priority"];
+
+  @FilterField("due")
+  due?: AdminFilterValues["due"];
+
+  @FilterField("hasAttachments")
+  hasAttachments?: boolean;
+
+  @FilterField("adminMemberId", { optionalEmpty: true })
+  adminMemberId?: string;
+
+  @FilterField("verified")
+  verified?: boolean;
+
+  @FilterField("authorId")
+  authorId?: string[];
+
+  @FilterField("kind")
+  kind?: AdminFilterValues["kind"];
+
+  @FilterField("uploadedById")
+  uploadedById?: string[];
+
+  @FilterField("mime")
+  mime?: AdminFilterValues["mime"];
+
+  @FilterField("transcode")
+  transcode?: AdminFilterValues["transcode"];
+
+  @FilterField("actorId")
+  actorId?: string[];
+
+  @FilterField("type")
+  type?: string[];
+
+  @FilterField("action")
+  action?: string[];
+
+  @FilterField("adminId")
+  adminId?: string[];
+
+  @FilterField("targetType")
+  targetType?: string[];
+
+  @FilterField("targetId")
+  targetId?: string;
 }

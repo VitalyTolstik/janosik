@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AdminPage } from "@janosik/shared";
+import {
+  ENTITY_FILTERS,
+  ENTITY_STATUS_VALUES,
+  normalizeAdminStatus,
+  type AdminFilterKey,
+  type AdminFilterValues,
+  type AdminListSurface,
+  type AdminPage,
+} from "@janosik/shared";
 import type { AdminListParams } from "./admin-client";
 import {
   EMPTY_ADMIN_LIST_FILTERS,
   PERIOD_WINDOWS_MS,
   adminFiltersKey,
-  type AdminListFilterKey,
+  adminListRequestFilters,
+  listFilterError,
   type AdminListFilters,
   type AdminListQueryState,
 } from "./admin-list-query";
@@ -36,6 +45,7 @@ export interface AdminListState<T> {
   /** A newer request is in flight while the previous rows stay on screen. */
   refreshing: boolean;
   error: boolean;
+  filterError?: string;
   /** Raw input value; updates on every keystroke. */
   search: string;
   /** Committed (debounced) search used for the request and the URL. */
@@ -52,7 +62,10 @@ export interface AdminListState<T> {
   setLimit: (value: number) => void;
   /** Exact id filters shared by every addressable list (TASK-176.6). */
   filters: AdminListFilters;
-  setFilter: (key: AdminListFilterKey, value: string | null) => void;
+  setFilter: <Key extends AdminFilterKey>(
+    key: Key,
+    value: AdminFilterValues[Key] | null,
+  ) => void;
   clearFilters: () => void;
   /** Replace the whole state from the URL (back/forward or a deep link). */
   applyState: (state: AdminListQueryState) => void;
@@ -71,9 +84,13 @@ interface ListResult<T> {
 
 export function useAdminList<T>(
   fetcher: (params: AdminListParams) => Promise<AdminPage<T>>,
-  options: { limit?: number; initialState?: AdminListQueryState } = {},
+  options: {
+    limit?: number;
+    initialState?: AdminListQueryState;
+    surface?: AdminListSurface;
+  } = {},
 ): AdminListState<T> {
-  const initial = options.initialState;
+  const { initialState: initial, surface } = options;
   const [limit, setLimitState] = useState(
     initial?.limit ?? options.limit ?? 50,
   );
@@ -90,6 +107,7 @@ export function useAdminList<T>(
   const [filters, setFilters] = useState<AdminListFilters>(
     initial?.filters ?? EMPTY_ADMIN_LIST_FILTERS,
   );
+  const [urlFilterError, setUrlFilterError] = useState(initial?.filterError);
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState<ListResult<T> | null>(null);
 
@@ -107,13 +125,29 @@ export function useAdminList<T>(
     return () => clearTimeout(timer);
   }, [rawSearch, search]);
 
-  const filterKey = adminFiltersKey(filters);
-  const requestKey = `${search}|${status}|${period}|${limit}|${offset}|${filterKey}|${reloadKey}`;
+  const filterError = urlFilterError ?? listFilterError(filters, surface);
+  const requestKey = JSON.stringify([
+    surface,
+    search,
+    status,
+    period,
+    limit,
+    offset,
+    adminFiltersKey(filters),
+    reloadKey,
+  ]);
 
   useEffect(() => {
+    if (filterError !== undefined) return;
     let cancelled = false;
+    const window = Object.hasOwn(PERIOD_WINDOWS_MS, period)
+      ? PERIOD_WINDOWS_MS[period]
+      : undefined;
     const from =
-      period === "any" ? undefined : Date.now() - PERIOD_WINDOWS_MS[period];
+      window !== undefined &&
+      (surface === undefined || ENTITY_FILTERS[surface].dateRange)
+        ? Date.now() - window
+        : undefined;
     void fetcherRef
       .current({
         search,
@@ -121,11 +155,7 @@ export function useAdminList<T>(
         from,
         limit,
         offset,
-        ...(filters.boardId === null ? {} : { boardId: filters.boardId }),
-        ...(filters.columnId === null ? {} : { columnId: filters.columnId }),
-        ...(filters.labelId === null ? {} : { labelId: filters.labelId }),
-        ...(filters.cardId === null ? {} : { cardId: filters.cardId }),
-        ...(filters.commandId === null ? {} : { commandId: filters.commandId }),
+        ...adminListRequestFilters(filters, surface),
       })
       .then((page) => {
         if (cancelled) return;
@@ -157,22 +187,42 @@ export function useAdminList<T>(
     return () => {
       cancelled = true;
     };
-  }, [requestKey, search, status, period, limit, offset, filters, filterKey]);
+  }, [
+    requestKey,
+    search,
+    status,
+    period,
+    limit,
+    offset,
+    filters,
+    surface,
+    filterError,
+  ]);
 
   // Keep the last successful page while a search/page request is in flight
   // (SKELETON-AUDIT §4.11): the table header and rows must not vanish on
   // every keystroke. Only the very first answer gets a skeleton.
-  const loading = result === null;
-  const refreshing = result !== null && result.key !== requestKey;
+  const loading = result === null && filterError === undefined;
+  const refreshing =
+    result !== null && result.key !== requestKey && filterError === undefined;
 
   const setSearchInput = useCallback((value: string) => {
     setRawSearch(value);
   }, []);
 
-  const setStatus = useCallback((value: string) => {
-    setStatusRaw(value);
-    setOffset(0);
-  }, []);
+  const setStatus = useCallback(
+    (value: string) => {
+      const normalized = normalizeAdminStatus(surface, value);
+      if (
+        surface !== undefined &&
+        !ENTITY_STATUS_VALUES[surface].includes(normalized)
+      )
+        return;
+      setStatusRaw(normalized);
+      setOffset(0);
+    },
+    [surface],
+  );
 
   const setPeriod = useCallback((value: string) => {
     setPeriodRaw(value);
@@ -185,19 +235,36 @@ export function useAdminList<T>(
   }, []);
 
   const setFilter = useCallback(
-    (key: AdminListFilterKey, value: string | null) => {
+    <Key extends AdminFilterKey>(
+      key: Key,
+      value: AdminFilterValues[Key] | null,
+    ) => {
+      if (
+        surface !== undefined &&
+        !ENTITY_FILTERS[surface].supported.includes(key)
+      )
+        return;
       setFilters((current) => {
-        const next = value === null || value.trim() === "" ? null : value;
+        const next =
+          typeof value === "string" && value.trim() === "" ? null : value;
         if (current[key] === next) return current;
-        return { ...current, [key]: next };
+        const updated = { ...current };
+        if (next === null && !(key in EMPTY_ADMIN_LIST_FILTERS)) {
+          delete updated[key];
+        } else {
+          Object.assign(updated, { [key]: next });
+        }
+        return updated;
       });
+      setUrlFilterError(undefined);
       setOffset(0);
     },
-    [],
+    [surface],
   );
 
   const clearFilters = useCallback(() => {
     setFilters(EMPTY_ADMIN_LIST_FILTERS);
+    setUrlFilterError(undefined);
     setOffset(0);
   }, []);
 
@@ -211,6 +278,7 @@ export function useAdminList<T>(
     setLimitState(next.limit);
     setOffset(next.offset);
     setFilters(next.filters);
+    setUrlFilterError(next.filterError);
   }, []);
 
   const reload = useCallback(() => {
@@ -218,13 +286,14 @@ export function useAdminList<T>(
   }, []);
 
   return {
-    items: result?.items ?? [],
-    total: result?.total ?? 0,
+    items: filterError === undefined ? (result?.items ?? []) : [],
+    total: filterError === undefined ? (result?.total ?? 0) : 0,
     loading,
     refreshing,
     // Keep a previous failure on screen while its retry is in flight; the
     // retry must not masquerade as an empty result.
-    error: result?.error ?? false,
+    error: filterError !== undefined || (result?.error ?? false),
+    filterError,
     search: rawSearch,
     effectiveSearch: search,
     setSearch: setSearchInput,
@@ -240,7 +309,8 @@ export function useAdminList<T>(
     setFilter,
     clearFilters,
     applyState,
-    errorStatus: result?.errorStatus ?? null,
+    errorStatus:
+      filterError === undefined ? (result?.errorStatus ?? null) : null,
     reload,
   };
 }

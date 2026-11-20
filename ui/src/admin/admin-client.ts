@@ -1,3 +1,4 @@
+import { adminFilterEntries, type AdminFilters } from "@janosik/shared";
 import type {
   AdminAuditRowDto,
   AdminAuthResponseDto,
@@ -85,20 +86,13 @@ import { ApiError, apiBaseUrl } from "@/api/client";
  * provider turns into the master login screen.
  */
 
-export interface AdminListParams {
+export interface AdminListParams extends AdminFilters {
   search?: string;
   status?: string;
   /** Inclusive `createdAt` lower bound, unix ms (period tabs). */
   from?: number;
   /** Inclusive `createdAt` upper bound, unix ms. */
   to?: number;
-  /** Structural filters (TASK-176.6): exact ids, never name matching. */
-  boardId?: string;
-  columnId?: string;
-  labelId?: string;
-  cardId?: string;
-  /** Exact command ↔ audit correlation (TASK-176.10). */
-  commandId?: string;
   limit?: number;
   offset?: number;
 }
@@ -906,11 +900,8 @@ export class AdminApiClient {
       search.set("offset", String(params.offset));
     if (params.from !== undefined) search.set("from", String(params.from));
     if (params.to !== undefined) search.set("to", String(params.to));
-    if (params.boardId) search.set("boardId", params.boardId);
-    if (params.columnId) search.set("columnId", params.columnId);
-    if (params.labelId) search.set("labelId", params.labelId);
-    if (params.cardId) search.set("cardId", params.cardId);
-    if (params.commandId) search.set("commandId", params.commandId);
+    for (const [key, value] of adminFilterEntries(params))
+      search.append(key, value);
     const value = search.toString();
     return value === "" ? "" : `?${value}`;
   }
