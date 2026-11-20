@@ -459,6 +459,7 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         cardId: card.id,
         labelId: action.labelId,
         on: !action.on,
+        cardUpdatedAt: card.updatedAt,
         cardActivity: feedOf(card),
         // Re-attaching puts the label back where it sat in the list.
         ...(index === -1 ? {} : { index }),

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Board, Card, Label } from "@janosik/shared";
+import { boardReducer } from "@janosik/shared";
 import { changedEntityIds } from "@/store/board-diff";
 
 function card(overrides: Partial<Card> = {}): Card {
@@ -120,7 +121,28 @@ describe("changedEntityIds", () => {
     expect(changedEntityIds(board(), server)).toEqual(["c-2"]);
   });
 
-  it("reports a label-only card change with an equal updatedAt (TASK-156)", () => {
+  it("detects a SET_CARD_LABEL change by timestamp before reading labelIds", () => {
+    const local = board({ labels: [{ id: "l-1", name: "Bug", color: "red" }] });
+    const [server] = boardReducer([local], {
+      type: "SET_CARD_LABEL",
+      boardId: local.id,
+      cardId: "c-1",
+      labelId: "l-1",
+      on: true,
+      at: 2,
+    });
+    const updated = server.cards["c-1"];
+    const labelIds = updated.labelIds;
+    expect(labelIds).toEqual(["l-1"]);
+    expect(updated.updatedAt).toBe(2);
+
+    const readLabelIds = vi.fn(() => labelIds);
+    Object.defineProperty(updated, "labelIds", { get: readLabelIds });
+    expect(changedEntityIds(local, server)).toEqual(["c-1"]);
+    expect(readLabelIds).not.toHaveBeenCalled();
+  });
+
+  it("falls back to labelIds for a label-only change with equal timestamps (TASK-156)", () => {
     const server = board();
     server.cards["c-1"] = card({ labelIds: ["l-1"] });
     expect(changedEntityIds(board(), server)).toEqual(["c-1"]);
