@@ -16,9 +16,14 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAdminT } from "../admin-i18n";
 import { listFilterError, type AdminListFilters } from "../admin-list-query";
 import { Badge } from "../ui";
-import { DraftFacetPicker, FilterFacetPicker } from "./FilterFacetPicker";
+import {
+  DraftFacetPicker,
+  FilterFacetPicker,
+  FilterIdPicker,
+} from "./FilterFacetPicker";
 import {
   FILTER_BAR_TITLES,
+  isPeopleLookup,
   offeredFilters,
   RADIO_FILTERS,
   type FilterBarSurface,
@@ -156,19 +161,21 @@ function FilterMenu({
       label: "admin.filters.scope",
       facets: facets.filter(
         (facet) =>
-          "type" in facet && facet.type !== "user" && facet.kind === "lookup",
+          facet.kind === "id" ||
+          (facet.kind === "lookup" && !isPeopleLookup(facet)),
       ),
     },
     {
       label: "admin.filters.people",
-      facets: facets.filter(
-        (facet) => "type" in facet && facet.type === "user",
-      ),
+      facets: facets.filter(isPeopleLookup),
     },
     {
       label: "admin.filters.properties",
       facets: facets.filter(
-        ({ kind, key }) => kind !== "lookup" && key !== "assigneeId",
+        (facet) =>
+          facet.kind !== "lookup" &&
+          facet.kind !== "id" &&
+          !isPeopleLookup(facet),
       ),
     },
   ] as const;
@@ -177,7 +184,11 @@ function FilterMenu({
   };
   const apply = (patch: Partial<AdminListFilters>) => {
     const next = { ...filters, ...patch };
-    if (patch.boardId !== undefined && patch.boardId !== filters.boardId) {
+    if (
+      surface !== "commands" &&
+      patch.boardId !== undefined &&
+      patch.boardId !== filters.boardId
+    ) {
       next.columnId = next.labelId = next.cardId = null;
       delete next.labelMatch;
     }
@@ -242,8 +253,20 @@ function FilterMenu({
               <FilterFacetPicker
                 key={active.key}
                 facet={active}
-                boardId={filters.boardId}
+                boardId={surface === "commands" ? null : filters.boardId}
+                columnHint={
+                  surface === "commands"
+                    ? "admin.filters.narrowCommandColumn"
+                    : undefined
+                }
                 value={selectedFilterValues(filters, active.key)[0] ?? null}
+                onSelect={(id) => apply({ [active.key]: id })}
+              />
+            ) : active.kind === "id" ? (
+              <FilterIdPicker
+                key={active.key}
+                facet={active}
+                value={filters[active.key] ?? ""}
                 onSelect={(id) => apply({ [active.key]: id })}
               />
             ) : active.kind === "multi" ? (
