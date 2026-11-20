@@ -21,8 +21,18 @@ test("deletes an own comment after confirmation and it stays deleted", async ({
 
   await comment.hover();
   await comment.getByTestId("comment-delete").click();
-  const confirm = page.getByRole("dialog", { name: "Delete this comment?" });
+  // TASK-177.17: the title names the author and the body quotes the comment.
+  const confirm = page.getByRole("dialog", {
+    name: /^Delete .+’s comment\?$/,
+  });
   await expect(confirm).toBeVisible();
+  await expect(confirm.getByTestId("comment-delete-author")).toContainText(
+    "Author:",
+  );
+  await expect(confirm.getByTestId("comment-delete-excerpt")).toHaveText(
+    "Please remove me",
+  );
+  await expect(confirm).toContainText("This cannot be undone.");
   // Opening the confirmation must not delete anything yet. Radix hides the
   // parent dialog from the accessibility tree while the nested confirm is up,
   // so count the rows by test id instead of a role-scoped locator.

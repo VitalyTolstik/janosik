@@ -637,6 +637,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-177.17 makes comment deletion explicit: the confirmation names the
+  author in its title, shows a short excerpt of the exact comment, and keeps
+  the honest “cannot be undone” copy. Comments are soft-deleted server-side,
+  but the public API has no restore route (only the master-admin entity
+  restore reaches the row), so the UI deliberately offers no undo toast rather
+  than recreating the comment under a new id. The delete trigger and the
+  dialog actions meet the 44 px touch target on small screens and touch-only
+  devices. EN/RU copy and tests cover the excerpt/author, cancel, the no-undo
+  decision and the touch targets.
+
 - TASK-177.3 keeps per-card comment drafts when you reopen a card and clears
   them when the session ends. Activity counts show `50+` when more rows remain
   and the total is unknown, or `N of M` when the total is known. A 65-comment

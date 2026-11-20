@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +15,8 @@ interface ConfirmDialogProps {
   open: boolean;
   title: string;
   description?: string;
+  /** Extra content between the description and the actions (TASK-177.17). */
+  children?: ReactNode;
   /** Label for the confirm button, e.g. "Delete column". */
   confirmLabel: string;
   /** Renders the confirm button in the destructive style. */
@@ -29,6 +33,7 @@ export function ConfirmDialog({
   open,
   title,
   description,
+  children,
   confirmLabel,
   destructive = false,
   onConfirm,
@@ -50,17 +55,18 @@ export function ConfirmDialog({
             <DialogDescription>{description}</DialogDescription>
           ) : null}
         </DialogHeader>
+        {children}
         <DialogFooter className="mt-2">
           <Button
             variant="outline"
-            className="max-md:min-h-11"
+            className="max-md:min-h-11 no-hover:min-h-11"
             onClick={() => onOpenChange(false)}
           >
             {t("common.cancel")}
           </Button>
           <Button
             variant={destructive ? "destructive" : "default"}
-            className="max-md:min-h-11"
+            className="max-md:min-h-11 no-hover:min-h-11"
             onClick={handleConfirm}
           >
             {confirmLabel}

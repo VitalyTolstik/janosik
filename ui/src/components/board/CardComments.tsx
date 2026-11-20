@@ -64,6 +64,20 @@ function isPendingComment(comment: CommentDto) {
   return comment.id.startsWith("pending-");
 }
 
+/** Longest plain-text preview shown before deleting a comment (TASK-177.17). */
+const DELETE_EXCERPT_LENGTH = 240;
+
+/**
+ * The comment body as a one-paragraph excerpt: markdown/line breaks collapse
+ * to spaces so the confirmation stays scannable, and a long body is cut with
+ * an ellipsis instead of turning the dialog into a wall of text.
+ */
+function commentExcerpt(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= DELETE_EXCERPT_LENGTH) return compact;
+  return `${compact.slice(0, DELETE_EXCERPT_LENGTH - 1).trimEnd()}…`;
+}
+
 interface CardCommentsProps {
   cardId: string;
   boardId: string;
@@ -114,6 +128,16 @@ export function CardComments({
   const draft = composer.draft?.text ?? "";
   const kind = composer.draft?.kind ?? DEFAULT_COMMENT_KIND;
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
+  const pendingAuthor = useBoardMember(boardId, pendingDelete?.authorId);
+  // Only the author's own comment can be deleted, so the current user is a
+  // safe fallback while the board directory is still loading (TASK-177.17).
+  const pendingAuthorName =
+    userLabel(
+      pendingAuthor?.displayName ??
+        (pendingDelete?.authorId === user?.id ? user?.displayName : null),
+      pendingAuthor?.email ??
+        (pendingDelete?.authorId === user?.id ? (user?.email ?? "") : ""),
+    ) || t("comment.unknownAuthor");
 
   const markUnavailable = useCallback((error: unknown) => {
     if (
@@ -326,6 +350,10 @@ export function CardComments({
     }
   };
 
+  // TASK-177.17: the server keeps the row soft-deleted, but there is no
+  // user-facing comment restore endpoint (only the master-admin entity
+  // restore reaches it), so this UI deliberately offers no undo toast and
+  // the dialog says the deletion cannot be undone.
   const handleDelete = async () => {
     const comment = pendingDelete;
     if (comment === null) return;
@@ -436,12 +464,32 @@ export function CardComments({
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-        title={t("comment.deleteTitle")}
+        title={t("comment.deleteTitle", { name: pendingAuthorName })}
         description={t("comment.deleteDescription")}
         confirmLabel={t("comment.deleteConfirm")}
         destructive
         onConfirm={() => void handleDelete()}
-      />
+      >
+        {pendingDelete ? (
+          <figure
+            className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2"
+            data-testid="comment-delete-preview"
+          >
+            <figcaption
+              className="text-xs text-muted-foreground"
+              data-testid="comment-delete-author"
+            >
+              {t("comment.deleteAuthor", { name: pendingAuthorName })}
+            </figcaption>
+            <blockquote
+              className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90"
+              data-testid="comment-delete-excerpt"
+            >
+              {commentExcerpt(pendingDelete.text)}
+            </blockquote>
+          </figure>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }
@@ -797,7 +845,7 @@ function CommentRow({
                 type="button"
                 aria-label={t("comment.delete")}
                 data-testid="comment-delete"
-                className="shrink-0 rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                className="inline-flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive max-md:h-11 max-md:w-11 no-hover:h-11 no-hover:w-11"
                 onClick={onDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
