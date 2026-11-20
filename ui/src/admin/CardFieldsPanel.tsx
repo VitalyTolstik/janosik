@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Paintbrush, X } from "lucide-react";
 import {
   CARD_PRIORITIES,
@@ -22,6 +22,7 @@ import type {
 } from "@janosik/shared";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import type { CalendarComponent } from "@/components/ui/calendar-lazy";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -36,7 +37,10 @@ import { COVER_COLOR_KEYS, COVER_GRADIENT_KEYS } from "@/utils/palette-keys";
 import { PRIORITY_META, priorityLabel } from "@/utils/priority";
 import { adminApi } from "./admin-client";
 import { useAdminT, type AdminMessageKey } from "./admin-i18n";
-import { DateTimeField } from "./announcements/DateTimeField";
+import {
+  DateTimeField,
+  type CalendarFallbackState,
+} from "./announcements/DateTimeField";
 import { LabelChip } from "./cells";
 import { CharCount, Field, OwnerAttributionNotice, Panel } from "./ui";
 
@@ -134,15 +138,60 @@ function memberActive(member: AdminBoardMemberRowDto): boolean {
   );
 }
 
+function CardCalendarFallback({
+  value,
+  onChange,
+  retry,
+}: CalendarFallbackState) {
+  const t = useAdminT();
+  const inputId = useId();
+  const retryButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    retryButton.current?.focus({ preventScroll: true });
+  }, []);
+
+  return (
+    <div className="w-72 max-w-full space-y-2">
+      <p role="alert" className="text-xs text-danger">
+        {t("admin.cards.fields.calendarFailed")}
+      </p>
+      <Button
+        ref={retryButton}
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={retry}
+      >
+        {t("admin.cards.fields.calendarRetry")}
+      </Button>
+      <Field
+        htmlFor={inputId}
+        label={t("admin.cards.fields.calendarFallbackLabel")}
+      >
+        <Input
+          id={inputId}
+          type="datetime-local"
+          className="min-w-0"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </Field>
+    </div>
+  );
+}
+
 export function CardFieldsPanel({
   card,
   cardLabels,
   onSaved,
+  calendarLoader,
 }: {
   card: AdminCardDetailDto["card"];
   /** Labels currently attached to the card, as served by the detail DTO. */
   cardLabels: AdminCardDetailDto["labels"];
   onSaved: () => void;
+  calendarLoader?: () => Promise<{ Calendar: CalendarComponent }>;
 }) {
   const t = useAdminT();
   const toast = useToast();
@@ -595,6 +644,8 @@ export function CardFieldsPanel({
                   placeholder={t("admin.cards.fields.duePlaceholder")}
                   clearLabel={t("admin.cards.fields.dueClearDraft")}
                   timeLabel={t("admin.cards.fields.dueTime")}
+                  calendarLoader={calendarLoader}
+                  calendarFallback={CardCalendarFallback}
                 />
               </div>
               <Button

@@ -68,23 +68,17 @@ import {
 import { RowActions, type EntityAction } from "./row-actions";
 
 /**
- * The field editors pull in the date picker and shared palettes. Keeping them
- * in their own lazy chunk leaves the admin shell inside its size budget
- * (TASK-176.9 review B3).
+ * Live cards mount both editors together. One lazy chunk compresses their
+ * shared imports and UI code while each editor keeps its own render boundary.
  */
 const CardFieldsPanel = lazy(() =>
-  import("./CardFieldsPanel").then((module) => ({
+  import("./card-detail-editors").then((module) => ({
     default: module.CardFieldsPanel,
   })),
 );
 
-/**
- * Checklists and links use the shared command model but need their own
- * admin-native controls. Keeping them in a second lazy chunk leaves both the
- * shell and the field editor budget untouched.
- */
 const CardRelationsPanel = lazy(() =>
-  import("./CardRelationsPanel").then((module) => ({
+  import("./card-detail-editors").then((module) => ({
     default: module.CardRelationsPanel,
   })),
 );

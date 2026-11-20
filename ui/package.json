@@ -57,8 +57,7 @@
       "name": "admin card page (shell + lazy panels + shared admin UI, gzip)",
       "path": [
         "dist/assets/AdminApp-*.js",
-        "dist/assets/CardFieldsPanel-*.js",
-        "dist/assets/CardRelationsPanel-*.js",
+        "dist/assets/card-detail-editors-*.js",
         "dist/assets/ui-*.js",
         "dist/assets/links-*.js"
       ],
