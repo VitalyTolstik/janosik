@@ -3,9 +3,9 @@ import { expectHistory, redo, undo } from "@/helpers/history.js";
 
 test("undo and redo board rename", async ({ page, board }) => {
   await board.open(page);
-  const originalTitle = await page.locator("header h2").innerText();
+  const originalTitle = await page.locator("header h1").innerText();
 
-  await page.locator("header h2").click();
+  await page.locator("header h1").click();
   await page.locator('[name="board-title-edit"]').fill("Renamed board");
   await page.locator('[name="board-title-edit"]').press("Enter");
   await expect(

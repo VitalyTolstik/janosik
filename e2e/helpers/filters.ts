@@ -48,7 +48,9 @@ export function cardByTitle(page: Page, title: string): Locator {
 }
 
 export async function openFilters(page: Page): Promise<Locator> {
-  await filterBar(page).getByRole("button", { name: "Filter cards" }).click();
+  await filterBar(page)
+    .getByRole("button", { name: "Filters", exact: true })
+    .click();
   await expect(filtersPopover(page)).toBeVisible();
   return filtersPopover(page);
 }

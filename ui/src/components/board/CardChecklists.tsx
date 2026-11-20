@@ -281,9 +281,11 @@ function ChecklistCard({
         <div
           className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
           role="progressbar"
+          aria-label={t("checklist.progressLabel", { title: checklist.title })}
           aria-valuemin={0}
           aria-valuemax={total}
           aria-valuenow={done}
+          aria-valuetext={t("checklist.progressValue", { done, total })}
         >
           <div
             className="h-full rounded-full bg-primary transition-[width]"
@@ -315,6 +317,7 @@ function ChecklistCard({
                   type="button"
                   onClick={() => onToggleItem(item.id)}
                   aria-pressed={item.done}
+                  aria-label={t("checklist.itemToggle", { text: item.text })}
                   className={cn(
                     "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
                     item.done
@@ -322,7 +325,9 @@ function ChecklistCard({
                       : "border-border/80 bg-background hover:border-primary/60",
                   )}
                 >
-                  {item.done ? <Check className="h-3 w-3" /> : null}
+                  {item.done ? (
+                    <Check aria-hidden="true" className="h-3 w-3" />
+                  ) : null}
                 </button>
               )}
               {editingItemId === item.id ? (

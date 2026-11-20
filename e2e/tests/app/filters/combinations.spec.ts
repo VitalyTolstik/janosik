@@ -119,7 +119,7 @@ test("applies every facet with AND and counts each one", async ({
   // query + due + label + priority + assignee + links + created
   await expect(facetCount(page)).toHaveText("7");
   await expect(
-    filterBar(page).getByRole("button", { name: "Filter cards" }),
+    filterBar(page).getByRole("button", { name: "Filters", exact: true }),
   ).toContainText("Filters");
 
   const cases = [

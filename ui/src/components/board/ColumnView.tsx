@@ -338,13 +338,13 @@ function ColumnViewBody({
               aria-hidden
               className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
             />
-            <h3
+            <h2
               className="janosik-column-accent-heading truncate text-sm font-semibold text-foreground"
               onDoubleClick={readOnly ? undefined : openRename}
               {...(readOnly ? {} : doubleTapHandlers)}
             >
               {column.title}
-            </h3>
+            </h2>
           </span>
           <span className="flex shrink-0 items-center gap-1">
             <span
@@ -436,12 +436,12 @@ function ColumnViewBody({
                 />
               </div>
             ) : (
-              <div className="flex flex-col">
-                <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground/70">
+              <ul className="flex flex-col">
+                <li className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">
                   {isFiltered && column.cardIds.length > 0
                     ? t("filter.noMatch")
                     : t("column.empty")}
-                </div>
+                </li>
                 {inlineAddAllowed && (
                   <AddCardZone
                     index={0}
@@ -449,7 +449,7 @@ function ColumnViewBody({
                     touchVisible
                   />
                 )}
-              </div>
+              </ul>
             )
           ) : (
             <SortableContext items={ids} strategy={verticalListSortingStrategy}>

@@ -110,7 +110,7 @@ export function GlobalSearch({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={t("search.aria")}
+            aria-label={t("search.label")}
             onClick={() => setOpenBoth(true)}
             className={cn(
               "gap-1.5 text-muted-foreground transition-colors hover:text-foreground",

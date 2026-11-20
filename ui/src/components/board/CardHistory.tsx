@@ -196,7 +196,7 @@ export function CardHistory({
           <CardSectionSkeleton kind="history" rows={4} />
         </SkeletonRegion>
       ) : visible.length === 0 && nextCursor === null ? (
-        <p className="py-1 text-sm text-muted-foreground/70">
+        <p className="py-1 text-sm text-muted-foreground">
           {t("history.empty")}
         </p>
       ) : visible.length > 0 ? (
@@ -356,7 +356,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
             {t(sentence.key, sentence.params)}
           </p>
           <time
-            className="shrink-0 text-[11px] text-muted-foreground/70"
+            className="shrink-0 text-[11px] text-muted-foreground"
             dateTime={new Date(entry.at).toISOString()}
             title={formatDate(entry.at, lang, hour12)}
           >

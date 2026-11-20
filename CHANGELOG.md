@@ -637,6 +637,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-177.15 card accessibility: checklist item toggles are named from the
+  item text and progress bars expose `aria-label`/`aria-valuetext`; closing the
+  card dialog returns keyboard focus to the card (or the board landmark when
+  the card is gone) while the focus trap stays; the board title is the page
+  `h1` and columns are `h2`, the dialog no longer adds a second `main`, and
+  insert zones are always list items. The Block type placeholder, column/link
+  empty states, active board/activity tabs and label chips now clear WCAG AA in
+  both themes (new `--chip-*`/`--tab-text` tokens, checked by a contrast-pair
+  test); axe-core runs on the board and card dialog in light and dark, and the
+  hidden attachment input is labelled. Header controls whose accessible name
+  diverged from their visible text now keep the visible label in the name
+  (Filters, Global search, Account).
+
 - TASK-177.3 keeps per-card comment drafts when you reopen a card and clears
   them when the session ends. Activity counts show `50+` when more rows remain
   and the total is unknown, or `N of M` when the total is known. A 65-comment

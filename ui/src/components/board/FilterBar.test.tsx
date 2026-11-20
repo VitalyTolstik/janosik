@@ -80,14 +80,14 @@ describe("FilterBar", () => {
 
     // Facet options are not rendered until the popover opens.
     expect(screen.queryByText("Overdue")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     expect(screen.getByText("Overdue")).toBeInTheDocument();
     expect(screen.getByText("Feature")).toBeInTheDocument();
   });
 
   it("keeps the popover scrollable so every facet stays reachable", async () => {
     renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
 
     // On short viewports the panel is capped to the available height and
     // scrolls as one surface (no nested label-list scroller).
@@ -100,7 +100,7 @@ describe("FilterBar", () => {
 
   it("selects a due status from the popover", async () => {
     const onChange = renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     await userEvent.click(screen.getByRole("radio", { name: "Overdue" }));
     expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
@@ -110,7 +110,7 @@ describe("FilterBar", () => {
 
   it("moves through a radio facet with arrow keys (TASK-152, C17)", async () => {
     const onChange = renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
 
     const checked = screen.getByRole("radio", { name: "Any due date" });
     checked.focus();
@@ -125,7 +125,7 @@ describe("FilterBar", () => {
 
   it("toggles a label checkbox from the popover", async () => {
     const onChange = renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Bug" }));
     // The click can arrive while the previous URL write is still in a router
     // transition. Resolving against that newer state must keep its facet;
@@ -139,7 +139,7 @@ describe("FilterBar", () => {
 
   it("toggles a priority checkbox from the popover", async () => {
     const onChange = renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Blocker" }));
     expect(lastApplied(onChange)).toEqual({
       ...EMPTY_FILTER,
@@ -149,7 +149,7 @@ describe("FilterBar", () => {
 
   it("switches the label match mode between any and all", async () => {
     const onChange = renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     const group = screen.getByRole("radiogroup", { name: "Label match mode" });
     expect(group).toHaveTextContent("Any");
     expect(group).toHaveTextContent("All");
@@ -162,9 +162,9 @@ describe("FilterBar", () => {
 
   it("shows the active facet count on the filters button", () => {
     renderBar({ ...EMPTY_FILTER, due: "soon", labelIds: ["l1"] });
-    expect(
-      screen.getByRole("button", { name: "Filter cards" }),
-    ).toHaveTextContent("2");
+    expect(screen.getByRole("button", { name: "Filters" })).toHaveTextContent(
+      "2",
+    );
   });
 
   it("renders removable chips for the active facets", async () => {
@@ -251,7 +251,7 @@ describe("FilterBar", () => {
 
   it("retires the relative window when a calendar day is picked", async () => {
     const onChange = renderBar();
-    await userEvent.click(screen.getByRole("button", { name: "Filter cards" }));
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
     await userEvent.click(screen.getByRole("radio", { name: "Last 30 days" }));
 
     // Open the calendar and pick a day; the lazy chunk needs a longer wait.

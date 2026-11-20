@@ -130,7 +130,7 @@ test("board header keeps the title and Agents action usable at tablet widths", a
 
     const layout = await page.evaluate(() => {
       const headerEl = document.querySelector("header")!;
-      const title = headerEl.querySelector("h2");
+      const title = headerEl.querySelector("h1");
       const agent = document.querySelector<HTMLElement>(
         '[data-testid="agent-control-trigger"]',
       );
@@ -177,7 +177,7 @@ test("board header keeps the title and Agents action usable at tablet widths", a
       expect(layout.agentHeight).toBeGreaterThanOrEqual(44);
     }
     const search = page.getByRole("button", {
-      name: "Search cards and boards",
+      name: "Global search",
     });
     if (width === 720) {
       await expect(search).toBeHidden();

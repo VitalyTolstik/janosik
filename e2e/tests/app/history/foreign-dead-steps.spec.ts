@@ -197,7 +197,7 @@ test("one undo skips several overtaken steps and still applies the next live one
   await closeCardDialog(page);
   await titleSaved;
 
-  await page.locator("header h2").click();
+  await page.locator("header h1").click();
   await page.locator('[name="board-title-edit"]').fill("Local board");
   const boardSaved = page.waitForResponse(
     (response) =>

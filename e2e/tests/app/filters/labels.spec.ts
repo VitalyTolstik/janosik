@@ -54,7 +54,7 @@ test("filters by any of the selected labels", async ({ page, board }) => {
 
   await expectCardTitles(page, ["Only bug", "Only feature", "Both labels"]);
   await expect(
-    filterBar(page).getByRole("button", { name: "Filter cards" }),
+    filterBar(page).getByRole("button", { name: "Filters", exact: true }),
   ).toContainText("1");
 });
 

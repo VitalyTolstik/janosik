@@ -37,25 +37,31 @@ export const LABEL_COLORS = [
 /** Legacy colors accepted from persisted data but not offered in the picker. */
 export type LabelColor = (typeof LABEL_COLORS)[number] | "amber";
 
-/** Tailwind classes used to render a label chip in both themes. */
+/** Tailwind classes used to render a label chip in both themes.
+ *
+ * The text colors are the `--chip-*` tokens from `ui/src/index.css`,
+ * not the raw palette hues: at 10–11px the raw hues fail WCAG AA on the 15%
+ * chip fill (yellow measured 1.61:1 in light). The tokens keep the hue while
+ * switching to a deep shade in light and a pastel in dark.
+ */
 export const LABEL_COLOR_CHIP = {
-  red: "bg-danger/15 text-danger",
-  orange: "bg-orange/15 text-orange",
-  yellow: "bg-yellow/15 text-yellow",
-  brown: "bg-brown/15 text-brown",
-  green: "bg-success/15 text-success",
-  teal: "bg-teal/15 text-teal",
-  cyan: "bg-secondary/15 text-secondary",
-  blue: "bg-blue/15 text-blue",
-  indigo: "bg-indigo/15 text-indigo",
-  brand: "bg-primary/15 text-primary",
-  fuchsia: "bg-fuchsia/15 text-fuchsia",
-  pink: "bg-pink/15 text-pink",
-  slate: "bg-slate/15 text-slate",
+  red: "bg-danger/15 text-(--chip-red)",
+  orange: "bg-orange/15 text-(--chip-orange)",
+  yellow: "bg-yellow/15 text-(--chip-yellow)",
+  brown: "bg-brown/15 text-(--chip-brown)",
+  green: "bg-success/15 text-(--chip-green)",
+  teal: "bg-teal/15 text-(--chip-teal)",
+  cyan: "bg-secondary/15 text-(--chip-cyan)",
+  blue: "bg-blue/15 text-(--chip-blue)",
+  indigo: "bg-indigo/15 text-(--chip-indigo)",
+  brand: "bg-primary/15 text-(--tab-text)",
+  fuchsia: "bg-fuchsia/15 text-(--chip-fuchsia)",
+  pink: "bg-pink/15 text-(--chip-pink)",
+  slate: "bg-slate/15 text-(--chip-slate)",
   // Colorless: an outlined empty pill instead of a tinted one.
   plain: "border border-border bg-background/40 text-muted-foreground",
   // Retired color kept so persisted labels still render.
-  amber: "bg-warning/15 text-warning",
+  amber: "bg-warning/15 text-(--chip-warning)",
 } satisfies Record<LabelColor, string>;
 
 /** Solid color used for dot indicators (e.g. drag previews, swatches). */
