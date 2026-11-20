@@ -252,35 +252,70 @@ describe("boardReducer — cards", () => {
     expect(progress?.cardIds).toEqual(["card-4"]);
   });
 
-  it("attaches and detaches a label on a card", () => {
-    const board = reduceBoard(freshBoard(), {
+  it("stamps the card when a label is attached or detached", () => {
+    const seed = freshBoard();
+    const attachAt = seed.cards["card-2"].updatedAt + 1;
+    const board = reduceBoard(seed, {
       type: "SET_CARD_LABEL",
       cardId: "card-2",
       labelId: "label-urgent",
       on: true,
+      at: attachAt,
     });
     expect(board.cards["card-2"].labelIds).toContain("label-urgent");
+    expect(board.cards["card-2"].updatedAt).toBe(attachAt);
 
     const cleared = reduceBoard(board, {
       type: "SET_CARD_LABEL",
       cardId: "card-2",
       labelId: "label-urgent",
       on: false,
+      at: attachAt + 1,
     });
     expect(cleared.cards["card-2"].labelIds).not.toContain("label-urgent");
+    expect(cleared.cards["card-2"].updatedAt).toBe(attachAt + 1);
   });
 
-  it("ignores unknown labels", () => {
-    const board = freshBoard();
-    const next = reduceBoard(board, {
+  it("uses the saved card stamp when undoing a label change", () => {
+    const seed = freshBoard();
+    const card = seed.cards["card-2"];
+    const next = reduceBoard(seed, {
       type: "SET_CARD_LABEL",
-      cardId: "card-2",
-      labelId: "no-such-label",
-      on: true,
+      cardId: card.id,
+      labelId: "label-dev",
+      on: false,
+      inverse: true,
+      cardUpdatedAt: card.updatedAt - 1,
+      at: card.updatedAt + 1,
     });
-    // Seed card-2 already carries the Development label — unchanged.
-    expect(next.cards["card-2"].labelIds).toEqual(["label-dev"]);
+    expect(next.cards[card.id].labelIds).toEqual([]);
+    expect(next.cards[card.id].updatedAt).toBe(card.updatedAt - 1);
   });
+
+  it.each([
+    ["unknown label", "card-2", "no-such-label", true],
+    ["unknown card", "no-such-card", "label-dev", true],
+    ["already attached", "card-2", "label-dev", true],
+    ["already detached", "card-2", "label-urgent", false],
+  ])(
+    "keeps the card stamp for a label no-op (%s)",
+    (_case, cardId, labelId, on) => {
+      const board = freshBoard();
+      const card = board.cards["card-2"];
+      const updatedAt = card.updatedAt;
+      const next = reduceBoard(board, {
+        type: "SET_CARD_LABEL",
+        cardId,
+        labelId,
+        on,
+        at: updatedAt + 1,
+      });
+      // Seed card-2 already carries the Development label — unchanged.
+      expect(next.cards["card-2"].labelIds).toEqual(["label-dev"]);
+      expect(next.cards["card-2"].updatedAt).toBe(updatedAt);
+      expect(next).toBe(board);
+    },
+  );
 });
 
 describe("boardReducer — LABEL management", () => {
@@ -2005,9 +2040,23 @@ describe("boardReducer — collection limits (TASK-20)", () => {
         on: true,
       });
     }
-    expect(state[0].cards["card-1"].labelIds).toHaveLength(
-      LIMITS.labelsPerCard,
-    );
+    const board = state[0];
+    const card = board.cards["card-1"];
+    const updatedAt = card.updatedAt;
+    expect(card.labelIds).toHaveLength(LIMITS.labelsPerCard);
+
+    const extra = board.labels.find(
+      (label) => !card.labelIds.includes(label.id),
+    )!;
+    const refused = reduceBoard(board, {
+      type: "SET_CARD_LABEL",
+      cardId: card.id,
+      labelId: extra.id,
+      on: true,
+      at: updatedAt + 1,
+    });
+    expect(refused.cards[card.id].updatedAt).toBe(updatedAt);
+    expect(refused).toBe(board);
   });
 
   it("refuses new labels on a board beyond LIMITS.labelsPerBoard", async () => {

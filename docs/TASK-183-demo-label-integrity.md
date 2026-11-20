@@ -636,6 +636,20 @@ implementation must turn it into tests or a documented decision.
 | `RENAME_LABEL` / `SET_LABEL_COLOR` | label metadata only; card content unchanged | no card bump | Intentional; document why. |
 | `ADD_LABEL` | no existing card changes | no card bump | Intentional. |
 
+**TASK-183.2 implementation (2026-11-20).** `SET_CARD_LABEL` now stamps each
+attach or detach, and its inverse restores the previous stamp. Shared and
+backend tests cover the exact timestamps, including undo through the command
+endpoint. The UI focus diff uses the stamp first and retains the TASK-156
+label-array check for compatibility.
+
+**Follow-up TASK-183.3 — Board-wide label timestamps.** Owner: board commands
+maintainers. Recorded 2026-11-20. `DELETE_LABEL` and `RESTORE_LABEL` still
+change membership without updating `updatedAt`, `version` or `lastActorId`
+on the affected card rows. The multi-card cascade/restore test in
+`backend/test/commands-labels-checklists.e2e-spec.ts` pins this behavior.
+The follow-up owns forward card stamping and backward-compatible validation
+of per-card timestamps in `RestoreLabelAction.assignments` for exact undo.
+
 `DELETE_LABEL` is multi-card: one command removes a label from many cards.
 Fixing it needs both forward stamping for every affected card and a per-card
 timestamp in the inverse. `RestoreLabelAction`’s `assignments` currently
@@ -954,11 +968,9 @@ with an explicit compatibility rationale.
 4. **One shared reset database or a template clone per session?** Recommended:
    one reset database plus `verify` for the first version; document template
    cloning for teams that need parallel manual sessions.
-5. **Should `DELETE_LABEL` and `RESTORE_LABEL` be fixed in 183.2?** They share
-   the timestamp gap but are multi-card. Recommended: fix them with forward
-   stamping plus per-card assignment timestamps if the change stays reviewable;
-   otherwise split into a named follow-up and keep the current workaround
-   explicit.
+5. **Should `DELETE_LABEL` and `RESTORE_LABEL` be fixed in 183.2?** The
+   multi-card change is tracked in TASK-183.3. See §3.3 for the regression
+   coverage and the per-card undo requirement.
 6. **Should label rename/color bump affected cards?** Recommended: no. Label
    metadata changes, not card membership; the card content is unchanged. Record
    the decision in the audit table.

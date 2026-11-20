@@ -8,7 +8,7 @@ import type {
   CommandResponse,
   Label,
 } from "@janosik/shared";
-import { boardReducer, LIMITS } from "@janosik/shared";
+import { boardReducer, invert, LIMITS } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -160,6 +160,81 @@ describe("Commands API — labels & checklists (e2e)", () => {
   }
 
   describe("contract: aggregate == boardReducer", () => {
+    it("persists the card stamp and bookkeeping on label attach, undo and redo", async () => {
+      const boardId = await importBoard("Label timestamps", {
+        labels: [{ id: "label-stamp", name: "Bug", color: "red" }],
+      });
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+      const actor = await prisma.user.findUniqueOrThrow({
+        where: { email: MEMBER_EMAIL },
+        select: { id: true },
+      });
+      const before = await getAggregate(boardId);
+      const [cardId] = Object.keys(before.cards);
+      const attach = {
+        type: "SET_CARD_LABEL",
+        boardId,
+        cardId,
+        labelId: before.labels[0].id,
+        on: true,
+        at: tick(),
+      } as const;
+      const [expected] = boardReducer([before], attach, {
+        withActivity: false,
+      });
+
+      const readCard = async () => {
+        const { labels, ...row } = await prisma.card.findUniqueOrThrow({
+          where: { id: cardId },
+          select: {
+            updatedAt: true,
+            version: true,
+            lastActorId: true,
+            labels: { orderBy: { position: "asc" }, select: { labelId: true } },
+          },
+        });
+        return { ...row, labelIds: labels.map(({ labelId }) => labelId) };
+      };
+      const original = await readCard();
+      const undo = invert(before, attach);
+      if (undo?.type !== "SET_CARD_LABEL") {
+        throw new Error("Expected a SET_CARD_LABEL inverse");
+      }
+
+      await apply(boardId, attach, memberToken);
+      const attached = await readCard();
+      expect(attached).toEqual({
+        updatedAt: new Date(attach.at),
+        version: original.version + 1,
+        lastActorId: actor.id,
+        labelIds: expected.cards[cardId].labelIds,
+      });
+      expect(attached.labelIds).toEqual([attach.labelId]);
+
+      await apply(boardId, { ...attach, at: tick() }, memberToken);
+      expect(await readCard()).toEqual(attached);
+
+      await apply(boardId, { ...undo, at: tick() }, memberToken);
+      const undone = await readCard();
+      expect(undone).toEqual({
+        updatedAt: original.updatedAt,
+        version: attached.version + 1,
+        lastActorId: actor.id,
+        labelIds: original.labelIds,
+      });
+      expect(stripAttribution(await getAggregate(boardId))).toEqual(
+        stripAttribution(before),
+      );
+
+      const redo = { ...attach, at: tick() };
+      await apply(boardId, redo, memberToken);
+      expect(await readCard()).toEqual({
+        ...attached,
+        updatedAt: new Date(redo.at),
+        version: undone.version + 1,
+      });
+    });
+
     it("walks the label and checklist action set", async () => {
       const boardId = await createBoard("Labels contract board");
       await applyAndAssert(
@@ -886,7 +961,7 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ]);
     });
 
-    it("cascades a deleted label out of every card and restores it", async () => {
+    it("cascades and restores card labels without changing card bookkeeping (TASK-183.3)", async () => {
       const boardId = await createBoard("Cascade board");
       await apply(
         boardId,
@@ -928,6 +1003,15 @@ describe("Commands API — labels & checklists (e2e)", () => {
         );
       }
 
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_CARD_LABEL",
+          cardId: "card-cas-2",
+          labelId: "l-cas-1",
+          on: true,
+        }),
+      );
       const before = await getAggregate(boardId);
       const label = before.labels.find((entry) => entry.id === "l-cas-1");
       const assignments = Object.values(before.cards)
@@ -936,6 +1020,21 @@ describe("Commands API — labels & checklists (e2e)", () => {
           index: card.labelIds.indexOf("l-cas-1"),
         }))
         .filter((assignment) => assignment.index !== -1);
+      expect(assignments).toHaveLength(2);
+      const readCardBookkeeping = () =>
+        prisma.card.findMany({
+          where: { id: { in: assignments.map(({ cardId }) => cardId) } },
+          orderBy: { id: "asc" },
+          select: {
+            id: true,
+            updatedAt: true,
+            version: true,
+            lastActorId: true,
+          },
+        });
+      const original = await readCardBookkeeping();
+      expect(original).toHaveLength(2);
+      expect(original[0].updatedAt).not.toEqual(original[1].updatedAt);
 
       await apply(
         boardId,
@@ -945,6 +1044,8 @@ describe("Commands API — labels & checklists (e2e)", () => {
       const afterDelete = await getAggregate(boardId);
       expect(afterDelete.labels.map((entry) => entry.id)).toEqual(["l-cas-2"]);
       expect(afterDelete.cards["card-cas-1"].labelIds).toEqual([]);
+      expect(afterDelete.cards["card-cas-2"].labelIds).toEqual(["l-cas-2"]);
+      expect(await readCardBookkeeping()).toEqual(original);
       const labelRow = await prisma.label.findUnique({
         where: { id: "l-cas-1" },
       });
@@ -953,7 +1054,7 @@ describe("Commands API — labels & checklists (e2e)", () => {
         await prisma.cardLabel.count({ where: { labelId: "l-cas-1" } }),
       ).toBe(0);
 
-      await applyAndAssert(
+      const restored = await applyAndAssert(
         boardId,
         scoped(boardId, {
           type: "RESTORE_LABEL",
@@ -964,9 +1065,18 @@ describe("Commands API — labels & checklists (e2e)", () => {
       );
       const links = await prisma.cardLabel.findMany({
         where: { labelId: "l-cas-1" },
+        orderBy: { cardId: "asc" },
       });
-      expect(links).toHaveLength(1);
-      expect(links[0].cardId).toBe("card-cas-1");
+      expect(links.map(({ cardId }) => cardId)).toEqual([
+        "card-cas-1",
+        "card-cas-2",
+      ]);
+      expect(restored.cards["card-cas-1"].labelIds).toEqual(["l-cas-1"]);
+      expect(restored.cards["card-cas-2"].labelIds).toEqual([
+        "l-cas-2",
+        "l-cas-1",
+      ]);
+      expect(await readCardBookkeeping()).toEqual(original);
     });
   });
 
