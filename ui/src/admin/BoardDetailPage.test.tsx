@@ -174,11 +174,13 @@ describe("board detail addressable links", () => {
     expect(await screen.findByTestId("admin-filter-boardId")).toHaveTextContent(
       "b-1",
     );
-    const request = server.requests
-      .filter((entry) => entry.path === "/admin/entities/comments")
-      .at(-1);
-    expect(request?.query.get("boardId")).toBe("b-1");
-    expect(request?.query.get("status")).toBe("active");
+    await waitFor(() => {
+      const request = server.requests
+        .filter((entry) => entry.path === "/admin/entities/comments")
+        .at(-1);
+      expect(request?.query.get("boardId")).toBe("b-1");
+      expect(request?.query.get("status")).toBe("active");
+    });
   });
 
   it("uses returnTo as the back target", async () => {
