@@ -663,6 +663,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- TASK-177.17 makes comment deletion explicit: the confirmation names the
+  author in its title, shows a short excerpt of the exact comment, and keeps
+  the honest “cannot be undone” copy. Comments are soft-deleted server-side,
+  but the public API has no restore route (only the master-admin entity
+  restore reaches the row), so the UI deliberately offers no undo toast rather
+  than recreating the comment under a new id. The delete trigger and the
+  dialog actions meet the 44 px touch target on small screens and touch-only
+  devices. The trigger is enlarged but still appears only on hover until
+  TASK-177.8 makes it visible on touch. The excerpt collapses whitespace and
+  truncates on grapheme boundaries (code points when `Intl.Segmenter` is
+  unavailable), so surrogate pairs and ZWJ emoji are never split; the author
+  line falls back from display name to email to author id; a non-404 DELETE
+  failure restores the comment at its loaded position instead of collapsing
+  pagination, while a 404 keeps it removed and repairs the count; a repeated
+  confirmation sends exactly one request, and different comments can be
+  deleted while an earlier request is in flight. EN/RU copy and tests cover
+  the excerpt/author, cancel, the no-undo decision and the touch targets.
+
 - TASK-177.10 groups global search results before applying the 20-hit cap:
   `Cards` and `Boards` are capped separately, so a board hit stays visible
   under a long card list. The group heading shows `20 of N` (or

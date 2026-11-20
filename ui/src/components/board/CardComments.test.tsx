@@ -8,16 +8,18 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Board, CommentDto } from "@janosik/shared";
+import type { Board, BoardMemberDto, CommentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
 import { CardComments } from "@/components/board/CardComments";
+import type { ActivityCount } from "@/components/board/card-activity-count";
 import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import { defaultI18n, ensureLocale } from "@/i18n/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { FakeServer } from "@/test/fake-server";
 
@@ -90,6 +92,19 @@ function comment(overrides: Partial<CommentDto> = {}): CommentDto {
   };
 }
 
+function member(overrides: Partial<BoardMemberDto> = {}): BoardMemberDto {
+  return {
+    userId: "user-1",
+    displayName: "Admin",
+    email: "admin@example.com",
+    role: "ADMIN",
+    expiresAt: null,
+    avatarColor: null,
+    avatarPath: null,
+    ...overrides,
+  };
+}
+
 type FetchHandler = (
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -100,6 +115,7 @@ function renderComments(
   readOnly = false,
   handler: FetchHandler = server.handle,
   cardId = "card-1",
+  onCountChange?: (count: ActivityCount | null | undefined) => void,
 ) {
   vi.stubGlobal("fetch", handler);
   const tree = (open: boolean) => (
@@ -115,6 +131,7 @@ function renderComments(
                       cardId={cardId}
                       boardId="b-1"
                       readOnly={readOnly}
+                      onCountChange={onCountChange}
                     />
                   )}
                 </UserProfileProvider>
@@ -480,12 +497,351 @@ describe("CardComments", () => {
       expect(screen.queryByText("Mine")).not.toBeInTheDocument(),
     );
     expect(
-      server.requests.some(
+      server.requests.filter(
         (request) =>
           request.method === "DELETE" &&
           request.path === "/api/v1/comments/comment-1",
       ),
-    ).toBe(true);
+    ).toHaveLength(1);
+  });
+
+  it("sends exactly one DELETE when the confirmation is activated twice", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Once" })]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    const confirm = await screen.findByRole("button", { name: "Delete" });
+    act(() => {
+      confirm.click();
+      confirm.click();
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Once")).not.toBeInTheDocument(),
+    );
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "DELETE" &&
+          request.path === "/api/v1/comments/comment-1",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("starts a second comment delete while the first DELETE is in flight", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "First" }),
+      comment({ id: "comment-2", text: "Second" }),
+    ]);
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    renderComments(server, false, async (input, init) => {
+      if (
+        init?.method === "DELETE" &&
+        String(input).includes("/comments/comment-1")
+      ) {
+        await firstGate;
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("First");
+
+    const first = screen
+      .getAllByTestId("comment")
+      .find((row) => row.dataset.commentId === "comment-1");
+    fireEvent.click(within(first as HTMLElement).getByTestId("comment-delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(screen.queryByText("First")).not.toBeInTheDocument(),
+    );
+
+    const second = screen
+      .getAllByTestId("comment")
+      .find((row) => row.dataset.commentId === "comment-2");
+    fireEvent.click(
+      within(second as HTMLElement).getByTestId("comment-delete"),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(screen.queryByText("Second")).not.toBeInTheDocument(),
+    );
+
+    await act(async () => releaseFirst());
+    await waitFor(() =>
+      expect(
+        server.requests.filter((request) => request.method === "DELETE"),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByTestId("comment")).not.toBeInTheDocument();
+  });
+
+  it("restores a failed delete at its old index without resetting loaded pages", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments(
+      "card-1",
+      Array.from({ length: 51 }, (_, index) =>
+        comment({
+          id: `comment-${index}`,
+          text: `Comment ${index}`,
+          createdAt: 1_700_000_000_000 + index,
+        }),
+      ),
+    );
+    let deleteCalls = 0;
+    renderComments(server, false, async (input, init) => {
+      if (init?.method === "DELETE") {
+        deleteCalls += 1;
+        return new Response(JSON.stringify({ message: "delete failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("Comment 0");
+
+    fireEvent.click(await screen.findByTestId("comments-show-older"));
+    expect(await screen.findByText("Comment 50")).toBeInTheDocument();
+    const doomed = screen
+      .getAllByTestId("comment")
+      .find((row) => row.dataset.commentId === "comment-50");
+    expect(doomed).toBeDefined();
+    fireEvent.click(
+      within(doomed as HTMLElement).getByTestId("comment-delete"),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    expect(
+      await screen.findByText("Could not delete the comment"),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getAllByTestId("comment")).toHaveLength(51),
+    );
+    expect(screen.getAllByTestId("comment").at(-1)).toHaveAttribute(
+      "data-comment-id",
+      "comment-50",
+    );
+    // The page-2 row and its position survive the error; a page-1 reset would
+    // bring the "Show older comments" control back.
+    expect(screen.queryByTestId("comments-show-older")).not.toBeInTheDocument();
+    expect(deleteCalls).toBe(1);
+  });
+
+  it("keeps an already-deleted comment removed on 404 and updates the count", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Already gone" }),
+      comment({ id: "comment-2", text: "Still here" }),
+    ]);
+    const onCountChange = vi.fn();
+    let deleteCalls = 0;
+    renderComments(
+      server,
+      false,
+      async (input, init) => {
+        if (init?.method === "DELETE") {
+          deleteCalls += 1;
+          return new Response(JSON.stringify({ message: "not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return server.handle(input, init);
+      },
+      "card-1",
+      onCountChange,
+    );
+    await screen.findByText("Already gone");
+    await waitFor(() =>
+      expect(onCountChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ visible: 2 }),
+      ),
+    );
+
+    const doomed = screen
+      .getAllByTestId("comment")
+      .find((row) => row.dataset.commentId === "comment-1");
+    fireEvent.click(
+      within(doomed as HTMLElement).getByTestId("comment-delete"),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Already gone")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(onCountChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ visible: 1 }),
+      ),
+    );
+    expect(
+      screen.queryByText("Could not delete the comment"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Still here")).toBeInTheDocument();
+    expect(screen.getAllByTestId("comment")).toHaveLength(1);
+    expect(deleteCalls).toBe(1);
+  });
+
+  it("shows the member author and exact excerpt in the delete confirmation", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.membersByBoard.set("b-1", [
+      member({ displayName: "Vera", email: "vera@example.com" }),
+    ]);
+    server.seedComments("card-1", [
+      comment({
+        text: "  **Rename** the\n`migration` table\tbefore the release  ",
+      }),
+    ]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(await within(dialog).findByText("Author: Vera")).toBeVisible();
+    const excerpt = within(dialog).getByTestId("comment-delete-excerpt");
+    // Exact textContent, not the whitespace-normalizing matcher.
+    expect(excerpt.textContent).toBe(
+      "**Rename** the `migration` table before the release",
+    );
+    expect(excerpt).toHaveAttribute("dir", "auto");
+    expect(within(dialog).getByText(/cannot be undone/i)).toBeVisible();
+    expect(
+      within(dialog).getByRole("heading", { name: /Delete Vera/ }),
+    ).toBeVisible();
+  });
+
+  it("falls back to the author email when the member directory is missing", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.account.displayName = null;
+    server.seedComments("card-1", [comment({ text: "Email fallback" })]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(
+      await within(dialog).findByText("Author: admin@example.com"),
+    ).toBeVisible();
+  });
+
+  it("keeps a right-to-left excerpt intact for dir=auto", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ text: "  שלום עולם\nمرحبا بالعالم  " }),
+    ]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    const dialog = await screen.findByRole("dialog");
+    const excerpt = within(dialog).getByTestId("comment-delete-excerpt");
+
+    expect(excerpt.textContent).toBe("שלום עולם مرحبا بالعالم");
+    expect(excerpt).toHaveAttribute("dir", "auto");
+  });
+
+  it("keeps the comment when the delete confirmation is cancelled", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Keep me" })]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Keep me")).toBeInTheDocument();
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "DELETE" &&
+          request.path === "/api/v1/comments/comment-1",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("gives the delete trigger and the confirm action 44 px touch targets", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Touch me" })]);
+    renderComments(server);
+
+    const trigger = await screen.findByTestId("comment-delete");
+    expect(trigger).toHaveClass(
+      "max-md:h-11",
+      "max-md:w-11",
+      "no-hover:h-11",
+      "no-hover:w-11",
+    );
+
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Delete" })).toHaveClass(
+      "max-md:min-h-11",
+      "no-hover:min-h-11",
+    );
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveClass(
+      "max-md:min-h-11",
+      "no-hover:min-h-11",
+    );
+  });
+
+  it("does not offer undo because a deleted comment has no restore endpoint", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Gone" })]);
+    renderComments(server);
+
+    fireEvent.click(await screen.findByTestId("comment-delete"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Gone")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /undo/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/restored/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the delete confirmation in Russian", async () => {
+    await ensureLocale("ru");
+    await act(async () => {
+      await defaultI18n.changeLanguage("ru");
+    });
+    try {
+      const server = new FakeServer([seedBoard()]);
+      server.membersByBoard.set("b-1", [member()]);
+      server.seedComments("card-1", [comment({ text: "Удалить меня" })]);
+      renderComments(server);
+
+      fireEvent.click(await screen.findByTestId("comment-delete"));
+      const dialog = await screen.findByRole("dialog");
+
+      expect(await within(dialog).findByText("Автор: Admin")).toBeVisible();
+      expect(
+        within(dialog).getByTestId("comment-delete-excerpt").textContent,
+      ).toBe("Удалить меня");
+      expect(
+        within(dialog).getByRole("heading", {
+          name: "Удалить комментарий Admin?",
+        }),
+      ).toBeVisible();
+      expect(
+        within(dialog).getByText(
+          "Комментарий исчезнет у всех. Это действие нельзя отменить.",
+        ),
+      ).toBeVisible();
+      expect(
+        within(dialog).getByRole("button", { name: "Удалить" }),
+      ).toBeVisible();
+    } finally {
+      await act(async () => {
+        await defaultI18n.changeLanguage("en");
+      });
+    }
   });
 
   it("offers no delete on someone else's comment and none in read-only", async () => {

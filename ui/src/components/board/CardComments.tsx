@@ -25,6 +25,10 @@ import {
   type ActivityPage,
 } from "@/components/board/card-activity-count";
 import { CardSectionSkeleton } from "@/components/board/CardSectionSkeleton";
+import {
+  commentAuthorLabel,
+  commentExcerpt,
+} from "@/components/board/comment-delete";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useCommentDraft } from "@/components/board/use-comment-draft";
@@ -114,6 +118,14 @@ export function CardComments({
   const draft = composer.draft?.text ?? "";
   const kind = composer.draft?.kind ?? DEFAULT_COMMENT_KIND;
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
+  const pendingAuthor = useBoardMember(boardId, pendingDelete?.authorId);
+  const deletingIdRef = useRef<string | null>(null);
+  const pendingAuthorName = commentAuthorLabel(
+    pendingDelete?.authorId ?? "",
+    pendingAuthor,
+    user,
+    t("comment.unknownAuthor"),
+  );
 
   const markUnavailable = useCallback((error: unknown) => {
     if (
@@ -326,9 +338,20 @@ export function CardComments({
     }
   };
 
+  // TASK-177.17: the server keeps the row soft-deleted, but there is no
+  // user-facing comment restore endpoint (only the master-admin entity
+  // restore reaches it), so this UI deliberately offers no undo toast and
+  // the dialog says the deletion cannot be undone.
   const handleDelete = async () => {
     const comment = pendingDelete;
-    if (comment === null) return;
+    // A double click or a repeated Enter of the same confirmation reaches the
+    // handler twice before React closes the dialog. The guard is per comment,
+    // so deleting a different comment while this request is in flight still
+    // works instead of silently dropping the second confirmation.
+    if (comment === null || deletingIdRef.current === comment.id) return;
+    deletingIdRef.current = comment.id;
+    const index = itemsRef.current.findIndex((item) => item.id === comment.id);
+    const previousTotal = total;
     setPendingDelete(null);
     setThread((current) => ({
       ...current,
@@ -338,9 +361,34 @@ export function CardComments({
     try {
       await api.deleteComment(comment.id);
       if (nextCursor !== null || total !== undefined) void refreshNewest();
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        // The server already deleted it elsewhere: keep the optimistic
+        // removal and repair the exact count instead of resurrecting the row.
+        setThread((current) => ({
+          ...current,
+          total:
+            previousTotal !== undefined
+              ? Math.max(0, previousTotal - 1)
+              : current.total,
+        }));
+        return;
+      }
       toast.error(t("comment.deleteError"));
-      void loadFirst();
+      // Keep the loaded pages intact: reinsert the row where it was instead
+      // of resetting to page 1 (which would drop comments loaded from 2+).
+      setThread((current) => {
+        if (current.items.some((item) => item.id === comment.id)) {
+          return { ...current, total: previousTotal };
+        }
+        const items = [...current.items];
+        const insertAt =
+          index >= 0 ? Math.min(index, items.length) : items.length;
+        items.splice(insertAt, 0, comment);
+        return { ...current, items, total: previousTotal };
+      });
+    } finally {
+      if (deletingIdRef.current === comment.id) deletingIdRef.current = null;
     }
   };
 
@@ -436,12 +484,33 @@ export function CardComments({
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-        title={t("comment.deleteTitle")}
+        title={t("comment.deleteTitle", { name: pendingAuthorName })}
         description={t("comment.deleteDescription")}
         confirmLabel={t("comment.deleteConfirm")}
         destructive
         onConfirm={() => void handleDelete()}
-      />
+      >
+        {pendingDelete ? (
+          <figure
+            className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2"
+            data-testid="comment-delete-preview"
+          >
+            <figcaption
+              className="text-xs text-muted-foreground"
+              data-testid="comment-delete-author"
+            >
+              {t("comment.deleteAuthor", { name: pendingAuthorName })}
+            </figcaption>
+            <blockquote
+              dir="auto"
+              className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90"
+              data-testid="comment-delete-excerpt"
+            >
+              {commentExcerpt(pendingDelete.text)}
+            </blockquote>
+          </figure>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }
@@ -797,7 +866,7 @@ function CommentRow({
                 type="button"
                 aria-label={t("comment.delete")}
                 data-testid="comment-delete"
-                className="shrink-0 rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                className="inline-flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive max-md:h-11 max-md:w-11 no-hover:h-11 no-hover:w-11"
                 onClick={onDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
