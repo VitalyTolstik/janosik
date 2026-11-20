@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import {
   Navigate,
   Route,
@@ -11,19 +12,41 @@ import { AdminAuthProvider, useAdminAuth } from "./AdminAuthContext";
 import { AdminLoginPage } from "./AdminLoginPage";
 import { AdminShell } from "./AdminShell";
 import { DashboardPage } from "./DashboardPage";
-import { EntityPage } from "./EntityPage";
-import { useEntityConfig } from "./entity-configs";
 import { UserDetailPage } from "./UserDetailPage";
 import { CardDetailPage } from "./CardDetailPage";
 import { BoardDetailPage } from "./BoardDetailPage";
 import { BoardContentPage } from "./BoardContentPage";
 import { BoardWorkflowPage } from "./BoardWorkflowPage";
-import { BoardsHubPage } from "./hubs/BoardsHubPage";
-import { ModerationHubPage } from "./hubs/ModerationHubPage";
-import { AuditHubPage } from "./hubs/AuditHubPage";
-import { AccessHubPage } from "./hubs/AccessHubPage";
-import { CommunicationsHubPage } from "./hubs/CommunicationsHubPage";
 import { SettingsHubPage } from "./hubs/SettingsHubPage";
+
+// List routes share the filter registry and URL state code. Detail routes
+// can open directly without loading either.
+const UsersPage = lazy(() => import("./UsersPage"));
+const BoardsHubPage = lazy(() =>
+  import("./hubs/BoardsHubPage").then(({ BoardsHubPage }) => ({
+    default: BoardsHubPage,
+  })),
+);
+const ModerationHubPage = lazy(() =>
+  import("./hubs/ModerationHubPage").then(({ ModerationHubPage }) => ({
+    default: ModerationHubPage,
+  })),
+);
+const AuditHubPage = lazy(() =>
+  import("./hubs/AuditHubPage").then(({ AuditHubPage }) => ({
+    default: AuditHubPage,
+  })),
+);
+const AccessHubPage = lazy(() =>
+  import("./hubs/AccessHubPage").then(({ AccessHubPage }) => ({
+    default: AccessHubPage,
+  })),
+);
+const CommunicationsHubPage = lazy(() =>
+  import("./hubs/CommunicationsHubPage").then(({ CommunicationsHubPage }) => ({
+    default: CommunicationsHubPage,
+  })),
+);
 
 /**
  * Master panel entry (TASK-36), lazy-loaded from `/admin/*`.
@@ -36,15 +59,6 @@ import { SettingsHubPage } from "./hubs/SettingsHubPage";
  * its hub tab and keeps the query string, so old deep links and bookmarks do
  * not break. Detail routes remain their own pages.
  */
-
-function EntityRoute({
-  entity,
-}: {
-  entity: Parameters<typeof useEntityConfig>[0];
-}) {
-  const config = useEntityConfig(entity);
-  return <EntityPage key={entity} config={config} />;
-}
 
 /** Detail pages remount per id so state never leaks between entities. */
 function UserDetailRoute() {
@@ -95,7 +109,7 @@ function AdminGate() {
       <Route element={<AdminShell />}>
         <Route index element={<DashboardPage />} />
 
-        <Route path="users" element={<EntityRoute entity="users" />} />
+        <Route path="users" element={<UsersPage />} />
         <Route path="users/:userId" element={<UserDetailRoute />} />
 
         <Route path="boards" element={<BoardsHubPage />} />

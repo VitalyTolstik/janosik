@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -14,6 +14,7 @@ import { AdminTopbar } from "./layout/AdminTopbar";
 import { ADMIN_HUBS, HUB_SHORTCUTS } from "./layout/admin-nav";
 import { AdminShortcutsDialog } from "./layout/AdminShortcutsDialog";
 import { GlobalSearchDialog, rememberRecentPath } from "./GlobalSearch";
+import { EntityListSkeleton } from "./skeletons";
 import "./admin.css";
 
 /**
@@ -224,7 +225,13 @@ export function AdminShell() {
           tabIndex={-1}
           className="min-h-0 flex-1 overflow-y-auto outline-none"
         >
-          <Outlet />
+          <Suspense
+            fallback={
+              <EntityListSkeleton columns={5} testId="admin-route-skeleton" />
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 
