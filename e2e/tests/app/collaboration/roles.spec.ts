@@ -114,9 +114,7 @@ test("the last admin cannot be demoted or removed", async ({
   const row = memberRow(page, board.email);
 
   await expect(row.getByTestId("role-trigger")).toBeDisabled();
-  await expect(
-    row.getByRole("button", { name: `Remove — ${board.email}` }),
-  ).toBeDisabled();
+  await expect(row.getByTestId("board-member-leave")).toBeDisabled();
   await expect(dialog).toBeVisible();
 
   // Bypassing the disabled controls must not loosen the server guard.
@@ -140,9 +138,7 @@ test("the last admin cannot be demoted or removed", async ({
     memberRow(page, board.email).getByTestId("role-trigger"),
   ).toBeEnabled();
   await expect(
-    memberRow(page, board.email).getByRole("button", {
-      name: `Remove — ${board.email}`,
-    }),
+    memberRow(page, board.email).getByTestId("board-member-leave"),
   ).toBeEnabled();
   await expect(memberRow(page, partner.user.email)).toBeVisible();
 });
