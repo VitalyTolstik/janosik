@@ -70,12 +70,14 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  actionsClassName,
   eyebrow,
   meta,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  actionsClassName?: string;
   /** Small uppercase context line above the h1. */
   eyebrow?: string;
   /** A short meta line below the subtitle (ids, status, dates). */
@@ -107,7 +109,12 @@ export function PageHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div
+          className={cn(
+            "flex shrink-0 flex-wrap items-center gap-2",
+            actionsClassName,
+          )}
+        >
           {actions}
         </div>
       ) : null}
@@ -181,13 +188,20 @@ export function FilterTabs<T extends string>({
   value,
   options,
   onChange,
+  className,
 }: {
   value: T;
   options: Array<{ value: T; label: string }>;
   onChange: (value: T) => void;
+  className?: string;
 }) {
   return (
-    <div className="inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5">
+    <div
+      className={cn(
+        "inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5",
+        className,
+      )}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -351,11 +365,13 @@ export function ErrorState({
 
 export function EmptyState({
   message,
+  announce = false,
   filtered = false,
   onClear,
   action,
 }: {
   message?: string;
+  announce?: boolean;
   /** Distinguish "no rows exist" from "the current filters match nothing". */
   filtered?: boolean;
   onClear?: () => void;
@@ -367,7 +383,10 @@ export function EmptyState({
       className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center"
       data-testid="admin-empty-state"
     >
-      <p className="text-xs font-medium text-foreground">
+      <p
+        role={announce ? "alert" : undefined}
+        className="text-xs font-medium text-foreground"
+      >
         {message ?? t("admin.common.empty")}
       </p>
       {filtered ? (

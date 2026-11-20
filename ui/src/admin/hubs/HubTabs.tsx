@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { Lock } from "lucide-react";
+import { parseAdminFilterId } from "@janosik/shared";
 
 import { cn } from "@/lib/utils";
 import { useAdminT } from "../admin-i18n";
@@ -37,6 +38,10 @@ export function HubTabs({
   const visible = tabs.filter(
     (tab) => tab.ownerOnly !== true || isOwner || showOwnerTabs,
   );
+  const [boardId, repeated] = params.getAll("boardId");
+  const board =
+    repeated === undefined ? parseAdminFilterId(boardId) : undefined;
+  const returnTo = params.get("returnTo");
 
   return (
     <div
@@ -53,10 +58,22 @@ export function HubTabs({
       >
         {visible.map((tab) => {
           const selected = active === tab.key;
+          const href = hubTabHref(hub, tab.key);
+          const context = new URLSearchParams();
+          if (board && tab.preserves?.includes("boardId")) {
+            context.set("boardId", board);
+          }
+          if (returnTo !== null) context.set("returnTo", returnTo);
           return (
             <Link
               key={tab.key}
-              to={hubTabHref(hub, tab.key)}
+              to={
+                selected
+                  ? { search: params.toString() }
+                  : context.size > 0
+                    ? `${href}&${context}`
+                    : href
+              }
               role="tab"
               aria-selected={selected}
               data-testid={`admin-hub-tab-${tab.key}`}

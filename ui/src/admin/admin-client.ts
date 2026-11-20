@@ -26,6 +26,8 @@ import type {
   AdminUpdateOAuthProviderRequest,
   AdminEntity,
   AdminEntityRowMap,
+  AdminFilterOptionsDto,
+  AdminFilterOptionsQuery,
   AdminFilters,
   AdminGlobalSearchDto,
   AdminListSurface,
@@ -391,6 +393,26 @@ export class AdminApiClient {
 
   listCards(params: AdminListParams = {}): Promise<AdminPage<AdminCardRowDto>> {
     return this.list("/admin/cards", "cards", params);
+  }
+
+  filterOptions(
+    { type, ids, q, limit, boardId, columnId, cardId }: AdminFilterOptionsQuery,
+    signal?: AbortSignal,
+  ): Promise<AdminFilterOptionsDto> {
+    const params = new URLSearchParams({ type });
+    if (ids !== undefined) {
+      for (const id of ids) params.append("ids", id);
+    } else {
+      if (q) params.set("q", q);
+      if (limit !== undefined) params.set("limit", String(limit));
+      if (boardId) params.set("boardId", boardId);
+      if (columnId) params.set("columnId", columnId);
+      if (cardId) params.set("cardId", cardId);
+    }
+    return this.request<AdminFilterOptionsDto>(
+      `/admin/filter-options?${params}`,
+      { signal },
+    );
   }
 
   archiveCard(cardId: string): Promise<{ status: "ok" }> {
